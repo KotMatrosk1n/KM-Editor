@@ -33,6 +33,11 @@ internal sealed class ZaPokemonEditSessionService
     private const string DexLayoutRecordId = "dex-layout";
     private const string VanillaDexPlacementRecordId = "dex-placement-vanilla";
     private const string AlphaMoveRecordIdPrefix = "alpha:";
+    private const string GlobalRecordId = "all";
+    private const string GlobalEvYieldField = "evYieldAll";
+    private const string GlobalExpYieldField = "expYieldAll";
+    private const string RemoveYieldValue = "remove";
+    private const string RestoreYieldValue = "restore";
     private const string DexPlacementPayloadV1Prefix = "v1|";
     private const string DexPlacementPayloadV2Prefix = "v2|";
     private const int PersonalTableEntryFieldIndex = 0;
@@ -62,6 +67,16 @@ internal sealed class ZaPokemonEditSessionService
     private const int PersonalLevelupMovesFieldIndex = 25;
     private const int EvolutionDataSize = 16;
     private const int LevelupMoveDataSize = 4;
+
+    private static readonly HashSet<string> EvYieldFields =
+    [
+        ZaPokemonWorkflowService.EVYieldHPField,
+        ZaPokemonWorkflowService.EVYieldAttackField,
+        ZaPokemonWorkflowService.EVYieldDefenseField,
+        ZaPokemonWorkflowService.EVYieldSpecialAttackField,
+        ZaPokemonWorkflowService.EVYieldSpecialDefenseField,
+        ZaPokemonWorkflowService.EVYieldSpeedField,
+    ];
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
@@ -104,6 +119,29 @@ internal sealed class ZaPokemonEditSessionService
             return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
+        if (IsGlobalYieldField(field))
+        {
+            var globalPendingEdit = CreateGlobalYieldPendingEdit(workflow, field, value, diagnostics);
+            if (globalPendingEdit is null)
+            {
+                return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+            }
+
+            var globalUpdatedSession = ReplacePendingPokemonEdit(currentSession, globalPendingEdit);
+            var globalInteractionDiagnostics = new List<ValidationDiagnostic>();
+            ValidateGlobalYieldSessionInteractions(globalUpdatedSession, globalInteractionDiagnostics);
+            if (globalInteractionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                diagnostics.AddRange(globalInteractionDiagnostics);
+                return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+            }
+
+            return new ZaPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, globalUpdatedSession.PendingEdits),
+                globalUpdatedSession,
+                diagnostics);
+        }
+
         var pokemon = workflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == personalId);
         if (pokemon is null)
         {
@@ -128,6 +166,7 @@ internal sealed class ZaPokemonEditSessionService
             pendingEdit);
         var interactionDiagnostics = new List<ValidationDiagnostic>();
         ValidateAlphaSessionInteractions(loadedWorkflow, updatedSession, interactionDiagnostics);
+        ValidateGlobalYieldSessionInteractions(updatedSession, interactionDiagnostics);
         if (interactionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             diagnostics.AddRange(interactionDiagnostics);
@@ -182,33 +221,46 @@ internal sealed class ZaPokemonEditSessionService
                 continue;
             }
 
-            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == update.PersonalId);
-            if (pokemon is null)
+            PendingEdit? pendingEdit;
+            if (IsGlobalYieldField(update.Field))
             {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
-                    ZaEditSessionSupport.PokemonDomain,
-                    field: "personalId",
-                    expected: "Existing Pokemon personal record"));
-                continue;
+                pendingEdit = CreateGlobalYieldPendingEdit(
+                    effectiveWorkflow,
+                    update.Field,
+                    update.Value,
+                    diagnostics);
+            }
+            else
+            {
+                var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == update.PersonalId);
+                if (pokemon is null)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                        ZaEditSessionSupport.PokemonDomain,
+                        field: "personalId",
+                        expected: "Existing Pokemon personal record"));
+                    continue;
+                }
+
+                pendingEdit = CreateFieldPendingEdit(effectiveWorkflow, pokemon, update.Field, update.Value, diagnostics);
             }
 
-            var pendingEdit = CreateFieldPendingEdit(effectiveWorkflow, pokemon, update.Field, update.Value, diagnostics);
             if (pendingEdit is null)
             {
                 continue;
             }
 
-            updatedSession = ReplaceOrRemoveAlphaNoOp(
-                loadedWorkflow,
-                updatedSession,
-                pendingEdit);
+            updatedSession = IsGlobalYieldEdit(pendingEdit)
+                ? ReplacePendingPokemonEdit(updatedSession, pendingEdit)
+                : ReplaceOrRemoveAlphaNoOp(loadedWorkflow, updatedSession, pendingEdit);
             effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
         }
 
         var interactionDiagnostics = new List<ValidationDiagnostic>();
         ValidateAlphaSessionInteractions(loadedWorkflow, updatedSession, interactionDiagnostics);
+        ValidateGlobalYieldSessionInteractions(updatedSession, interactionDiagnostics);
         if (interactionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             diagnostics.AddRange(interactionDiagnostics);
@@ -919,7 +971,7 @@ internal sealed class ZaPokemonEditSessionService
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             CreateOperationField(LearnsetFieldPrefix, operation.Action, operation.Slot),
             FormatOperationValue(operation.MoveId, operation.RawLevel));
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
 
         return new ZaPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
@@ -983,7 +1035,7 @@ internal sealed class ZaPokemonEditSessionService
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
             FormatEvolutionValue(operation));
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
 
         return new ZaPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
@@ -1035,7 +1087,7 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         var effectiveWorkflow = workflow;
-        foreach (var edit in session.PendingEdits)
+        foreach (var edit in OrderPersonalEditsForApply(session.PendingEdits))
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidatePendingEdit(project, effectiveWorkflow, edit, diagnostics);
@@ -1057,6 +1109,7 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         ValidateAlphaSessionInteractions(workflow, session, diagnostics);
+        ValidateGlobalYieldSessionInteractions(session, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -1222,6 +1275,24 @@ internal sealed class ZaPokemonEditSessionService
         {
             project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
+            if (NeedsBaseRows(session.PendingEdits))
+            {
+                var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+                plan = plan with
+                {
+                    Writes = plan.Writes
+                        .Select((write, index) => index == 0
+                            ? write with
+                            {
+                                SourceFingerprint = CreateCombinedSourceFingerprint(
+                                    source.Bytes,
+                                    baseSource.Bytes),
+                            }
+                            : write)
+                        .ToArray(),
+                };
+            }
+
             rows = ReadRows(project, source).Rows;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
@@ -1578,7 +1649,10 @@ internal sealed class ZaPokemonEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            var personalArray = ReadRows(project, source);
+            var personalArray = ReadRows(
+                project,
+                source,
+                includeBaseRows: NeedsBaseRows(session.PendingEdits));
             var rows = personalArray.Rows;
             var dexEdit = session.PendingEdits.SingleOrDefault(IsDexPlacementEdit);
             ZaWorkflowFile? contentsSource = null;
@@ -1607,9 +1681,15 @@ internal sealed class ZaPokemonEditSessionService
                 || migratedLegacyArguments
                 || RequiresEncodedEvolutionRebuild(session.PendingEdits)
                 || dexApply.RequiresPersonalRebuild;
-            foreach (var edit in session.PendingEdits.Where(edit => !IsDexPlacementEdit(edit)))
+            foreach (var edit in OrderPersonalEditsForApply(
+                session.PendingEdits.Where(edit => !IsDexPlacementEdit(edit))))
             {
-                ApplyEdit(rows, edit, conversionState, diagnostics);
+                ApplyEdit(
+                    rows,
+                    personalArray.BaseRows ?? Array.Empty<PersonalRow>(),
+                    edit,
+                    conversionState,
+                    diagnostics);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -1944,7 +2024,10 @@ internal sealed class ZaPokemonEditSessionService
                     if (ordinaryEdits.Length > 0)
                     {
                         var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
-                        var personalArray = ReadRows(project, personalSource);
+                        var personalArray = ReadRows(
+                            project,
+                            personalSource,
+                            includeBaseRows: NeedsBaseRows(ordinaryEdits));
                         var rows = personalArray.Rows;
                         var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
                         var migratedLegacyArguments = PrepareEvolutionItemConversions(
@@ -1955,9 +2038,14 @@ internal sealed class ZaPokemonEditSessionService
                             || RequiresPersonalArrayRebuild(rows, ordinaryEdits)
                             || migratedLegacyArguments
                             || RequiresEncodedEvolutionRebuild(ordinaryEdits);
-                        foreach (var edit in ordinaryEdits)
+                        foreach (var edit in OrderPersonalEditsForApply(ordinaryEdits))
                         {
-                            ApplyEdit(rows, edit, conversionState, diagnostics);
+                            ApplyEdit(
+                                rows,
+                                personalArray.BaseRows ?? Array.Empty<PersonalRow>(),
+                                edit,
+                                conversionState,
+                                diagnostics);
                         }
 
                         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -2188,6 +2276,15 @@ internal sealed class ZaPokemonEditSessionService
             return null;
         }
 
+        if (string.Equals(
+                normalizedField,
+                ZaPokemonWorkflowService.BaseExperienceField,
+                StringComparison.Ordinal)
+            && !ValidateBaseExperienceValue(pokemon, parsed.Value, diagnostics))
+        {
+            return null;
+        }
+
         var displayValue = string.Equals(editableField.ValueKind, "boolean", StringComparison.Ordinal)
             ? parsed.Value == 0 ? "disabled" : "enabled"
             : parsed.Value.ToString(CultureInfo.InvariantCulture);
@@ -2198,6 +2295,220 @@ internal sealed class ZaPokemonEditSessionService
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             normalizedField,
             parsed.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static void ValidateGlobalYieldSessionInteractions(
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!session.PendingEdits.Any(IsGlobalYieldRestoreEdit)
+            || !session.PendingEdits.Any(edit => string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.FormField,
+                StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Pokemon Form changes and vanilla yield restores must be applied separately so every restored value remains bound to the verified species and form.",
+            ZaEditSessionSupport.PokemonDomain,
+            field: ZaPokemonWorkflowService.FormField,
+            expected: "Apply or discard Form changes before staging Restore EXP Yield or Restore EV Yield"));
+    }
+
+    private static PendingEdit? CreateGlobalYieldPendingEdit(
+        ZaPokemonWorkflow workflow,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var normalizedField = field.Trim();
+        var normalizedValue = value.Trim();
+        if (!IsGlobalYieldField(normalizedField))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            return null;
+        }
+
+        if (!IsGlobalYieldAction(normalizedValue))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon yield action '{normalizedValue}' is not supported.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: normalizedField,
+                expected: "remove or restore"));
+            return null;
+        }
+
+        if (string.Equals(normalizedValue, RestoreYieldValue, StringComparison.Ordinal)
+            && workflow.Pokemon.Any(pokemon => pokemon.VanillaYieldDefaults is null))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon yield restore requires matching clean base yield data for every loaded Pokemon row.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: normalizedField,
+                expected: "Verified clean base Pokemon personal data with matching species and forms"));
+            return null;
+        }
+
+        var sources = CreateGlobalYieldSources(workflow, normalizedValue);
+        if (sources.Count == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon yield editing requires a verified personal-data source.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: normalizedField,
+                expected: "Verified current Pokemon personal data"));
+            return null;
+        }
+
+        var target = string.Equals(normalizedField, GlobalEvYieldField, StringComparison.Ordinal)
+            ? "EV yield"
+            : "EXP yield";
+        var action = string.Equals(normalizedValue, RemoveYieldValue, StringComparison.Ordinal)
+            ? "Remove"
+            : "Restore";
+
+        return new PendingEdit(
+            ZaEditSessionSupport.PokemonDomain,
+            $"{action} all Pokemon {target}.",
+            sources,
+            GlobalRecordId,
+            normalizedField,
+            normalizedValue);
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateGlobalYieldSources(
+        ZaPokemonWorkflow workflow,
+        string action)
+    {
+        var provenance = workflow.Pokemon.FirstOrDefault()?.Provenance;
+        if (provenance is null)
+        {
+            return Array.Empty<ProjectFileReference>();
+        }
+
+        var effective = new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+        if (!string.Equals(action, RestoreYieldValue, StringComparison.Ordinal))
+        {
+            return [effective];
+        }
+
+        var baseSource = new ProjectFileReference(
+            ProjectFileLayer.Base,
+            $"romfs/{ZaDataPaths.PersonalArray}");
+        return effective == baseSource ? [effective] : [effective, baseSource];
+    }
+
+    private static bool ValidateBaseExperienceValue(
+        ZaPokemonRecord pokemon,
+        int baseExperience,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (ZaPokemonExperience.TryCalculateExpAddend(
+                pokemon.BaseStats.Total,
+                pokemon.EvolutionStage,
+                baseExperience,
+                out _))
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Base EXP cannot be represented by Pokemon Legends Z-A's stored EXP addend for this Pokemon's current stats and evolution stage.",
+            ZaEditSessionSupport.PokemonDomain,
+            field: ZaPokemonWorkflowService.BaseExperienceField,
+            expected: "Base EXP that maps to a signed 16-bit Z-A addend"));
+        return false;
+    }
+
+    private void ValidateGlobalYieldEdit(
+        OpenedProject project,
+        ZaPokemonWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsGlobalYieldAction(edit.NewValue))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon yield edit uses an invalid action.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "remove or restore"));
+            return;
+        }
+
+        var expectedSources = CreateGlobalYieldSources(workflow, edit.NewValue!);
+        if (!edit.Sources.SequenceEqual(expectedSources))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon yield sources do not match the current personal data and required clean base data.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "Current effective personal source and clean base source for restore"));
+            return;
+        }
+
+        if (IsGlobalExpYieldEdit(edit)
+            && string.Equals(edit.NewValue, RemoveYieldValue, StringComparison.Ordinal))
+        {
+            foreach (var pokemon in workflow.Pokemon)
+            {
+                ValidateBaseExperienceValue(pokemon, 0, diagnostics);
+            }
+
+            return;
+        }
+
+        if (!string.Equals(edit.NewValue, RestoreYieldValue, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        IReadOnlyList<PersonalRow> baseRows;
+        try
+        {
+            baseRows = ReadVerifiedBaseRows(project, workflow);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or ArgumentException
+                or UnauthorizedAccessException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon yield restore could not verify clean base personal data: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                file: $"romfs/{ZaDataPaths.PersonalArray}",
+                field: edit.Field,
+                expected: "Matching clean base Pokemon personal data"));
+            return;
+        }
+
+        if (!IsGlobalExpYieldEdit(edit))
+        {
+            return;
+        }
+
+        foreach (var pokemon in workflow.Pokemon)
+        {
+            var baseRow = baseRows[pokemon.PersonalId];
+            var vanillaBaseExperience = ZaPokemonExperience.CalculateBaseExperience(
+                CalculateBaseStatTotal(baseRow.BaseStats),
+                baseRow.EvoStage,
+                baseRow.ExpAddend);
+            ValidateBaseExperienceValue(pokemon, vanillaBaseExperience, diagnostics);
+        }
     }
 
     private void ValidatePendingEdit(
@@ -2213,6 +2524,12 @@ internal sealed class ZaPokemonEditSessionService
                 $"Pending edit domain '{edit.Domain}' is not supported by Pokemon Legends Z-A Pokemon Data.",
                 ZaEditSessionSupport.PokemonDomain,
                 expected: ZaEditSessionSupport.PokemonDomain));
+            return;
+        }
+
+        if (IsGlobalYieldEdit(edit))
+        {
+            ValidateGlobalYieldEdit(project, workflow, edit, diagnostics);
             return;
         }
 
@@ -2302,13 +2619,21 @@ internal sealed class ZaPokemonEditSessionService
             return;
         }
 
-        _ = ZaEditSessionSupport.TryParseInt(
+        var parsed = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.PokemonDomain,
             diagnostics);
+        if (parsed is not null
+            && string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.BaseExperienceField,
+                StringComparison.Ordinal))
+        {
+            ValidateBaseExperienceValue(pokemon, parsed.Value, diagnostics);
+        }
     }
 
     private static void ValidateAlphaMoveEdit(
@@ -2421,7 +2746,7 @@ internal sealed class ZaPokemonEditSessionService
     private static ZaPokemonWorkflow OverlayPendingEdits(ZaPokemonWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updated = workflow;
-        foreach (var edit in edits)
+        foreach (var edit in OrderPersonalEditsForApply(edits))
         {
             updated = OverlayPendingEdit(updated, edit);
         }
@@ -2483,8 +2808,17 @@ internal sealed class ZaPokemonEditSessionService
             };
         }
 
-        if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
-            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+        if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal))
+        {
+            return workflow;
+        }
+
+        if (IsGlobalYieldEdit(edit))
+        {
+            return OverlayGlobalYieldEdit(workflow, edit);
+        }
+
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             return workflow;
         }
@@ -3160,7 +3494,7 @@ internal sealed class ZaPokemonEditSessionService
                 CultureInfo.InvariantCulture,
                 out var moveId))
         {
-            return ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+            return ReplacePendingPokemonEdit(session, pendingEdit);
         }
 
         var sourceMoveId = loadedWorkflow.Pokemon
@@ -3170,7 +3504,7 @@ internal sealed class ZaPokemonEditSessionService
             ?.MoveId;
         if (sourceMoveId != moveId)
         {
-            return ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+            return ReplacePendingPokemonEdit(session, pendingEdit);
         }
 
         return session with
@@ -3557,6 +3891,22 @@ internal sealed class ZaPokemonEditSessionService
         return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
+    private static string CreateCombinedSourceFingerprint(byte[] effectiveBytes, byte[] baseBytes)
+    {
+        ArgumentNullException.ThrowIfNull(effectiveBytes);
+        ArgumentNullException.ThrowIfNull(baseBytes);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Span<byte> lengthBytes = stackalloc byte[sizeof(long)];
+        BinaryPrimitives.WriteInt64LittleEndian(lengthBytes, effectiveBytes.LongLength);
+        hash.AppendData(lengthBytes);
+        hash.AppendData(effectiveBytes);
+        BinaryPrimitives.WriteInt64LittleEndian(lengthBytes, baseBytes.LongLength);
+        hash.AppendData(lengthBytes);
+        hash.AppendData(baseBytes);
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
     private static ProjectFileReference ToSourceReference(ZaPokemonProvenance provenance)
     {
         return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
@@ -3623,21 +3973,28 @@ internal sealed class ZaPokemonEditSessionService
         var dex = pokemon.DexPresence;
         var abilities = pokemon.Abilities;
         var labels = workflow.EditableFields;
+        var currentExpAddend = pokemon.BaseExperience
+            - ZaPokemonExperience.CalculateFormulaBase(stats.Total, pokemon.EvolutionStage);
         var updated = field switch
         {
-            ZaPokemonWorkflowService.HPField => pokemon with { BaseStats = stats with { HP = value, Total = RecalculateTotal(stats with { HP = value }) } },
-            ZaPokemonWorkflowService.AttackField => pokemon with { BaseStats = stats with { Attack = value, Total = RecalculateTotal(stats with { Attack = value }) } },
-            ZaPokemonWorkflowService.DefenseField => pokemon with { BaseStats = stats with { Defense = value, Total = RecalculateTotal(stats with { Defense = value }) } },
-            ZaPokemonWorkflowService.SpecialAttackField => pokemon with { BaseStats = stats with { SpecialAttack = value, Total = RecalculateTotal(stats with { SpecialAttack = value }) } },
-            ZaPokemonWorkflowService.SpecialDefenseField => pokemon with { BaseStats = stats with { SpecialDefense = value, Total = RecalculateTotal(stats with { SpecialDefense = value }) } },
-            ZaPokemonWorkflowService.SpeedField => pokemon with { BaseStats = stats with { Speed = value, Total = RecalculateTotal(stats with { Speed = value }) } },
+            ZaPokemonWorkflowService.HPField => OverlayBaseStats(pokemon, stats with { HP = value }, currentExpAddend),
+            ZaPokemonWorkflowService.AttackField => OverlayBaseStats(pokemon, stats with { Attack = value }, currentExpAddend),
+            ZaPokemonWorkflowService.DefenseField => OverlayBaseStats(pokemon, stats with { Defense = value }, currentExpAddend),
+            ZaPokemonWorkflowService.SpecialAttackField => OverlayBaseStats(pokemon, stats with { SpecialAttack = value }, currentExpAddend),
+            ZaPokemonWorkflowService.SpecialDefenseField => OverlayBaseStats(pokemon, stats with { SpecialDefense = value }, currentExpAddend),
+            ZaPokemonWorkflowService.SpeedField => OverlayBaseStats(pokemon, stats with { Speed = value }, currentExpAddend),
             ZaPokemonWorkflowService.Type1Field => pokemon with { Type1 = FormatType(value) },
             ZaPokemonWorkflowService.Type2Field => pokemon with { Type2 = FormatType(value) },
             ZaPokemonWorkflowService.Ability1Field => pokemon with { Abilities = abilities with { Ability1 = value, Ability1Label = ResolveFieldOptionLabel(labels, ZaPokemonWorkflowService.Ability1Field, value, ZaLabels.Ability(value)) } },
             ZaPokemonWorkflowService.Ability2Field => pokemon with { Abilities = abilities with { Ability2 = value, Ability2Label = ResolveFieldOptionLabel(labels, ZaPokemonWorkflowService.Ability2Field, value, ZaLabels.Ability(value)) } },
             ZaPokemonWorkflowService.HiddenAbilityField => pokemon with { Abilities = abilities with { HiddenAbility = value, HiddenAbilityLabel = ResolveFieldOptionLabel(labels, ZaPokemonWorkflowService.HiddenAbilityField, value, ZaLabels.Ability(value)) } },
             ZaPokemonWorkflowService.CatchRateField => pokemon with { CatchRate = value },
-            ZaPokemonWorkflowService.EvolutionStageField => pokemon with { EvolutionStage = value },
+            ZaPokemonWorkflowService.EvolutionStageField => pokemon with
+            {
+                EvolutionStage = value,
+                BaseExperience = ZaPokemonExperience.CalculateBaseExperience(stats.Total, value, currentExpAddend),
+            },
+            ZaPokemonWorkflowService.BaseExperienceField => pokemon with { BaseExperience = value },
             ZaPokemonWorkflowService.GenderRatioField => pokemon with { GenderRatio = value, GenderRatioLabel = FormatGender(value) },
             ZaPokemonWorkflowService.HeightField => pokemon with { Height = value },
             ZaPokemonWorkflowService.WeightField => pokemon with { Weight = value },
@@ -3646,7 +4003,172 @@ internal sealed class ZaPokemonEditSessionService
             _ => pokemon,
         };
 
-        return updated with { Personal = OverlayPersonalDetails(personal, field, value) };
+        var updatedPersonal = OverlayPersonalDetails(personal, field, value);
+        if (field is ZaPokemonWorkflowService.HPField
+            or ZaPokemonWorkflowService.AttackField
+            or ZaPokemonWorkflowService.DefenseField
+            or ZaPokemonWorkflowService.SpecialAttackField
+            or ZaPokemonWorkflowService.SpecialDefenseField
+            or ZaPokemonWorkflowService.SpeedField
+            or ZaPokemonWorkflowService.EvolutionStageField)
+        {
+            updatedPersonal = updatedPersonal with { BaseExperience = updated.BaseExperience };
+        }
+
+        return updated with { Personal = updatedPersonal };
+    }
+
+    private static bool IsGlobalYieldField(string? field)
+    {
+        return string.Equals(field?.Trim(), GlobalEvYieldField, StringComparison.Ordinal)
+            || string.Equals(field?.Trim(), GlobalExpYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalYieldEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, GlobalRecordId, StringComparison.Ordinal)
+            && IsGlobalYieldField(edit.Field);
+    }
+
+    private static bool IsGlobalEvYieldEdit(PendingEdit edit)
+    {
+        return IsGlobalYieldEdit(edit)
+            && string.Equals(edit.Field, GlobalEvYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalExpYieldEdit(PendingEdit edit)
+    {
+        return IsGlobalYieldEdit(edit)
+            && string.Equals(edit.Field, GlobalExpYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalYieldRestoreEdit(PendingEdit edit)
+    {
+        return IsGlobalYieldEdit(edit)
+            && string.Equals(edit.NewValue, RestoreYieldValue, StringComparison.Ordinal);
+    }
+
+    private static bool IsSameGlobalYieldTarget(PendingEdit candidate, PendingEdit pendingEdit)
+    {
+        return IsGlobalYieldEdit(candidate)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalYieldAction(string? value)
+    {
+        return string.Equals(value, RemoveYieldValue, StringComparison.Ordinal)
+            || string.Equals(value, RestoreYieldValue, StringComparison.Ordinal);
+    }
+
+    private static bool NeedsBaseRows(IEnumerable<PendingEdit> edits)
+    {
+        return edits.Any(edit => IsGlobalYieldEdit(edit)
+            && string.Equals(edit.NewValue, RestoreYieldValue, StringComparison.Ordinal));
+    }
+
+    private static ZaPokemonRecord OverlayBaseStats(
+        ZaPokemonRecord pokemon,
+        ZaPokemonBaseStats stats,
+        int expAddend)
+    {
+        var recalculated = stats with { Total = RecalculateTotal(stats) };
+        return pokemon with
+        {
+            BaseStats = recalculated,
+            BaseExperience = ZaPokemonExperience.CalculateBaseExperience(
+                recalculated.Total,
+                pokemon.EvolutionStage,
+                expAddend),
+        };
+    }
+
+    private static EditSession ReplacePendingPokemonEdit(EditSession session, PendingEdit pendingEdit)
+    {
+        if (IsOrderedRowOperation(pendingEdit))
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
+                    .Append(pendingEdit)
+                    .ToArray(),
+            };
+        }
+
+        var pendingEdits = session.PendingEdits
+            .Where(edit => !ShouldReplacePendingEdit(edit, pendingEdit))
+            .Append(pendingEdit)
+            .ToArray();
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool ShouldReplacePendingEdit(PendingEdit candidate, PendingEdit pendingEdit)
+    {
+        if (!string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (IsGlobalYieldEdit(pendingEdit))
+        {
+            return IsSameGlobalYieldTarget(candidate, pendingEdit)
+                || (IsGlobalExpYieldEdit(pendingEdit)
+                    && string.Equals(
+                        candidate.Field,
+                        ZaPokemonWorkflowService.BaseExperienceField,
+                        StringComparison.Ordinal))
+                || (IsGlobalEvYieldEdit(pendingEdit)
+                    && EvYieldFields.Contains(candidate.Field ?? string.Empty));
+        }
+
+        if (string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (IsGlobalExpYieldEdit(candidate)
+            && string.Equals(
+                pendingEdit.Field,
+                ZaPokemonWorkflowService.BaseExperienceField,
+                StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return IsGlobalEvYieldEdit(candidate)
+            && EvYieldFields.Contains(pendingEdit.Field ?? string.Empty);
+    }
+
+    private static bool IsLearnsetEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && edit.Field?.StartsWith($"{LearnsetFieldPrefix}:", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsEvolutionEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && edit.Field?.StartsWith($"{EvolutionFieldPrefix}:", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsOrderedRowOperation(PendingEdit edit)
+    {
+        return IsLearnsetEdit(edit) || IsEvolutionEdit(edit);
+    }
+
+    private static IEnumerable<PendingEdit> OrderPersonalEditsForApply(IEnumerable<PendingEdit> edits)
+    {
+        return edits.OrderBy(edit =>
+            IsGlobalYieldRestoreEdit(edit)
+                ? 2
+                : IsGlobalExpYieldEdit(edit)
+                || string.Equals(
+                    edit.Field,
+                    ZaPokemonWorkflowService.BaseExperienceField,
+                    StringComparison.Ordinal)
+                ? 1
+                : 0);
     }
 
     private static ZaPokemonPersonalDetails OverlayPersonalDetails(
@@ -3669,6 +4191,7 @@ internal sealed class ZaPokemonEditSessionService
             ZaPokemonWorkflowService.GenderRatioField => personal with { GenderRatio = value },
             ZaPokemonWorkflowService.HatchCyclesField => personal with { HatchCycles = value },
             ZaPokemonWorkflowService.BaseFriendshipField => personal with { BaseFriendship = value },
+            ZaPokemonWorkflowService.BaseExperienceField => personal with { BaseExperience = value },
             ZaPokemonWorkflowService.ExpGrowthField => personal with { ExpGrowth = value },
             ZaPokemonWorkflowService.EggGroup1Field => personal with { EggGroup1 = value },
             ZaPokemonWorkflowService.EggGroup2Field => personal with { EggGroup2 = value },
@@ -3681,6 +4204,70 @@ internal sealed class ZaPokemonEditSessionService
             ZaPokemonWorkflowService.IsPresentInGameField => personal with { IsPresentInGame = value != 0 },
             ZaPokemonWorkflowService.RegionalDexIndexField => personal with { RegionalDexIndex = value },
             _ => personal,
+        };
+    }
+
+    private static ZaPokemonWorkflow OverlayGlobalYieldEdit(ZaPokemonWorkflow workflow, PendingEdit edit)
+    {
+        var removing = string.Equals(edit.NewValue, RemoveYieldValue, StringComparison.Ordinal);
+        var restoring = string.Equals(edit.NewValue, RestoreYieldValue, StringComparison.Ordinal);
+        if (!removing && !restoring)
+        {
+            return workflow;
+        }
+
+        return workflow with
+        {
+            Pokemon = workflow.Pokemon
+                .Select(pokemon => edit.Field switch
+                {
+                    GlobalEvYieldField when removing => OverlayAllEvYields(pokemon, 0, 0, 0, 0, 0, 0),
+                    GlobalExpYieldField when removing => OverlayPersonalField(
+                        workflow,
+                        pokemon,
+                        ZaPokemonWorkflowService.BaseExperienceField,
+                        0),
+                    GlobalEvYieldField when pokemon.VanillaYieldDefaults is { } vanilla =>
+                        OverlayAllEvYields(
+                            pokemon,
+                            vanilla.EVYieldHP,
+                            vanilla.EVYieldAttack,
+                            vanilla.EVYieldDefense,
+                            vanilla.EVYieldSpecialAttack,
+                            vanilla.EVYieldSpecialDefense,
+                            vanilla.EVYieldSpeed),
+                    GlobalExpYieldField when pokemon.VanillaYieldDefaults is { } vanilla =>
+                        OverlayPersonalField(
+                            workflow,
+                            pokemon,
+                            ZaPokemonWorkflowService.BaseExperienceField,
+                            vanilla.BaseExperience),
+                    _ => pokemon,
+                })
+                .ToArray(),
+        };
+    }
+
+    private static ZaPokemonRecord OverlayAllEvYields(
+        ZaPokemonRecord pokemon,
+        int hp,
+        int attack,
+        int defense,
+        int specialAttack,
+        int specialDefense,
+        int speed)
+    {
+        return pokemon with
+        {
+            Personal = pokemon.Personal with
+            {
+                EVYieldHP = hp,
+                EVYieldAttack = attack,
+                EVYieldDefense = defense,
+                EVYieldSpecialAttack = specialAttack,
+                EVYieldSpecialDefense = specialDefense,
+                EVYieldSpeed = speed,
+            },
         };
     }
 
@@ -3718,15 +4305,13 @@ internal sealed class ZaPokemonEditSessionService
                 learnset.RemoveAt(targetSlot);
                 break;
             case MoveUpAction when targetSlot > 0 && targetSlot < learnset.Count:
-                (learnset[targetSlot - 1], learnset[targetSlot]) = (learnset[targetSlot], learnset[targetSlot - 1]);
+                learnset = MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, targetSlot - 1);
                 break;
             case MoveDownAction when targetSlot >= 0 && targetSlot < learnset.Count - 1:
-                (learnset[targetSlot + 1], learnset[targetSlot]) = (learnset[targetSlot], learnset[targetSlot + 1]);
+                learnset = MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, targetSlot + 1);
                 break;
             case MoveToAction when operation.MoveId is { } destination && targetSlot >= 0 && targetSlot < learnset.Count && destination >= 0 && destination < learnset.Count:
-                var moved = learnset[targetSlot];
-                learnset.RemoveAt(targetSlot);
-                learnset.Insert(destination, moved);
+                learnset = MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, destination);
                 break;
         }
 
@@ -3734,6 +4319,28 @@ internal sealed class ZaPokemonEditSessionService
         {
             Learnset = learnset.Select((move, index) => move with { Slot = index }).ToArray(),
         };
+    }
+
+    private static List<ZaPokemonLearnsetMove> MoveLearnsetMoveIdsKeepingSlotLevels(
+        IReadOnlyList<ZaPokemonLearnsetMove> learnset,
+        int sourceSlot,
+        int destinationSlot)
+    {
+        var moveIdentities = learnset
+            .Select(move => (move.MoveId, move.MoveName))
+            .ToList();
+        var movedIdentity = moveIdentities[sourceSlot];
+        moveIdentities.RemoveAt(sourceSlot);
+        moveIdentities.Insert(destinationSlot, movedIdentity);
+
+        return moveIdentities
+            .Select((identity, index) => learnset[index] with
+            {
+                Slot = index,
+                MoveId = identity.MoveId,
+                MoveName = identity.MoveName,
+            })
+            .ToList();
     }
 
     private static ZaPokemonRecord ApplyEvolutionOperation(
@@ -3845,10 +4452,17 @@ internal sealed class ZaPokemonEditSessionService
 
     private static void ApplyEdit(
         IReadOnlyList<PersonalRow> rows,
+        IReadOnlyList<PersonalRow> baseRows,
         PendingEdit edit,
         ZaEvolutionItemConversionState conversionState,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (IsGlobalYieldEdit(edit))
+        {
+            ApplyGlobalYieldEdit(rows, baseRows, edit, diagnostics);
+            return;
+        }
+
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
             || personalId < 0
             || personalId >= rows.Count)
@@ -3917,6 +4531,79 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         ApplyPersonalField(row, edit.Field, value, diagnostics);
+    }
+
+    private static void ApplyGlobalYieldEdit(
+        IReadOnlyList<PersonalRow> rows,
+        IReadOnlyList<PersonalRow> baseRows,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsGlobalYieldAction(edit.NewValue))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon yield edit uses an invalid action.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "remove or restore"));
+            return;
+        }
+
+        var restoring = string.Equals(edit.NewValue, RestoreYieldValue, StringComparison.Ordinal);
+        if (restoring && baseRows.Count != rows.Count)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon yield restore requires a matching clean base personal table.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "Base and effective personal tables with identical row counts"));
+            return;
+        }
+
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var row = rows[index];
+            if ((row.Species?.Species ?? 0) <= 0)
+            {
+                continue;
+            }
+
+            var baseRow = restoring ? baseRows[index] : null;
+            if (baseRow is not null && !PersonalRowIdentityMatches(row, baseRow))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon yield restore base identity does not match personal row {index.ToString(CultureInfo.InvariantCulture)}.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: edit.Field,
+                    expected: "Matching species and form at every restored row"));
+                return;
+            }
+
+            switch (edit.Field)
+            {
+                case GlobalEvYieldField when !restoring:
+                    row.HasEvYield = true;
+                    row.EvYield = StatInfoRow.Zero;
+                    break;
+                case GlobalEvYieldField:
+                    row.HasEvYield = baseRow!.HasEvYield;
+                    row.EvYield = baseRow.EvYield;
+                    break;
+                case GlobalExpYieldField when !restoring:
+                    ApplyBaseExperience(row, 0);
+                    break;
+                case GlobalExpYieldField:
+                    var vanillaBaseExperience = ZaPokemonExperience.CalculateBaseExperience(
+                        CalculateBaseStatTotal(baseRow!.BaseStats),
+                        baseRow.EvoStage,
+                        baseRow.ExpAddend);
+                    ApplyBaseExperience(row, vanillaBaseExperience);
+                    break;
+            }
+        }
     }
 
     private static void ApplyPersonalField(
@@ -4016,6 +4703,9 @@ internal sealed class ZaPokemonEditSessionService
                 case ZaPokemonWorkflowService.BaseFriendshipField:
                     row.HasBaseFriendship = true;
                     row.BaseFriendship = ToByte(value);
+                    break;
+                case ZaPokemonWorkflowService.BaseExperienceField:
+                    ApplyBaseExperience(row, value);
                     break;
                 case ZaPokemonWorkflowService.ExpGrowthField:
                     row.HasXpGrowth = true;
@@ -4141,16 +4831,30 @@ internal sealed class ZaPokemonEditSessionService
                 learnset.RemoveAt(targetSlot);
                 break;
             case MoveUpAction when targetSlot > 0 && targetSlot < learnset.Count:
-                (learnset[targetSlot - 1], learnset[targetSlot]) = (learnset[targetSlot], learnset[targetSlot - 1]);
+                MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, targetSlot - 1);
                 break;
             case MoveDownAction when targetSlot >= 0 && targetSlot < learnset.Count - 1:
-                (learnset[targetSlot + 1], learnset[targetSlot]) = (learnset[targetSlot], learnset[targetSlot + 1]);
+                MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, targetSlot + 1);
                 break;
             case MoveToAction when operation.MoveId is { } destination && targetSlot >= 0 && targetSlot < learnset.Count && destination >= 0 && destination < learnset.Count:
-                var moved = learnset[targetSlot];
-                learnset.RemoveAt(targetSlot);
-                learnset.Insert(destination, moved);
+                MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, destination);
                 break;
+        }
+    }
+
+    private static void MoveLearnsetMoveIdsKeepingSlotLevels(
+        IList<LevelupMoveRow> learnset,
+        int sourceSlot,
+        int destinationSlot)
+    {
+        var moveIds = learnset.Select(move => move.Move).ToList();
+        var movedMoveId = moveIds[sourceSlot];
+        moveIds.RemoveAt(sourceSlot);
+        moveIds.Insert(destinationSlot, movedMoveId);
+
+        for (var index = 0; index < learnset.Count; index++)
+        {
+            learnset[index] = learnset[index] with { Move = moveIds[index] };
         }
     }
 
@@ -4264,12 +4968,15 @@ internal sealed class ZaPokemonEditSessionService
         }
     }
 
-    private PersonalArrayRows ReadRows(OpenedProject project, ZaWorkflowFile source)
+    private PersonalArrayRows ReadRows(
+        OpenedProject project,
+        ZaWorkflowFile source,
+        bool includeBaseRows = false)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
         var requiresLegacyDexOrderRepair = table.HasLegacyByteZADexOrderLayout;
         ZaPersonalTable? baseTable = null;
-        if (requiresLegacyDexOrderRepair)
+        if (requiresLegacyDexOrderRepair || includeBaseRows)
         {
             var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
             baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
@@ -4303,7 +5010,71 @@ internal sealed class ZaPokemonEditSessionService
                 : PersonalRow.From(row.Value, baseRow, requiresLegacyDexOrderRepair));
         }
 
-        return new PersonalArrayRows(rows, requiresLegacyDexOrderRepair);
+        IReadOnlyList<PersonalRow>? baseRows = null;
+        if (includeBaseRows)
+        {
+            if (baseTable is not { } verifiedBase || verifiedBase.EntryLength != table.EntryLength)
+            {
+                throw new InvalidDataException(
+                    "Pokemon yield restore requires base and effective personal tables with identical row counts.");
+            }
+
+            baseRows = ReadTableRows(verifiedBase);
+            for (var index = 0; index < rows.Count; index++)
+            {
+                if ((rows[index].Species?.Species ?? 0) > 0
+                    && !PersonalRowIdentityMatches(rows[index], baseRows[index]))
+                {
+                    throw new InvalidDataException(
+                        $"Pokemon yield restore base identity does not match personal row {index.ToString(CultureInfo.InvariantCulture)}.");
+                }
+            }
+        }
+
+        return new PersonalArrayRows(rows, requiresLegacyDexOrderRepair, baseRows);
+    }
+
+    private IReadOnlyList<PersonalRow> ReadVerifiedBaseRows(
+        OpenedProject project,
+        ZaPokemonWorkflow workflow)
+    {
+        var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+        var baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
+        if (baseTable.HasLegacyByteZADexOrderLayout)
+        {
+            throw new InvalidDataException(
+                "The configured clean base personal table uses the malformed legacy Pokédex layout.");
+        }
+
+        var rows = ReadTableRows(baseTable);
+        foreach (var pokemon in workflow.Pokemon)
+        {
+            if (pokemon.PersonalId < 0
+                || pokemon.PersonalId >= rows.Count
+                || rows[pokemon.PersonalId].Species is not { } species
+                || species.Species != pokemon.SpeciesId
+                || species.Form != pokemon.Form)
+            {
+                throw new InvalidDataException(
+                    $"Clean base personal row {pokemon.PersonalId.ToString(CultureInfo.InvariantCulture)} does not match the loaded Pokemon identity.");
+            }
+        }
+
+        return rows;
+    }
+
+    private static IReadOnlyList<PersonalRow> ReadTableRows(ZaPersonalTable table)
+    {
+        var rows = new List<PersonalRow>(table.EntryLength);
+        for (var index = 0; index < table.EntryLength; index++)
+        {
+            var row = table.Entry(index);
+            rows.Add(row is null
+                ? PersonalRow.Empty()
+                : PersonalRow.From(row.Value, baseRow: null, hasLegacyByteDexOrderLayout: false));
+        }
+
+        return rows;
     }
 
     private static byte[] WriteRows(IReadOnlyList<PersonalRow> rows)
@@ -4327,6 +5098,11 @@ internal sealed class ZaPokemonEditSessionService
         var learnsetLengths = new Dictionary<int, int>();
         foreach (var edit in edits)
         {
+            if (IsGlobalYieldEdit(edit))
+            {
+                return true;
+            }
+
             if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
                 || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
                 || personalId < 0
@@ -4453,6 +5229,7 @@ internal sealed class ZaPokemonEditSessionService
             ZaPokemonWorkflowService.GenderRatioField => !row.HasGender,
             ZaPokemonWorkflowService.HatchCyclesField => !row.HasEggHatchCycles,
             ZaPokemonWorkflowService.BaseFriendshipField => !row.HasBaseFriendship,
+            ZaPokemonWorkflowService.BaseExperienceField => true,
             ZaPokemonWorkflowService.ExpGrowthField => !row.HasXpGrowth,
             ZaPokemonWorkflowService.EggGroup1Field => !row.HasEggGroup1,
             ZaPokemonWorkflowService.EggGroup2Field => !row.HasEggGroup2,
@@ -4732,13 +5509,13 @@ internal sealed class ZaPokemonEditSessionService
 
                     break;
                 case MoveUpAction:
-                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Slot - 1, LevelupMoveDataSize, edit.Field, diagnostics);
+                    MoveLearnsetMoveIdsKeepingSlotLevels(data, vectorOffset, length, operation.Slot, operation.Slot - 1, edit.Field, diagnostics);
                     break;
                 case MoveDownAction:
-                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Slot + 1, LevelupMoveDataSize, edit.Field, diagnostics);
+                    MoveLearnsetMoveIdsKeepingSlotLevels(data, vectorOffset, length, operation.Slot, operation.Slot + 1, edit.Field, diagnostics);
                     break;
                 case MoveToAction:
-                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.MoveId ?? -1, LevelupMoveDataSize, edit.Field, diagnostics);
+                    MoveLearnsetMoveIdsKeepingSlotLevels(data, vectorOffset, length, operation.Slot, operation.MoveId ?? -1, edit.Field, diagnostics);
                     break;
                 default:
                     diagnostics.Add(OperationDiagnostic($"Learnset action '{operation.Action}' is not supported.", "action"));
@@ -5155,6 +5932,60 @@ internal sealed class ZaPokemonEditSessionService
         moved.CopyTo(data.AsSpan(destinationOffset, structSize));
     }
 
+    private static void MoveLearnsetMoveIdsKeepingSlotLevels(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        int sourceSlot,
+        int destinationSlot,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetStructVectorElementOffset(
+                data,
+                vectorOffset,
+                length,
+                sourceSlot,
+                LevelupMoveDataSize,
+                field,
+                diagnostics,
+                out var sourceOffset)
+            || !TryGetStructVectorElementOffset(
+                data,
+                vectorOffset,
+                length,
+                destinationSlot,
+                LevelupMoveDataSize,
+                field,
+                diagnostics,
+                out var destinationOffset)
+            || sourceSlot == destinationSlot)
+        {
+            return;
+        }
+
+        var elementStart = vectorOffset + sizeof(int);
+        var movedMoveId = ReadUShort(data, sourceOffset);
+        if (destinationSlot < sourceSlot)
+        {
+            for (var slot = sourceSlot; slot > destinationSlot; slot--)
+            {
+                var currentOffset = elementStart + slot * LevelupMoveDataSize;
+                WriteUShort(data, currentOffset, ReadUShort(data, currentOffset - LevelupMoveDataSize));
+            }
+        }
+        else
+        {
+            for (var slot = sourceSlot; slot < destinationSlot; slot++)
+            {
+                var currentOffset = elementStart + slot * LevelupMoveDataSize;
+                WriteUShort(data, currentOffset, ReadUShort(data, currentOffset + LevelupMoveDataSize));
+            }
+        }
+
+        WriteUShort(data, destinationOffset, movedMoveId);
+    }
+
     private static void AddUShortVectorValue(
         byte[] data,
         int vectorOffset,
@@ -5427,18 +6258,35 @@ internal sealed class ZaPokemonEditSessionService
                     diagnostics.Add(OperationDiagnostic("Learnset upserts require a move ID and a level from 0 to 255.", "moveId/level"));
                 }
 
-                if (operation.Action == UpsertAction && operation.Slot < 0)
+                if (operation.Action == AddAction && operation.Slot != pokemon.Learnset.Count)
                 {
-                    diagnostics.Add(OperationDiagnostic("Learnset upsert requires a target slot.", "slot"));
+                    diagnostics.Add(OperationDiagnostic("Learnset add must target the next empty row.", "slot"));
+                }
+                else if (operation.Action == UpsertAction
+                    && (operation.Slot < 0 || operation.Slot > pokemon.Learnset.Count))
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset upsert must target an existing row or the next empty row.", "slot"));
                 }
 
                 break;
             case RemoveAction:
-            case MoveUpAction:
-            case MoveDownAction:
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Learnset.Count)
                 {
-                    diagnostics.Add(OperationDiagnostic("Learnset operation targets a slot that is not loaded.", "slot"));
+                    diagnostics.Add(OperationDiagnostic("Learnset remove must target an existing row.", "slot"));
+                }
+
+                break;
+            case MoveUpAction:
+                if (operation.Slot <= 0 || operation.Slot >= pokemon.Learnset.Count)
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset move-up must target a row below the first row.", "slot"));
+                }
+
+                break;
+            case MoveDownAction:
+                if (operation.Slot < 0 || operation.Slot >= pokemon.Learnset.Count - 1)
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset move-down must target a row above the last row.", "slot"));
                 }
 
                 break;
@@ -5446,6 +6294,10 @@ internal sealed class ZaPokemonEditSessionService
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Learnset.Count || operation.MoveId is null or < 0 || operation.MoveId >= pokemon.Learnset.Count)
                 {
                     diagnostics.Add(OperationDiagnostic("Learnset move-to requires loaded source and destination slots.", "slot"));
+                }
+                else if (operation.Slot == operation.MoveId)
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset move-to source and destination rows must be different.", "slot"));
                 }
 
                 break;
@@ -5473,18 +6325,35 @@ internal sealed class ZaPokemonEditSessionService
                     diagnostics.Add(OperationDiagnostic("Evolution upserts require method, argument, species, form, and level.", "evolution"));
                 }
 
-                if (operation.Action == UpsertAction && operation.Slot < 0)
+                if (operation.Action == AddAction && operation.Slot != pokemon.Evolutions.Count)
                 {
-                    diagnostics.Add(OperationDiagnostic("Evolution upsert requires a target slot.", "slot"));
+                    diagnostics.Add(OperationDiagnostic("Evolution add must target the next empty row.", "slot"));
+                }
+                else if (operation.Action == UpsertAction
+                    && (operation.Slot < 0 || operation.Slot > pokemon.Evolutions.Count))
+                {
+                    diagnostics.Add(OperationDiagnostic("Evolution upsert must target an existing row or the next empty row.", "slot"));
                 }
 
                 break;
             case RemoveAction:
-            case MoveUpAction:
-            case MoveDownAction:
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Evolutions.Count)
                 {
-                    diagnostics.Add(OperationDiagnostic("Evolution operation targets a slot that is not loaded.", "slot"));
+                    diagnostics.Add(OperationDiagnostic("Evolution remove must target an existing row.", "slot"));
+                }
+
+                break;
+            case MoveUpAction:
+                if (operation.Slot <= 0 || operation.Slot >= pokemon.Evolutions.Count)
+                {
+                    diagnostics.Add(OperationDiagnostic("Evolution move-up must target a row below the first row.", "slot"));
+                }
+
+                break;
+            case MoveDownAction:
+                if (operation.Slot < 0 || operation.Slot >= pokemon.Evolutions.Count - 1)
+                {
+                    diagnostics.Add(OperationDiagnostic("Evolution move-down must target a row above the last row.", "slot"));
                 }
 
                 break;
@@ -5492,6 +6361,10 @@ internal sealed class ZaPokemonEditSessionService
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Evolutions.Count || operation.Method is null or < 0 || operation.Method >= pokemon.Evolutions.Count)
                 {
                     diagnostics.Add(OperationDiagnostic("Evolution move-to requires loaded source and destination slots.", "slot"));
+                }
+                else if (operation.Slot == operation.Method)
+                {
+                    diagnostics.Add(OperationDiagnostic("Evolution move-to source and destination rows must be different.", "slot"));
                 }
 
                 break;
@@ -5636,6 +6509,37 @@ internal sealed class ZaPokemonEditSessionService
         return stats.HP + stats.Attack + stats.Defense + stats.SpecialAttack + stats.SpecialDefense + stats.Speed;
     }
 
+    private static int CalculateBaseStatTotal(StatInfoRow? stats)
+    {
+        return stats is null
+            ? 0
+            : stats.Hp + stats.Atk + stats.Def + stats.Spa + stats.Spd + stats.Spe;
+    }
+
+    private static void ApplyBaseExperience(PersonalRow row, int baseExperience)
+    {
+        if (!ZaPokemonExperience.TryCalculateExpAddend(
+                CalculateBaseStatTotal(row.BaseStats),
+                row.EvoStage,
+                baseExperience,
+                out var expAddend))
+        {
+            throw new InvalidDataException(
+                $"Base EXP {baseExperience.ToString(CultureInfo.InvariantCulture)} cannot be represented by Pokemon Legends Z-A's EXP addend.");
+        }
+
+        row.HasExpAddend = true;
+        row.ExpAddend = expAddend;
+    }
+
+    private static bool PersonalRowIdentityMatches(PersonalRow row, PersonalRow baseRow)
+    {
+        return row.Species is { } species
+            && baseRow.Species is { } baseSpecies
+            && species.Species == baseSpecies.Species
+            && species.Form == baseSpecies.Form;
+    }
+
     private static string ResolveFieldOptionLabel(
         IReadOnlyList<ZaPokemonEditableField> fields,
         string field,
@@ -5753,8 +6657,8 @@ internal sealed class ZaPokemonEditSessionService
         public bool HasEggHatchCycles { get; set; }
         public byte BaseFriendship { get; set; }
         public bool HasBaseFriendship { get; set; }
-        public ushort Unknown16 { get; set; }
-        public bool HasUnknown16 { get; set; }
+        public short ExpAddend { get; set; }
+        public bool HasExpAddend { get; set; }
         public byte EvoStage { get; set; }
         public bool HasEvoStage { get; set; }
         public ushort Unknown18 { get; set; }
@@ -5827,8 +6731,8 @@ internal sealed class ZaPokemonEditSessionService
                 HasEggHatchCycles = row.HasEggHatchCycles,
                 BaseFriendship = row.BaseFriendship,
                 HasBaseFriendship = row.HasBaseFriendship,
-                Unknown16 = row.Unknown16,
-                HasUnknown16 = row.HasUnknown16,
+                ExpAddend = row.ExpAddend,
+                HasExpAddend = row.HasExpAddend,
                 EvoStage = row.EvoStage,
                 HasEvoStage = row.HasEvoStage,
                 Unknown18 = row.Unknown18,
@@ -5922,9 +6826,9 @@ internal sealed class ZaPokemonEditSessionService
                 ZaPersonal.AddEvoStage(builder, EvoStage);
             }
 
-            if (HasUnknown16)
+            if (HasExpAddend)
             {
-                ZaPersonal.AddUnknown16(builder, Unknown16);
+                ZaPersonal.AddExpAddend(builder, ExpAddend);
             }
 
             if (HasBaseFriendship || BaseFriendship != 0)
@@ -6035,7 +6939,8 @@ internal sealed class ZaPokemonEditSessionService
 
     private sealed record PersonalArrayRows(
         IReadOnlyList<PersonalRow> Rows,
-        bool RequiresLegacyDexOrderRepair);
+        bool RequiresLegacyDexOrderRepair,
+        IReadOnlyList<PersonalRow>? BaseRows);
 
     private sealed record DexPlacementPayload(
         int Version,

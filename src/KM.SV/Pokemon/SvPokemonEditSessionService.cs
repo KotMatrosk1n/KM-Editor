@@ -250,7 +250,7 @@ internal sealed class SvPokemonEditSessionService
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             CreateOperationField(LearnsetFieldPrefix, operation.Action, operation.Slot),
             FormatOperationValue(operation.MoveId, operation.RawLevel));
-        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
 
         return new SvPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
@@ -323,7 +323,7 @@ internal sealed class SvPokemonEditSessionService
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
             FormatEvolutionValue(operation));
-        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
 
         return new SvPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
@@ -821,6 +821,16 @@ internal sealed class SvPokemonEditSessionService
 
     private static EditSession ReplacePendingPokemonEdit(EditSession session, PendingEdit pendingEdit)
     {
+        if (IsOrderedRowOperation(pendingEdit))
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
+                    .Append(pendingEdit)
+                    .ToArray(),
+            };
+        }
+
         var pendingEdits = session.PendingEdits
             .Where(edit => !ShouldReplacePendingEdit(edit, pendingEdit))
             .Append(pendingEdit)
@@ -1067,15 +1077,13 @@ internal sealed class SvPokemonEditSessionService
                 learnset.RemoveAt(targetSlot);
                 break;
             case MoveUpAction when targetSlot > 0 && targetSlot < learnset.Count:
-                (learnset[targetSlot - 1], learnset[targetSlot]) = (learnset[targetSlot], learnset[targetSlot - 1]);
+                learnset = MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, targetSlot - 1);
                 break;
             case MoveDownAction when targetSlot >= 0 && targetSlot < learnset.Count - 1:
-                (learnset[targetSlot + 1], learnset[targetSlot]) = (learnset[targetSlot], learnset[targetSlot + 1]);
+                learnset = MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, targetSlot + 1);
                 break;
             case MoveToAction when operation.MoveId is { } destination && targetSlot >= 0 && targetSlot < learnset.Count && destination >= 0 && destination < learnset.Count:
-                var moved = learnset[targetSlot];
-                learnset.RemoveAt(targetSlot);
-                learnset.Insert(destination, moved);
+                learnset = MoveLearnsetMoveIdsKeepingSlotLevels(learnset, targetSlot, destination);
                 break;
         }
 
@@ -1083,6 +1091,28 @@ internal sealed class SvPokemonEditSessionService
         {
             Learnset = learnset.Select((move, index) => move with { Slot = index }).ToArray(),
         };
+    }
+
+    private static List<SvPokemonLearnsetMove> MoveLearnsetMoveIdsKeepingSlotLevels(
+        IReadOnlyList<SvPokemonLearnsetMove> moves,
+        int sourceSlot,
+        int destinationSlot)
+    {
+        var movePayloads = moves
+            .Select(move => (move.MoveId, move.MoveName))
+            .ToList();
+        var movedPayload = movePayloads[sourceSlot];
+        movePayloads.RemoveAt(sourceSlot);
+        movePayloads.Insert(destinationSlot, movedPayload);
+
+        return moves
+            .Select((slot, index) => slot with
+            {
+                Slot = index,
+                MoveId = movePayloads[index].MoveId,
+                MoveName = movePayloads[index].MoveName,
+            })
+            .ToList();
     }
 
     private static SvPokemonRecord ApplyEvolutionOperation(
@@ -1484,16 +1514,30 @@ internal sealed class SvPokemonEditSessionService
                 row.LevelupMoves.RemoveAt(targetSlot);
                 break;
             case MoveUpAction when targetSlot > 0 && targetSlot < row.LevelupMoves.Count:
-                (row.LevelupMoves[targetSlot - 1], row.LevelupMoves[targetSlot]) = (row.LevelupMoves[targetSlot], row.LevelupMoves[targetSlot - 1]);
+                MoveLearnsetMoveIdsKeepingSlotLevels(row.LevelupMoves, targetSlot, targetSlot - 1);
                 break;
             case MoveDownAction when targetSlot >= 0 && targetSlot < row.LevelupMoves.Count - 1:
-                (row.LevelupMoves[targetSlot + 1], row.LevelupMoves[targetSlot]) = (row.LevelupMoves[targetSlot], row.LevelupMoves[targetSlot + 1]);
+                MoveLearnsetMoveIdsKeepingSlotLevels(row.LevelupMoves, targetSlot, targetSlot + 1);
                 break;
             case MoveToAction when operation.MoveId is { } destination && targetSlot >= 0 && targetSlot < row.LevelupMoves.Count && destination >= 0 && destination < row.LevelupMoves.Count:
-                var moved = row.LevelupMoves[targetSlot];
-                row.LevelupMoves.RemoveAt(targetSlot);
-                row.LevelupMoves.Insert(destination, moved);
+                MoveLearnsetMoveIdsKeepingSlotLevels(row.LevelupMoves, targetSlot, destination);
                 break;
+        }
+    }
+
+    private static void MoveLearnsetMoveIdsKeepingSlotLevels(
+        IList<LevelupMoveRow> moves,
+        int sourceSlot,
+        int destinationSlot)
+    {
+        var moveIds = moves.Select(move => move.Move).ToList();
+        var movedMoveId = moveIds[sourceSlot];
+        moveIds.RemoveAt(sourceSlot);
+        moveIds.Insert(destinationSlot, movedMoveId);
+
+        for (var index = 0; index < moves.Count; index++)
+        {
+            moves[index] = moves[index] with { Move = moveIds[index] };
         }
     }
 
@@ -1791,18 +1835,31 @@ internal sealed class SvPokemonEditSessionService
                     diagnostics.Add(OperationDiagnostic("Learnset upserts require a move ID and level.", "moveId/level"));
                 }
 
-                if (operation.Action == UpsertAction && operation.Slot < 0)
+                if (operation.Action == UpsertAction
+                    && (operation.Slot < 0 || operation.Slot > pokemon.Learnset.Count))
                 {
-                    diagnostics.Add(OperationDiagnostic("Learnset upsert requires a target slot.", "slot"));
+                    diagnostics.Add(OperationDiagnostic("Learnset upsert requires an existing slot or the next empty slot.", "slot"));
                 }
 
                 break;
             case RemoveAction:
-            case MoveUpAction:
-            case MoveDownAction:
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Learnset.Count)
                 {
                     diagnostics.Add(OperationDiagnostic("Learnset operation targets a slot that is not loaded.", "slot"));
+                }
+
+                break;
+            case MoveUpAction:
+                if (operation.Slot <= 0 || operation.Slot >= pokemon.Learnset.Count)
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset move-up must target a row below the first row.", "slot"));
+                }
+
+                break;
+            case MoveDownAction:
+                if (operation.Slot < 0 || operation.Slot >= pokemon.Learnset.Count - 1)
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset move-down must target a row above the last row.", "slot"));
                 }
 
                 break;
@@ -1810,6 +1867,10 @@ internal sealed class SvPokemonEditSessionService
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Learnset.Count || operation.MoveId is null or < 0 || operation.MoveId >= pokemon.Learnset.Count)
                 {
                     diagnostics.Add(OperationDiagnostic("Learnset move-to requires loaded source and destination slots.", "slot"));
+                }
+                else if (operation.Slot == operation.MoveId.Value)
+                {
+                    diagnostics.Add(OperationDiagnostic("Learnset move-to source and destination slots must differ.", "slot"));
                 }
 
                 break;
@@ -1837,18 +1898,31 @@ internal sealed class SvPokemonEditSessionService
                     diagnostics.Add(OperationDiagnostic("Evolution upserts require method, argument, species, form, and level.", "evolution"));
                 }
 
-                if (operation.Action == UpsertAction && operation.Slot < 0)
+                if (operation.Action == UpsertAction
+                    && (operation.Slot < 0 || operation.Slot > pokemon.Evolutions.Count))
                 {
-                    diagnostics.Add(OperationDiagnostic("Evolution upsert requires a target slot.", "slot"));
+                    diagnostics.Add(OperationDiagnostic("Evolution upsert requires an existing slot or the next empty slot.", "slot"));
                 }
 
                 break;
             case RemoveAction:
-            case MoveUpAction:
-            case MoveDownAction:
                 if (operation.Slot < 0 || operation.Slot >= pokemon.Evolutions.Count)
                 {
                     diagnostics.Add(OperationDiagnostic("Evolution operation targets a slot that is not loaded.", "slot"));
+                }
+
+                break;
+            case MoveUpAction:
+                if (operation.Slot <= 0 || operation.Slot >= pokemon.Evolutions.Count)
+                {
+                    diagnostics.Add(OperationDiagnostic("Evolution move-up must target a row below the first row.", "slot"));
+                }
+
+                break;
+            case MoveDownAction:
+                if (operation.Slot < 0 || operation.Slot >= pokemon.Evolutions.Count - 1)
+                {
+                    diagnostics.Add(OperationDiagnostic("Evolution move-down must target a row above the last row.", "slot"));
                 }
 
                 break;
@@ -2053,6 +2127,23 @@ internal sealed class SvPokemonEditSessionService
     {
         return string.Equals(value, RemoveYieldValue, StringComparison.Ordinal)
             || string.Equals(value, RestoreYieldValue, StringComparison.Ordinal);
+    }
+
+    private static bool IsLearnsetEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && edit.Field?.StartsWith($"{LearnsetFieldPrefix}:", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsEvolutionEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && edit.Field?.StartsWith($"{EvolutionFieldPrefix}:", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsOrderedRowOperation(PendingEdit edit)
+    {
+        return IsLearnsetEdit(edit) || IsEvolutionEdit(edit);
     }
 
     private static bool NeedsBaseRows(IEnumerable<PendingEdit> edits)

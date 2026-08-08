@@ -13,8 +13,38 @@ internal static class ZaTrainerNameCatalog
         {
             ["Ev_d00_1000_02"] = "executive01",
             ["Ev_d00_1000_02_strong"] = "executive01",
+            ["Ev_d00_1000_hono"] = RivalNameKeys,
+            ["Ev_d00_1000_kusa"] = RivalNameKeys,
+            ["Ev_d00_1000_mizu"] = RivalNameKeys,
+            ["Ev_d01_3100_hono"] = RivalNameKeys,
+            ["Ev_d01_3100_kusa"] = RivalNameKeys,
+            ["Ev_d01_3100_mizu"] = RivalNameKeys,
             ["Ev_d02_0010_02"] = "executive02",
             ["Ev_d02_0010_02_strong"] = "executive02",
+            ["Ev_d02_2200_hono"] = RivalNameKeys,
+            ["Ev_d02_2200_kusa"] = RivalNameKeys,
+            ["Ev_d02_2200_mizu"] = RivalNameKeys,
+            ["Ev_d03_1300_hono"] = RivalNameKeys,
+            ["Ev_d03_1300_kusa"] = RivalNameKeys,
+            ["Ev_d03_1300_mizu"] = RivalNameKeys,
+            ["Ev_d04_2100_hono"] = RivalNameKeys,
+            ["Ev_d04_2100_kusa"] = RivalNameKeys,
+            ["Ev_d04_2100_mizu"] = RivalNameKeys,
+            ["Ev_d05_1200_hono"] = RivalNameKeys,
+            ["Ev_d05_1200_kusa"] = RivalNameKeys,
+            ["Ev_d05_1200_mizu"] = RivalNameKeys,
+            ["Ev_d06_1020_hono"] = RivalNameKeys,
+            ["Ev_d06_1020_kusa"] = RivalNameKeys,
+            ["Ev_d06_1020_mizu"] = RivalNameKeys,
+            ["Ev_d07_1000_hono"] = RivalNameKeys,
+            ["Ev_d07_1000_kusa"] = RivalNameKeys,
+            ["Ev_d07_1000_mizu"] = RivalNameKeys,
+            ["Ev_d07_1100_hono"] = RivalNameKeys,
+            ["Ev_d07_1100_kusa"] = RivalNameKeys,
+            ["Ev_d07_1100_mizu"] = RivalNameKeys,
+            ["Ev_d07_2000_hono"] = RivalNameKeys,
+            ["Ev_d07_2000_kusa"] = RivalNameKeys,
+            ["Ev_d07_2000_mizu"] = RivalNameKeys,
             ["Ev_m01_0070"] = "alias01",
             ["Ev_m01_0110"] = "alias03",
             ["Ev_m02_0030_hono"] = RivalNameKeys,
@@ -48,6 +78,9 @@ internal static class ZaTrainerNameCatalog
             ["Ev_m05_1500"] = "boss01",
             ["Ev_m05_2610"] = "executive02",
             ["Ev_m05_3000"] = "boss02",
+            ["Ev_m05_boss_0015_multi_hono"] = RivalNameKeys,
+            ["Ev_m05_boss_0015_multi_kusa"] = RivalNameKeys,
+            ["Ev_m05_boss_0015_multi_mizu"] = RivalNameKeys,
             ["Ev_m05_boss_0354_multi"] = "friend_01",
             ["Ev_m06_1000"] = "TRNAME_STAR_M",
             ["Ev_m06_1100"] = "executive03",
@@ -56,6 +89,9 @@ internal static class ZaTrainerNameCatalog
             ["Ev_m06_2955_02"] = "celebrityw01",
             ["Ev_m06_2970"] = "representative",
             ["Ev_m06_4000"] = "boss03",
+            ["Ev_m06_boss_0303_multi_hono"] = RivalNameKeys,
+            ["Ev_m06_boss_0303_multi_kusa"] = RivalNameKeys,
+            ["Ev_m06_boss_0303_multi_mizu"] = RivalNameKeys,
             ["Ev_m07_0026"] = "friend_01",
             ["Ev_m07_1100"] = "kimono",
             ["Ev_m07_4810"] = "celebrityw02",
@@ -65,11 +101,17 @@ internal static class ZaTrainerNameCatalog
             ["Ev_m07_5200"] = "boss02",
             ["Ev_m07_5300"] = "boss03",
             ["Ev_m07_5510"] = "boss04",
+            ["Ev_m07_boss_0003_multi_hono"] = RivalNameKeys,
+            ["Ev_m07_boss_0003_multi_kusa"] = RivalNameKeys,
+            ["Ev_m07_boss_0003_multi_mizu"] = RivalNameKeys,
             ["Ev_m07_boss_0478_multi"] = "friend_01",
             ["Ev_m08_3500"] = "executive03",
             ["Ev_m08_4010"] = "detective",
             ["Ev_m08_4310"] = "executive05",
             ["Ev_m08_7000"] = "boss05",
+            ["Ev_m08_boss_0149_multi_hono"] = RivalNameKeys,
+            ["Ev_m08_boss_0149_multi_kusa"] = RivalNameKeys,
+            ["Ev_m08_boss_0149_multi_mizu"] = RivalNameKeys,
             ["Ev_m08_boss_0248_multi"] = "friend_01",
             ["Ev_m09_1000_hono"] = RivalNameKeys,
             ["Ev_m09_1000_kusa"] = RivalNameKeys,
@@ -78,12 +120,16 @@ internal static class ZaTrainerNameCatalog
             ["Ev_m10_2000_kusa"] = RivalNameKeys,
             ["Ev_m10_2000_mizu"] = RivalNameKeys,
             ["Ev_m10_9710"] = "oldboss",
+            ["Ev_sub_003_001"] = "sub_121",
             ["Ev_sub_140_020_hono"] = RivalNameKeys,
             ["Ev_sub_140_020_kusa"] = RivalNameKeys,
             ["Ev_sub_140_020_mizu"] = RivalNameKeys,
             ["Ev_sub_142_010"] = "friend_01",
             ["Ev_sub_161_010_02"] = "executive01",
             ["Ev_sub_162_010_02"] = "executive02",
+            ["Ev_sub_163_010_multi_hono"] = RivalNameKeys,
+            ["Ev_sub_163_010_multi_kusa"] = RivalNameKeys,
+            ["Ev_sub_163_010_multi_mizu"] = RivalNameKeys,
             ["Ev_sub_166_010_multi"] = "executive02",
             ["Ev_sub_167_010_02"] = "executive02",
         };
@@ -209,6 +255,35 @@ internal static class ZaTrainerNameCatalog
     {
         return !string.IsNullOrWhiteSpace(trainerId)
             && trainerId.StartsWith("dim_rank_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsSharedRivalRoster(string? trainerId)
+    {
+        var nameKeys = ResolveTrainerNameKeys(trainerId);
+        return nameKeys.Contains("rival_01", StringComparer.OrdinalIgnoreCase)
+            && nameKeys.Contains("rival_02", StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static string? ResolveRivalStarterBranch(string? trainerId)
+    {
+        if (!IsSharedRivalRoster(trainerId) || string.IsNullOrWhiteSpace(trainerId))
+        {
+            return null;
+        }
+
+        if (trainerId.EndsWith("_hono", StringComparison.OrdinalIgnoreCase))
+        {
+            return "fire";
+        }
+
+        if (trainerId.EndsWith("_kusa", StringComparison.OrdinalIgnoreCase))
+        {
+            return "grass";
+        }
+
+        return trainerId.EndsWith("_mizu", StringComparison.OrdinalIgnoreCase)
+            ? "water"
+            : null;
     }
 
     public static IReadOnlyList<string> ResolveTrainerNameKeys(string? trainerId)

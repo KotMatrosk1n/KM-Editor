@@ -34,6 +34,8 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
         "This encounter's population data is missing or mixed, so it cannot be restored safely.";
     private const string MaterializationReason =
         "A changed vanilla value cannot be written because its source scalar is not safely materialized.";
+    private const string StrengthenShapeReason =
+        "This encounter has a non-vanilla StrengthenValue block that cannot be removed by scalar restoration.";
     private const string ValueReason =
         "The verified vanilla values are not valid for the currently loaded game data.";
 
@@ -128,6 +130,12 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
         if (!CurrentWorkflowValuesMatchSource(slot, currentRow, currentSpawnerSlot, currentAppearance))
         {
             blockedReason = IdentityReason;
+            return false;
+        }
+
+        if (currentRow.StrengthenValue is not null && baseRow.StrengthenValue is null)
+        {
+            blockedReason = StrengthenShapeReason;
             return false;
         }
 
@@ -387,8 +395,8 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
     private bool TryResolveIdentity(
         ZaEncounterTableRecord table,
         ZaEncounterSlotRecord slot,
-        out ZaPokemonDataEntry currentRow,
-        out ZaPokemonDataEntry baseRow,
+        out ZaEncounterDataEntry currentRow,
+        out ZaEncounterDataEntry baseRow,
         out ZaPokemonSpawnerEncountDataInfo currentSpawnerSlot,
         out ZaPokemonSpawnerEncountDataInfo baseSpawnerSlot,
         out AppearanceState? currentAppearance,
@@ -443,16 +451,18 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
 
     private bool TryResolveSharedRow(
         int sourceIndex,
-        out ZaPokemonDataEntry currentRow,
-        out ZaPokemonDataEntry baseRow)
+        out ZaEncounterDataEntry currentRow,
+        out ZaEncounterDataEntry baseRow)
     {
         currentRow = null!;
         baseRow = null!;
         var currentMatches = currentEncounterDocument.Entries
+            .OfType<ZaEncounterDataEntry>()
             .Where(candidate => candidate.SourceIndex == sourceIndex)
             .Take(2)
             .ToArray();
         var baseMatches = baseEncounterDocument.Entries
+            .OfType<ZaEncounterDataEntry>()
             .Where(candidate => candidate.SourceIndex == sourceIndex)
             .Take(2)
             .ToArray();
@@ -546,7 +556,7 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
 
     private static bool CurrentWorkflowValuesMatchSource(
         ZaEncounterSlotRecord slot,
-        ZaPokemonDataEntry row,
+        ZaEncounterDataEntry row,
         ZaPokemonSpawnerEncountDataInfo spawnerSlot,
         AppearanceState? appearance)
     {
@@ -586,6 +596,12 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             && slot.IvSpeed == ReadIv(row.TalentValue, stats => stats.Speed)
             && slot.TalentScale == row.TalentScale
             && slot.TalentVCount == row.TalentVNum
+            && slot.StrengthenHp == ReadStrengthen(row.StrengthenValue, stats => stats.HP)
+            && slot.StrengthenAttack == ReadStrengthen(row.StrengthenValue, stats => stats.Attack)
+            && slot.StrengthenDefense == ReadStrengthen(row.StrengthenValue, stats => stats.Defense)
+            && slot.StrengthenSpecialAttack == ReadStrengthen(row.StrengthenValue, stats => stats.SpecialAttack)
+            && slot.StrengthenSpecialDefense == ReadStrengthen(row.StrengthenValue, stats => stats.SpecialDefense)
+            && slot.StrengthenSpeed == ReadStrengthen(row.StrengthenValue, stats => stats.Speed)
             && alphaChanceMatches
             && alphaBonusMatches
             && slot.Weight == spawnerSlot.Weight
@@ -594,12 +610,12 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
     }
 
     private static IReadOnlyList<ZaEncounterVanillaFieldValue> CreateSharedFields(
-        ZaPokemonDataEntry currentRow,
-        ZaPokemonDataEntry baseRow,
+        ZaEncounterDataEntry currentRow,
+        ZaEncounterDataEntry baseRow,
         int baseAlphaChance)
     {
-        return
-        [
+        var fields = new List<ZaEncounterVanillaFieldValue>
+        {
             CreateField(
                 ZaEncountersWorkflowService.SpeciesIdField,
                 baseRow.DevNo,
@@ -698,15 +714,49 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
                 ZaEncountersWorkflowService.VanillaTalentVCountField,
                 baseRow.TalentVNum,
                 currentRow.TalentVNum != baseRow.TalentVNum),
-        ];
+        };
+
+        if (baseRow.StrengthenValue is { } baseStrengthen)
+        {
+            var currentStrengthen = currentRow.StrengthenValue;
+            fields.AddRange(
+            [
+                CreateField(
+                    ZaEncountersWorkflowService.StrengthenHpField,
+                    baseStrengthen.HP,
+                    currentStrengthen?.HP != baseStrengthen.HP),
+                CreateField(
+                    ZaEncountersWorkflowService.StrengthenAttackField,
+                    baseStrengthen.Attack,
+                    currentStrengthen?.Attack != baseStrengthen.Attack),
+                CreateField(
+                    ZaEncountersWorkflowService.StrengthenDefenseField,
+                    baseStrengthen.Defense,
+                    currentStrengthen?.Defense != baseStrengthen.Defense),
+                CreateField(
+                    ZaEncountersWorkflowService.StrengthenSpecialAttackField,
+                    baseStrengthen.SpecialAttack,
+                    currentStrengthen?.SpecialAttack != baseStrengthen.SpecialAttack),
+                CreateField(
+                    ZaEncountersWorkflowService.StrengthenSpecialDefenseField,
+                    baseStrengthen.SpecialDefense,
+                    currentStrengthen?.SpecialDefense != baseStrengthen.SpecialDefense),
+                CreateField(
+                    ZaEncountersWorkflowService.StrengthenSpeedField,
+                    baseStrengthen.Speed,
+                    currentStrengthen?.Speed != baseStrengthen.Speed),
+            ]);
+        }
+
+        return fields;
     }
 
-    private static IReadOnlyList<int> ReadMoves(ZaPokemonDataEntry row)
+    private static IReadOnlyList<int> ReadMoves(ZaEncounterDataEntry row)
     {
         return row.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0];
     }
 
-    private static int ReadMove(ZaPokemonDataEntry row, int index)
+    private static int ReadMove(ZaEncounterDataEntry row, int index)
     {
         return ReadMoves(row)[index];
     }
@@ -716,6 +766,13 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
         Func<ZaPokemonDataStatsRecord, int> select)
     {
         return stats is null ? -1 : select(stats);
+    }
+
+    private static int? ReadStrengthen(
+        ZaPokemonDataStatsRecord? stats,
+        Func<ZaPokemonDataStatsRecord, int> select)
+    {
+        return stats is null ? null : select(stats);
     }
 
     private static IReadOnlyList<ZaEncounterVanillaFieldValue> CreateSpawnerFields(
@@ -767,7 +824,7 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
         int sourceSpeciesId,
         int sourceForm,
         IReadOnlyList<ZaEncounterVanillaFieldValue> fields,
-        ZaPokemonDataEntry baseRow,
+        ZaEncounterDataEntry baseRow,
         int baseAlphaChance,
         AppearanceState? baseAppearance)
     {
@@ -870,7 +927,13 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
         int value)
     {
         if (field is ZaEncountersWorkflowService.VanillaTalentScaleField
-            or ZaEncountersWorkflowService.VanillaTalentVCountField)
+            or ZaEncountersWorkflowService.VanillaTalentVCountField
+            or ZaEncountersWorkflowService.StrengthenHpField
+            or ZaEncountersWorkflowService.StrengthenAttackField
+            or ZaEncountersWorkflowService.StrengthenDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpecialAttackField
+            or ZaEncountersWorkflowService.StrengthenSpecialDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpeedField)
         {
             return true;
         }
@@ -965,7 +1028,7 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
     }
 
     private static bool TryReadBaseRowValue(
-        ZaPokemonDataEntry row,
+        ZaEncounterDataEntry row,
         string? field,
         out int value)
     {
@@ -1033,6 +1096,18 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             case ZaEncountersWorkflowService.IvSpeedField:
                 value = ReadIv(row.TalentValue, stats => stats.Speed);
                 return true;
+            case ZaEncountersWorkflowService.StrengthenHpField:
+                return TryReadStrengthen(row.StrengthenValue, stats => stats.HP, out value);
+            case ZaEncountersWorkflowService.StrengthenAttackField:
+                return TryReadStrengthen(row.StrengthenValue, stats => stats.Attack, out value);
+            case ZaEncountersWorkflowService.StrengthenDefenseField:
+                return TryReadStrengthen(row.StrengthenValue, stats => stats.Defense, out value);
+            case ZaEncountersWorkflowService.StrengthenSpecialAttackField:
+                return TryReadStrengthen(row.StrengthenValue, stats => stats.SpecialAttack, out value);
+            case ZaEncountersWorkflowService.StrengthenSpecialDefenseField:
+                return TryReadStrengthen(row.StrengthenValue, stats => stats.SpecialDefense, out value);
+            case ZaEncountersWorkflowService.StrengthenSpeedField:
+                return TryReadStrengthen(row.StrengthenValue, stats => stats.Speed, out value);
             case ZaEncountersWorkflowService.VanillaTalentScaleField:
                 value = row.TalentScale;
                 return true;
@@ -1043,6 +1118,21 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
                 value = 0;
                 return false;
         }
+    }
+
+    private static bool TryReadStrengthen(
+        ZaPokemonDataStatsRecord? stats,
+        Func<ZaPokemonDataStatsRecord, int> select,
+        out int value)
+    {
+        if (stats is null)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = select(stats);
+        return true;
     }
 
     private static ZaEncounterVanillaFieldValue CreateField(
@@ -1077,6 +1167,12 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             or ZaEncountersWorkflowService.IvSpecialAttackField
             or ZaEncountersWorkflowService.IvSpecialDefenseField
             or ZaEncountersWorkflowService.IvSpeedField
+            or ZaEncountersWorkflowService.StrengthenHpField
+            or ZaEncountersWorkflowService.StrengthenAttackField
+            or ZaEncountersWorkflowService.StrengthenDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpecialAttackField
+            or ZaEncountersWorkflowService.StrengthenSpecialDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpeedField
             or ZaEncountersWorkflowService.VanillaTalentScaleField
             or ZaEncountersWorkflowService.VanillaTalentVCountField;
     }

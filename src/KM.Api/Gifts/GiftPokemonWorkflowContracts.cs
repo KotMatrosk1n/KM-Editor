@@ -77,7 +77,15 @@ public sealed record GiftPokemonRecordDto(
     string IvSummary,
     GiftPokemonProvenanceDto Provenance)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AlphaChancePercent { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AlphaLevelBonus { get; init; }
+
     public string EditorFamily { get; init; } = "swsh";
+
+    public bool CanEditAlphaSettings { get; init; }
 
     public IReadOnlyList<GiftPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<GiftPokemonEditableFieldOptionDto>();

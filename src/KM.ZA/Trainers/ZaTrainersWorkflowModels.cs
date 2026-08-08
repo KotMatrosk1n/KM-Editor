@@ -79,7 +79,11 @@ public sealed record ZaTrainerRecord(
     ZaTrainerProvenance Provenance,
     int Rank,
     bool MegaEvolution,
-    bool LastHand);
+    bool LastHand)
+{
+    public bool IsSharedRivalRoster { get; init; }
+    public string? RivalStarterBranch { get; init; }
+}
 
 public sealed record ZaTrainerAiFlagState(
     int Bit,

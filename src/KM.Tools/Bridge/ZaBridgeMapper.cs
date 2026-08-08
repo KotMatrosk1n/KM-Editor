@@ -823,6 +823,48 @@ public static class ZaBridgeMapper
                     context.Label,
                     context.Rank))
                 .ToArray(),
+            PlayerPartner = table.PlayerPartner is null
+                ? null
+                : ToDto(table.PlayerPartner),
+        };
+    }
+
+    private static EncounterPlayerPartnerRecordDto ToDto(
+        ZaEncounterPlayerPartnerRecord partner)
+    {
+        return new EncounterPlayerPartnerRecordDto(
+            partner.Slot,
+            partner.PokemonDataSourceIndex,
+            partner.PokemonDataId,
+            partner.Label,
+            partner.Role,
+            partner.Description,
+            partner.SpeciesId,
+            partner.Species,
+            partner.Form,
+            partner.Level,
+            partner.LevelMax,
+            partner.CanEditLevel,
+            partner.HeldItemId,
+            partner.Ability,
+            partner.Nature,
+            partner.Gender,
+            partner.ShinyMode,
+            partner.MoveIds,
+            partner.HasExplicitMoves,
+            partner.FlawlessIvCount,
+            partner.IvHp,
+            partner.IvAttack,
+            partner.IvDefense,
+            partner.IvSpecialAttack,
+            partner.IvSpecialDefense,
+            partner.IvSpeed,
+            ToDto(partner.Provenance),
+            partner.CanRevertToVanilla,
+            partner.RevertToVanillaBlockedReason)
+        {
+            FormOptions = partner.FormOptions.Select(ToDto).ToArray(),
+            EditableFields = partner.EditableFields.Select(ToDto).ToArray(),
         };
     }
 
@@ -872,6 +914,13 @@ public static class ZaBridgeMapper
             IvSpeed = slot.IvSpeed,
             TalentScale = slot.TalentScale,
             TalentVCount = slot.TalentVCount,
+            StrengthenHp = slot.StrengthenHp,
+            StrengthenAttack = slot.StrengthenAttack,
+            StrengthenDefense = slot.StrengthenDefense,
+            StrengthenSpecialAttack = slot.StrengthenSpecialAttack,
+            StrengthenSpecialDefense = slot.StrengthenSpecialDefense,
+            StrengthenSpeed = slot.StrengthenSpeed,
+            CanEditStrengthenValues = slot.CanEditStrengthenValues,
             EncounterActivationConditions = slot.EncounterActivationConditions,
             StrengthenValueSummary = slot.StrengthenValueSummary,
             ItemDropSummaries = slot.ItemDropSummaries,
@@ -1855,6 +1904,8 @@ public static class ZaBridgeMapper
             ZaRank = trainer.Rank,
             ZaMegaEvolution = trainer.MegaEvolution,
             ZaLastHand = trainer.LastHand,
+            ZaSharedRivalRoster = trainer.IsSharedRivalRoster,
+            ZaRivalStarterBranch = trainer.RivalStarterBranch,
         };
     }
 
@@ -1901,8 +1952,11 @@ public static class ZaBridgeMapper
                 ProjectBridgeMapper.ToDto(gift.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(gift.Provenance.FileState)))
         {
+            AlphaChancePercent = gift.CanEditAlphaSettings ? gift.AlphaChancePercent : null,
+            AlphaLevelBonus = gift.CanEditAlphaSettings ? gift.AlphaAdditionalLevel : null,
             EditorFamily = "za",
             AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
+            CanEditAlphaSettings = gift.CanEditAlphaSettings,
             FormOptions = gift.FormOptions.Select(ToDto).ToArray(),
             EventLabel = gift.EventLabel,
             Moves = gift.Moves.Select(ToDto).ToArray(),

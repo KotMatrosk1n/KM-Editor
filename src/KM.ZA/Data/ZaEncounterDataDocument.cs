@@ -78,7 +78,7 @@ internal sealed class ZaEncounterDataGroup
 
 internal sealed class ZaEncounterDataEntry : ZaPokemonDataEntry
 {
-    public ZaPokemonDataStatsRecord? StrengthenValue { get; init; }
+    public ZaPokemonDataStatsRecord? StrengthenValue { get; set; }
     public IReadOnlyList<ZaEncounterItemDropRecord> ItemDrops { get; init; } =
         Array.Empty<ZaEncounterItemDropRecord>();
 

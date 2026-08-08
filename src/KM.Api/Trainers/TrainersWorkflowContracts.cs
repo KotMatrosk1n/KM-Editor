@@ -104,6 +104,10 @@ public sealed record TrainerRecordDto(
     public bool? ZaMegaEvolution { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ZaLastHand { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ZaSharedRivalRoster { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ZaRivalStarterBranch { get; init; }
 }
 
 public sealed record TrainerAiFlagStateDto(

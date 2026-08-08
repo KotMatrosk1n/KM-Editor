@@ -320,8 +320,8 @@ public struct ZaPersonal : IFlatbufferObject
 
     public byte EggHatchCycles => ReadByte(32);
     public byte BaseFriendship => ReadByte(34);
-    public ushort Unknown16 => ReadUshort(36);
-    public bool HasUnknown16 => p.__offset(36) != 0;
+    public short ExpAddend => ReadShort(36);
+    public bool HasExpAddend => p.__offset(36) != 0;
     public byte EvoStage => ReadByte(38);
     public ushort Unknown18 => ReadUshort(40);
     public bool HasUnknown18 => p.__offset(40) != 0;
@@ -450,7 +450,7 @@ public struct ZaPersonal : IFlatbufferObject
     public static void AddEggHatch(FlatBufferBuilder builder, Offset<ZaEggHatchInfo> offset) => builder.AddStruct(13, offset.Value, 0);
     public static void AddEggHatchCycles(FlatBufferBuilder builder, byte value) => builder.AddByte(14, value, 0);
     public static void AddBaseFriendship(FlatBufferBuilder builder, byte value) => builder.AddByte(15, value, 0);
-    public static void AddUnknown16(FlatBufferBuilder builder, ushort value) => builder.AddUshort(16, value, 0);
+    public static void AddExpAddend(FlatBufferBuilder builder, short value) => builder.AddShort(16, value, 0);
     public static void AddEvoStage(FlatBufferBuilder builder, byte value) => builder.AddByte(17, value, 0);
     public static void AddUnknown18(FlatBufferBuilder builder, ushort value) => builder.AddUshort(18, value, 0);
     public static void AddEvYield(FlatBufferBuilder builder, Offset<ZaStatInfo> offset) => builder.AddStruct(19, offset.Value, 0);
@@ -472,6 +472,12 @@ public struct ZaPersonal : IFlatbufferObject
         }
 
         return builder.EndVector();
+    }
+
+    private short ReadShort(int offsetSlot)
+    {
+        var offset = p.__offset(offsetSlot);
+        return offset == 0 ? (short)0 : p.bb.GetShort(offset + p.bb_pos);
     }
 
     public static Offset<ZaPersonal> End(FlatBufferBuilder builder) => new(builder.EndTable());

@@ -119,8 +119,11 @@ internal sealed class ZaGiftPokemonEditSessionService
             loadedWorkflow,
             updatedSession.PendingEdits,
             diagnostics);
+        var finalValuesAreValid =
+            ValidateFinalSpeciesForms(loadedWorkflow, projectedWorkflow, diagnostics)
+            & ValidateFinalAlphaSettings(projectedWorkflow, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            || !ValidateFinalSpeciesForms(loadedWorkflow, projectedWorkflow, diagnostics))
+            || !finalValuesAreValid)
         {
             return new ZaGiftPokemonEditResult(currentWorkflow, currentSession, diagnostics);
         }
@@ -158,6 +161,7 @@ internal sealed class ZaGiftPokemonEditSessionService
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             ValidateFinalSpeciesForms(workflow, effectiveWorkflow, diagnostics);
+            ValidateFinalAlphaSettings(effectiveWorkflow, diagnostics);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -278,6 +282,11 @@ internal sealed class ZaGiftPokemonEditSessionService
             return null;
         }
 
+        if (!ValidateAlphaEditability(gift, normalizedField, diagnostics))
+        {
+            return null;
+        }
+
         var parsedValue = ZaEditSessionSupport.TryParseInt(
             value,
             editableField.MinimumValue,
@@ -321,8 +330,7 @@ internal sealed class ZaGiftPokemonEditSessionService
             return;
         }
 
-        if (!ZaGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var giftIndex)
-            || workflow.Gifts.All(candidate => candidate.GiftIndex != giftIndex))
+        if (!ZaGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var giftIndex))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -330,6 +338,23 @@ internal sealed class ZaGiftPokemonEditSessionService
                 ZaEditSessionSupport.GiftPokemonDomain,
                 field: "giftIndex",
                 expected: "Existing gift Pokemon record"));
+            return;
+        }
+
+        var gift = workflow.Gifts.FirstOrDefault(candidate => candidate.GiftIndex == giftIndex);
+        if (gift is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending gift Pokemon edit targets a record that is not loaded.",
+                ZaEditSessionSupport.GiftPokemonDomain,
+                field: "giftIndex",
+                expected: "Existing gift Pokemon record"));
+            return;
+        }
+
+        if (!ValidateAlphaEditability(gift, edit.Field, diagnostics))
+        {
             return;
         }
 
@@ -522,6 +547,12 @@ internal sealed class ZaGiftPokemonEditSessionService
             ZaGiftPokemonWorkflowService.IvSpecialAttackField => OverlayIvs(gift, gift.Ivs with { SpecialAttack = value }),
             ZaGiftPokemonWorkflowService.IvSpecialDefenseField => OverlayIvs(gift, gift.Ivs with { SpecialDefense = value }),
             ZaGiftPokemonWorkflowService.IvSpeedField => OverlayIvs(gift, gift.Ivs with { Speed = value }),
+            ZaGiftPokemonWorkflowService.AlphaChancePercentField => gift with
+            {
+                AlphaProbability = value,
+                AlphaChancePercent = value,
+            },
+            ZaGiftPokemonWorkflowService.AlphaLevelBonusField => gift with { AlphaAdditionalLevel = value },
             _ => gift,
         };
     }
@@ -600,6 +631,18 @@ internal sealed class ZaGiftPokemonEditSessionService
                 ZaEditSessionSupport.GiftPokemonDomain,
                 field: "giftIndex",
                 expected: "Existing source gift Pokemon row"));
+            return;
+        }
+
+        if (IsAlphaField(edit.Field)
+            && !ZaGiftPokemonWorkflowService.CanEditAlphaSettings(displayRow))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Alpha settings edit no longer targets a supported restoration gift row.",
+                ZaEditSessionSupport.GiftPokemonDomain,
+                field: edit.Field,
+                expected: "Restoration gift with whole-number Alpha chance and Alpha level bonus from 0 through 100"));
             return;
         }
 
@@ -683,7 +726,82 @@ internal sealed class ZaGiftPokemonEditSessionService
             case ZaGiftPokemonWorkflowService.IvSpeedField:
                 SetIv(row, value, ivs => ivs with { Speed = value });
                 break;
+            case ZaGiftPokemonWorkflowService.AlphaChancePercentField:
+                row.OyabunProbability = value;
+                break;
+            case ZaGiftPokemonWorkflowService.AlphaLevelBonusField:
+                row.OyabunAdditionalLevel = value;
+                break;
         }
+    }
+
+    private static bool ValidateAlphaEditability(
+        ZaGiftPokemonEntry gift,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsAlphaField(field) || gift.CanEditAlphaSettings)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Alpha chance and Alpha level bonus can only be edited for supported fossil restoration gifts.",
+            ZaEditSessionSupport.GiftPokemonDomain,
+            field: field,
+            expected: "Restoration gift with whole-number Alpha chance and Alpha level bonus from 0 through 100"));
+        return false;
+    }
+
+    private static bool ValidateFinalAlphaSettings(
+        ZaGiftPokemonWorkflow workflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var isValid = true;
+        foreach (var gift in workflow.Gifts.Where(candidate => candidate.CanEditAlphaSettings))
+        {
+            if (gift.AlphaChancePercent is not int alphaChancePercent)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Restoration gift '{gift.EventLabel}' does not have a supported whole-number Alpha chance.",
+                    ZaEditSessionSupport.GiftPokemonDomain,
+                    field: ZaGiftPokemonWorkflowService.AlphaChancePercentField,
+                    expected: "Whole-number percent from 0 through 100"));
+                isValid = false;
+                continue;
+            }
+
+            if (alphaChancePercent <= 0)
+            {
+                continue;
+            }
+
+            var alphaLevel = (long)gift.Level + gift.AlphaAdditionalLevel;
+            if (alphaLevel <= 100)
+            {
+                continue;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Restoration gift '{gift.EventLabel}' would become level {alphaLevel.ToString(CultureInfo.InvariantCulture)} "
+                + $"because base level {gift.Level.ToString(CultureInfo.InvariantCulture)} and Alpha level bonus "
+                + $"{gift.AlphaAdditionalLevel.ToString(CultureInfo.InvariantCulture)} are combined when Alpha chance is enabled.",
+                ZaEditSessionSupport.GiftPokemonDomain,
+                field: ZaGiftPokemonWorkflowService.AlphaLevelBonusField,
+                expected: "When Alpha chance is above 0 percent, base level plus Alpha level bonus must be at most 100"));
+            isValid = false;
+        }
+
+        return isValid;
+    }
+
+    private static bool IsAlphaField(string? field)
+    {
+        return field is ZaGiftPokemonWorkflowService.AlphaChancePercentField
+            or ZaGiftPokemonWorkflowService.AlphaLevelBonusField;
     }
 
     private static void SetMove(ZaPokemonDataEntry row, int moveIndex, int moveId)

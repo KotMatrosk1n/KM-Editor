@@ -31,17 +31,37 @@ internal sealed class ZaGiftPokemonWorkflowService
     public const string IvSpecialAttackField = "ivSpecialAttack";
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string FlawlessIvCountField = "flawlessIvCount";
+    public const string AlphaChancePercentField = "alphaChancePercent";
+    public const string AlphaLevelBonusField = "alphaLevelBonus";
 
     private const string WorkflowLabel = "Gift Pokemon";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A scripted gift Pokemon sources.";
 
-    private static readonly string[] GiftIdPrefixes =
+    private static readonly string[] GiftIds =
     [
-        "sub_addpoke",
-        "addpoke",
-        "main_init_poke",
-        "main_poke",
-        "main10400_poke",
+        "main_init_poke_1",
+        "main_init_poke_2",
+        "main_init_poke_3",
+        "sub_addpoke_fushigidane",
+        "sub_addpoke_hitokage",
+        "sub_addpoke_zenigame",
+        "sub_addpoke_harimaron",
+        "sub_addpoke_fokko",
+        "sub_addpoke_keromatsu",
+        "sub_addpoke_gmaggyo",
+        "sub_addpoke_kofuurai",
+        "addpoke_floette_eien",
+        "sub_addpoke_rukario",
+        "vsmega_init_abusoru",
+        "sub_addpoke_chigoras",
+        "sub_addpoke_amarus",
+        "restoration_ptera",
+        "restoration_chigoras",
+        "restoration_amarus",
+        "sub_addpoke_magiana",
+        "sub_addpoke_merumetal",
+        "sub_addpoke_huupa",
+        "sub_addpoke_korekure",
     ];
 
     private static readonly IReadOnlyDictionary<string, string> StarterGameplayRowsBySceneRow =
@@ -52,12 +72,19 @@ internal sealed class ZaGiftPokemonWorkflowService
             ["main_init_poke_3"] = "test_encount_init_poke_2",
         };
 
+    private static readonly string[] RestorationGiftIds =
+    [
+        "restoration_ptera",
+        "restoration_chigoras",
+        "restoration_amarus",
+    ];
+
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> GenderOptions =
     [
-        new(-1, "Game default / random"),
-        new(0, "Random"),
-        new(1, "Male"),
-        new(2, "Female"),
+        new(-1, "Random / species default"),
+        new(0, "Male"),
+        new(1, "Female"),
+        new(2, "Genderless"),
     ];
 
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> ShinyModeOptions =
@@ -203,7 +230,7 @@ internal sealed class ZaGiftPokemonWorkflowService
     internal static bool IsGiftPokemonId(string? id)
     {
         return !string.IsNullOrWhiteSpace(id)
-            && GiftIdPrefixes.Any(prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            && GiftIds.Contains(id, StringComparer.OrdinalIgnoreCase);
     }
 
     internal static bool IsGiftPokemonSourceId(string? id)
@@ -274,11 +301,15 @@ internal sealed class ZaGiftPokemonWorkflowService
         var ivs = ReadIvs(entry);
         var flawlessIvCount = ReadFlawlessIvCount(entry);
         var heldItemId = entry.HoldItem ?? 0;
+        int? alphaChancePercent = TryReadAlphaChancePercent(entry.OyabunProbability, out var wholeAlphaChancePercent)
+            ? wholeAlphaChancePercent
+            : null;
+        var canEditAlphaSettings = CanEditAlphaSettings(entry);
 
         return new ZaGiftPokemonEntry(
             giftIndex,
             entry.SourceIndex,
-            CreateDisplayLabel(giftIndex, speciesName, entry.MinLevel, entry.MaxLevel, eventLabel, isEgg),
+            CreateDisplayLabel(giftIndex, speciesName, entry.MinLevel, entry.MaxLevel, isEgg),
             eventLabel,
             speciesId,
             speciesName,
@@ -307,7 +338,9 @@ internal sealed class ZaGiftPokemonWorkflowService
                 source.SourceLayer,
                 source.FileState))
         {
+            AlphaChancePercent = alphaChancePercent,
             AbilityOptions = abilityOptions,
+            CanEditAlphaSettings = canEditAlphaSettings,
         };
     }
 
@@ -461,7 +494,39 @@ internal sealed class ZaGiftPokemonWorkflowService
             CreateField(IvSpeedField, "Speed IV", -1, 31),
             CreateField(IvSpecialAttackField, "Sp. Atk IV", -1, 31),
             CreateField(IvSpecialDefenseField, "Sp. Def IV", -1, 31),
+            CreateField(AlphaChancePercentField, "Alpha chance", 0, 100),
+            CreateField(AlphaLevelBonusField, "Alpha level bonus", 0, 100),
         ];
+    }
+
+    internal static bool CanEditAlphaSettings(ZaPokemonDataEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return IsRestorationGiftId(entry.Id)
+            && TryReadAlphaChancePercent(entry.OyabunProbability, out _)
+            && entry.OyabunAdditionalLevel is >= 0 and <= 100;
+    }
+
+    private static bool IsRestorationGiftId(string? id)
+    {
+        return !string.IsNullOrWhiteSpace(id)
+            && RestorationGiftIds.Contains(id, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool TryReadAlphaChancePercent(float value, out int wholePercent)
+    {
+        if (float.IsFinite(value)
+            && value >= 0
+            && value <= 100
+            && value == MathF.Truncate(value))
+        {
+            wholePercent = checked((int)value);
+            return true;
+        }
+
+        wholePercent = 0;
+        return false;
     }
 
     private static IReadOnlyList<ZaGiftPokemonEditableFieldOption> CreateAbilityModeOptions(
@@ -595,13 +660,12 @@ internal sealed class ZaGiftPokemonWorkflowService
         string species,
         int minLevel,
         int maxLevel,
-        string eventLabel,
         bool isEgg)
     {
         var giftNumber = (giftIndex + 1).ToString(CultureInfo.InvariantCulture);
         if (isEgg)
         {
-            return $"Gift {giftNumber}: {species} Egg ({eventLabel})";
+            return $"Gift {giftNumber}: {species} Egg";
         }
 
         var levelLabel = minLevel == 0 && maxLevel == 0
@@ -609,7 +673,7 @@ internal sealed class ZaGiftPokemonWorkflowService
             : minLevel == maxLevel
                 ? $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)}"
                 : $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)} to {maxLevel.ToString(CultureInfo.InvariantCulture)}";
-        return $"Gift {giftNumber}: {species} {levelLabel} ({eventLabel})";
+        return $"Gift {giftNumber}: {species} {levelLabel}";
     }
 
     internal sealed class ZaGiftAbilityResolver

@@ -17,6 +17,7 @@ internal sealed class ZaEncountersWorkflowService
     public const string FormField = "form";
     public const string LevelMinField = "levelMin";
     public const string LevelMaxField = "levelMax";
+    public const string PlayerPartnerLevelField = "playerPartnerLevel";
     public const string AlphaChancePercentField = "alphaChancePercent";
     public const string AlphaLevelBonusField = "alphaLevelBonus";
     public const string HeldItemIdField = "heldItemId";
@@ -35,6 +36,15 @@ internal sealed class ZaEncountersWorkflowService
     public const string IvSpecialAttackField = "ivSpecialAttack";
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string IvSpeedField = "ivSpeed";
+    public const string StrengthenHpField = "strengthenHp";
+    public const string StrengthenAttackField = "strengthenAttack";
+    public const string StrengthenDefenseField = "strengthenDefense";
+    public const string StrengthenSpecialAttackField = "strengthenSpecialAttack";
+    public const string StrengthenSpecialDefenseField = "strengthenSpecialDefense";
+    public const string StrengthenSpeedField = "strengthenSpeed";
+    public const int MinimumStrengthenValue = 0;
+    public const int MaximumStrengthenHpValue = ushort.MaxValue;
+    public const int MaximumStrengthenOtherValue = byte.MaxValue;
     internal const string VanillaTalentScaleField = "vanillaTalentScale";
     internal const string VanillaTalentVCountField = "vanillaTalentVCount";
     public const string WeightField = "weight";
@@ -147,6 +157,7 @@ internal sealed class ZaEncountersWorkflowService
         ZaWorkflowFile? encounterSource = null;
         ZaWorkflowFile? spawnerSource = null;
         ZaWorkflowFile? bossBattleSource = null;
+        ZaWorkflowFile? playerPartnerSource = null;
         var labels = ZaTextLabelLookup.None();
         var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var outzoneAvailability = ZaOutzoneEncounterAvailability.Unknown;
@@ -183,6 +194,18 @@ internal sealed class ZaEncountersWorkflowService
             fileSource,
             labels,
             diagnostics);
+        var editableFields = CreateEditableFields(labels, pokemonAvailability);
+        if (tables.Any(ZaEncounterPlayerPartnerCatalog.IsTargetTable))
+        {
+            tables = TryAttachPlayerPartner(
+                project,
+                tables,
+                labels,
+                pokemonAvailability,
+                editableFields,
+                diagnostics,
+                out playerPartnerSource);
+        }
 
         var summary = ZaWorkflowSupport.CreateSummary(
             project,
@@ -194,11 +217,11 @@ internal sealed class ZaEncountersWorkflowService
         var workflow = new ZaEncountersWorkflow(
             summary,
             tables,
-            CreateEditableFields(labels, pokemonAvailability),
+            editableFields,
             new ZaEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
-                new[] { encounterSource, spawnerSource, bossBattleSource }.Count(source => source is not null)
+                new[] { encounterSource, spawnerSource, bossBattleSource, playerPartnerSource }.Count(source => source is not null)
                     + scriptedBossCatalog.SourceFileCount),
             diagnostics)
         {
@@ -409,6 +432,172 @@ internal sealed class ZaEncountersWorkflowService
                 $"romfs/{ZaDataPaths.BossBattleDataGlobal}"));
             return null;
         }
+    }
+
+    private ZaEncounterTableRecord[] TryAttachPlayerPartner(
+        OpenedProject project,
+        IReadOnlyList<ZaEncounterTableRecord> tables,
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability,
+        IReadOnlyList<ZaEncounterEditableField> editableFields,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out ZaWorkflowFile? source)
+    {
+        source = null;
+        try
+        {
+            var candidateSource = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            var document = ZaPokemonDataDocument.Parse(candidateSource.Bytes);
+            if (!ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+                    document,
+                    out var row,
+                    out var blockedReason))
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    "AZ's temporary Lucario could not be matched safely and will remain hidden. "
+                        + blockedReason,
+                    candidateSource.RelativePath,
+                    expected: $"Unique '{ZaEncounterPlayerPartnerCatalog.PokemonDataId}' row at source index {ZaEncounterPlayerPartnerCatalog.PokemonDataSourceIndex}"));
+                return tables.ToArray();
+            }
+
+            source = candidateSource;
+            var canRevertToVanilla = TryValidatePlayerPartnerBaseRow(
+                project,
+                out var revertToVanillaBlockedReason);
+            var moves = row.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0];
+            var partner = new ZaEncounterPlayerPartnerRecord(
+                ZaEncounterPlayerPartnerCatalog.EditSlot,
+                row.SourceIndex,
+                row.Id!,
+                "AZ's Lucario",
+                "Temporary player partner",
+                "Used only as the player's partner during the Absol battle. This is a separate PokemonData row from the level 50 Lucario received later.",
+                row.DevNo,
+                FormatEncounterSpeciesLabel(row.DevNo, row.FormNo, labels),
+                row.FormNo,
+                row.MinLevel,
+                row.MaxLevel,
+                row.MinLevel == row.MaxLevel && row.MinLevel is >= 1 and <= 100,
+                row.HoldItem ?? 0,
+                row.Tokusei,
+                row.Seikaku,
+                row.Sex,
+                row.Rare,
+                moves,
+                row.WazaList is not null,
+                ZaPokemonDataIvEncoding.ReadFlawlessIvCount(row),
+                ReadIv(row.TalentValue, stats => stats.HP) ?? -1,
+                ReadIv(row.TalentValue, stats => stats.Attack) ?? -1,
+                ReadIv(row.TalentValue, stats => stats.Defense) ?? -1,
+                ReadIv(row.TalentValue, stats => stats.SpecialAttack) ?? -1,
+                ReadIv(row.TalentValue, stats => stats.SpecialDefense) ?? -1,
+                ReadIv(row.TalentValue, stats => stats.Speed) ?? -1,
+                new ZaEncounterProvenance(
+                    candidateSource.RelativePath,
+                    candidateSource.SourceLayer,
+                    candidateSource.FileState),
+                canRevertToVanilla,
+                revertToVanillaBlockedReason)
+            {
+                FormOptions = CreateFormOptions(
+                    row.DevNo,
+                    labels.Pokemon(row.DevNo),
+                    pokemonAvailability),
+                EditableFields = CreatePlayerPartnerEditableFields(editableFields),
+                TalentScale = row.TalentScale,
+                TalentVCount = row.TalentVNum,
+            };
+
+            return tables
+                .Select(table => ZaEncounterPlayerPartnerCatalog.IsTargetTable(table)
+                    ? table with { PlayerPartner = partner }
+                    : table)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or ArgumentException
+            or UnauthorizedAccessException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                "AZ's temporary Lucario could not be loaded and will remain hidden. "
+                    + exception.Message,
+                $"romfs/{ZaDataPaths.PokemonDataArray}",
+                expected: "Readable verified PokemonData source"));
+            return tables.ToArray();
+        }
+    }
+
+    private bool TryValidatePlayerPartnerBaseRow(
+        OpenedProject project,
+        out string? blockedReason)
+    {
+        try
+        {
+            var source = fileSource.ReadBase(project, ZaDataPaths.PokemonDataArray);
+            var document = ZaPokemonDataDocument.Parse(source.Bytes);
+            if (!ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+                    document,
+                    out var row,
+                    out var identityBlockedReason))
+            {
+                blockedReason = identityBlockedReason;
+                return false;
+            }
+
+            if (row.MinLevel != row.MaxLevel)
+            {
+                blockedReason = "The verified base partner row does not contain one fixed level.";
+                return false;
+            }
+
+            blockedReason = null;
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or ArgumentException
+            or UnauthorizedAccessException)
+        {
+            blockedReason = $"Verified base PokemonData could not be read: {exception.Message}";
+            return false;
+        }
+    }
+
+    private static IReadOnlyList<ZaEncounterEditableField> CreatePlayerPartnerEditableFields(
+        IReadOnlyList<ZaEncounterEditableField> editableFields)
+    {
+        var fieldsById = editableFields.ToDictionary(field => field.Field, StringComparer.Ordinal);
+        var levelField = new ZaEncounterEditableField(
+            PlayerPartnerLevelField,
+            "Level",
+            "integer",
+            1,
+            100,
+            Array.Empty<ZaEncounterEditableFieldOption>());
+        return
+        [
+            fieldsById[SpeciesIdField],
+            fieldsById[FormField],
+            levelField,
+            fieldsById[HeldItemIdField],
+            fieldsById[GenderField],
+            fieldsById[AbilityField],
+            fieldsById[NatureField],
+            fieldsById[ShinyModeField],
+            fieldsById[FlawlessIvCountField],
+            fieldsById[IvHpField],
+            fieldsById[IvAttackField],
+            fieldsById[IvDefenseField],
+            fieldsById[IvSpecialAttackField],
+            fieldsById[IvSpecialDefenseField],
+            fieldsById[IvSpeedField],
+            fieldsById[Move1IdField],
+            fieldsById[Move2IdField],
+            fieldsById[Move3IdField],
+            fieldsById[Move4IdField],
+        ];
     }
 
     internal static ZaEncounterEditableField? GetEditableField(
@@ -697,6 +886,7 @@ internal sealed class ZaEncountersWorkflowService
             var hasStructuralAlphaReference = HasStructuralAlphaReference(encounterDataId);
             var pokemon = ResolvePokemonRow(encounterDataId, pokemonRows);
             var encounterPokemon = pokemon as ZaEncounterDataEntry;
+            var strengthenValue = encounterPokemon?.StrengthenValue;
             var speciesId = pokemon?.DevNo ?? 0;
             var form = pokemon?.FormNo ?? 0;
             var alphaChancePercent = pokemon is not null
@@ -790,8 +980,15 @@ internal sealed class ZaEncountersWorkflowService
                 IvSpeed = ReadIv(pokemon?.TalentValue, stats => stats.Speed),
                 TalentScale = pokemon?.TalentScale,
                 TalentVCount = pokemon?.TalentVNum,
+                StrengthenHp = strengthenValue?.HP,
+                StrengthenAttack = strengthenValue?.Attack,
+                StrengthenDefense = strengthenValue?.Defense,
+                StrengthenSpecialAttack = strengthenValue?.SpecialAttack,
+                StrengthenSpecialDefense = strengthenValue?.SpecialDefense,
+                StrengthenSpeed = strengthenValue?.Speed,
+                CanEditStrengthenValues = CanEditStrengthenValues(strengthenValue),
                 EncounterActivationConditions = FormatEncounterActivationConditions(pokemon),
-                StrengthenValueSummary = FormatStats(encounterPokemon?.StrengthenValue),
+                StrengthenValueSummary = FormatStats(strengthenValue),
                 ItemDropSummaries = FormatItemDrops(encounterPokemon),
             };
         }
@@ -834,11 +1031,55 @@ internal sealed class ZaEncountersWorkflowService
 
     private static string? FormatStats(ZaPokemonDataStatsRecord? stats)
     {
-        return stats is null
-            ? null
+        return stats is null ? null : FormatStrengthenValues(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
+    }
+
+    internal static string? FormatStrengthenValues(
+        int? hp,
+        int? attack,
+        int? defense,
+        int? specialAttack,
+        int? specialDefense,
+        int? speed)
+    {
+        return hp is null
+            || attack is null
+            || defense is null
+            || specialAttack is null
+            || specialDefense is null
+            || speed is null
+                ? null
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"HP {FormatStrengthenValue(hp.Value)} / Atk {FormatStrengthenValue(attack.Value)} / Def {FormatStrengthenValue(defense.Value)} / SpA {FormatStrengthenValue(specialAttack.Value)} / SpD {FormatStrengthenValue(specialDefense.Value)} / Spe {FormatStrengthenValue(speed.Value)}");
+    }
+
+    private static string FormatStrengthenValue(int value)
+    {
+        return value > 0
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"{value / 10m:0.0}x (stored {value})")
             : string.Create(
                 CultureInfo.InvariantCulture,
-                $"HP {stats.HP} / Atk {stats.Attack} / Def {stats.Defense} / SpA {stats.SpecialAttack} / SpD {stats.SpecialDefense} / Spe {stats.Speed}");
+                $"override disabled (stored {value})");
+    }
+
+    private static bool CanEditStrengthenValues(ZaPokemonDataStatsRecord? stats)
+    {
+        return stats is not null
+            && stats.HP is >= MinimumStrengthenValue and <= MaximumStrengthenHpValue
+            && stats.Attack is >= MinimumStrengthenValue and <= MaximumStrengthenOtherValue
+            && stats.Defense is >= MinimumStrengthenValue and <= MaximumStrengthenOtherValue
+            && stats.SpecialAttack is >= MinimumStrengthenValue and <= MaximumStrengthenOtherValue
+            && stats.SpecialDefense is >= MinimumStrengthenValue and <= MaximumStrengthenOtherValue
+            && stats.Speed is >= MinimumStrengthenValue and <= MaximumStrengthenOtherValue;
     }
 
     private static IReadOnlyList<string> FormatItemDrops(ZaEncounterDataEntry? pokemon)
@@ -968,6 +1209,12 @@ internal sealed class ZaEncountersWorkflowService
             new(IvSpecialAttackField, "Sp. Atk IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(IvSpecialDefenseField, "Sp. Def IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(IvSpeedField, "Speed IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(StrengthenHpField, "HP multiplier (stored tenths)", "integer", MinimumStrengthenValue, MaximumStrengthenHpValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(StrengthenAttackField, "Attack multiplier (stored tenths)", "integer", MinimumStrengthenValue, MaximumStrengthenOtherValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(StrengthenDefenseField, "Defense multiplier (stored tenths)", "integer", MinimumStrengthenValue, MaximumStrengthenOtherValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(StrengthenSpecialAttackField, "Sp. Atk multiplier (stored tenths)", "integer", MinimumStrengthenValue, MaximumStrengthenOtherValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(StrengthenSpecialDefenseField, "Sp. Def multiplier (stored tenths)", "integer", MinimumStrengthenValue, MaximumStrengthenOtherValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(StrengthenSpeedField, "Speed multiplier (stored tenths)", "integer", MinimumStrengthenValue, MaximumStrengthenOtherValue, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(Move1IdField, "Move 1", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             new(Move2IdField, "Move 2", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             new(Move3IdField, "Move 3", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
