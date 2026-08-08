@@ -51,6 +51,7 @@ internal sealed class ZaPokemonWorkflowService
     public const string GenderRatioField = "genderRatio";
     public const string HatchCyclesField = "hatchCycles";
     public const string BaseFriendshipField = "baseFriendship";
+    public const string BaseExperienceField = "baseExperience";
     public const string ExpGrowthField = "expGrowth";
     public const string EggGroup1Field = "eggGroup1";
     public const string EggGroup2Field = "eggGroup2";
@@ -104,6 +105,7 @@ internal sealed class ZaPokemonWorkflowService
         CreateField(GenderRatioField, "Gender Ratio", "Breeding", 0, byte.MaxValue),
         CreateField(HatchCyclesField, "Hatch Cycles", "Breeding", 0, byte.MaxValue),
         CreateField(BaseFriendshipField, "Base Friendship", "Battle Basics", 0, byte.MaxValue),
+        CreateField(BaseExperienceField, "Base EXP", "Battle Basics", 0, null),
         CreateField(ExpGrowthField, "EXP Growth", "Battle Basics", 0, byte.MaxValue),
         CreateField(EggGroup1Field, "Egg Group 1", "Breeding", 0, byte.MaxValue),
         CreateField(EggGroup2Field, "Egg Group 2", "Breeding", 0, byte.MaxValue),
@@ -407,6 +409,7 @@ internal sealed class ZaPokemonWorkflowService
                 spriteLabels,
                 tmCatalog,
                 evolutionItemArgumentLabels).ToArray();
+            pokemon = AttachVanillaYieldDefaults(project, pokemon);
 
             try
             {
@@ -1247,7 +1250,10 @@ internal sealed class ZaPokemonWorkflowService
             baseEntry,
             hasLegacyByteDexOrderLayout);
         var total = hp + attack + defense + specialAttack + specialDefense + speed;
-        const int baseExperience = 0;
+        var baseExperience = ZaPokemonExperience.CalculateBaseExperience(
+            total,
+            entry.EvoStage,
+            entry.ExpAddend);
         var stats = new ZaPokemonBaseStats(
             hp,
             attack,
@@ -1330,6 +1336,63 @@ internal sealed class ZaPokemonWorkflowService
             ReadCompatibility(entry, labels, tmCatalog),
             new ZaPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState),
             spriteLabels.Pokemon(speciesId));
+    }
+
+    private ZaPokemonRecord[] AttachVanillaYieldDefaults(
+        OpenedProject project,
+        IReadOnlyList<ZaPokemonRecord> pokemon)
+    {
+        try
+        {
+            var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+            var baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
+            return pokemon.Select(record =>
+            {
+                if (record.PersonalId < 0
+                    || record.PersonalId >= baseTable.EntryLength
+                    || baseTable.Entry(record.PersonalId) is not { } baseEntry
+                    || baseEntry.Species is not { } baseSpecies
+                    || baseSpecies.Species != record.SpeciesId
+                    || baseSpecies.Form != record.Form)
+                {
+                    return record;
+                }
+
+                var baseStats = baseEntry.BaseStats;
+                var baseTotal = baseStats is null
+                    ? 0
+                    : baseStats.Value.Hp
+                        + baseStats.Value.Atk
+                        + baseStats.Value.Def
+                        + baseStats.Value.Spa
+                        + baseStats.Value.Spd
+                        + baseStats.Value.Spe;
+                var baseEvYield = baseEntry.EvYield;
+                return record with
+                {
+                    VanillaYieldDefaults = new ZaPokemonVanillaYieldDefaults(
+                        ZaPokemonExperience.CalculateBaseExperience(
+                            baseTotal,
+                            baseEntry.EvoStage,
+                            baseEntry.ExpAddend),
+                        baseEvYield?.Hp ?? 0,
+                        baseEvYield?.Atk ?? 0,
+                        baseEvYield?.Def ?? 0,
+                        baseEvYield?.Spa ?? 0,
+                        baseEvYield?.Spd ?? 0,
+                        baseEvYield?.Spe ?? 0),
+                };
+            }).ToArray();
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or ArgumentException
+                or UnauthorizedAccessException)
+        {
+            return pokemon.ToArray();
+        }
     }
 
     private static IReadOnlyList<ZaPokemonEvolutionRecord> ReadEvolutions(
@@ -1841,8 +1904,8 @@ internal sealed class ZaPokemonWorkflowService
         string field,
         string label,
         string group,
-        int minimumValue,
-        int maximumValue,
+        int? minimumValue,
+        int? maximumValue,
         IReadOnlyList<ZaPokemonEditableFieldOption>? options = null)
     {
         return new ZaPokemonEditableField(

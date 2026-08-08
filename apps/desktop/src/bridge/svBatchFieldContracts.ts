@@ -170,7 +170,7 @@ export const updateRentalPokemonFieldsResponseSchema = z.strictObject({
 
 export const encounterSlotFieldUpdateSchema = z.strictObject({
   field: z.string(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().min(-1),
   tableId: z.string(),
   value: z.string()
 });
@@ -190,7 +190,7 @@ export const updateEncounterSlotFieldsResponseSchema = z.strictObject({
 export const stageEncounterSlotVanillaRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().min(-1),
   tableId: z.string().min(1)
 });
 

@@ -129,6 +129,27 @@ public sealed record EncounterSlotRecordDto(
     public int? TalentVCount { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StrengthenHp { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StrengthenAttack { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StrengthenDefense { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StrengthenSpecialAttack { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StrengthenSpecialDefense { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StrengthenSpeed { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CanEditStrengthenValues { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? EncounterActivationConditions { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -136,6 +157,44 @@ public sealed record EncounterSlotRecordDto(
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? ItemDropSummaries { get; init; }
+}
+
+public sealed record EncounterPlayerPartnerRecordDto(
+    int Slot,
+    int PokemonDataSourceIndex,
+    string PokemonDataId,
+    string Label,
+    string Role,
+    string Description,
+    int SpeciesId,
+    string Species,
+    int Form,
+    int Level,
+    int LevelMax,
+    bool CanEditLevel,
+    int HeldItemId,
+    int Ability,
+    int Nature,
+    int Gender,
+    int ShinyMode,
+    IReadOnlyList<int> MoveIds,
+    bool HasExplicitMoves,
+    int? FlawlessIvCount,
+    int IvHp,
+    int IvAttack,
+    int IvDefense,
+    int IvSpecialAttack,
+    int IvSpecialDefense,
+    int IvSpeed,
+    EncounterProvenanceDto Provenance,
+    bool CanRevertToVanilla,
+    string? RevertToVanillaBlockedReason)
+{
+    public IReadOnlyList<EncounterEditableFieldOptionDto> FormOptions { get; init; } =
+        Array.Empty<EncounterEditableFieldOptionDto>();
+
+    public IReadOnlyList<EncounterEditableFieldDto> EditableFields { get; init; } =
+        Array.Empty<EncounterEditableFieldDto>();
 }
 
 public sealed record EncounterTableRecordDto(
@@ -184,6 +243,9 @@ public sealed record EncounterTableRecordDto(
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<BossBattleContextDto>? BossBattleContexts { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EncounterPlayerPartnerRecordDto? PlayerPartner { get; init; }
 }
 
 public sealed record EncounterPhaseConditionDto(

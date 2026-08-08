@@ -52,8 +52,7 @@ internal sealed class ZaTrainersWorkflowService
 
     private static readonly IReadOnlyList<ZaTrainerEditableFieldOption> GenderOptions =
     [
-        new(-1, "Game default / random"),
-        new(0, "Random"),
+        new(0, "Random / species default"),
         new(1, "Male"),
         new(2, "Female"),
     ];
@@ -136,7 +135,7 @@ internal sealed class ZaTrainersWorkflowService
         CreateField(LastHandField, "Last hand", 0, 1, BooleanOptions, "boolean"),
         CreateField(FormField, "Form", 0, short.MaxValue),
         CreateField(LevelField, "Level", 0, 100),
-        CreateField(GenderField, "Gender", -1, 2, GenderOptions),
+        CreateField(GenderField, "Gender", 0, 2, GenderOptions),
         CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaTrainerAbilitySet.Empty)),
         CreateField(NatureField, "Nature", -1, 25, NatureOptions),
         CreateField(EvHpField, "HP EV", 0, int.MaxValue),
@@ -327,7 +326,11 @@ internal sealed class ZaTrainersWorkflowService
                 ClassFileState: null),
             trainer.Rank,
             trainer.MegaEvolution,
-            trainer.LastHand);
+            trainer.LastHand)
+        {
+            IsSharedRivalRoster = ZaTrainerNameCatalog.IsSharedRivalRoster(trainer.TrainerId),
+            RivalStarterBranch = ZaTrainerNameCatalog.ResolveRivalStarterBranch(trainer.TrainerId),
+        };
     }
 
     private static IEnumerable<ZaTrainerPokemonRecord> ReadTeam(
@@ -374,8 +377,8 @@ internal sealed class ZaTrainersWorkflowService
             null,
             [0, 0, 0, 0],
             ["None", "None", "None", "None"],
-            -1,
-            FormatGender(-1),
+            0,
+            FormatGender(0),
             0,
             abilityResolver.FormatAbilityMode(0, ZaTrainerAbilitySet.Empty),
             -1,
@@ -644,8 +647,7 @@ internal sealed class ZaTrainersWorkflowService
     {
         return value switch
         {
-            -1 => "Game default / random",
-            0 => "Random",
+            0 => "Random / species default",
             1 => "Male",
             2 => "Female",
             _ => $"Gender {value.ToString(CultureInfo.InvariantCulture)}",

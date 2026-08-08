@@ -96,6 +96,20 @@ public sealed record ZaEncounterSlotRecord(
 
     public int? TalentVCount { get; init; }
 
+    public int? StrengthenHp { get; init; }
+
+    public int? StrengthenAttack { get; init; }
+
+    public int? StrengthenDefense { get; init; }
+
+    public int? StrengthenSpecialAttack { get; init; }
+
+    public int? StrengthenSpecialDefense { get; init; }
+
+    public int? StrengthenSpeed { get; init; }
+
+    public bool CanEditStrengthenValues { get; init; }
+
     public IReadOnlyList<string> EncounterActivationConditions { get; init; } =
         Array.Empty<string>();
 
@@ -140,11 +154,55 @@ public sealed record ZaEncounterTableRecord(
     public int? BossBattleWaveRank { get; init; }
 
     public IReadOnlyList<ZaBossBattleContext>? BossBattleContexts { get; init; }
+
+    public ZaEncounterPlayerPartnerRecord? PlayerPartner { get; init; }
 }
 
 public sealed record ZaEncounterPhaseCondition(
     int Operator,
     IReadOnlyList<string> Values);
+
+public sealed record ZaEncounterPlayerPartnerRecord(
+    int Slot,
+    int PokemonDataSourceIndex,
+    string PokemonDataId,
+    string Label,
+    string Role,
+    string Description,
+    int SpeciesId,
+    string Species,
+    int Form,
+    int Level,
+    int LevelMax,
+    bool CanEditLevel,
+    int HeldItemId,
+    int Ability,
+    int Nature,
+    int Gender,
+    int ShinyMode,
+    IReadOnlyList<int> MoveIds,
+    bool HasExplicitMoves,
+    int? FlawlessIvCount,
+    int IvHp,
+    int IvAttack,
+    int IvDefense,
+    int IvSpecialAttack,
+    int IvSpecialDefense,
+    int IvSpeed,
+    ZaEncounterProvenance Provenance,
+    bool CanRevertToVanilla,
+    string? RevertToVanillaBlockedReason)
+{
+    public IReadOnlyList<ZaEncounterEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<ZaEncounterEditableFieldOption>();
+
+    public IReadOnlyList<ZaEncounterEditableField> EditableFields { get; init; } =
+        Array.Empty<ZaEncounterEditableField>();
+
+    internal int TalentScale { get; init; }
+
+    internal int TalentVCount { get; init; }
+}
 
 public sealed record ZaEncounterEditableField(
     string Field,

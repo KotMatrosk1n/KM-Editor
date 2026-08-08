@@ -35,17 +35,21 @@ internal sealed class ZaTradePokemonWorkflowService
     private const string WorkflowLabel = "Trade Pokemon";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A received trade Pokemon payloads; trade requests are handled by event scripts.";
 
-    private static readonly string[] TradeIdPrefixes =
+    private static readonly string[] TradeIds =
     [
-        "sub_tradepoke",
+        "sub_tradepoke_heracros",
+        "sub_tradepoke_riolu",
+        "sub_addpoke_gyadon",
+        "sub_addpoke_araichu",
+        "sub_tradepoke_poligon2",
     ];
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> GenderOptions =
     [
-        new(-1, "Game default / random"),
-        new(0, "Random"),
-        new(1, "Male"),
-        new(2, "Female"),
+        new(-1, "Random / species default"),
+        new(0, "Male"),
+        new(1, "Female"),
+        new(2, "Genderless"),
     ];
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> ShinyModeOptions =
@@ -190,7 +194,7 @@ internal sealed class ZaTradePokemonWorkflowService
     internal static bool IsTradePokemonId(string? id)
     {
         return !string.IsNullOrWhiteSpace(id)
-            && TradeIdPrefixes.Any(prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            && TradeIds.Contains(id, StringComparer.OrdinalIgnoreCase);
     }
 
     internal static string FormatGender(int value)
@@ -257,7 +261,7 @@ internal sealed class ZaTradePokemonWorkflowService
         return new ZaTradePokemonEntry(
             tradeIndex,
             entry.SourceIndex,
-            CreateDisplayLabel(tradeIndex, speciesName, entry.MinLevel, entry.MaxLevel, eventLabel),
+            CreateDisplayLabel(tradeIndex, speciesName, entry.MinLevel, entry.MaxLevel),
             eventLabel,
             speciesId,
             speciesName,
@@ -523,14 +527,13 @@ internal sealed class ZaTradePokemonWorkflowService
         int tradeIndex,
         string species,
         int minLevel,
-        int maxLevel,
-        string eventLabel)
+        int maxLevel)
     {
         var tradeNumber = (tradeIndex + 1).ToString(CultureInfo.InvariantCulture);
         var levelLabel = minLevel == maxLevel
             ? $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)}"
             : $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)} to {maxLevel.ToString(CultureInfo.InvariantCulture)}";
-        return $"Trade {tradeNumber}: {species} {levelLabel} ({eventLabel})";
+        return $"Trade {tradeNumber}: {species} {levelLabel}";
     }
 
     internal sealed class ZaTradeAbilityResolver

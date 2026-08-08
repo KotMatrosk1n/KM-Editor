@@ -54,6 +54,10 @@ public sealed record ZaGiftPokemonEntry(
     int AlphaAdditionalLevel,
     ZaGiftPokemonProvenance Provenance)
 {
+    public int? AlphaChancePercent { get; init; }
+
+    public bool CanEditAlphaSettings { get; init; }
+
     public IReadOnlyList<ZaGiftPokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaGiftPokemonEditableFieldOption>();
 

@@ -61,15 +61,46 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         var table = workflow.Tables.FirstOrDefault(candidate => candidate.TableId == tableId);
+        if (table is not null
+            && slot == ZaEncounterPlayerPartnerCatalog.EditSlot
+            && table.PlayerPartner is { } playerPartner)
+        {
+            var pendingPartnerEdit = CreatePlayerPartnerPendingEdit(
+                table,
+                playerPartner,
+                field,
+                value,
+                diagnostics);
+            if (pendingPartnerEdit is null)
+            {
+                return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
+            }
+
+            var projectedPartnerWorkflow = OverlayPendingEdit(workflow, pendingPartnerEdit);
+            var updatedPartnerSession = ZaEditSessionSupport.ReplacePendingEdit(
+                currentSession,
+                pendingPartnerEdit);
+            ValidateFinalPlayerPartnerSpeciesForm(workflow, projectedPartnerWorkflow, diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
+            }
+
+            return new ZaEncountersEditResult(
+                OverlayPendingEdits(loadedWorkflow, updatedPartnerSession.PendingEdits),
+                updatedPartnerSession,
+                diagnostics);
+        }
+
         var slotRecord = table?.Slots.FirstOrDefault(candidate => candidate.Slot == slot);
         if (table is null || slotRecord is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Encounter edit targets a table or slot that is not loaded.",
+                "Encounter edit targets a table, slot, or special battle Pokemon that is not loaded.",
                 ZaEditSessionSupport.EncountersDomain,
                 field: "slot",
-                expected: "Existing Pokemon Legends Z-A encounter table slot"));
+                expected: "Existing Pokemon Legends Z-A encounter table slot or its verified player partner"));
             return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
@@ -158,15 +189,39 @@ internal sealed class ZaEncountersEditSessionService
             }
 
             var table = effectiveWorkflow.Tables.FirstOrDefault(candidate => candidate.TableId == update.TableId);
+            if (table is not null
+                && update.Slot == ZaEncounterPlayerPartnerCatalog.EditSlot
+                && table.PlayerPartner is { } playerPartner)
+            {
+                var pendingPartnerEdit = CreatePlayerPartnerPendingEdit(
+                    table,
+                    playerPartner,
+                    update.Field,
+                    update.Value,
+                    diagnostics);
+                if (pendingPartnerEdit is null)
+                {
+                    continue;
+                }
+
+                updatedSession = ZaEditSessionSupport.ReplacePendingEdit(
+                    updatedSession,
+                    pendingPartnerEdit);
+                effectiveWorkflow = OverlayPendingEdit(
+                    effectiveWorkflow,
+                    pendingPartnerEdit);
+                continue;
+            }
+
             var slot = table?.Slots.FirstOrDefault(candidate => candidate.Slot == update.Slot);
             if (table is null || slot is null)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    "Encounter edit targets a table or slot that is not loaded.",
+                    "Encounter edit targets a table, slot, or special battle Pokemon that is not loaded.",
                     ZaEditSessionSupport.EncountersDomain,
                     field: "slot",
-                    expected: "Existing Pokemon Legends Z-A encounter table slot"));
+                    expected: "Existing Pokemon Legends Z-A encounter table slot or its verified player partner"));
                 continue;
             }
 
@@ -193,6 +248,7 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         ValidateFinalSpeciesFormPairs(loadedWorkflow, effectiveWorkflow, diagnostics);
+        ValidateFinalPlayerPartnerSpeciesForm(loadedWorkflow, effectiveWorkflow, diagnostics);
         ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
         ValidateFinalSpawnerCounts(effectiveWorkflow, updatedSession.PendingEdits, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -239,13 +295,26 @@ internal sealed class ZaEncountersEditSessionService
 
         var targetTable = loadedWorkflow.Tables.FirstOrDefault(candidate =>
             string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
+        if (targetTable is not null
+            && slot == ZaEncounterPlayerPartnerCatalog.EditSlot
+            && targetTable.PlayerPartner is not null)
+        {
+            return StagePlayerPartnerVanilla(
+                project,
+                loadedWorkflow,
+                currentWorkflow,
+                currentSession,
+                targetTable,
+                diagnostics);
+        }
+
         var targetSlot = targetTable?.Slots.FirstOrDefault(candidate =>
             candidate.Slot == slot);
         if (targetTable is null || targetSlot is null)
         {
             diagnostics.Add(CreateVanillaRestoreDiagnostic(
-                "Vanilla restore targets an encounter table or slot that is not loaded.",
-                "Existing Pokemon Legends Z-A encounter table slot"));
+                "Vanilla restore targets an encounter table, slot, or special battle Pokemon that is not loaded.",
+                "Existing Pokemon Legends Z-A encounter table slot or its verified player partner"));
             return new ZaEncountersEditResult(
                 currentWorkflow,
                 currentSession,
@@ -404,6 +473,193 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics);
     }
 
+    private ZaEncountersEditResult StagePlayerPartnerVanilla(
+        OpenedProject project,
+        ZaEncountersWorkflow loadedWorkflow,
+        ZaEncountersWorkflow currentWorkflow,
+        EditSession currentSession,
+        ZaEncounterTableRecord targetTable,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var hasCurrentRow = TryReadPlayerPartnerRow(
+            project,
+            readBase: false,
+            out _,
+            out var currentRow,
+            out var currentBlockedReason);
+        var hasBaseRow = TryReadPlayerPartnerRow(
+            project,
+            readBase: true,
+            out var baseSource,
+            out var baseRow,
+            out var baseBlockedReason);
+        if (!hasCurrentRow || !hasBaseRow)
+        {
+            diagnostics.Add(CreateVanillaRestoreDiagnostic(
+                !string.IsNullOrWhiteSpace(currentBlockedReason)
+                    ? currentBlockedReason
+                    : baseBlockedReason,
+                "Exact temporary partner identity in readable effective and verified base PokemonData files"));
+            return new ZaEncountersEditResult(currentWorkflow, currentSession, diagnostics.ToArray());
+        }
+
+        if (baseRow.MinLevel != baseRow.MaxLevel
+            || baseRow.WazaList is null
+            || baseRow.TalentValue is null)
+        {
+            diagnostics.Add(CreateVanillaRestoreDiagnostic(
+                "The verified base temporary partner row does not have its expected fixed level, move list, and IV storage.",
+                "Materialized fixed level, four-move list, and six IV values in verified base PokemonData"));
+            return new ZaEncountersEditResult(currentWorkflow, currentSession, diagnostics.ToArray());
+        }
+
+        var retainedEdits = currentSession.PendingEdits
+            .Where(edit => !ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId))
+            .ToArray();
+        var removedEditCount = currentSession.PendingEdits.Count - retainedEdits.Length;
+        var updatedSession = currentSession with { PendingEdits = retainedEdits };
+        var effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, retainedEdits);
+        var baseReference = new ProjectFileReference(
+            ProjectFileLayer.Base,
+            baseSource.RelativePath);
+        var restoreMarker = new ProjectFileReference(
+            ProjectFileLayer.Base,
+            ZaEncounterPlayerPartnerCatalog.VanillaRestoreMarker);
+        var restoreFields = CreatePlayerPartnerRestoreFields(currentRow, baseRow);
+        var stagedFieldCount = 0;
+        foreach (var restoreField in restoreFields.Where(field => field.RequiresWrite))
+        {
+            var effectiveTable = effectiveWorkflow.Tables.FirstOrDefault(table =>
+                string.Equals(table.TableId, targetTable.TableId, StringComparison.Ordinal));
+            var effectivePartner = effectiveTable?.PlayerPartner;
+            if (effectiveTable is null || effectivePartner is null)
+            {
+                diagnostics.Add(CreateVanillaRestoreDiagnostic(
+                    "The temporary partner target changed while its vanilla fields were being staged.",
+                    "Stable verified Absol battle and temporary partner identity"));
+                return new ZaEncountersEditResult(currentWorkflow, currentSession, diagnostics.ToArray());
+            }
+
+            var pendingEdit = CreatePlayerPartnerPendingEdit(
+                effectiveTable,
+                effectivePartner,
+                restoreField.Field,
+                restoreField.Value.ToString(CultureInfo.InvariantCulture),
+                diagnostics,
+                allowVerifiedVanillaValue: true);
+            if (pendingEdit is null)
+            {
+                return new ZaEncountersEditResult(currentWorkflow, currentSession, diagnostics.ToArray());
+            }
+
+            pendingEdit = pendingEdit with
+            {
+                Sources = pendingEdit.Sources
+                    .Append(baseReference)
+                    .Append(restoreMarker)
+                    .Distinct()
+                    .ToArray(),
+            };
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            stagedFieldCount++;
+        }
+
+        ValidateFinalPlayerPartnerSpeciesForm(loadedWorkflow, effectiveWorkflow, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaEncountersEditResult(currentWorkflow, currentSession, diagnostics.ToArray());
+        }
+
+        var message = stagedFieldCount > 0
+            ? $"Staged {stagedFieldCount.ToString(CultureInfo.InvariantCulture)} verified vanilla field values for AZ's temporary Lucario."
+            : removedEditCount > 0
+                ? "AZ's temporary Lucario already matches verified vanilla values. Its pending edits were cleared."
+                : "AZ's temporary Lucario already matches verified vanilla values.";
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            message,
+            ZaEditSessionSupport.EncountersDomain));
+        return new ZaEncountersEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics.ToArray());
+    }
+
+    private bool TryReadPlayerPartnerRow(
+        OpenedProject project,
+        bool readBase,
+        out ZaWorkflowFile source,
+        out ZaPokemonDataEntry row,
+        out string blockedReason)
+    {
+        try
+        {
+            source = readBase
+                ? fileSource.ReadBase(project, ZaDataPaths.PokemonDataArray)
+                : fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            var document = ZaPokemonDataDocument.Parse(source.Bytes);
+            return ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+                document,
+                out row,
+                out blockedReason);
+        }
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or ArgumentException
+            or UnauthorizedAccessException)
+        {
+            source = null!;
+            row = null!;
+            blockedReason = $"{(readBase ? "Verified base" : "Effective")} PokemonData could not be read: {exception.Message}";
+            return false;
+        }
+    }
+
+    private static IReadOnlyList<ZaEncounterVanillaFieldValue> CreatePlayerPartnerRestoreFields(
+        ZaPokemonDataEntry currentRow,
+        ZaPokemonDataEntry baseRow)
+    {
+        var currentMoves = currentRow.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0];
+        var baseMoves = baseRow.WazaList!.Values.Take(4).ToArray();
+        var currentIvs = currentRow.TalentValue;
+        var baseIvs = baseRow.TalentValue!;
+        return
+        [
+            RestoreField(ZaEncountersWorkflowService.SpeciesIdField, currentRow.DevNo, baseRow.DevNo),
+            RestoreField(ZaEncountersWorkflowService.FormField, currentRow.FormNo, baseRow.FormNo),
+            new ZaEncounterVanillaFieldValue(
+                ZaEncountersWorkflowService.PlayerPartnerLevelField,
+                baseRow.MinLevel,
+                currentRow.MinLevel != baseRow.MinLevel || currentRow.MaxLevel != baseRow.MaxLevel),
+            RestoreField(ZaEncountersWorkflowService.HeldItemIdField, currentRow.HoldItem ?? 0, baseRow.HoldItem ?? 0),
+            RestoreField(ZaEncountersWorkflowService.AbilityField, currentRow.Tokusei, baseRow.Tokusei),
+            RestoreField(ZaEncountersWorkflowService.NatureField, currentRow.Seikaku, baseRow.Seikaku),
+            RestoreField(ZaEncountersWorkflowService.GenderField, currentRow.Sex, baseRow.Sex),
+            RestoreField(ZaEncountersWorkflowService.ShinyModeField, currentRow.Rare, baseRow.Rare),
+            RestoreField(ZaEncountersWorkflowService.Move1IdField, currentMoves[0], baseMoves[0]),
+            RestoreField(ZaEncountersWorkflowService.Move2IdField, currentMoves[1], baseMoves[1]),
+            RestoreField(ZaEncountersWorkflowService.Move3IdField, currentMoves[2], baseMoves[2]),
+            RestoreField(ZaEncountersWorkflowService.Move4IdField, currentMoves[3], baseMoves[3]),
+            RestoreField(ZaEncountersWorkflowService.IvHpField, currentIvs?.HP ?? -1, baseIvs.HP),
+            RestoreField(ZaEncountersWorkflowService.IvAttackField, currentIvs?.Attack ?? -1, baseIvs.Attack),
+            RestoreField(ZaEncountersWorkflowService.IvDefenseField, currentIvs?.Defense ?? -1, baseIvs.Defense),
+            RestoreField(ZaEncountersWorkflowService.IvSpecialAttackField, currentIvs?.SpecialAttack ?? -1, baseIvs.SpecialAttack),
+            RestoreField(ZaEncountersWorkflowService.IvSpecialDefenseField, currentIvs?.SpecialDefense ?? -1, baseIvs.SpecialDefense),
+            RestoreField(ZaEncountersWorkflowService.IvSpeedField, currentIvs?.Speed ?? -1, baseIvs.Speed),
+            RestoreField(ZaEncountersWorkflowService.VanillaTalentScaleField, currentRow.TalentScale, baseRow.TalentScale),
+            RestoreField(ZaEncountersWorkflowService.VanillaTalentVCountField, currentRow.TalentVNum, baseRow.TalentVNum),
+        ];
+    }
+
+    private static ZaEncounterVanillaFieldValue RestoreField(
+        string field,
+        int currentValue,
+        int baseValue)
+    {
+        return new ZaEncounterVanillaFieldValue(field, baseValue, currentValue != baseValue);
+    }
+
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -427,6 +683,18 @@ internal sealed class ZaEncountersEditSessionService
                 project,
                 fileSource,
                 out vanillaRestoreCatalog,
+                out _);
+        }
+        ZaPokemonDataEntry? playerPartnerBaseRow = null;
+        if (session.PendingEdits.Any(edit =>
+                ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId)
+                && HasPlayerPartnerVanillaRestoreSourceMarker(edit)))
+        {
+            _ = TryReadPlayerPartnerRow(
+                project,
+                readBase: true,
+                out _,
+                out playerPartnerBaseRow,
                 out _);
         }
         var verifiedVanillaSpeciesFormSources = session.PendingEdits
@@ -455,7 +723,8 @@ internal sealed class ZaEncountersEditSessionService
                 effectiveWorkflow,
                 edit,
                 diagnostics,
-                vanillaRestoreCatalog);
+                vanillaRestoreCatalog,
+                playerPartnerBaseRow);
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
             {
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
@@ -473,6 +742,7 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics,
             vanillaRestoreCatalog,
             verifiedVanillaSpeciesFormSources);
+        ValidateFinalPlayerPartnerSpeciesForm(workflow, effectiveWorkflow, diagnostics);
         ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
         ValidateFinalSpawnerCounts(effectiveWorkflow, session.PendingEdits, diagnostics);
 
@@ -534,8 +804,11 @@ internal sealed class ZaEncountersEditSessionService
                     AffectsBossActionData(edit.Field))
                 ? CreateBossActionPlanSemanticSources(project)
                 : Array.Empty<PlanFingerprintSource>();
+            var playerPartnerSemanticSources = session.PendingEdits.Any(IsPlayerPartnerEdit)
+                ? CreatePlayerPartnerPlanSemanticSources(project)
+                : Array.Empty<PlanFingerprintSource>();
             var plannedVirtualPaths = session.PendingEdits
-                .Select(edit => GetSourcePathForField(edit.Field))
+                .Select(GetSourcePathForEdit)
                 .Append(normalizationState.Result.HasChanges
                     ? ZaDataPaths.PokemonSpawnerDataArray
                     : null)
@@ -548,11 +821,16 @@ internal sealed class ZaEncountersEditSessionService
                 .Select(virtualPath =>
                 {
                     var plannedSemanticSources = string.Equals(
-                        virtualPath,
-                        ZaDataPaths.BossMoveSelectorArray,
-                        StringComparison.Ordinal)
+                            virtualPath,
+                            ZaDataPaths.BossMoveSelectorArray,
+                            StringComparison.Ordinal)
                         ? bossActionSemanticSources
-                        : semanticSources;
+                        : string.Equals(
+                            virtualPath,
+                            ZaDataPaths.PokemonDataArray,
+                            StringComparison.Ordinal)
+                            ? playerPartnerSemanticSources
+                            : semanticSources;
                     var semanticSourceReferences = plannedSemanticSources
                         .Where(source => source.Layer is not null)
                         .Select(source => new ProjectFileReference(
@@ -561,7 +839,7 @@ internal sealed class ZaEncountersEditSessionService
                         .ToArray();
                     var plannedEdits = session.PendingEdits
                         .Where(edit => string.Equals(
-                            GetSourcePathForField(edit.Field),
+                            GetSourcePathForEdit(edit),
                             virtualPath,
                             StringComparison.Ordinal))
                         .OrderBy(edit => edit.RecordId, StringComparer.Ordinal)
@@ -726,7 +1004,10 @@ internal sealed class ZaEncountersEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var normalizationState = PrepareWebSpawnNormalization(project, session);
             var workflow = normalizationState.CurrentWorkflow;
-            var writesEncounterData = session.PendingEdits.Any(edit => AffectsSharedPokemonData(edit.Field));
+            var writesPlayerPartnerData = session.PendingEdits.Any(IsPlayerPartnerEdit);
+            var writesEncounterData = session.PendingEdits.Any(edit =>
+                !IsPlayerPartnerEdit(edit)
+                && AffectsSharedPokemonData(edit.Field));
             var writesSpawnerData = session.PendingEdits.Any(edit => AffectsSpawnerData(edit.Field))
                 || normalizationState.Result.HasChanges;
             var writesBossActionData = session.PendingEdits.Any(edit =>
@@ -736,6 +1017,9 @@ internal sealed class ZaEncountersEditSessionService
             var capturedSemanticSources = normalizationState.SemanticSources;
             var bossActionSemanticSources = writesBossActionData
                 ? CreateBossActionPlanSemanticSources(project)
+                : Array.Empty<PlanFingerprintSource>();
+            var playerPartnerSemanticSources = writesPlayerPartnerData
+                ? CreatePlayerPartnerPlanSemanticSources(project)
                 : Array.Empty<PlanFingerprintSource>();
             if ((writesEncounterData && !CapturedSourcesMatchPlan(
                     paths,
@@ -754,7 +1038,13 @@ internal sealed class ZaEncountersEditSessionService
                     currentPlan,
                     ZaDataPaths.BossMoveSelectorArray,
                     outputMode,
-                    bossActionSemanticSources)))
+                    bossActionSemanticSources))
+                || (writesPlayerPartnerData && !CapturedSourcesMatchPlan(
+                    paths,
+                    currentPlan,
+                    ZaDataPaths.PokemonDataArray,
+                    outputMode,
+                    playerPartnerSemanticSources)))
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -773,7 +1063,7 @@ internal sealed class ZaEncountersEditSessionService
             if (outputMode == ZaOutputMode.Standalone)
             {
                 var plannedVirtualPaths = session.PendingEdits
-                    .Select(edit => GetSourcePathForField(edit.Field))
+                    .Select(GetSourcePathForEdit)
                     .Append(normalizationState.Result.HasChanges
                         ? ZaDataPaths.PokemonSpawnerDataArray
                         : null)
@@ -828,9 +1118,22 @@ internal sealed class ZaEncountersEditSessionService
             var bossActionDocument = bossActionSourceBytes is not null
                 ? ZaBossMoveSelectorDocument.Parse(bossActionSourceBytes)
                 : null;
+            var playerPartnerSourceBytes = writesPlayerPartnerData
+                ? playerPartnerSemanticSources.Single(source => string.Equals(
+                    source.VirtualPath,
+                    ZaDataPaths.PokemonDataArray,
+                    StringComparison.Ordinal)).Bytes
+                : null;
+            var playerPartnerDocument = playerPartnerSourceBytes is not null
+                ? ZaPokemonDataDocument.Parse(playerPartnerSourceBytes)
+                : null;
             foreach (var edit in session.PendingEdits)
             {
-                if (AffectsBossActionData(edit.Field))
+                if (IsPlayerPartnerEdit(edit))
+                {
+                    ApplyPlayerPartnerEdit(playerPartnerDocument!, edit, diagnostics);
+                }
+                else if (AffectsBossActionData(edit.Field))
                 {
                     ApplyBossActionEdit(workflow, bossActionDocument!, edit, diagnostics);
                 }
@@ -855,6 +1158,28 @@ internal sealed class ZaEncountersEditSessionService
                 outputWrites.Add(new ZaWorkflowFileWrite(
                     ZaDataPaths.EncountDataArray,
                     encounterDocument.Write()));
+            }
+
+            if (playerPartnerDocument is not null && playerPartnerSourceBytes is not null)
+            {
+                var playerPartnerBytes = playerPartnerDocument.Write();
+                if (!VerifyPlayerPartnerOutput(
+                        playerPartnerSourceBytes,
+                        playerPartnerBytes,
+                        normalizationState.EffectiveWorkflow,
+                        diagnostics))
+                {
+                    return ZaEditSessionSupport.CreateApplyResult(
+                        applyId,
+                        appliedAt,
+                        currentPlan,
+                        writtenFiles,
+                        diagnostics);
+                }
+
+                outputWrites.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.PokemonDataArray,
+                    playerPartnerBytes));
             }
 
             if (bossActionDocument is not null && bossActionSourceBytes is not null)
@@ -918,6 +1243,13 @@ internal sealed class ZaEncountersEditSessionService
             if (encounterDocument is not null)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.EncountDataArray, outputMode));
+            }
+
+            if (playerPartnerDocument is not null)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.PokemonDataArray,
+                    outputMode));
             }
 
             if (spawnerDocument is not null)
@@ -1275,6 +1607,47 @@ internal sealed class ZaEncountersEditSessionService
         ];
     }
 
+    private IReadOnlyList<PlanFingerprintSource> CreatePlayerPartnerPlanSemanticSources(
+        OpenedProject project)
+    {
+        var source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+        var baseSource = fileSource.ReadBase(project, ZaDataPaths.PokemonDataArray);
+        var document = ZaPokemonDataDocument.Parse(source.Bytes);
+        var baseDocument = ZaPokemonDataDocument.Parse(baseSource.Bytes);
+        var hasSourceRow = ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+            document,
+            out _,
+            out var sourceBlockedReason);
+        var hasBaseRow = ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+            baseDocument,
+            out _,
+            out var baseBlockedReason);
+        if (!hasSourceRow || !hasBaseRow)
+        {
+            throw new InvalidDataException(
+                "AZ's temporary Lucario cannot be fingerprinted safely. "
+                    + (!string.IsNullOrWhiteSpace(sourceBlockedReason)
+                        ? sourceBlockedReason
+                        : baseBlockedReason));
+        }
+
+        return
+        [
+            new PlanFingerprintSource(
+                ZaDataPaths.PokemonDataArray,
+                source.Bytes,
+                source.SourceLayer.ToString(),
+                source.RelativePath,
+                source.SourceLayer),
+            new PlanFingerprintSource(
+                $"base:{ZaDataPaths.PokemonDataArray}",
+                baseSource.Bytes,
+                $"Base:{baseSource.Origin}",
+                baseSource.RelativePath,
+                ProjectFileLayer.Base),
+        ];
+    }
+
     private sealed record PlanFingerprintSource(
         string VirtualPath,
         byte[] Bytes,
@@ -1369,6 +1742,13 @@ internal sealed class ZaEncountersEditSessionService
             return null;
         }
 
+        if (!allowVerifiedVanillaSharedValue
+            && IsStrengthenField(normalizedField)
+            && !ValidateStrengthenFieldEditability(table, slot, normalizedField, diagnostics))
+        {
+            return null;
+        }
+
         var parsedValue = ZaEditSessionSupport.TryParseInt(
             value,
             allowVerifiedVanillaSharedValue ? null : editableField.MinimumValue,
@@ -1426,6 +1806,134 @@ internal sealed class ZaEncountersEditSessionService
             recordId,
             normalizedField,
             parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static PendingEdit? CreatePlayerPartnerPendingEdit(
+        ZaEncounterTableRecord table,
+        ZaEncounterPlayerPartnerRecord partner,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool allowVerifiedVanillaValue = false)
+    {
+        var normalizedField = field.Trim();
+        if (!ZaEncounterPlayerPartnerCatalog.IsTargetTable(table)
+            || partner.Slot != ZaEncounterPlayerPartnerCatalog.EditSlot
+            || partner.PokemonDataSourceIndex != ZaEncounterPlayerPartnerCatalog.PokemonDataSourceIndex
+            || !string.Equals(
+                partner.PokemonDataId,
+                ZaEncounterPlayerPartnerCatalog.PokemonDataId,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "The selected temporary partner no longer has its verified Absol battle identity.",
+                normalizedField,
+                "Exact Absol story battle and vsmega_init_rukario source identity"));
+            return null;
+        }
+
+        var editableField = ResolvePlayerPartnerEditableField(
+            partner,
+            normalizedField,
+            allowVerifiedVanillaValue);
+        if (editableField is null)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                $"Temporary partner field '{normalizedField}' is not supported.",
+                normalizedField,
+                "Supported AZ's Lucario field"));
+            return null;
+        }
+
+        if (!allowVerifiedVanillaValue
+            && string.Equals(
+                normalizedField,
+                ZaEncountersWorkflowService.PlayerPartnerLevelField,
+                StringComparison.Ordinal)
+            && !partner.CanEditLevel)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "The temporary partner level is read-only because its source row does not currently store one fixed level from 1 through 100.",
+                normalizedField,
+                "Matching minimum and maximum levels from 1 through 100"));
+            return null;
+        }
+
+        var parsedValue = ZaEditSessionSupport.TryParseInt(
+            value,
+            allowVerifiedVanillaValue ? null : editableField.MinimumValue,
+            allowVerifiedVanillaValue ? null : editableField.MaximumValue,
+            normalizedField,
+            ZaEditSessionSupport.EncountersDomain,
+            diagnostics);
+        if (parsedValue is null
+            || !allowVerifiedVanillaValue
+                && !ValidateOptionValue(editableField, parsedValue.Value, diagnostics))
+        {
+            return null;
+        }
+
+        if (!allowVerifiedVanillaValue
+            && normalizedField is (ZaEncountersWorkflowService.SpeciesIdField
+                or ZaEncountersWorkflowService.FormField
+                or ZaEncountersWorkflowService.HeldItemIdField))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "AZ's temporary partner is scripted as Lucario holding Lucarionite. Changing its species, form, or held item may disrupt the battle's scripted Mega Evolution behavior.",
+                ZaEditSessionSupport.EncountersDomain,
+                partner.Provenance.SourceFile,
+                normalizedField,
+                "Keep Lucario form 0 with Lucarionite unless the replacement has been tested in the Absol battle"));
+        }
+
+        var optionLabel = editableField.Options.FirstOrDefault(option =>
+            option.Value == parsedValue.Value)?.Label;
+        var displayValue = optionLabel
+            ?? parsedValue.Value.ToString(CultureInfo.InvariantCulture);
+        return ZaEditSessionSupport.CreatePendingEdit(
+            ZaEditSessionSupport.EncountersDomain,
+            $"Set AZ's temporary Lucario {editableField.Label} to {displayValue} for the Absol battle.",
+            new ProjectFileReference(
+                partner.Provenance.SourceLayer,
+                partner.Provenance.SourceFile),
+            ZaEncounterPlayerPartnerCatalog.RecordId,
+            normalizedField,
+            parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static ZaEncounterEditableField? ResolvePlayerPartnerEditableField(
+        ZaEncounterPlayerPartnerRecord partner,
+        string? field,
+        bool allowVerifiedVanillaValue)
+    {
+        var editableField = partner.EditableFields.FirstOrDefault(candidate =>
+            string.Equals(candidate.Field, field, StringComparison.Ordinal));
+        if (editableField is not null || !allowVerifiedVanillaValue)
+        {
+            return editableField;
+        }
+
+        return field switch
+        {
+            ZaEncountersWorkflowService.VanillaTalentScaleField =>
+                new ZaEncounterEditableField(
+                    field,
+                    "Talent scale",
+                    "integer",
+                    null,
+                    null,
+                    Array.Empty<ZaEncounterEditableFieldOption>()),
+            ZaEncountersWorkflowService.VanillaTalentVCountField =>
+                new ZaEncounterEditableField(
+                    field,
+                    "Talent V count",
+                    "integer",
+                    null,
+                    null,
+                    Array.Empty<ZaEncounterEditableFieldOption>()),
+            _ => null,
+        };
     }
 
     private PendingEdit? CreateBossActionPendingEdit(
@@ -1592,11 +2100,26 @@ internal sealed class ZaEncountersEditSessionService
             expected: expected);
     }
 
+    private static ValidationDiagnostic CreatePlayerPartnerDiagnostic(
+        string message,
+        string? field,
+        string expected)
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.EncountersDomain,
+            file: $"romfs/{ZaDataPaths.PokemonDataArray}",
+            field: field,
+            expected: expected);
+    }
+
     private static void ValidatePendingEdit(
         ZaEncountersWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics,
-        ZaEncounterVanillaRestoreCatalog? vanillaRestoreCatalog = null)
+        ZaEncounterVanillaRestoreCatalog? vanillaRestoreCatalog = null,
+        ZaPokemonDataEntry? playerPartnerBaseRow = null)
     {
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.EncountersDomain, StringComparison.Ordinal))
         {
@@ -1605,6 +2128,16 @@ internal sealed class ZaEncountersEditSessionService
                 $"Pending edit domain '{edit.Domain}' is not supported by Pokemon Legends Z-A Wild Encounters.",
                 ZaEditSessionSupport.EncountersDomain,
                 expected: ZaEditSessionSupport.EncountersDomain));
+            return;
+        }
+
+        if (ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId))
+        {
+            ValidatePlayerPartnerPendingEdit(
+                workflow,
+                edit,
+                playerPartnerBaseRow,
+                diagnostics);
             return;
         }
 
@@ -1699,6 +2232,17 @@ internal sealed class ZaEncountersEditSessionService
         if (slot is not null
             && AffectsSpawnerData(edit.Field)
             && !ValidateSpawnerFieldEditability(slot, edit.Field, diagnostics))
+        {
+            return;
+        }
+
+        if (!isVerifiedVanillaValue
+            && IsStrengthenField(edit.Field)
+            && !ValidateStrengthenPendingEditability(
+                workflow,
+                sourceIndex,
+                edit.Field,
+                diagnostics))
         {
             return;
         }
@@ -1812,6 +2356,176 @@ internal sealed class ZaEncountersEditSessionService
                 "Pending boss action edit is missing its selector source provenance.",
                 edit.Field,
                 $"Source reference for romfs/{ZaDataPaths.BossMoveSelectorArray}"));
+        }
+    }
+
+    private static void ValidatePlayerPartnerPendingEdit(
+        ZaEncountersWorkflow workflow,
+        PendingEdit edit,
+        ZaPokemonDataEntry? baseRow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var matches = workflow.Tables
+            .Where(ZaEncounterPlayerPartnerCatalog.IsTargetTable)
+            .Select(table => table.PlayerPartner)
+            .Where(partner => partner is not null)
+            .Cast<ZaEncounterPlayerPartnerRecord>()
+            .ToArray();
+        if (matches.Length != 1
+            || matches[0].PokemonDataSourceIndex != ZaEncounterPlayerPartnerCatalog.PokemonDataSourceIndex
+            || !string.Equals(
+                matches[0].PokemonDataId,
+                ZaEncounterPlayerPartnerCatalog.PokemonDataId,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "Pending temporary partner edit no longer targets one verified Absol battle PokemonData row.",
+                edit.Field,
+                "One exact vsmega_init_rukario row attached to the base Absol story battle"));
+            return;
+        }
+
+        if (!HasSourceReference(edit, ZaDataPaths.PokemonDataArray))
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "Pending temporary partner edit is missing its PokemonData source provenance.",
+                edit.Field,
+                $"Source reference for romfs/{ZaDataPaths.PokemonDataArray}"));
+            return;
+        }
+
+        var hasVanillaMarker = HasPlayerPartnerVanillaRestoreSourceMarker(edit);
+        var isVerifiedVanillaValue = hasVanillaMarker
+            && baseRow is not null
+            && TryReadPlayerPartnerField(baseRow, edit.Field, out var expectedValue)
+            && int.TryParse(
+                edit.NewValue,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out var stagedValue)
+            && stagedValue == expectedValue;
+        if (hasVanillaMarker && !isVerifiedVanillaValue)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "The pending temporary partner restore no longer matches the exact verified base PokemonData row. Stage the restore again before review.",
+                edit.Field,
+                "Current exact vanilla field value from vsmega_init_rukario at source index 772"));
+            return;
+        }
+
+        var partner = matches[0];
+        var editableField = ResolvePlayerPartnerEditableField(
+            partner,
+            edit.Field,
+            isVerifiedVanillaValue);
+        if (editableField is null)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                $"Temporary partner field '{edit.Field ?? "(missing)"}' is not supported.",
+                edit.Field,
+                "Supported AZ's Lucario field"));
+            return;
+        }
+
+        if (!isVerifiedVanillaValue
+            && string.Equals(
+                edit.Field,
+                ZaEncountersWorkflowService.PlayerPartnerLevelField,
+                StringComparison.Ordinal)
+            && !partner.CanEditLevel)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "The pending temporary partner level no longer targets one fixed source level from 1 through 100.",
+                edit.Field,
+                "Matching minimum and maximum levels from 1 through 100"));
+            return;
+        }
+
+        var value = ZaEditSessionSupport.TryParseInt(
+            edit.NewValue,
+            isVerifiedVanillaValue ? null : editableField.MinimumValue,
+            isVerifiedVanillaValue ? null : editableField.MaximumValue,
+            edit.Field,
+            ZaEditSessionSupport.EncountersDomain,
+            diagnostics);
+        if (value is not null && !isVerifiedVanillaValue)
+        {
+            _ = ValidateOptionValue(editableField, value.Value, diagnostics);
+        }
+    }
+
+    private static bool TryReadPlayerPartnerField(
+        ZaPokemonDataEntry row,
+        string? field,
+        out int value)
+    {
+        var moves = row.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0];
+        var ivs = row.TalentValue;
+        switch (field)
+        {
+            case ZaEncountersWorkflowService.SpeciesIdField:
+                value = row.DevNo;
+                return true;
+            case ZaEncountersWorkflowService.FormField:
+                value = row.FormNo;
+                return true;
+            case ZaEncountersWorkflowService.PlayerPartnerLevelField when row.MinLevel == row.MaxLevel:
+                value = row.MinLevel;
+                return true;
+            case ZaEncountersWorkflowService.HeldItemIdField:
+                value = row.HoldItem ?? 0;
+                return true;
+            case ZaEncountersWorkflowService.AbilityField:
+                value = row.Tokusei;
+                return true;
+            case ZaEncountersWorkflowService.NatureField:
+                value = row.Seikaku;
+                return true;
+            case ZaEncountersWorkflowService.GenderField:
+                value = row.Sex;
+                return true;
+            case ZaEncountersWorkflowService.ShinyModeField:
+                value = row.Rare;
+                return true;
+            case ZaEncountersWorkflowService.Move1IdField:
+                value = moves[0];
+                return true;
+            case ZaEncountersWorkflowService.Move2IdField:
+                value = moves[1];
+                return true;
+            case ZaEncountersWorkflowService.Move3IdField:
+                value = moves[2];
+                return true;
+            case ZaEncountersWorkflowService.Move4IdField:
+                value = moves[3];
+                return true;
+            case ZaEncountersWorkflowService.IvHpField when ivs is not null:
+                value = ivs.HP;
+                return true;
+            case ZaEncountersWorkflowService.IvAttackField when ivs is not null:
+                value = ivs.Attack;
+                return true;
+            case ZaEncountersWorkflowService.IvDefenseField when ivs is not null:
+                value = ivs.Defense;
+                return true;
+            case ZaEncountersWorkflowService.IvSpecialAttackField when ivs is not null:
+                value = ivs.SpecialAttack;
+                return true;
+            case ZaEncountersWorkflowService.IvSpecialDefenseField when ivs is not null:
+                value = ivs.SpecialDefense;
+                return true;
+            case ZaEncountersWorkflowService.IvSpeedField when ivs is not null:
+                value = ivs.Speed;
+                return true;
+            case ZaEncountersWorkflowService.VanillaTalentScaleField:
+                value = row.TalentScale;
+                return true;
+            case ZaEncountersWorkflowService.VanillaTalentVCountField:
+                value = row.TalentVNum;
+                return true;
+            default:
+                value = 0;
+                return false;
         }
     }
 
@@ -1970,8 +2684,24 @@ internal sealed class ZaEncountersEditSessionService
             or ZaEncountersWorkflowService.IvSpecialAttackField
             or ZaEncountersWorkflowService.IvSpecialDefenseField
             or ZaEncountersWorkflowService.IvSpeedField
+            or ZaEncountersWorkflowService.StrengthenHpField
+            or ZaEncountersWorkflowService.StrengthenAttackField
+            or ZaEncountersWorkflowService.StrengthenDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpecialAttackField
+            or ZaEncountersWorkflowService.StrengthenSpecialDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpeedField
             or ZaEncountersWorkflowService.VanillaTalentScaleField
             or ZaEncountersWorkflowService.VanillaTalentVCountField;
+    }
+
+    private static bool IsStrengthenField(string? field)
+    {
+        return field is ZaEncountersWorkflowService.StrengthenHpField
+            or ZaEncountersWorkflowService.StrengthenAttackField
+            or ZaEncountersWorkflowService.StrengthenDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpecialAttackField
+            or ZaEncountersWorkflowService.StrengthenSpecialDefenseField
+            or ZaEncountersWorkflowService.StrengthenSpeedField;
     }
 
     private static bool AffectsSpawnerSlot(string? field)
@@ -2066,6 +2796,16 @@ internal sealed class ZaEncountersEditSessionService
             && HasBaseSource(edit, ZaDataPaths.PokemonSpawnerDataArray);
     }
 
+    private static bool HasPlayerPartnerVanillaRestoreSourceMarker(PendingEdit edit)
+    {
+        return edit.Sources.Any(source =>
+            source.Layer == ProjectFileLayer.Base
+            && string.Equals(
+                source.RelativePath,
+                ZaEncounterPlayerPartnerCatalog.VanillaRestoreMarker,
+                StringComparison.Ordinal));
+    }
+
     private static bool HasBaseSource(PendingEdit edit, string virtualPath)
     {
         var relativePath = $"romfs/{virtualPath}";
@@ -2134,6 +2874,63 @@ internal sealed class ZaEncountersEditSessionService
         return false;
     }
 
+    private static bool ValidateStrengthenFieldEditability(
+        ZaEncounterTableRecord table,
+        ZaEncounterSlotRecord slot,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (IsBossEncounterTable(table) && slot.CanEditStrengthenValues)
+        {
+            return true;
+        }
+
+        var message = !IsBossEncounterTable(table)
+            ? "Strengthen multipliers can only be edited from a verified boss encounter placement."
+            : "Boss strengthen multipliers are read-only because the source encounter row does not contain six non-negative, runtime-representable values.";
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.EncountersDomain,
+            field: field,
+            expected: "Materialized boss StrengthenValue data with HP from 0 through 65535 and the other stats from 0 through 255"));
+        return false;
+    }
+
+    private static bool ValidateStrengthenPendingEditability(
+        ZaEncountersWorkflow workflow,
+        int sourceIndex,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var editableBossPlacement = workflow.Tables
+            .Where(IsBossEncounterTable)
+            .SelectMany(table => table.Slots)
+            .Any(slot =>
+                slot.PokemonDataSourceIndex == sourceIndex
+                && slot.CanEditStrengthenValues);
+        if (editableBossPlacement)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Pending boss strengthen edit no longer targets a materialized, runtime-representable boss StrengthenValue row.",
+            ZaEditSessionSupport.EncountersDomain,
+            field: field,
+            expected: "Loaded boss placement with six non-negative strengthen controls"));
+        return false;
+    }
+
+    private static bool IsBossEncounterTable(ZaEncounterTableRecord table)
+    {
+        return !string.IsNullOrWhiteSpace(table.BossBattleContextKey)
+            || table.LocationKey?.StartsWith("boss_", StringComparison.OrdinalIgnoreCase) == true
+            || table.RawSpawnerId?.StartsWith("btl_spn_boss_", StringComparison.OrdinalIgnoreCase) == true
+            || table.RawSpawnerId?.StartsWith("spn_boss_", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
     private static string GetSourcePathForField(string? field)
     {
         if (AffectsBossActionData(field))
@@ -2144,6 +2941,22 @@ internal sealed class ZaEncountersEditSessionService
         return AffectsSpawnerData(field)
             ? ZaDataPaths.PokemonSpawnerDataArray
             : ZaDataPaths.EncountDataArray;
+    }
+
+    private static bool IsPlayerPartnerEdit(PendingEdit edit)
+    {
+        return string.Equals(
+                edit.Domain,
+                ZaEditSessionSupport.EncountersDomain,
+                StringComparison.Ordinal)
+            && ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId);
+    }
+
+    private static string GetSourcePathForEdit(PendingEdit edit)
+    {
+        return IsPlayerPartnerEdit(edit)
+            ? ZaDataPaths.PokemonDataArray
+            : GetSourcePathForField(edit.Field);
     }
 
     private static bool ValidateSharedAlphaLevelBonus(
@@ -2460,6 +3273,45 @@ internal sealed class ZaEncountersEditSessionService
         }
     }
 
+    private static void ValidateFinalPlayerPartnerSpeciesForm(
+        ZaEncountersWorkflow sourceWorkflow,
+        ZaEncountersWorkflow projectedWorkflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var source = sourceWorkflow.Tables
+            .Where(ZaEncounterPlayerPartnerCatalog.IsTargetTable)
+            .Select(table => table.PlayerPartner)
+            .FirstOrDefault(partner => partner is not null);
+        var projected = projectedWorkflow.Tables
+            .Where(ZaEncounterPlayerPartnerCatalog.IsTargetTable)
+            .Select(table => table.PlayerPartner)
+            .FirstOrDefault(partner => partner is not null);
+        if (source is null || projected is null)
+        {
+            return;
+        }
+
+        ZaSpeciesFormPairValidation.ValidateChangedPair(
+            sourceWorkflow.PokemonAvailability,
+            source.SpeciesId,
+            source.Form,
+            projected.SpeciesId,
+            projected.Form,
+            ZaEditSessionSupport.EncountersDomain,
+            "AZ's temporary Lucario",
+            diagnostics,
+            source.Provenance.SourceFile,
+            ZaEncountersWorkflowService.FormField);
+        if (projected.Level != projected.LevelMax
+            || projected.Level is < 1 or > 100)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "AZ's temporary partner must keep one fixed level from 1 through 100.",
+                ZaEncountersWorkflowService.PlayerPartnerLevelField,
+                "Matching minimum and maximum levels from 1 through 100"));
+        }
+    }
+
     private static void AppendOutzoneBehaviorWarnings(
         ZaEncountersWorkflow sourceWorkflow,
         ZaEncountersWorkflow projectedWorkflow,
@@ -2562,6 +3414,26 @@ internal sealed class ZaEncountersEditSessionService
             || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
         {
             return workflow;
+        }
+
+        if (ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId))
+        {
+            return workflow with
+            {
+                Tables = workflow.Tables
+                    .Select(table => table.PlayerPartner is { } partner
+                        && ZaEncounterPlayerPartnerCatalog.IsTargetTable(table)
+                            ? table with
+                            {
+                                PlayerPartner = OverlayPlayerPartner(
+                                    workflow,
+                                    partner,
+                                    edit.Field,
+                                    value),
+                            }
+                            : table)
+                    .ToArray(),
+            };
         }
 
         if (ZaScriptedBossActionCatalog.TryParseEditField(
@@ -2668,6 +3540,118 @@ internal sealed class ZaEncountersEditSessionService
         };
     }
 
+    private static ZaEncounterPlayerPartnerRecord OverlayPlayerPartner(
+        ZaEncountersWorkflow workflow,
+        ZaEncounterPlayerPartnerRecord partner,
+        string? field,
+        int value)
+    {
+        var updated = field switch
+        {
+            ZaEncountersWorkflowService.SpeciesIdField => partner with
+            {
+                SpeciesId = value,
+                Species = ZaEncountersWorkflowService.FormatEncounterSpeciesLabel(
+                    value,
+                    partner.Form,
+                    ResolveSpeciesName(workflow, value)),
+            },
+            ZaEncountersWorkflowService.FormField => partner with
+            {
+                Form = value,
+                Species = ZaEncountersWorkflowService.FormatEncounterSpeciesLabel(
+                    partner.SpeciesId,
+                    value,
+                    ResolveSpeciesName(workflow, partner.SpeciesId)),
+            },
+            ZaEncountersWorkflowService.PlayerPartnerLevelField => partner with
+            {
+                Level = value,
+                LevelMax = value,
+                CanEditLevel = value is >= 1 and <= 100,
+            },
+            ZaEncountersWorkflowService.HeldItemIdField => partner with { HeldItemId = value },
+            ZaEncountersWorkflowService.AbilityField => partner with { Ability = value },
+            ZaEncountersWorkflowService.NatureField => partner with { Nature = value },
+            ZaEncountersWorkflowService.GenderField => partner with { Gender = value },
+            ZaEncountersWorkflowService.ShinyModeField => partner with { ShinyMode = value },
+            ZaEncountersWorkflowService.Move1IdField => OverlayPlayerPartnerMove(partner, 0, value),
+            ZaEncountersWorkflowService.Move2IdField => OverlayPlayerPartnerMove(partner, 1, value),
+            ZaEncountersWorkflowService.Move3IdField => OverlayPlayerPartnerMove(partner, 2, value),
+            ZaEncountersWorkflowService.Move4IdField => OverlayPlayerPartnerMove(partner, 3, value),
+            ZaEncountersWorkflowService.FlawlessIvCountField => partner with
+            {
+                FlawlessIvCount = value,
+                IvHp = -1,
+                IvAttack = -1,
+                IvDefense = -1,
+                IvSpecialAttack = -1,
+                IvSpecialDefense = -1,
+                IvSpeed = -1,
+                TalentScale = value == 0
+                    ? ZaPokemonDataIvEncoding.GameDefaultRandomMode
+                    : ZaPokemonDataIvEncoding.FixedOrGuaranteedMode,
+                TalentVCount = value,
+            },
+            ZaEncountersWorkflowService.IvHpField => OverlayPlayerPartnerIv(
+                partner with { IvHp = value }),
+            ZaEncountersWorkflowService.IvAttackField => OverlayPlayerPartnerIv(
+                partner with { IvAttack = value }),
+            ZaEncountersWorkflowService.IvDefenseField => OverlayPlayerPartnerIv(
+                partner with { IvDefense = value }),
+            ZaEncountersWorkflowService.IvSpecialAttackField => OverlayPlayerPartnerIv(
+                partner with { IvSpecialAttack = value }),
+            ZaEncountersWorkflowService.IvSpecialDefenseField => OverlayPlayerPartnerIv(
+                partner with { IvSpecialDefense = value }),
+            ZaEncountersWorkflowService.IvSpeedField => OverlayPlayerPartnerIv(
+                partner with { IvSpeed = value }),
+            ZaEncountersWorkflowService.VanillaTalentScaleField => partner with { TalentScale = value },
+            ZaEncountersWorkflowService.VanillaTalentVCountField => partner with { TalentVCount = value },
+            _ => partner,
+        };
+
+        return field is ZaEncountersWorkflowService.SpeciesIdField
+            or ZaEncountersWorkflowService.FormField
+                ? updated with
+                {
+                    FormOptions = ZaEncountersWorkflowService.CreateFormOptions(
+                        updated.SpeciesId,
+                        ResolveSpeciesName(workflow, updated.SpeciesId),
+                        workflow.PokemonAvailability),
+                }
+                : updated;
+    }
+
+    private static ZaEncounterPlayerPartnerRecord OverlayPlayerPartnerMove(
+        ZaEncounterPlayerPartnerRecord partner,
+        int moveIndex,
+        int moveId)
+    {
+        var moves = partner.MoveIds.Take(4).ToArray();
+        if (moves.Length < 4)
+        {
+            Array.Resize(ref moves, 4);
+        }
+
+        moves[moveIndex] = moveId;
+        return partner with
+        {
+            MoveIds = moves,
+            HasExplicitMoves = moves.Any(move => move != ZaPokemonDataConstants.MoveAuto),
+        };
+    }
+
+    private static ZaEncounterPlayerPartnerRecord OverlayPlayerPartnerIv(
+        ZaEncounterPlayerPartnerRecord partner)
+    {
+        return partner with
+        {
+            FlawlessIvCount = null,
+            TalentScale = ZaPokemonDataIvEncoding.FixedOrGuaranteedMode,
+            TalentVCount = 0,
+        };
+    }
+
     private static ZaEncounterSlotRecord OverlaySlot(
         ZaEncountersWorkflow workflow,
         ZaEncounterSlotRecord slot,
@@ -2735,6 +3719,12 @@ internal sealed class ZaEncountersEditSessionService
             ZaEncountersWorkflowService.IvSpecialAttackField => OverlayIv(slot, value, iv => slot with { IvSpecialAttack = iv }),
             ZaEncountersWorkflowService.IvSpecialDefenseField => OverlayIv(slot, value, iv => slot with { IvSpecialDefense = iv }),
             ZaEncountersWorkflowService.IvSpeedField => OverlayIv(slot, value, iv => slot with { IvSpeed = iv }),
+            ZaEncountersWorkflowService.StrengthenHpField => OverlayStrengthen(slot with { StrengthenHp = value }),
+            ZaEncountersWorkflowService.StrengthenAttackField => OverlayStrengthen(slot with { StrengthenAttack = value }),
+            ZaEncountersWorkflowService.StrengthenDefenseField => OverlayStrengthen(slot with { StrengthenDefense = value }),
+            ZaEncountersWorkflowService.StrengthenSpecialAttackField => OverlayStrengthen(slot with { StrengthenSpecialAttack = value }),
+            ZaEncountersWorkflowService.StrengthenSpecialDefenseField => OverlayStrengthen(slot with { StrengthenSpecialDefense = value }),
+            ZaEncountersWorkflowService.StrengthenSpeedField => OverlayStrengthen(slot with { StrengthenSpeed = value }),
             ZaEncountersWorkflowService.VanillaTalentScaleField => slot with { TalentScale = value },
             ZaEncountersWorkflowService.VanillaTalentVCountField => slot with { TalentVCount = value },
             ZaEncountersWorkflowService.WeightField => slot with { Weight = value },
@@ -2785,6 +3775,20 @@ internal sealed class ZaEncountersEditSessionService
             FlawlessIvCount = null,
             TalentScale = ZaPokemonDataIvEncoding.FixedOrGuaranteedMode,
             TalentVCount = 0,
+        };
+    }
+
+    private static ZaEncounterSlotRecord OverlayStrengthen(ZaEncounterSlotRecord slot)
+    {
+        return slot with
+        {
+            StrengthenValueSummary = ZaEncountersWorkflowService.FormatStrengthenValues(
+                slot.StrengthenHp,
+                slot.StrengthenAttack,
+                slot.StrengthenDefense,
+                slot.StrengthenSpecialAttack,
+                slot.StrengthenSpecialDefense,
+                slot.StrengthenSpeed),
         };
     }
 
@@ -3206,7 +4210,9 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        var row = document.Entries.FirstOrDefault(candidate => candidate.SourceIndex == sourceIndex);
+        var row = document.Entries
+            .OfType<ZaEncounterDataEntry>()
+            .FirstOrDefault(candidate => candidate.SourceIndex == sourceIndex);
         if (row is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -3219,6 +4225,330 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         ApplyField(row, edit.Field, value);
+    }
+
+    private static void ApplyPlayerPartnerEdit(
+        ZaPokemonDataDocument document,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsPlayerPartnerEdit(edit)
+            || !int.TryParse(
+                edit.NewValue,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out var value))
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "Pending temporary partner edit is not valid for apply.",
+                edit.Field,
+                "Exact vsmega_init_rukario source identity and supported integer field"));
+            return;
+        }
+
+        if (!ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+                document,
+                out var row,
+                out var blockedReason))
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                "Pending temporary partner edit target is no longer exact. " + blockedReason,
+                edit.Field,
+                "Unique vsmega_init_rukario row at source index 772"));
+            return;
+        }
+
+        if (!ApplyPlayerPartnerField(row, edit.Field, value))
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                $"Temporary partner field '{edit.Field ?? "(missing)"}' is not supported for apply.",
+                edit.Field,
+                "Supported AZ's Lucario field"));
+        }
+    }
+
+    private static bool ApplyPlayerPartnerField(
+        ZaPokemonDataEntry row,
+        string? field,
+        int value)
+    {
+        switch (field)
+        {
+            case ZaEncountersWorkflowService.SpeciesIdField:
+                row.DevNo = value;
+                return true;
+            case ZaEncountersWorkflowService.FormField:
+                row.FormNo = value;
+                return true;
+            case ZaEncountersWorkflowService.PlayerPartnerLevelField:
+                row.MinLevel = value;
+                row.MaxLevel = value;
+                return true;
+            case ZaEncountersWorkflowService.HeldItemIdField:
+                row.HoldItem = value == 0 ? null : value;
+                return true;
+            case ZaEncountersWorkflowService.AbilityField:
+                row.Tokusei = value;
+                return true;
+            case ZaEncountersWorkflowService.NatureField:
+                row.Seikaku = value;
+                return true;
+            case ZaEncountersWorkflowService.GenderField:
+                row.Sex = value;
+                return true;
+            case ZaEncountersWorkflowService.ShinyModeField:
+                row.Rare = value;
+                return true;
+            case ZaEncountersWorkflowService.Move1IdField:
+                SetMove(row, 0, value);
+                return true;
+            case ZaEncountersWorkflowService.Move2IdField:
+                SetMove(row, 1, value);
+                return true;
+            case ZaEncountersWorkflowService.Move3IdField:
+                SetMove(row, 2, value);
+                return true;
+            case ZaEncountersWorkflowService.Move4IdField:
+                SetMove(row, 3, value);
+                return true;
+            case ZaEncountersWorkflowService.FlawlessIvCountField:
+                ZaPokemonDataIvEncoding.SetPreset(row, value);
+                return true;
+            case ZaEncountersWorkflowService.IvHpField:
+                SetIv(row, ivs => ivs with { HP = value });
+                return true;
+            case ZaEncountersWorkflowService.IvAttackField:
+                SetIv(row, ivs => ivs with { Attack = value });
+                return true;
+            case ZaEncountersWorkflowService.IvDefenseField:
+                SetIv(row, ivs => ivs with { Defense = value });
+                return true;
+            case ZaEncountersWorkflowService.IvSpecialAttackField:
+                SetIv(row, ivs => ivs with { SpecialAttack = value });
+                return true;
+            case ZaEncountersWorkflowService.IvSpecialDefenseField:
+                SetIv(row, ivs => ivs with { SpecialDefense = value });
+                return true;
+            case ZaEncountersWorkflowService.IvSpeedField:
+                SetIv(row, ivs => ivs with { Speed = value });
+                return true;
+            case ZaEncountersWorkflowService.VanillaTalentScaleField:
+                row.TalentScale = value;
+                return true;
+            case ZaEncountersWorkflowService.VanillaTalentVCountField:
+                row.TalentVNum = value;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool VerifyPlayerPartnerOutput(
+        byte[] sourceBytes,
+        byte[] outputBytes,
+        ZaEncountersWorkflow effectiveWorkflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            var sourceDocument = ZaPokemonDataDocument.Parse(sourceBytes);
+            var outputDocument = ZaPokemonDataDocument.Parse(outputBytes);
+            var hasSourceRow = ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+                sourceDocument,
+                out var sourceRow,
+                out var sourceBlockedReason);
+            var hasOutputRow = ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
+                outputDocument,
+                out var outputRow,
+                out var outputBlockedReason);
+            if (!hasSourceRow || !hasOutputRow)
+            {
+                diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                    "Temporary partner output lost its exact PokemonData identity. "
+                        + (!string.IsNullOrWhiteSpace(outputBlockedReason)
+                            ? outputBlockedReason
+                            : sourceBlockedReason),
+                    field: null,
+                    "Unique vsmega_init_rukario row at source index 772"));
+                return false;
+            }
+
+            var expectedMatches = effectiveWorkflow.Tables
+                .Where(ZaEncounterPlayerPartnerCatalog.IsTargetTable)
+                .Select(table => table.PlayerPartner)
+                .Where(partner => partner is not null)
+                .Cast<ZaEncounterPlayerPartnerRecord>()
+                .ToArray();
+            if (expectedMatches.Length != 1
+                || !PlayerPartnerRowMatches(outputRow, sourceRow, expectedMatches[0]))
+            {
+                diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                    "Temporary partner output does not match the reviewed AZ's Lucario values or changed unexposed source fields.",
+                    field: null,
+                    "Reviewed partner fields with all unexposed source values preserved"));
+                return false;
+            }
+
+            if (sourceDocument.Groups.Count != outputDocument.Groups.Count)
+            {
+                diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                    "Temporary partner output changed the PokemonData group count.",
+                    field: null,
+                    "Unchanged PokemonData structure outside source index 772"));
+                return false;
+            }
+
+            for (var groupIndex = 0; groupIndex < sourceDocument.Groups.Count; groupIndex++)
+            {
+                var sourceRows = sourceDocument.Groups[groupIndex].Rows;
+                var outputRows = outputDocument.Groups[groupIndex].Rows;
+                if (sourceRows.Count != outputRows.Count)
+                {
+                    diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                        "Temporary partner output changed a PokemonData group shape.",
+                        field: null,
+                        "Unchanged PokemonData structure outside source index 772"));
+                    return false;
+                }
+
+                for (var rowIndex = 0; rowIndex < sourceRows.Count; rowIndex++)
+                {
+                    var before = sourceRows[rowIndex];
+                    var after = outputRows[rowIndex];
+                    if (before?.SourceIndex == ZaEncounterPlayerPartnerCatalog.PokemonDataSourceIndex)
+                    {
+                        continue;
+                    }
+
+                    if (!PokemonDataRowsEqual(before, after))
+                    {
+                        diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                            "Temporary partner output changed an unrelated PokemonData row.",
+                            field: null,
+                            "Only vsmega_init_rukario at source index 772 may change"));
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (exception is InvalidDataException
+            or ArgumentException
+            or OverflowException)
+        {
+            diagnostics.Add(CreatePlayerPartnerDiagnostic(
+                $"Temporary partner output could not be verified: {exception.Message}",
+                field: null,
+                "Readable PokemonData output with one exact reviewed row change"));
+            return false;
+        }
+    }
+
+    private static bool PlayerPartnerRowMatches(
+        ZaPokemonDataEntry output,
+        ZaPokemonDataEntry source,
+        ZaEncounterPlayerPartnerRecord expected)
+    {
+        var outputMoves = output.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0];
+        return output.SourceIndex == ZaEncounterPlayerPartnerCatalog.PokemonDataSourceIndex
+            && string.Equals(output.Id, ZaEncounterPlayerPartnerCatalog.PokemonDataId, StringComparison.Ordinal)
+            && output.DevNo == expected.SpeciesId
+            && output.FormNo == expected.Form
+            && output.MinLevel == expected.Level
+            && output.MaxLevel == expected.LevelMax
+            && output.Sex == expected.Gender
+            && output.Rare == expected.ShinyMode
+            && output.Tokusei == expected.Ability
+            && output.Seikaku == expected.Nature
+            && output.TalentScale == expected.TalentScale
+            && output.TalentVNum == expected.TalentVCount
+            && output.TalentValue == new ZaPokemonDataStatsRecord(
+                expected.IvHp,
+                expected.IvAttack,
+                expected.IvDefense,
+                expected.IvSpecialAttack,
+                expected.IvSpecialDefense,
+                expected.IvSpeed)
+            && outputMoves.SequenceEqual(expected.MoveIds.Take(4))
+            && (output.WazaList is not null) == expected.HasExplicitMoves
+            && (output.HoldItem ?? 0) == expected.HeldItemId
+            && output.OyabunProbability.Equals(source.OyabunProbability)
+            && output.OyabunAdditionalLevel == source.OyabunAdditionalLevel
+            && ActivationConditionsEqual(output.ActivationConditions, source.ActivationConditions);
+    }
+
+    private static bool PokemonDataRowsEqual(
+        ZaPokemonDataEntry? left,
+        ZaPokemonDataEntry? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return left.SourceIndex == right.SourceIndex
+            && string.Equals(left.Id, right.Id, StringComparison.Ordinal)
+            && left.DevNo == right.DevNo
+            && left.MinLevel == right.MinLevel
+            && left.MaxLevel == right.MaxLevel
+            && left.Sex == right.Sex
+            && left.FormNo == right.FormNo
+            && left.Rare == right.Rare
+            && left.Tokusei == right.Tokusei
+            && left.Seikaku == right.Seikaku
+            && left.TalentScale == right.TalentScale
+            && left.TalentVNum == right.TalentVNum
+            && left.OyabunProbability.Equals(right.OyabunProbability)
+            && left.OyabunAdditionalLevel == right.OyabunAdditionalLevel
+            && left.TalentValue == right.TalentValue
+            && left.WazaList == right.WazaList
+            && left.HoldItem == right.HoldItem
+            && ActivationConditionsEqual(left.ActivationConditions, right.ActivationConditions);
+    }
+
+    private static bool ActivationConditionsEqual(
+        IReadOnlyList<ZaPokemonDataActivationConditionRecord> left,
+        IReadOnlyList<ZaPokemonDataActivationConditionRecord> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var conditionIndex = 0; conditionIndex < left.Count; conditionIndex++)
+        {
+            var leftElements = left[conditionIndex].Elements;
+            var rightElements = right[conditionIndex].Elements;
+            if (leftElements.Count != rightElements.Count)
+            {
+                return false;
+            }
+
+            for (var elementIndex = 0; elementIndex < leftElements.Count; elementIndex++)
+            {
+                var leftParams = leftElements[elementIndex].Params;
+                var rightParams = rightElements[elementIndex].Params;
+                if (leftParams.Count != rightParams.Count)
+                {
+                    return false;
+                }
+
+                for (var paramIndex = 0; paramIndex < leftParams.Count; paramIndex++)
+                {
+                    var leftParam = leftParams[paramIndex];
+                    var rightParam = rightParams[paramIndex];
+                    if (!string.Equals(leftParam.Condition, rightParam.Condition, StringComparison.Ordinal)
+                        || leftParam.Op != rightParam.Op
+                        || !leftParam.Params.SequenceEqual(rightParam.Params, StringComparer.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
     }
 
     private static bool TryResolveSpawnerSlot(
@@ -3318,7 +4648,7 @@ internal sealed class ZaEncountersEditSessionService
     }
 
     private static void ApplyField(
-        ZaPokemonDataEntry row,
+        ZaEncounterDataEntry row,
         string? field,
         int value)
     {
@@ -3390,6 +4720,24 @@ internal sealed class ZaEncountersEditSessionService
             case ZaEncountersWorkflowService.IvSpeedField:
                 SetIv(row, ivs => ivs with { Speed = value });
                 break;
+            case ZaEncountersWorkflowService.StrengthenHpField:
+                SetStrengthen(row, stats => stats with { HP = value });
+                break;
+            case ZaEncountersWorkflowService.StrengthenAttackField:
+                SetStrengthen(row, stats => stats with { Attack = value });
+                break;
+            case ZaEncountersWorkflowService.StrengthenDefenseField:
+                SetStrengthen(row, stats => stats with { Defense = value });
+                break;
+            case ZaEncountersWorkflowService.StrengthenSpecialAttackField:
+                SetStrengthen(row, stats => stats with { SpecialAttack = value });
+                break;
+            case ZaEncountersWorkflowService.StrengthenSpecialDefenseField:
+                SetStrengthen(row, stats => stats with { SpecialDefense = value });
+                break;
+            case ZaEncountersWorkflowService.StrengthenSpeedField:
+                SetStrengthen(row, stats => stats with { Speed = value });
+                break;
             case ZaEncountersWorkflowService.VanillaTalentScaleField:
                 row.TalentScale = value;
                 break;
@@ -3413,6 +4761,21 @@ internal sealed class ZaEncountersEditSessionService
         Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
     {
         ZaPokemonDataIvEncoding.SetFixedIvs(row, update);
+    }
+
+    private static void SetStrengthen(
+        ZaEncounterDataEntry row,
+        Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
+    {
+        row.StrengthenValue = update(
+            row.StrengthenValue
+                ?? new ZaPokemonDataStatsRecord(
+                    ZaEncountersWorkflowService.MinimumStrengthenValue,
+                    ZaEncountersWorkflowService.MinimumStrengthenValue,
+                    ZaEncountersWorkflowService.MinimumStrengthenValue,
+                    ZaEncountersWorkflowService.MinimumStrengthenValue,
+                    ZaEncountersWorkflowService.MinimumStrengthenValue,
+                    ZaEncountersWorkflowService.MinimumStrengthenValue));
     }
 
     private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)
@@ -3457,6 +4820,17 @@ internal sealed class ZaEncountersEditSessionService
                 $"Set the shared Alpha chance to {value} percent for every placement linked to {slot.EncounterRecordId}.",
             ZaEncountersWorkflowService.AlphaLevelBonusField =>
                 $"Set the shared Alpha level bonus to +{value} for every placement linked to {slot.EncounterRecordId}.",
+            ZaEncountersWorkflowService.StrengthenHpField
+                or ZaEncountersWorkflowService.StrengthenAttackField
+                or ZaEncountersWorkflowService.StrengthenDefenseField
+                or ZaEncountersWorkflowService.StrengthenSpecialAttackField
+                or ZaEncountersWorkflowService.StrengthenSpecialDefenseField
+                or ZaEncountersWorkflowService.StrengthenSpeedField =>
+                value == ZaEncountersWorkflowService.MinimumStrengthenValue
+                    ? $"Disable the shared boss {field.Label.ToLowerInvariant()} override for every placement linked to {slot.EncounterRecordId}."
+                    : string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Set the shared boss {field.Label.ToLowerInvariant()} to {value / 10m:0.0}x (stored {value}) for every placement linked to {slot.EncounterRecordId}."),
             ZaEncountersWorkflowService.WeightField =>
                 $"Set {table.Location} slot {slot.Slot + 1} weight to {value}.",
             ZaEncountersWorkflowService.SlotMaxCountField =>

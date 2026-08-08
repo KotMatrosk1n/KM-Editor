@@ -1737,7 +1737,9 @@ export const trainerRecordSchema = z.strictObject({
   trainerId: z.number().int().nonnegative(),
   zaLastHand: z.boolean().nullable().default(null),
   zaMegaEvolution: z.boolean().nullable().default(null),
-  zaRank: z.number().int().nonnegative().nullable().default(null)
+  zaRank: z.number().int().nonnegative().nullable().default(null),
+  zaRivalStarterBranch: z.enum(['fire', 'grass', 'water']).nullable().default(null),
+  zaSharedRivalRoster: z.boolean().nullable().default(null)
 });
 
 export const trainerEditableFieldSchema = z.strictObject({
@@ -1801,8 +1803,11 @@ export const giftPokemonRecordSchema = z.strictObject({
   ability: z.number().int(),
   abilityLabel: z.string(),
   abilityOptions: z.array(giftPokemonEditableFieldOptionSchema).default([]),
+  alphaChancePercent: z.number().int().min(0).max(100).nullable().default(null),
+  alphaLevelBonus: z.number().int().min(0).max(100).nullable().default(null),
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
+  canEditAlphaSettings: z.boolean().default(false),
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
   editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
@@ -3179,6 +3184,13 @@ export const encounterSlotRecordSchema = z.strictObject({
   slotMaxCount: z.number().int().nonnegative().nullable().optional(),
   speciesId: z.number().int().nonnegative(),
   species: z.string(),
+  canEditStrengthenValues: z.boolean().nullable().optional(),
+  strengthenAttack: z.number().int().nullable().optional(),
+  strengthenDefense: z.number().int().nullable().optional(),
+  strengthenHp: z.number().int().nullable().optional(),
+  strengthenSpecialAttack: z.number().int().nullable().optional(),
+  strengthenSpecialDefense: z.number().int().nullable().optional(),
+  strengthenSpeed: z.number().int().nullable().optional(),
   strengthenValueSummary: z.string().nullable().optional(),
   talentScale: z.number().int().nullable().optional(),
   talentVCount: z.number().int().nullable().optional(),
@@ -3199,6 +3211,49 @@ const encounterPhaseConditionSchema = z.strictObject({
   values: z.array(z.string())
 });
 
+export const encounterEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  options: z.array(encounterEditableFieldOptionSchema).optional(),
+  valueKind: z.string()
+});
+
+export const encounterPlayerPartnerRecordSchema = z.strictObject({
+  ability: z.number().int(),
+  canEditLevel: z.boolean(),
+  canRevertToVanilla: z.boolean(),
+  description: z.string().min(1),
+  editableFields: z.array(encounterEditableFieldSchema).default([]),
+  flawlessIvCount: z.number().int().nullable(),
+  form: z.number().int().nonnegative(),
+  formOptions: z.array(encounterEditableFieldOptionSchema).default([]),
+  gender: z.number().int(),
+  hasExplicitMoves: z.boolean(),
+  heldItemId: z.number().int().nonnegative(),
+  ivAttack: z.number().int(),
+  ivDefense: z.number().int(),
+  ivHp: z.number().int(),
+  ivSpecialAttack: z.number().int(),
+  ivSpecialDefense: z.number().int(),
+  ivSpeed: z.number().int(),
+  label: z.string().min(1),
+  level: z.number().int().min(1).max(100),
+  levelMax: z.number().int().min(1).max(100),
+  moveIds: z.array(z.number().int().nonnegative()).length(4),
+  nature: z.number().int(),
+  pokemonDataId: z.string().min(1),
+  pokemonDataSourceIndex: z.number().int().nonnegative(),
+  provenance: encounterProvenanceSchema,
+  revertToVanillaBlockedReason: z.string().nullable(),
+  role: z.string().min(1),
+  shinyMode: z.number().int(),
+  slot: z.literal(-1),
+  species: z.string().min(1),
+  speciesId: z.number().int().nonnegative()
+});
+
 export const encounterTableRecordSchema = z.strictObject({
   archiveMember: z.string(),
   area: z.string(),
@@ -3216,6 +3271,7 @@ export const encounterTableRecordSchema = z.strictObject({
   locationKey: z.string().nullable().optional(),
   locationSort: z.number().int().nullable().optional(),
   phaseConditions: z.array(encounterPhaseConditionSchema).nullable().optional(),
+  playerPartner: encounterPlayerPartnerRecordSchema.nullable().optional(),
   provenance: encounterProvenanceSchema,
   rawSpawnerId: z.string().nullable().optional(),
   slots: z.array(encounterSlotRecordSchema),
@@ -3226,15 +3282,6 @@ export const encounterTableRecordSchema = z.strictObject({
   tableDetails: z.string().nullable().optional(),
   tableLabel: z.string().nullable().optional(),
   tableId: z.string()
-});
-
-export const encounterEditableFieldSchema = z.strictObject({
-  field: z.string(),
-  label: z.string(),
-  maximumValue: z.number().int().nullable(),
-  minimumValue: z.number().int().nullable(),
-  options: z.array(encounterEditableFieldOptionSchema).optional(),
-  valueKind: z.string()
 });
 
 export const encountersWorkflowStatsSchema = z.strictObject({
@@ -5490,6 +5537,9 @@ export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
 export type ShopRecord = z.infer<typeof shopRecordSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
 export type EncounterEditableField = z.infer<typeof encounterEditableFieldSchema>;
+export type EncounterPlayerPartnerRecord = z.infer<
+  typeof encounterPlayerPartnerRecordSchema
+>;
 export type EncounterSlotRecord = z.infer<typeof encounterSlotRecordSchema>;
 export type EncounterTableRecord = z.infer<typeof encounterTableRecordSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;

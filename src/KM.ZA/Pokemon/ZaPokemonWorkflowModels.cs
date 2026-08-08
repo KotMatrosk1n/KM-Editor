@@ -153,7 +153,19 @@ public sealed record ZaPokemonRecord(
     IReadOnlyList<ZaPokemonCompatibilityGroup> Compatibility,
     ZaPokemonProvenance Provenance,
     string? SpriteName = null,
-    ZaPokemonAlphaMove? AlphaMove = null);
+    ZaPokemonAlphaMove? AlphaMove = null)
+{
+    internal ZaPokemonVanillaYieldDefaults? VanillaYieldDefaults { get; init; }
+}
+
+internal sealed record ZaPokemonVanillaYieldDefaults(
+    int BaseExperience,
+    int EVYieldHP,
+    int EVYieldAttack,
+    int EVYieldDefense,
+    int EVYieldSpecialAttack,
+    int EVYieldSpecialDefense,
+    int EVYieldSpeed);
 
 public sealed record ZaPokemonWorkflowStats(
     int TotalPokemonCount,

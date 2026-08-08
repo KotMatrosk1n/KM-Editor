@@ -14,6 +14,8 @@ namespace KM.ZA.Trainers;
 
 internal sealed class ZaTrainersEditSessionService
 {
+    private const int MeowsticSpeciesId = 678;
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
     private readonly ZaTrainersWorkflowService trainersWorkflowService;
@@ -81,6 +83,7 @@ internal sealed class ZaTrainersEditSessionService
             updatedSession.PendingEdits,
             diagnostics);
         ValidateFinalSpeciesFormPairs(loadedWorkflow, projectedWorkflow, diagnostics);
+        ValidateTrainerMeowsticSexForms(loadedWorkflow, projectedWorkflow, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
@@ -162,6 +165,7 @@ internal sealed class ZaTrainersEditSessionService
             updatedSession.PendingEdits,
             diagnostics);
         ValidateFinalSpeciesFormPairs(loadedWorkflow, projectedWorkflow, diagnostics);
+        ValidateTrainerMeowsticSexForms(loadedWorkflow, projectedWorkflow, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
@@ -201,6 +205,7 @@ internal sealed class ZaTrainersEditSessionService
 
         var projectedWorkflow = OverlayPendingEdits(project, workflow, validEdits, diagnostics);
         ValidateFinalSpeciesFormPairs(workflow, projectedWorkflow, diagnostics);
+        ValidateTrainerMeowsticSexForms(workflow, projectedWorkflow, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -560,6 +565,57 @@ internal sealed class ZaTrainersEditSessionService
         }
     }
 
+    private static void ValidateTrainerMeowsticSexForms(
+        ZaTrainersWorkflow sourceWorkflow,
+        ZaTrainersWorkflow projectedWorkflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sourceTrainersById = sourceWorkflow.Trainers.ToDictionary(trainer => trainer.TrainerId);
+
+        foreach (var projectedTrainer in projectedWorkflow.Trainers)
+        {
+            sourceTrainersById.TryGetValue(projectedTrainer.TrainerId, out var sourceTrainer);
+            foreach (var projectedPokemon in projectedTrainer.Team.Where(
+                pokemon => pokemon.SpeciesId == MeowsticSpeciesId))
+            {
+                if (IsMeowsticFormCompatibleWithExplicitGender(projectedPokemon.Form, projectedPokemon.Gender))
+                {
+                    continue;
+                }
+
+                var sourcePokemon = sourceTrainer?.Team.FirstOrDefault(
+                    pokemon => pokemon.Slot == projectedPokemon.Slot);
+                if (sourcePokemon is not null
+                    && sourcePokemon.SpeciesId == projectedPokemon.SpeciesId
+                    && sourcePokemon.Form == projectedPokemon.Form
+                    && sourcePokemon.Gender == projectedPokemon.Gender)
+                {
+                    continue;
+                }
+
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{projectedTrainer.Name} slot {projectedPokemon.Slot} has a Meowstic form "
+                    + "that does not match its explicit gender.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    file: projectedTrainer.Provenance.TeamSourceFile,
+                    field: ZaTrainersWorkflowService.FormField,
+                    expected: "Trainer-dependent selection, Male with form 0 or 2, "
+                    + "or Female with form 1 or 3."));
+            }
+        }
+    }
+
+    private static bool IsMeowsticFormCompatibleWithExplicitGender(int form, int gender)
+    {
+        return gender switch
+        {
+            1 => form is 0 or 2,
+            2 => form is 1 or 3,
+            _ => true,
+        };
+    }
+
     private ZaTrainersWorkflow OverlayPendingEdits(
         OpenedProject project,
         ZaTrainersWorkflow workflow,
@@ -788,8 +844,8 @@ internal sealed class ZaTrainersEditSessionService
             null,
             [0, 0, 0, 0],
             ["None", "None", "None", "None"],
-            -1,
-            ZaTrainersWorkflowService.FormatGender(-1),
+            0,
+            ZaTrainersWorkflowService.FormatGender(0),
             0,
             "Game default / random",
             -1,
@@ -1303,7 +1359,7 @@ internal sealed class ZaTrainersEditSessionService
             {
                 SpeciesId = 0,
                 FormId = 0,
-                Sex = -1,
+                Sex = 0,
                 Item = 0,
                 Level = 1,
                 BallId = 0,
@@ -1321,7 +1377,7 @@ internal sealed class ZaTrainersEditSessionService
         {
             SpeciesId = 0;
             FormId = 0;
-            Sex = -1;
+            Sex = 0;
             Item = 0;
             Level = 1;
             Array.Clear(Moves);

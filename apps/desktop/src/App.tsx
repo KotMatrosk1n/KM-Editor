@@ -84,8 +84,10 @@ import {
   parseSvEncounterFacets
 } from './svEncounterTables';
 import {
+  type Dispatch,
   type ReactNode,
   type RefObject,
+  type SetStateAction,
   Component,
   Fragment,
   createContext,
@@ -113,6 +115,7 @@ import {
   type DynamaxAdventuresWorkflow,
   type EditSession,
   type EncounterEditableField,
+  type EncounterPlayerPartnerRecord,
   type EncounterSlotRecord,
   type EncounterTableRecord,
   type EncountersWorkflow,
@@ -1114,6 +1117,15 @@ type PokemonLearnsetDraftFields = {
   moveId: string;
   level: string;
 };
+type PokemonLearnsetDragState = {
+  learnsetSignature: string;
+  moveId: number;
+  personalId: number;
+  rawLevel: number;
+  sourceSlot: number;
+  token: string;
+  transferValue: string;
+};
 type GithubRelease = {
   draft?: boolean;
   html_url?: string;
@@ -1258,9 +1270,37 @@ const pokemonRemoveEvYieldValue = 'remove';
 const pokemonRestoreEvYieldValue = 'restore';
 const pokemonMaximumUshortValue = 65_535;
 const pokemonMaximumByteValue = 255;
+const zaPokemonExpAddendMinimum = -32_768;
+const zaPokemonExpAddendMaximum = 32_767;
+const zaPokemonBaseExperienceFieldName = 'baseExperience';
+const zaPokemonEvolutionStageFieldName = 'evolutionStage';
+const zaPokemonBaseStatFieldNames = [
+  'hp',
+  'attack',
+  'defense',
+  'specialAttack',
+  'specialDefense',
+  'speed'
+] as const;
 const swshPokemonLearnsetMaximumLevel = 100;
 const swshPokemonMaximumLearnsetRows = 65;
 const swshPokemonMaximumEvolutionRows = 9;
+const pokemonLearnsetDragDataType = 'application/x-km-editor-learnset-row';
+let pokemonLearnsetDragTokenSequence = 0;
+
+function createPokemonLearnsetDragToken() {
+  pokemonLearnsetDragTokenSequence += 1;
+  return `${Date.now().toString(36)}-${pokemonLearnsetDragTokenSequence.toString(36)}`;
+}
+
+function createPokemonLearnsetSignature(learnset: readonly PokemonLearnsetMove[]) {
+  return learnset
+    .map(
+      (move) =>
+        `${move.slot}:${move.moveId}:${move.level}:${move.rawLevel ?? move.level}`
+    )
+    .join('|');
+}
 const trainerClassIdFieldName = 'trainerClassId';
 const classBallIdFieldName = 'classBallId';
 const battleTypeFieldName = 'battleType';
@@ -1281,6 +1321,7 @@ const levelFieldName = 'level';
 const heldItemIdFieldName = 'heldItemId';
 const moveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
 const genderFieldName = 'gender';
+const zaMeowsticSpeciesId = 678;
 const abilityFieldName = 'ability';
 const natureFieldName = 'nature';
 const evFieldNames = [
@@ -1459,6 +1500,12 @@ const giftTeraTypeFieldName = 'teraType';
 const giftScaleModeFieldName = 'scaleMode';
 const giftScaleValueFieldName = 'scaleValue';
 const giftFlawlessIvCountFieldName = 'flawlessIvCount';
+const giftAlphaChancePercentFieldName = 'alphaChancePercent';
+const giftAlphaLevelBonusFieldName = 'alphaLevelBonus';
+const giftAlphaFieldNames = [
+  giftAlphaChancePercentFieldName,
+  giftAlphaLevelBonusFieldName
+] as const;
 const giftPokemonFieldNames = [
   giftSpeciesFieldName,
   formFieldName,
@@ -1477,7 +1524,8 @@ const giftPokemonFieldNames = [
   ...ivFieldNames,
   giftFlawlessIvCountFieldName,
   giftScaleModeFieldName,
-  giftScaleValueFieldName
+  giftScaleValueFieldName,
+  ...giftAlphaFieldNames
 ] as const;
 const tradeField03FieldName = 'field03';
 const tradeRequiredSpeciesFieldName = 'requiredSpecies';
@@ -1640,6 +1688,7 @@ const zaEncounterAppearanceMinCountFieldName = 'appearanceMinCount';
 const zaEncounterAppearanceMaxCountFieldName = 'appearanceMaxCount';
 const zaEncounterAlphaChanceFieldName = 'alphaChancePercent';
 const zaEncounterAlphaLevelBonusFieldName = 'alphaLevelBonus';
+const zaEncounterPlayerPartnerLevelFieldName = 'playerPartnerLevel';
 const zaEncounterTraitFieldNames = new Set<string>([
   genderFieldName,
   abilityFieldName,
@@ -1650,6 +1699,14 @@ const zaEncounterMoveFieldNames = new Set<string>(giftMoveFieldNames);
 const zaEncounterIvFieldNames = new Set<string>([
   giftFlawlessIvCountFieldName,
   ...ivFieldNames
+]);
+const zaEncounterStrengthenFieldNames = new Set<string>([
+  'strengthenHp',
+  'strengthenAttack',
+  'strengthenDefense',
+  'strengthenSpecialAttack',
+  'strengthenSpecialDefense',
+  'strengthenSpeed'
 ]);
 const zaEncounterSlotSpecificFieldNames = new Set([
   zaEncounterWeightFieldName,
@@ -12559,7 +12616,9 @@ export function App({
       ) : null}
       {isSvCacheClearConfirmOpen ? (
         <SvCacheClearConfirmationModal
-          cacheSizeLabel={formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0)}
+          cacheSizeLabel={
+            svCacheStatus ? formatByteSize(svCacheStatus.cacheSizeBytes) : t('Unavailable')
+          }
           cacheTitle={
             isSwordShieldGame(selectedGame)
               ? t('settings.cache.swsh.title')
@@ -13999,7 +14058,6 @@ function PokemonSection({
                 value={workflow ? workflow.stats.totalLearnsetMoveCount.toString() : '0'}
               />
             </div>
-            {editorFamily !== 'za' ? (
             <div className="pokemon-toolbar-actions">
               <button
                 className="primary-button compact-button"
@@ -14038,7 +14096,6 @@ function PokemonSection({
                 <span>Restore EV Yield</span>
               </button>
             </div>
-            ) : null}
           </div>
         </div>
 
@@ -14549,14 +14606,25 @@ function SelectedPokemonPanel({
   const sparsePersonalDrafts = pokemon
     ? personalDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
     : {};
-  const personalDrafts = pokemon
-    ? { ...personalDraftDefaults, ...sparsePersonalDrafts }
-    : {};
+  const personalDrafts = useMemo(
+    () => (pokemon ? { ...personalDraftDefaults, ...sparsePersonalDrafts } : {}),
+    [personalDraftDefaults, pokemon, sparsePersonalDrafts]
+  );
+  const contextualPersonalFields = useMemo(
+    () =>
+      contextualizeZaPokemonPersonalFields(
+        editorFamily,
+        editableFields,
+        pokemon,
+        personalDrafts
+      ),
+    [editableFields, editorFamily, personalDrafts, pokemon]
+  );
   const writablePersonalFields = useMemo(
     () =>
       new Set(
         pokemon
-          ? editableFields
+          ? contextualPersonalFields
               .filter(
                 (field) =>
                   getEditablePersonalFieldValue(pokemon, field.field) !== null &&
@@ -14565,7 +14633,7 @@ function SelectedPokemonPanel({
               .map((field) => field.field)
           : []
       ),
-    [editableFields, pokemon]
+    [contextualPersonalFields, pokemon]
   );
   const alphaMove = editorFamily === 'za' ? pokemon?.alphaMove ?? null : null;
   const alphaMoveDraftKey = pokemon
@@ -14707,7 +14775,9 @@ function SelectedPokemonPanel({
   );
   const [newLearnsetMoveIdDraft, setNewLearnsetMoveIdDraft] = useState('');
   const [newLearnsetLevelDraft, setNewLearnsetLevelDraft] = useState('');
-  const [draggedLearnsetSlot, setDraggedLearnsetSlot] = useState<number | null>(null);
+  const [learnsetDragState, setLearnsetDragState] = useState<PokemonLearnsetDragState | null>(
+    null
+  );
   const [dragOverLearnsetSlot, setDragOverLearnsetSlot] = useState<number | null>(null);
   const learnsetMoveOptionsForDraft = useMemo(
     () => addCurrentPokemonFieldOption(learnsetMoveOptions, learnsetMoveIdDraft, 'Move'),
@@ -14898,8 +14968,8 @@ function SelectedPokemonPanel({
   ]);
 
   const personalFieldGroups = useMemo(
-    () => groupPokemonEditableFields(editableFields),
-    [editableFields]
+    () => groupPokemonEditableFields(contextualPersonalFields),
+    [contextualPersonalFields]
   );
   const updateSelectedEvolutionDraft = useCallback(
     (patch: Partial<PokemonEvolutionDraftFields>) => {
@@ -14968,8 +15038,8 @@ function SelectedPokemonPanel({
     [pokemon, selectedLearnsetMove]
   );
   const personalDraftSummary = useMemo(
-    () => getPokemonPersonalDraftSummary(pokemon, editableFields, personalDrafts),
-    [editableFields, personalDrafts, pokemon]
+    () => getPokemonPersonalDraftSummary(pokemon, contextualPersonalFields, personalDrafts),
+    [contextualPersonalFields, personalDrafts, pokemon]
   );
   const selectedCompatibilityGroup =
     pokemon?.compatibility.find((group) => group.groupId === selectedCompatibilityGroupId) ??
@@ -15025,6 +15095,10 @@ function SelectedPokemonPanel({
   const hasLearnsetDrafts = Object.keys(learnsetDraftsBySlot).length > 0;
   const canModifyEvolutionStructure = canEditEvolution && !hasEvolutionDrafts;
   const canModifyLearnsetStructure = canEditLearnset && !hasLearnsetDrafts;
+  useEffect(() => {
+    setLearnsetDragState(null);
+    setDragOverLearnsetSlot(null);
+  }, [canModifyLearnsetStructure, editSession?.sessionId, pokemon?.personalId]);
   const parsedEvolutionSpecies = parseEditableIntegerDraft(
     evolutionSpeciesDraft,
     pokemonSpeciesOptions
@@ -15079,38 +15153,48 @@ function SelectedPokemonPanel({
     (editorFamily !== 'swsh' ||
       isValidSwShLearnsetMove(parsedNewLearnsetMoveId, learnsetMoveOptions));
   const handleDropLearnsetMove = useCallback(
-    async (targetSlot: number, sourceSlot = draggedLearnsetSlot) => {
+    async (targetSlot: number, transferValue: string) => {
+      const activeDrag = learnsetDragState;
+      setLearnsetDragState(null);
+      setDragOverLearnsetSlot(null);
+
+      const sourceMove = pokemon?.learnset.find(
+        (candidate) => candidate.slot === activeDrag?.sourceSlot
+      );
       if (
         !canModifyLearnsetStructure ||
         !pokemon ||
-        sourceSlot === null ||
-        !Number.isInteger(sourceSlot) ||
-        sourceSlot === targetSlot
+        activeDrag === null ||
+        transferValue !== activeDrag.transferValue ||
+        activeDrag.personalId !== pokemon.personalId ||
+        activeDrag.learnsetSignature !== createPokemonLearnsetSignature(pokemon.learnset) ||
+        !Number.isInteger(activeDrag.sourceSlot) ||
+        activeDrag.sourceSlot < 0 ||
+        activeDrag.sourceSlot >= pokemon.learnset.length ||
+        !Number.isInteger(targetSlot) ||
+        targetSlot < 0 ||
+        targetSlot >= pokemon.learnset.length ||
+        activeDrag.sourceSlot === targetSlot ||
+        sourceMove === undefined ||
+        sourceMove.moveId !== activeDrag.moveId ||
+        (sourceMove.rawLevel ?? sourceMove.level) !== activeDrag.rawLevel ||
+        !pokemon.learnset.some((candidate) => candidate.slot === targetSlot)
       ) {
-        setDraggedLearnsetSlot(null);
-        setDragOverLearnsetSlot(null);
         return;
       }
 
       const didMove = await onUpdatePokemonLearnset(
         pokemon.personalId,
         'moveTo',
-        sourceSlot,
+        activeDrag.sourceSlot,
         targetSlot,
         null
       );
       if (didMove) {
         setSelectedLearnsetSlot(targetSlot);
       }
-      setDraggedLearnsetSlot(null);
-      setDragOverLearnsetSlot(null);
     },
-    [
-      canModifyLearnsetStructure,
-      draggedLearnsetSlot,
-      onUpdatePokemonLearnset,
-      pokemon
-    ]
+    [canModifyLearnsetStructure, learnsetDragState, onUpdatePokemonLearnset, pokemon]
   );
   const evolutionDraftReview = useMemo(
     () =>
@@ -15718,14 +15802,13 @@ function SelectedPokemonPanel({
                     return (
                       <li
                         className={`learnset-list-item ${
-                          draggedLearnsetSlot === move.slot ? 'learnset-dragging' : ''
+                          learnsetDragState?.sourceSlot === move.slot ? 'learnset-dragging' : ''
                         } ${
                           dragOverLearnsetSlot === move.slot ? 'learnset-drop-target' : ''
                         }`}
-                        draggable={canModifyLearnsetStructure}
                         key={move.slot}
                         onDragEnd={() => {
-                          setDraggedLearnsetSlot(null);
+                          setLearnsetDragState(null);
                           setDragOverLearnsetSlot(null);
                         }}
                         onDragLeave={() => {
@@ -15734,17 +15817,14 @@ function SelectedPokemonPanel({
                           );
                         }}
                         onDragOver={(event) => {
-                          const transferredSlot = Number.parseInt(
-                            event.dataTransfer.getData('text/plain'),
-                            10
-                          );
-                          const sourceSlot =
-                            draggedLearnsetSlot ??
-                            (Number.isInteger(transferredSlot) ? transferredSlot : null);
                           if (
                             !canModifyLearnsetStructure ||
-                            sourceSlot === null ||
-                            sourceSlot === move.slot
+                            learnsetDragState === null ||
+                            learnsetDragState.personalId !== pokemon.personalId ||
+                            learnsetDragState.sourceSlot === move.slot ||
+                            !Array.from(event.dataTransfer.types).includes(
+                              pokemonLearnsetDragDataType
+                            )
                           ) {
                             return;
                           }
@@ -15754,32 +15834,61 @@ function SelectedPokemonPanel({
                           setDragOverLearnsetSlot(move.slot);
                         }}
                         onDragStart={(event) => {
-                          if (!canModifyLearnsetStructure) {
+                          if (
+                            !canModifyLearnsetStructure ||
+                            !(event.target instanceof Element) ||
+                            !event.target.closest('.learnset-drag-cell')
+                          ) {
                             event.preventDefault();
                             return;
                           }
 
+                          const token = createPokemonLearnsetDragToken();
+                          const transferValue = JSON.stringify({
+                            personalId: pokemon.personalId,
+                            sourceSlot: move.slot,
+                            token
+                          });
                           event.dataTransfer.effectAllowed = 'move';
-                          event.dataTransfer.setData('text/plain', move.slot.toString());
-                          setDraggedLearnsetSlot(move.slot);
+                          event.dataTransfer.setData(pokemonLearnsetDragDataType, transferValue);
+                          if (typeof event.dataTransfer.setDragImage === 'function') {
+                            event.dataTransfer.setDragImage(event.currentTarget, 18, 18);
+                          }
+                          setLearnsetDragState({
+                            learnsetSignature: createPokemonLearnsetSignature(pokemon.learnset),
+                            moveId: move.moveId,
+                            personalId: pokemon.personalId,
+                            rawLevel: move.rawLevel ?? move.level,
+                            sourceSlot: move.slot,
+                            token,
+                            transferValue
+                          });
                           setDragOverLearnsetSlot(null);
-                          setSelectedLearnsetSlot(move.slot);
                         }}
                         onDrop={(event) => {
-                          const transferredSlot = Number.parseInt(
-                            event.dataTransfer.getData('text/plain'),
-                            10
-                          );
-                          const sourceSlot =
-                            draggedLearnsetSlot ??
-                            (Number.isInteger(transferredSlot) ? transferredSlot : null);
+                          if (
+                            learnsetDragState === null ||
+                            !Array.from(event.dataTransfer.types).includes(
+                              pokemonLearnsetDragDataType
+                            )
+                          ) {
+                            return;
+                          }
+
                           event.preventDefault();
-                          void handleDropLearnsetMove(move.slot, sourceSlot);
+                          void handleDropLearnsetMove(
+                            move.slot,
+                            event.dataTransfer.getData(pokemonLearnsetDragDataType)
+                          );
                         }}
                       >
                         {isSelected && editSession !== null ? (
                           <div className="learnset-row learnset-inline-row">
-                            <span className="learnset-drag-cell" aria-hidden="true">
+                            <span
+                              aria-hidden="true"
+                              className="learnset-drag-cell"
+                              draggable={canModifyLearnsetStructure}
+                            >
                               <GripVertical size={15} />
                             </span>
                             <span className="learnset-slot-cell">#{move.slot + 1}</span>
@@ -15904,7 +16013,11 @@ function SelectedPokemonPanel({
                             onClick={() => setSelectedLearnsetSlot(move.slot)}
                             type="button"
                           >
-                            <span className="learnset-drag-cell" aria-hidden="true">
+                            <span
+                              aria-hidden="true"
+                              className="learnset-drag-cell"
+                              draggable={canModifyLearnsetStructure}
+                            >
                               <GripVertical size={15} />
                             </span>
                             <span className="learnset-slot-cell">#{move.slot + 1}</span>
@@ -18687,6 +18800,7 @@ function SelectedTrainerPanel({
   selectedSlot: number | null;
   trainer: TrainerRecord | null;
 }) {
+  const { t } = useLocalization();
   const [trainerDraftsByTrainerId, setTrainerDraftsByTrainerId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -18754,6 +18868,21 @@ function SelectedTrainerPanel({
   const pokemonDrafts = selectedPokemonDraftKey
     ? pokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
     : {};
+  const projectedSelectedPokemonSpeciesId = selectedPokemon
+    ? (parseOptionalInteger(
+        pokemonDrafts[speciesIdFieldName] ?? selectedPokemon.speciesId.toString()
+      ) ?? selectedPokemon.speciesId)
+    : null;
+  const projectedSelectedPokemonGender = selectedPokemon
+    ? (parseOptionalInteger(
+        pokemonDrafts[genderFieldName] ?? selectedPokemon.gender.toString()
+      ) ?? selectedPokemon.gender)
+    : null;
+  const isSelectedZaTrainerMeowstic = Boolean(
+    editorFamily === 'za' && projectedSelectedPokemonSpeciesId === zaMeowsticSpeciesId
+  );
+  const isSelectedZaTrainerMeowsticDynamic =
+    isSelectedZaTrainerMeowstic && projectedSelectedPokemonGender === 0;
   const selectedPokemonFormOptionContext = useMemo(
     () => {
       if (!selectedPokemon) {
@@ -18784,6 +18913,28 @@ function SelectedTrainerPanel({
       const usesCurrentIdentity =
         context.speciesId === selectedPokemon.speciesId &&
         draftedForm === selectedPokemon.form;
+      const zaTrainerMeowstic =
+        editorFamily === 'za' && context.speciesId === zaMeowsticSpeciesId;
+      const genderOptions = zaTrainerMeowstic
+        ? (pokemonFields.find((field) => field.field === genderFieldName)?.options ?? []).map(
+            (option) =>
+              option.value === 0
+                ? {
+                    ...option,
+                    label: t('za.trainers.meowstic.defaultGenderOption')
+                  }
+                : option
+          )
+        : undefined;
+      const allowedFormValues = zaTrainerMeowstic
+        ? getZaTrainerMeowsticFormsForGender(projectedSelectedPokemonGender)
+        : undefined;
+      const formLabelOverrides =
+        zaTrainerMeowstic && projectedSelectedPokemonGender === 0
+          ? {
+              [draftedForm]: t('za.trainers.meowstic.defaultFormOption')
+            }
+          : undefined;
 
       return {
         ...context,
@@ -18791,15 +18942,21 @@ function SelectedTrainerPanel({
           ? createTrainerPokemonAbilityOptions(referencePokemon)
           : usesCurrentIdentity
             ? selectedPokemon.abilityOptions
-            : []
+            : [],
+        allowedFormValues,
+        formLabelOverrides,
+        genderOptions
       };
     },
     [
       defaultContextualPokemonFields,
       editorFamily,
+      pokemonFields,
       pokemonDrafts,
       pokemonWorkflow,
-      selectedPokemon
+      projectedSelectedPokemonGender,
+      selectedPokemon,
+      t
     ]
   );
   const contextualPokemonFields = useMemo(
@@ -19168,6 +19325,45 @@ function SelectedTrainerPanel({
             </div>
           </dl>
 
+          {editorFamily === 'za' && trainer.zaSharedRivalRoster === true ? (
+            <section
+              aria-labelledby="za-shared-rival-roster-heading"
+              className="technical-tool-notice technical-tool-notice-info za-shared-rival-notice"
+            >
+              <div className="technical-tool-notice-heading">
+                <UsersRound aria-hidden="true" size={18} />
+                <div>
+                  <h3 id="za-shared-rival-roster-heading">
+                    {t('za.trainers.sharedRival.title')}
+                  </h3>
+                  <p>
+                    <strong>{t('za.trainers.sharedRival.recordIdLabel')}</strong>{' '}
+                    <code data-localization-ignore="true">{trainer.location}</code>
+                  </p>
+                </div>
+              </div>
+              <div className="za-shared-rival-notice-facts">
+                <p>{t('za.trainers.sharedRival.selection')}</p>
+                {trainer.zaRivalStarterBranch ? (
+                  <p>
+                    {t('za.trainers.sharedRival.starterBranch', {
+                      branch: t(
+                        `za.trainers.sharedRival.starter.${trainer.zaRivalStarterBranch}`
+                      )
+                    })}
+                  </p>
+                ) : null}
+                <p>{t('za.trainers.sharedRival.editScope')}</p>
+                <p>{t('za.trainers.sharedRival.meowsticAvailability')}</p>
+                {trainer.team.some((pokemon) => pokemon.speciesId === zaMeowsticSpeciesId) ? (
+                  <p>{t('za.trainers.sharedRival.meowstic')}</p>
+                ) : (
+                  <p>{t('za.trainers.sharedRival.meowsticAbsent')}</p>
+                )}
+              </div>
+            </section>
+          ) : null}
+
           <div className="trainer-edit-form">
             {trainer.aiFlagStates.length > 0 ? (
               <div className="trainer-ai-flags-panel">
@@ -19291,14 +19487,20 @@ function SelectedTrainerPanel({
               <div className="trainer-party-card-grid" aria-label="Trainer party Pokemon">
                 {trainer.team.map((pokemon) => {
                   const isEmptySlot = pokemon.speciesId === 0;
+                  const isDynamicZaTrainerMeowstic =
+                    editorFamily === 'za' &&
+                    pokemon.speciesId === zaMeowsticSpeciesId &&
+                    pokemon.gender === 0;
                   const pokemonLabel = isEmptySlot
                     ? 'Empty slot'
-                    : formatSpeciesFormLabel(
-                        pokemon.species,
-                        pokemon.form,
-                        pokemon.speciesId,
-                        editorFamily
-                      );
+                    : isDynamicZaTrainerMeowstic
+                      ? t('za.trainers.meowstic.cardLabel')
+                      : formatSpeciesFormLabel(
+                          pokemon.species,
+                          pokemon.form,
+                          pokemon.speciesId,
+                          editorFamily
+                        );
                   const pokemonSpriteLabel = isEmptySlot
                     ? 'None'
                     : formatSpeciesFormLabel(
@@ -19337,6 +19539,26 @@ function SelectedTrainerPanel({
 
             {selectedPokemon ? (
               <div className="trainer-party-edit-stack">
+                {isSelectedZaTrainerMeowstic ? (
+                  <section className="technical-tool-notice technical-tool-notice-info">
+                    <div className="technical-tool-notice-heading">
+                      <UsersRound aria-hidden="true" size={18} />
+                      <div>
+                        <h3>{t('za.trainers.meowstic.detailsTitle')}</h3>
+                        <p>
+                          {t(
+                            isSelectedZaTrainerMeowsticDynamic &&
+                              trainer.zaSharedRivalRoster === true
+                              ? 'za.trainers.sharedRival.meowstic.detailsDynamic'
+                              : isSelectedZaTrainerMeowsticDynamic
+                                ? 'za.trainers.meowstic.detailsDynamic'
+                                : 'za.trainers.meowstic.detailsExplicit'
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
                 <div className="editable-field-groups">
                   {pokemonFieldGroups.map((group) => (
                     <fieldset className="editable-field-group" key={group.group}>
@@ -19362,9 +19584,14 @@ function SelectedTrainerPanel({
                               ? 'Fill the previous party slot first.'
                               : selectedPokemonSlotIsEmpty && field.field !== speciesIdFieldName
                               ? 'Set species before editing this slot.'
-                              : isDynamaxDependentField && !selectedPokemonCanDynamax
-                              ? 'Set Can Dynamax to Yes to edit this field.'
-                              : undefined;
+                              : isSelectedZaTrainerMeowsticDynamic &&
+                                  field.field === formFieldName
+                                ? t(
+                                    'za.trainers.meowstic.formRuntimeSelected'
+                                  )
+                                : isDynamaxDependentField && !selectedPokemonCanDynamax
+                                  ? 'Set Can Dynamax to Yes to edit this field.'
+                                  : undefined;
 
                           return (
                             <TrainerDraftField
@@ -19433,6 +19660,39 @@ function SelectedTrainerPanel({
                                     });
                                     if (resolvedForm !== null) {
                                       nextDrafts[formFieldName] = resolvedForm.toString();
+                                    }
+                                  }
+                                }
+                                if (
+                                  editorFamily === 'za' &&
+                                  (field.field === speciesIdFieldName ||
+                                    field.field === genderFieldName)
+                                ) {
+                                  const nextSpeciesId =
+                                    parseOptionalInteger(
+                                      nextDrafts[speciesIdFieldName] ??
+                                        selectedPokemon.speciesId.toString()
+                                    ) ?? selectedPokemon.speciesId;
+                                  const nextGender =
+                                    parseOptionalInteger(
+                                      nextDrafts[genderFieldName] ??
+                                        selectedPokemon.gender.toString()
+                                    ) ?? selectedPokemon.gender;
+                                  const nextForm =
+                                    parseOptionalInteger(
+                                      nextDrafts[formFieldName] ??
+                                        selectedPokemon.form.toString()
+                                    ) ?? selectedPokemon.form;
+
+                                  if (nextSpeciesId === zaMeowsticSpeciesId) {
+                                    if (nextGender === 0) {
+                                      nextDrafts[formFieldName] = '0';
+                                    } else if (nextGender === 1 || nextGender === 2) {
+                                      nextDrafts[formFieldName] =
+                                        resolveZaTrainerMeowsticFormForGender(
+                                          nextGender,
+                                          nextForm
+                                        ).toString();
                                     }
                                   }
                                 }
@@ -19647,6 +19907,31 @@ function TrainerDraftField({
       ) : null}
     </label>
   );
+}
+
+function getZaTrainerMeowsticFormsForGender(gender: number | null) {
+  if (gender === 1) {
+    return [0, 2];
+  }
+
+  if (gender === 2) {
+    return [1, 3];
+  }
+
+  return undefined;
+}
+
+function resolveZaTrainerMeowsticFormForGender(gender: number, form: number) {
+  const isMegaForm = form === 2 || form === 3;
+  if (gender === 1) {
+    return isMegaForm ? 2 : 0;
+  }
+
+  if (gender === 2) {
+    return isMegaForm ? 3 : 1;
+  }
+
+  return form;
 }
 
 function createTrainerDrafts(
@@ -22396,7 +22681,11 @@ function getEncounterEditableFieldGroup(field: NumericEditableField) {
     return 'Traits';
   }
 
-  if (field.field === encounterLevelMinFieldName || field.field === encounterLevelMaxFieldName) {
+  if (
+    field.field === encounterLevelMinFieldName ||
+    field.field === encounterLevelMaxFieldName ||
+    field.field === zaEncounterPlayerPartnerLevelFieldName
+  ) {
     return 'Levels';
   }
 
@@ -22424,6 +22713,10 @@ function getEncounterEditableFieldGroup(field: NumericEditableField) {
 
   if (zaEncounterIvFieldNames.has(field.field)) {
     return 'IVs';
+  }
+
+  if (zaEncounterStrengthenFieldNames.has(field.field)) {
+    return 'Boss Strength Multipliers';
   }
 
   if (zaEncounterMoveFieldNames.has(field.field)) {
@@ -22468,7 +22761,13 @@ function localizeZaEncounterSpawnerField(
     [zaEncounterAppearanceMinCountFieldName]:
       'za.spawnSettings.overallMinCountLabel',
     [zaEncounterAppearanceMaxCountFieldName]:
-      'za.spawnSettings.overallMaxCountLabel'
+      'za.spawnSettings.overallMaxCountLabel',
+    strengthenHp: 'za.encounters.strengthen.hpLabel',
+    strengthenAttack: 'za.encounters.strengthen.attackLabel',
+    strengthenDefense: 'za.encounters.strengthen.defenseLabel',
+    strengthenSpecialAttack: 'za.encounters.strengthen.specialAttackLabel',
+    strengthenSpecialDefense: 'za.encounters.strengthen.specialDefenseLabel',
+    strengthenSpeed: 'za.encounters.strengthen.speedLabel'
   };
   const labelKey = labelKeyByField[field.field];
   return labelKey ? { ...field, label: translate(labelKey) } : field;
@@ -22516,6 +22815,12 @@ function getRaidRewardEditableFieldGroup(field: NumericEditableField) {
 }
 
 function getPokemonInstanceFieldGroup(field: NumericEditableField) {
+  if (
+    giftAlphaFieldNames.includes(field.field as (typeof giftAlphaFieldNames)[number])
+  ) {
+    return 'Restoration Alpha Settings';
+  }
+
   if (
     field.field === giftSpeciesFieldName ||
     field.field === formFieldName ||
@@ -22869,7 +23174,7 @@ function GiftPokemonDraftField({
           min={field.minimumValue ?? undefined}
           onChange={(event) => onChange(event.target.value)}
           step={
-            field.field === 'timing.cooldown'
+            parseMoveTimingField(field.field)?.member === 'cooldown'
               ? 0.1
               : field.valueKind === 'number'
                 ? 'any'
@@ -23190,6 +23495,7 @@ function SelectedGiftPokemonPanel({
   ) => Promise<boolean>;
   pokemonWorkflow: PokemonWorkflow | null;
 }) {
+  const { t } = useLocalization();
   const [giftDraftsByIndex, setGiftDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -23197,11 +23503,18 @@ function SelectedGiftPokemonPanel({
   const giftFields = useMemo(
     () =>
       editableFields
-        .filter((field) =>
-          giftPokemonFieldNames.includes(field.field as (typeof giftPokemonFieldNames)[number])
+        .filter(
+          (field) =>
+            giftPokemonFieldNames.includes(
+              field.field as (typeof giftPokemonFieldNames)[number]
+            ) &&
+            (!giftAlphaFieldNames.includes(
+              field.field as (typeof giftAlphaFieldNames)[number]
+            ) ||
+              (editorFamily === 'za' && gift?.canEditAlphaSettings === true))
         )
         .map(withPokemonInstanceIvPresetOptions),
-    [editableFields]
+    [editableFields, editorFamily, gift?.canEditAlphaSettings]
   );
   const defaultContextualGiftFields = useMemo(
     () =>
@@ -23301,7 +23614,41 @@ function SelectedGiftPokemonPanel({
     () => groupNumericEditableFields(contextualGiftFields, getPokemonInstanceFieldGroup),
     [contextualGiftFields]
   );
-  const giftDraftSummary = useMemo(
+  const giftAlphaRangeError = useMemo(() => {
+    if (editorFamily !== 'za' || gift?.canEditAlphaSettings !== true) {
+      return null;
+    }
+
+    const readBoundedWholeNumber = (field: string, currentValue: number | null) => {
+      const rawValue = giftDrafts[field] ?? currentValue?.toString() ?? '';
+      const parsedValue = Number(rawValue);
+      return Number.isInteger(parsedValue) && parsedValue >= 0 && parsedValue <= 100
+        ? parsedValue
+        : null;
+    };
+    const level = readBoundedWholeNumber(levelFieldName, gift.level);
+    const alphaChance = readBoundedWholeNumber(
+      giftAlphaChancePercentFieldName,
+      gift.alphaChancePercent
+    );
+    const alphaLevelBonus = readBoundedWholeNumber(
+      giftAlphaLevelBonusFieldName,
+      gift.alphaLevelBonus
+    );
+    if (level === null || alphaChance === null || alphaLevelBonus === null) {
+      return null;
+    }
+
+    const alphaLevel = level + alphaLevelBonus;
+    return alphaChance > 0 && alphaLevel > 100
+      ? t('za.gifts.alpha.rangeError', {
+          bonus: alphaLevelBonus,
+          level,
+          total: alphaLevel
+        })
+      : null;
+  }, [editorFamily, gift, giftDrafts, t]);
+  const baseGiftDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
         getActivePokemonInstanceFields(contextualGiftFields, giftDrafts),
@@ -23309,6 +23656,26 @@ function SelectedGiftPokemonPanel({
         gift ? (field) => getEditableGiftPokemonFieldValue(gift, field) : null
       ),
     [contextualGiftFields, gift, giftDrafts]
+  );
+  const giftDraftSummary = useMemo(
+    () =>
+      giftAlphaRangeError
+        ? {
+            ...baseGiftDraftSummary,
+            invalidFields: [
+              ...baseGiftDraftSummary.invalidFields,
+              {
+                field: giftAlphaLevelBonusFieldName,
+                label: t('za.gifts.alpha.levelBonusLabel'),
+                value:
+                  giftDrafts[giftAlphaLevelBonusFieldName] ??
+                  gift?.alphaLevelBonus?.toString() ??
+                  ''
+              }
+            ]
+          }
+        : baseGiftDraftSummary,
+    [baseGiftDraftSummary, gift?.alphaLevelBonus, giftAlphaRangeError, giftDrafts, t]
   );
   useRegisterEditorDraftDirty('giftPokemon', countFieldDraftRecords(giftDraftsByIndex) > 0);
   const canSaveGiftDrafts =
@@ -23377,10 +23744,12 @@ function SelectedGiftPokemonPanel({
               <dt>File state</dt>
               <dd>{formatFileState(gift.provenance.fileState)}</dd>
             </div>
-            <div>
-              <dt>Ball</dt>
-              <dd>{gift.ballItem}</dd>
-            </div>
+            {editorFamily !== 'za' ? (
+              <div>
+                <dt>Ball</dt>
+                <dd>{gift.ballItem}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Held item</dt>
               <dd>{gift.heldItem ?? 'None'}</dd>
@@ -23416,16 +23785,50 @@ function SelectedGiftPokemonPanel({
             </div>
           </dl>
 
+          {editorFamily === 'za' && gift.eventLabel === 'sub_addpoke_rukario' ? (
+            <section className="technical-tool-notice technical-tool-notice-info">
+              <div className="technical-tool-notice-heading">
+                <Dumbbell aria-hidden="true" size={18} />
+                <div>
+                  <h3>{t('za.gifts.lucario.heading')}</h3>
+                  <p>{t('za.gifts.lucario.description')}</p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {editorFamily === 'za' && gift.canEditAlphaSettings ? (
+            <section className="technical-tool-notice technical-tool-notice-info">
+              <div className="technical-tool-notice-heading">
+                <ShieldCheck aria-hidden="true" size={18} />
+                <div>
+                  <h3>{t('za.gifts.alpha.heading')}</h3>
+                  <p>{t('za.gifts.alpha.description')}</p>
+                  <p>
+                    {t('za.gifts.alpha.currentValues', {
+                      bonus: gift.alphaLevelBonus ?? 0,
+                      chance: gift.alphaChancePercent ?? 0
+                    })}
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <div className="trainer-edit-form">
             <div className="editable-field-groups">
               {giftFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
+                  <legend>
+                    {group.group === 'Restoration Alpha Settings'
+                      ? t('za.gifts.alpha.heading')
+                      : group.group}
+                  </legend>
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
                       const currentValue = getEditableGiftPokemonFieldValue(gift, field.field);
                       const draftValue = giftDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
+                      const baseDraftState = getTrainerFieldDraftState(
                         draftValue,
                         currentValue,
                         field,
@@ -23436,6 +23839,28 @@ function SelectedGiftPokemonPanel({
                             getEditableGiftPokemonFieldValue(gift, fieldName)
                         }
                       );
+                      const draftState =
+                        giftAlphaRangeError &&
+                        field.field === giftAlphaLevelBonusFieldName
+                          ? {
+                              ...baseDraftState,
+                              error: giftAlphaRangeError,
+                              isValid: false,
+                              normalizedValue: null
+                            }
+                          : baseDraftState;
+                      const alphaFieldLabel =
+                        field.field === giftAlphaChancePercentFieldName
+                          ? t('za.gifts.alpha.chanceLabel')
+                          : field.field === giftAlphaLevelBonusFieldName
+                            ? t('za.gifts.alpha.levelBonusLabel')
+                            : undefined;
+                      const alphaFieldHelp =
+                        field.field === giftAlphaChancePercentFieldName
+                          ? t('za.gifts.alpha.chanceHelp')
+                          : field.field === giftAlphaLevelBonusFieldName
+                            ? t('za.gifts.alpha.levelBonusHelp')
+                            : undefined;
 
                       return (
                         <GiftPokemonDraftField
@@ -23452,7 +23877,9 @@ function SelectedGiftPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={giftFormOptionContext}
+                          helpText={alphaFieldHelp}
                           key={field.field}
+                          labelText={alphaFieldLabel}
                           onChange={(value) => {
                             const nextDrafts = {
                               ...giftDrafts,
@@ -23556,6 +23983,19 @@ function SelectedGiftPokemonPanel({
                       );
                     })}
                   </div>
+                  {group.group === 'Restoration Alpha Settings' ? (
+                    <div className="field-group-action-row za-spawner-field-note">
+                      <small
+                        className={
+                          giftAlphaRangeError
+                            ? 'editable-field-error'
+                            : 'editable-field-status'
+                        }
+                      >
+                        {giftAlphaRangeError ?? t('za.gifts.alpha.rangeRule')}
+                      </small>
+                    </div>
+                  ) : null}
                 </fieldset>
               ))}
             </div>
@@ -28714,11 +29154,17 @@ function SelectedEncounterPanel({
   const [scriptedBossDraftsBySelectorId, setScriptedBossDraftsBySelectorId] = useState<
     Record<string, string>
   >({});
+  const [playerPartnerDraftsByKey, setPlayerPartnerDraftsByKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const { language, t, translateLiteral } = useLocalization();
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const isZaBossTable = Boolean(
+    isZaEncounterTable && table && isZaBossEncounterTable(table)
+  );
   const isZaScriptedBossTable = Boolean(
     isZaEncounterTable && table && isZaScriptedBossEncounterTable(table)
   );
@@ -28737,7 +29183,9 @@ function SelectedEncounterPanel({
       editableFields
         .filter(
           (field) =>
-            !isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)
+            (!isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)) &&
+            (!zaEncounterStrengthenFieldNames.has(field.field) ||
+              (isZaBossTable && encounterSlot?.canEditStrengthenValues === true))
         )
         .map((field) => {
           const numericField = toNumericEditableControlField(
@@ -28768,6 +29216,8 @@ function SelectedEncounterPanel({
       encounterSlot?.formOptions,
       encounterSlot?.species,
       encounterSlot?.speciesId,
+      encounterSlot?.canEditStrengthenValues,
+      isZaBossTable,
       isZaScriptedBossTable,
       t
     ]
@@ -28807,6 +29257,12 @@ function SelectedEncounterPanel({
       encounterSlot?.moveIds,
       encounterSlot?.nature,
       encounterSlot?.shinyMode,
+      encounterSlot?.strengthenAttack,
+      encounterSlot?.strengthenDefense,
+      encounterSlot?.strengthenHp,
+      encounterSlot?.strengthenSpecialAttack,
+      encounterSlot?.strengthenSpecialDefense,
+      encounterSlot?.strengthenSpeed,
       encounterSlot?.slot,
       encounterSlot?.slotMaxCount,
       encounterSlot?.speciesId,
@@ -29035,7 +29491,9 @@ function SelectedEncounterPanel({
       editableFields
         .filter(
           (field) =>
-            !isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)
+            (!isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)) &&
+            (!zaEncounterStrengthenFieldNames.has(field.field) ||
+              (isZaBossTable && encounterSlot?.canEditStrengthenValues === true))
         )
         .map((field) => {
           const numericField = toNumericEditableControlField(
@@ -29058,6 +29516,7 @@ function SelectedEncounterPanel({
       encounterFormOptionContext,
       encounterSlot,
       editorFamily,
+      isZaBossTable,
       isZaScriptedBossTable,
       t
     ]
@@ -29166,6 +29625,7 @@ function SelectedEncounterPanel({
       countFieldDraftRecords(zaSlotDraftsBySlotKey) +
       countFieldDraftRecords(zaAppearanceDraftsByTableId) +
       countFieldDraftRecords(levelDraftsByScopeKey) +
+      countFieldDraftRecords(playerPartnerDraftsByKey) +
       Object.keys(scriptedBossDraftsBySelectorId).length >
       0
   );
@@ -29462,6 +29922,7 @@ function SelectedEncounterPanel({
               setZaSlotDraftsBySlotKey({});
               setZaAppearanceDraftsByTableId({});
               setLevelDraftsByScopeKey({});
+              setPlayerPartnerDraftsByKey({});
               setScriptedBossDraftsBySelectorId({});
             })
           }
@@ -29875,6 +30336,22 @@ function SelectedEncounterPanel({
                   </div>
                 ) : null}
 
+                {isZaEncounterTable && table.playerPartner ? (
+                  <ZaEncounterPlayerPartnerEditor
+                    canEditEncounters={canEditEncounters}
+                    draftsByKey={playerPartnerDraftsByKey}
+                    editSession={editSession}
+                    isEditStarting={isEditStarting}
+                    isEncounterUpdating={isEncounterUpdating}
+                    onDraftsByKeyChange={setPlayerPartnerDraftsByKey}
+                    onStageVanilla={onStageEncounterVanilla}
+                    onUpdateFields={onUpdateEncounterSlotFields}
+                    partner={table.playerPartner}
+                    pokemonWorkflow={pokemonWorkflow}
+                    tableId={table.tableId}
+                  />
+                ) : null}
+
                 <div className="editable-field-groups">
                   {isZaScriptedBossTable ? (
                     <fieldset className="editable-field-group za-scripted-boss-field-group">
@@ -29961,7 +30438,10 @@ function SelectedEncounterPanel({
                   {encounterFieldGroups.map((group) => (
                     <fieldset
                       className={`editable-field-group ${
-                        isZaEncounterTable && (group.group === 'IVs' || group.group === 'Moves')
+                        isZaEncounterTable &&
+                        (group.group === 'IVs' ||
+                          group.group === 'Moves' ||
+                          group.group === 'Boss Strength Multipliers')
                           ? 'za-encounter-field-group-wide'
                           : ''
                       }`}
@@ -29972,6 +30452,8 @@ function SelectedEncounterPanel({
                           ? t('za.spawnSettings.slotGroup')
                           : group.group === 'Spawner Population'
                             ? t('za.spawnSettings.populationGroup')
+                            : group.group === 'Boss Strength Multipliers'
+                              ? t('za.encounters.strengthen.heading')
                             : translateLiteral(group.group)}
                       </legend>
                       <div className="editable-field-grid">
@@ -30249,6 +30731,13 @@ function SelectedEncounterPanel({
                           </small>
                         </div>
                       ) : null}
+                      {group.group === 'Boss Strength Multipliers' && isZaEncounterTable ? (
+                        <div className="field-group-action-row za-spawner-field-note">
+                          <small className="editable-field-status">
+                            {t('za.encounters.strengthen.help')}
+                          </small>
+                        </div>
+                      ) : null}
                       {group.group === 'Shared Alpha Settings' &&
                       isZaEncounterTable &&
                       (zaAlphaChanceDisplay ||
@@ -30306,13 +30795,15 @@ function SelectedEncounterPanel({
                           )}
                         </dd>
                       </div>
-                      <div>
-                        <dt>{t('za.encounters.advanced.strengthenValues')}</dt>
-                        <dd>
-                          {encounterSlot.strengthenValueSummary ??
-                            t('za.encounters.advanced.notPresent')}
-                        </dd>
-                      </div>
+                      {!isZaBossTable || encounterSlot.canEditStrengthenValues !== true ? (
+                        <div>
+                          <dt>{t('za.encounters.advanced.strengthenValues')}</dt>
+                          <dd>
+                            {encounterSlot.strengthenValueSummary ??
+                              t('za.encounters.advanced.notPresent')}
+                          </dd>
+                        </div>
+                      ) : null}
                       {!isZaScriptedBossTable ? (
                         <div>
                           <dt>{t('za.encounters.advanced.moveStorage')}</dt>
@@ -30478,6 +30969,7 @@ function SelectedEncounterPanel({
                           setZaSlotDraftsBySlotKey({});
                           setZaAppearanceDraftsByTableId({});
                           setLevelDraftsByScopeKey({});
+                          setPlayerPartnerDraftsByKey({});
                           setScriptedBossDraftsBySelectorId({});
                         })
                       }
@@ -30608,6 +31100,406 @@ function SelectedEncounterPanel({
         <p className="empty-copy">No encounter table selected.</p>
       )}
     </aside>
+  );
+}
+
+function ZaEncounterPlayerPartnerEditor({
+  canEditEncounters,
+  draftsByKey,
+  editSession,
+  isEditStarting,
+  isEncounterUpdating,
+  onDraftsByKeyChange,
+  onStageVanilla,
+  onUpdateFields,
+  partner,
+  pokemonWorkflow,
+  tableId
+}: {
+  canEditEncounters: boolean;
+  draftsByKey: Record<string, Record<string, string>>;
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isEncounterUpdating: boolean;
+  onDraftsByKeyChange: Dispatch<
+    SetStateAction<Record<string, Record<string, string>>>
+  >;
+  onStageVanilla?: (tableId: string, slot: number) => Promise<boolean>;
+  onUpdateFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
+  partner: EncounterPlayerPartnerRecord;
+  pokemonWorkflow: PokemonWorkflow | null;
+  tableId: string;
+}) {
+  const { t, translateLiteral } = useLocalization();
+  const draftKey = `${tableId}:${partner.pokemonDataId}:${partner.pokemonDataSourceIndex}`;
+  const defaultFields = useMemo(
+    () =>
+      partner.editableFields.map((field) =>
+        withPokemonInstanceIvPresetOptions(toNumericEditableControlField(field))
+      ),
+    [partner.editableFields]
+  );
+  const draftDefaults = useMemo(
+    () =>
+      createPokemonInstanceDrafts(defaultFields, (field) =>
+        getEditableEncounterPlayerPartnerFieldValue(partner, field)
+      ),
+    [
+      defaultFields,
+      partner.ability,
+      partner.flawlessIvCount,
+      partner.form,
+      partner.gender,
+      partner.heldItemId,
+      partner.ivAttack,
+      partner.ivDefense,
+      partner.ivHp,
+      partner.ivSpecialAttack,
+      partner.ivSpecialDefense,
+      partner.ivSpeed,
+      partner.level,
+      partner.moveIds,
+      partner.nature,
+      partner.shinyMode,
+      partner.speciesId
+    ]
+  );
+  const drafts = draftsByKey[draftKey] ?? draftDefaults;
+  const formOptionContext = useMemo(
+    () =>
+      createDraftSpeciesFormOptionContext(
+        defaultFields.find((field) => field.field === encounterSpeciesFieldName) ?? null,
+        drafts[encounterSpeciesFieldName],
+        partner.species,
+        partner.speciesId,
+        undefined,
+        'za',
+        undefined,
+        partner.formOptions
+      ),
+    [defaultFields, drafts, partner.formOptions, partner.species, partner.speciesId]
+  );
+  const fields = useMemo(
+    () =>
+      defaultFields.map((field) => {
+        const options = getContextualFieldOptions(field, formOptionContext);
+        return options === field.options ? field : { ...field, options };
+      }),
+    [defaultFields, formOptionContext]
+  );
+  const fieldGroups = useMemo(
+    () => groupNumericEditableFields(fields, getEncounterEditableFieldGroup),
+    [fields]
+  );
+  const draftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        getActivePokemonInstanceFields(fields, drafts),
+        drafts,
+        (field) => getEditableEncounterPlayerPartnerFieldValue(partner, field)
+      ),
+    [drafts, fields, partner]
+  );
+  const hasLocalDrafts = draftsByKey[draftKey] !== undefined;
+  const recordId = getZaEncounterPlayerPartnerRecordId(partner);
+  const hasStagedChanges = (editSession?.pendingEdits ?? []).some(
+    (edit) => edit.domain === 'workflow.encounters' && edit.recordId === recordId
+  );
+  const canStage =
+    editSession !== null &&
+    canEditEncounters &&
+    !isEncounterUpdating &&
+    draftSummary.changedFields.length > 0 &&
+    draftSummary.invalidFields.length === 0;
+  const revertBlockedReason = hasLocalDrafts
+    ? t('za.encounters.playerPartner.revertDraftBlocked')
+    : partner.revertToVanillaBlockedReason
+      ? translateLiteral(partner.revertToVanillaBlockedReason)
+      : t('za.encounters.playerPartner.revertHelp');
+  const canRevert =
+    onStageVanilla !== undefined &&
+    partner.canRevertToVanilla &&
+    editSession !== null &&
+    canEditEncounters &&
+    !hasLocalDrafts &&
+    !isEditStarting &&
+    !isEncounterUpdating;
+
+  useEffect(() => {
+    onDraftsByKeyChange((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, draftKey, draftDefaults)
+    );
+  }, [draftDefaults, draftKey, onDraftsByKeyChange]);
+
+  return (
+    <section
+      aria-labelledby="za-player-partner-heading"
+      className="za-player-partner-editor"
+    >
+      <div className="za-player-partner-heading">
+        <div className="za-player-partner-title">
+          <Dumbbell aria-hidden="true" size={20} />
+          <div>
+            <h3 id="za-player-partner-heading">
+              {t('za.encounters.playerPartner.heading')}
+            </h3>
+            <p>{t('za.encounters.playerPartner.description')}</p>
+          </div>
+        </div>
+        <div className="za-player-partner-statuses">
+          <span className="status-pill status-pill-info">
+            {t('za.encounters.playerPartner.role')}
+          </span>
+          {hasStagedChanges ? (
+            <span className="status-pill status-pill-success">
+              {t('za.encounters.playerPartner.staged')}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="za-player-partner-summary">
+        <PokemonSprite
+          className="za-player-partner-sprite"
+          editorFamily="za"
+          form={partner.form}
+          name={partner.species}
+          speciesId={partner.speciesId}
+        />
+        <div>
+          <strong>
+            {formatSpeciesFormLabel(partner.species, partner.form, partner.speciesId, 'za')}
+          </strong>
+          <span>
+            {partner.level === partner.levelMax
+              ? `Lv. ${partner.level}`
+              : `Lv. ${partner.level}-${partner.levelMax}`}
+          </span>
+        </div>
+        <dl>
+          <div>
+            <dt>{t('za.encounters.playerPartner.recordLabel')}</dt>
+            <dd>
+              <code data-localization-ignore="true">{partner.pokemonDataId}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>{t('za.encounters.playerPartner.sourceLabel')}</dt>
+            <dd>{partner.provenance.sourceFile}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="za-player-partner-guidance" role="note">
+        <p>{t('za.encounters.playerPartner.scopeHelp')}</p>
+        <p>{t('za.encounters.playerPartner.safetyHelp')}</p>
+      </div>
+
+      <div className="editable-field-groups">
+        {fieldGroups.map((group) => (
+          <fieldset className="editable-field-group" key={group.group}>
+            <legend>{group.group}</legend>
+            <div className="editable-field-grid">
+              {group.fields.map((field) => {
+                const currentValue = getEditableEncounterPlayerPartnerFieldValue(
+                  partner,
+                  field.field
+                );
+                const draftValue = drafts[field.field] ?? '';
+                const draftState = getTrainerFieldDraftState(
+                  draftValue,
+                  currentValue,
+                  field,
+                  {
+                    drafts,
+                    fields,
+                    getValue: (fieldName) =>
+                      getEditableEncounterPlayerPartnerFieldValue(partner, fieldName)
+                  }
+                );
+                const disabledReason =
+                  field.field === zaEncounterPlayerPartnerLevelFieldName &&
+                  !partner.canEditLevel
+                    ? t('za.encounters.playerPartner.levelLocked')
+                    : getPokemonInstanceIvStatDisabledReason(
+                        field.field,
+                        fields,
+                        drafts
+                      ) ?? undefined;
+
+                return (
+                  <GiftPokemonDraftField
+                    currentValue={currentValue}
+                    disabled={
+                      !canEditEncounters ||
+                      editSession === null ||
+                      isEncounterUpdating
+                    }
+                    disabledReason={disabledReason}
+                    draftState={draftState}
+                    draftValue={draftValue}
+                    field={field}
+                    formOptionContext={formOptionContext}
+                    idPrefix={`za-player-partner-${partner.pokemonDataSourceIndex}`}
+                    key={field.field}
+                    onChange={(value) => {
+                      const nextDrafts = { ...drafts, [field.field]: value };
+                      if (field.field === encounterSpeciesFieldName) {
+                        const speciesField = fields.find(
+                          (candidate) => candidate.field === encounterSpeciesFieldName
+                        );
+                        const formField = fields.find(
+                          (candidate) => candidate.field === encounterFormFieldName
+                        );
+                        const previousSpeciesId = parseEditableIntegerDraft(
+                          drafts[encounterSpeciesFieldName] ?? partner.speciesId.toString(),
+                          speciesField?.options
+                        );
+                        const targetSpeciesId = parseEditableIntegerDraft(
+                          value,
+                          speciesField?.options
+                        );
+                        const previousForm =
+                          parseOptionalInteger(
+                            drafts[encounterFormFieldName] ?? partner.form.toString()
+                          ) ?? partner.form;
+                        if (
+                          formField &&
+                          targetSpeciesId !== null &&
+                          targetSpeciesId !== previousSpeciesId
+                        ) {
+                          const resolvedForm = resolveSpeciesChangeForm({
+                            gameFamily: 'za',
+                            pokemonRecords: pokemonWorkflow?.pokemon,
+                            previousForm,
+                            sourceForm: partner.form,
+                            sourceSpeciesId: partner.speciesId,
+                            speciesField,
+                            targetSpeciesId
+                          });
+                          if (resolvedForm !== null) {
+                            nextDrafts[encounterFormFieldName] = resolvedForm.toString();
+                          }
+                        }
+                      }
+
+                      onDraftsByKeyChange((currentDrafts) =>
+                        setFieldDraftRecord(
+                          currentDrafts,
+                          draftKey,
+                          nextDrafts,
+                          draftDefaults
+                        )
+                      );
+                    }}
+                  />
+                );
+              })}
+            </div>
+            {group.group === 'Levels' ? (
+              <div className="field-group-action-row za-spawner-field-note">
+                <small className="editable-field-status">
+                  {t('za.encounters.playerPartner.levelHelp')}
+                </small>
+              </div>
+            ) : null}
+            {group.group === 'Moves' ? (
+              <div className="field-group-action-row za-spawner-field-note">
+                <small className="editable-field-status">
+                  {t('za.encounters.playerPartner.movesHelp')}
+                </small>
+              </div>
+            ) : null}
+            {group.group === 'IVs' ? (
+              <div className="field-group-action-row za-spawner-field-note">
+                <small className="editable-field-status">{t('za.encounters.ivHelp')}</small>
+              </div>
+            ) : null}
+          </fieldset>
+        ))}
+      </div>
+
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isEncounterUpdating || undefined}
+            className="primary-button"
+            disabled={!canStage}
+            onClick={async () => {
+              const didSave = await onUpdateFields(
+                tableId,
+                partner.slot,
+                draftSummary.changedFields.map((change) => ({
+                  field: change.field,
+                  value: change.value
+                }))
+              );
+              if (didSave) {
+                onDraftsByKeyChange((currentDrafts) =>
+                  deleteFieldDraftRecord(currentDrafts, draftKey)
+                );
+              }
+            }}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isEncounterUpdating}
+              label="Stage Partner"
+            />
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!hasLocalDrafts || isEncounterUpdating}
+            onClick={() =>
+              onDraftsByKeyChange((currentDrafts) =>
+                deleteFieldDraftRecord(currentDrafts, draftKey)
+              )
+            }
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>{t('za.encounters.playerPartner.discardDraft')}</span>
+          </button>
+          <span className="draft-action-summary">{formatDraftSummary(draftSummary)}</span>
+        </EditorSessionBarActions>
+      ) : null}
+
+      {onStageVanilla ? (
+        <div className="za-encounter-revert-action">
+          <button
+            aria-busy={isEncounterUpdating || undefined}
+            className="danger-button"
+            disabled={!canRevert}
+            onClick={async () => {
+              const didSave = await onStageVanilla(tableId, partner.slot);
+              if (didSave) {
+                onDraftsByKeyChange((currentDrafts) =>
+                  deleteFieldDraftRecord(currentDrafts, draftKey)
+                );
+              }
+            }}
+            title={revertBlockedReason}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel={t('za.encounters.reverting')}
+              icon={<RotateCcw aria-hidden="true" size={16} />}
+              isBusy={isEncounterUpdating}
+              label={t('za.encounters.playerPartner.revertToVanilla')}
+            />
+          </button>
+          <small className={hasLocalDrafts ? 'editable-field-error' : 'editable-field-status'}>
+            {revertBlockedReason}
+          </small>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -39874,7 +40766,9 @@ function SettingsSection({
     status.kind === 'restarting';
   const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
-  const cacheSizeLabel = formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0);
+  const cacheSizeLabel = svCacheStatus
+    ? formatByteSize(svCacheStatus.cacheSizeBytes)
+    : t('Unavailable');
   const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
   const canShowSvCacheSettings = isProjectCacheGame(selectedGame);
   const cacheTitle = isSwordShieldGame(selectedGame)
@@ -40122,7 +41016,7 @@ function SettingsSection({
             <button
               aria-busy={isSvCacheClearing || undefined}
               className="danger-button"
-              disabled={isSvCacheClearing}
+              disabled={isSvCacheClearing || svCacheStatus === null}
               onClick={onClearSvCache}
               type="button"
             >
@@ -42173,6 +43067,10 @@ function filterMoves(
 
   if (normalizedSearch.length === 0) {
     return moves;
+  }
+
+  if (normalizedSearch === 'boss') {
+    return moves.filter((move) => getMoveRuntimeVariants(move).includes(2));
   }
 
   return moves.filter((move) =>
@@ -44484,6 +45382,17 @@ function filterEncounterTables(
       table.tableLabel ?? '',
       table.tableDetails ?? '',
       table.provenance.sourceFile,
+      ...(table.playerPartner
+        ? [
+            table.playerPartner.label,
+            table.playerPartner.role,
+            table.playerPartner.description,
+            table.playerPartner.pokemonDataId,
+            table.playerPartner.species,
+            table.playerPartner.speciesId.toString(),
+            table.playerPartner.level.toString()
+          ]
+        : []),
       ...table.slots.flatMap((slot) => {
         const profile = isZaScriptedBossEncounterTable(table)
           ? findScriptedBossProfile(
@@ -45017,6 +45926,66 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
       return encounterSlot.ivSpecialDefense ?? null;
     case ivFieldNames[5]:
       return encounterSlot.ivSpeed ?? null;
+    case 'strengthenHp':
+      return encounterSlot.strengthenHp ?? null;
+    case 'strengthenAttack':
+      return encounterSlot.strengthenAttack ?? null;
+    case 'strengthenDefense':
+      return encounterSlot.strengthenDefense ?? null;
+    case 'strengthenSpecialAttack':
+      return encounterSlot.strengthenSpecialAttack ?? null;
+    case 'strengthenSpecialDefense':
+      return encounterSlot.strengthenSpecialDefense ?? null;
+    case 'strengthenSpeed':
+      return encounterSlot.strengthenSpeed ?? null;
+    default:
+      return null;
+  }
+}
+
+function getEditableEncounterPlayerPartnerFieldValue(
+  partner: EncounterPlayerPartnerRecord,
+  field: string
+) {
+  switch (field) {
+    case speciesIdFieldName:
+      return partner.speciesId;
+    case encounterFormFieldName:
+      return partner.form;
+    case zaEncounterPlayerPartnerLevelFieldName:
+      return partner.level;
+    case heldItemIdFieldName:
+      return partner.heldItemId;
+    case abilityFieldName:
+      return partner.ability;
+    case natureFieldName:
+      return partner.nature;
+    case genderFieldName:
+      return partner.gender;
+    case giftShinyLockFieldName:
+      return partner.shinyMode;
+    case giftMoveFieldNames[0]:
+      return partner.moveIds[0] ?? null;
+    case giftMoveFieldNames[1]:
+      return partner.moveIds[1] ?? null;
+    case giftMoveFieldNames[2]:
+      return partner.moveIds[2] ?? null;
+    case giftMoveFieldNames[3]:
+      return partner.moveIds[3] ?? null;
+    case giftFlawlessIvCountFieldName:
+      return partner.flawlessIvCount;
+    case ivFieldNames[0]:
+      return partner.ivHp;
+    case ivFieldNames[1]:
+      return partner.ivAttack;
+    case ivFieldNames[2]:
+      return partner.ivDefense;
+    case ivFieldNames[3]:
+      return partner.ivSpecialAttack;
+    case ivFieldNames[4]:
+      return partner.ivSpecialDefense;
+    case ivFieldNames[5]:
+      return partner.ivSpeed;
     default:
       return null;
   }
@@ -45323,6 +46292,10 @@ function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string
       return gift.scaleMode;
     case giftScaleValueFieldName:
       return gift.scaleValue;
+    case giftAlphaChancePercentFieldName:
+      return gift.alphaChancePercent;
+    case giftAlphaLevelBonusFieldName:
+      return gift.alphaLevelBonus;
     default:
       return null;
   }
@@ -45762,6 +46735,71 @@ type PokemonPersonalDraftChange = {
   value: string;
 };
 
+function contextualizeZaPokemonPersonalFields(
+  editorFamily: EditorUiFamily,
+  fields: PokemonEditableField[],
+  pokemon: PokemonRecord | null,
+  drafts: Record<string, string>
+) {
+  if (editorFamily !== 'za' || pokemon === null) {
+    return fields;
+  }
+
+  const readProjectedInteger = (
+    field: string,
+    fallback: number,
+    minimum: number,
+    maximum: number
+  ) => {
+    const rawValue = drafts[field]?.trim();
+    if (!rawValue) {
+      return fallback;
+    }
+
+    const parsedValue = Number(rawValue);
+    return Number.isInteger(parsedValue) &&
+      parsedValue >= minimum &&
+      parsedValue <= maximum
+      ? parsedValue
+      : fallback;
+  };
+  const projectedStatTotal = zaPokemonBaseStatFieldNames.reduce(
+    (total, field) =>
+      total +
+      readProjectedInteger(
+        field,
+        getEditablePersonalFieldValue(pokemon, field) ?? 0,
+        0,
+        pokemonMaximumByteValue
+      ),
+    0
+  );
+  const projectedEvolutionStage = readProjectedInteger(
+    zaPokemonEvolutionStageFieldName,
+    pokemon.evolutionStage,
+    0,
+    3
+  );
+  const formulaBase = Math.ceil(
+    (projectedStatTotal * (1 + 3 * projectedEvolutionStage)) / 20
+  );
+  const minimumBaseExperience = Math.max(
+    0,
+    formulaBase + zaPokemonExpAddendMinimum
+  );
+  const maximumBaseExperience = formulaBase + zaPokemonExpAddendMaximum;
+
+  return fields.map((field) =>
+    field.field === zaPokemonBaseExperienceFieldName
+      ? {
+          ...field,
+          maximumValue: maximumBaseExperience,
+          minimumValue: minimumBaseExperience
+        }
+      : field
+  );
+}
+
 function createPokemonPersonalDrafts(
   pokemon: PokemonRecord | null,
   fields: PokemonEditableField[]
@@ -46041,8 +47079,10 @@ type EditableFieldOption = {
 
 type SpeciesFormOptionContext = {
   abilityOptions?: EditableFieldOption[];
+  allowedFormValues?: readonly number[];
   formOptions?: EditableFieldOption[];
   formOptionsAreAuthoritative?: boolean;
+  formLabelOverrides?: Readonly<Record<number, string>>;
   gameFamily?: EditorUiFamily;
   genderOptions?: EditableFieldOption[];
   species: string;
@@ -47217,10 +48257,14 @@ function getContextualFieldOptions(
       ? formOptionContext.formOptions
       : options;
 
-  return formOptions.map((option) => ({
+  const contextualOptions = formOptions.map((option) => ({
     ...option,
     label: formatSpeciesFormOptionLabel(option.value, formOptionContext)
   }));
+  const allowedFormValues = formOptionContext.allowedFormValues;
+  return allowedFormValues
+    ? contextualOptions.filter((option) => allowedFormValues.includes(option.value))
+    : contextualOptions;
 }
 
 function useContextualSpeciesFormOptions(
@@ -47739,7 +48783,10 @@ function getPendingEncounterTableIds(
         (slot) =>
           (slot.encounterRecordId != null && pendingRecordIds.has(slot.encounterRecordId)) ||
           pendingRecordIds.has(`${table.tableId}#${slot.slot}`)
-      )
+      ) ||
+      (table.playerPartner !== null &&
+        table.playerPartner !== undefined &&
+        pendingRecordIds.has(getZaEncounterPlayerPartnerRecordId(table.playerPartner)))
     ) {
       tableIds.add(table.tableId);
     }
@@ -47757,6 +48804,10 @@ function getPendingEncounterTableIds(
   }
 
   return tableIds;
+}
+
+function getZaEncounterPlayerPartnerRecordId(partner: EncounterPlayerPartnerRecord) {
+  return `player-partner:${partner.pokemonDataId}:${partner.pokemonDataSourceIndex}`;
 }
 
 function getPendingTeraRaidRecordIds(editSession: EditSession | null) {
@@ -49685,6 +50736,7 @@ function stripTrailingGenericFormLabel(species: string, form: number) {
 
 function formatSpeciesFormOptionLabel(form: number, context: SpeciesFormOptionContext) {
   return (
+    context.formLabelOverrides?.[form] ??
     resolveSpeciesFormLabel(context.species, form, context.speciesId, context.gameFamily) ??
     (form === 0 ? resolveBaseSpeciesFormLabel(context) ?? 'Base' : `Form ${form}`)
   );

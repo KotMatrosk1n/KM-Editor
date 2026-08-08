@@ -4234,21 +4234,17 @@ h2 {
   opacity: 0.35;
 }
 
-.learnset-list-item:not([draggable='true']) .learnset-drag-cell {
+.learnset-drag-cell:not([draggable='true']) {
   visibility: hidden;
 }
 
-.learnset-list-item[draggable='true'] .learnset-drag-cell {
+.learnset-drag-cell[draggable='true'] {
   color: var(--color-gold);
   cursor: grab;
   opacity: 1;
 }
 
-.learnset-list-item[draggable='true'] .learnset-row {
-  cursor: grab;
-}
-
-.learnset-list-item[draggable='true'] .learnset-row:active {
+.learnset-drag-cell[draggable='true']:active {
   cursor: grabbing;
 }
 
@@ -4770,6 +4766,31 @@ h2 {
 .trainer-inspector > .item-provenance-list {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   margin-top: 0;
+}
+
+.trainer-inspector > .za-shared-rival-notice {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: flex-start;
+  margin-top: 0;
+}
+
+.za-shared-rival-notice > .technical-tool-notice-heading {
+  flex: 1 1 280px;
+}
+
+.za-shared-rival-notice-facts {
+  display: grid;
+  flex: 4 1 760px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 10px 22px;
+  min-width: 0;
+}
+
+.za-shared-rival-notice-facts > p {
+  margin: 0;
 }
 
 .trainer-inspector .pokemon-summary-card > .pokemon-summary-main {
@@ -8907,6 +8928,130 @@ button.sv-encounter-condition-row:hover {
   text-transform: uppercase;
 }
 
+.za-player-partner-editor {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgb(24 37 67 / 78%), rgb(18 31 52 / 72%));
+  border: 1px solid rgb(94 129 202 / 48%);
+  border-radius: 8px;
+}
+
+.za-player-partner-heading,
+.za-player-partner-title,
+.za-player-partner-statuses {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.za-player-partner-heading {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.za-player-partner-title {
+  flex: 1 1 520px;
+  min-width: 0;
+}
+
+.za-player-partner-title > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #8eb8ff;
+}
+
+.za-player-partner-title h3,
+.za-player-partner-title p,
+.za-player-partner-guidance p {
+  margin: 0;
+}
+
+.za-player-partner-title p,
+.za-player-partner-guidance {
+  color: var(--color-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.za-player-partner-statuses {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.za-player-partner-summary {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 0.55fr) minmax(320px, 1.45fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgb(9 16 31 / 62%);
+  border: 1px solid rgb(94 129 202 / 30%);
+  border-radius: 7px;
+}
+
+.za-player-partner-sprite {
+  width: 56px;
+  height: 56px;
+}
+
+.za-player-partner-summary > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.za-player-partner-summary > div strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.za-player-partner-summary > div span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.za-player-partner-summary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.za-player-partner-summary dl > div {
+  min-width: 0;
+}
+
+.za-player-partner-summary dt {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.za-player-partner-summary dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.za-player-partner-guidance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.za-player-partner-guidance p {
+  padding: 9px 10px;
+  background: rgb(15 25 45 / 72%);
+  border: 1px solid rgb(94 129 202 / 26%);
+  border-radius: 6px;
+}
+
 .za-scripted-boss-actions {
   display: grid;
   gap: 10px;
@@ -11117,6 +11262,16 @@ input {
 
   .za-encounter-ownership-summary {
     grid-template-columns: 1fr;
+  }
+
+  .za-player-partner-summary,
+  .za-player-partner-summary dl,
+  .za-player-partner-guidance {
+    grid-template-columns: 1fr;
+  }
+
+  .za-player-partner-statuses {
+    justify-content: flex-start;
   }
 
   .za-encounter-advanced-heading {
