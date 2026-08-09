@@ -154,15 +154,17 @@ public static class EditSessionBridgeMapper
 
     private static ValidationDiagnostic ToCore(ApiDiagnostic diagnostic)
     {
+        var sanitized = BridgeDiagnosticSanitizer.Sanitize(diagnostic);
+
         return new ValidationDiagnostic(
-            ToCore(diagnostic.Severity),
-            diagnostic.Message,
-            diagnostic.File,
-            diagnostic.Domain,
-            diagnostic.Field,
-            diagnostic.Expected)
+            ToCore(sanitized.Severity),
+            sanitized.Message,
+            sanitized.File,
+            sanitized.Domain,
+            sanitized.Field,
+            sanitized.Expected)
         {
-            Code = diagnostic.Code,
+            Code = sanitized.Code,
         };
     }
 

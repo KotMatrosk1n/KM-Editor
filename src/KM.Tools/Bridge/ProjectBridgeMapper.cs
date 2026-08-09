@@ -63,15 +63,17 @@ public static class ProjectBridgeMapper
 
     public static ApiDiagnostic ToDto(ValidationDiagnostic diagnostic)
     {
+        var sanitized = BridgeDiagnosticSanitizer.Sanitize(diagnostic);
+
         return new ApiDiagnostic(
-            ToDto(diagnostic.Severity),
-            diagnostic.Message,
-            diagnostic.File,
-            diagnostic.Domain,
-            diagnostic.Field,
-            diagnostic.Expected)
+            ToDto(sanitized.Severity),
+            sanitized.Message,
+            sanitized.File,
+            sanitized.Domain,
+            sanitized.Field,
+            sanitized.Expected)
         {
-            Code = diagnostic.Code,
+            Code = sanitized.Code,
         };
     }
 

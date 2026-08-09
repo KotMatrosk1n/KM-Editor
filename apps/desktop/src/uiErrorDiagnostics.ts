@@ -6,12 +6,17 @@ import { ProjectBridgeError } from './bridge/projectBridgeError';
 import { DesktopServiceError } from './desktopServices';
 import {
   desktopErrorCodes,
+  isKmErrorCode,
   projectBridgeErrorCodes,
   swshPlacementErrorCodes,
   swshDynamaxAdventuresErrorCodes,
   type KmErrorCode
 } from './errorCodes';
-import { createReportableError, formatReportableErrorMessage } from './errorReporting';
+import {
+  createReportableError,
+  formatReportableErrorMessage,
+  sanitizeReportableErrorText
+} from './errorReporting';
 
 const expectedBridgeErrorCodes = new Set<KmErrorCode>([
   swshDynamaxAdventuresErrorCodes.seedInvalid,
@@ -31,6 +36,10 @@ export function toProjectBridgeDiagnostics(
 
   if (error instanceof ProjectBridgeError) {
     if (error.apiError.diagnostics.length > 0) {
+      if (error.apiError.code === projectBridgeErrorCodes.unexpected) {
+        return createUnexpectedBridgeDiagnostics(error);
+      }
+
       return error.apiError.diagnostics;
     }
 
@@ -67,6 +76,88 @@ export function toProjectBridgeDiagnostics(
       'bridge'
     )
   ];
+}
+
+function createUnexpectedBridgeDiagnostics(error: ProjectBridgeError): ApiDiagnostic[] {
+  const [primaryDiagnostic, ...remainingDiagnostics] = error.apiError.diagnostics;
+  if (!primaryDiagnostic) {
+    return [];
+  }
+
+  const sanitizedPrimaryDiagnostic = sanitizeBackendDiagnostic(primaryDiagnostic, error);
+  const semanticCode = isKmErrorCode(sanitizedPrimaryDiagnostic.code)
+    ? sanitizedPrimaryDiagnostic.code
+    : error.semanticCode ?? projectBridgeErrorCodes.unexpected;
+  const report = createReportableError(error, {
+    fallbackMessage: error.apiError.message,
+    kind: 'bridge',
+    seed: createBackendDiagnosticSeed(sanitizedPrimaryDiagnostic, error),
+    semanticCode,
+    title: 'KM Editor hit an unexpected bridge error.'
+  });
+  const reportMessage = formatReportableErrorMessage(report, { includeSemanticCode: false });
+  const backendMessage = sanitizedPrimaryDiagnostic.message.trim();
+
+  return [
+    {
+      ...sanitizedPrimaryDiagnostic,
+      message:
+        backendMessage.length > 0 && !reportMessage.includes(backendMessage)
+          ? `${reportMessage}\n\nBackend diagnostic:\n${backendMessage}`
+          : reportMessage
+    },
+    ...remainingDiagnostics.map((diagnostic) => sanitizeBackendDiagnostic(diagnostic, error))
+  ];
+}
+
+function sanitizeBackendDiagnostic(
+  diagnostic: ApiDiagnostic,
+  error: ProjectBridgeError
+): ApiDiagnostic {
+  return {
+    ...diagnostic,
+    domain: sanitizeOptionalBackendDiagnosticText(diagnostic.domain, error),
+    expected: sanitizeOptionalBackendDiagnosticText(diagnostic.expected, error),
+    field: sanitizeOptionalBackendDiagnosticText(diagnostic.field, error),
+    file: sanitizeOptionalBackendDiagnosticText(diagnostic.file, error),
+    message: sanitizeBackendDiagnosticText(diagnostic.message, error)
+  };
+}
+
+function createBackendDiagnosticSeed(
+  diagnostic: ApiDiagnostic,
+  error: ProjectBridgeError
+) {
+  return JSON.stringify([
+    diagnostic.code ?? null,
+    diagnostic.severity,
+    sanitizeOptionalBackendDiagnosticText(diagnostic.message, error),
+    sanitizeOptionalBackendDiagnosticText(diagnostic.domain, error),
+    sanitizeOptionalBackendDiagnosticText(diagnostic.file, error),
+    sanitizeOptionalBackendDiagnosticText(diagnostic.field, error),
+    sanitizeOptionalBackendDiagnosticText(diagnostic.expected, error)
+  ]);
+}
+
+function sanitizeOptionalBackendDiagnosticText(
+  value: string | null | undefined,
+  error: ProjectBridgeError
+) {
+  return value === null || value === undefined
+    ? null
+    : sanitizeBackendDiagnosticText(value, error);
+}
+
+function sanitizeBackendDiagnosticText(value: string, error: ProjectBridgeError) {
+  let sanitized = sanitizeReportableErrorText(value);
+  if (error.requestId) {
+    sanitized = sanitized.replaceAll(error.requestId, '[request ID]');
+  }
+  if (error.responseRequestId) {
+    sanitized = sanitized.replaceAll(error.responseRequestId, '[response request ID]');
+  }
+
+  return sanitized;
 }
 
 export function toDesktopErrorDiagnostics(

@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SV;
+using System.Security;
 
 namespace KM.SV.Workflows;
 
@@ -32,20 +33,43 @@ internal sealed class SvWorkflowFileSource
         {
             var trinityModManagerPath = CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath);
             var standalonePath = CombineGraphPath(project.Paths.OutputRootPath, relativePath);
-            var looseOutput = SelectLatestLooseOutput(trinityModManagerPath, standalonePath);
+            (string Path, bool IsStandalone)? looseOutput;
+            try
+            {
+                looseOutput = SelectLatestLooseOutput(trinityModManagerPath, standalonePath);
+            }
+            catch (Exception exception) when (IsContextualFileFailure(exception))
+            {
+                throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    entry?.State,
+                    exception,
+                    ProjectFileOperation.Inspect);
+            }
+
             if (looseOutput is not null)
             {
+                var state = looseOutput.Value.IsStandalone
+                    ? entry?.State ?? ProjectFileGraphEntryState.LayeredOverride
+                    : ProjectFileGraphEntryState.LayeredOverride;
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(looseOutput.Value.Path),
+                    ReadAllBytes(
+                        looseOutput.Value.Path,
+                        relativePath,
+                        ProjectFileLayer.Layered,
+                        state),
                     ProjectFileLayer.Layered,
-                    looseOutput.Value.IsStandalone
-                        ? entry?.State ?? ProjectFileGraphEntryState.LayeredOverride
-                        : ProjectFileGraphEntryState.LayeredOverride);
+                    state);
             }
 
-            if (TryReadOutputArchive(project.Paths, normalizedVirtualPath, out var layeredArchiveBytes))
+            if (TryReadOutputArchive(
+                project.Paths,
+                normalizedVirtualPath,
+                relativePath,
+                out var layeredArchiveBytes))
             {
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
@@ -59,12 +83,20 @@ internal sealed class SvWorkflowFileSource
         if (!string.IsNullOrWhiteSpace(project.Paths.BaseRomFsPath))
         {
             var looseBasePath = CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath);
-            if (File.Exists(looseBasePath))
+            if (FileExistsWithContext(
+                looseBasePath,
+                relativePath,
+                ProjectFileLayer.Base,
+                entry?.State))
             {
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(looseBasePath),
+                    ReadAllBytes(
+                        looseBasePath,
+                        relativePath,
+                        ProjectFileLayer.Base,
+                        entry?.State),
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
@@ -79,12 +111,25 @@ internal sealed class SvWorkflowFileSource
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
-            catch (FileNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
+            }
+            catch (Exception exception) when (IsContextualFileFailure(exception))
+            {
+                throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Base,
+                    entry?.State,
+                    exception,
+                    ProjectFileOperation.Inspect);
             }
         }
 
-        throw new FileNotFoundException($"Scarlet/Violet file '{relativePath}' could not be resolved.");
+        throw CreateReadFailure(
+            relativePath,
+            layer: null,
+            state: entry?.State,
+            exception: new FileNotFoundException());
     }
 
     public SvWorkflowFile ReadBase(OpenedProject project, string virtualRomFsPath)
@@ -99,12 +144,20 @@ internal sealed class SvWorkflowFileSource
         if (!string.IsNullOrWhiteSpace(project.Paths.BaseRomFsPath))
         {
             var looseBasePath = CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath);
-            if (File.Exists(looseBasePath))
+            if (FileExistsWithContext(
+                looseBasePath,
+                relativePath,
+                ProjectFileLayer.Base,
+                entry?.State))
             {
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(looseBasePath),
+                    ReadAllBytes(
+                        looseBasePath,
+                        relativePath,
+                        ProjectFileLayer.Base,
+                        entry?.State),
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
@@ -119,12 +172,25 @@ internal sealed class SvWorkflowFileSource
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
-            catch (FileNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
+            }
+            catch (Exception exception) when (IsContextualFileFailure(exception))
+            {
+                throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Base,
+                    entry?.State,
+                    exception,
+                    ProjectFileOperation.Inspect);
             }
         }
 
-        throw new FileNotFoundException($"Scarlet/Violet base file '{relativePath}' could not be resolved.");
+        throw CreateReadFailure(
+            relativePath,
+            layer: null,
+            state: entry?.State,
+            exception: new FileNotFoundException());
     }
 
     public bool Exists(OpenedProject project, string virtualRomFsPath)
@@ -137,9 +203,17 @@ internal sealed class SvWorkflowFileSource
 
         if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
         {
-            if (File.Exists(CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath))
-                || File.Exists(CombineGraphPath(project.Paths.OutputRootPath, relativePath))
-                || TryOutputArchiveContains(project.Paths, normalizedVirtualPath))
+            if (FileExistsWithContext(
+                    CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath),
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    state: null)
+                || FileExistsWithContext(
+                    CombineGraphPath(project.Paths.OutputRootPath, relativePath),
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    state: null)
+                || TryOutputArchiveContains(project.Paths, normalizedVirtualPath, relativePath))
             {
                 return true;
             }
@@ -150,7 +224,11 @@ internal sealed class SvWorkflowFileSource
             return false;
         }
 
-        if (File.Exists(CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath)))
+        if (FileExistsWithContext(
+            CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath),
+            relativePath,
+            ProjectFileLayer.Base,
+            state: null))
         {
             return true;
         }
@@ -159,9 +237,18 @@ internal sealed class SvWorkflowFileSource
         {
             return cacheManager.ContainsBaseTrinityFile(project.Paths, normalizedVirtualPath);
         }
-        catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return false;
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Base,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
         }
     }
 
@@ -340,8 +427,8 @@ internal sealed class SvWorkflowFileSource
         string trinityModManagerPath,
         string standalonePath)
     {
-        var trinityModManagerExists = File.Exists(trinityModManagerPath);
-        var standaloneExists = File.Exists(standalonePath);
+        var trinityModManagerExists = FileExistsForInspection(trinityModManagerPath);
+        var standaloneExists = FileExistsForInspection(standalonePath);
         if (!trinityModManagerExists)
         {
             return standaloneExists ? (standalonePath, true) : null;
@@ -357,7 +444,11 @@ internal sealed class SvWorkflowFileSource
             : (trinityModManagerPath, false);
     }
 
-    private static bool TryReadOutputArchive(ProjectPaths paths, string virtualPath, out byte[] bytes)
+    private static bool TryReadOutputArchive(
+        ProjectPaths paths,
+        string virtualPath,
+        string relativePath,
+        out byte[] bytes)
     {
         bytes = [];
         try
@@ -378,14 +469,24 @@ internal sealed class SvWorkflowFileSource
                 paths.ScarletVioletSupportFolderPath);
             return archive.TryReadFile(virtualPath, out bytes);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsContextualFileFailure(exception))
         {
-            bytes = [];
-            return false;
+            // An existing output archive participates in the game's effective data. Falling back
+            // to base after an inspection failure would hide that source and could stage edits
+            // against bytes the game does not use.
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Layered,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
         }
     }
 
-    private static bool TryOutputArchiveContains(ProjectPaths paths, string virtualPath)
+    private static bool TryOutputArchiveContains(
+        ProjectPaths paths,
+        string virtualPath,
+        string relativePath)
     {
         try
         {
@@ -400,10 +501,92 @@ internal sealed class SvWorkflowFileSource
                 paths.ScarletVioletSupportFolderPath);
             return archive.ContainsFile(virtualPath);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            // Treat an unreadable output archive as an unknown candidate, not as an absent file.
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Layered,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
+        }
+    }
+
+    private static byte[] ReadAllBytes(
+        string path,
+        string relativePath,
+        ProjectFileLayer layer,
+        ProjectFileGraphEntryState? state)
+    {
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(relativePath, layer, state, exception);
+        }
+    }
+
+    private static bool FileExistsWithContext(
+        string path,
+        string relativePath,
+        ProjectFileLayer layer,
+        ProjectFileGraphEntryState? state)
+    {
+        try
+        {
+            return FileExistsForInspection(path);
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                layer,
+                state,
+                exception,
+                ProjectFileOperation.Inspect);
+        }
+    }
+
+    private static bool FileExistsForInspection(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.Directory) == 0;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return false;
         }
+    }
+
+    private static ProjectFileOperationException CreateReadFailure(
+        string relativePath,
+        ProjectFileLayer? layer,
+        ProjectFileGraphEntryState? state,
+        Exception exception,
+        ProjectFileOperation operation = ProjectFileOperation.Read)
+    {
+        return exception as ProjectFileOperationException
+            ?? new ProjectFileOperationException(
+                operation,
+                relativePath,
+                layer,
+                state,
+                exception);
+    }
+
+    private static bool IsContextualFileFailure(Exception exception)
+    {
+        return exception is IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or SecurityException
+            or DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException;
     }
 
     private static bool HasTrinityArchive(string rootPath)
@@ -414,8 +597,8 @@ internal sealed class SvWorkflowFileSource
 
     private static bool HasTrinityArchiveAt(string romFsRoot)
     {
-        return File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfd"))
-            && File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfs"));
+        return FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfd"))
+            && FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfs"));
     }
 }
 

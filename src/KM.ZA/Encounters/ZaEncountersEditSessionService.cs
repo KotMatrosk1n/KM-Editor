@@ -1186,6 +1186,7 @@ internal sealed class ZaEncountersEditSessionService
             {
                 var bossActionBytes = bossActionDocument.Write();
                 if (!VerifyBossActionOutput(
+                        workflow,
                         bossActionSourceBytes,
                         bossActionBytes,
                         session.PendingEdits,
@@ -1949,7 +1950,7 @@ internal sealed class ZaEncountersEditSessionService
         if (!IsPrimaryBossController(table.RawSpawnerId))
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "Boss action edits must be staged from the primary Rogue Mega controller encounter.",
+                "Boss action edits must be staged from the primary scripted boss controller encounter.",
                 field,
                 "Selected primary btl_spn_boss_* controller"));
             return null;
@@ -1965,7 +1966,7 @@ internal sealed class ZaEncountersEditSessionService
         if (profile is null || action is null)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "The selected Rogue Mega controller does not own this boss action selector.",
+                "The selected scripted boss controller does not own this boss action selector.",
                 field,
                 "Selector action owned by the selected primary controller"));
             return null;
@@ -1984,10 +1985,24 @@ internal sealed class ZaEncountersEditSessionService
             return null;
         }
 
+        if (!TryResolveEditableBossActionOwners(
+                workflow,
+                selectorActionId,
+                out _,
+                out var variant)
+            || action.Variant != variant)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "The shared boss action selector does not have one verified editable move variant.",
+                field,
+                "All selector owners must be editable battle actions with the same move variant"));
+            return null;
+        }
+
         var parsedValue = ZaEditSessionSupport.TryParseInt(
             value,
             minimumValue: 0,
-            maximumValue: null,
+            maximumValue: ZaScriptedBossActionCatalog.MaximumBaseMoveId,
             field: field,
             domain: ZaEditSessionSupport.EncountersDomain,
             diagnostics: diagnostics);
@@ -1997,13 +2012,14 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
-            candidate.MoveId == parsedValue.Value);
+            candidate.MoveId == parsedValue.Value
+            && candidate.Variant == variant);
         if (option is null)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "The requested move is not a verified working Boss Move replacement.",
+                "The requested move is not a verified working replacement for this selector variant.",
                 field,
-                "Move with one Boss battle row and a matching Boss timing row"));
+                "Move with one battle row and a matching timing row for the selector variant"));
             return null;
         }
 
@@ -2027,7 +2043,8 @@ internal sealed class ZaEncountersEditSessionService
 
         var affectedProfiles = workflow.ScriptedBosses
             .Where(candidate => candidate.Actions.Any(candidateAction =>
-                candidateAction.SelectorActionId == selectorActionId))
+                candidateAction.SelectorActionId == selectorActionId
+                && candidateAction.Variant == variant))
             .Select(candidate => candidate.Name)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
@@ -2038,7 +2055,7 @@ internal sealed class ZaEncountersEditSessionService
             1 => affectedProfiles[0],
             _ => string.Join(", ", affectedProfiles),
         };
-        var summary = $"Set Rogue Mega selector action {selectorActionId.ToString(CultureInfo.InvariantCulture)} "
+        var summary = $"Set scripted boss selector action {selectorActionId.ToString(CultureInfo.InvariantCulture)} "
             + $"from {action.Name} to {option.Name}. Affected profiles: {impact}.";
 
         return ZaEditSessionSupport.CreatePendingEdit(
@@ -2069,6 +2086,34 @@ internal sealed class ZaEncountersEditSessionService
                 StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool TryResolveEditableBossActionOwners(
+        ZaEncountersWorkflow workflow,
+        int selectorActionId,
+        out ZaScriptedBossActionRecord[] ownedActions,
+        out int variant)
+    {
+        ownedActions = workflow.ScriptedBosses
+            .SelectMany(profile => profile.Actions)
+            .Where(action => action.SelectorActionId == selectorActionId)
+            .ToArray();
+        variant = default;
+        if (ownedActions.Length == 0
+            || ownedActions[0].Variant is not { } sharedVariant
+            || ownedActions.Any(action =>
+                !action.CanEdit
+                || !string.Equals(
+                    action.Kind,
+                    ZaScriptedBossActionCatalog.BattleMoveKind,
+                    StringComparison.Ordinal)
+                || action.Variant != sharedVariant))
+        {
+            return false;
+        }
+
+        variant = sharedVariant;
+        return true;
+    }
+
     private static string CreateBossActionLockMessage(
         ZaScriptedBossActionRecord action)
     {
@@ -2081,7 +2126,7 @@ internal sealed class ZaEncountersEditSessionService
             ZaScriptedBossActionCatalog.SelectorUnavailableLockReason =>
                 "This boss action selector could not be verified against the base game and is locked.",
             ZaScriptedBossActionCatalog.RuntimeCatalogUnavailableLockReason =>
-                "Working Boss Move replacement data could not be verified, so this selector is locked.",
+                "Working move replacement data could not be verified, so this selector is locked.",
             _ => "This boss action is locked and cannot be edited.",
         };
     }
@@ -2297,42 +2342,46 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        var actions = workflow.ScriptedBosses
-            .SelectMany(profile => profile.Actions)
-            .Where(action => action.SelectorActionId == selectorActionId)
-            .ToArray();
-        if (actions.Length == 0)
+        if (!TryResolveEditableBossActionOwners(
+                workflow,
+                selectorActionId,
+                out var actions,
+                out var variant))
         {
-            diagnostics.Add(CreateBossActionDiagnostic(
-                "Pending boss action edit targets a selector that is not owned by a verified Rogue Mega controller.",
-                edit.Field,
-                "Known selector action from a verified Rogue Mega profile"));
-            return;
-        }
-
-        if (actions.Any(action =>
-                !action.CanEdit
-                || !string.Equals(
-                    action.Kind,
-                    ZaScriptedBossActionCatalog.BattleMoveKind,
-                    StringComparison.Ordinal)))
-        {
-            diagnostics.Add(CreateBossActionDiagnostic(
-                CreateBossActionLockMessage(actions.First(action =>
+            if (actions.Length == 0)
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    "Pending boss action edit targets a selector that is not owned by a verified scripted boss controller.",
+                    edit.Field,
+                    "Known selector action from a verified scripted boss profile"));
+            }
+            else if (actions.FirstOrDefault(action =>
                     !action.CanEdit
                     || !string.Equals(
                         action.Kind,
                         ZaScriptedBossActionCatalog.BattleMoveKind,
-                        StringComparison.Ordinal))),
-                edit.Field,
-                "Verified data-driven battle move selector"));
+                        StringComparison.Ordinal)) is { } lockedAction)
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    CreateBossActionLockMessage(lockedAction),
+                    edit.Field,
+                    "Verified data-driven battle move selector"));
+            }
+            else
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    "Pending boss action edit targets a shared selector without one verified move variant.",
+                    edit.Field,
+                    "All selector owners must use the same non-null move variant"));
+            }
+
             return;
         }
 
         var moveId = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             minimumValue: 0,
-            maximumValue: null,
+            maximumValue: ZaScriptedBossActionCatalog.MaximumBaseMoveId,
             field: edit.Field,
             domain: ZaEditSessionSupport.EncountersDomain,
             diagnostics: diagnostics);
@@ -2341,12 +2390,14 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        if (!workflow.ScriptedBossMoveOptions.Any(option => option.MoveId == moveId.Value))
+        if (!workflow.ScriptedBossMoveOptions.Any(option =>
+                option.MoveId == moveId.Value
+                && option.Variant == variant))
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "Pending boss action edit no longer selects a verified working Boss Move replacement.",
+                "Pending boss action edit no longer selects a verified working replacement for its selector variant.",
                 edit.Field,
-                "Move with one Boss battle row and a matching Boss timing row"));
+                "Move with one battle row and a matching timing row for the selector variant"));
             return;
         }
 
@@ -3444,18 +3495,19 @@ internal sealed class ZaEncountersEditSessionService
                 out var recordSelectorActionId)
             && selectorActionId == recordSelectorActionId)
         {
+            if (!TryResolveEditableBossActionOwners(
+                    workflow,
+                    selectorActionId,
+                    out _,
+                    out var variant))
+            {
+                return workflow;
+            }
+
             var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
-                candidate.MoveId == value);
-            if (option is null
-                || !workflow.ScriptedBosses
-                    .SelectMany(profile => profile.Actions)
-                    .Where(action => action.SelectorActionId == selectorActionId)
-                    .All(action =>
-                        action.CanEdit
-                        && string.Equals(
-                            action.Kind,
-                            ZaScriptedBossActionCatalog.BattleMoveKind,
-                            StringComparison.Ordinal)))
+                candidate.MoveId == value
+                && candidate.Variant == variant);
+            if (option is null)
             {
                 return workflow;
             }
@@ -3471,6 +3523,7 @@ internal sealed class ZaEncountersEditSessionService
                                 {
                                     MoveId = option.MoveId,
                                     RuntimeMoveId = option.RuntimeMoveId,
+                                    Variant = option.Variant,
                                     Name = option.Name,
                                     RuntimeState = ZaScriptedBossActionCatalog.WorkingRuntimeState,
                                 }
@@ -4006,35 +4059,48 @@ internal sealed class ZaEncountersEditSessionService
                 edit.NewValue,
                 NumberStyles.AllowLeadingSign,
                 CultureInfo.InvariantCulture,
-                out var moveId))
+                out var moveId)
+            || moveId is < 0 or > ZaScriptedBossActionCatalog.MaximumBaseMoveId)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
                 "Pending boss action edit is not valid for apply.",
                 edit.Field,
-                "Matching selector action record and verified Boss Move ID"));
+                "Matching selector action record and verified base move ID"));
             return;
         }
 
-        var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
-            candidate.MoveId == moveId);
-        var ownedActions = workflow.ScriptedBosses
-            .SelectMany(profile => profile.Actions)
-            .Where(action => action.SelectorActionId == selectorActionId)
-            .ToArray();
-        if (option is null
-            || option.RuntimeMoveId != ZaScriptedBossActionCatalog.ToRuntimeMoveId(moveId)
-            || ownedActions.Length == 0
-            || ownedActions.Any(action =>
-                !action.CanEdit
-                || !string.Equals(
-                    action.Kind,
-                    ZaScriptedBossActionCatalog.BattleMoveKind,
-                    StringComparison.Ordinal)))
+        if (!TryResolveEditableBossActionOwners(
+                workflow,
+                selectorActionId,
+                out var ownedActions,
+                out var variant))
         {
             diagnostics.Add(CreateBossActionDiagnostic(
                 "Pending boss action replacement is no longer verified or editable.",
                 edit.Field,
-                "Owned data-driven selector and working Boss Move replacement"));
+                "Owned data-driven selector whose owners share one editable move variant"));
+            return;
+        }
+
+        var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
+            candidate.MoveId == moveId
+            && candidate.Variant == variant);
+        if (option is null)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action replacement is no longer verified for its selector variant.",
+                edit.Field,
+                "Working move replacement for the selector's verified variant"));
+            return;
+        }
+
+        var runtimeMoveId = ZaScriptedBossActionCatalog.ToRuntimeMoveId(moveId, variant);
+        if (option.RuntimeMoveId != runtimeMoveId)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action replacement no longer maps to the reviewed runtime move ID.",
+                edit.Field,
+                runtimeMoveId.ToString(CultureInfo.InvariantCulture)));
             return;
         }
 
@@ -4050,7 +4116,7 @@ internal sealed class ZaEncountersEditSessionService
 
         if (!document.TrySetRuntimeMoveId(
                 selectorActionId,
-                option.RuntimeMoveId,
+                runtimeMoveId,
                 out var error))
         {
             diagnostics.Add(CreateBossActionDiagnostic(
@@ -4063,6 +4129,7 @@ internal sealed class ZaEncountersEditSessionService
     }
 
     private static bool VerifyBossActionOutput(
+        ZaEncountersWorkflow workflow,
         byte[] originalBytes,
         byte[] outputBytes,
         IEnumerable<PendingEdit> pendingEdits,
@@ -4079,24 +4146,49 @@ internal sealed class ZaEncountersEditSessionService
                     edit.NewValue,
                     NumberStyles.AllowLeadingSign,
                     CultureInfo.InvariantCulture,
-                    out var moveId);
-                return (hasActionId, actionId, hasMoveId, moveId, edit.Field);
+                    out var moveId)
+                    && moveId is >= 0 and <= ZaScriptedBossActionCatalog.MaximumBaseMoveId;
+                var variant = default(int);
+                var hasVariant = hasActionId
+                    && TryResolveEditableBossActionOwners(
+                        workflow,
+                        actionId,
+                        out _,
+                        out variant);
+                var hasOption = hasMoveId
+                    && hasVariant
+                    && workflow.ScriptedBossMoveOptions.Any(option =>
+                        option.MoveId == moveId
+                        && option.Variant == variant);
+                return (
+                    hasActionId,
+                    actionId,
+                    hasMoveId,
+                    moveId,
+                    hasVariant,
+                    variant,
+                    hasOption,
+                    edit.Field);
             })
             .ToArray();
         if (expectedEdits.Length == 0
-            || expectedEdits.Any(edit => !edit.hasActionId || !edit.hasMoveId))
+            || expectedEdits.Any(edit =>
+                !edit.hasActionId
+                || !edit.hasMoveId
+                || !edit.hasVariant
+                || !edit.hasOption))
         {
             diagnostics.Add(CreateBossActionDiagnostic(
                 "Boss action output verification did not receive a complete selector change set.",
                 field: null,
-                expected: "Complete reviewed boss action edits"));
+                expected: "Complete reviewed boss action edits with verified move variants"));
             return false;
         }
 
         var conflictingEdit = expectedEdits
             .GroupBy(edit => edit.actionId)
             .FirstOrDefault(group => group
-                .Select(edit => edit.moveId)
+                .Select(edit => (edit.moveId, edit.variant))
                 .Distinct()
                 .Skip(1)
                 .Any());
@@ -4114,7 +4206,8 @@ internal sealed class ZaEncountersEditSessionService
             .ToDictionary(
                 group => group.Key,
                 group => ZaScriptedBossActionCatalog.ToRuntimeMoveId(
-                    group.First().moveId));
+                    group.First().moveId,
+                    group.First().variant));
         var original = ZaBossMoveSelectorDocument.Parse(originalBytes);
         var output = ZaBossMoveSelectorDocument.Parse(outputBytes);
         if (originalBytes.Length != outputBytes.Length
