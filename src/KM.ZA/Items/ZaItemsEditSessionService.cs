@@ -41,7 +41,8 @@ internal sealed class ZaItemsEditSessionService
         EditSession? session,
         int itemId,
         string field,
-        string value)
+        string value,
+        string? owner = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
@@ -75,7 +76,13 @@ internal sealed class ZaItemsEditSessionService
             return new ZaItemsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(workflow, item, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(
+            workflow,
+            item,
+            field,
+            value,
+            diagnostics,
+            owner: owner);
         if (pendingEdit is null)
         {
             return new ZaItemsEditResult(workflow, currentSession, diagnostics);
@@ -1899,7 +1906,8 @@ internal sealed class ZaItemsEditSessionService
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics,
-        bool isVerifiedBaseRestore = false)
+        bool isVerifiedBaseRestore = false,
+        string? owner = null)
     {
         var normalizedField = field.Trim();
         var parsedValue = TryParseEditableValue(workflow, normalizedField, value, diagnostics);
@@ -1946,7 +1954,10 @@ internal sealed class ZaItemsEditSessionService
             new ProjectFileReference(item.Provenance.SourceLayer, item.Provenance.SourceFile),
             item.ItemId.ToString(CultureInfo.InvariantCulture),
             normalizedField,
-            parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+            parsedValue.Value.ToString(CultureInfo.InvariantCulture)) with
+        {
+            Owner = owner,
+        };
     }
 
     private static bool TryStagePendingEdit(

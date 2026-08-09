@@ -13,6 +13,7 @@ public static class ZaWorkflowIds
     public const string Pokemon = "pokemon";
     public const string Trainers = "trainers";
     public const string Encounters = "encounters";
+    public const string ScriptedBosses = "scriptedBosses";
     public const string StaticEncounters = "staticEncounters";
     public const string Shops = "shops";
     public const string GiftPokemon = "giftPokemon";

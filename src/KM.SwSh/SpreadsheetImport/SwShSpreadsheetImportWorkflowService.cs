@@ -118,7 +118,7 @@ public sealed class SwShSpreadsheetImportWorkflowService
                     "SellPrice",
                     "integer",
                     IsRequired: false,
-                    "New sell price. This writes the underlying buy-price row value."),
+                    "New sell price. When BuyPrice is also provided, this must equal floor(BuyPrice / 2); by itself, it writes the shared buy-price row value."),
                 new SwShSpreadsheetImportColumnRecord(
                     4,
                     "WattsPrice",

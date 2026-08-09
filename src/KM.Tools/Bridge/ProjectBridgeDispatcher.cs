@@ -571,10 +571,10 @@ public sealed class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var selections = ProjectBridgeMapper.ToCore(request.Payload.Selections);
         var result = IsPokemonLegendsZA(paths)
-            ? zaGameDumpService.Run(paths, request.Payload.DestinationFolder, selections)
+            ? zaGameDumpService.Run(paths, request.Payload.DestinationFolder, selections, request.Payload.ProducerVersion)
             : IsScarletViolet(paths)
-            ? svGameDumpService.Run(paths, request.Payload.DestinationFolder, selections)
-            : swShGameDumpService.Run(paths, request.Payload.DestinationFolder, selections);
+            ? svGameDumpService.Run(paths, request.Payload.DestinationFolder, selections, request.Payload.ProducerVersion)
+            : swShGameDumpService.Run(paths, request.Payload.DestinationFolder, selections, request.Payload.ProducerVersion);
         var response = new RunGameDumpResponse(ProjectBridgeMapper.ToDto(result));
 
         return SerializeSuccess(response, request.RequestId);
@@ -986,7 +986,9 @@ public sealed class ProjectBridgeDispatcher
             : new ZaTextWorkflowQuery(
                 query.SearchText,
                 query.Offset ?? 0,
-                query.Limit ?? ZaTextWorkflowService.DefaultQueryLimit);
+                query.Limit ?? ZaTextWorkflowService.DefaultQueryLimit,
+                query.CategoryId,
+                query.Language);
     }
 
     private string DispatchLoadTrainersWorkflow(string requestJson)

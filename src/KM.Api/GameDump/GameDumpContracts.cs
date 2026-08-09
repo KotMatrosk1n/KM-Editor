@@ -29,11 +29,13 @@ public sealed record LoadGameDumpWorkflowRequest(ProjectPathsDto Paths);
 public sealed record RunGameDumpRequest(
     ProjectPathsDto Paths,
     string DestinationFolder,
-    IReadOnlyList<GameDumpSelectionDto> Selections);
+    IReadOnlyList<GameDumpSelectionDto> Selections,
+    string? ProducerVersion = null);
 
 public sealed record GameDumpSelectionDto(
     string CategoryId,
-    GameDumpFormatDto Format);
+    GameDumpFormatDto Format,
+    IReadOnlyList<string>? LanguageCodes = null);
 
 public sealed record GameDumpCategoryDto(
     string Id,
@@ -43,7 +45,19 @@ public sealed record GameDumpCategoryDto(
     IReadOnlyList<GameDumpFormatDto> Formats,
     GameDumpFormatDto DefaultFormat,
     bool IsAvailable,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public GameDumpCategoryLanguageOptionsDto? LanguageOptions { get; init; }
+}
+
+public sealed record GameDumpLanguageOptionDto(
+    string Code,
+    string Label);
+
+public sealed record GameDumpCategoryLanguageOptionsDto(
+    IReadOnlyList<GameDumpLanguageOptionDto> Options,
+    IReadOnlyList<string> DefaultLanguageCodes,
+    bool SupportsAllLanguages);
 
 public sealed record GameDumpWorkflowDto(
     IReadOnlyList<GameDumpCategoryDto> Categories,

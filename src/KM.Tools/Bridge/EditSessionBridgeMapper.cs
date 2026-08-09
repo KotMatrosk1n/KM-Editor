@@ -58,7 +58,8 @@ public static class EditSessionBridgeMapper
             sources,
             edit.RecordId,
             edit.Field,
-            edit.NewValue);
+            edit.NewValue,
+            edit.Owner);
     }
 
     public static ChangePlanDto ToDto(ChangePlan changePlan)
@@ -128,7 +129,8 @@ public static class EditSessionBridgeMapper
             edit.Sources.Select(ToDto).ToArray(),
             edit.RecordId,
             edit.Field,
-            edit.NewValue);
+            edit.NewValue,
+            edit.Owner);
     }
 
     private static PendingEdit ToCore(PendingEditDto edit)
@@ -139,7 +141,8 @@ public static class EditSessionBridgeMapper
             edit.Sources.Select(ToCore).ToArray(),
             edit.RecordId,
             edit.Field,
-            edit.NewValue);
+            edit.NewValue,
+            edit.Owner);
     }
 
     private static FileProvenanceDto ToDto(ProjectFileReference source)

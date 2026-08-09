@@ -31,6 +31,7 @@ type GameDumpSelectionState = Record<
   string,
   {
     format: GameDumpFormat;
+    languageCodes?: string[];
     selected: boolean;
   }
 >;
@@ -47,14 +48,17 @@ type GameDumpProgress = {
 type GameDumpCategoryFilter = 'all' | 'available' | 'selected';
 
 const destinationStorageKey = 'km-editor.game-dump-destinations.v1';
+const allGameDumpLanguagesValue = '__all__';
 
 export function GameDumpSection({
+  appVersion,
   bridge,
   desktopServices,
   health,
   onWriteStateChange,
   paths
 }: {
+  appVersion: string;
   bridge: ProjectBridge;
   desktopServices: DesktopServices;
   health: ProjectHealth | null;
@@ -74,7 +78,7 @@ export function GameDumpSection({
   const [categoryFilter, setCategoryFilter] = useState<GameDumpCategoryFilter>('all');
   const [categorySearch, setCategorySearch] = useState('');
   const loadWorkflowRunRef = useRef(0);
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
 
   const selectedCategories = useMemo(
     () =>
@@ -105,6 +109,13 @@ export function GameDumpSection({
     });
   }, [categoryFilter, categorySearch, selectionState, translateLiteral, workflowCategories]);
 
+  const invalidateGeneratedState = useCallback(() => {
+    setIsConfirmOpen(false);
+    setResult(null);
+    setActionDiagnostics([]);
+    setProgress(null);
+  }, []);
+
   useEffect(() => {
     if (!paths.selectedGame) {
       setDestinationFolder('');
@@ -119,11 +130,9 @@ export function GameDumpSection({
       if (paths.selectedGame) {
         rememberDestination(paths.selectedGame, destination);
       }
-      setResult(null);
-      setActionDiagnostics([]);
-      setProgress(null);
+      invalidateGeneratedState();
     },
-    [paths.selectedGame]
+    [invalidateGeneratedState, paths.selectedGame]
   );
 
   const loadWorkflow = useCallback(async () => {
@@ -133,11 +142,14 @@ export function GameDumpSection({
       setWorkflowCategories([]);
       setWorkflowDiagnostics([]);
       setSelectionState({});
+      setResult(null);
       setProgress(null);
       return;
     }
 
     setIsLoading(true);
+    setIsConfirmOpen(false);
+    setResult(null);
     setActionDiagnostics([]);
     setProgress({
       detail: 'Reading available dump categories.',
@@ -158,6 +170,10 @@ export function GameDumpSection({
             category.id,
             {
               format: current[category.id]?.format ?? category.defaultFormat,
+              languageCodes: resolveLanguageSelection(
+                category,
+                current[category.id]?.languageCodes
+              ),
               selected: current[category.id]?.selected ?? category.isAvailable
             }
           ])
@@ -173,6 +189,9 @@ export function GameDumpSection({
         error,
         'Game Dump could not be loaded.'
       );
+      setWorkflowCategories([]);
+      setWorkflowDiagnostics([]);
+      setSelectionState({});
       if (failureDiagnostics.length === 0) {
         setProgress(null);
         return;
@@ -235,6 +254,15 @@ export function GameDumpSection({
   };
 
   const handleGenerate = async () => {
+    if (
+      isLoading ||
+      isGenerating ||
+      selectedCategories.length === 0 ||
+      destinationFolder.trim().length === 0
+    ) {
+      return;
+    }
+
     setIsConfirmOpen(false);
     onWriteStateChange?.(true);
     setIsGenerating(true);
@@ -243,7 +271,15 @@ export function GameDumpSection({
     try {
       const selections: GameDumpSelection[] = selectedCategories.map((category) => ({
         categoryId: category.id,
-        format: selectionState[category.id]?.format ?? category.defaultFormat
+        format: selectionState[category.id]?.format ?? category.defaultFormat,
+        ...(category.languageOptions
+          ? {
+              languageCodes: resolveLanguageSelection(
+                category,
+                selectionState[category.id]?.languageCodes
+              )
+            }
+          : {})
       }));
       setProgress({
         detail: 'Preparing selected categories.',
@@ -263,6 +299,7 @@ export function GameDumpSection({
       const response = await bridge.runGameDump({
         destinationFolder,
         paths,
+        producerVersion: appVersion,
         selections
       });
       setResult(response.result);
@@ -299,7 +336,11 @@ export function GameDumpSection({
     }
   };
 
-  const canGenerate = selectedCount > 0 && destinationFolder.trim().length > 0 && !isGenerating;
+  const canGenerate =
+    selectedCount > 0 &&
+    destinationFolder.trim().length > 0 &&
+    !isLoading &&
+    !isGenerating;
   const availableCount = workflowCategories.filter((category) => category.isAvailable).length;
 
   return (
@@ -326,6 +367,7 @@ export function GameDumpSection({
                 <input
                   aria-label={translateLiteral('Destination folder')}
                   data-localization-ignore="true"
+                  disabled={isGenerating}
                   onChange={(event) => updateDestinationFolder(event.target.value)}
                   placeholder={translateLiteral('Select a destination folder')}
                   type="text"
@@ -412,40 +454,50 @@ export function GameDumpSection({
             <div className="game-dump-actions">
             <button
               className="secondary-button compact-button"
-              disabled={availableCount === 0 || isGenerating}
-              onClick={() =>
+              disabled={availableCount === 0 || isLoading || isGenerating}
+              onClick={() => {
+                invalidateGeneratedState();
                 setSelectionState((current) =>
                   Object.fromEntries(
                     workflowCategories.map((category) => [
                       category.id,
                       {
                         format: current[category.id]?.format ?? category.defaultFormat,
+                        languageCodes: resolveLanguageSelection(
+                          category,
+                          current[category.id]?.languageCodes
+                        ),
                         selected: category.isAvailable
                       }
                     ])
                   )
-                )
-              }
+                );
+              }}
               type="button"
             >
               {translateLiteral('Select All')}
             </button>
             <button
               className="secondary-button compact-button"
-              disabled={workflowCategories.length === 0 || isGenerating}
-              onClick={() =>
+              disabled={workflowCategories.length === 0 || isLoading || isGenerating}
+              onClick={() => {
+                invalidateGeneratedState();
                 setSelectionState((current) =>
                   Object.fromEntries(
                     workflowCategories.map((category) => [
                       category.id,
                       {
                         format: current[category.id]?.format ?? category.defaultFormat,
+                        languageCodes: resolveLanguageSelection(
+                          category,
+                          current[category.id]?.languageCodes
+                        ),
                         selected: false
                       }
                     ])
                   )
-                )
-              }
+                );
+              }}
               type="button"
             >
               {translateLiteral('Clear')}
@@ -461,11 +513,13 @@ export function GameDumpSection({
             {filteredCategories.map((category) => {
               const state = selectionState[category.id] ?? {
                 format: category.defaultFormat,
+                languageCodes: resolveLanguageSelection(category),
                 selected: false
               };
               const blockedReason =
                 category.diagnostics.find((diagnostic) => diagnostic.severity === 'error')
                   ?.message ?? category.diagnostics[0]?.message;
+              const languageHelpId = `game-dump-language-help-${category.id}`;
 
               return (
                 <article
@@ -475,16 +529,21 @@ export function GameDumpSection({
                   <label className="game-dump-category-check">
                     <input
                       checked={state.selected && category.isAvailable}
-                      disabled={!category.isAvailable || isGenerating}
-                      onChange={(event) =>
+                      disabled={!category.isAvailable || isLoading || isGenerating}
+                      onChange={(event) => {
+                        invalidateGeneratedState();
                         setSelectionState((current) => ({
                           ...current,
                           [category.id]: {
                             format: current[category.id]?.format ?? category.defaultFormat,
+                            languageCodes: resolveLanguageSelection(
+                              category,
+                              current[category.id]?.languageCodes
+                            ),
                             selected: event.target.checked
                           }
-                        }))
-                      }
+                        }));
+                      }}
                       type="checkbox"
                     />
                     <span>
@@ -492,7 +551,11 @@ export function GameDumpSection({
                       <small>{translateLiteral(category.description)}</small>
                     </span>
                   </label>
-                  <div className="game-dump-category-controls">
+                  <div
+                    className={`game-dump-category-controls${
+                      category.languageOptions ? ' has-language-options' : ''
+                    }`}
+                  >
                     <span className={`status-pill ${category.isAvailable ? 'status-ready' : 'status-blocked'}`}>
                       {translateLiteral(category.isAvailable ? 'Available' : 'Unavailable')}
                     </span>
@@ -500,16 +563,23 @@ export function GameDumpSection({
                       <span>{translateLiteral('Format')}</span>
                       <select
                         aria-label={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
-                        disabled={!category.isAvailable || !state.selected || isGenerating}
-                        onChange={(event) =>
+                        disabled={
+                          !category.isAvailable || !state.selected || isLoading || isGenerating
+                        }
+                        onChange={(event) => {
+                          invalidateGeneratedState();
                           setSelectionState((current) => ({
                             ...current,
                             [category.id]: {
                               format: event.target.value as GameDumpFormat,
+                              languageCodes: resolveLanguageSelection(
+                                category,
+                                current[category.id]?.languageCodes
+                              ),
                               selected: current[category.id]?.selected ?? true
                             }
-                          }))
-                        }
+                          }));
+                        }}
                         value={state.format}
                       >
                         {category.formats.map((format) => (
@@ -519,6 +589,51 @@ export function GameDumpSection({
                         ))}
                       </select>
                     </label>
+                    {category.languageOptions ? (
+                      <label className="path-field game-dump-language-field">
+                        <span>{t('gameDump.language.label')}</span>
+                        <select
+                          aria-describedby={languageHelpId}
+                          aria-label={`${translateLiteral(category.label)} ${t(
+                            'gameDump.language.label'
+                          )}`}
+                          data-localization-ignore="true"
+                          disabled={
+                            !category.isAvailable || !state.selected || isLoading || isGenerating
+                          }
+                          onChange={(event) => {
+                            invalidateGeneratedState();
+                            const languageCodes =
+                              event.target.value === allGameDumpLanguagesValue
+                                ? category.languageOptions!.options.map((option) => option.code)
+                                : [event.target.value];
+                            setSelectionState((current) => ({
+                              ...current,
+                              [category.id]: {
+                                format: current[category.id]?.format ?? category.defaultFormat,
+                                languageCodes,
+                                selected: current[category.id]?.selected ?? true
+                              }
+                            }));
+                          }}
+                          value={formatLanguageSelection(category, state.languageCodes)}
+                        >
+                          {category.languageOptions.supportsAllLanguages ? (
+                            <option value={allGameDumpLanguagesValue}>
+                              {t('gameDump.language.all', {
+                                count: category.languageOptions.options.length
+                              })}
+                            </option>
+                          ) : null}
+                          {category.languageOptions.options.map((option) => (
+                            <option key={option.code} value={option.code}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <small id={languageHelpId}>{t('gameDump.language.help')}</small>
+                      </label>
+                    ) : null}
                   </div>
                   {blockedReason ? (
                     <p className="workflow-disabled-reason">
@@ -582,6 +697,7 @@ export function GameDumpSection({
       {isConfirmOpen ? (
         <GameDumpConfirmationModal
           categoryCount={selectedCount}
+          confirmationCopy={t('gameDump.confirm.replaceOwned')}
           destinationFolder={destinationFolder}
           isGenerating={isGenerating}
           onCancel={() => setIsConfirmOpen(false)}
@@ -595,6 +711,7 @@ export function GameDumpSection({
 
 function GameDumpConfirmationModal({
   categoryCount,
+  confirmationCopy,
   destinationFolder,
   isGenerating,
   onCancel,
@@ -602,6 +719,7 @@ function GameDumpConfirmationModal({
   translateLiteral
 }: {
   categoryCount: number;
+  confirmationCopy: string;
   destinationFolder: string;
   isGenerating: boolean;
   onCancel: () => void;
@@ -628,9 +746,7 @@ function GameDumpConfirmationModal({
           <h2 id="game-dump-confirm-heading">{translateLiteral('Generate Dump Files')}</h2>
         </div>
         <p className="modal-copy">
-          {translateLiteral(
-            'Selected category folders and the manifest in the destination will be overwritten.'
-          )}
+          {confirmationCopy}
         </p>
         <dl className="game-dump-confirm-details">
           <div>
@@ -702,6 +818,64 @@ function GameDumpProgressPanel({
       </dl>
     </div>
   );
+}
+
+function resolveLanguageSelection(
+  category: GameDumpCategory,
+  requestedLanguageCodes?: readonly string[]
+) {
+  const languageOptions = category.languageOptions;
+  if (!languageOptions || languageOptions.options.length === 0) {
+    return undefined;
+  }
+
+  const supportedCodes = languageOptions.options.map((option) => option.code);
+  const supportedCodeSet = new Set(supportedCodes);
+  const requested = Array.from(
+    new Set((requestedLanguageCodes ?? []).filter((code) => supportedCodeSet.has(code)))
+  );
+  if (
+    languageOptions.supportsAllLanguages &&
+    requested.length === supportedCodes.length &&
+    supportedCodes.every((code) => requested.includes(code))
+  ) {
+    return supportedCodes;
+  }
+  if (requested.length > 0) {
+    return [requested[0]!];
+  }
+
+  const defaults = Array.from(
+    new Set(languageOptions.defaultLanguageCodes.filter((code) => supportedCodeSet.has(code)))
+  );
+  if (
+    languageOptions.supportsAllLanguages &&
+    defaults.length === supportedCodes.length &&
+    supportedCodes.every((code) => defaults.includes(code))
+  ) {
+    return supportedCodes;
+  }
+
+  return [defaults[0] ?? supportedCodes[0]!];
+}
+
+function formatLanguageSelection(
+  category: GameDumpCategory,
+  requestedLanguageCodes?: readonly string[]
+) {
+  const resolved = resolveLanguageSelection(category, requestedLanguageCodes);
+  if (!category.languageOptions || !resolved || resolved.length === 0) {
+    return '';
+  }
+
+  if (
+    category.languageOptions.supportsAllLanguages &&
+    resolved.length === category.languageOptions.options.length
+  ) {
+    return allGameDumpLanguagesValue;
+  }
+
+  return resolved[0]!;
 }
 
 function formatGameDumpFormat(

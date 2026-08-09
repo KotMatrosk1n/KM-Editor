@@ -8,6 +8,12 @@ namespace KM.Formats.SwSh;
 
 public sealed record SwShGameTextLine(string Text, ushort Flags);
 
+public enum GameTextNullLineEncoding
+{
+    LegacyCountOne,
+    PayloadCountTwo
+}
+
 public sealed class SwShGameTextFile
 {
     private const ushort BaseKey = 0x7C89;
@@ -131,7 +137,14 @@ public sealed class SwShGameTextFile
 
     public static byte[] Write(IReadOnlyList<SwShGameTextLine> lines)
     {
-        return WriteCore(lines, source: null);
+        return Write(lines, GameTextNullLineEncoding.LegacyCountOne);
+    }
+
+    public static byte[] Write(
+        IReadOnlyList<SwShGameTextLine> lines,
+        GameTextNullLineEncoding nullLineEncoding)
+    {
+        return WriteCore(lines, source: null, nullLineEncoding);
     }
 
     public static void ValidateText(string text)
@@ -142,16 +155,27 @@ public sealed class SwShGameTextFile
 
     public byte[] WritePreserving(IReadOnlyList<SwShGameTextLine> lines)
     {
-        return WriteCore(lines, this);
+        return WritePreserving(lines, GameTextNullLineEncoding.LegacyCountOne);
     }
 
-    private static byte[] WriteCore(IReadOnlyList<SwShGameTextLine> lines, SwShGameTextFile? source)
+    public byte[] WritePreserving(
+        IReadOnlyList<SwShGameTextLine> lines,
+        GameTextNullLineEncoding nullLineEncoding)
+    {
+        return WriteCore(lines, this, nullLineEncoding);
+    }
+
+    private static byte[] WriteCore(
+        IReadOnlyList<SwShGameTextLine> lines,
+        SwShGameTextFile? source,
+        GameTextNullLineEncoding nullLineEncoding)
     {
         ArgumentNullException.ThrowIfNull(lines);
+        ValidateNullLineEncoding(nullLineEncoding);
 
         if (lines.Count > ushort.MaxValue)
         {
-            throw new ArgumentOutOfRangeException(nameof(lines), "Sword/Shield text files cannot contain more than 65535 lines.");
+            throw new ArgumentOutOfRangeException(nameof(lines), "Game text files cannot contain more than 65535 lines.");
         }
 
         if (source is not null && lines.Count != source.Lines.Count)
@@ -173,7 +197,8 @@ public sealed class SwShGameTextFile
             return preserved;
         }
 
-        if (source is not null && TryWriteWithinSourceCapacity(lines, source, out var capacityPreserved))
+        if (source is not null
+            && TryWriteWithinSourceCapacity(lines, source, nullLineEncoding, out var capacityPreserved))
         {
             return capacityPreserved;
         }
@@ -194,13 +219,13 @@ public sealed class SwShGameTextFile
             }
             else
             {
-                encryptedLines[i] = EncodeLine(line.Text, i);
+                encryptedLines[i] = EncodeLine(line.Text, i, nullLineEncoding);
                 CryptLineData(encryptedLines[i], key);
             }
 
             if (encryptedLines[i].Length / sizeof(ushort) > ushort.MaxValue)
             {
-                throw new InvalidDataException($"Text line {i} is too long for the Sword/Shield text format.");
+                throw new InvalidDataException($"Text line {i} is too long for the game text format.");
             }
 
             key = unchecked((ushort)(key + KeyAdvance));
@@ -247,6 +272,7 @@ public sealed class SwShGameTextFile
     private static bool TryWriteWithinSourceCapacity(
         IReadOnlyList<SwShGameTextLine> lines,
         SwShGameTextFile source,
+        GameTextNullLineEncoding nullLineEncoding,
         out byte[] data)
     {
         data = source._sourceData!.ToArray();
@@ -266,7 +292,7 @@ public sealed class SwShGameTextFile
 
             if (!string.Equals(line.Text, source.Lines[i].Text, StringComparison.Ordinal))
             {
-                var encoded = EncodeLine(line.Text, i);
+                var encoded = EncodeLine(line.Text, i, nullLineEncoding);
                 var capacity = source._sourceEncryptedLines![i].Length;
                 if (encoded.Length > capacity)
                 {
@@ -441,6 +467,9 @@ public sealed class SwShGameTextFile
             case (ushort)'\n':
                 builder.Append("\\n");
                 break;
+            case (ushort)'\t':
+                builder.Append("\\t");
+                break;
             case (ushort)'\\':
                 builder.Append("\\\\");
                 break;
@@ -606,22 +635,25 @@ public sealed class SwShGameTextFile
         return value;
     }
 
-    private static byte[] EncodeLine(string text, int lineIndex)
+    private static byte[] EncodeLine(
+        string text,
+        int lineIndex,
+        GameTextNullLineEncoding nullLineEncoding = GameTextNullLineEncoding.LegacyCountOne)
     {
         ValidateUtf16(text);
         if (text.Length > ushort.MaxValue)
         {
-            throw new InvalidDataException($"Text line {lineIndex} is too long for the Sword/Shield text format.");
+            throw new InvalidDataException($"Text line {lineIndex} is too long for the game text format.");
         }
 
         var initialCapacity = Math.Min(text.Length, ushort.MaxValue - 5) + 5;
         var values = new List<ushort>(initialCapacity);
-        AppendEncodedText(text, values);
+        AppendEncodedText(text, values, nullLineEncoding);
 
         values.Add(Terminator);
         if (values.Count > ushort.MaxValue)
         {
-            throw new InvalidDataException($"Text line {lineIndex} is too long for the Sword/Shield text format.");
+            throw new InvalidDataException($"Text line {lineIndex} is too long for the game text format.");
         }
 
         var data = new byte[checked(values.Count * sizeof(ushort))];
@@ -636,6 +668,7 @@ public sealed class SwShGameTextFile
     private static void AppendEncodedText(
         string text,
         ICollection<ushort> values,
+        GameTextNullLineEncoding nullLineEncoding,
         bool allowRubyDelimiters = false)
     {
         for (var i = 0; i < text.Length; i++)
@@ -643,7 +676,7 @@ public sealed class SwShGameTextFile
             var value = text[i];
             if (value == (char)Terminator || value == (char)VariableMarker)
             {
-                throw new InvalidDataException($"Raw U+{(ushort)value:X4} is reserved by the Sword/Shield text format.");
+                throw new InvalidDataException($"Raw U+{(ushort)value:X4} is reserved by the game text format.");
             }
 
             if (value == '\\')
@@ -659,7 +692,7 @@ public sealed class SwShGameTextFile
 
             if (value == '[')
             {
-                var consumed = AppendBracketControl(text, i, values);
+                var consumed = AppendBracketControl(text, i, values, nullLineEncoding);
                 if (consumed > 0)
                 {
                     i += consumed - 1;
@@ -671,7 +704,7 @@ public sealed class SwShGameTextFile
 
             if (value == '{')
             {
-                var consumed = AppendRuby(text, i, values);
+                var consumed = AppendRuby(text, i, values, nullLineEncoding);
                 i += consumed - 1;
                 continue;
             }
@@ -689,6 +722,9 @@ public sealed class SwShGameTextFile
         {
             case 'n':
                 values.Add('\n');
+                break;
+            case 't':
+                values.Add('\t');
                 break;
             case '\\':
             case '[':
@@ -710,7 +746,11 @@ public sealed class SwShGameTextFile
         }
     }
 
-    private static int AppendBracketControl(string text, int start, ICollection<ushort> values)
+    private static int AppendBracketControl(
+        string text,
+        int start,
+        ICollection<ushort> values,
+        GameTextNullLineEncoding nullLineEncoding)
     {
         var remaining = text.AsSpan(start);
         if (remaining.StartsWith("[WAIT", StringComparison.Ordinal))
@@ -733,14 +773,18 @@ public sealed class SwShGameTextFile
                 throw new InvalidDataException("Null-line controls require one decimal line index from 0 through 65535.");
             }
 
-            AppendSpecialVariable(values, TextNull, lineIndex);
+            AppendSpecialVariable(
+                values,
+                TextNull,
+                lineIndex,
+                GetTextNullVariableCount(nullLineEncoding));
             return body.Length + "[~ ]".Length;
         }
 
         if (remaining.StartsWith("[VAR", StringComparison.Ordinal))
         {
             var body = ReadBracketBody(text, start, "[VAR ");
-            AppendGenericVariable(body, values);
+            AppendGenericVariable(body, values, nullLineEncoding);
             return body.Length + "[VAR ]".Length;
         }
 
@@ -763,7 +807,10 @@ public sealed class SwShGameTextFile
         return text[(start + prefix.Length)..end];
     }
 
-    private static void AppendGenericVariable(string body, ICollection<ushort> values)
+    private static void AppendGenericVariable(
+        string body,
+        ICollection<ushort> values,
+        GameTextNullLineEncoding nullLineEncoding)
     {
         var argumentStart = body.IndexOf('(', StringComparison.Ordinal);
         var variableText = argumentStart < 0 ? body : body[..argumentStart];
@@ -816,7 +863,7 @@ public sealed class SwShGameTextFile
         }
 
         values.Add(VariableMarker);
-        values.Add(CreateVariableCount(variable, arguments.Count));
+        values.Add(CreateVariableCount(variable, arguments.Count, nullLineEncoding));
         values.Add(variable);
         foreach (var argument in arguments)
         {
@@ -824,7 +871,11 @@ public sealed class SwShGameTextFile
         }
     }
 
-    private static int AppendRuby(string text, int start, ICollection<ushort> values)
+    private static int AppendRuby(
+        string text,
+        int start,
+        ICollection<ushort> values,
+        GameTextNullLineEncoding nullLineEncoding)
     {
         var end = FindUnescaped(text, start + 1, '}');
         if (end < 0)
@@ -838,9 +889,11 @@ public sealed class SwShGameTextFile
             throw new InvalidDataException("Ruby text must use {base|ruby} or {base|ruby|alternate-base} syntax.");
         }
 
-        var firstBase = EncodeRubyFragment(parts[0]);
-        var ruby = EncodeRubyFragment(parts[1]);
-        var secondBase = parts.Count == 3 ? EncodeRubyFragment(parts[2]) : firstBase;
+        var firstBase = EncodeRubyFragment(parts[0], nullLineEncoding);
+        var ruby = EncodeRubyFragment(parts[1], nullLineEncoding);
+        var secondBase = parts.Count == 3
+            ? EncodeRubyFragment(parts[2], nullLineEncoding)
+            : firstBase;
         if (firstBase.Count != secondBase.Count)
         {
             throw new InvalidDataException("Ruby base text copies must contain the same number of UTF-16 values.");
@@ -851,7 +904,7 @@ public sealed class SwShGameTextFile
             || firstBase.Count > ushort.MaxValue
             || ruby.Count > ushort.MaxValue)
         {
-            throw new InvalidDataException("Ruby text is too long for the Sword/Shield text format.");
+            throw new InvalidDataException("Ruby text is too long for the game text format.");
         }
 
         values.Add(VariableMarker);
@@ -865,10 +918,12 @@ public sealed class SwShGameTextFile
         return end - start + 1;
     }
 
-    private static List<ushort> EncodeRubyFragment(string text)
+    private static List<ushort> EncodeRubyFragment(
+        string text,
+        GameTextNullLineEncoding nullLineEncoding)
     {
         var result = new List<ushort>(text.Length);
-        AppendEncodedText(text, result, allowRubyDelimiters: true);
+        AppendEncodedText(text, result, nullLineEncoding, allowRubyDelimiters: true);
         return result;
     }
 
@@ -931,22 +986,48 @@ public sealed class SwShGameTextFile
         values.Add(variable);
     }
 
-    private static void AppendSpecialVariable(ICollection<ushort> values, ushort variable, ushort payload)
+    private static void AppendSpecialVariable(
+        ICollection<ushort> values,
+        ushort variable,
+        ushort payload,
+        ushort count = 1)
     {
         values.Add(VariableMarker);
-        values.Add(1);
+        values.Add(count);
         values.Add(variable);
         values.Add(payload);
     }
 
-    private static ushort CreateVariableCount(ushort variable, int argumentCount)
+    private static ushort CreateVariableCount(
+        ushort variable,
+        int argumentCount,
+        GameTextNullLineEncoding nullLineEncoding)
     {
         if (variable == TextNull)
         {
-            return 1;
+            return GetTextNullVariableCount(nullLineEncoding);
         }
 
         return checked((ushort)(argumentCount + 1));
+    }
+
+    private static ushort GetTextNullVariableCount(GameTextNullLineEncoding nullLineEncoding)
+    {
+        return nullLineEncoding switch
+        {
+            GameTextNullLineEncoding.LegacyCountOne => 1,
+            GameTextNullLineEncoding.PayloadCountTwo => 2,
+            _ => throw new ArgumentOutOfRangeException(nameof(nullLineEncoding))
+        };
+    }
+
+    private static void ValidateNullLineEncoding(GameTextNullLineEncoding nullLineEncoding)
+    {
+        if (nullLineEncoding is not GameTextNullLineEncoding.LegacyCountOne
+            and not GameTextNullLineEncoding.PayloadCountTwo)
+        {
+            throw new ArgumentOutOfRangeException(nameof(nullLineEncoding));
+        }
     }
 
     private static void AppendWaitVariable(ICollection<ushort> values, ushort duration)
@@ -964,7 +1045,7 @@ public sealed class SwShGameTextFile
             var value = text[i];
             if (value == (char)Terminator || value == (char)VariableMarker)
             {
-                throw new InvalidDataException($"Raw U+{(ushort)value:X4} is reserved by the Sword/Shield text format.");
+                throw new InvalidDataException($"Raw U+{(ushort)value:X4} is reserved by the game text format.");
             }
 
             if (char.IsHighSurrogate(value))

@@ -3,6 +3,8 @@
 using KM.Core.Diagnostics;
 using KM.Core.GameDump;
 using KM.Core.Projects;
+using KM.ZA.Data;
+using KM.ZA.Text;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.GameDump;
@@ -29,7 +31,13 @@ public sealed class ZaGameDumpService
         var categories = CreateCategories()
             .Select(definition =>
             {
-                var summary = summaries.GetValueOrDefault(definition.Id);
+                var summaryId = string.Equals(
+                    definition.Id,
+                    ZaWorkflowIds.ScriptedBosses,
+                    StringComparison.Ordinal)
+                        ? ZaWorkflowIds.Encounters
+                        : definition.Id;
+                var summary = summaries.GetValueOrDefault(summaryId);
                 var isAvailable = summary?.Availability is ZaWorkflowAvailability.ReadOnly or ZaWorkflowAvailability.Available;
                 var diagnostics = summary?.Diagnostics ?? [];
                 return definition.ToCategory(isAvailable, diagnostics);
@@ -42,7 +50,8 @@ public sealed class ZaGameDumpService
     public GameDumpResult Run(
         ProjectPaths paths,
         string destinationFolder,
-        IReadOnlyList<GameDumpSelection> selections)
+        IReadOnlyList<GameDumpSelection> selections,
+        string? producerVersion = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(selections);
@@ -66,6 +75,7 @@ public sealed class ZaGameDumpService
         var categoryStates = workflow.Categories.ToDictionary(category => category.Id, StringComparer.Ordinal);
         var definitions = CreateCategories().ToDictionary(category => category.Id, StringComparer.Ordinal);
         var writtenFiles = new List<GameDumpWrittenFile>();
+        var categoryResults = new Dictionary<string, GameDumpWriteCategoryResult>(StringComparer.Ordinal);
 
         foreach (var selection in selections)
         {
@@ -94,13 +104,33 @@ public sealed class ZaGameDumpService
             return new GameDumpResult(destinationFolder, writtenFiles, diagnostics, Succeeded: false);
         }
 
-        Directory.CreateDirectory(destinationFolder);
+        GameDumpRunTransaction transaction;
+        try
+        {
+            transaction = GameDumpWriter.BeginTransaction(destinationFolder);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Failed to prepare the game dump destination: {exception.Message}",
+                field: "destinationFolder"));
+            return new GameDumpResult(destinationFolder, [], diagnostics, Succeeded: false);
+        }
+
+        using var transactionScope = transaction;
         foreach (var selection in selections.DistinctBy(selection => selection.CategoryId))
         {
             var definition = definitions[selection.CategoryId];
             try
             {
-                var result = definition.Write(paths, destinationFolder, selection.Format);
+                var result = definition.Write(paths, transaction.StagingFolder, selection);
+                categoryResults[selection.CategoryId] = result;
                 diagnostics.AddRange(result.Diagnostics);
                 writtenFiles.AddRange(result.WrittenFiles);
             }
@@ -114,36 +144,42 @@ public sealed class ZaGameDumpService
         }
 
         var succeeded = diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
-        writtenFiles.Add(GameDumpWriter.WriteManifest(
-            destinationFolder,
-            new
-            {
-                generatedAtUtc = DateTimeOffset.UtcNow,
-                gameFamily = "Pokemon Legends Z-A",
-                selectedGame = paths.SelectedGame?.ToString(),
-                succeeded,
-                categories = selections.Select(selection => new
-                {
-                    id = selection.CategoryId,
-                    format = selection.Format.ToString(),
-                }),
-                files = writtenFiles.Select(file => new
-                {
-                    categoryId = file.CategoryId,
-                    relativePath = file.RelativePath,
-                    sizeBytes = file.SizeBytes,
-                }),
-                diagnostics = diagnostics.Select(diagnostic => new
-                {
-                    diagnostic.Code,
-                    severity = diagnostic.Severity.ToString(),
-                    diagnostic.Message,
-                    diagnostic.File,
-                    diagnostic.Domain,
-                    diagnostic.Field,
-                    diagnostic.Expected,
-                }),
-            }));
+        if (!succeeded)
+        {
+            return new GameDumpResult(destinationFolder, [], diagnostics, Succeeded: false);
+        }
+
+        try
+        {
+            writtenFiles.Add(GameDumpWriter.WriteManifest(
+                transaction.StagingFolder,
+                GameDumpWriter.CreateManifest(
+                    "Pokemon Legends Z-A",
+                    paths.SelectedGame,
+                    succeeded,
+                    selections,
+                    categoryResults,
+                    writtenFiles,
+                    diagnostics,
+                    destinationFolder,
+                    producerVersion)));
+            transaction.Promote(
+                writtenFiles,
+                selections.Select(selection => selection.CategoryId).ToHashSet(StringComparer.Ordinal));
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Failed to publish the game dump snapshot: {exception.Message}",
+                field: "destinationFolder"));
+            return new GameDumpResult(destinationFolder, [], diagnostics, Succeeded: false);
+        }
 
         return new GameDumpResult(destinationFolder, writtenFiles, diagnostics, succeeded);
     }
@@ -180,6 +216,17 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.Encounters.ZaEncounterTableRecord>(workflow.Tables, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.ScriptedBosses,
+                "Scripted Bosses",
+                "Verified profile-specific battle-stage and HP-phase schedules, controller actions, selectors, move variants, runtime availability, and editability.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadEncounters(paths);
+                    return new GameDumpCategoryData<KM.ZA.ScriptedBosses.ZaScriptedBossProfileRecord>(
+                        workflow.ScriptedBosses,
+                        workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.GiftPokemon,
                 "Gift Pokemon",
                 "Scripted local gift Pokemon rows, moves, IVs, and provenance.",
@@ -209,12 +256,16 @@ public sealed class ZaGameDumpService
             GameDumpWriter.CreateTextCategory(
                 ZaWorkflowIds.Text,
                 "Text",
-                "Message text entries, dialogue contexts, languages, and provenance.",
-                paths =>
-                {
-                    var workflow = workflowService.LoadText(paths);
-                    return new GameDumpCategoryData<KM.ZA.Text.ZaTextEntryRecord>(workflow.Entries, workflow.Diagnostics);
-                }),
+                "Every editable message line for the selected game-text language or all available game-text languages, including semantic message keys and source details.",
+                new GameDumpCategoryLanguageOptions(
+                    ZaTextWorkflowService.SupportedLanguages
+                        .Select(language => new GameDumpLanguageOption(language.Language, language.Label))
+                        .ToArray(),
+                    ZaTextWorkflowService.SupportedLanguages
+                        .Select(language => language.Language)
+                        .ToArray(),
+                    SupportsAllLanguages: true),
+                LoadTextRows),
             GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.Items,
                 "Items",
@@ -252,6 +303,84 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.TypeChart.ZaTypeChartCell>(workflow.Cells, workflow.Diagnostics);
                 }),
         ];
+    }
+
+    private GameDumpCategoryData<ZaTextEntryRecord> LoadTextRows(
+        ProjectPaths paths,
+        GameDumpSelection selection)
+    {
+        var diagnostics = new List<ValidationDiagnostic>();
+        var requestedLanguages = ResolveRequestedTextLanguages(paths, selection, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new GameDumpCategoryData<ZaTextEntryRecord>([], diagnostics);
+        }
+
+        var entries = new List<ZaTextEntryRecord>();
+        var languageMetadata = new List<GameDumpLanguageExportMetadata>(requestedLanguages.Count);
+        foreach (var requestedLanguage in requestedLanguages)
+        {
+            var workflow = workflowService.LoadTextUnpaged(paths, requestedLanguage);
+            diagnostics.AddRange(workflow.Diagnostics);
+            entries.AddRange(workflow.Entries);
+            var usedFallback = !string.Equals(
+                requestedLanguage,
+                workflow.SelectedLanguage,
+                StringComparison.OrdinalIgnoreCase);
+            languageMetadata.Add(new GameDumpLanguageExportMetadata(
+                requestedLanguage,
+                workflow.SelectedLanguage,
+                usedFallback,
+                usedFallback
+                    ? $"{requestedLanguage} message tables were not found; {workflow.SelectedLanguage} message tables were exported instead."
+                    : null,
+                workflow.Stats.SourceFileCount,
+                workflow.Entries.Count));
+        }
+
+        return new GameDumpCategoryData<ZaTextEntryRecord>(
+            entries,
+            diagnostics,
+            new GameDumpCategoryExportMetadata(languageMetadata));
+    }
+
+    private static IReadOnlyList<string> ResolveRequestedTextLanguages(
+        ProjectPaths paths,
+        GameDumpSelection selection,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var requestedCodes = selection.LanguageCodes?
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(code => code.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
+        if (requestedCodes.Length == 0)
+        {
+            return [ZaGameTextLanguage.Resolve(paths)];
+        }
+
+        var supportedLanguages = ZaTextWorkflowService.SupportedLanguages;
+        var resolved = new List<string>(requestedCodes.Length);
+        foreach (var requestedCode in requestedCodes)
+        {
+            var supported = supportedLanguages.FirstOrDefault(language => string.Equals(
+                language.Language,
+                requestedCode,
+                StringComparison.OrdinalIgnoreCase));
+            if (supported is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Text dump language '{requestedCode}' is not supported by Pokemon Legends Z-A.",
+                    field: "languageCodes",
+                    expected: string.Join(", ", supportedLanguages.Select(language => language.Language))));
+                continue;
+            }
+
+            resolved.Add(supported.Language);
+        }
+
+        return resolved;
     }
 
     private static ValidationDiagnostic CreateGameMismatchDiagnostic()

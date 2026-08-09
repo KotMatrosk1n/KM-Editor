@@ -15,10 +15,10 @@ internal static class ZaMovePlayerDamageTimelineCatalog
 
     private static readonly IReadOnlyDictionary<
         (int AttackId, int DamageBulletId),
-        IReadOnlyList<ZaMovePlayerDamageTimelineLaunchRecord>> LaunchesByDamageRow =
+        IReadOnlyList<CatalogTimelineLaunchRecord>> LaunchesByDamageRow =
         new Dictionary<
             (int AttackId, int DamageBulletId),
-            IReadOnlyList<ZaMovePlayerDamageTimelineLaunchRecord>>
+            IReadOnlyList<CatalogTimelineLaunchRecord>>
         {
             [(16, 21)] =
             [
@@ -1314,10 +1314,72 @@ internal static class ZaMovePlayerDamageTimelineCatalog
 
     public static IReadOnlyList<ZaMovePlayerDamageTimelineLaunchRecord> GetLaunches(
         int attackId,
-        int damageBulletId) =>
-        LaunchesByDamageRow.TryGetValue((attackId, damageBulletId), out var launches)
-            ? launches
-            : [];
+        int damageBulletId)
+    {
+        if (!LaunchesByDamageRow.TryGetValue((attackId, damageBulletId), out var launches))
+        {
+            return [];
+        }
+
+        return launches
+            .Select((launch, index) => new ZaMovePlayerDamageTimelineLaunchRecord(
+                FormattableString.Invariant($"{attackId}:{damageBulletId}:{index + 1}"),
+                launch.RootBulletId,
+                launch.TimelineName,
+                launch.TimelinePath,
+                ClassifyLocalCondition(launch.ConditionTag))
+            {
+                RelationshipPaths = launch.RelationshipPaths,
+            })
+            .ToArray();
+    }
+
+    private static ZaMovePlayerDamageLocalConditionRecord ClassifyLocalCondition(
+        string? conditionTag) => conditionTag switch
+        {
+            null => new("verified-none", "when-reached", "when-reached", null),
+            "Heat2_Not_Performed" => new(
+                "verified",
+                "hp-phase-transition",
+                "before-hp-phase-2-transition-completes",
+                conditionTag),
+            "Heat2_Performed" => new(
+                "verified",
+                "hp-phase-transition",
+                "after-hp-phase-2-transition-completes",
+                conditionTag),
+            "BosoMega_Control_1A" => ControllerPattern("boss-mega-control-1a", conditionTag),
+            "BosoMega_Control_1B" => ControllerPattern("boss-mega-control-1b", conditionTag),
+            "BosoMega_Control_1C" => ControllerPattern("boss-mega-control-1c", conditionTag),
+            "BosoMega_Control_2A" => ControllerPattern("boss-mega-control-2a", conditionTag),
+            "BosoMega_Control_2B" => ControllerPattern("boss-mega-control-2b", conditionTag),
+            "BosoMega_Control_2C" => ControllerPattern("boss-mega-control-2c", conditionTag),
+            "BosoMega_Control_3A" => ControllerPattern("boss-mega-control-3a", conditionTag),
+            "BosoMega_Control_3B" => ControllerPattern("boss-mega-control-3b", conditionTag),
+            "BosoGuraadon" => Identity("groudon", conditionTag),
+            "BosoDaakurai" => Identity("darkrai", conditionTag),
+            "BosoKaiooga" => Identity("kyogre", conditionTag),
+            "BosoMegaDaakurai" => Identity("mega-darkrai", conditionTag),
+            "BosoRekkuuza" => Identity("rayquaza", conditionTag),
+            "Zigarude_100%" => Identity("zygarde-complete", conditionTag),
+            "Poke0952" => Identity("tatsugiri", conditionTag),
+            "Poke0149" => Identity("dragonite", conditionTag),
+            "Poke0359" => Identity("absol", conditionTag),
+            "Nyaonikusu_Single_Bullet" => new(
+                "verified",
+                "choreography",
+                "meowstic-single-bullet",
+                conditionTag),
+            _ => new("unclassified", "unknown", "unclassified", conditionTag),
+        };
+
+    private static ZaMovePlayerDamageLocalConditionRecord ControllerPattern(
+        string semanticKey,
+        string rawTag) => new("verified", "controller-pattern", semanticKey, rawTag);
+
+    private static ZaMovePlayerDamageLocalConditionRecord Identity(
+        string semanticKey,
+        string rawTag) => new("verified", "identity", semanticKey, rawTag);
 
     public static bool MatchesVerifiedBaseBulletCatalog(byte[] bytes)
     {
@@ -1326,5 +1388,15 @@ internal static class ZaMovePlayerDamageTimelineCatalog
             Convert.ToHexString(SHA256.HashData(bytes)),
             VerifiedBaseBulletCatalogSha256,
             StringComparison.Ordinal);
+    }
+
+    private sealed record CatalogTimelineLaunchRecord(
+        int RootBulletId,
+        string TimelineName,
+        string TimelinePath,
+        string? ConditionTag)
+    {
+        public IReadOnlyList<IReadOnlyList<ZaMovePlayerDamageTimelinePathEdgeRecord>>
+            RelationshipPaths { get; init; } = [];
     }
 }

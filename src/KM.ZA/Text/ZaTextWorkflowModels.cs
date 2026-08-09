@@ -15,6 +15,7 @@ public sealed record ZaTextEntryRecord(
     int TextId,
     string TextKey,
     string Label,
+    string? MessageKey,
     string Language,
     string SourceFile,
     int LineIndex,
@@ -46,13 +47,37 @@ public sealed record ZaTextEditableField(
 public sealed record ZaTextWorkflowQuery(
     string? SearchText,
     int Offset,
-    int Limit);
+    int Limit,
+    string? CategoryId = null,
+    string? Language = null);
+
+public sealed record ZaTextCategoryRecord(
+    string CategoryId,
+    string Label,
+    string Description,
+    int SourceFileCount);
+
+public sealed record ZaTextResultPage(
+    int Offset,
+    int Limit,
+    int ReturnedEntryCount,
+    bool HasPrevious,
+    bool HasNext);
+
+public sealed record ZaTextLanguageRecord(
+    string Language,
+    string Label);
 
 public sealed record ZaTextWorkflow(
     ZaWorkflowSummary Summary,
     IReadOnlyList<ZaTextEntryRecord> Entries,
     IReadOnlyList<ZaDialogueReferenceRecord> DialogueReferences,
     IReadOnlyList<ZaTextEditableField> EditableFields,
+    IReadOnlyList<ZaTextCategoryRecord> Categories,
+    string SelectedCategoryId,
+    IReadOnlyList<ZaTextLanguageRecord> Languages,
+    string SelectedLanguage,
+    ZaTextResultPage? Page,
     ZaTextWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 

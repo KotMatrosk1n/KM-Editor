@@ -232,6 +232,7 @@ import {
   findScriptedBossProfile,
   getScriptedBossMoveSearchValues,
   ScriptedBossEncounterActions,
+  ScriptedBossMoveControllerAvailability,
   ScriptedBossMoveOwnership
 } from './features/scripted-bosses/ScriptedBossActions';
 import {
@@ -409,6 +410,12 @@ import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
 import { resolveSpeciesChangeForm } from './features/pokemon/speciesFormDrafts';
 import {
+  canonicalTextToEditorText,
+  formatCanonicalTextSummary,
+  insertCanonicalTextControl,
+  normalizeEditorTextInput
+} from './features/text/textControlPresentation';
+import {
   createShopInventoryUpdateValue,
   getNextShopInventoryDraftId,
   parseShopInventoryUpdateItemIds
@@ -438,21 +445,75 @@ type TrinityCacheStatus = SvCacheStatus | ZaCacheStatus | SwShCacheStatus;
 const textControlInserts = [
   {
     display: '\\n',
-    label: 'Line break',
-    title: 'Insert a normal line break inside the same message box.',
+    labelKey: 'text.controls.lineBreak.label',
+    titleKey: 'text.controls.lineBreak.insertHelp',
     value: '\\n'
   },
   {
+    display: '\\t',
+    labelKey: 'text.controls.tab.label',
+    titleKey: 'text.controls.tab.insertHelp',
+    value: '\\t'
+  },
+  {
     display: '\\c\\n',
-    label: 'Wait + clear',
-    title: 'Insert the A-button continue prompt, clear the box, then continue on the next line.',
+    labelKey: 'text.controls.waitClear.label',
+    titleKey: 'text.controls.waitClear.insertHelp',
     value: '\\c\\n'
   },
   {
     display: '\\r\\n',
-    label: 'Wait + scroll',
-    title: 'Insert the wait/scroll advance control, then continue on the next line.',
+    labelKey: 'text.controls.waitScroll.label',
+    titleKey: 'text.controls.waitScroll.insertHelp',
     value: '\\r\\n'
+  }
+] as const;
+
+const textControlReference = [
+  {
+    descriptionKey: 'text.controls.lineBreak.description',
+    labelKey: 'text.controls.lineBreak.label',
+    syntax: '\\n'
+  },
+  {
+    descriptionKey: 'text.controls.tab.description',
+    labelKey: 'text.controls.tab.label',
+    syntax: '\\t'
+  },
+  {
+    descriptionKey: 'text.controls.waitClear.description',
+    labelKey: 'text.controls.waitClear.label',
+    syntax: '\\c'
+  },
+  {
+    descriptionKey: 'text.controls.waitScroll.description',
+    labelKey: 'text.controls.waitScroll.label',
+    syntax: '\\r'
+  },
+  {
+    descriptionKey: 'text.controls.timedWait.description',
+    labelKey: 'text.controls.timedWait.label',
+    syntax: '[WAIT n]'
+  },
+  {
+    descriptionKey: 'text.controls.indexedBlank.description',
+    labelKey: 'text.controls.indexedBlank.label',
+    syntax: '[~ n]'
+  },
+  {
+    descriptionKey: 'text.controls.ruby.description',
+    labelKey: 'text.controls.ruby.label',
+    syntax: '{base|reading}'
+  },
+  {
+    descriptionKey: 'text.controls.variable.description',
+    labelKey: 'text.controls.variable.label',
+    syntax: '[VAR code(arguments)]'
+  },
+  {
+    descriptionKey: 'text.controls.literal.description',
+    labelKey: 'text.controls.literal.label',
+    syntax: '\\\\  \\[  \\{'
   }
 ] as const;
 
@@ -570,15 +631,24 @@ const gameDefinitions = {
 const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet', 'za'] as const satisfies readonly ProjectGame[];
 const trinityTextWorkflowPageLimit = 500;
 
-function createTextWorkflowQuery(game: ProjectGame | null, searchText: string): TextWorkflowQuery | undefined {
+function createTextWorkflowQuery(
+  game: ProjectGame | null,
+  searchText: string,
+  categoryId: string | null = null,
+  offset = 0,
+  textLanguage: string | null = null
+): TextWorkflowQuery | undefined {
   if (!isScarletVioletGame(game) && !isPokemonLegendsZAGame(game)) {
     return undefined;
   }
 
   const trimmedSearchText = searchText.trim();
+  const isLegendsZA = isPokemonLegendsZAGame(game);
   return {
+    categoryId: isLegendsZA ? categoryId : null,
+    language: isLegendsZA ? textLanguage : null,
     limit: trinityTextWorkflowPageLimit,
-    offset: 0,
+    offset: isLegendsZA ? offset : 0,
     searchText: trimmedSearchText.length > 0 ? trimmedSearchText : null
   };
 }
@@ -1888,6 +1958,20 @@ export function App({
 } = {}) {
   useSelectEditableFieldContents();
   const { language, t, translateLiteral } = useLocalization();
+  const [textCategoryId, setTextCategoryId] = useState<string | null>(null);
+  const [textResultOffset, setTextResultOffset] = useState(0);
+  const [textLanguage, setTextLanguage] = useState<string | null>(null);
+  const textQueryContextRef = useRef({
+    categoryId: textCategoryId,
+    language: textLanguage,
+    offset: textResultOffset
+  });
+  textQueryContextRef.current = {
+    categoryId: textCategoryId,
+    language: textLanguage,
+    offset: textResultOffset
+  };
+  const skipNormalizedTextQueryReloadRef = useRef(false);
 
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const applyResult = useWorkbenchStore((state) => state.applyResult);
@@ -1907,6 +1991,10 @@ export function App({
     (paths: ProjectPathDraft = draftPathsRef.current) =>
       toProjectPaths(paths, languageRef.current),
     []
+  );
+  const gameDumpPaths = useMemo(
+    () => createProjectPaths(draftPaths),
+    [createProjectPaths, draftPaths, language]
   );
   const canCommitGameTextWorkflow = useCallback(
     (gameTextLanguage: LanguageCode) => gameTextLanguage === languageRef.current,
@@ -2305,6 +2393,8 @@ export function App({
   const [isMoveUpdating, setIsMoveUpdating] = useState(false);
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isTextUpdating, setIsTextUpdating] = useState(false);
+  const isTextUpdatingRef = useRef(isTextUpdating);
+  isTextUpdatingRef.current = isTextUpdating;
   const [isTrainersLoading, setIsTrainersLoading] = useState(false);
   const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
   const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
@@ -2380,6 +2470,9 @@ export function App({
   const [isNpcItemGiftStaging, setIsNpcItemGiftStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
+  const spreadsheetImportPreviewRunRef = useRef(0);
+  const spreadsheetImportSourcePathRef = useRef(spreadsheetImportSourcePath);
+  spreadsheetImportSourcePathRef.current = spreadsheetImportSourcePath;
   const [modMergerDirectory1, setModMergerDirectory1] = useState('');
   const [modMergerDirectory2, setModMergerDirectory2] = useState('');
   const [modMergerMergeMode, setModMergerMergeMode] =
@@ -3088,6 +3181,8 @@ export function App({
   }, [evictWorkflowPayloads]);
 
   const clearPendingEditState = useCallback(() => {
+    spreadsheetImportPreviewRunRef.current += 1;
+    setIsSpreadsheetImportPreviewing(false);
     editSessionOperationRunRef.current += 1;
     editSessionMutationGenerationRef.current += 1;
     editSessionMutationQueueRef.current = Promise.resolve();
@@ -3113,6 +3208,9 @@ export function App({
     svCacheWarmupRunRef.current += 1;
     setIsSvCacheWarming(false);
     setSvCacheStatus(null);
+    setTextCategoryId(null);
+    setTextResultOffset(0);
+    setTextLanguage(null);
     clearPendingEditState();
     resetProjectSession();
     clearLoadedWorkflowData();
@@ -4715,16 +4813,84 @@ export function App({
     );
   };
 
+  const handleTextWorkflowLoadError = useCallback(
+    (error: unknown) => {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      const committedWorkflow = textWorkflowRef.current;
+      setTextCategoryId(committedWorkflow?.selectedCategoryId ?? null);
+      setTextResultOffset(committedWorkflow?.page?.offset ?? 0);
+      setTextLanguage(committedWorkflow?.selectedLanguage ?? null);
+    },
+    [setBridgeDiagnostics]
+  );
+
+  const commitTextWorkflow = useCallback(
+    (workflow: TextWorkflow) => {
+      const normalizedContext = {
+        categoryId: workflow.selectedCategoryId,
+        language: workflow.selectedLanguage,
+        offset: workflow.page?.offset ?? 0
+      };
+      const currentContext = textQueryContextRef.current;
+      const didNormalizeQuery =
+        currentContext.categoryId !== normalizedContext.categoryId ||
+        currentContext.language !== normalizedContext.language ||
+        currentContext.offset !== normalizedContext.offset;
+
+      if (didNormalizeQuery) {
+        skipNormalizedTextQueryReloadRef.current = true;
+        textQueryContextRef.current = normalizedContext;
+        setTextCategoryId(normalizedContext.categoryId);
+        setTextLanguage(normalizedContext.language);
+        setTextResultOffset(normalizedContext.offset);
+      }
+
+      setTextWorkflow(workflow);
+    },
+    [setTextWorkflow]
+  );
+
   const handleOpenTextWorkflow = async (searchTextOverride = textSearchText) => {
     await runRetainedWorkflowLoad(
       'text',
       setIsTextLoading,
       () => bridge.loadTextWorkflow({
         paths: createProjectPaths(draftPaths),
-        query: createTextWorkflowQuery(selectedGame, searchTextOverride)
+        query: createTextWorkflowQuery(
+          selectedGame,
+          searchTextOverride,
+          textCategoryId,
+          textResultOffset,
+          textLanguage
+        )
       }),
-      (response) => setTextWorkflow(response.workflow)
+      (response) => commitTextWorkflow(response.workflow),
+      undefined,
+      handleTextWorkflowLoadError
     );
+  };
+
+  const handleTextSearchChange = (nextSearchText: string) => {
+    setTextResultOffset(0);
+    setSelectedTextKey(null);
+    setTextSearchText(nextSearchText);
+  };
+
+  const handleTextCategoryChange = (categoryId: string) => {
+    setTextCategoryId(categoryId);
+    setTextResultOffset(0);
+    setSelectedTextKey(null);
+  };
+
+  const handleTextLanguageChange = (nextLanguage: string) => {
+    setTextLanguage(nextLanguage);
+    setTextResultOffset(0);
+    setSelectedTextKey(null);
+  };
+
+  const handleTextPageChange = (offset: number) => {
+    setTextResultOffset(Math.max(0, offset));
+    setSelectedTextKey(null);
   };
 
   useEffect(() => {
@@ -4732,15 +4898,32 @@ export function App({
       return;
     }
 
+    if (skipNormalizedTextQueryReloadRef.current) {
+      skipNormalizedTextQueryReloadRef.current = false;
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
+      if (isTextUpdatingRef.current) {
+        return;
+      }
+
       void runRetainedWorkflowLoad(
         'text',
         setIsTextLoading,
         () => bridge.loadTextWorkflow({
           paths: createProjectPaths(draftPathsRef.current),
-          query: createTextWorkflowQuery(selectedGame, textSearchText)
+          query: createTextWorkflowQuery(
+            selectedGame,
+            textSearchText,
+            textCategoryId,
+            textResultOffset,
+            textLanguage
+          )
         }),
-        (response) => setTextWorkflow(response.workflow)
+        (response) => commitTextWorkflow(response.workflow),
+        undefined,
+        handleTextWorkflowLoadError
       );
     }, 250);
 
@@ -4748,11 +4931,15 @@ export function App({
   }, [
     activeSection,
     bridge,
+    commitTextWorkflow,
+    handleTextWorkflowLoadError,
     runRetainedWorkflowLoad,
     selectedGame,
     setBridgeDiagnostics,
-    setTextWorkflow,
     supportsTrinityOutput,
+    textCategoryId,
+    textLanguage,
+    textResultOffset,
     textSearchText
   ]);
 
@@ -6692,26 +6879,55 @@ export function App({
   ]);
 
   const handlePreviewSpreadsheetImport = async (profileId: string, sourcePath: string) => {
+    const runId = spreadsheetImportPreviewRunRef.current + 1;
+    spreadsheetImportPreviewRunRef.current = runId;
+    const projectGeneration = projectScopeGenerationRef.current;
+    const requestSourcePath = sourcePath;
+    const requestIsCurrent = () =>
+      spreadsheetImportPreviewRunRef.current === runId &&
+      projectScopeGenerationRef.current === projectGeneration &&
+      spreadsheetImportSourcePathRef.current === requestSourcePath;
+
     setIsSpreadsheetImportPreviewing(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.previewSpreadsheetImport({
-        paths: createProjectPaths(draftPaths),
-        profileId,
-        session: editSession,
-        sourcePath
-      });
-      setSpreadsheetImportWorkflow(response.workflow);
-      setSpreadsheetImportPreview(response.preview);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.previewSpreadsheetImport({
+            paths: createProjectPaths(draftPaths),
+            profileId,
+            session,
+            sourcePath: requestSourcePath
+          });
+          return requestIsCurrent()
+            ? {
+                ...response,
+                session:
+                  response.session.pendingEdits.length > 0 ? response.session : null
+              }
+            : { ...response, session };
+        },
+        (response) => {
+          if (!requestIsCurrent()) {
+            return;
+          }
+
+          setSpreadsheetImportWorkflow(response.workflow);
+          setSpreadsheetImportPreview(response.preview);
+          setEditSessionSection(response.session && activeSectionIsEditor ? activeSection : null);
+          setEditValidationDiagnostics(response.diagnostics);
+        }
+      );
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (requestIsCurrent()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsSpreadsheetImportPreviewing(false);
+      if (spreadsheetImportPreviewRunRef.current === runId) {
+        setIsSpreadsheetImportPreviewing(false);
+      }
     }
   };
 
@@ -6726,6 +6942,8 @@ export function App({
         title: translateLiteral('Select Dump Import source file')
       });
       if (selectedFile) {
+        spreadsheetImportPreviewRunRef.current += 1;
+        setIsSpreadsheetImportPreviewing(false);
         setSpreadsheetImportSourcePath(selectedFile);
         setSpreadsheetImportPreview(null);
         setEditValidationDiagnostics([]);
@@ -6743,6 +6961,8 @@ export function App({
   };
 
   const handleSpreadsheetImportSourcePathChange = (sourcePath: string) => {
+    spreadsheetImportPreviewRunRef.current += 1;
+    setIsSpreadsheetImportPreviewing(false);
     setSpreadsheetImportSourcePath(sourcePath);
     setSpreadsheetImportPreview(null);
     setEditValidationDiagnostics([]);
@@ -8468,6 +8688,8 @@ export function App({
   };
 
   const handleUpdateTextEntry = async (textKey: string, value: string) => {
+    workflowLoadGenerationRef.current.invalidate('text');
+    isTextUpdatingRef.current = true;
     setIsTextUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -8477,7 +8699,13 @@ export function App({
         async (session) => {
           const updateResponse = await bridge.updateTextEntry({
             paths: createProjectPaths(draftPaths),
-            query: createTextWorkflowQuery(selectedGame, textSearchText),
+            query: createTextWorkflowQuery(
+              selectedGame,
+              textSearchText,
+              textCategoryId,
+              textResultOffset,
+              textLanguage
+            ),
             session,
             textKey,
             value
@@ -8495,7 +8723,7 @@ export function App({
         },
         (updateResponse) => {
           if (updateResponse.didSucceed && updateResponse.workflow) {
-            setTextWorkflow(updateResponse.workflow);
+            commitTextWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
@@ -8506,6 +8734,7 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
     } finally {
+      isTextUpdatingRef.current = false;
       setIsTextUpdating(false);
     }
   };
@@ -10575,10 +10804,16 @@ export function App({
         async () => {
           const response = await bridge.loadTextWorkflow({
             paths,
-            query: createTextWorkflowQuery(selectedGame, textSearchText)
+            query: createTextWorkflowQuery(
+              selectedGame,
+              textSearchText,
+              textCategoryId,
+              textResultOffset,
+              textLanguage
+            )
           });
           if (canCommitRefresh()) {
-            setTextWorkflow(response.workflow);
+            commitTextWorkflow(response.workflow);
           }
         }
       );
@@ -11642,12 +11877,18 @@ export function App({
                 editSession={getEditSessionForSection('text')}
                 isEditStarting={isEditStarting}
                 isPagedResultWindow={supportsTrinityOutput}
+                isTextLoading={isTextLoading}
                 isTextUpdating={isTextUpdating}
-                onSearchChange={setTextSearchText}
+                onCategoryChange={handleTextCategoryChange}
+                onLanguageChange={handleTextLanguageChange}
+                onPageChange={handleTextPageChange}
+                onSearchChange={handleTextSearchChange}
                 onSelectTextEntry={setSelectedTextKey}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTextEntry={handleUpdateTextEntry}
                 searchText={textSearchText}
+                selectedCategoryId={textCategoryId}
+                selectedLanguage={textLanguage}
                 selectedTextKey={selectedTextKey}
                 workflow={textWorkflow}
               />
@@ -12436,11 +12677,12 @@ export function App({
           ) : null}
           {activeSection === 'gameDump' ? (
             <GameDumpSection
+              appVersion={appVersion}
               bridge={bridge}
               desktopServices={desktopServices}
               health={health}
               onWriteStateChange={setIsGameDumpWriting}
-              paths={createProjectPaths(draftPaths)}
+              paths={gameDumpPaths}
             />
           ) : null}
           {activeSection === 'modMerger' ? (
@@ -12887,6 +13129,7 @@ function VirtualTableBody<T>({
 
     if (scrollParentRef.current) {
       scrollParentRef.current.scrollTop = 0;
+      scrollParentRef.current.scrollLeft = 0;
     }
     rowVirtualizer.scrollToOffset(0);
   }, [resetKey]);
@@ -15892,6 +16135,26 @@ function SelectedPokemonPanel({
                               <GripVertical size={15} />
                             </span>
                             <span className="learnset-slot-cell">#{move.slot + 1}</span>
+                            <label className="path-field learnset-inline-field learnset-level-field">
+                              <span>Level</span>
+                              <input
+                                disabled={!canEditLearnset}
+                                max={learnsetMaximumLevel}
+                                min={0}
+                                onChange={(event) => {
+                                  setLearnsetLevelDraft(event.target.value);
+                                  updateSelectedLearnsetDraft({ level: event.target.value });
+                                }}
+                                type="number"
+                                value={learnsetLevelDraft}
+                              />
+                            </label>
+                            <span
+                              className="learnset-inline-metadata"
+                              data-localization-ignore="true"
+                            >
+                              {displayMove.masteryLabel ?? ''}
+                            </span>
                             <label className="path-field learnset-inline-field learnset-move-field">
                               <span>Move</span>
                               {learnsetMoveOptionsForDraft.length > 0 ? (
@@ -15919,26 +16182,6 @@ function SelectedPokemonPanel({
                                 />
                               )}
                             </label>
-                            <label className="path-field learnset-inline-field learnset-level-field">
-                              <span>Level</span>
-                              <input
-                                disabled={!canEditLearnset}
-                                max={learnsetMaximumLevel}
-                                min={0}
-                                onChange={(event) => {
-                                  setLearnsetLevelDraft(event.target.value);
-                                  updateSelectedLearnsetDraft({ level: event.target.value });
-                                }}
-                                type="number"
-                                value={learnsetLevelDraft}
-                              />
-                            </label>
-                            <span
-                              className="learnset-inline-metadata"
-                              data-localization-ignore="true"
-                            >
-                              {displayMove.masteryLabel ?? ''}
-                            </span>
                             <div className="learnset-inline-actions">
                               <button
                                 aria-label="Move learnset row up"
@@ -16891,23 +17134,153 @@ function formatMovePlayerDamageHitInterval(value: number, language: string) {
   });
 }
 
-function formatMovePlayerDamageConditionTag(
-  conditionTag: string | null,
+type MovePlayerDamageLocalCondition =
+  MoveRecord['playerDamageRows'][number]['invocations'][number]['verifiedVanillaTimelineLaunches'][number]['localCondition'];
+
+type MovePlayerDamageLocalConditionKey = MovePlayerDamageLocalCondition['semanticKey'];
+
+const movePlayerDamageControllerPatterns: Partial<
+  Record<MovePlayerDamageLocalConditionKey, string>
+> = {
+  'boss-mega-control-1a': '1A',
+  'boss-mega-control-1b': '1B',
+  'boss-mega-control-1c': '1C',
+  'boss-mega-control-2a': '2A',
+  'boss-mega-control-2b': '2B',
+  'boss-mega-control-2c': '2C',
+  'boss-mega-control-3a': '3A',
+  'boss-mega-control-3b': '3B'
+};
+
+const movePlayerDamageIdentityKeys: Partial<
+  Record<MovePlayerDamageLocalConditionKey, string>
+> = {
+  absol: 'moves.playerDamage.localCondition.identity.absol',
+  darkrai: 'moves.playerDamage.localCondition.identity.darkrai',
+  dragonite: 'moves.playerDamage.localCondition.identity.dragonite',
+  groudon: 'moves.playerDamage.localCondition.identity.groudon',
+  kyogre: 'moves.playerDamage.localCondition.identity.kyogre',
+  'mega-darkrai': 'moves.playerDamage.localCondition.identity.megaDarkrai',
+  rayquaza: 'moves.playerDamage.localCondition.identity.rayquaza',
+  tatsugiri: 'moves.playerDamage.localCondition.identity.tatsugiri',
+  'zygarde-complete': 'moves.playerDamage.localCondition.identity.zygardeComplete'
+};
+
+type MovePlayerDamageLaunchCondition = {
+  badge: string;
+  detail: string;
+  rawTag: string | null;
+  tone:
+    | 'when-reached'
+    | 'phase-before'
+    | 'phase-after'
+    | 'pattern'
+    | 'identity'
+    | 'choreography'
+    | 'unclassified';
+};
+
+function getMovePlayerDamageLaunchCondition(
+  condition: MovePlayerDamageLocalCondition,
   t: ReturnType<typeof useLocalization>['t']
-) {
-  if (conditionTag === null) {
-    return t('moves.playerDamage.condition.none');
+): MovePlayerDamageLaunchCondition {
+  if (condition.semanticKey === 'when-reached') {
+    return {
+      badge: t('moves.playerDamage.localCondition.whenReached.label'),
+      detail: t('moves.playerDamage.localCondition.whenReached.help'),
+      rawTag: null,
+      tone: 'when-reached'
+    };
   }
 
-  const knownConditions: Record<string, string> = {
-    Poke0149: 'moves.playerDamage.condition.dragonite',
-    Poke0359: 'moves.playerDamage.condition.absol',
-    Poke0952: 'moves.playerDamage.condition.scovillain'
+  if (condition.semanticKey === 'before-hp-phase-2-transition-completes') {
+    return {
+      badge: t('moves.playerDamage.localCondition.beforePhase2.label'),
+      detail: t('moves.playerDamage.localCondition.beforePhase2.help'),
+      rawTag: condition.rawTag,
+      tone: 'phase-before'
+    };
+  }
+
+  if (condition.semanticKey === 'after-hp-phase-2-transition-completes') {
+    return {
+      badge: t('moves.playerDamage.localCondition.afterPhase2.label'),
+      detail: t('moves.playerDamage.localCondition.afterPhase2.help'),
+      rawTag: condition.rawTag,
+      tone: 'phase-after'
+    };
+  }
+
+  const controllerPattern = movePlayerDamageControllerPatterns[condition.semanticKey];
+  if (controllerPattern) {
+    return {
+      badge: t('moves.playerDamage.localCondition.controllerPattern.label', {
+        pattern: controllerPattern
+      }),
+      detail: t('moves.playerDamage.localCondition.controllerPattern.help', {
+        pattern: controllerPattern
+      }),
+      rawTag: condition.rawTag,
+      tone: 'pattern'
+    };
+  }
+
+  const identityKey = movePlayerDamageIdentityKeys[condition.semanticKey];
+  if (identityKey) {
+    const identity = t(identityKey);
+    return {
+      badge: t('moves.playerDamage.localCondition.identity.label', { identity }),
+      detail: t('moves.playerDamage.localCondition.identity.help', { identity }),
+      rawTag: condition.rawTag,
+      tone: 'identity'
+    };
+  }
+
+  if (condition.semanticKey === 'meowstic-single-bullet') {
+    return {
+      badge: t('moves.playerDamage.localCondition.meowsticSingleBullet.label'),
+      detail: t('moves.playerDamage.localCondition.meowsticSingleBullet.help'),
+      rawTag: condition.rawTag,
+      tone: 'choreography'
+    };
+  }
+
+  return {
+    badge: t('moves.playerDamage.localCondition.unclassified.label'),
+    detail: t('moves.playerDamage.localCondition.unclassified.help'),
+    rawTag: condition.rawTag,
+    tone: 'unclassified'
   };
-  const knownCondition = knownConditions[conditionTag];
-  return knownCondition
-    ? t(knownCondition, { tag: conditionTag })
-    : t('moves.playerDamage.condition.active', { tag: conditionTag });
+}
+
+type MovePlayerDamageTimelineLaunch =
+  MoveRecord['playerDamageRows'][number]['invocations'][number]['verifiedVanillaTimelineLaunches'][number];
+
+type MovePlayerDamageTimelineGroup = {
+  key: string;
+  name: string;
+  path: string;
+  shootActions: MovePlayerDamageTimelineLaunch[];
+};
+
+function groupMovePlayerDamageTimelineLaunches(
+  launches: MovePlayerDamageTimelineLaunch[]
+): MovePlayerDamageTimelineGroup[] {
+  const groups = new Map<string, MovePlayerDamageTimelineGroup>();
+  for (const launch of launches) {
+    const existing = groups.get(launch.timelinePath);
+    if (existing) {
+      existing.shootActions.push(launch);
+      continue;
+    }
+    groups.set(launch.timelinePath, {
+      key: launch.timelinePath,
+      name: launch.timelineName,
+      path: launch.timelinePath,
+      shootActions: [launch]
+    });
+  }
+  return [...groups.values()];
 }
 
 function formatMovePlayerDamageRole(
@@ -17041,52 +17414,101 @@ function MovePlayerDamageDescriptor({
               </div>
               {row.bulletMappingMatchesVerifiedVanilla && invocation.verifiedVanillaTimelineLaunches.length > 0 ? (
                 <>
-                  {invocation.verifiedVanillaTimelineLaunches.map((launch, launchIndex) => {
-                    const relationshipPaths = launch.relationshipPaths.filter(
-                      (path) => path.length > 0
-                    );
-                    return (
-                      <Fragment
-                        key={`${launch.timelinePath}-${launch.rootBulletId}-${launchIndex}`}
-                      >
+                  <p className="move-player-damage-scope-flow">
+                    {t('moves.playerDamage.timeline.scopeFlow')}
+                  </p>
+                  <div className="move-player-damage-timeline-groups">
+                    {groupMovePlayerDamageTimelineLaunches(
+                      invocation.verifiedVanillaTimelineLaunches
+                    ).map((timeline, timelineIndex) => (
+                      <section className="move-player-damage-timeline-group" key={timeline.key}>
+                        <div className="move-player-damage-timeline-heading">
+                          <strong>
+                            {t('moves.playerDamage.timeline.groupHeading', {
+                              index: timelineIndex + 1
+                            })}
+                          </strong>
+                          <code title={timeline.path}>{timeline.name}</code>
+                        </div>
                         <p>
-                          {t('moves.playerDamage.timeline.verifiedVanillaEvidence')}{' '}
-                          <code title={launch.timelinePath}>{launch.timelineName}</code>{' '}
                           {t(
-                            launch.rootBulletId === invocation.bulletId
-                              ? 'moves.playerDamage.timeline.launchesDirect'
-                              : 'moves.playerDamage.timeline.launchesRoot',
-                            {
-                              condition: formatMovePlayerDamageConditionTag(
-                                launch.conditionTag,
-                                t
-                              ),
-                              rootBulletId: launch.rootBulletId
-                            }
-                          )}{' '}
-                          {t(
-                            launch.rootBulletId === invocation.bulletId
-                              ? 'moves.playerDamage.timeline.directInvocation'
-                              : 'moves.playerDamage.timeline.chainInvocation',
-                            {
-                              attackId: row.attackId,
-                              bulletId: invocation.bulletId
-                            }
+                            timeline.shootActions.length === 1
+                              ? 'moves.playerDamage.timeline.groupHelp.one'
+                              : 'moves.playerDamage.timeline.groupHelp.other',
+                            { count: timeline.shootActions.length }
                           )}
                         </p>
-                        {relationshipPaths.map((path, pathIndex) => (
-                          <p key={`${launchIndex}-${pathIndex}`}>
-                            {t('moves.playerDamage.timeline.relationshipPath', {
-                              edges: path
-                                .map((edge) => formatMovePlayerDamageRelationshipEdge(edge, t))
-                                .join(' → '),
-                              index: pathIndex + 1
-                            })}
-                          </p>
-                        ))}
-                      </Fragment>
-                    );
-                  })}
+                        <div className="move-player-damage-shoot-actions">
+                          {timeline.shootActions.map((launch, launchIndex) => {
+                            const relationshipPaths = launch.relationshipPaths.filter(
+                              (path) => path.length > 0
+                            );
+                            const launchCondition = getMovePlayerDamageLaunchCondition(
+                              launch.localCondition,
+                              t
+                            );
+                            return (
+                              <article
+                                className="move-player-damage-shoot-action"
+                                data-shoot-action-key={launch.shootActionKey}
+                                key={launch.shootActionKey}
+                              >
+                                <strong className="move-player-damage-shoot-action-heading">
+                                  {t('moves.playerDamage.timeline.shootStep', {
+                                    index: launchIndex + 1,
+                                    total: timeline.shootActions.length
+                                  })}
+                                </strong>
+                                <div
+                                  className={`move-player-damage-launch-condition is-${launchCondition.tone}`}
+                                  role="note"
+                                >
+                                  <span className="move-player-damage-launch-condition-badge">
+                                    {launchCondition.badge}
+                                  </span>
+                                  <span className="move-player-damage-launch-condition-detail">
+                                    {launchCondition.detail}
+                                  </span>
+                                  {launchCondition.rawTag !== null ? (
+                                    <span className="move-player-damage-launch-condition-technical">
+                                      <span>
+                                        {t('moves.playerDamage.technical.conditionAiTag')}
+                                      </span>
+                                      <code>{launchCondition.rawTag}</code>
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p>
+                                  {t(
+                                    launch.rootBulletId === invocation.bulletId
+                                      ? 'moves.playerDamage.timeline.stepDirect'
+                                      : 'moves.playerDamage.timeline.stepChain',
+                                    {
+                                      attackId: row.attackId,
+                                      bulletId: invocation.bulletId,
+                                      rootBulletId: launch.rootBulletId
+                                    }
+                                  )}
+                                </p>
+                                {relationshipPaths.map((path, pathIndex) => (
+                                  <p key={`${launch.shootActionKey}:${pathIndex}`}>
+                                    {t('moves.playerDamage.timeline.relationshipPath', {
+                                      edges: path
+                                        .map((edge) =>
+                                          formatMovePlayerDamageRelationshipEdge(edge, t)
+                                        )
+                                        .join(' → '),
+                                      index: pathIndex + 1
+                                    })}
+                                  </p>
+                                ))}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
                   {invocation.sources.length > 0 ? (
                     <p>
                       {t('moves.playerDamage.timeline.immediateLink', {
@@ -17758,14 +18180,20 @@ function SelectedMovePanel({
                           : translateLiteral(group.group)}
                       </legend>
                       {isPlayerDamageGroup ? (
-                        <p className="field-note move-player-damage-group-note">
-                          {t(
-                            move.playerDamageRows.length === 1
-                              ? 'moves.playerDamage.groupNote.one'
-                              : 'moves.playerDamage.groupNote.other',
-                            { count: move.playerDamageRows.length }
-                          )}
-                        </p>
+                        <>
+                          <p className="field-note move-player-damage-group-note">
+                            {t(
+                              move.playerDamageRows.length === 1
+                                ? 'moves.playerDamage.groupNote.one'
+                                : 'moves.playerDamage.groupNote.other',
+                              { count: move.playerDamageRows.length }
+                            )}
+                          </p>
+                          <ScriptedBossMoveControllerAvailability
+                            move={move}
+                            profiles={scriptedBosses}
+                          />
+                        </>
                       ) : null}
                       <div
                         className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-grid' : ''}`}
@@ -18128,35 +18556,105 @@ function SelectedMovePanel({
   );
 }
 
+const textCategoryLocalizationKeys: Readonly<
+  Record<string, { label: string; description: string }>
+> = {
+  all: {
+    label: 'text.category.all.label',
+    description: 'text.category.all.description'
+  },
+  'main-story': {
+    label: 'text.category.main-story.label',
+    description: 'text.category.main-story.description'
+  },
+  'side-missions': {
+    label: 'text.category.side-missions.label',
+    description: 'text.category.side-missions.description'
+  },
+  'mega-dimension': {
+    label: 'text.category.mega-dimension.label',
+    description: 'text.category.mega-dimension.description'
+  },
+  'battle-royale': {
+    label: 'text.category.battle-royale.label',
+    description: 'text.category.battle-royale.description'
+  },
+  items: {
+    label: 'text.category.items.label',
+    description: 'text.category.items.description'
+  },
+  'pokemon-pokedex': {
+    label: 'text.category.pokemon-pokedex.label',
+    description: 'text.category.pokemon-pokedex.description'
+  },
+  'moves-abilities': {
+    label: 'text.category.moves-abilities.label',
+    description: 'text.category.moves-abilities.description'
+  },
+  'trainers-characters': {
+    label: 'text.category.trainers-characters.label',
+    description: 'text.category.trainers-characters.description'
+  },
+  locations: {
+    label: 'text.category.locations.label',
+    description: 'text.category.locations.description'
+  },
+  'facilities-services': {
+    label: 'text.category.facilities-services.label',
+    description: 'text.category.facilities-services.description'
+  },
+  'ui-shared': {
+    label: 'text.category.ui-shared.label',
+    description: 'text.category.ui-shared.description'
+  },
+  'other-scripts': {
+    label: 'text.category.other-scripts.label',
+    description: 'text.category.other-scripts.description'
+  }
+};
+
 function TextSection({
   editSession,
   isEditStarting,
   isPagedResultWindow,
+  isTextLoading,
   isTextUpdating,
+  onCategoryChange,
+  onLanguageChange,
+  onPageChange,
   onSearchChange,
   onSelectTextEntry,
   onStartEditSession,
   onUpdateTextEntry,
   searchText,
+  selectedCategoryId,
+  selectedLanguage,
   selectedTextKey,
   workflow
 }: {
   editSession: EditSession | null;
   isEditStarting: boolean;
   isPagedResultWindow: boolean;
+  isTextLoading: boolean;
   isTextUpdating: boolean;
+  onCategoryChange: (categoryId: string) => void;
+  onLanguageChange: (language: string) => void;
+  onPageChange: (offset: number) => void;
   onSearchChange: (searchText: string) => void;
   onSelectTextEntry: (textKey: string | null) => void;
   onStartEditSession: () => void;
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
   searchText: string;
+  selectedCategoryId: string | null;
+  selectedLanguage: string | null;
   selectedTextKey: string | null;
   workflow: TextWorkflow | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const entries = workflow?.entries ?? [];
   const filteredEntries = useMemo(
-    () => filterTextEntries(entries, searchText),
-    [entries, searchText]
+    () => (workflow?.page ? entries : filterTextEntries(entries, searchText)),
+    [entries, searchText, workflow?.page]
   );
   const selectedEntry = useMemo(
     () =>
@@ -18167,6 +18665,16 @@ function TextSection({
   );
   const canEditText = workflow?.summary.availability === 'available';
   const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
+  const categories = workflow?.categories ?? [];
+  const page = workflow?.page ?? null;
+  const activeCategoryId = workflow?.selectedCategoryId ?? selectedCategoryId ?? 'all';
+  const activeCategory = categories.find(
+    (category) => category.categoryId === activeCategoryId
+  );
+  const activeLanguage = workflow?.selectedLanguage ?? selectedLanguage ?? '';
+  const resultStart = page && page.returnedEntryCount > 0 ? page.offset + 1 : 0;
+  const resultEnd = page ? page.offset + page.returnedEntryCount : filteredEntries.length;
+  const pageNumber = page ? Math.floor(page.offset / page.limit) + 1 : 1;
 
   return (
     <>
@@ -18176,24 +18684,52 @@ function TextSection({
           <h2 id="text-heading">Text and Dialogue Map</h2>
         </div>
 
-        <div className="items-toolbar">
+        <div className="items-toolbar text-toolbar">
+          {workflow && workflow.languages.length > 0 ? (
+            <label className="path-field text-language-field">
+              <span>{t('text.language.label')}</span>
+              <select
+                aria-label={t('text.language.ariaLabel')}
+                data-localization-ignore="true"
+                disabled={isTextLoading || isTextUpdating}
+                onChange={(event) => onLanguageChange(event.target.value)}
+                value={activeLanguage}
+              >
+                {workflow.languages.map((language) => (
+                  <option key={language.language} value={language.language}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search text entries"
-              disabled={!workflow}
+              aria-label={t('text.search.ariaLabel')}
+              disabled={!workflow || isTextLoading || isTextUpdating}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search text"
+              placeholder={t('text.search.placeholder')}
               type="search"
               value={searchText}
             />
           </label>
           <Metric
-            label={isPagedResultWindow ? 'Loaded results' : 'Loaded entries'}
-            value={workflow ? workflow.stats.totalTextEntryCount.toString() : '0'}
+            label={
+              page
+                ? t('text.metrics.pageEntries')
+                : isPagedResultWindow
+                  ? 'Loaded results'
+                  : 'Loaded entries'
+            }
+            value={
+              workflow
+                ? (page?.returnedEntryCount ?? workflow.stats.totalTextEntryCount).toString()
+                : '0'
+            }
           />
           <Metric
-            label="Source files"
+            label={categories.length > 0 ? t('text.metrics.availableFiles') : 'Source files'}
             value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
           />
           <Metric
@@ -18201,6 +18737,78 @@ function TextSection({
             value={(editSession?.pendingEdits.length ?? 0).toString()}
           />
         </div>
+
+        {workflow && categories.length > 0 ? (
+          <nav aria-label={t('text.categories.ariaLabel')} className="text-category-browser">
+            <div className="text-category-tabs">
+              {categories.map((category) => {
+                const localizationKeys = textCategoryLocalizationKeys[category.categoryId];
+
+                return (
+                  <button
+                    aria-pressed={category.categoryId === activeCategoryId}
+                    className={category.categoryId === activeCategoryId ? 'is-active' : ''}
+                    disabled={isTextLoading || isTextUpdating}
+                    key={category.categoryId}
+                    onClick={() => onCategoryChange(category.categoryId)}
+                    type="button"
+                  >
+                    <span>
+                      {localizationKeys
+                        ? t(localizationKeys.label)
+                        : translateLiteral(category.label)}
+                    </span>
+                    <small>
+                      {t('text.categories.fileCount', {
+                        count: category.sourceFileCount
+                      })}
+                    </small>
+                  </button>
+                );
+              })}
+            </div>
+            {activeCategory ? (
+              <p>
+                {textCategoryLocalizationKeys[activeCategory.categoryId]
+                  ? t(textCategoryLocalizationKeys[activeCategory.categoryId].description)
+                  : translateLiteral(activeCategory.description)}
+              </p>
+            ) : null}
+          </nav>
+        ) : null}
+
+        {workflow && page ? (
+          <nav aria-label={t('text.pagination.ariaLabel')} className="text-page-bar">
+            <span aria-live="polite">
+              {page.returnedEntryCount > 0
+                ? t('text.pagination.showing', {
+                    start: resultStart,
+                    end: resultEnd,
+                    page: pageNumber
+                  })
+                : t('text.pagination.empty', { page: pageNumber })}
+              {page.hasNext ? ` · ${t('text.pagination.more')}` : ''}
+            </span>
+            <div>
+              <button
+                className="secondary-button"
+                disabled={!page.hasPrevious || isTextLoading || isTextUpdating}
+                onClick={() => onPageChange(Math.max(0, page.offset - page.limit))}
+                type="button"
+              >
+                {t('text.pagination.previous')}
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!page.hasNext || isTextLoading || isTextUpdating}
+                onClick={() => onPageChange(page.offset + page.limit)}
+                type="button"
+              >
+                {t('text.pagination.next')}
+              </button>
+            </div>
+          </nav>
+        ) : null}
 
         {workflow ? (
           <EditorSessionBar
@@ -18216,14 +18824,15 @@ function TextSection({
         {workflow ? (
           <div className="text-layout">
             <div
+              aria-busy={isTextLoading || undefined}
               aria-colcount={5}
-              aria-label="Text entries"
+              aria-label={t('text.table.ariaLabel')}
               aria-rowcount={filteredEntries.length + 1}
               className="text-table"
               role="table"
             >
               <div className="text-row text-row-heading" role="row">
-                <span role="columnheader">Index</span>
+                <span role="columnheader">{t('text.messageKey')}</span>
                 <span role="columnheader">File</span>
                 <span role="columnheader">Line</span>
                 <span role="columnheader">Value</span>
@@ -18232,8 +18841,10 @@ function TextSection({
               <VirtualTableBody
                 getKey={(entry) => entry.textKey}
                 items={filteredEntries}
+                resetKey={`${activeLanguage}:${activeCategoryId}:${page?.offset ?? 0}:${searchText}`}
                 renderRow={(entry) => (
                   <button
+                    aria-selected={selectedEntry?.textKey === entry.textKey}
                     className={`text-row ${selectedEntry?.textKey === entry.textKey ? 'text-row-selected' : ''} ${
                       pendingTextKeys.has(entry.textKey) ? 'text-row-pending' : ''
                     }`}
@@ -18241,10 +18852,21 @@ function TextSection({
                     role="row"
                     type="button"
                   >
-                    <span role="cell">{entry.textId}</span>
-                    <span role="cell">{entry.sourceFile}</span>
+                    <span data-localization-ignore="true" role="cell">
+                      {entry.messageKey ?? entry.label}
+                    </span>
+                    <span data-localization-ignore="true" role="cell">
+                      {entry.sourceFile}
+                    </span>
                     <span role="cell">{entry.lineIndex}</span>
-                    <span data-localization-ignore="true" role="cell">{entry.value}</span>
+                    <span
+                      aria-label={canonicalTextToEditorText(entry.value)}
+                      className="text-value-summary"
+                      data-localization-ignore="true"
+                      role="cell"
+                    >
+                      {formatCanonicalTextSummary(entry.value)}
+                    </span>
                     <span role="cell">{formatSourceLayer(entry.provenance.sourceLayer)}</span>
                   </button>
                 )}
@@ -18285,11 +18907,18 @@ function SelectedTextPanel({
   isTextUpdating: boolean;
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
 }) {
+  const { t } = useLocalization();
   const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const textValueTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const textValueSelectionRef = useRef({
+    end: 0,
+    start: 0,
+    textKey: null as string | null
+  });
   const valueField = editableFields.find((field) => field.field === 'value');
   const draftValue = entry ? draftsByTextKey[entry.textKey] ?? entry.value : '';
+  const displayDraftValue = canonicalTextToEditorText(draftValue);
   const isTextDraftDirty =
     entry !== null && (draftsByTextKey[entry.textKey] ?? entry.value) !== entry.value;
   const isTextInputDisabled =
@@ -18317,6 +18946,15 @@ function SelectedTextPanel({
       return nextDrafts;
     });
   }, [entry, isTextDraftDirty]);
+
+  useEffect(() => {
+    const end = displayDraftValue.length;
+    textValueSelectionRef.current = {
+      end,
+      start: end,
+      textKey: entry?.textKey ?? null
+    };
+  }, [entry?.textKey]);
 
   const updateTextDraft = useCallback(
     (nextValue: string) => {
@@ -18347,26 +18985,42 @@ function SelectedTextPanel({
       }
 
       const textarea = textValueTextareaRef.current;
-      const shouldUseTextareaSelection = textarea !== null && document.activeElement === textarea;
-      const selectionStart = shouldUseTextareaSelection
-        ? textarea.selectionStart
-        : draftValue.length;
-      const selectionEnd = shouldUseTextareaSelection ? textarea.selectionEnd : draftValue.length;
-      const nextValue = `${draftValue.slice(0, selectionStart)}${token}${draftValue.slice(selectionEnd)}`;
-      const nextCursorPosition = selectionStart + token.length;
-      updateTextDraft(nextValue);
+      const storedSelection = textValueSelectionRef.current;
+      const hasStoredSelection =
+        storedSelection.textKey === entry.textKey &&
+        storedSelection.start >= 0 &&
+        storedSelection.end >= storedSelection.start &&
+        storedSelection.end <= displayDraftValue.length;
+      const selectionStart = hasStoredSelection
+        ? storedSelection.start
+        : displayDraftValue.length;
+      const selectionEnd = hasStoredSelection ? storedSelection.end : displayDraftValue.length;
+      const insertion = insertCanonicalTextControl(
+        displayDraftValue,
+        token,
+        selectionStart,
+        selectionEnd
+      );
+      updateTextDraft(insertion.canonicalValue);
+      textValueSelectionRef.current = {
+        end: insertion.cursorPosition,
+        start: insertion.cursorPosition,
+        textKey: entry.textKey
+      };
 
       window.requestAnimationFrame(() => {
         textarea?.focus();
-        textarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+        textarea?.setSelectionRange(insertion.cursorPosition, insertion.cursorPosition);
       });
     },
-    [draftValue, entry, isTextInputDisabled, updateTextDraft]
+    [displayDraftValue, entry, isTextInputDisabled, updateTextDraft]
   );
 
   const draftState = getTextDraftState(draftValue, entry, valueField);
   const canSubmit = editSession !== null && draftState.canSubmit;
   const textDraftCount = Object.keys(draftsByTextKey).length;
+  const textLengthHelpId = 'selected-text-canonical-length';
+  const maximumTextLength = valueField?.maximumLength ?? null;
 
   return (
     <aside aria-label="Selected text provenance" className="text-inspector">
@@ -18424,6 +19078,12 @@ function SelectedTextPanel({
               <dt>Label</dt>
               <dd data-localization-ignore="true">{entry.label}</dd>
             </div>
+            {entry.messageKey ? (
+              <div className="text-source-file-detail">
+                <dt>{t('text.messageKey')}</dt>
+                <dd data-localization-ignore="true">{entry.messageKey}</dd>
+              </div>
+            ) : null}
             <div className="text-source-file-detail">
               <dt>Source file</dt>
               <dd data-localization-ignore="true">{entry.sourceFile}</dd>
@@ -18446,30 +19106,88 @@ function SelectedTextPanel({
             <div className="path-field">
               <span>{valueField?.label ?? 'Text value'}</span>
               <div aria-label="Insert text controls" className="text-token-toolbar" role="toolbar">
-                {textControlInserts.map((token) => (
-                  <button
-                    aria-label={`Insert ${token.label} ${token.display}`}
-                    className="text-token-button"
-                    disabled={isTextInputDisabled}
-                    key={token.value}
-                    onClick={() => insertTextControlToken(token.value)}
-                    title={token.title}
-                    type="button"
-                  >
-                    <span>{token.label}</span>
-                    <code>{token.display}</code>
-                  </button>
-                ))}
+                {textControlInserts.map((token) => {
+                  const label = t(token.labelKey);
+                  return (
+                    <button
+                      aria-label={t('text.controls.insertAria', {
+                        label,
+                        syntax: token.display
+                      })}
+                      className="text-token-button"
+                      disabled={isTextInputDisabled}
+                      key={token.value}
+                      onClick={() => insertTextControlToken(token.value)}
+                      title={t(token.titleKey)}
+                      type="button"
+                    >
+                      <span>{label}</span>
+                      <code>{token.display}</code>
+                    </button>
+                  );
+                })}
               </div>
+              <details className="text-control-guide">
+                <summary>{t('text.controls.guide.title')}</summary>
+                <p>{t('text.controls.guide.help')}</p>
+                <dl>
+                  {textControlReference.map((control) => (
+                    <div key={control.syntax}>
+                      <dt>
+                        <code>{control.syntax}</code>
+                        <strong>{t(control.labelKey)}</strong>
+                      </dt>
+                      <dd>{t(control.descriptionKey)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
               <textarea
+                aria-describedby={maximumTextLength === null ? undefined : textLengthHelpId}
+                aria-invalid={!draftState.inRange || undefined}
                 aria-label={valueField?.label ?? 'Text value'}
                 disabled={isTextInputDisabled}
-                maxLength={valueField?.maximumLength ?? undefined}
-                onChange={(event) => updateTextDraft(event.target.value)}
+                onChange={(event) => {
+                  const normalized = normalizeEditorTextInput(
+                    event.currentTarget.value,
+                    event.currentTarget.selectionStart,
+                    event.currentTarget.selectionEnd
+                  );
+                  textValueSelectionRef.current = {
+                    end: normalized.selectionEnd,
+                    start: normalized.selectionStart,
+                    textKey: entry.textKey
+                  };
+                  updateTextDraft(normalized.canonicalValue);
+                  window.requestAnimationFrame(() => {
+                    textValueTextareaRef.current?.setSelectionRange(
+                      normalized.selectionStart,
+                      normalized.selectionEnd
+                    );
+                  });
+                }}
+                onSelect={(event) => {
+                  textValueSelectionRef.current = {
+                    end: event.currentTarget.selectionEnd,
+                    start: event.currentTarget.selectionStart,
+                    textKey: entry.textKey
+                  };
+                }}
                 ref={textValueTextareaRef}
                 rows={8}
-                value={draftValue}
+                value={displayDraftValue}
               />
+              {maximumTextLength === null ? null : (
+                <small
+                  className={`text-value-length-help ${draftState.inRange ? '' : 'is-invalid'}`}
+                  id={textLengthHelpId}
+                >
+                  {t('text.controls.length', {
+                    count: draftValue.length,
+                    maximum: maximumTextLength
+                  })}
+                </small>
+              )}
             </div>
 
             {!entry.canEdit ? (
@@ -28902,12 +29620,13 @@ function EncountersSection({
   selectedTableId,
   workflow
 }: EncountersSectionProps) {
+  const { t } = useLocalization();
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const allTables = workflow?.tables ?? [];
   const scriptedBosses = workflow?.scriptedBosses ?? [];
   const filteredTables = useMemo(
-    () => filterEncounterTables(allTables, searchText, scriptedBosses),
-    [allTables, scriptedBosses, searchText]
+    () => filterEncounterTables(allTables, searchText, scriptedBosses, t),
+    [allTables, scriptedBosses, searchText, t]
   );
   const selectedTableFromId =
     filteredTables.find((table) => table.tableId === selectedTableId) ?? null;
@@ -40398,6 +41117,8 @@ function ModMergerFileList({
   );
 }
 
+const dumpImporterItemsPriceOwner = 'workflow.dump-import.items-price';
+
 function SpreadsheetImportSection({
   editSession,
   isPreviewing,
@@ -40419,7 +41140,7 @@ function SpreadsheetImportSection({
   sourcePath: string;
   workflow: SpreadsheetImportWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [rowFilter, setRowFilter] = useState<'accepted' | 'all' | 'rejected'>('all');
   const importProfiles = workflow?.profiles ?? [];
   const previewProfile = preview
@@ -40438,11 +41159,15 @@ function SpreadsheetImportSection({
     preview?.rows.filter(
       (row) => rowFilter === 'all' || row.status.toLocaleLowerCase() === rowFilter
     ) ?? [];
+  const importPendingEditCount =
+    editSession?.pendingEdits.filter(
+      (edit) => edit.owner === dumpImporterItemsPriceOwner
+    ).length ?? 0;
   const importProgressSteps = [
     { complete: sourcePath.trim().length > 0, label: 'Source' },
     { complete: preview !== null, label: 'Preview' },
     {
-      complete: preview !== null && (editSession?.pendingEdits.length ?? 0) > 0,
+      complete: preview !== null && importPendingEditCount > 0,
       label: 'Changes'
     }
   ];
@@ -40479,8 +41204,8 @@ function SpreadsheetImportSection({
             value={preview ? preview.acceptedRowCount.toString() : '0'}
           />
           <Metric
-            label="Pending changes"
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
+            label={t('dumpImporter.importedChanges')}
+            value={importPendingEditCount.toString()}
           />
         </div>
 
@@ -40498,6 +41223,7 @@ function SpreadsheetImportSection({
                     <input
                       aria-label="CSV, TSV, or JSON source path"
                       data-localization-ignore="true"
+                      disabled={isPreviewing}
                       onChange={(event) => onSourcePathChange(event.target.value)}
                       placeholder={translateLiteral('items.csv, items.tsv, or items.json')}
                       type="text"
@@ -40529,6 +41255,9 @@ function SpreadsheetImportSection({
                   <span>{isPreviewing ? 'Previewing' : 'Preview Import'}</span>
                 </button>
               </div>
+              <p className="spreadsheet-import-replacement-note">
+                {t('dumpImporter.previewReplacement')}
+              </p>
 
               {preview ? (
                 <>
@@ -43126,6 +43855,7 @@ function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
     [
       entry.textId.toString(),
       entry.label,
+      entry.messageKey ?? '',
       entry.language,
       entry.sourceFile,
       entry.lineIndex.toString(),
@@ -43869,12 +44599,17 @@ function buildEncounterTableRows(
     const orderedGroupTables = isZaGroup
       ? [...groupTables].sort(compareZaEncounterSpawnerTables)
       : groupTables;
+    const preferredZaBossTable = isZaGroup
+      ? getPreferredZaBossMainBattleTable(orderedGroupTables)
+      : null;
     const table =
       selectedTable &&
       getEncounterTableZoneKey(selectedTable) === zoneKey &&
       orderedGroupTables.some((groupTable) => groupTable.tableId === selectedTable.tableId)
         ? selectedTable
-        : getPreferredEncounterTable(orderedGroupTables) ?? orderedGroupTables[0]!;
+        : preferredZaBossTable ??
+          getPreferredEncounterTable(orderedGroupTables) ??
+          orderedGroupTables[0]!;
     const zaFamily = isZaGroup ? getZaEncounterZoneFamily(table) : null;
     const areaLabel = isZaGroup
       ? formatZaEncounterZonePreview(orderedGroupTables)
@@ -43906,6 +44641,15 @@ function getDefaultEncounterTable(tables: EncounterTableRecord[]) {
   }
 
   return buildEncounterTableRows(tables, null)[0]?.table ?? null;
+}
+
+function getPreferredZaBossMainBattleTable(tables: EncounterTableRecord[]) {
+  return (
+    tables.find(
+      (table) =>
+        isZaBossEncounterTable(table) && getZaBossEncounterContext(table).key === 'story'
+    ) ?? null
+  );
 }
 
 function compareEncounterTableRows(left: EncounterTableListRow, right: EncounterTableListRow) {
@@ -45368,7 +46112,8 @@ function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
 function filterEncounterTables(
   tables: EncounterTableRecord[],
   searchText: string,
-  scriptedBosses: ScriptedBossProfile[] = []
+  scriptedBosses: ScriptedBossProfile[] = [],
+  localize?: ReturnType<typeof useLocalization>['t']
 ) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -45408,6 +46153,24 @@ function filterEncounterTables(
               getZaBossEncounterLineageKey(table)
             )
           : null;
+        const profileSearchValues = profile
+          ? [
+              profile.key,
+              profile.lineageKey,
+              profile.name,
+              profile.phaseModel.state,
+              profile.phaseModel.kind,
+              ...profile.phaseModel.phases.flatMap((phase) => [
+                phase.key,
+                phase.stageName,
+                phase.speciesId.toString(),
+                phase.form.toString(),
+                `stage ${phase.stage}`,
+                `phase ${phase.hpPhase}`,
+                `${phase.minimumHpPercent} ${phase.maximumHpPercent}`
+              ])
+            ]
+          : [];
         return [
           slot.slot.toString(),
           slot.species,
@@ -45420,6 +46183,7 @@ function filterEncounterTables(
           slot.appearanceMinCount?.toString() ?? '',
           slot.appearanceMaxCount?.toString() ?? '',
           slot.weather,
+          ...profileSearchValues,
           ...(profile?.actions.flatMap((action) => [
             action.name,
             action.moveId?.toString() ?? '',
@@ -45428,7 +46192,22 @@ function filterEncounterTables(
             action.selectorActionId?.toString() ?? '',
             action.kind,
             action.runtimeState,
-            action.lockReason ?? ''
+            action.lockReason ?? '',
+            action.phaseContext ?? '',
+            action.variant?.toString() ?? '',
+            action.variant === null
+              ? ''
+              : formatLocalizedMoveRuntimeVariantLabel(
+                  action.variant,
+                  localize ?? ((key) => key)
+                ),
+            ...action.phaseAvailability.flatMap((availability) => [
+              availability.phaseKey,
+              availability.state,
+              localize?.(
+                `za.encounters.bossActions.phase.state.${availability.state}`
+              ) ?? ''
+            ])
           ]) ?? [])
         ];
       })
@@ -49100,7 +49879,8 @@ function getTextDraftState(
       entry !== null &&
       entry.canEdit &&
       inRange &&
-      draftValue !== entry.value
+      draftValue !== entry.value,
+    inRange
   };
 }
 

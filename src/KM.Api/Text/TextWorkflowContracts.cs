@@ -10,7 +10,9 @@ namespace KM.Api.Text;
 public sealed record TextWorkflowQueryDto(
     string? SearchText,
     int? Offset,
-    int? Limit);
+    int? Limit,
+    string? CategoryId = null,
+    string? Language = null);
 
 public sealed record LoadTextWorkflowRequest(
     ProjectPathsDto Paths,
@@ -31,7 +33,8 @@ public sealed record TextEntryRecordDto(
     string Value,
     bool CanEdit,
     string? EditBlockedReason,
-    TextProvenanceDto Provenance);
+    TextProvenanceDto Provenance,
+    string? MessageKey = null);
 
 public sealed record DialogueReferenceRecordDto(
     string DialogueId,
@@ -53,13 +56,41 @@ public sealed record TextEditableFieldDto(
     int? MinimumLength,
     int? MaximumLength);
 
+public sealed record TextCategoryDto(
+    string CategoryId,
+    string Label,
+    string Description,
+    int SourceFileCount);
+
+public sealed record TextResultPageDto(
+    int Offset,
+    int Limit,
+    int ReturnedEntryCount,
+    bool HasPrevious,
+    bool HasNext);
+
+public sealed record TextLanguageDto(
+    string Language,
+    string Label);
+
 public sealed record TextWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<TextEntryRecordDto> Entries,
     IReadOnlyList<DialogueReferenceRecordDto> DialogueReferences,
     IReadOnlyList<TextEditableFieldDto> EditableFields,
     TextWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<TextCategoryDto> Categories { get; init; } = [];
+
+    public string? SelectedCategoryId { get; init; }
+
+    public TextResultPageDto? Page { get; init; }
+
+    public IReadOnlyList<TextLanguageDto> Languages { get; init; } = [];
+
+    public string? SelectedLanguage { get; init; }
+}
 
 public sealed record LoadTextWorkflowResponse(TextWorkflowDto Workflow);
 

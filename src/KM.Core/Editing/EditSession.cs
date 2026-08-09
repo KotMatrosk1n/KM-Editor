@@ -24,6 +24,18 @@ public sealed record EditSession(
         };
     }
 
+    public EditSession WithoutPendingEditsOwnedBy(string owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner);
+
+        return this with
+        {
+            PendingEdits = PendingEdits
+                .Where(edit => !string.Equals(edit.Owner, owner, StringComparison.Ordinal))
+                .ToArray(),
+        };
+    }
+
     public ChangePlan CreateEmptyChangePlan()
     {
         return ChangePlan.Empty(Id);

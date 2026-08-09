@@ -85,14 +85,17 @@ public sealed class ZaTextEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = textWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
+        var summary = textWorkflowService.CreateSummary(project);
 
-        CanEditText(project, workflow, diagnostics);
-
-        foreach (var edit in session.PendingEdits)
+        if (ZaEditSessionSupport.CanEdit(
+            project,
+            summary,
+            summary.Diagnostics,
+            ZaEditSessionSupport.TextDomain,
+            diagnostics))
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdits(project, session.PendingEdits, diagnostics);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -222,7 +225,7 @@ public sealed class ZaTextEditSessionService
                     }
 
                     var value = edit.NewValue ?? string.Empty;
-                    if (!TryValidateTextValue(value, lines[lineIndex].Text, diagnostics))
+                    if (!TryValidateTextValue(value, diagnostics))
                     {
                         continue;
                     }
@@ -230,7 +233,9 @@ public sealed class ZaTextEditSessionService
                     lines[lineIndex] = lines[lineIndex] with { Text = value };
                 }
 
-                pendingOutputs.Add(new TextOutput(editGroup.Key, SwShGameTextFile.Write(lines)));
+                pendingOutputs.Add(new TextOutput(
+                    editGroup.Key,
+                    textFile.WritePreserving(lines, GameTextNullLineEncoding.PayloadCountTwo)));
             }
             catch (InvalidDataException exception)
             {
@@ -255,6 +260,14 @@ public sealed class ZaTextEditSessionService
                     $"Pokemon Legends Z-A text source file could not be read: {exception.Message}",
                     file: $"romfs/{editGroup.Key}",
                     expected: "Readable Pokemon Legends Z-A message table"));
+            }
+            catch (ArgumentException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending Pokemon Legends Z-A text edit has an invalid source path: {exception.Message}",
+                    file: $"romfs/{editGroup.Key}",
+                    expected: "Canonical Pokemon Legends Z-A message-table path"));
             }
         }
 
@@ -321,49 +334,86 @@ public sealed class ZaTextEditSessionService
             diagnostics);
     }
 
-    private static void ValidatePendingEdit(
-        ZaTextWorkflow workflow,
-        PendingEdit edit,
+    private void ValidatePendingEdits(
+        OpenedProject project,
+        IReadOnlyList<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(edit.Domain, ZaEditSessionSupport.TextDomain, StringComparison.Ordinal))
+        var validTargets = new List<(PendingEdit Edit, string VirtualPath, int LineIndex)>();
+        foreach (var edit in edits)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Pending edit domain '{edit.Domain}' is not supported by the Pokemon Legends Z-A Text workflow.",
-                expected: ZaEditSessionSupport.TextDomain));
-            return;
+            if (!string.Equals(edit.Domain, ZaEditSessionSupport.TextDomain, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending edit domain '{edit.Domain}' is not supported by the Pokemon Legends Z-A Text workflow.",
+                    expected: ZaEditSessionSupport.TextDomain));
+                continue;
+            }
+
+            if (!string.Equals(edit.Field, TextValueField, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+                continue;
+            }
+
+            if (!ZaTextWorkflowService.TryGetVirtualPathFromTextKey(
+                edit.RecordId,
+                out var virtualPath,
+                out var lineIndex))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Pokemon Legends Z-A text edit does not include a valid source line.",
+                    field: "textKey",
+                    expected: "Text key in source#line format"));
+                continue;
+            }
+
+            validTargets.Add((edit, virtualPath, lineIndex));
         }
 
-        if (!string.Equals(edit.Field, TextValueField, StringComparison.Ordinal))
+        foreach (var targetGroup in validTargets.GroupBy(
+            target => target.VirtualPath,
+            StringComparer.OrdinalIgnoreCase))
         {
-            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
-            return;
-        }
+            try
+            {
+                var source = fileSource.Read(project, targetGroup.Key);
+                var textFile = SwShGameTextFile.Parse(source.Bytes);
+                foreach (var target in targetGroup)
+                {
+                    if (target.LineIndex >= textFile.Lines.Count)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            "Pending Pokemon Legends Z-A text edit targets a line that is not present in its source table.",
+                            field: "textKey",
+                            file: $"romfs/{target.VirtualPath}",
+                            expected: "Existing text line"));
+                        continue;
+                    }
 
-        var entry = workflow.Entries.FirstOrDefault(candidate =>
-            string.Equals(candidate.TextKey, edit.RecordId, StringComparison.Ordinal));
-        if (entry is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pending Pokemon Legends Z-A text edit targets a record that is not loaded.",
-                field: "textKey",
-                expected: "Existing text entry"));
-            return;
+                    TryValidateTextValue(target.Edit.NewValue ?? string.Empty, diagnostics);
+                }
+            }
+            catch (InvalidDataException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon Legends Z-A text source file could not be decoded: {exception.Message}",
+                    file: $"romfs/{targetGroup.Key}",
+                    expected: "Pokemon Legends Z-A encrypted text table"));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon Legends Z-A text source file could not be read: {exception.Message}",
+                    file: $"romfs/{targetGroup.Key}",
+                    expected: "Readable Pokemon Legends Z-A message table"));
+            }
         }
-
-        if (!entry.CanEdit)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Text entry '{entry.Label}' is read-only: {entry.EditBlockedReason}",
-                field: TextValueField,
-                expected: "Editable text line"));
-            return;
-        }
-
-        TryValidateTextValue(edit.NewValue ?? string.Empty, entry.Value, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -381,7 +431,7 @@ public sealed class ZaTextEditSessionService
             return null;
         }
 
-        if (!TryValidateTextValue(value, selectedEntry.Value, diagnostics))
+        if (!TryValidateTextValue(value, diagnostics))
         {
             return null;
         }
@@ -397,7 +447,6 @@ public sealed class ZaTextEditSessionService
 
     private static bool TryValidateTextValue(
         string value,
-        string currentValue,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (value.Length > ZaTextWorkflowService.MaximumTextLength)
@@ -410,7 +459,20 @@ public sealed class ZaTextEditSessionService
             return false;
         }
 
-        return true;
+        try
+        {
+            SwShGameTextFile.ValidateText(value);
+            return true;
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                exception.Message,
+                field: TextValueField,
+                expected: "Valid escaped text, [VAR], [WAIT n], [~ n], or {base|ruby} syntax"));
+            return false;
+        }
     }
 
     private static ZaTextWorkflow OverlayPendingEdit(ZaTextWorkflow workflow, PendingEdit edit)

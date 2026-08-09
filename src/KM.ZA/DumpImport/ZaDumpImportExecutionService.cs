@@ -69,7 +69,8 @@ internal sealed class ZaDumpImportExecutionService
         var project = projectWorkspaceService.Open(paths);
         var workflow = workflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-        var currentSession = session ?? EditSession.Start();
+        var originalSession = session ?? EditSession.Start();
+        var currentSession = originalSession;
         var sourceDisplayPath = sourcePath.Trim();
         var emptyPreview = CreatePreview(profileId, sourceDisplayPath, []);
 
@@ -80,7 +81,7 @@ internal sealed class ZaDumpImportExecutionService
                 $"Dump Importer profile '{profileId}' is not supported.",
                 field: "profileId",
                 expected: ZaDumpImportWorkflowService.ItemsPriceProfileId));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         var profile = workflow.Profiles.FirstOrDefault(candidate =>
@@ -92,7 +93,7 @@ internal sealed class ZaDumpImportExecutionService
                 "Items price import profile is blocked for this project.",
                 field: "profileId",
                 expected: "Available Items price import profile"));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         if (!project.Health.CanOpenEditableWorkflows)
@@ -101,7 +102,7 @@ internal sealed class ZaDumpImportExecutionService
                 DiagnosticSeverity.Error,
                 "Dump Importer execution requires valid base paths and a valid output root.",
                 expected: "Editable project paths"));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         if (!File.Exists(sourceDisplayPath))
@@ -111,7 +112,7 @@ internal sealed class ZaDumpImportExecutionService
                 "Dump Importer source file could not be found.",
                 field: "sourcePath",
                 expected: "Readable CSV, TSV, or JSON file"));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         var itemsWorkflow = itemsWorkflowService.Load(project);
@@ -121,7 +122,7 @@ internal sealed class ZaDumpImportExecutionService
                 DiagnosticSeverity.Error,
                 "Dump Importer execution could not load Items workflow data.",
                 expected: KM.ZA.Data.ZaDataPaths.ItemDataArray));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         try
@@ -130,9 +131,10 @@ internal sealed class ZaDumpImportExecutionService
             var headerMap = BuildHeaderMap(table.Headers, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
-                return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+                return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
             }
 
+            currentSession = currentSession.WithoutPendingEditsOwnedBy(PendingEditOwners.DumpImporterItemsPrice);
             var rowPreviews = new List<ZaDumpImportRowPreviewRecord>();
             foreach (var row in table.Rows)
             {
@@ -159,7 +161,7 @@ internal sealed class ZaDumpImportExecutionService
                 $"Dump Importer source could not be parsed: {exception.Message}",
                 field: "sourcePath",
                 expected: "CSV, TSV, or JSON with importable row data"));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
         catch (JsonException exception)
         {
@@ -168,7 +170,7 @@ internal sealed class ZaDumpImportExecutionService
                 $"Dump Importer source could not be parsed{FormatJsonLocation(exception)}: {exception.Message}",
                 field: "sourcePath",
                 expected: "CSV, TSV, or JSON with importable row data"));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -177,7 +179,7 @@ internal sealed class ZaDumpImportExecutionService
                 $"Dump Importer source could not be read: {exception.Message}",
                 field: "sourcePath",
                 expected: "Readable CSV, TSV, or JSON file"));
-            return new ZaDumpImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
     }
 
@@ -258,7 +260,8 @@ internal sealed class ZaDumpImportExecutionService
                 rowSession,
                 itemId,
                 edit.Field,
-                edit.Value.ToString(CultureInfo.InvariantCulture));
+                edit.Value.ToString(CultureInfo.InvariantCulture),
+                PendingEditOwners.DumpImporterItemsPrice);
             rowSession = result.Session;
             diagnostics.AddRange(result.Diagnostics);
         }
@@ -302,18 +305,19 @@ internal sealed class ZaDumpImportExecutionService
         {
             var priceChanged = price != item.BuyPrice;
             var sellChanged = sellPrice != item.SellPrice;
-            if (priceChanged && sellChanged && (long)sellPrice * 2L == price)
+            if ((priceChanged || sellChanged)
+                && ItemPriceSemantics.IsCompatiblePair(price, sellPrice))
             {
                 skipSellPrice = true;
             }
-            else if (priceChanged && sellChanged)
+            else if (priceChanged || sellChanged)
             {
                 diagnostics.Add(CreateRowDiagnostic(
                     row,
                     DiagnosticSeverity.Error,
-                    "Price and SellPrice both changed to incompatible values, but they target the same stored item-table field. Change one value, or keep Price equal to SellPrice multiplied by 2.",
+                    "Price and SellPrice target the same stored item-table field. When both columns are provided, SellPrice must equal floor(Price / 2).",
                     field: "Price/SellPrice",
-                    expected: "One stored price edit"));
+                    expected: "SellPrice = floor(Price / 2)"));
                 cells.Add(CreateCell("Price", ZaItemsWorkflowService.PriceField, priceText, "rejected", "Conflicting shared price edit."));
                 cells.Add(CreateCell("SellPrice", SellPriceField, sellText, "rejected", "Conflicting shared price edit."));
                 return requestedEdits;

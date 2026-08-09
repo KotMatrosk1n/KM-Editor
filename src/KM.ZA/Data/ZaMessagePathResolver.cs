@@ -55,13 +55,9 @@ internal static class ZaMessagePathResolver
         {
             fileName = Path.ChangeExtension(fileName, null);
         }
-        else
-        {
-            extension = DefaultMessageExtension;
-        }
 
         return string.IsNullOrWhiteSpace(fileName)
             ? null
-            : $"{MessageRootPath}/{language}/{folder}/{fileName}{extension}";
+            : $"{MessageRootPath}/{language}/{folder}/{fileName}{DefaultMessageExtension}";
     }
 }
