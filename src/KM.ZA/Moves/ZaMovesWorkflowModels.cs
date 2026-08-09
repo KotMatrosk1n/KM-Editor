@@ -119,11 +119,18 @@ public sealed record ZaMovePlayerDamageTimelinePathEdgeRecord(
     int ChildBulletId,
     string Kind);
 
+public sealed record ZaMovePlayerDamageLocalConditionRecord(
+    string State,
+    string Kind,
+    string SemanticKey,
+    string? RawTag);
+
 public sealed record ZaMovePlayerDamageTimelineLaunchRecord(
+    string ShootActionKey,
     int RootBulletId,
     string TimelineName,
     string TimelinePath,
-    string? ConditionTag)
+    ZaMovePlayerDamageLocalConditionRecord LocalCondition)
 {
     public IReadOnlyList<IReadOnlyList<ZaMovePlayerDamageTimelinePathEdgeRecord>>
         RelationshipPaths { get; init; } = [];

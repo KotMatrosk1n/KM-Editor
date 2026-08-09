@@ -235,6 +235,15 @@ public sealed class ZaWorkflowService
         return textWorkflowService.Load(project, query);
     }
 
+    public ZaTextWorkflow LoadTextUnpaged(ProjectPaths paths, string language)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(language);
+
+        var project = projectWorkspaceService.Open(paths);
+        return textWorkflowService.LoadUnpaged(project, language);
+    }
+
     public ZaDumpImportWorkflow LoadDumpImport(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);

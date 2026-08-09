@@ -8,8 +8,23 @@ using KM.ZA.Workflows;
 
 namespace KM.ZA.ScriptedBosses;
 
-public sealed record ZaScriptedBossHeatAvailabilityRecord(
-    int HeatLevel,
+public sealed record ZaScriptedBossPhaseRecord(
+    string Key,
+    int Stage,
+    int HpPhase,
+    int SpeciesId,
+    int Form,
+    string StageName,
+    int MinimumHpPercent,
+    int MaximumHpPercent);
+
+public sealed record ZaScriptedBossPhaseModelRecord(
+    string State,
+    string Kind,
+    IReadOnlyList<ZaScriptedBossPhaseRecord> Phases);
+
+public sealed record ZaScriptedBossPhaseAvailabilityRecord(
+    string PhaseKey,
     string State);
 
 public sealed record ZaScriptedBossActionRecord(
@@ -26,8 +41,8 @@ public sealed record ZaScriptedBossActionRecord(
     bool CanEdit,
     string RuntimeState,
     string? LockReason,
-    IReadOnlyList<ZaScriptedBossHeatAvailabilityRecord> HeatAvailability,
-    string? HeatContext);
+    IReadOnlyList<ZaScriptedBossPhaseAvailabilityRecord> PhaseAvailability,
+    string? PhaseContext);
 
 public sealed record ZaScriptedBossProfileRecord(
     string Key,
@@ -36,6 +51,7 @@ public sealed record ZaScriptedBossProfileRecord(
     int Form,
     string Name,
     string Scope,
+    ZaScriptedBossPhaseModelRecord PhaseModel,
     IReadOnlyList<ZaScriptedBossActionRecord> Actions);
 
 public sealed record ZaScriptedBossMoveOptionRecord(
@@ -67,10 +83,16 @@ internal static class ZaScriptedBossActionCatalog
     public const string UnavailableRuntimeState = "unavailable";
     public const string NotApplicableRuntimeState = "not-applicable";
 
-    public const string AvailableHeatState = "available";
-    public const string ContextOnlyHeatState = "context-only";
-    public const string UnavailableHeatState = "unavailable";
-    public const string UnverifiedHeatState = "unverified";
+    public const string VerifiedPhaseModelState = "verified";
+    public const string AvailablePhaseState = "available";
+    public const string ContextOnlyPhaseState = "context-only";
+    public const string UnavailablePhaseState = "unavailable";
+    public const string UnverifiedPhaseState = "unverified";
+
+    public const string HpBandsPhaseModelKind = "hp-bands";
+    public const string BattleStagesPhaseModelKind = "battle-stages";
+    public const string BattleStagesWithHpBandsPhaseModelKind =
+        "battle-stages-with-hp-bands";
 
     public const string ControllerScriptLockReason = "controller-script";
     public const string TimingChoreographyLockReason = "timing-choreography";
@@ -82,17 +104,11 @@ internal static class ZaScriptedBossActionCatalog
     private const int NormalMoveVariant = 0;
     private const int PlusMoveVariant = 1;
     private const int BossMoveVariant = 2;
-    private const int Heat1 = 1;
-    private const int Heat2 = 2;
-    private const int Heat3 = 3;
-
-    // These profile-local schedules are projected from the base-game Rogue Mega controller
-    // graph. A selector can be shared by multiple species while retaining a different schedule
-    // in each species controller, so availability must never be inferred from the selector alone.
-    // Every covered profile/move pair is listed explicitly so controller variants for the same
-    // species cannot inherit one another's schedule. Banette is intentionally absent because its
-    // selectors are dispatched behind native warp behavior that cannot be phase-traced safely.
-    private static readonly IReadOnlyDictionary<string, IReadOnlySet<int>> VerifiedHeatScheduleMoves =
+    // Actual boss spawners replace the executable's fallback thresholds. Ordinary encounters use
+    // two HP phases (50 < HP <= 100 and 0 < HP <= 50), while multi-form encounters can define a
+    // separate schedule for each chained battle stage. Availability is therefore profile- and
+    // phase-local; it must never be inferred from a shared selector ID alone.
+    private static readonly IReadOnlyDictionary<string, IReadOnlySet<int>> VerifiedPhaseScheduleMoves =
         new Dictionary<string, IReadOnlySet<int>>(StringComparer.Ordinal)
         {
             ["3:1"] = new HashSet<int> { 72, 73, 76, 331, 438, 482 },
@@ -118,7 +134,7 @@ internal static class ZaScriptedBossActionCatalog
             ("303:1", 14), // Mawile: Swords Dance is invoked by after-stun choreography.
         };
 
-    private static readonly IReadOnlySet<(string ProfileKey, int MoveId)> PostHeat2OnlyActions =
+    private static readonly IReadOnlySet<(string ProfileKey, int MoveId)> Phase2OnlyActions =
         new HashSet<(string ProfileKey, int MoveId)>
         {
             ("3:1", 482),   // Venusaur: Sludge Wave
@@ -136,7 +152,7 @@ internal static class ZaScriptedBossActionCatalog
             ("701:1", 280), // Hawlucha: Brick Break
         };
 
-    private static readonly IReadOnlySet<(string ProfileKey, int MoveId)> Heat1OnlyActions =
+    private static readonly IReadOnlySet<(string ProfileKey, int MoveId)> Phase1OnlyActions =
         new HashSet<(string ProfileKey, int MoveId)>
         {
             ("149:1", 85), // Dragonite: Thunderbolt
@@ -309,49 +325,66 @@ internal static class ZaScriptedBossActionCatalog
             BattleMove(428),
             BattleMove(453)),
         ScriptedBossProfile("359:2:z", "boss_0359_z_01", 359, 2,
+            HpBandPhases(359, 2),
             SelectorBattleMove(29701, 122),
             SelectorBattleMove(29702, 282),
             SelectorBattleMove(31205, 555),
             SelectorBattleMove(17618, 425)),
         ScriptedBossProfile("382:controller", "boss_0382", 382, 0,
-            SelectorBattleMove(29951, 618),
-            SelectorBattleMove(29952, 57),
-            SelectorBattleMove(17624, 87),
-            SelectorBattleMove(31952, 58)),
+            FullStagePhases((382, 0), (382, 1)),
+            SelectorBattleMove(29951, 618, BossMoveVariant, 2),
+            SelectorBattleMove(29952, 57, BossMoveVariant, 1, 2),
+            SelectorBattleMove(17624, 87, BossMoveVariant, 1, 2) with
+            {
+                ContextOnlyStages = new HashSet<int> { 1 },
+            },
+            SelectorBattleMove(31952, 58, BossMoveVariant, 1, 2)),
         ScriptedBossProfile("383:controller", "boss_0383", 383, 0,
-            SelectorBattleMove(30201, 619),
-            SelectorBattleMove(30202, 815),
-            SelectorBattleMove(30203, 126),
-            SelectorBattleMove(17624, 87),
-            SelectorBattleMove(17531, 76),
-            SelectorBattleMove(31952, 58)),
+            FullStagePhases((383, 0), (383, 1)),
+            SelectorBattleMove(30201, 619, BossMoveVariant, 2),
+            SelectorBattleMove(30202, 815, BossMoveVariant, 1, 2),
+            SelectorBattleMove(30203, 126, BossMoveVariant, 1, 2),
+            SelectorBattleMove(17531, 76, BossMoveVariant, 1, 2) with
+            {
+                ContextOnlyStages = new HashSet<int> { 1 },
+            }),
         ScriptedBossProfile("384:controller", "boss_0384", 384, 0,
-            SelectorBattleMove(30451, 434),
-            SelectorBattleMove(30452, 620),
-            SelectorBattleMove(30453, 800),
-            SelectorBattleMove(20952, 200),
-            SelectorBattleMove(20202, 304)),
+            FullStagePhases((384, 0), (384, 1)),
+            SelectorBattleMove(30451, 434, BossMoveVariant, 1, 2),
+            SelectorBattleMove(30452, 620, BossMoveVariant, 2),
+            SelectorBattleMove(30453, 800, BossMoveVariant, 1, 2),
+            SelectorBattleMove(20952, 200, BossMoveVariant, 1, 2),
+            SelectorBattleMove(20202, 304, BossMoveVariant, 1, 2)),
         ScriptedBossProfile("398:1:controller", "boss_0398", 398, 1,
+            HpBandPhases(398, 1),
             SelectorBattleMove(30701, 183),
             SelectorBattleMove(30702, 814),
             SelectorBattleMove(30703, 411),
             SelectorBattleMove(30704, 38),
             SelectorMovementHelper(20205, 340)),
         ScriptedBossProfile("485:1:controller", "boss_0485", 485, 1,
+            HpBandPhases(485, 1),
             SelectorBattleMove(30951, 315),
             SelectorBattleMove(30952, 463),
             SelectorBattleMove(30953, 430),
             SelectorBattleMove(30954, 523)),
         ScriptedBossProfile("491:controller", "boss_0491", 491, 0,
-            SelectorBattleMove(31201, 464),
-            SelectorBattleMove(31202, 44),
-            SelectorBattleMove(31203, 693),
-            SelectorBattleMove(31204, 248),
-            SelectorBattleMove(17634, 566),
-            SelectorBattleMove(31205, 555),
-            SelectorBattleMove(17617, 247),
-            ScriptedMechanic("clone-nightmare-sequence", "Clone and nightmare sequence")),
+            FullStagePhases((491, 0), (491, 1)),
+            SelectorBattleMove(31201, 464, BossMoveVariant, 1, 2),
+            SelectorBattleMove(31202, 44, BossMoveVariant, 2),
+            SelectorBattleMove(31203, 693, BossMoveVariant, 1, 2),
+            SelectorBattleMove(31204, 248, BossMoveVariant, 1, 2),
+            SelectorBattleMove(17634, 566, BossMoveVariant, 1, 2),
+            SelectorBattleMove(31205, 555, BossMoveVariant, 1, 2),
+            SelectorBattleMove(17617, 247, BossMoveVariant, 2),
+            ScriptedMechanic(
+                "darkrai-nightmare-sequence",
+                "Nightmare sequence",
+                1,
+                2),
+            ScriptedMechanic("darkrai-clone-sequence", "Clone sequence", 2)),
         ScriptedBossProfile("678:2:controller", "boss_0678", 678, 2,
+            HpBandPhases(678, 2),
             SelectorBattleMove(31451, 94),
             SelectorBattleMove(17617, 247),
             SelectorBattleMove(20204, 585),
@@ -360,16 +393,18 @@ internal static class ZaScriptedBossActionCatalog
             SelectorBattleMove(31453, 113, NormalMoveVariant),
             SelectorBattleMove(31454, 115, NormalMoveVariant)),
         ScriptedBossProfile("718:controller", "boss_0718", 718, 2,
-            SelectorBattleMove(17623, 242),
-            SelectorBattleMove(21451, 245),
-            SelectorBattleMove(21452, 614),
-            SelectorBattleMove(17640, 157),
-            SelectorBattleMove(17626, 406),
-            SelectorBattleMove(21951, 616),
-            SelectorBattleMove(22201, 615),
-            SelectorBattleMove(22202, 687),
-            SelectorMovementHelper(22203, 150)),
+            HpBandStagePhases((718, 2), (718, 3), (718, 4)),
+            SelectorBattleMove(17623, 242, BossMoveVariant, 1, 2),
+            SelectorBattleMove(21451, 245, BossMoveVariant, 1),
+            SelectorBattleMove(21452, 614, BossMoveVariant, 1, 3),
+            SelectorBattleMove(17640, 157, BossMoveVariant, 2),
+            SelectorBattleMove(17626, 406, BossMoveVariant, 2),
+            SelectorBattleMove(21951, 616, BossMoveVariant, 2, 3),
+            SelectorBattleMove(22201, 615, BossMoveVariant, 3),
+            SelectorBattleMove(22202, 687, BossMoveVariant, 3),
+            SelectorMovementHelper(22203, 150, 3)),
         ScriptedBossProfile("807:1:controller", "boss_0807", 807, 1,
+            HpBandPhases(807, 1),
             SelectorBattleMove(31701, 721),
             SelectorBattleMove(31702, 527),
             SelectorBattleMove(31703, 223),
@@ -378,6 +413,7 @@ internal static class ZaScriptedBossActionCatalog
             SelectorBattleMove(22253, 612),
             SelectorBattleMove(17635, 280)),
         ScriptedBossProfile("952:3:controller", "boss_0952", 952, 3,
+            HpBandPhases(952, 3),
             SelectorBattleMove(31951, 225),
             SelectorBattleMove(20454, 407),
             SelectorBattleMove(17639, 127),
@@ -604,6 +640,27 @@ internal static class ZaScriptedBossActionCatalog
                     profile.Form,
                     ZaLabels.PokemonWithForm(profile.SpeciesId, profile.Form, speciesName),
                     profile.Scope,
+                    new ZaScriptedBossPhaseModelRecord(
+                        VerifiedPhaseModelState,
+                        profile.PhaseModelKind,
+                        profile.Phases
+                            .Select(phase =>
+                            {
+                                var stageSpeciesName = labels.Pokemon(phase.SpeciesId);
+                                return new ZaScriptedBossPhaseRecord(
+                                    phase.Key,
+                                    phase.Stage,
+                                    phase.HpPhase,
+                                    phase.SpeciesId,
+                                    phase.Form,
+                                    ZaLabels.PokemonWithForm(
+                                        phase.SpeciesId,
+                                        phase.Form,
+                                        stageSpeciesName),
+                                    phase.MinimumHpPercent,
+                                    phase.MaximumHpPercent);
+                            })
+                            .ToArray()),
                     profile.Actions
                         .Select(action => ProjectAction(
                             profile,
@@ -645,8 +702,8 @@ internal static class ZaScriptedBossActionCatalog
                 CanEdit: false,
                 NotApplicableRuntimeState,
                 ControllerScriptLockReason,
-                HeatAvailability: [],
-                HeatContext: null);
+                PhaseAvailability: ProjectPhaseAvailability(profile, action),
+                PhaseContext: null);
         }
 
         ZaBossMoveSelectorRow? activeRow = null;
@@ -701,76 +758,89 @@ internal static class ZaScriptedBossActionCatalog
             canEdit,
             runtimeState,
             lockReason,
-            ProjectHeatAvailability(profile, action),
-            ProjectHeatContext(profile, action));
+            ProjectPhaseAvailability(profile, action),
+            ProjectPhaseContext(profile, action));
     }
 
-    private static string? ProjectHeatContext(ProfileDefinition profile, ActionDefinition action)
+    private static string? ProjectPhaseContext(ProfileDefinition profile, ActionDefinition action)
     {
-        return profile.UsesBaseHeatSchedule
-            && action.VanillaMoveId is not null
-            && ContextOnlyActions.Contains((profile.Key, action.VanillaMoveId.Value))
+        return action.ContextOnlyStages is not null
+            || (action.AvailableStages is null
+                && action.VanillaMoveId is not null
+                && ContextOnlyActions.Contains((profile.Key, action.VanillaMoveId.Value)))
                 ? "after-stun"
                 : null;
     }
 
-    private static IReadOnlyList<ZaScriptedBossHeatAvailabilityRecord> ProjectHeatAvailability(
+    private static IReadOnlyList<ZaScriptedBossPhaseAvailabilityRecord> ProjectPhaseAvailability(
         ProfileDefinition profile,
         ActionDefinition action)
     {
-        if (!profile.UsesBaseHeatSchedule || action.VanillaMoveId is null)
+        if (action.AvailableStages is not null)
         {
-            return [];
+            return profile.Phases
+                .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                    phase.Key,
+                    action.ContextOnlyStages?.Contains(phase.Stage) == true
+                        ? ContextOnlyPhaseState
+                        : action.AvailableStages.Contains(phase.Stage)
+                        ? AvailablePhaseState
+                        : UnavailablePhaseState))
+                .ToArray();
+        }
+
+        if (action.VanillaMoveId is null)
+        {
+            return profile.Phases
+                .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                    phase.Key,
+                    UnverifiedPhaseState))
+                .ToArray();
         }
 
         var profileAction = (profile.Key, action.VanillaMoveId.Value);
         if (ContextOnlyActions.Contains(profileAction))
         {
-            return
-            [
-                new ZaScriptedBossHeatAvailabilityRecord(Heat1, ContextOnlyHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat2, ContextOnlyHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat3, ContextOnlyHeatState),
-            ];
+            return profile.Phases
+                .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                    phase.Key,
+                    ContextOnlyPhaseState))
+                .ToArray();
         }
 
-        if (!VerifiedHeatScheduleMoves.TryGetValue(profile.Key, out var verifiedMoves)
+        if (!VerifiedPhaseScheduleMoves.TryGetValue(profile.Key, out var verifiedMoves)
             || !verifiedMoves.Contains(action.VanillaMoveId.Value))
         {
-            return
-            [
-                new ZaScriptedBossHeatAvailabilityRecord(Heat1, UnverifiedHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat2, UnverifiedHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat3, UnverifiedHeatState),
-            ];
+            return profile.Phases
+                .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                    phase.Key,
+                    UnverifiedPhaseState))
+                .ToArray();
         }
 
-        if (PostHeat2OnlyActions.Contains(profileAction))
+        if (Phase2OnlyActions.Contains(profileAction))
         {
-            return
-            [
-                new ZaScriptedBossHeatAvailabilityRecord(Heat1, UnavailableHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat2, AvailableHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat3, AvailableHeatState),
-            ];
+            return profile.Phases
+                .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                    phase.Key,
+                    phase.HpPhase == 2 ? AvailablePhaseState : UnavailablePhaseState))
+                .ToArray();
         }
 
-        if (Heat1OnlyActions.Contains(profileAction))
+        if (Phase1OnlyActions.Contains(profileAction))
         {
-            return
-            [
-                new ZaScriptedBossHeatAvailabilityRecord(Heat1, AvailableHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat2, UnavailableHeatState),
-                new ZaScriptedBossHeatAvailabilityRecord(Heat3, UnavailableHeatState),
-            ];
+            return profile.Phases
+                .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                    phase.Key,
+                    phase.HpPhase == 1 ? AvailablePhaseState : UnavailablePhaseState))
+                .ToArray();
         }
 
-        return
-        [
-            new ZaScriptedBossHeatAvailabilityRecord(Heat1, AvailableHeatState),
-            new ZaScriptedBossHeatAvailabilityRecord(Heat2, AvailableHeatState),
-            new ZaScriptedBossHeatAvailabilityRecord(Heat3, AvailableHeatState),
-        ];
+        return profile.Phases
+            .Select(phase => new ZaScriptedBossPhaseAvailabilityRecord(
+                phase.Key,
+                AvailablePhaseState))
+            .ToArray();
     }
 
     private static string CreateRuntimeState(
@@ -884,7 +954,8 @@ internal static class ZaScriptedBossActionCatalog
             speciesId,
             form,
             BaseRogueMegaScope,
-            UsesBaseHeatSchedule: true,
+            HpBandsPhaseModelKind,
+            HpBandPhases(speciesId, form),
             actions);
     }
 
@@ -893,16 +964,72 @@ internal static class ZaScriptedBossActionCatalog
         string lineageKey,
         int speciesId,
         int form,
+        IReadOnlyList<PhaseDefinition> phases,
         params ActionDefinition[] actions)
     {
+        var stageCount = phases.Select(phase => phase.Stage).Distinct().Count();
+        var hasMultipleHpPhases = phases
+            .GroupBy(phase => phase.Stage)
+            .Any(stage => stage.Count() > 1);
         return new ProfileDefinition(
             key,
             lineageKey,
             speciesId,
             form,
             VerifiedScriptedBossScope,
-            UsesBaseHeatSchedule: false,
+            stageCount > 1
+                ? hasMultipleHpPhases
+                    ? BattleStagesWithHpBandsPhaseModelKind
+                    : BattleStagesPhaseModelKind
+                : HpBandsPhaseModelKind,
+            phases,
             actions);
+    }
+
+    private static IReadOnlyList<PhaseDefinition> HpBandPhases(int speciesId, int form)
+    {
+        return HpBandStagePhases((speciesId, form));
+    }
+
+    private static IReadOnlyList<PhaseDefinition> HpBandStagePhases(
+        params (int SpeciesId, int Form)[] stages)
+    {
+        return stages
+            .SelectMany((stage, index) => new[]
+            {
+                new PhaseDefinition(
+                    $"stage-{index + 1}-phase-1",
+                    index + 1,
+                    HpPhase: 1,
+                    stage.SpeciesId,
+                    stage.Form,
+                    MinimumHpPercent: 50,
+                    MaximumHpPercent: 100),
+                new PhaseDefinition(
+                    $"stage-{index + 1}-phase-2",
+                    index + 1,
+                    HpPhase: 2,
+                    stage.SpeciesId,
+                    stage.Form,
+                    MinimumHpPercent: 0,
+                    MaximumHpPercent: 50),
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<PhaseDefinition> FullStagePhases(
+        params (int SpeciesId, int Form)[] stages)
+    {
+        return stages
+            .Select((stage, index) => new PhaseDefinition(
+                $"stage-{index + 1}-phase-1",
+                index + 1,
+                HpPhase: 1,
+                stage.SpeciesId,
+                stage.Form,
+                MinimumHpPercent: 0,
+                MaximumHpPercent: 100))
+            .ToArray();
     }
 
     private static ActionDefinition BattleMove(int moveId)
@@ -922,7 +1049,8 @@ internal static class ZaScriptedBossActionCatalog
     private static ActionDefinition SelectorBattleMove(
         int selectorActionId,
         int moveId,
-        int variant = BossMoveVariant)
+        int variant = BossMoveVariant,
+        params int[] availableStages)
     {
         return new ActionDefinition(
             $"{BattleMoveKind}:{selectorActionId}",
@@ -932,7 +1060,10 @@ internal static class ZaScriptedBossActionCatalog
             variant,
             Name: null,
             UsesBattleParameters: true,
-            UsesTimingParameters: true);
+            UsesTimingParameters: true,
+            AvailableStages: availableStages.Length == 0
+                ? new HashSet<int> { 1 }
+                : availableStages.ToHashSet());
     }
 
     private static ActionDefinition MovementHelper(int moveId)
@@ -949,7 +1080,10 @@ internal static class ZaScriptedBossActionCatalog
             UsesTimingParameters: true);
     }
 
-    private static ActionDefinition SelectorMovementHelper(int selectorActionId, int moveId)
+    private static ActionDefinition SelectorMovementHelper(
+        int selectorActionId,
+        int moveId,
+        params int[] availableStages)
     {
         return new ActionDefinition(
             $"{MovementHelperKind}:{selectorActionId}",
@@ -959,10 +1093,16 @@ internal static class ZaScriptedBossActionCatalog
             BossMoveVariant,
             Name: null,
             UsesBattleParameters: false,
-            UsesTimingParameters: true);
+            UsesTimingParameters: true,
+            AvailableStages: availableStages.Length == 0
+                ? new HashSet<int> { 1 }
+                : availableStages.ToHashSet());
     }
 
-    private static ActionDefinition ScriptedMechanic(string key, string name)
+    private static ActionDefinition ScriptedMechanic(
+        string key,
+        string name,
+        params int[] availableStages)
     {
         return new ActionDefinition(
             $"{ScriptedMechanicKind}:{key}",
@@ -972,7 +1112,10 @@ internal static class ZaScriptedBossActionCatalog
             Variant: null,
             name,
             UsesBattleParameters: false,
-            UsesTimingParameters: false);
+            UsesTimingParameters: false,
+            AvailableStages: availableStages.Length == 0
+                ? null
+                : availableStages.ToHashSet());
     }
 
     private sealed record ProfileDefinition(
@@ -981,8 +1124,18 @@ internal static class ZaScriptedBossActionCatalog
         int SpeciesId,
         int Form,
         string Scope,
-        bool UsesBaseHeatSchedule,
+        string PhaseModelKind,
+        IReadOnlyList<PhaseDefinition> Phases,
         IReadOnlyList<ActionDefinition> Actions);
+
+    private sealed record PhaseDefinition(
+        string Key,
+        int Stage,
+        int HpPhase,
+        int SpeciesId,
+        int Form,
+        int MinimumHpPercent,
+        int MaximumHpPercent);
 
     private sealed record ActionDefinition(
         string Key,
@@ -992,5 +1145,9 @@ internal static class ZaScriptedBossActionCatalog
         int? Variant,
         string? Name,
         bool UsesBattleParameters,
-        bool UsesTimingParameters);
+        bool UsesTimingParameters,
+        IReadOnlySet<int>? AvailableStages = null)
+    {
+        public IReadOnlySet<int>? ContextOnlyStages { get; init; }
+    }
 }

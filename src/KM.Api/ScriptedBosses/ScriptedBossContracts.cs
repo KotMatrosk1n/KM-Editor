@@ -2,8 +2,23 @@
 
 namespace KM.Api.ScriptedBosses;
 
-public sealed record ScriptedBossHeatAvailabilityDto(
-    int HeatLevel,
+public sealed record ScriptedBossPhaseDto(
+    string Key,
+    int Stage,
+    int HpPhase,
+    int SpeciesId,
+    int Form,
+    string StageName,
+    int MinimumHpPercent,
+    int MaximumHpPercent);
+
+public sealed record ScriptedBossPhaseModelDto(
+    string State,
+    string Kind,
+    IReadOnlyList<ScriptedBossPhaseDto> Phases);
+
+public sealed record ScriptedBossPhaseAvailabilityDto(
+    string PhaseKey,
     string State);
 
 public sealed record ScriptedBossActionDto(
@@ -20,8 +35,8 @@ public sealed record ScriptedBossActionDto(
     bool CanEdit,
     string RuntimeState,
     string? LockReason,
-    IReadOnlyList<ScriptedBossHeatAvailabilityDto> HeatAvailability,
-    string? HeatContext);
+    IReadOnlyList<ScriptedBossPhaseAvailabilityDto> PhaseAvailability,
+    string? PhaseContext);
 
 public sealed record ScriptedBossProfileDto(
     string Key,
@@ -30,6 +45,7 @@ public sealed record ScriptedBossProfileDto(
     int Form,
     string Name,
     string Scope,
+    ScriptedBossPhaseModelDto PhaseModel,
     IReadOnlyList<ScriptedBossActionDto> Actions);
 
 public sealed record ScriptedBossMoveOptionDto(

@@ -17,7 +17,19 @@ export const gameDumpFormatSchema = z.enum([
 
 export const gameDumpSelectionSchema = z.strictObject({
   categoryId: z.string(),
-  format: gameDumpFormatSchema
+  format: gameDumpFormatSchema,
+  languageCodes: z.array(z.string().min(1)).nullable().optional()
+});
+
+export const gameDumpLanguageOptionSchema = z.strictObject({
+  code: z.string().min(1),
+  label: z.string().min(1)
+});
+
+export const gameDumpCategoryLanguageOptionsSchema = z.strictObject({
+  defaultLanguageCodes: z.array(z.string().min(1)),
+  options: z.array(gameDumpLanguageOptionSchema),
+  supportsAllLanguages: z.boolean()
 });
 
 export const loadGameDumpWorkflowRequestSchema = z.strictObject({
@@ -27,6 +39,7 @@ export const loadGameDumpWorkflowRequestSchema = z.strictObject({
 export const runGameDumpRequestSchema = z.strictObject({
   destinationFolder: z.string(),
   paths: projectPathsSchema,
+  producerVersion: z.string().min(1).nullable().optional(),
   selections: z.array(gameDumpSelectionSchema)
 });
 
@@ -38,6 +51,7 @@ export const gameDumpCategorySchema = z.strictObject({
   id: z.string(),
   isAvailable: z.boolean(),
   kind: gameDumpCategoryKindSchema,
+  languageOptions: gameDumpCategoryLanguageOptionsSchema.nullable().optional(),
   label: z.string()
 });
 

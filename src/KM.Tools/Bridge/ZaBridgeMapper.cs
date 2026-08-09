@@ -646,7 +646,29 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalTextEntryCount,
                 workflow.Stats.DialogueReferenceCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            Categories = workflow.Categories
+                .Select(category => new TextCategoryDto(
+                    category.CategoryId,
+                    category.Label,
+                    category.Description,
+                    category.SourceFileCount))
+                .ToArray(),
+            SelectedCategoryId = workflow.SelectedCategoryId,
+            Languages = workflow.Languages
+                .Select(language => new TextLanguageDto(language.Language, language.Label))
+                .ToArray(),
+            SelectedLanguage = workflow.SelectedLanguage,
+            Page = workflow.Page is null
+                ? null
+                : new TextResultPageDto(
+                    workflow.Page.Offset,
+                    workflow.Page.Limit,
+                    workflow.Page.ReturnedEntryCount,
+                    workflow.Page.HasPrevious,
+                    workflow.Page.HasNext),
+        };
     }
 
     private static ScriptedBossProfileDto ToDto(ZaScriptedBossProfileRecord profile)
@@ -658,6 +680,20 @@ public static class ZaBridgeMapper
             profile.Form,
             profile.Name,
             profile.Scope,
+            new ScriptedBossPhaseModelDto(
+                profile.PhaseModel.State,
+                profile.PhaseModel.Kind,
+                profile.PhaseModel.Phases
+                    .Select(phase => new ScriptedBossPhaseDto(
+                        phase.Key,
+                        phase.Stage,
+                        phase.HpPhase,
+                        phase.SpeciesId,
+                        phase.Form,
+                        phase.StageName,
+                        phase.MinimumHpPercent,
+                        phase.MaximumHpPercent))
+                    .ToArray()),
             profile.Actions.Select(ToDto).ToArray());
     }
 
@@ -677,12 +713,12 @@ public static class ZaBridgeMapper
             action.CanEdit,
             action.RuntimeState,
             action.LockReason,
-            action.HeatAvailability
-                .Select(availability => new ScriptedBossHeatAvailabilityDto(
-                    availability.HeatLevel,
+            action.PhaseAvailability
+                .Select(availability => new ScriptedBossPhaseAvailabilityDto(
+                    availability.PhaseKey,
                     availability.State))
                 .ToArray(),
-            action.HeatContext);
+            action.PhaseContext);
     }
 
     private static ScriptedBossMoveOptionDto ToDto(ZaScriptedBossMoveOptionRecord option)
@@ -1723,10 +1759,15 @@ public static class ZaBridgeMapper
                 .ToArray(),
             invocation.VerifiedVanillaTimelineLaunches
                 .Select(launch => new MovePlayerDamageTimelineLaunchRecordDto(
+                    launch.ShootActionKey,
                     launch.RootBulletId,
                     launch.TimelineName,
                     launch.TimelinePath,
-                    launch.ConditionTag)
+                    new MovePlayerDamageLocalConditionRecordDto(
+                        launch.LocalCondition.State,
+                        launch.LocalCondition.Kind,
+                        launch.LocalCondition.SemanticKey,
+                        launch.LocalCondition.RawTag))
                 {
                     RelationshipPaths = launch.RelationshipPaths
                         .Select(path => (IReadOnlyList<MovePlayerDamageTimelinePathEdgeRecordDto>)path
@@ -1778,7 +1819,8 @@ public static class ZaBridgeMapper
             entry.Value,
             entry.CanEdit,
             entry.EditBlockedReason,
-            ToDto(entry.Provenance));
+            ToDto(entry.Provenance),
+            entry.MessageKey);
     }
 
     private static TextEditableFieldDto ToDto(ZaTextEditableField field)

@@ -104,7 +104,8 @@ public static class ProjectBridgeMapper
         return selections
             .Select(selection => new GameDumpSelection(
                 selection.CategoryId,
-                ToCore(selection.Format)))
+                ToCore(selection.Format),
+                selection.LanguageCodes?.ToArray()))
             .ToArray();
     }
 
@@ -118,7 +119,17 @@ public static class ProjectBridgeMapper
             category.Formats.Select(ToDto).ToArray(),
             ToDto(category.DefaultFormat),
             category.IsAvailable,
-            category.Diagnostics.Select(ToDto).ToArray());
+            category.Diagnostics.Select(ToDto).ToArray())
+        {
+            LanguageOptions = category.LanguageOptions is null
+                ? null
+                : new GameDumpCategoryLanguageOptionsDto(
+                    category.LanguageOptions.Options
+                        .Select(option => new GameDumpLanguageOptionDto(option.Code, option.Label))
+                        .ToArray(),
+                    category.LanguageOptions.DefaultLanguageCodes.ToArray(),
+                    category.LanguageOptions.SupportsAllLanguages),
+        };
     }
 
     private static GameDumpWrittenFileDto ToDto(GameDumpWrittenFile file)

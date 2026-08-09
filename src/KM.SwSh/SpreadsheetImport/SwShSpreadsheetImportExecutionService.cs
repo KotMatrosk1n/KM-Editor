@@ -59,7 +59,8 @@ public sealed class SwShSpreadsheetImportExecutionService
         var project = projectWorkspaceService.Open(paths);
         var workflow = workflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-        var currentSession = session ?? EditSession.Start();
+        var originalSession = session ?? EditSession.Start();
+        var currentSession = originalSession;
         var sourceDisplayPath = sourcePath.Trim();
         var emptyPreview = CreatePreview(profileId, sourceDisplayPath, []);
 
@@ -70,7 +71,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 $"Dump Importer profile '{profileId}' is not supported.",
                 field: "profileId",
                 expected: SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         var profile = workflow.Profiles.FirstOrDefault(candidate =>
@@ -82,7 +83,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 "Items price import profile is blocked for this project.",
                 field: "profileId",
                 expected: "Available Items price import profile"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         if (!project.Health.CanOpenEditableWorkflows)
@@ -91,7 +92,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 DiagnosticSeverity.Error,
                 "Dump Importer execution requires valid base paths and a valid output root.",
                 expected: "Editable project paths"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         if (!File.Exists(sourceDisplayPath))
@@ -101,7 +102,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 "Dump Importer source file could not be found.",
                 field: "sourcePath",
                 expected: "Readable CSV, TSV, or JSON file"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         var itemsWorkflow = itemsWorkflowService.Load(project);
@@ -111,7 +112,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 DiagnosticSeverity.Error,
                 "Dump Importer execution could not load Items workflow data.",
                 expected: SwShItemsWorkflowService.ItemDataPath));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
         try
@@ -120,9 +121,10 @@ public sealed class SwShSpreadsheetImportExecutionService
             var headerMap = BuildHeaderMap(table.Headers, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
-                return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+                return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
             }
 
+            currentSession = currentSession.WithoutPendingEditsOwnedBy(PendingEditOwners.DumpImporterItemsPrice);
             var rowPreviews = new List<SwShSpreadsheetImportRowPreviewRecord>();
             foreach (var row in table.Rows)
             {
@@ -149,7 +151,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 $"Dump Importer source could not be parsed: {exception.Message}",
                 field: "sourcePath",
                 expected: "CSV, TSV, or JSON with importable row data"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
         catch (JsonException exception)
         {
@@ -158,7 +160,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 $"Dump Importer source could not be parsed{FormatJsonLocation(exception)}: {exception.Message}",
                 field: "sourcePath",
                 expected: "CSV, TSV, or JSON with importable row data"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
         catch (IOException exception)
         {
@@ -167,7 +169,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 $"Dump Importer source could not be read: {exception.Message}",
                 field: "sourcePath",
                 expected: "Readable CSV, TSV, or JSON file"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -176,7 +178,7 @@ public sealed class SwShSpreadsheetImportExecutionService
                 $"Dump Importer source could not be read: {exception.Message}",
                 field: "sourcePath",
                 expected: "Readable CSV, TSV, or JSON file"));
-            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+            return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
     }
 
@@ -257,7 +259,8 @@ public sealed class SwShSpreadsheetImportExecutionService
                 rowSession,
                 itemId,
                 edit.Field,
-                edit.Value.ToString(CultureInfo.InvariantCulture));
+                edit.Value.ToString(CultureInfo.InvariantCulture),
+                PendingEditOwners.DumpImporterItemsPrice);
             rowSession = result.Session;
             diagnostics.AddRange(result.Diagnostics);
         }
@@ -302,19 +305,20 @@ public sealed class SwShSpreadsheetImportExecutionService
             var buyChanged = buyParsed && buyPrice != item.BuyPrice;
             var sellChanged = sellParsed && sellPrice != item.SellPrice;
 
-            if (buyChanged && sellChanged && (long)sellPrice * 2L == buyPrice)
+            if ((buyChanged || sellChanged)
+                && ItemPriceSemantics.IsCompatiblePair(buyPrice, sellPrice))
             {
                 sharedPriceFieldToSkip = SwShItemsWorkflowService.SellPriceField;
             }
-            else if (buyChanged && sellChanged)
+            else if (buyChanged || sellChanged)
             {
                 hasConflictingStoredPriceEdit = true;
                 diagnostics.Add(CreateRowDiagnostic(
                     row,
                     DiagnosticSeverity.Error,
-                    "BuyPrice and SellPrice both changed to incompatible values, but they target the same stored item-table field. Change one value, or keep BuyPrice equal to SellPrice multiplied by 2.",
+                    "BuyPrice and SellPrice target the same stored item-table field. When both columns are provided, SellPrice must equal floor(BuyPrice / 2).",
                     field: "BuyPrice/SellPrice",
-                    expected: "One stored price edit"));
+                    expected: "SellPrice = floor(BuyPrice / 2)"));
             }
         }
 

@@ -300,6 +300,8 @@ export const loadMovesWorkflowRequestSchema = z.strictObject({
 });
 
 export const textWorkflowQuerySchema = z.strictObject({
+  categoryId: z.string().nullable().optional(),
+  language: z.string().nullable().optional(),
   limit: z.number().int().positive().nullable().optional(),
   offset: z.number().int().nonnegative().nullable().optional(),
   searchText: z.string().nullable().optional()
@@ -518,6 +520,7 @@ export const pendingEditSchema = z.strictObject({
   domain: z.string(),
   field: z.string().nullable().optional(),
   newValue: z.string().nullable().optional(),
+  owner: z.string().nullable().optional(),
   recordId: z.string().nullable().optional(),
   sources: z.array(projectFileReferenceSchema),
   summary: z.string()
@@ -1351,8 +1354,189 @@ export const movePlayerDamageInvocationSourceRecordSchema = z.strictObject({
   parentBulletId: z.number().int().positive()
 });
 
+const movePlayerDamageLocalConditionSemanticKeys = [
+  'when-reached',
+  'before-hp-phase-2-transition-completes',
+  'after-hp-phase-2-transition-completes',
+  'boss-mega-control-1a',
+  'boss-mega-control-1b',
+  'boss-mega-control-1c',
+  'boss-mega-control-2a',
+  'boss-mega-control-2b',
+  'boss-mega-control-2c',
+  'boss-mega-control-3a',
+  'boss-mega-control-3b',
+  'groudon',
+  'darkrai',
+  'kyogre',
+  'mega-darkrai',
+  'rayquaza',
+  'zygarde-complete',
+  'tatsugiri',
+  'dragonite',
+  'absol',
+  'meowstic-single-bullet',
+  'unclassified'
+] as const;
+
+const movePlayerDamageLocalConditionExpectations = {
+  'when-reached': {
+    kind: 'when-reached',
+    rawTag: null,
+    state: 'verified-none'
+  },
+  'before-hp-phase-2-transition-completes': {
+    kind: 'hp-phase-transition',
+    rawTag: 'Heat2_Not_Performed',
+    state: 'verified'
+  },
+  'after-hp-phase-2-transition-completes': {
+    kind: 'hp-phase-transition',
+    rawTag: 'Heat2_Performed',
+    state: 'verified'
+  },
+  'boss-mega-control-1a': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_1A',
+    state: 'verified'
+  },
+  'boss-mega-control-1b': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_1B',
+    state: 'verified'
+  },
+  'boss-mega-control-1c': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_1C',
+    state: 'verified'
+  },
+  'boss-mega-control-2a': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_2A',
+    state: 'verified'
+  },
+  'boss-mega-control-2b': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_2B',
+    state: 'verified'
+  },
+  'boss-mega-control-2c': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_2C',
+    state: 'verified'
+  },
+  'boss-mega-control-3a': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_3A',
+    state: 'verified'
+  },
+  'boss-mega-control-3b': {
+    kind: 'controller-pattern',
+    rawTag: 'BosoMega_Control_3B',
+    state: 'verified'
+  },
+  groudon: {
+    kind: 'identity',
+    rawTag: 'BosoGuraadon',
+    state: 'verified'
+  },
+  darkrai: {
+    kind: 'identity',
+    rawTag: 'BosoDaakurai',
+    state: 'verified'
+  },
+  kyogre: {
+    kind: 'identity',
+    rawTag: 'BosoKaiooga',
+    state: 'verified'
+  },
+  'mega-darkrai': {
+    kind: 'identity',
+    rawTag: 'BosoMegaDaakurai',
+    state: 'verified'
+  },
+  rayquaza: {
+    kind: 'identity',
+    rawTag: 'BosoRekkuuza',
+    state: 'verified'
+  },
+  'zygarde-complete': {
+    kind: 'identity',
+    rawTag: 'Zigarude_100%',
+    state: 'verified'
+  },
+  tatsugiri: {
+    kind: 'identity',
+    rawTag: 'Poke0952',
+    state: 'verified'
+  },
+  dragonite: {
+    kind: 'identity',
+    rawTag: 'Poke0149',
+    state: 'verified'
+  },
+  absol: {
+    kind: 'identity',
+    rawTag: 'Poke0359',
+    state: 'verified'
+  },
+  'meowstic-single-bullet': {
+    kind: 'choreography',
+    rawTag: 'Nyaonikusu_Single_Bullet',
+    state: 'verified'
+  },
+  unclassified: {
+    kind: 'unknown',
+    rawTag: undefined,
+    state: 'unclassified'
+  }
+} as const;
+
+export const movePlayerDamageLocalConditionRecordSchema = z
+  .strictObject({
+    kind: z.enum([
+      'when-reached',
+      'hp-phase-transition',
+      'controller-pattern',
+      'identity',
+      'choreography',
+      'unknown'
+    ]),
+    rawTag: z.string().min(1).nullable(),
+    semanticKey: z.enum(movePlayerDamageLocalConditionSemanticKeys),
+    state: z.enum(['verified-none', 'verified', 'unclassified'])
+  })
+  .superRefine((condition, context) => {
+    const expected = movePlayerDamageLocalConditionExpectations[condition.semanticKey];
+    if (condition.state !== expected.state) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Player-damage local-condition state does not match its semantic key.',
+        path: ['state']
+      });
+    }
+    if (condition.kind !== expected.kind) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Player-damage local-condition kind does not match its semantic key.',
+        path: ['kind']
+      });
+    }
+    if (
+      expected.rawTag === undefined
+        ? condition.rawTag === null
+        : condition.rawTag !== expected.rawTag
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Player-damage local-condition raw tag does not match its semantic key.',
+        path: ['rawTag']
+      });
+    }
+  });
+
 export const movePlayerDamageTimelineLaunchRecordSchema = z.strictObject({
-  conditionTag: z.string().min(1).nullable(),
+  localCondition: movePlayerDamageLocalConditionRecordSchema,
   relationshipPaths: z.array(
     z.array(
       z.strictObject({
@@ -1363,6 +1547,7 @@ export const movePlayerDamageTimelineLaunchRecordSchema = z.strictObject({
     )
   ),
   rootBulletId: z.number().int().positive(),
+  shootActionKey: z.string().regex(/^\d+:\d+:[1-9]\d*$/),
   timelineName: z.string().min(1),
   timelinePath: z.string().min(1)
 });
@@ -1378,33 +1563,102 @@ export const movePlayerDamageInvocationRecordSchema = z.strictObject({
   verifiedVanillaTimelineLaunches: z.array(movePlayerDamageTimelineLaunchRecordSchema)
 });
 
-export const movePlayerDamageRecordSchema = z.strictObject({
-  attackId: z.number().int().positive(),
-  defaultDamage: z.number().int().nonnegative(),
-  hitIntervalSeconds: z.number().finite(),
-  bulletMappingMatchesVerifiedVanilla: z.boolean(),
-  invocations: z.array(movePlayerDamageInvocationRecordSchema),
-  playerDamage: z.number().int().min(0).max(999),
-  runtimeMoveId: z.number().int().min(2000).max(2999),
-  vanillaPlayerDamage: z.number().int().min(0).max(999),
-  verifiedVanillaTimelineCatalogAvailable: z.boolean()
-});
+export const movePlayerDamageRecordSchema = z
+  .strictObject({
+    attackId: z.number().int().positive(),
+    defaultDamage: z.number().int().nonnegative(),
+    hitIntervalSeconds: z.number().finite(),
+    bulletMappingMatchesVerifiedVanilla: z.boolean(),
+    invocations: z.array(movePlayerDamageInvocationRecordSchema),
+    playerDamage: z.number().int().min(0).max(999),
+    runtimeMoveId: z.number().int().min(2000).max(2999),
+    vanillaPlayerDamage: z.number().int().min(0).max(999),
+    verifiedVanillaTimelineCatalogAvailable: z.boolean()
+  })
+  .superRefine((record, context) => {
+    const shootActionKeys = new Set<string>();
+    for (const [invocationIndex, invocation] of record.invocations.entries()) {
+      for (const [launchIndex, launch] of
+        invocation.verifiedVanillaTimelineLaunches.entries()) {
+        const expectedKey = `${record.attackId}:${invocation.bulletId}:${launchIndex + 1}`;
+        if (launch.shootActionKey !== expectedKey) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'Player-damage Shoot action keys must match the Attack ID, damage Bullet ID, and one-based catalog order.',
+            path: [
+              'invocations',
+              invocationIndex,
+              'verifiedVanillaTimelineLaunches',
+              launchIndex,
+              'shootActionKey'
+            ]
+          });
+        }
+        if (shootActionKeys.has(launch.shootActionKey)) {
+          context.addIssue({
+            code: 'custom',
+            message: 'Player-damage Shoot action keys must be unique within an Attack row.',
+            path: [
+              'invocations',
+              invocationIndex,
+              'verifiedVanillaTimelineLaunches',
+              launchIndex,
+              'shootActionKey'
+            ]
+          });
+        }
+        shootActionKeys.add(launch.shootActionKey);
+      }
+    }
+  });
 
 export const moveVanillaFieldValueSchema = z.strictObject({
   field: z.string(),
   value: z.string()
 });
 
-export const scriptedBossHeatAvailabilitySchema = z.strictObject({
-  heatLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+export const scriptedBossPhaseAvailabilitySchema = z.strictObject({
+  phaseKey: z.string().min(1),
   state: z.enum(['available', 'context-only', 'unavailable', 'unverified'])
+});
+
+export const scriptedBossPhaseSchema = z
+  .strictObject({
+    form: z.number().int().nonnegative(),
+    hpPhase: z.number().int().min(1),
+    key: z.string().min(1),
+    maximumHpPercent: z.number().int().min(0).max(100),
+    minimumHpPercent: z.number().int().min(0).max(100),
+    speciesId: z.number().int().min(1),
+    stage: z.number().int().min(1),
+    stageName: z.string().min(1)
+  })
+  .superRefine((phase, context) => {
+    if (phase.minimumHpPercent >= phase.maximumHpPercent) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Boss phase HP ranges must have a minimum below their maximum.',
+        path: ['minimumHpPercent']
+      });
+    }
+  });
+
+export const scriptedBossPhaseModelSchema = z.strictObject({
+  kind: z.enum([
+    'hp-bands',
+    'battle-stages',
+    'battle-stages-with-hp-bands',
+    'none',
+    'unknown'
+  ]),
+  phases: z.array(scriptedBossPhaseSchema),
+  state: z.enum(['verified', 'unverified', 'verified-none'])
 });
 
 export const scriptedBossActionSchema = z
   .strictObject({
     canEdit: z.boolean(),
-    heatContext: z.enum(['after-stun']).nullable(),
-    heatAvailability: z.array(scriptedBossHeatAvailabilitySchema).max(3),
     key: z.string(),
     kind: z.enum(['battle-move', 'movement-helper', 'scripted-mechanic']),
     lockReason: z
@@ -1417,6 +1671,8 @@ export const scriptedBossActionSchema = z
       .nullable(),
     moveId: z.number().int().min(0).max(999).nullable(),
     name: z.string(),
+    phaseAvailability: z.array(scriptedBossPhaseAvailabilitySchema),
+    phaseContext: z.enum(['after-stun']).nullable(),
     runtimeMoveId: z.number().int().nullable(),
     runtimeState: z.enum([
       'working',
@@ -1435,46 +1691,33 @@ export const scriptedBossActionSchema = z
     variant: z.union([z.literal(0), z.literal(1), z.literal(2)]).nullable()
   })
   .superRefine((action, context) => {
-    const heatLevels = new Set(
-      action.heatAvailability.map((availability) => availability.heatLevel)
+    const phaseKeys = new Set(
+      action.phaseAvailability.map((availability) => availability.phaseKey)
     );
-    const hasCompletePhaseAvailability =
-      action.heatAvailability.length === 3 && heatLevels.size === 3;
-    const contextOnlyCount = action.heatAvailability.filter(
+    const contextOnlyCount = action.phaseAvailability.filter(
       (availability) => availability.state === 'context-only'
     ).length;
-    if (
-      (action.kind === 'scripted-mechanic' && action.heatAvailability.length !== 0) ||
-      (action.kind !== 'scripted-mechanic' &&
-        action.heatAvailability.length !== 0 &&
-        !hasCompletePhaseAvailability)
-    ) {
+    if (phaseKeys.size !== action.phaseAvailability.length) {
       context.addIssue({
         code: 'custom',
-        message:
-          action.kind === 'scripted-mechanic'
-            ? 'Script-only boss actions cannot declare Heat availability.'
-            : 'Boss action Heat availability must be empty or contain each Heat level exactly once.',
-        path: ['heatAvailability']
+        message: 'Boss action phase availability cannot repeat a phase key.',
+        path: ['phaseAvailability']
       });
     }
 
-    if (contextOnlyCount !== 0 && contextOnlyCount !== 3) {
+    if (action.phaseContext !== null && contextOnlyCount === 0) {
       context.addIssue({
         code: 'custom',
-        message: 'Context-only Heat availability must apply to every Heat level.',
-        path: ['heatAvailability']
+        message: 'Boss action phase context requires at least one context-only phase.',
+        path: ['phaseContext']
       });
     }
 
-    if (
-      action.heatContext !== null &&
-      (action.heatAvailability.length !== 3 || contextOnlyCount !== 3)
-    ) {
+    if (action.phaseContext === null && contextOnlyCount !== 0) {
       context.addIssue({
         code: 'custom',
-        message: 'Boss action Heat context requires context-only availability.',
-        path: ['heatContext']
+        message: 'Context-only phase availability requires a phase context.',
+        path: ['phaseContext']
       });
     }
 
@@ -1523,15 +1766,112 @@ export const scriptedBossMoveOptionSchema = z.strictObject({
   variant: z.union([z.literal(0), z.literal(1), z.literal(2)])
 });
 
-export const scriptedBossProfileSchema = z.strictObject({
-  actions: z.array(scriptedBossActionSchema),
-  form: z.number().int().nonnegative(),
-  key: z.string(),
-  lineageKey: z.string(),
-  name: z.string(),
-  scope: z.enum(['base-rogue-mega', 'verified-scripted-boss']),
-  speciesId: z.number().int().nonnegative()
-});
+export const scriptedBossProfileSchema = z
+  .strictObject({
+    actions: z.array(scriptedBossActionSchema),
+    form: z.number().int().nonnegative(),
+    key: z.string(),
+    lineageKey: z.string(),
+    name: z.string(),
+    phaseModel: scriptedBossPhaseModelSchema,
+    scope: z.enum(['base-rogue-mega', 'verified-scripted-boss']),
+    speciesId: z.number().int().nonnegative()
+  })
+  .superRefine((profile, context) => {
+    const phaseKeys = profile.phaseModel.phases.map((phase) => phase.key);
+    const uniquePhaseKeys = new Set(phaseKeys);
+    const phaseSlots = new Set(
+      profile.phaseModel.phases.map((phase) => `${phase.stage}:${phase.hpPhase}`)
+    );
+    if (uniquePhaseKeys.size !== phaseKeys.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Boss phase models cannot repeat a phase key.',
+        path: ['phaseModel', 'phases']
+      });
+    }
+    if (phaseSlots.size !== phaseKeys.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Boss phase models cannot repeat a battle-stage and HP-phase pair.',
+        path: ['phaseModel', 'phases']
+      });
+    }
+
+    const orderedPhases = [...profile.phaseModel.phases].sort(
+      (left, right) => left.stage - right.stage || left.hpPhase - right.hpPhase
+    );
+    if (
+      orderedPhases.some(
+        (phase, index) => phase.key !== profile.phaseModel.phases[index]?.key
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Boss phases must be ordered by battle stage and HP phase.',
+        path: ['phaseModel', 'phases']
+      });
+    }
+
+    const hasVerifiedModel = profile.phaseModel.state === 'verified';
+    const hasNoPhaseModel = profile.phaseModel.state === 'verified-none';
+    if (
+      hasVerifiedModel &&
+      (profile.phaseModel.phases.length === 0 ||
+        profile.phaseModel.kind === 'none' ||
+        profile.phaseModel.kind === 'unknown')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Verified boss phase models require a known kind and at least one phase.',
+        path: ['phaseModel']
+      });
+    }
+    if (
+      profile.phaseModel.state === 'unverified' &&
+      (profile.phaseModel.kind !== 'unknown' || profile.phaseModel.phases.length !== 0)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Unverified boss phase models must use the unknown kind and no phases.',
+        path: ['phaseModel']
+      });
+    }
+    if (
+      hasNoPhaseModel &&
+      (profile.phaseModel.kind !== 'none' || profile.phaseModel.phases.length !== 0)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Verified phase-free boss models must use the none kind and no phases.',
+        path: ['phaseModel']
+      });
+    }
+
+    for (const [actionIndex, action] of profile.actions.entries()) {
+      const actionPhaseKeys = new Set(
+        action.phaseAvailability.map((availability) => availability.phaseKey)
+      );
+      if (!hasVerifiedModel && action.phaseAvailability.length !== 0) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Only verified boss phase models can expose action phase availability.',
+          path: ['actions', actionIndex, 'phaseAvailability']
+        });
+      }
+      if (
+        hasVerifiedModel &&
+        (actionPhaseKeys.size !== uniquePhaseKeys.size ||
+          phaseKeys.some((phaseKey) => !actionPhaseKeys.has(phaseKey)))
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Boss action phase availability must cover every verified phase exactly once.',
+          path: ['actions', actionIndex, 'phaseAvailability']
+        });
+      }
+    }
+  });
 
 export const moveRecordSchema = z.strictObject({
   accuracy: z.number().int().nonnegative(),
@@ -1611,6 +1951,7 @@ export const textEntryRecordSchema = z.strictObject({
   label: z.string(),
   language: z.string(),
   lineIndex: z.number().int().nonnegative(),
+  messageKey: z.string().nullable(),
   provenance: textProvenanceSchema,
   sourceFile: z.string(),
   textId: z.number().int().nonnegative(),
@@ -1641,11 +1982,53 @@ export const textEditableFieldSchema = z.strictObject({
   valueKind: z.string()
 });
 
+export const textCategorySchema = z.strictObject({
+  categoryId: z.string().min(1),
+  description: z.string(),
+  label: z.string(),
+  sourceFileCount: z.number().int().nonnegative()
+});
+
+export const textResultPageSchema = z
+  .strictObject({
+    hasNext: z.boolean(),
+    hasPrevious: z.boolean(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+    returnedEntryCount: z.number().int().nonnegative()
+  })
+  .superRefine((page, context) => {
+    if (page.returnedEntryCount > page.limit) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Text result pages cannot return more entries than their requested limit.',
+        path: ['returnedEntryCount']
+      });
+    }
+    if (page.hasPrevious !== (page.offset > 0)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Text result page previous-state must match its offset.',
+        path: ['hasPrevious']
+      });
+    }
+  });
+
+export const textLanguageSchema = z.strictObject({
+  label: z.string(),
+  language: z.string().min(1)
+});
+
 export const textWorkflowSchema = z.strictObject({
+  categories: z.array(textCategorySchema),
   diagnostics: z.array(apiDiagnosticSchema),
   dialogueReferences: z.array(dialogueReferenceRecordSchema),
   editableFields: z.array(textEditableFieldSchema),
   entries: z.array(textEntryRecordSchema),
+  languages: z.array(textLanguageSchema),
+  page: textResultPageSchema.nullable(),
+  selectedCategoryId: z.string().nullable(),
+  selectedLanguage: z.string().nullable(),
   stats: textWorkflowStatsSchema,
   summary: workflowSummarySchema
 });

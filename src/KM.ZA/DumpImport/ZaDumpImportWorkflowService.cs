@@ -105,7 +105,7 @@ internal sealed class ZaDumpImportWorkflowService
             [
                 new ZaDumpImportColumnRecord(1, "ItemId", "integer", IsRequired: true, "Existing item ID."),
                 new ZaDumpImportColumnRecord(2, "Price", "integer", IsRequired: false, "New base shop price."),
-                new ZaDumpImportColumnRecord(3, "SellPrice", "integer", IsRequired: false, "New sell price. This writes the underlying base price row value."),
+                new ZaDumpImportColumnRecord(3, "SellPrice", "integer", IsRequired: false, "New sell price. When Price is also provided, this must equal floor(Price / 2); by itself, it writes the shared base-price row value."),
                 new ZaDumpImportColumnRecord(4, "MegaShardPrice", "integer", IsRequired: false, "New Mega Shard price."),
                 new ZaDumpImportColumnRecord(5, "ColorfulScrewPrice", "integer", IsRequired: false, "New Colorful Screw price."),
             ],

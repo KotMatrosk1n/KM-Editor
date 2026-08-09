@@ -121,10 +121,34 @@ public sealed class SwShItemsEditSessionService
         return UpdateFields(paths, session, [new SwShItemFieldUpdate(itemId, field, value)]);
     }
 
+    internal SwShItemsEditResult UpdateField(
+        ProjectPaths paths,
+        EditSession? session,
+        int itemId,
+        string field,
+        string value,
+        string owner)
+    {
+        return UpdateFieldsOwned(
+            paths,
+            session,
+            [new SwShItemFieldUpdate(itemId, field, value)],
+            owner);
+    }
+
     public SwShItemsEditResult UpdateFields(
         ProjectPaths paths,
         EditSession? session,
         IReadOnlyList<SwShItemFieldUpdate> updates)
+    {
+        return UpdateFieldsOwned(paths, session, updates, owner: null);
+    }
+
+    private SwShItemsEditResult UpdateFieldsOwned(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShItemFieldUpdate> updates,
+        string? owner)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(updates);
@@ -179,7 +203,8 @@ public sealed class SwShItemsEditSessionService
                     update,
                     batchAssignments,
                     diagnostics,
-                    out candidateSession))
+                    out candidateSession,
+                    owner))
             {
                 break;
             }
@@ -219,7 +244,8 @@ public sealed class SwShItemsEditSessionService
                         update,
                         batchAssignments,
                         diagnostics,
-                        out candidateSession))
+                        out candidateSession,
+                        owner))
                 {
                     break;
                 }
@@ -418,7 +444,8 @@ public sealed class SwShItemsEditSessionService
         SwShItemFieldUpdate update,
         ICollection<StorageAssignment> batchAssignments,
         ICollection<ValidationDiagnostic> diagnostics,
-        out EditSession updatedSession)
+        out EditSession updatedSession,
+        string? owner = null)
     {
         updatedSession = session;
         var selectedItem = workflow.Items.FirstOrDefault(item => item.ItemId == update.ItemId);
@@ -432,7 +459,13 @@ public sealed class SwShItemsEditSessionService
             return false;
         }
 
-        var pendingEdit = CreatePendingEdit(workflow, selectedItem, update.Field, update.Value, diagnostics);
+        var pendingEdit = CreatePendingEdit(
+            workflow,
+            selectedItem,
+            update.Field,
+            update.Value,
+            diagnostics,
+            owner);
         if (pendingEdit is null)
         {
             return false;
@@ -1090,7 +1123,8 @@ public sealed class SwShItemsEditSessionService
         SwShItemRecord selectedItem,
         string field,
         string value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        string? owner = null)
     {
         var normalizedField = NormalizeFieldName(field.Trim());
         var itemField = GetEditableField(normalizedField);
@@ -1145,7 +1179,8 @@ public sealed class SwShItemsEditSessionService
             [new ProjectFileReference(canonicalItem.Provenance.SourceLayer, canonicalItem.Provenance.SourceFile)],
             RecordId: canonicalItemId.ToString(CultureInfo.InvariantCulture),
             Field: itemField.Field,
-            NewValue: itemValue.ToString(CultureInfo.InvariantCulture));
+            NewValue: itemValue.ToString(CultureInfo.InvariantCulture),
+            Owner: owner);
     }
 
     private static int? TryParsePendingEditValue(

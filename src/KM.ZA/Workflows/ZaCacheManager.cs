@@ -21,7 +21,7 @@ public enum ZaCacheMode
 public sealed class ZaCacheManager
 {
     public const int CacheSchemaVersion = 1;
-    public const string ParserVersion = "za-cache-parser-v1";
+    public const string ParserVersion = "za-cache-parser-v2";
     public const string DecompressorVersion = "za-cache-decompressor-v1";
 
     private const long DefaultMaxCacheSizeBytes = 512L * 1024 * 1024;
@@ -242,6 +242,9 @@ public sealed class ZaCacheManager
                 if (!string.IsNullOrWhiteSpace(virtualPath))
                 {
                     yield return virtualPath;
+                    yield return Path.ChangeExtension(virtualPath, ".tbl")
+                        .Replace(Path.DirectorySeparatorChar, '/')
+                        .Replace(Path.AltDirectorySeparatorChar, '/');
                 }
             }
         }
@@ -655,14 +658,33 @@ public sealed class ZaCacheManager
         IReadOnlyList<string> virtualPaths)
     {
         var manifestPath = GetWarmupPathsPath(context);
-        if (File.Exists(manifestPath))
+        try
         {
-            return false;
+            if (File.Exists(manifestPath))
+            {
+                using var stream = OpenJsonReadStream(manifestPath);
+                var existing = JsonSerializer.Deserialize<ZaCacheWarmupPathsFile>(stream, JsonOptions);
+                if (existing is not null
+                    && existing.CacheSchemaVersion == CacheSchemaVersion
+                    && existing.Source == context.Source
+                    && existing.VirtualPaths.SequenceEqual(virtualPaths, StringComparer.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
         }
 
         WriteJsonAtomic(
             manifestPath,
             new ZaCacheWarmupPathsFile(CacheSchemaVersion, context.Source, virtualPaths));
+        retainedWarmupProgressSource = null;
+        retainedWarmupProgressMode = null;
+        retainedWarmupProgressPaths = null;
+        retainedCompletedWarmupPaths = null;
+        TryDeleteFile(GetWarmupStatePath(context));
         return true;
     }
 

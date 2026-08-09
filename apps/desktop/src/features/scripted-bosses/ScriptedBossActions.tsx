@@ -9,19 +9,26 @@ import {
 } from '../../bridge/contracts';
 import { useLocalization } from '../../localization/LocalizationProvider';
 
-const heatAvailabilityStates = [
+const phaseAvailabilityStates = [
   'available',
   'unavailable',
   'context-only',
   'unverified'
 ] as const;
 
-const heatAvailabilitySearchLabels = {
+const phaseAvailabilitySearchLabels = {
   available: 'available',
   'context-only': 'context only',
   unavailable: 'locked',
   unverified: 'unverified'
 } as const;
+
+type Localize = (
+  key: string,
+  params?: Record<string, string | number>
+) => string;
+
+type ScriptedBossPhase = ScriptedBossProfile['phaseModel']['phases'][number];
 
 export function findScriptedBossProfile(
   profiles: ScriptedBossProfile[],
@@ -68,37 +75,54 @@ export function getScriptedBossActionOwners(
 export function getScriptedBossMoveSearchValues(
   profiles: ScriptedBossProfile[],
   moveId: number,
-  localize?: (key: string) => string
+  localize?: Localize
 ) {
-  return getScriptedBossOwners(profiles, moveId).flatMap(({ action, profile }) => [
-    profile.key,
-    profile.name,
-    profile.speciesId.toString(),
-    action.kind,
-    action.runtimeState,
-    action.lockReason ?? '',
-    action.heatContext ?? '',
-    action.selectorActionId?.toString() ?? '',
-    action.vanillaMoveId?.toString() ?? '',
-    ...action.heatAvailability.flatMap((availability) => {
-      const stateLabel = heatAvailabilitySearchLabels[availability.state];
-      const localizedHeatLevel = localize?.(
-        `za.encounters.bossActions.heat.level.${availability.heatLevel}`
-      );
-      const localizedState = localize?.(
-        `za.encounters.bossActions.heat.state.${availability.state}`
-      );
-      return [
-        `heat ${availability.heatLevel} ${stateLabel}`,
-        `phase ${availability.heatLevel} ${stateLabel}`,
-        localizedHeatLevel && localizedState
-          ? `${localizedHeatLevel} ${localizedState}`
-          : '',
-        stateLabel,
-        availability.state
-      ];
-    })
-  ]);
+  return getScriptedBossOwners(profiles, moveId).flatMap(({ action, profile }) => {
+    const phasesByKey = new Map(
+      profile.phaseModel.phases.map((phase) => [phase.key, phase])
+    );
+    const variantLabel = action.variant === null
+      ? ''
+      : formatScriptedBossRuntimeVariantLabel(action.variant, localize);
+    return [
+      profile.key,
+      profile.name,
+      profile.speciesId.toString(),
+      profile.phaseModel.state,
+      profile.phaseModel.kind,
+      action.kind,
+      action.runtimeState,
+      action.lockReason ?? '',
+      action.phaseContext ?? '',
+      action.selectorActionId?.toString() ?? '',
+      action.vanillaMoveId?.toString() ?? '',
+      action.variant?.toString() ?? '',
+      variantLabel,
+      ...profile.phaseModel.phases.flatMap((phase) => [
+        phase.key,
+        phase.stageName,
+        `stage ${phase.stage}`,
+        `phase ${phase.hpPhase}`,
+        `${phase.minimumHpPercent} ${phase.maximumHpPercent}`
+      ]),
+      ...action.phaseAvailability.flatMap((availability) => {
+        const stateLabel = phaseAvailabilitySearchLabels[availability.state];
+        const phase = phasesByKey.get(availability.phaseKey);
+        const localizedState = localize?.(
+          `za.encounters.bossActions.phase.state.${availability.state}`
+        );
+        return [
+          availability.phaseKey,
+          phase?.stageName ?? '',
+          phase ? `stage ${phase.stage}` : '',
+          phase ? `phase ${phase.hpPhase}` : '',
+          `${stateLabel}`,
+          localizedState ?? '',
+          availability.state
+        ];
+      })
+    ];
+  });
 }
 
 export function ScriptedBossEncounterActions({
@@ -115,8 +139,11 @@ export function ScriptedBossEncounterActions({
   const lockedCount = (profile?.actions.length ?? 0) - editableCount;
   const hasBrokenAction = profile?.actions.some(isBrokenScriptedBossAction) ?? false;
   const hasUnavailableAction = profile?.actions.some(isUnavailableScriptedBossAction) ?? false;
-  const hasPhaseAvailability =
-    profile?.actions.some((action) => action.heatAvailability.length > 0) ?? false;
+  const phaseGroups = profile === null ? [] : groupScriptedBossPhases(profile);
+  const hasVerifiedPhaseModel = profile?.phaseModel.state === 'verified';
+  const hasSingleStageHpBands = Boolean(
+    profile?.phaseModel.kind === 'hp-bands' && phaseGroups.length === 1
+  );
 
   return (
     <section
@@ -227,14 +254,18 @@ export function ScriptedBossEncounterActions({
           <p className="za-scripted-boss-pool-help">
             {t('za.encounters.bossActions.scopeHelp')}
           </p>
-          {hasPhaseAvailability ? (
-            <div className="za-scripted-boss-heat-guide" role="note">
-              <div className="za-scripted-boss-heat-guide-heading">
-                <strong>{t('za.encounters.bossActions.heat.heading')}</strong>
-                <span>{t('za.encounters.bossActions.heat.help')}</span>
+          {hasVerifiedPhaseModel ? (
+            <div className="za-scripted-boss-phase-guide" role="note">
+              <div className="za-scripted-boss-phase-guide-heading">
+                <strong>{t('za.encounters.bossActions.phase.heading')}</strong>
+                <span>
+                  {t(
+                    `za.encounters.bossActions.phase.help.${profile.phaseModel.kind}`
+                  )}
+                </span>
               </div>
-              <div className="za-scripted-boss-heat-legend" role="list">
-                {heatAvailabilityStates.map((state) => (
+              <div className="za-scripted-boss-phase-legend" role="list">
+                {phaseAvailabilityStates.map((state) => (
                   <span className={`is-${state}`} key={state} role="listitem">
                     {state === 'available' ? (
                       <CheckCircle aria-hidden="true" size={12} />
@@ -245,27 +276,76 @@ export function ScriptedBossEncounterActions({
                     ) : (
                       <AlertTriangle aria-hidden="true" size={12} />
                     )}
-                    {t(`za.encounters.bossActions.heat.state.${state}`)}
+                    {t(`za.encounters.bossActions.phase.state.${state}`)}
                   </span>
                 ))}
               </div>
               <div
-                aria-label={t('za.encounters.bossActions.heat.rangesLabel')}
-                className="za-scripted-boss-heat-ranges"
+                aria-label={t('za.encounters.bossActions.phase.rangesLabel')}
+                className={`za-scripted-boss-phase-stages ${
+                  hasSingleStageHpBands ? 'is-single-stage' : 'is-multi-stage'
+                }`}
                 role="list"
               >
-                {[1, 2, 3].map((heatLevel) => (
-                  <span key={heatLevel} role="listitem">
-                    {t(`za.encounters.bossActions.heat.range.${heatLevel}`)}
-                  </span>
+                {phaseGroups.map((group) => (
+                  <section key={group.stage} role="listitem">
+                    {!hasSingleStageHpBands ? (
+                      <strong>
+                        {t('za.encounters.bossActions.phase.stageLabel', {
+                          name: group.stageName,
+                          stage: group.stage
+                        })}
+                      </strong>
+                    ) : null}
+                    <div role="list">
+                      {group.phases.map((phase) => (
+                        <span key={phase.key} role="listitem">
+                          {hasSingleStageHpBands || group.phases.length > 1 ? (
+                            <strong>
+                              {t('za.encounters.bossActions.phase.hpPhaseLabel', {
+                                phase: phase.hpPhase
+                              })}
+                            </strong>
+                          ) : null}
+                          <small>
+                            {t('za.encounters.bossActions.phase.hpRange', {
+                              maximum: phase.maximumHpPercent,
+                              minimum: phase.minimumHpPercent
+                            })}
+                          </small>
+                        </span>
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
-              <small>{t('za.encounters.bossActions.heat.baseGameHelp')}</small>
+              {profile.phaseModel.kind === 'hp-bands' ? (
+                <small>{t('za.encounters.bossActions.phase.hpBandsHelp')}</small>
+              ) : null}
             </div>
           ) : (
-            <p className="za-scripted-boss-pool-help" role="note">
-              {t('za.encounters.bossActions.scheduleUnmapped')}
-            </p>
+            <div
+              className={`za-scripted-boss-phase-model-status is-${profile.phaseModel.state}`}
+              role="note"
+            >
+              {profile.phaseModel.state === 'verified-none' ? (
+                <CheckCircle aria-hidden="true" size={16} />
+              ) : (
+                <AlertTriangle aria-hidden="true" size={16} />
+              )}
+              <div>
+                <strong>
+                  {t(
+                    `za.encounters.bossActions.phase.model.${profile.phaseModel.state}.label`
+                  )}
+                </strong>
+                <span>
+                  {t(
+                    `za.encounters.bossActions.phase.model.${profile.phaseModel.state}.help`
+                  )}
+                </span>
+              </div>
+            </div>
           )}
           {editableCount > 0 ? (
             <p className="za-scripted-boss-replacement-caveat">
@@ -279,20 +359,35 @@ export function ScriptedBossEncounterActions({
                 : getScriptedBossActionOwners(profiles, action.selectorActionId);
               const isBroken = isBrokenScriptedBossAction(action);
               const isUnavailable = isUnavailableScriptedBossAction(action);
-              const hasHeatLock = action.heatAvailability.some(
+              const hasPhaseLock = action.phaseAvailability.some(
                 (availability) => availability.state === 'unavailable'
               );
-              const hasUnverifiedHeat = action.heatAvailability.some(
+              const hasUnverifiedPhase = action.phaseAvailability.some(
                 (availability) => availability.state === 'unverified'
               );
-              const hasContextOnlyHeat = action.heatAvailability.some(
+              const hasContextOnlyPhase = action.phaseAvailability.some(
                 (availability) => availability.state === 'context-only'
               );
+              const contextOnlyPhaseLabels = action.phaseAvailability
+                .filter((availability) => availability.state === 'context-only')
+                .map((availability) => {
+                  const phase = profile.phaseModel.phases.find(
+                    (candidate) => candidate.key === availability.phaseKey
+                  );
+                  return phase
+                    ? formatScriptedBossActionPhaseLabel(profile, phase, t)
+                    : availability.phaseKey;
+                })
+                .join(', ');
 
               return (
                 <li
                   className={`${action.canEdit ? 'is-editable' : 'is-locked'} ${
                     isBroken ? 'is-broken' : isUnavailable ? 'is-unavailable' : 'is-working'
+                  } ${
+                    action.variant === null
+                      ? ''
+                      : `is-runtime-variant-${formatScriptedBossRuntimeVariantKey(action.variant)}`
                   }`}
                   key={action.key}
                 >
@@ -302,6 +397,18 @@ export function ScriptedBossEncounterActions({
                       <span>{formatScriptedBossActionKind(action, t)}</span>
                     </div>
                     <div className="za-scripted-boss-action-statuses">
+                      {action.variant !== null ? (
+                        <span
+                          aria-label={t('za.encounters.bossActions.variant.ariaLabel', {
+                            variant: formatScriptedBossRuntimeVariantLabel(action.variant, t)
+                          })}
+                          className={`za-scripted-boss-variant-pill is-${formatScriptedBossRuntimeVariantKey(
+                            action.variant
+                          )}`}
+                        >
+                          {formatScriptedBossRuntimeVariantLabel(action.variant, t)}
+                        </span>
+                      ) : null}
                       <span
                         className={`za-scripted-boss-status-pill ${
                           action.canEdit
@@ -386,60 +493,66 @@ export function ScriptedBossEncounterActions({
                     </small>
                   ) : null}
 
-                  {action.heatAvailability.length > 0 ? (
-                    <div className="za-scripted-boss-heat-availability">
-                      <span className="za-scripted-boss-heat-availability-label">
-                        {t('za.encounters.bossActions.heat.actionLabel')}
+                  {action.phaseAvailability.length > 0 ? (
+                    <div className="za-scripted-boss-phase-availability">
+                      <span className="za-scripted-boss-phase-availability-label">
+                        {t('za.encounters.bossActions.phase.actionLabel')}
                       </span>
                       <div
-                        aria-label={t('za.encounters.bossActions.heat.actionLabel')}
-                        className="za-scripted-boss-heat-pills"
+                        aria-label={t('za.encounters.bossActions.phase.actionLabel')}
+                        className="za-scripted-boss-phase-pills"
                         role="list"
                       >
-                        {action.heatAvailability.map((availability) => (
-                          <span
-                            className={`za-scripted-boss-heat-pill is-${availability.state}`}
-                            key={availability.heatLevel}
-                            role="listitem"
-                          >
-                            {availability.state === 'available' ? (
-                              <CheckCircle aria-hidden="true" size={12} />
-                            ) : availability.state === 'unavailable' ? (
-                              <Lock aria-hidden="true" size={12} />
-                            ) : availability.state === 'context-only' ? (
-                              <Binary aria-hidden="true" size={12} />
-                            ) : (
-                              <AlertTriangle aria-hidden="true" size={12} />
-                            )}
-                            <span>
-                              {t(
-                                `za.encounters.bossActions.heat.level.${availability.heatLevel}`
+                        {action.phaseAvailability.map((availability) => {
+                          const phase = profile.phaseModel.phases.find(
+                            (candidate) => candidate.key === availability.phaseKey
+                          );
+                          return (
+                            <span
+                              className={`za-scripted-boss-phase-pill is-${availability.state}`}
+                              key={availability.phaseKey}
+                              role="listitem"
+                            >
+                              {availability.state === 'available' ? (
+                                <CheckCircle aria-hidden="true" size={12} />
+                              ) : availability.state === 'unavailable' ? (
+                                <Lock aria-hidden="true" size={12} />
+                              ) : availability.state === 'context-only' ? (
+                                <Binary aria-hidden="true" size={12} />
+                              ) : (
+                                <AlertTriangle aria-hidden="true" size={12} />
                               )}
+                              <span>
+                                {phase
+                                  ? formatScriptedBossActionPhaseLabel(profile, phase, t)
+                                  : availability.phaseKey}
+                              </span>
+                              <small>
+                                {t(
+                                  `za.encounters.bossActions.phase.state.${availability.state}`
+                                )}
+                              </small>
                             </span>
-                            <small>
-                              {t(
-                                `za.encounters.bossActions.heat.state.${availability.state}`
-                              )}
-                            </small>
-                          </span>
-                        ))}
+                          );
+                        })}
                       </div>
-                      {hasHeatLock ? (
-                        <small className="za-scripted-boss-heat-detail is-locked">
-                          {t('za.encounters.bossActions.heat.lockedHelp')}
+                      {hasPhaseLock ? (
+                        <small className="za-scripted-boss-phase-detail is-locked">
+                          {t('za.encounters.bossActions.phase.lockedHelp')}
                         </small>
                       ) : null}
-                      {hasUnverifiedHeat ? (
-                        <small className="za-scripted-boss-heat-detail is-unverified">
-                          {t('za.encounters.bossActions.heat.unverifiedHelp')}
+                      {hasUnverifiedPhase ? (
+                        <small className="za-scripted-boss-phase-detail is-unverified">
+                          {t('za.encounters.bossActions.phase.unverifiedHelp')}
                         </small>
                       ) : null}
-                      {hasContextOnlyHeat ? (
-                        <small className="za-scripted-boss-heat-detail is-context-only">
+                      {hasContextOnlyPhase ? (
+                        <small className="za-scripted-boss-phase-detail is-context-only">
                           {t(
-                            action.heatContext === 'after-stun'
-                              ? 'za.encounters.bossActions.heat.context.after-stun'
-                              : 'za.encounters.bossActions.heat.contextOnlyHelp'
+                            action.phaseContext === 'after-stun'
+                              ? 'za.encounters.bossActions.phase.context.after-stun'
+                              : 'za.encounters.bossActions.phase.contextOnlyHelp',
+                            { phases: contextOnlyPhaseLabels }
                           )}
                         </small>
                       ) : null}
@@ -545,6 +658,192 @@ export function ScriptedBossMoveOwnership({
   );
 }
 
+export function ScriptedBossMoveControllerAvailability({
+  move,
+  profiles
+}: {
+  move: MoveRecord;
+  profiles: ScriptedBossProfile[];
+}) {
+  const { t } = useLocalization();
+  const owners = getScriptedBossOwners(profiles, move.moveId, 2);
+
+  return (
+    <section className="move-player-damage-controller-availability" role="note">
+      <div className="move-player-damage-controller-availability-heading">
+        <ShieldAlert aria-hidden="true" size={17} />
+        <div>
+          <h4>{t('moves.playerDamage.controllerAvailability.heading')}</h4>
+          <p>{t('moves.playerDamage.controllerAvailability.help')}</p>
+        </div>
+      </div>
+      {owners.length > 0 ? (
+        <ScriptedBossMoveOwnerAvailabilityList owners={owners} />
+      ) : (
+        <p className="move-scripted-boss-owner-empty">
+          {t('moves.playerDamage.controllerAvailability.noOwner')}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ScriptedBossMoveOwnerAvailabilityList({
+  owners
+}: {
+  owners: ReturnType<typeof getScriptedBossOwners>;
+}) {
+  const { t } = useLocalization();
+
+  return (
+    <ul className="move-scripted-boss-owner-list has-availability">
+      {owners.map(({ action, profile }) => {
+        const phasesByKey = new Map(
+          profile.phaseModel.phases.map((phase) => [phase.key, phase])
+        );
+        return (
+          <li key={`${profile.key}:${action.key}`}>
+            <Binary aria-hidden="true" size={15} />
+            <div className="move-scripted-boss-owner-body">
+              <div className="move-scripted-boss-owner-heading">
+                <strong>{profile.name}</strong>
+                <span>{formatScriptedBossActionKind(action, t)}</span>
+              </div>
+              {profile.phaseModel.state === 'verified' ? (
+                <div
+                  aria-label={t('moves.bossOwners.controllerScheduleLabel', {
+                    boss: profile.name
+                  })}
+                  className="move-scripted-boss-owner-phases"
+                  role="list"
+                >
+                  {action.phaseAvailability.map((availability) => {
+                    const phase = phasesByKey.get(availability.phaseKey);
+                    if (!phase) {
+                      return null;
+                    }
+                    return (
+                      <span
+                        className={`is-${availability.state}`}
+                        key={availability.phaseKey}
+                        role="listitem"
+                      >
+                        <strong>
+                          {formatScriptedBossActionPhaseLabel(profile, phase, t)}
+                        </strong>
+                        <small>
+                          {t(
+                            `za.encounters.bossActions.phase.state.${availability.state}`
+                          )}
+                        </small>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className={`move-scripted-boss-owner-model is-${profile.phaseModel.state}`}>
+                  {t(`moves.bossOwners.phaseModel.${profile.phaseModel.state}`)}
+                </span>
+              )}
+              {action.phaseContext === 'after-stun' ? (
+                <small className="move-scripted-boss-owner-context">
+                  {t('moves.bossOwners.afterStunContext')}
+                </small>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function groupScriptedBossPhases(profile: ScriptedBossProfile) {
+  const groups = new Map<
+    number,
+    { phases: ScriptedBossPhase[]; stage: number; stageName: string }
+  >();
+  for (const phase of profile.phaseModel.phases) {
+    const group = groups.get(phase.stage);
+    if (group) {
+      group.phases.push(phase);
+    } else {
+      groups.set(phase.stage, {
+        phases: [phase],
+        stage: phase.stage,
+        stageName: phase.stageName
+      });
+    }
+  }
+
+  return [...groups.values()].sort((left, right) => left.stage - right.stage);
+}
+
+function formatScriptedBossActionPhaseLabel(
+  profile: ScriptedBossProfile,
+  phase: ScriptedBossPhase,
+  t: Localize
+) {
+  const stagePhaseCount = profile.phaseModel.phases.filter(
+    (candidate) => candidate.stage === phase.stage
+  ).length;
+  if (profile.phaseModel.kind === 'hp-bands') {
+    return t('za.encounters.bossActions.phase.hpPhaseLabel', {
+      phase: phase.hpPhase
+    });
+  }
+
+  return stagePhaseCount > 1
+    ? t('za.encounters.bossActions.phase.actionStageAndHpPhase', {
+        name: phase.stageName,
+        phase: phase.hpPhase,
+        stage: phase.stage
+      })
+    : t('za.encounters.bossActions.phase.stageLabel', {
+        name: phase.stageName,
+        stage: phase.stage
+      });
+}
+
+function formatScriptedBossRuntimeVariantKey(variant: number) {
+  switch (variant) {
+    case 0:
+      return 'normal';
+    case 1:
+      return 'plus';
+    case 2:
+      return 'boss';
+    default:
+      return 'unknown';
+  }
+}
+
+function formatScriptedBossRuntimeVariantLabel(
+  variant: number,
+  localize?: Localize
+) {
+  const key = formatScriptedBossRuntimeVariantKey(variant);
+  if (localize) {
+    return localize(
+      key === 'unknown'
+        ? 'moves.runtimeVariant.unknown'
+        : `moves.runtimeVariant.${key}`,
+      { variant }
+    );
+  }
+
+  switch (key) {
+    case 'normal':
+      return 'Normal Move';
+    case 'plus':
+      return 'Plus Move';
+    case 'boss':
+      return 'Boss Move';
+    default:
+      return `Variant ${variant}`;
+  }
+}
+
 function isBrokenScriptedBossAction(action: ScriptedBossAction) {
   return [
     'missing-battle',
@@ -567,8 +866,10 @@ function formatScriptedBossActionName(
       return t('za.encounters.bossActions.mechanic.volcanicEruption');
     case 'scripted-mechanic:clone-sequence':
       return t('za.encounters.bossActions.mechanic.cloneSequence');
-    case 'scripted-mechanic:clone-nightmare-sequence':
-      return t('za.encounters.bossActions.mechanic.cloneNightmareSequence');
+    case 'scripted-mechanic:darkrai-nightmare-sequence':
+      return t('za.encounters.bossActions.mechanic.darkraiNightmareSequence');
+    case 'scripted-mechanic:darkrai-clone-sequence':
+      return t('za.encounters.bossActions.mechanic.darkraiCloneSequence');
     default:
       return action.name;
   }

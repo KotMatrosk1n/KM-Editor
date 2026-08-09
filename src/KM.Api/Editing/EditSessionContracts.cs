@@ -44,7 +44,8 @@ public sealed record PendingEditDto(
     IReadOnlyList<FileProvenanceDto> Sources,
     string? RecordId = null,
     string? Field = null,
-    string? NewValue = null);
+    string? NewValue = null,
+    string? Owner = null);
 
 public enum FileLayerDto
 {

@@ -1745,16 +1745,30 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     );
   }
 
-  const importRowSharedPriceMatch =
-    /^Row (\d+): BuyPrice and SellPrice both changed to incompatible values, but they target the same stored item-table field\. Change one value, or keep BuyPrice equal to SellPrice multiplied by 2\.$/.exec(
+  const importRowSharedBuyPriceMatch =
+    /^Row (\d+): BuyPrice and SellPrice target the same stored item-table field\. When both columns are provided, SellPrice must equal floor\(BuyPrice \/ 2\)\.$/.exec(
       literal
     );
-  if (importRowSharedPriceMatch) {
+  if (importRowSharedBuyPriceMatch) {
     return formatLiteralTemplate(
       language,
-      'Row {row}: BuyPrice and SellPrice both changed to incompatible values, but they target the same stored item-table field. Change one value, or keep BuyPrice equal to SellPrice multiplied by 2.',
+      'Row {row}: BuyPrice and SellPrice target the same stored item-table field. When both columns are provided, SellPrice must equal floor(BuyPrice / 2).',
       {
-        row: importRowSharedPriceMatch[1]
+        row: importRowSharedBuyPriceMatch[1]
+      }
+    );
+  }
+
+  const importRowSharedZaPriceMatch =
+    /^Row (\d+): Price and SellPrice target the same stored item-table field\. When both columns are provided, SellPrice must equal floor\(Price \/ 2\)\.$/.exec(
+      literal
+    );
+  if (importRowSharedZaPriceMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Row {row}: Price and SellPrice target the same stored item-table field. When both columns are provided, SellPrice must equal floor(Price / 2).',
+      {
+        row: importRowSharedZaPriceMatch[1]
       }
     );
   }

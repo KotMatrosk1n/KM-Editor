@@ -42,7 +42,8 @@ public sealed class SvGameDumpService
     public GameDumpResult Run(
         ProjectPaths paths,
         string destinationFolder,
-        IReadOnlyList<GameDumpSelection> selections)
+        IReadOnlyList<GameDumpSelection> selections,
+        string? producerVersion = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(selections);
@@ -66,6 +67,7 @@ public sealed class SvGameDumpService
         var categoryStates = workflow.Categories.ToDictionary(category => category.Id, StringComparer.Ordinal);
         var definitions = CreateCategories().ToDictionary(category => category.Id, StringComparer.Ordinal);
         var writtenFiles = new List<GameDumpWrittenFile>();
+        var categoryResults = new Dictionary<string, GameDumpWriteCategoryResult>(StringComparer.Ordinal);
 
         foreach (var selection in selections)
         {
@@ -94,13 +96,33 @@ public sealed class SvGameDumpService
             return new GameDumpResult(destinationFolder, writtenFiles, diagnostics, Succeeded: false);
         }
 
-        Directory.CreateDirectory(destinationFolder);
+        GameDumpRunTransaction transaction;
+        try
+        {
+            transaction = GameDumpWriter.BeginTransaction(destinationFolder);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Failed to prepare the game dump destination: {exception.Message}",
+                field: "destinationFolder"));
+            return new GameDumpResult(destinationFolder, [], diagnostics, Succeeded: false);
+        }
+
+        using var transactionScope = transaction;
         foreach (var selection in selections.DistinctBy(selection => selection.CategoryId))
         {
             var definition = definitions[selection.CategoryId];
             try
             {
-                var result = definition.Write(paths, destinationFolder, selection.Format);
+                var result = definition.Write(paths, transaction.StagingFolder, selection);
+                categoryResults[selection.CategoryId] = result;
                 diagnostics.AddRange(result.Diagnostics);
                 writtenFiles.AddRange(result.WrittenFiles);
             }
@@ -114,36 +136,42 @@ public sealed class SvGameDumpService
         }
 
         var succeeded = diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
-        writtenFiles.Add(GameDumpWriter.WriteManifest(
-            destinationFolder,
-            new
-            {
-                generatedAtUtc = DateTimeOffset.UtcNow,
-                gameFamily = "Scarlet/Violet",
-                selectedGame = paths.SelectedGame?.ToString(),
-                succeeded,
-                categories = selections.Select(selection => new
-                {
-                    id = selection.CategoryId,
-                    format = selection.Format.ToString(),
-                }),
-                files = writtenFiles.Select(file => new
-                {
-                    categoryId = file.CategoryId,
-                    relativePath = file.RelativePath,
-                    sizeBytes = file.SizeBytes,
-                }),
-                diagnostics = diagnostics.Select(diagnostic => new
-                {
-                    diagnostic.Code,
-                    severity = diagnostic.Severity.ToString(),
-                    diagnostic.Message,
-                    diagnostic.File,
-                    diagnostic.Domain,
-                    diagnostic.Field,
-                    diagnostic.Expected,
-                }),
-            }));
+        if (!succeeded)
+        {
+            return new GameDumpResult(destinationFolder, [], diagnostics, Succeeded: false);
+        }
+
+        try
+        {
+            writtenFiles.Add(GameDumpWriter.WriteManifest(
+                transaction.StagingFolder,
+                GameDumpWriter.CreateManifest(
+                    "Scarlet/Violet",
+                    paths.SelectedGame,
+                    succeeded,
+                    selections,
+                    categoryResults,
+                    writtenFiles,
+                    diagnostics,
+                    destinationFolder,
+                    producerVersion)));
+            transaction.Promote(
+                writtenFiles,
+                selections.Select(selection => selection.CategoryId).ToHashSet(StringComparer.Ordinal));
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Failed to publish the game dump snapshot: {exception.Message}",
+                field: "destinationFolder"));
+            return new GameDumpResult(destinationFolder, [], diagnostics, Succeeded: false);
+        }
 
         return new GameDumpResult(destinationFolder, writtenFiles, diagnostics, succeeded);
     }

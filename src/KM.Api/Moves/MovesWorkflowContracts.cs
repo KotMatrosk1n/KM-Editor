@@ -144,11 +144,18 @@ public sealed record MovePlayerDamageTimelinePathEdgeRecordDto(
     int ChildBulletId,
     string Kind);
 
+public sealed record MovePlayerDamageLocalConditionRecordDto(
+    string State,
+    string Kind,
+    string SemanticKey,
+    string? RawTag);
+
 public sealed record MovePlayerDamageTimelineLaunchRecordDto(
+    string ShootActionKey,
     int RootBulletId,
     string TimelineName,
     string TimelinePath,
-    string? ConditionTag)
+    MovePlayerDamageLocalConditionRecordDto LocalCondition)
 {
     public IReadOnlyList<IReadOnlyList<MovePlayerDamageTimelinePathEdgeRecordDto>>
         RelationshipPaths { get; init; } = [];

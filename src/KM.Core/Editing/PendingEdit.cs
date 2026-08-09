@@ -10,4 +10,10 @@ public sealed record PendingEdit(
     IReadOnlyList<ProjectFileReference> Sources,
     string? RecordId = null,
     string? Field = null,
-    string? NewValue = null);
+    string? NewValue = null,
+    string? Owner = null);
+
+public static class PendingEditOwners
+{
+    public const string DumpImporterItemsPrice = "workflow.dump-import.items-price";
+}
