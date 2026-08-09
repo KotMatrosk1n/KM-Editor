@@ -29534,17 +29534,21 @@ function SelectedEncounterPanel({
     return scriptedBossProfile.actions.flatMap((action) => {
       if (
         action.selectorActionId === null ||
-        (action.moveId === null && !action.canEdit) ||
+        !action.canEdit ||
+        action.kind !== 'battle-move' ||
+        action.variant === null ||
         seenSelectorIds.has(action.selectorActionId)
       ) {
         return [];
       }
 
       seenSelectorIds.add(action.selectorActionId);
-      const options: EditableFieldOption[] = scriptedBossMoveOptions.map((option) => ({
-        label: `${option.moveId} ${option.name}`,
-        value: option.moveId
-      }));
+      const options: EditableFieldOption[] = scriptedBossMoveOptions
+        .filter((option) => option.variant === action.variant)
+        .map((option) => ({
+          label: `${option.moveId} ${option.name}`,
+          value: option.moveId
+        }));
       if (
         action.moveId !== null &&
         !options.some((option) => option.value === action.moveId)
@@ -29562,7 +29566,7 @@ function SelectedEncounterPanel({
           field: {
             field: `bossAction.${action.selectorActionId}.moveId`,
             label: action.name,
-            maximumValue: null,
+            maximumValue: 999,
             minimumValue: 0,
             options,
             valueKind: 'integer'
@@ -30362,7 +30366,9 @@ function SelectedEncounterPanel({
                         renderActionControl={(action: ScriptedBossAction) => {
                           if (
                             action.selectorActionId === null ||
-                            (action.moveId === null && !action.canEdit)
+                            !action.canEdit ||
+                            action.kind !== 'battle-move' ||
+                            action.variant === null
                           ) {
                             return null;
                           }

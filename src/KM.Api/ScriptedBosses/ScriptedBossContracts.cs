@@ -13,6 +13,7 @@ public sealed record ScriptedBossActionDto(
     int? MoveId,
     int? VanillaMoveId,
     int? RuntimeMoveId,
+    int? Variant,
     string Name,
     bool UsesBattleParameters,
     bool UsesTimingParameters,
@@ -34,4 +35,5 @@ public sealed record ScriptedBossProfileDto(
 public sealed record ScriptedBossMoveOptionDto(
     int MoveId,
     int RuntimeMoveId,
+    int Variant,
     string Name);

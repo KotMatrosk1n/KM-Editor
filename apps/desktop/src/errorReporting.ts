@@ -280,15 +280,30 @@ function readErrorContext(
 export function sanitizeReportableErrorText(value: string) {
   return value
     .replace(
-      /(["'])(?:file:\/\/\/?[^"'\r\n]+|[A-Za-z]:[\\/][^"'\r\n]*|\\\\[^"'\r\n]+)\1/gi,
+      /(^|:\s)(?:--->\s*)?(?:[A-Za-z_][A-Za-z0-9_`]*(?:\.[A-Za-z_][A-Za-z0-9_`]*)*Exception):\s*/gi,
+      '$1'
+    )
+    .replace(
+      /(?:Unable to load (?:shared library|DLL)|Unable to find an entry point|Bad IL format)[^\r\n]*/gi,
+      'A native runtime component could not be loaded.'
+    )
+    .replace(
+      /(["'])(?:file:(?:\/{1,3}|[A-Za-z]:[\\/]|\\\\)[^"'\r\n]+|[A-Za-z]:[\\/][^"'\r\n]*|\\\\[^"'\r\n]+|\/\/(?!\/)[^"'\r\n]+|~(?:[A-Za-z0-9._-]+)?[\\/][^"'\r\n]*|\/(?!\/)[^"'\r\n]+)\1/gi,
       (_match, quote: string) => `${quote}[local path]${quote}`
     )
     // Unquoted native errors can contain paths with spaces. Once an absolute path starts,
     // redact the rest of that line; there is no reliable delimiter between the final path
     // segment and arbitrary native prose, and privacy is more important than that suffix.
-    .replace(/\bfile:\/\/\/?[^\r\n"'<>]+/gi, '[local path]')
+    .replace(/\bfile:(?:\/{1,3}|[A-Za-z]:[\\/]|\\\\)[^\r\n"'<>]+/gi, '[local path]')
     .replace(/\b[A-Za-z]:[\\/][^\r\n"'<>|]*/g, '[local path]')
-    .replace(/\\\\[^\\/\r\n"'<>|]+[\\/][^\r\n"'<>|]*/g, '[local path]');
+    .replace(/\\\\[^\\/\r\n"'<>|]+[\\/][^\r\n"'<>|]*/g, '[local path]')
+    .replace(/(?<!:)\/\/[^/\r\n"'<>|]+\/[^\r\n"'<>|]*/g, '[local path]')
+    .replace(
+      /(?<![A-Za-z0-9._-])(?:%(?:USERPROFILE|HOME)%|\$\{(?:USERPROFILE|HOME)\}|\$(?:USERPROFILE|HOME)|\$env:(?:USERPROFILE|HOME))[\\/][^\r\n"'<>|]*/gi,
+      '[local path]'
+    )
+    .replace(/(?<![A-Za-z0-9._-])~(?:[A-Za-z0-9._-]+)?[\\/][^\r\n"'<>|]*/g, '[local path]')
+    .replace(/(?<![:/A-Za-z0-9._-])\/(?!\/)[^\r\n"'<>|]+/g, '[local path]');
 }
 
 function redactReportableContext(

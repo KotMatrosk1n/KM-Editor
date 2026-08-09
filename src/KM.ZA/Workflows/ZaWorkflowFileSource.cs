@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Collections.Concurrent;
+using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using KM.Core.Diagnostics;
@@ -55,26 +56,49 @@ internal sealed class ZaWorkflowFileSource
             var isolatedTrinityModManagerPath = CombineGraphPath(
                 project.Paths.OutputRootPath,
                 $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}");
-            var looseOutput = SelectLatestLooseOutput(
-                trinityModManagerPath,
-                isolatedTrinityModManagerPath,
-                standalonePath);
+            (string Path, bool IsStandalone)? looseOutput;
+            try
+            {
+                looseOutput = SelectLatestLooseOutput(
+                    trinityModManagerPath,
+                    isolatedTrinityModManagerPath,
+                    standalonePath);
+            }
+            catch (Exception exception) when (IsContextualFileFailure(exception))
+            {
+                throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    entry?.State,
+                    exception,
+                    ProjectFileOperation.Inspect);
+            }
+
             if (looseOutput is not null)
             {
+                var state = looseOutput.Value.IsStandalone
+                    ? entry?.State ?? ProjectFileGraphEntryState.LayeredOverride
+                    : ProjectFileGraphEntryState.LayeredOverride;
                 return new ZaWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(looseOutput.Value.Path),
+                    ReadAllBytesWithContext(
+                        looseOutput.Value.Path,
+                        relativePath,
+                        ProjectFileLayer.Layered,
+                        state),
                     ProjectFileLayer.Layered,
-                    looseOutput.Value.IsStandalone
-                        ? entry?.State ?? ProjectFileGraphEntryState.LayeredOverride
-                        : ProjectFileGraphEntryState.LayeredOverride,
+                    state,
                     looseOutput.Value.IsStandalone
                         ? ZaWorkflowFileOrigin.StandaloneLooseOutput
                         : ZaWorkflowFileOrigin.TrinityModManagerLooseOutput);
             }
 
-            if (TryReadOutputArchive(project.Paths, normalizedVirtualPath, out var layeredArchiveBytes))
+            if (TryReadOutputArchive(
+                project.Paths,
+                normalizedVirtualPath,
+                relativePath,
+                out var layeredArchiveBytes))
             {
                 return new ZaWorkflowFile(
                     normalizedVirtualPath,
@@ -89,12 +113,20 @@ internal sealed class ZaWorkflowFileSource
         if (!string.IsNullOrWhiteSpace(project.Paths.BaseRomFsPath))
         {
             var looseBasePath = CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath);
-            if (File.Exists(looseBasePath))
+            if (FileExistsWithContext(
+                looseBasePath,
+                relativePath,
+                ProjectFileLayer.Base,
+                entry?.State))
             {
                 return new ZaWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(looseBasePath),
+                    ReadAllBytesWithContext(
+                        looseBasePath,
+                        relativePath,
+                        ProjectFileLayer.Base,
+                        entry?.State),
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
                     ZaWorkflowFileOrigin.LooseBase);
@@ -111,12 +143,25 @@ internal sealed class ZaWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
                     ZaWorkflowFileOrigin.BaseArchive);
             }
-            catch (FileNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
+            }
+            catch (Exception exception) when (IsContextualFileFailure(exception))
+            {
+                throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Base,
+                    entry?.State,
+                    exception,
+                    ProjectFileOperation.Inspect);
             }
         }
 
-        throw new FileNotFoundException($"Pokemon Legends Z-A file '{relativePath}' could not be resolved.");
+        throw CreateReadFailure(
+            relativePath,
+            layer: null,
+            state: entry?.State,
+            exception: new FileNotFoundException());
     }
 
     public ZaWorkflowFile ReadBase(OpenedProject project, string virtualRomFsPath)
@@ -131,12 +176,20 @@ internal sealed class ZaWorkflowFileSource
         if (!string.IsNullOrWhiteSpace(project.Paths.BaseRomFsPath))
         {
             var looseBasePath = CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath);
-            if (File.Exists(looseBasePath))
+            if (FileExistsWithContext(
+                looseBasePath,
+                relativePath,
+                ProjectFileLayer.Base,
+                entry?.State))
             {
                 return new ZaWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(looseBasePath),
+                    ReadAllBytesWithContext(
+                        looseBasePath,
+                        relativePath,
+                        ProjectFileLayer.Base,
+                        entry?.State),
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
                     ZaWorkflowFileOrigin.LooseBase);
@@ -153,12 +206,25 @@ internal sealed class ZaWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
                     ZaWorkflowFileOrigin.BaseArchive);
             }
-            catch (FileNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
+            }
+            catch (Exception exception) when (IsContextualFileFailure(exception))
+            {
+                throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Base,
+                    entry?.State,
+                    exception,
+                    ProjectFileOperation.Inspect);
             }
         }
 
-        throw new FileNotFoundException($"Pokemon Legends Z-A base file '{relativePath}' could not be resolved.");
+        throw CreateReadFailure(
+            relativePath,
+            layer: null,
+            state: entry?.State,
+            exception: new FileNotFoundException());
     }
 
     public bool Exists(OpenedProject project, string virtualRomFsPath)
@@ -171,12 +237,24 @@ internal sealed class ZaWorkflowFileSource
 
         if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
         {
-            if (File.Exists(CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath))
-                || File.Exists(CombineGraphPath(
+            if (FileExistsWithContext(
+                    CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath),
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    state: null)
+                || FileExistsWithContext(
+                    CombineGraphPath(
                     project.Paths.OutputRootPath,
-                    $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}"))
-                || File.Exists(CombineGraphPath(project.Paths.OutputRootPath, relativePath))
-                || TryOutputArchiveContains(project.Paths, normalizedVirtualPath))
+                    $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}"),
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    state: null)
+                || FileExistsWithContext(
+                    CombineGraphPath(project.Paths.OutputRootPath, relativePath),
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    state: null)
+                || TryOutputArchiveContains(project.Paths, normalizedVirtualPath, relativePath))
             {
                 return true;
             }
@@ -187,7 +265,11 @@ internal sealed class ZaWorkflowFileSource
             return false;
         }
 
-        if (File.Exists(CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath)))
+        if (FileExistsWithContext(
+            CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath),
+            relativePath,
+            ProjectFileLayer.Base,
+            state: null))
         {
             return true;
         }
@@ -196,9 +278,18 @@ internal sealed class ZaWorkflowFileSource
         {
             return cacheManager.ContainsBaseTrinityFile(project.Paths, normalizedVirtualPath);
         }
-        catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return false;
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Base,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
         }
     }
 
@@ -1319,7 +1410,7 @@ internal sealed class ZaWorkflowFileSource
             new LooseOutputCandidate(standalonePath, IsStandalone: true, Priority: 1),
         };
         var selected = candidates
-            .Where(candidate => File.Exists(candidate.Path))
+            .Where(candidate => FileExistsForInspection(candidate.Path))
             .OrderByDescending(candidate => File.GetLastWriteTimeUtc(candidate.Path))
             .ThenByDescending(candidate => candidate.Priority)
             .FirstOrDefault();
@@ -1331,7 +1422,11 @@ internal sealed class ZaWorkflowFileSource
         return (selected.Path, selected.IsStandalone);
     }
 
-    private static bool TryReadOutputArchive(ProjectPaths paths, string virtualPath, out byte[] bytes)
+    private static bool TryReadOutputArchive(
+        ProjectPaths paths,
+        string virtualPath,
+        string relativePath,
+        out byte[] bytes)
     {
         bytes = [];
         try
@@ -1352,14 +1447,24 @@ internal sealed class ZaWorkflowFileSource
                 paths.PokemonLegendsZASupportFolderPath);
             return archive.TryReadFile(virtualPath, out bytes);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsContextualFileFailure(exception))
         {
-            bytes = [];
-            return false;
+            // An existing output archive participates in the game's effective data. Falling back
+            // to base after an inspection failure would hide that source and could stage edits
+            // against bytes the game does not use.
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Layered,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
         }
     }
 
-    private static bool TryOutputArchiveContains(ProjectPaths paths, string virtualPath)
+    private static bool TryOutputArchiveContains(
+        ProjectPaths paths,
+        string virtualPath,
+        string relativePath)
     {
         try
         {
@@ -1374,10 +1479,92 @@ internal sealed class ZaWorkflowFileSource
                 paths.PokemonLegendsZASupportFolderPath);
             return archive.ContainsFile(virtualPath);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            // Treat an unreadable output archive as an unknown candidate, not as an absent file.
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Layered,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
+        }
+    }
+
+    private static byte[] ReadAllBytesWithContext(
+        string path,
+        string relativePath,
+        ProjectFileLayer layer,
+        ProjectFileGraphEntryState? state)
+    {
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(relativePath, layer, state, exception);
+        }
+    }
+
+    private static bool FileExistsWithContext(
+        string path,
+        string relativePath,
+        ProjectFileLayer layer,
+        ProjectFileGraphEntryState? state)
+    {
+        try
+        {
+            return FileExistsForInspection(path);
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                layer,
+                state,
+                exception,
+                ProjectFileOperation.Inspect);
+        }
+    }
+
+    private static bool FileExistsForInspection(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.Directory) == 0;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return false;
         }
+    }
+
+    private static ProjectFileOperationException CreateReadFailure(
+        string relativePath,
+        ProjectFileLayer? layer,
+        ProjectFileGraphEntryState? state,
+        Exception exception,
+        ProjectFileOperation operation = ProjectFileOperation.Read)
+    {
+        return exception as ProjectFileOperationException
+            ?? new ProjectFileOperationException(
+                operation,
+                relativePath,
+                layer,
+                state,
+                exception);
+    }
+
+    private static bool IsContextualFileFailure(Exception exception)
+    {
+        return exception is IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or SecurityException
+            or DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException;
     }
 
     private static bool HasTrinityArchive(string rootPath)
@@ -1388,8 +1575,8 @@ internal sealed class ZaWorkflowFileSource
 
     private static bool HasTrinityArchiveAt(string romFsRoot)
     {
-        return File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfd"))
-            && File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfs"));
+        return FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfd"))
+            && FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfs"));
     }
 
     private sealed record LooseOutputCandidate(

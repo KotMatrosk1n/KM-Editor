@@ -37,4 +37,14 @@ public sealed record ApiError(
     {
         return new ApiError(code, message, Array.Empty<ApiDiagnostic>());
     }
+
+    public static ApiError Create(
+        string code,
+        string message,
+        IReadOnlyList<ApiDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        return new ApiError(code, message, diagnostics);
+    }
 }

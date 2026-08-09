@@ -1415,7 +1415,7 @@ export const scriptedBossActionSchema = z
         'runtime-catalog-unavailable'
       ])
       .nullable(),
-    moveId: z.number().int().nonnegative().nullable(),
+    moveId: z.number().int().min(0).max(999).nullable(),
     name: z.string(),
     runtimeMoveId: z.number().int().nullable(),
     runtimeState: z.enum([
@@ -1431,27 +1431,30 @@ export const scriptedBossActionSchema = z
     selectorActionId: z.number().int().positive().nullable(),
     usesBattleParameters: z.boolean(),
     usesTimingParameters: z.boolean(),
-    vanillaMoveId: z.number().int().nonnegative().nullable()
+    vanillaMoveId: z.number().int().min(0).max(999).nullable(),
+    variant: z.union([z.literal(0), z.literal(1), z.literal(2)]).nullable()
   })
   .superRefine((action, context) => {
     const heatLevels = new Set(
       action.heatAvailability.map((availability) => availability.heatLevel)
     );
-    const expectedAvailabilityCount =
-      action.kind === 'scripted-mechanic' ? 0 : 3;
+    const hasCompletePhaseAvailability =
+      action.heatAvailability.length === 3 && heatLevels.size === 3;
     const contextOnlyCount = action.heatAvailability.filter(
       (availability) => availability.state === 'context-only'
     ).length;
     if (
-      action.heatAvailability.length !== expectedAvailabilityCount ||
-      (expectedAvailabilityCount === 3 && heatLevels.size !== 3)
+      (action.kind === 'scripted-mechanic' && action.heatAvailability.length !== 0) ||
+      (action.kind !== 'scripted-mechanic' &&
+        action.heatAvailability.length !== 0 &&
+        !hasCompletePhaseAvailability)
     ) {
       context.addIssue({
         code: 'custom',
         message:
-          expectedAvailabilityCount === 0
+          action.kind === 'scripted-mechanic'
             ? 'Script-only boss actions cannot declare Heat availability.'
-            : 'Boss action Heat availability must contain each Heat level exactly once.',
+            : 'Boss action Heat availability must be empty or contain each Heat level exactly once.',
         path: ['heatAvailability']
       });
     }
@@ -1490,6 +1493,13 @@ export const scriptedBossActionSchema = z
           path: ['selectorActionId']
         });
       }
+      if (action.variant === null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Editable boss actions require a runtime variant.',
+          path: ['variant']
+        });
+      }
       if (action.lockReason !== null) {
         context.addIssue({
           code: 'custom',
@@ -1507,9 +1517,10 @@ export const scriptedBossActionSchema = z
   });
 
 export const scriptedBossMoveOptionSchema = z.strictObject({
-  moveId: z.number().int().nonnegative(),
+  moveId: z.number().int().min(0).max(999),
   name: z.string(),
-  runtimeMoveId: z.number().int().nonnegative()
+  runtimeMoveId: z.number().int().min(0).max(2999),
+  variant: z.union([z.literal(0), z.literal(1), z.literal(2)])
 });
 
 export const scriptedBossProfileSchema = z.strictObject({
@@ -1518,7 +1529,7 @@ export const scriptedBossProfileSchema = z.strictObject({
   key: z.string(),
   lineageKey: z.string(),
   name: z.string(),
-  scope: z.enum(['base-rogue-mega']),
+  scope: z.enum(['base-rogue-mega', 'verified-scripted-boss']),
   speciesId: z.number().int().nonnegative()
 });
 

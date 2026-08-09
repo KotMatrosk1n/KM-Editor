@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.Diagnostics;
 using KM.Api.AngeFight;
 using KM.Api.BagHook;
 using KM.Api.Behavior;
@@ -279,18 +280,26 @@ public sealed class ProjectBridgeDispatcher
         }
 
         string? requestId = null;
+        string? command = null;
+        ProjectGame? selectedGame = null;
         try
         {
             // Read the minimal envelope first so the payload can be deserialized into the command-specific DTO.
             var envelope = DeserializeEnvelope(requestJson);
             requestId = envelope?.RequestId;
-            var gameScopeFailure = ValidateCommandGameScope(envelope, requestJson);
+            command = envelope?.Command;
+            if (command is not null
+                && TryReadSelectedGame(requestJson, out var selectedGameDto))
+            {
+                selectedGame = ToCore(selectedGameDto);
+            }
+
+            var gameScopeFailure = ValidateCommandGameScope(envelope, selectedGame);
             if (gameScopeFailure is not null)
             {
                 return (gameScopeFailure, RequiresDispatcherReset: false);
             }
 
-            var command = envelope?.Command;
             if (IsWorkflowCacheBoundary(command))
             {
                 // Project and editor snapshots depend on every configured path, but reusable base indexes
@@ -475,23 +484,25 @@ public sealed class ProjectBridgeDispatcher
         catch (BridgeRequestException exception)
         {
             var code = exception.Code ?? BridgeErrorCodes.InvalidJson;
-            var message = exception.Code is null
-                ? $"Bridge request JSON is invalid: {exception.Message}"
-                : exception.Message;
             return (
                 SerializeFailure(
                     code,
-                    message,
+                    exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
         }
         catch (Exception exception) when (!IsFatal(exception))
         {
+            var diagnostic = BridgeUnexpectedFailureClassifier.Classify(
+                exception,
+                command,
+                selectedGame);
             return (
                 SerializeFailure(
                     BridgeErrorCodes.Unexpected,
                     "The project bridge hit an unexpected internal error while processing the request.",
-                    requestId),
+                    requestId,
+                    [diagnostic]),
                 RequiresDispatcherReset: true);
         }
     }
@@ -3970,17 +3981,19 @@ public sealed class ProjectBridgeDispatcher
         return paths.SelectedGame is ProjectGame.ZA;
     }
 
-    private static string? ValidateCommandGameScope(BridgeCommandEnvelope? envelope, string requestJson)
+    private static string? ValidateCommandGameScope(
+        BridgeCommandEnvelope? envelope,
+        ProjectGame? selectedGame)
     {
-        if (envelope?.Command is not { } command || !TryReadSelectedGame(requestJson, out var selectedGame))
+        if (envelope?.Command is not { } command || selectedGame is null)
         {
             return null;
         }
 
         if (IsSwordShieldOnlyCommand(command)
-            && !IsSwordShield(selectedGame)
+            && !IsSwordShield(selectedGame.Value)
             && !(command is KmCommandNames.UpdateStaticEncounterFields
-                && IsPokemonLegendsZA(selectedGame)))
+                && IsPokemonLegendsZA(selectedGame.Value)))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -3989,17 +4002,17 @@ public sealed class ProjectBridgeDispatcher
         }
 
         if (IsScarletVioletOnlyCommand(command)
-            && !IsScarletViolet(selectedGame)
+            && !IsScarletViolet(selectedGame.Value)
             && !((command is KmCommandNames.UpdateItemFields or KmCommandNames.UpdateTrainerFields)
-                && IsPokemonLegendsZA(selectedGame))
+                && IsPokemonLegendsZA(selectedGame.Value))
             && !(command is
                     KmCommandNames.UpdateGiftPokemonFields or
                     KmCommandNames.UpdateTradePokemonFields or
                     KmCommandNames.UpdateEncounterSlotFields
-                && IsPokemonLegendsZA(selectedGame))
+                && IsPokemonLegendsZA(selectedGame.Value))
             && !(command is KmCommandNames.UpdatePlacementObjectFields
-                && IsPokemonLegendsZA(selectedGame))
-            && !(command is KmCommandNames.StageTypeChartUninstall && IsPokemonLegendsZA(selectedGame)))
+                && IsPokemonLegendsZA(selectedGame.Value))
+            && !(command is KmCommandNames.StageTypeChartUninstall && IsPokemonLegendsZA(selectedGame.Value)))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -4007,7 +4020,7 @@ public sealed class ProjectBridgeDispatcher
                 envelope.RequestId);
         }
 
-        if (IsPokemonLegendsZAOnlyCommand(command) && !IsPokemonLegendsZA(selectedGame))
+        if (IsPokemonLegendsZAOnlyCommand(command) && !IsPokemonLegendsZA(selectedGame.Value))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -4015,7 +4028,7 @@ public sealed class ProjectBridgeDispatcher
                 envelope.RequestId);
         }
 
-        if (IsPokemonLegendsZA(selectedGame) && !IsPokemonLegendsZAAllowedCommand(command))
+        if (IsPokemonLegendsZA(selectedGame.Value) && !IsPokemonLegendsZAAllowedCommand(command))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -4048,7 +4061,10 @@ public sealed class ProjectBridgeDispatcher
         }
         catch (JsonException exception)
         {
-            throw new BridgeRequestException(exception.Message, exception);
+            throw new BridgeRequestException(
+                "Bridge request selectedGame is invalid.",
+                exception,
+                BridgeErrorCodes.InvalidJson);
         }
 
         if (parsedGame is null)
@@ -4056,23 +4072,43 @@ public sealed class ProjectBridgeDispatcher
             return false;
         }
 
+        if (!Enum.IsDefined(parsedGame.Value))
+        {
+            throw new BridgeRequestException(
+                "Bridge request selectedGame is invalid.",
+                code: BridgeErrorCodes.InvalidJson);
+        }
+
         selectedGame = parsedGame.Value;
         return true;
     }
 
-    private static bool IsSwordShield(ProjectGameDto game)
+    private static bool IsSwordShield(ProjectGame game)
     {
-        return game is ProjectGameDto.Sword or ProjectGameDto.Shield;
+        return game is ProjectGame.Sword or ProjectGame.Shield;
     }
 
-    private static bool IsScarletViolet(ProjectGameDto game)
+    private static bool IsScarletViolet(ProjectGame game)
     {
-        return game is ProjectGameDto.Scarlet or ProjectGameDto.Violet;
+        return game is ProjectGame.Scarlet or ProjectGame.Violet;
     }
 
-    private static bool IsPokemonLegendsZA(ProjectGameDto game)
+    private static bool IsPokemonLegendsZA(ProjectGame game)
     {
-        return game is ProjectGameDto.ZA;
+        return game is ProjectGame.ZA;
+    }
+
+    private static ProjectGame ToCore(ProjectGameDto game)
+    {
+        return game switch
+        {
+            ProjectGameDto.Sword => ProjectGame.Sword,
+            ProjectGameDto.Shield => ProjectGame.Shield,
+            ProjectGameDto.Scarlet => ProjectGame.Scarlet,
+            ProjectGameDto.Violet => ProjectGame.Violet,
+            ProjectGameDto.ZA => ProjectGame.ZA,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
     }
 
     private void ClearWorkflowMemoryCaches(bool clearReusableDataCaches = true)
@@ -4510,7 +4546,10 @@ public sealed class ProjectBridgeDispatcher
         }
         catch (JsonException exception)
         {
-            throw new BridgeRequestException(exception.Message, exception);
+            throw new BridgeRequestException(
+                "Bridge request JSON could not be parsed.",
+                exception,
+                BridgeErrorCodes.InvalidJson);
         }
 
         if (request is null)
@@ -4536,7 +4575,10 @@ public sealed class ProjectBridgeDispatcher
         }
         catch (JsonException exception)
         {
-            throw new BridgeRequestException(exception.Message, exception);
+            throw new BridgeRequestException(
+                "Bridge request JSON could not be parsed.",
+                exception,
+                BridgeErrorCodes.InvalidJson);
         }
     }
 
@@ -4566,9 +4608,19 @@ public sealed class ProjectBridgeDispatcher
         return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
     }
 
-    private static string SerializeFailure(string code, string message, string? requestId)
+    private static string SerializeFailure(
+        string code,
+        string message,
+        string? requestId,
+        IReadOnlyList<ApiDiagnostic>? diagnostics = null)
     {
-        var response = BridgeResponse<object>.Failure(ApiError.Create(code, message), requestId);
+        var safeMessage = BridgeDiagnosticSanitizer.Sanitize(message);
+        var safeDiagnostics = diagnostics is null
+            ? Array.Empty<ApiDiagnostic>()
+            : diagnostics.Select(BridgeDiagnosticSanitizer.Sanitize).ToArray();
+        var response = BridgeResponse<object>.Failure(
+            ApiError.Create(code, safeMessage, safeDiagnostics),
+            requestId);
 
         return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
     }

@@ -10,4 +10,11 @@ public static class BridgeErrorCodes
     public const string InvalidJson = "KM-BRIDGE-INVALID-JSON";
     public const string GameMismatch = "KM-BRIDGE-GAME-MISMATCH";
     public const string Unexpected = "KM-BRIDGE-UNEXPECTED";
+    public const string AccessDenied = "KM-BRIDGE-ACCESS-DENIED";
+    public const string ResourceMissing = "KM-BRIDGE-RESOURCE-MISSING";
+    public const string DataInvalid = "KM-BRIDGE-DATA-INVALID";
+    public const string DataLayoutInvalid = "KM-BRIDGE-DATA-LAYOUT-INVALID";
+    public const string DataSupportUnavailable = "KM-BRIDGE-SUPPORT-RUNTIME-UNAVAILABLE";
+    public const string IoFailed = "KM-BRIDGE-IO-FAILED";
+    public const string InternalFailure = "KM-BRIDGE-INTERNAL-FAILURE";
 }

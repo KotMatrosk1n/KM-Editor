@@ -43,11 +43,15 @@ export function findScriptedBossProfile(
 
 export function getScriptedBossOwners(
   profiles: ScriptedBossProfile[],
-  moveId: number
+  moveId: number,
+  variant?: number
 ) {
   return profiles.flatMap((profile) =>
     profile.actions
-      .filter((action) => action.moveId === moveId)
+      .filter(
+        (action) =>
+          action.moveId === moveId && (variant === undefined || action.variant === variant)
+      )
       .map((action) => ({ action, profile }))
   );
 }
@@ -111,6 +115,8 @@ export function ScriptedBossEncounterActions({
   const lockedCount = (profile?.actions.length ?? 0) - editableCount;
   const hasBrokenAction = profile?.actions.some(isBrokenScriptedBossAction) ?? false;
   const hasUnavailableAction = profile?.actions.some(isUnavailableScriptedBossAction) ?? false;
+  const hasPhaseAvailability =
+    profile?.actions.some((action) => action.heatAvailability.length > 0) ?? false;
 
   return (
     <section
@@ -158,7 +164,13 @@ export function ScriptedBossEncounterActions({
           <div className="za-scripted-boss-profile-summary">
             <div>
               <strong>{profile.name}</strong>
-              <span>{t('za.encounters.bossActions.scope.base')}</span>
+              <span>
+                {t(
+                  profile.scope === 'base-rogue-mega'
+                    ? 'za.encounters.bossActions.scope.base'
+                    : 'za.encounters.bossActions.scope.verified'
+                )}
+              </span>
             </div>
             <div className="za-scripted-boss-profile-statuses">
               <span
@@ -215,40 +227,46 @@ export function ScriptedBossEncounterActions({
           <p className="za-scripted-boss-pool-help">
             {t('za.encounters.bossActions.scopeHelp')}
           </p>
-          <div className="za-scripted-boss-heat-guide" role="note">
-            <div className="za-scripted-boss-heat-guide-heading">
-              <strong>{t('za.encounters.bossActions.heat.heading')}</strong>
-              <span>{t('za.encounters.bossActions.heat.help')}</span>
+          {hasPhaseAvailability ? (
+            <div className="za-scripted-boss-heat-guide" role="note">
+              <div className="za-scripted-boss-heat-guide-heading">
+                <strong>{t('za.encounters.bossActions.heat.heading')}</strong>
+                <span>{t('za.encounters.bossActions.heat.help')}</span>
+              </div>
+              <div className="za-scripted-boss-heat-legend" role="list">
+                {heatAvailabilityStates.map((state) => (
+                  <span className={`is-${state}`} key={state} role="listitem">
+                    {state === 'available' ? (
+                      <CheckCircle aria-hidden="true" size={12} />
+                    ) : state === 'unavailable' ? (
+                      <Lock aria-hidden="true" size={12} />
+                    ) : state === 'context-only' ? (
+                      <Binary aria-hidden="true" size={12} />
+                    ) : (
+                      <AlertTriangle aria-hidden="true" size={12} />
+                    )}
+                    {t(`za.encounters.bossActions.heat.state.${state}`)}
+                  </span>
+                ))}
+              </div>
+              <div
+                aria-label={t('za.encounters.bossActions.heat.rangesLabel')}
+                className="za-scripted-boss-heat-ranges"
+                role="list"
+              >
+                {[1, 2, 3].map((heatLevel) => (
+                  <span key={heatLevel} role="listitem">
+                    {t(`za.encounters.bossActions.heat.range.${heatLevel}`)}
+                  </span>
+                ))}
+              </div>
+              <small>{t('za.encounters.bossActions.heat.baseGameHelp')}</small>
             </div>
-            <div className="za-scripted-boss-heat-legend" role="list">
-              {heatAvailabilityStates.map((state) => (
-                <span className={`is-${state}`} key={state} role="listitem">
-                  {state === 'available' ? (
-                    <CheckCircle aria-hidden="true" size={12} />
-                  ) : state === 'unavailable' ? (
-                    <Lock aria-hidden="true" size={12} />
-                  ) : state === 'context-only' ? (
-                    <Binary aria-hidden="true" size={12} />
-                  ) : (
-                    <AlertTriangle aria-hidden="true" size={12} />
-                  )}
-                  {t(`za.encounters.bossActions.heat.state.${state}`)}
-                </span>
-              ))}
-            </div>
-            <div
-              aria-label={t('za.encounters.bossActions.heat.rangesLabel')}
-              className="za-scripted-boss-heat-ranges"
-              role="list"
-            >
-              {[1, 2, 3].map((heatLevel) => (
-                <span key={heatLevel} role="listitem">
-                  {t(`za.encounters.bossActions.heat.range.${heatLevel}`)}
-                </span>
-              ))}
-            </div>
-            <small>{t('za.encounters.bossActions.heat.baseGameHelp')}</small>
-          </div>
+          ) : (
+            <p className="za-scripted-boss-pool-help" role="note">
+              {t('za.encounters.bossActions.scheduleUnmapped')}
+            </p>
+          )}
           {editableCount > 0 ? (
             <p className="za-scripted-boss-replacement-caveat">
               {t('za.encounters.bossActions.replacementCaveat')}
@@ -457,7 +475,7 @@ export function ScriptedBossMoveOwnership({
   profiles: ScriptedBossProfile[];
 }) {
   const { t } = useLocalization();
-  const owners = getScriptedBossOwners(profiles, move.moveId);
+  const owners = getScriptedBossOwners(profiles, move.moveId, 2);
   const battleVariantPresent = move.runtimeVariants.some(
     (variant) => variant.variant === 2
   );
@@ -549,6 +567,8 @@ function formatScriptedBossActionName(
       return t('za.encounters.bossActions.mechanic.volcanicEruption');
     case 'scripted-mechanic:clone-sequence':
       return t('za.encounters.bossActions.mechanic.cloneSequence');
+    case 'scripted-mechanic:clone-nightmare-sequence':
+      return t('za.encounters.bossActions.mechanic.cloneNightmareSequence');
     default:
       return action.name;
   }
@@ -560,7 +580,16 @@ function formatScriptedBossActionKind(
 ) {
   switch (action.kind) {
     case 'battle-move':
-      return t('za.encounters.bossActions.kind.battleMove');
+      switch (action.variant) {
+        case 0:
+          return t('za.encounters.bossActions.kind.normalMove');
+        case 1:
+          return t('za.encounters.bossActions.kind.plusMove');
+        case 2:
+          return t('za.encounters.bossActions.kind.bossMove');
+        default:
+          return t('za.encounters.bossActions.kind.battleMove');
+      }
     case 'movement-helper':
       return t('za.encounters.bossActions.kind.movementHelper');
     case 'scripted-mechanic':

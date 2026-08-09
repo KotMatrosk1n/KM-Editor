@@ -13,15 +13,22 @@ export const kmErrorCodeSchema = z
   .regex(kmErrorCodePattern, 'Error codes must use the uppercase KM-prefixed format.');
 
 export const projectBridgeErrorCodes = {
+  accessDenied: 'KM-BRIDGE-ACCESS-DENIED',
+  dataInvalid: 'KM-BRIDGE-DATA-INVALID',
+  dataLayoutInvalid: 'KM-BRIDGE-DATA-LAYOUT-INVALID',
+  dataSupportUnavailable: 'KM-BRIDGE-SUPPORT-RUNTIME-UNAVAILABLE',
   emptyRequest: 'KM-BRIDGE-EMPTY-REQUEST',
   gameMismatch: 'KM-BRIDGE-GAME-MISMATCH',
+  internalFailure: 'KM-BRIDGE-INTERNAL-FAILURE',
   invalidJson: 'KM-BRIDGE-INVALID-JSON',
   invalidResponseContract: 'KM-BRIDGE-RESPONSE-CONTRACT-INVALID',
   invalidResponseJson: 'KM-BRIDGE-RESPONSE-JSON-INVALID',
+  ioFailed: 'KM-BRIDGE-IO-FAILED',
   missingCommand: 'KM-BRIDGE-MISSING-COMMAND',
   missingPayload: 'KM-BRIDGE-RESPONSE-PAYLOAD-MISSING',
   missingRequestId: 'KM-BRIDGE-RESPONSE-REQUEST-ID-MISSING',
   requestIdMismatch: 'KM-BRIDGE-RESPONSE-REQUEST-ID-MISMATCH',
+  resourceMissing: 'KM-BRIDGE-RESOURCE-MISSING',
   transportFailed: 'KM-BRIDGE-TRANSPORT-FAILED',
   unsupportedCommand: 'KM-BRIDGE-UNSUPPORTED-COMMAND',
   unexpected: 'KM-BRIDGE-UNEXPECTED'

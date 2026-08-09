@@ -9,6 +9,7 @@ using KM.SwSh.Items;
 using KM.SwSh.Moves;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security;
 
 namespace KM.SwSh.Pokemon;
 
@@ -472,22 +473,24 @@ public sealed class SwShPokemonWorkflowService
                 CreateEditableFields(itemDisplayNames, abilityNames, displaySpeciesNames, presentSpeciesIds),
                 diagnostics);
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (IsDecodeFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Pokemon personal data source is not supported: {exception.Message}",
-                file: personalSource.GraphEntry.RelativePath,
-                expected: "Sword/Shield personal_total.bin"));
+                project,
+                personalSource.GraphEntry,
+                ProjectFileOperation.Decode,
+                exception));
             return CreateWorkflow(summary, [], sourceFileCount: 1, diagnostics);
         }
-        catch (IOException exception)
+        catch (Exception exception) when (IsReadFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Pokemon personal data source could not be read: {exception.Message}",
-                file: personalSource.GraphEntry.RelativePath,
-                expected: "Readable Sword/Shield personal_total.bin"));
+                project,
+                personalSource.GraphEntry,
+                ProjectFileOperation.Read,
+                exception));
             return CreateWorkflow(summary, [], sourceFileCount: 1, diagnostics);
         }
     }
@@ -512,21 +515,23 @@ public sealed class SwShPokemonWorkflowService
                 .Records
                 .ToDictionary(record => record.PersonalId);
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (IsDecodeFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"Pokemon learnset data source is not supported: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Sword/Shield wazaoboe_total.bin"));
+                project,
+                source.GraphEntry,
+                ProjectFileOperation.Decode,
+                exception));
         }
-        catch (IOException exception)
+        catch (Exception exception) when (IsReadFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"Pokemon learnset data source could not be read: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Readable Sword/Shield wazaoboe_total.bin"));
+                project,
+                source.GraphEntry,
+                ProjectFileOperation.Read,
+                exception));
         }
 
         return new Dictionary<int, SwShPokemonLearnsetRecord>();
@@ -549,21 +554,23 @@ public sealed class SwShPokemonWorkflowService
                 .OrderBy(item => item.ItemId)
                 .ToArray();
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (IsDecodeFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"Item metadata could not be decoded; evolution item selectors will be limited: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Sword/Shield item.dat"));
+                project,
+                source.GraphEntry,
+                ProjectFileOperation.Decode,
+                exception));
         }
-        catch (IOException exception)
+        catch (Exception exception) when (IsReadFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"Item metadata could not be read; evolution item selectors will be limited: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Readable Sword/Shield item.dat"));
+                project,
+                source.GraphEntry,
+                ProjectFileOperation.Read,
+                exception));
         }
 
         return [];
@@ -599,21 +606,23 @@ public sealed class SwShPokemonWorkflowService
             {
                 evolutions[speciesId.Value] = SwShEvolutionSet.Parse(File.ReadAllBytes(source.AbsolutePath)).Evolutions;
             }
-            catch (InvalidDataException exception)
+            catch (Exception exception) when (IsDecodeFailure(exception))
             {
-                diagnostics.Add(CreateDiagnostic(
+                diagnostics.Add(CreateSourceFailureDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"Pokemon evolution data source is not supported: {exception.Message}",
-                    file: source.GraphEntry.RelativePath,
-                    expected: "Sword/Shield evo_###.bin"));
+                    project,
+                    source.GraphEntry,
+                    ProjectFileOperation.Decode,
+                    exception));
             }
-            catch (IOException exception)
+            catch (Exception exception) when (IsReadFailure(exception))
             {
-                diagnostics.Add(CreateDiagnostic(
+                diagnostics.Add(CreateSourceFailureDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"Pokemon evolution data source could not be read: {exception.Message}",
-                    file: source.GraphEntry.RelativePath,
-                    expected: "Readable Sword/Shield evo_###.bin"));
+                    project,
+                    source.GraphEntry,
+                    ProjectFileOperation.Read,
+                    exception));
             }
         }
 
@@ -653,21 +662,23 @@ public sealed class SwShPokemonWorkflowService
                 .Select(line => line.Text)
                 .ToArray();
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (IsDecodeFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"{label} table could not be decoded: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Sword/Shield message .dat"));
+                project,
+                source.GraphEntry,
+                ProjectFileOperation.Decode,
+                exception));
         }
-        catch (IOException exception)
+        catch (Exception exception) when (IsReadFailure(exception))
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateSourceFailureDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"{label} table could not be read: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Readable Sword/Shield message .dat"));
+                project,
+                source.GraphEntry,
+                ProjectFileOperation.Read,
+                exception));
         }
 
         return [];
@@ -1660,9 +1671,16 @@ public sealed class SwShPokemonWorkflowService
             ? CombineGraphPath(project.Paths.BaseRomFsPath, PersonalDataPath["romfs/".Length..])
             : null;
 
-        return sourcePath is not null && File.Exists(sourcePath)
-            ? new WorkflowFileSource(graphEntry, sourcePath)
-            : null;
+        if (sourcePath is null)
+        {
+            return null;
+        }
+
+        EnsureWorkflowFileExists(
+            sourcePath,
+            graphEntry,
+            ProjectFileLayer.Base);
+        return new WorkflowFileSource(graphEntry, sourcePath);
     }
 
     internal static WorkflowFileSource? ResolveLearnsetDataSource(OpenedProject project)
@@ -1712,9 +1730,16 @@ public sealed class SwShPokemonWorkflowService
 
         var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
 
-        return sourcePath is not null && File.Exists(sourcePath)
-            ? new WorkflowFileSource(graphEntry, sourcePath)
-            : null;
+        if (sourcePath is null)
+        {
+            return null;
+        }
+
+        EnsureWorkflowFileExists(
+            sourcePath,
+            graphEntry,
+            ResolveSourceLayer(project.Paths, graphEntry));
+        return new WorkflowFileSource(graphEntry, sourcePath);
     }
 
     private static IEnumerable<WorkflowFileSource> ResolveWorkflowFiles(
@@ -1723,15 +1748,21 @@ public sealed class SwShPokemonWorkflowService
     {
         var prefix = relativeDirectory.TrimEnd('/') + "/";
 
-        return project.FileGraph.Entries
-            .Where(entry => entry.RelativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            .Select(entry => new
+        foreach (var entry in project.FileGraph.Entries.Where(entry =>
+                     entry.RelativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            var sourcePath = ResolveSourcePath(project.Paths, entry);
+            if (sourcePath is null)
             {
-                Entry = entry,
-                SourcePath = ResolveSourcePath(project.Paths, entry),
-            })
-            .Where(source => source.SourcePath is not null && File.Exists(source.SourcePath))
-            .Select(source => new WorkflowFileSource(source.Entry, source.SourcePath!));
+                continue;
+            }
+
+            EnsureWorkflowFileExists(
+                sourcePath,
+                entry,
+                ResolveSourceLayer(project.Paths, entry));
+            yield return new WorkflowFileSource(entry, sourcePath);
+        }
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -1747,6 +1778,40 @@ public sealed class SwShPokemonWorkflowService
         }
 
         return null;
+    }
+
+    private static ProjectFileLayer ResolveSourceLayer(
+        ProjectPaths paths,
+        ProjectFileGraphEntry entry)
+    {
+        return entry.LayeredFile is not null && !string.IsNullOrWhiteSpace(paths.OutputRootPath)
+            ? ProjectFileLayer.Layered
+            : ProjectFileLayer.Base;
+    }
+
+    private static void EnsureWorkflowFileExists(
+        string absolutePath,
+        ProjectFileGraphEntry entry,
+        ProjectFileLayer layer)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(absolutePath);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                throw new InvalidDataException("The selected project resource is a directory.");
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            throw new ProjectFileOperationException(
+                ProjectFileOperation.Inspect,
+                entry.RelativePath,
+                layer,
+                entry.State,
+                exception);
+        }
     }
 
     private static string? CombineGraphPath(string? rootPath, string relativePath)
@@ -1768,6 +1833,48 @@ public sealed class SwShPokemonWorkflowService
             : ProjectFileLayer.Base;
 
         return new SwShPokemonProvenance(entry.RelativePath, sourceLayer, entry.State);
+    }
+
+    private static ValidationDiagnostic CreateSourceFailureDiagnostic(
+        DiagnosticSeverity severity,
+        OpenedProject project,
+        ProjectFileGraphEntry entry,
+        ProjectFileOperation operation,
+        Exception exception)
+    {
+        var contextualFailure = new ProjectFileOperationException(
+            operation,
+            entry.RelativePath,
+            ResolveSourceLayer(project.Paths, entry),
+            entry.State,
+            exception);
+        var failure = ProjectFileFailureClassifier.Classify(contextualFailure);
+
+        return new ValidationDiagnostic(
+            severity,
+            failure.Message,
+            File: failure.FileContext?.VirtualPath,
+            Domain: "workflow.pokemon",
+            Expected: failure.Expected)
+        {
+            Code = failure.Code,
+        };
+    }
+
+    private static bool IsDecodeFailure(Exception exception)
+    {
+        return exception is InvalidDataException
+            or FormatException
+            or IndexOutOfRangeException
+            or ArgumentOutOfRangeException
+            or OverflowException
+            or InvalidOperationException
+            or NullReferenceException;
+    }
+
+    private static bool IsReadFailure(Exception exception)
+    {
+        return exception is IOException or UnauthorizedAccessException or SecurityException;
     }
 
     private static SwShWorkflowSummary CreateSummary(

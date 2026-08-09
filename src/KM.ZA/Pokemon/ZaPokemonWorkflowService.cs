@@ -401,14 +401,33 @@ internal sealed class ZaPokemonWorkflowService
                     $"romfs/{ZaDataPaths.PersonalArray}"));
             }
 
-            pokemon = LoadRecords(
-                source,
-                baseSource,
-                conversionState,
-                labels,
-                spriteLabels,
-                tmCatalog,
-                evolutionItemArgumentLabels).ToArray();
+            try
+            {
+                pokemon = LoadRecords(
+                    source,
+                    baseSource,
+                    conversionState,
+                    labels,
+                    spriteLabels,
+                    tmCatalog,
+                    evolutionItemArgumentLabels).ToArray();
+            }
+            catch (Exception exception) when (
+                exception is IndexOutOfRangeException
+                    or ArgumentOutOfRangeException
+                    or OverflowException
+                    or InvalidDataException
+                    or FormatException
+                    or InvalidOperationException
+                    or NullReferenceException)
+            {
+                throw new ProjectFileOperationException(
+                    ProjectFileOperation.Decode,
+                    source.RelativePath,
+                    source.SourceLayer,
+                    state: null,
+                    innerException: exception);
+            }
             pokemon = AttachVanillaYieldDefaults(project, pokemon);
 
             try
@@ -472,6 +491,10 @@ internal sealed class ZaPokemonWorkflowService
                     blockedReason,
                     $"romfs/{ZaDataPaths.PokedexContentsData}"));
             }
+        }
+        catch (ProjectFileOperationException)
+        {
+            throw;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {

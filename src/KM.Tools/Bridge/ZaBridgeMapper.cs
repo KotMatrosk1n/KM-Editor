@@ -670,6 +670,7 @@ public static class ZaBridgeMapper
             action.MoveId,
             action.VanillaMoveId,
             action.RuntimeMoveId,
+            action.Variant,
             action.Name,
             action.UsesBattleParameters,
             action.UsesTimingParameters,
@@ -689,6 +690,7 @@ public static class ZaBridgeMapper
         return new ScriptedBossMoveOptionDto(
             option.MoveId,
             option.RuntimeMoveId,
+            option.Variant,
             option.Name);
     }
 
