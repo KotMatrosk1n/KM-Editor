@@ -19,6 +19,9 @@ internal static class ZaSpecialSpawnNormalizer
     private const string ImmobileTag = "野生ポケ_温厚６_不動";
     private const string ObjectBoundTag = "野生ポケ_オブジェクト";
 
+    // Compatibility filtering is intentionally limited to geometry-bound attachments.
+    // Floating offsets, berry eating, rest, sleep, and object-bound poses work across
+    // replacements and are always restored to their verified base actions and tags.
     private static readonly SpecialSpawnDefinition[] Definitions =
     [
         new(
@@ -26,6 +29,7 @@ internal static class ZaSpecialSpawnNormalizer
             "tree branch",
             [11552],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [TreeBranchTag]),
         new(
@@ -33,6 +37,7 @@ internal static class ZaSpecialSpawnNormalizer
             "tree trunk",
             [11558],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [TreeTrunkTag]),
         new(
@@ -40,6 +45,7 @@ internal static class ZaSpecialSpawnNormalizer
             "spider web",
             [11563],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [TreeBranchTag]),
         new(
@@ -47,6 +53,7 @@ internal static class ZaSpecialSpawnNormalizer
             "lamppost or fixed perch",
             [11567],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [LampTag, TemperamentChangeTag, ImmobileTag]),
         new(
@@ -54,6 +61,7 @@ internal static class ZaSpecialSpawnNormalizer
             "wall",
             [11573],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [WallTag]),
         new(
@@ -61,13 +69,23 @@ internal static class ZaSpecialSpawnNormalizer
             "ceiling",
             [11577],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [CeilingTag]),
         new(
             "dirt-mound",
             "burrow or dirt mound",
-            [11594, 11595],
+            [11594],
             null,
+            SpecialSpawnPolicy.FilterByNativePair,
+            TagNormalizationMode.TruncateFromFirstMarker,
+            [DirtMoundTag]),
+        new(
+            "dirt-mound-11595",
+            "burrow or dirt mound",
+            [11595],
+            null,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [DirtMoundTag]),
         new(
@@ -75,6 +93,7 @@ internal static class ZaSpecialSpawnNormalizer
             "floating offset",
             [11606],
             null,
+            SpecialSpawnPolicy.AlwaysPreserve,
             TagNormalizationMode.KeepAll,
             []),
         new(
@@ -82,6 +101,7 @@ internal static class ZaSpecialSpawnNormalizer
             "berry-eating pose",
             [11618],
             null,
+            SpecialSpawnPolicy.AlwaysPreserve,
             TagNormalizationMode.RemoveTrailingMarkers,
             [BerryTag]),
         new(
@@ -89,6 +109,7 @@ internal static class ZaSpecialSpawnNormalizer
             "resting pose",
             [11619],
             null,
+            SpecialSpawnPolicy.AlwaysPreserve,
             TagNormalizationMode.RemoveTrailingMarkers,
             [RestTag]),
         new(
@@ -96,6 +117,7 @@ internal static class ZaSpecialSpawnNormalizer
             "sleeping pose",
             [11620],
             null,
+            SpecialSpawnPolicy.AlwaysPreserve,
             TagNormalizationMode.RemoveTrailingMarkers,
             [SleepTag]),
         new(
@@ -103,6 +125,7 @@ internal static class ZaSpecialSpawnNormalizer
             "fixed perch",
             [],
             ImmobileTag,
+            SpecialSpawnPolicy.FilterByNativePair,
             TagNormalizationMode.TruncateFromFirstMarker,
             [TemperamentChangeTag, ImmobileTag]),
         new(
@@ -110,6 +133,7 @@ internal static class ZaSpecialSpawnNormalizer
             "object-bound placement",
             [],
             ObjectBoundTag,
+            SpecialSpawnPolicy.AlwaysPreserve,
             TagNormalizationMode.TruncateFromFirstMarker,
             [ObjectBoundTag]),
         new(
@@ -117,6 +141,7 @@ internal static class ZaSpecialSpawnNormalizer
             "resting pose",
             [],
             RestTag,
+            SpecialSpawnPolicy.AlwaysPreserve,
             TagNormalizationMode.RemoveTrailingMarkers,
             [RestTag]),
     ];
@@ -139,6 +164,8 @@ internal static class ZaSpecialSpawnNormalizer
         var baseEncounterRows = CreateEncounterRowMap(baseEncounterDocument);
         var baseSpecialSlots = FindBaseSpecialSlots(baseSpawnerDocument, baseEncounterRows);
         var compatiblePairs = baseSpecialSlots
+            .Where(candidate =>
+                candidate.Definition.Policy == SpecialSpawnPolicy.FilterByNativePair)
             .GroupBy(candidate => candidate.Definition.CompatibilityGroup, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
@@ -165,19 +192,28 @@ internal static class ZaSpecialSpawnNormalizer
                 || !string.Equals(
                     currentSlot.EncountDataId,
                     candidate.Slot.EncountDataId,
-                    StringComparison.Ordinal)
-                || !currentPairs.TryGetValue(key, out var currentPair)
-                || !effectivePairs.TryGetValue(key, out var effectivePair))
+                    StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var profilePairs = compatiblePairs[candidate.Definition.CompatibilityGroup];
-            var finalUsesSpecialBehavior = profilePairs.Contains(effectivePair);
-            var currentUsesSpecialBehavior = profilePairs.Contains(currentPair);
-            if (finalUsesSpecialBehavior && currentUsesSpecialBehavior)
+            var alwaysPreserve =
+                candidate.Definition.Policy == SpecialSpawnPolicy.AlwaysPreserve;
+            var finalUsesSpecialBehavior = true;
+            if (!alwaysPreserve)
             {
-                continue;
+                if (!currentPairs.TryGetValue(key, out var currentPair)
+                    || !effectivePairs.TryGetValue(key, out var effectivePair))
+                {
+                    continue;
+                }
+
+                var profilePairs = compatiblePairs[candidate.Definition.CompatibilityGroup];
+                finalUsesSpecialBehavior = profilePairs.Contains(effectivePair);
+                if (finalUsesSpecialBehavior && profilePairs.Contains(currentPair))
+                {
+                    continue;
+                }
             }
 
             if (!spawnerDocument.TrySetSlotSpecialSpawnEnabled(
@@ -321,6 +357,7 @@ internal static class ZaSpecialSpawnNormalizer
         string DisplayName,
         IReadOnlyList<int> PopActionIds,
         string? TagOnlyMarker,
+        SpecialSpawnPolicy Policy,
         TagNormalizationMode TagMode,
         IReadOnlyList<string> BehaviorTags)
     {
@@ -371,6 +408,12 @@ internal static class ZaSpecialSpawnNormalizer
                         $"Unsupported special-spawn tag mode {TagMode}.");
             }
         }
+    }
+
+    private enum SpecialSpawnPolicy
+    {
+        FilterByNativePair,
+        AlwaysPreserve,
     }
 
     private enum TagNormalizationMode
