@@ -12859,7 +12859,11 @@ export function App({
       {isSvCacheClearConfirmOpen ? (
         <SvCacheClearConfirmationModal
           cacheSizeLabel={
-            svCacheStatus ? formatByteSize(svCacheStatus.cacheSizeBytes) : t('Unavailable')
+            formatCacheSizeLabel(
+              svCacheStatus?.cacheSizeBytes,
+              t('settings.cache.size.none'),
+              translateLiteral('Unavailable')
+            )
           }
           cacheTitle={
             isSwordShieldGame(selectedGame)
@@ -13449,10 +13453,12 @@ function SvCacheProgressPanel({
   selectedGame: ProjectGame;
   status: TrinityCacheStatus;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const isMinimal = status.settings.mode === 'minimal';
   const isSwordShieldCache = isSwordShieldGame(selectedGame);
   const percent = Math.max(0, Math.min(100, status.progressPercent));
+  const isSessionOnlyReady =
+    isSwordShieldCache && !isMinimal && percent >= 100 && status.cacheSizeBytes === 0;
   const phaseLabel = isMinimal
     ? 'Off'
     : isWarming
@@ -13467,9 +13473,11 @@ function SvCacheProgressPanel({
       ? t('settings.cache.swsh.status.off')
       : isWarming
         ? t('settings.cache.swsh.status.building')
-        : percent >= 100
-          ? t('settings.cache.swsh.status.ready')
-          : t('settings.cache.swsh.status.readyToBuild')
+        : isSessionOnlyReady
+          ? t('settings.cache.swsh.status.readySessionOnly')
+          : percent >= 100
+            ? t('settings.cache.swsh.status.ready')
+            : t('settings.cache.swsh.status.readyToBuild')
     : isMinimal
       ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
       : status.message;
@@ -13509,8 +13517,14 @@ function SvCacheProgressPanel({
           </div>
         ) : null}
         <div>
-          <dt>Cache size</dt>
-          <dd>{formatByteSize(status.cacheSizeBytes)}</dd>
+          <dt>{t('settings.cache.size.label')}</dt>
+          <dd>
+            {formatCacheSizeLabel(
+              status.cacheSizeBytes,
+              t('settings.cache.size.none'),
+              translateLiteral('Unavailable')
+            )}
+          </dd>
         </div>
       </dl>
       <p className="sv-cache-progress-message">{message}</p>
@@ -41501,9 +41515,11 @@ function SettingsSection({
     status.kind === 'restarting';
   const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
-  const cacheSizeLabel = svCacheStatus
-    ? formatByteSize(svCacheStatus.cacheSizeBytes)
-    : t('Unavailable');
+  const cacheSizeLabel = formatCacheSizeLabel(
+    svCacheStatus?.cacheSizeBytes,
+    t('settings.cache.size.none'),
+    translateLiteral('Unavailable')
+  );
   const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
   const canShowSvCacheSettings = isProjectCacheGame(selectedGame);
   const cacheTitle = isSwordShieldGame(selectedGame)
@@ -41722,7 +41738,7 @@ function SettingsSection({
             </label>
 
             <div aria-live="polite" className="metric sv-cache-size-metric">
-              <span className="metric-label">Current cache size</span>
+              <span className="metric-label">{t('settings.cache.size.currentLabel')}</span>
               <span
                 className={`metric-value metric-value-small sv-cache-size-value${
                   svCacheRefreshTick > 0 ? ' sv-cache-size-value-refreshed' : ''
@@ -42371,6 +42387,7 @@ function SvCacheClearConfirmationModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useLocalization();
   const dialogRef = useModalDialog({
     canClose: !isClearing,
     onClose: onCancel
@@ -42391,7 +42408,9 @@ function SvCacheClearConfirmationModal({
           <h2 id="sv-cache-clear-confirmation-heading">Clear {cacheTitle}?</h2>
         </div>
         <p className="modal-copy">{description}</p>
-        <p className="modal-copy modal-copy-muted">Current cache size: {cacheSizeLabel}</p>
+        <p className="modal-copy modal-copy-muted">
+          {t('settings.cache.size.current', { size: cacheSizeLabel })}
+        </p>
         <div className="modal-actions">
           <button
             aria-busy={isClearing || undefined}
@@ -52023,6 +52042,18 @@ function formatByteSize(value: number) {
 
   const maximumFractionDigits = size >= 10 || unitIndex === 0 ? 0 : 1;
   return `${size.toLocaleString(undefined, { maximumFractionDigits })} ${units[unitIndex]}`;
+}
+
+function formatCacheSizeLabel(
+  value: number | null | undefined,
+  emptyLabel: string,
+  unavailableLabel: string
+) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return unavailableLabel;
+  }
+
+  return value === 0 ? emptyLabel : formatByteSize(value);
 }
 
 function formatSvCacheModeLabel(mode: TrinityCacheMode) {
