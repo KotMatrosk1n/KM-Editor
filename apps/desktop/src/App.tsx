@@ -8429,6 +8429,55 @@ export function App({
     }
   };
 
+  const handleStagePokemonDexMegaSync = async () => {
+    setIsPokemonUpdating(true);
+    prepareDexLayoutStagingAction();
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.stagePokemonDexMegaSync({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session:
+              didSucceed && updateResponse.session.pendingEdits.length > 0
+                ? updateResponse.session
+                : didSucceed
+                  ? null
+                  : session,
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (
+            updateResponse.didSucceed &&
+            updateResponse.workflow
+          ) {
+            setPokemonWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.session ? 'dexLayout' : null);
+            registerEditorDraftDirty('dexLayout', false);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        },
+        getEditSessionForSection('dexLayout')
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
   const handleUpdatePokemonLearnset = async (
     personalId: number,
     action: string,
@@ -11834,6 +11883,9 @@ export function App({
                 onMovePlacement={handleMovePokemonDexPlacement}
                 onOpenChanges={() => handleNavigateSection('changes')}
                 onResizeDex={handleResizePokemonDex}
+                onStageMegaSync={() =>
+                  void handleStagePokemonDexMegaSync()
+                }
                 onStageReturnToVanilla={() =>
                   void handleStagePokemonDexVanilla()
                 }

@@ -16,6 +16,7 @@ export const kmCommandNameValues = [
   'pokemon.dex.move',
   'pokemon.dex.resize',
   'pokemon.dex.vanilla.stage',
+  'pokemon.dex.megas.sync.stage',
   'moves.load',
   'moves.field.update', 'moves.fields.update', 'moves.move.vanilla.stage',
   'text.load',
@@ -142,6 +143,7 @@ export const kmCommandNames = {
   movePokemonDexPlacement: 'pokemon.dex.move',
   resizePokemonDex: 'pokemon.dex.resize',
   stagePokemonDexVanilla: 'pokemon.dex.vanilla.stage',
+  stagePokemonDexMegaSync: 'pokemon.dex.megas.sync.stage',
   loadMovesWorkflow: 'moves.load',
   stageMoveVanilla: 'moves.move.vanilla.stage',
   updateMoveField: 'moves.field.update',
@@ -1079,6 +1081,7 @@ export const pokemonDexEditorSchema = z.strictObject({
   advancedBlockedReason: z.string().nullable(),
   blockedReason: z.string().nullable(),
   canReturnToVanilla: z.boolean(),
+  canSyncMegasToRegular: z.boolean(),
   canEditAdvanced: z.boolean(),
   canEdit: z.boolean(),
   executableBuildId: z.string().nullable(),
@@ -1234,6 +1237,17 @@ export const stagePokemonDexVanillaRequestSchema = z.strictObject({
 });
 
 export const stagePokemonDexVanillaResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
+export const stagePokemonDexMegaSyncRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stagePokemonDexMegaSyncResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: pokemonWorkflowSchema
@@ -6053,6 +6067,12 @@ export type StagePokemonDexVanillaRequest = z.infer<
 >;
 export type StagePokemonDexVanillaResponse = z.infer<
   typeof stagePokemonDexVanillaResponseSchema
+>;
+export type StagePokemonDexMegaSyncRequest = z.infer<
+  typeof stagePokemonDexMegaSyncRequestSchema
+>;
+export type StagePokemonDexMegaSyncResponse = z.infer<
+  typeof stagePokemonDexMegaSyncResponseSchema
 >;
 export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;

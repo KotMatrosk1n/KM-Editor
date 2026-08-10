@@ -473,6 +473,15 @@ public sealed class ZaWorkflowService
             session);
     }
 
+    public ZaPokemonEditResult StagePokemonDexMegaSync(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return pokemonEditSessionService.StageMegaDexSync(
+            paths,
+            session);
+    }
+
     public ZaMovesEditResult UpdateMoveField(
         ProjectPaths paths,
         EditSession? session,

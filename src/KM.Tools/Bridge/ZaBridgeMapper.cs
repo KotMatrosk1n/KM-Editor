@@ -546,6 +546,17 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StagePokemonDexMegaSyncResponse ToDtoDexMegaSync(
+        ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StagePokemonDexMegaSyncResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(ZaEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -591,6 +602,7 @@ public static class ZaBridgeMapper
                     workflow.DexEditor.IsVanillaLayout,
                     workflow.DexEditor.CanReturnToVanilla,
                     workflow.DexEditor.ReturnToVanillaBlockedReason,
+                    workflow.DexEditor.CanSyncMegasToRegular,
                     workflow.DexEditor.ExecutableBuildId,
                     workflow.DexEditor.ExecutableRegularCount,
                     workflow.DexEditor.RegularCount,

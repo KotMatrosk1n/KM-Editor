@@ -60,6 +60,8 @@ import {
   type ResizePokemonDexResponse,
   type StagePokemonDexVanillaRequest,
   type StagePokemonDexVanillaResponse,
+  type StagePokemonDexMegaSyncRequest,
+  type StagePokemonDexMegaSyncResponse,
   type SwapPokemonDexPlacementRequest,
   type SwapPokemonDexPlacementResponse,
   type UpdatePokemonFieldRequest,
@@ -263,6 +265,7 @@ import {
   movePokemonDexPlacementResponseSchema,
   resizePokemonDexResponseSchema,
   stagePokemonDexVanillaResponseSchema,
+  stagePokemonDexMegaSyncResponseSchema,
   swapPokemonDexPlacementResponseSchema,
   updatePokemonLearnsetResponseSchema,
   updateBehaviorEntryFieldResponseSchema,
@@ -445,6 +448,9 @@ export type ProjectBridge = {
   stagePokemonDexVanilla: (
     request: StagePokemonDexVanillaRequest
   ) => Promise<StagePokemonDexVanillaResponse>;
+  stagePokemonDexMegaSync: (
+    request: StagePokemonDexMegaSyncRequest
+  ) => Promise<StagePokemonDexMegaSyncResponse>;
   swapPokemonDexPlacement: (
     request: SwapPokemonDexPlacementRequest
   ) => Promise<SwapPokemonDexPlacementResponse>;
@@ -1415,6 +1421,13 @@ export function createProjectBridge(
         kmCommandNames.stagePokemonDexVanilla,
         request,
         stagePokemonDexVanillaResponseSchema
+      ),
+    stagePokemonDexMegaSync: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stagePokemonDexMegaSync,
+        request,
+        stagePokemonDexMegaSyncResponseSchema
       ),
     swapPokemonDexPlacement: (request) =>
       sendProjectBridgeRequest(

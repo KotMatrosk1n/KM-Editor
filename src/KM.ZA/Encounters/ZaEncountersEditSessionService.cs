@@ -790,8 +790,8 @@ internal sealed class ZaEncountersEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var normalizationState = PrepareWebSpawnNormalization(project, session);
-            AppendWebSpawnNormalizationErrors(
+            var normalizationState = PrepareSpecialSpawnNormalization(project, session);
+            AppendSpecialSpawnNormalizationErrors(
                 normalizationState.Result,
                 diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -860,11 +860,11 @@ internal sealed class ZaEncountersEditSessionService
                         sources,
                         outputMode);
                     var editCount = plannedEdits.Length;
-                    var webSpawnReason = CreateWebSpawnPlanReason(
+                    var specialSpawnReason = CreateSpecialSpawnPlanReason(
                         normalizationState.Result);
                     var reason = editCount switch
                     {
-                        0 => webSpawnReason,
+                        0 => specialSpawnReason,
                         1 => $"Apply pending Wild Encounters edit: {plannedEdits[0].Summary} "
                             + $"Change set SHA-256 {CreatePlanChangeSetFingerprint(plannedEdits)}.",
                         _ => $"Apply {editCount.ToString(CultureInfo.InvariantCulture)} pending Wild Encounters edits: "
@@ -877,7 +877,7 @@ internal sealed class ZaEncountersEditSessionService
                         && normalizationState.Result.HasChanges
                         && editCount > 0)
                     {
-                        reason += $" {webSpawnReason}";
+                        reason += $" {specialSpawnReason}";
                     }
 
                     return new PlannedFileWrite(
@@ -894,7 +894,7 @@ internal sealed class ZaEncountersEditSessionService
                 .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
                 .ToList();
 
-            AppendWebSpawnNormalizationPlanDiagnostics(
+            AppendSpecialSpawnNormalizationPlanDiagnostics(
                 normalizationState.Result,
                 diagnostics);
 
@@ -1002,7 +1002,7 @@ internal sealed class ZaEncountersEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var normalizationState = PrepareWebSpawnNormalization(project, session);
+            var normalizationState = PrepareSpecialSpawnNormalization(project, session);
             var workflow = normalizationState.CurrentWorkflow;
             var writesPlayerPartnerData = session.PendingEdits.Any(IsPlayerPartnerEdit);
             var writesEncounterData = session.PendingEdits.Any(edit =>
@@ -1209,7 +1209,7 @@ internal sealed class ZaEncountersEditSessionService
             {
                 var spawnerBytes = spawnerDocument.Write();
                 var verificationDocument = ZaPokemonSpawnerDataDocument.Parse(spawnerBytes);
-                var verification = ZaWebSpawnNormalizer.Reconcile(
+                var verification = ZaSpecialSpawnNormalizer.Reconcile(
                     normalizationState.CurrentWorkflow,
                     normalizationState.EffectiveWorkflow,
                     verificationDocument,
@@ -1219,10 +1219,10 @@ internal sealed class ZaEncountersEditSessionService
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        "Web placement normalization did not converge to the reviewed output state.",
+                        "Special placement normalization did not converge to the reviewed output state.",
                         ZaEditSessionSupport.EncountersDomain,
                         file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}",
-                        expected: "Stable reconciled web placement behavior"));
+                        expected: "Stable reconciled special placement behavior"));
                     return ZaEditSessionSupport.CreateApplyResult(
                         applyId,
                         appliedAt,
@@ -1274,7 +1274,7 @@ internal sealed class ZaEncountersEditSessionService
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage("Wild Encounters", outputMode),
                 ZaEditSessionSupport.EncountersDomain));
-            AppendWebSpawnNormalizationApplyDiagnostics(
+            AppendSpecialSpawnNormalizationApplyDiagnostics(
                 normalizationState.Result,
                 diagnostics);
         }
@@ -1393,7 +1393,7 @@ internal sealed class ZaEncountersEditSessionService
                 StringComparison.Ordinal);
     }
 
-    private PreparedWebSpawnNormalization PrepareWebSpawnNormalization(
+    private PreparedSpecialSpawnNormalization PrepareSpecialSpawnNormalization(
         OpenedProject project,
         EditSession session)
     {
@@ -1408,13 +1408,13 @@ internal sealed class ZaEncountersEditSessionService
         var spawnerDocument = ZaPokemonSpawnerDataDocument.Parse(spawnerSource.Bytes);
         var baseSpawnerDocument = ZaPokemonSpawnerDataDocument.Parse(baseSpawnerSource.Bytes);
         var baseEncounterDocument = ZaEncounterDataDocument.Parse(baseEncounterSource.Bytes);
-        var result = ZaWebSpawnNormalizer.Reconcile(
+        var result = ZaSpecialSpawnNormalizer.Reconcile(
             currentWorkflow,
             effectiveWorkflow,
             spawnerDocument,
             baseSpawnerDocument,
             baseEncounterDocument);
-        return new PreparedWebSpawnNormalization(
+        return new PreparedSpecialSpawnNormalization(
             currentWorkflow,
             effectiveWorkflow,
             encounterSource,
@@ -1430,30 +1430,30 @@ internal sealed class ZaEncountersEditSessionService
                 baseSpawnerSource));
     }
 
-    private static void AppendWebSpawnNormalizationErrors(
-        ZaWebSpawnNormalizationResult result,
+    private static void AppendSpecialSpawnNormalizationErrors(
+        ZaSpecialSpawnNormalizationResult result,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         foreach (var error in result.Errors)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"A web placement could not be reconciled safely. {error}",
+                $"A special placement could not be reconciled safely. {error}",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}",
-                expected: "Verified native web placement or byte-preserving ordinary-spawn conversion"));
+                expected: "Verified native special placement or byte-preserving ordinary-spawn conversion"));
         }
     }
 
-    private static void AppendWebSpawnNormalizationPlanDiagnostics(
-        ZaWebSpawnNormalizationResult result,
+    private static void AppendSpecialSpawnNormalizationPlanDiagnostics(
+        ZaSpecialSpawnNormalizationResult result,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (result.NormalizedCount > 0)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                $"The reviewed Wild Encounters output will remove spider-specific web behavior from "
+                $"The reviewed Wild Encounters output will remove incompatible special spawn behavior from "
                 + $"{FormatPlacementCount(result.NormalizedCount)} so they use ordinary spawn behavior.",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}"));
@@ -1463,15 +1463,15 @@ internal sealed class ZaEncountersEditSessionService
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                $"The reviewed Wild Encounters output will restore web behavior for "
+                $"The reviewed Wild Encounters output will restore special spawn behavior for "
                 + $"{FormatPlacementCount(result.RestoredCount)} returned to a compatible species.",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}"));
         }
     }
 
-    private static void AppendWebSpawnNormalizationApplyDiagnostics(
-        ZaWebSpawnNormalizationResult result,
+    private static void AppendSpecialSpawnNormalizationApplyDiagnostics(
+        ZaSpecialSpawnNormalizationResult result,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (result.NormalizedCount > 0)
@@ -1488,7 +1488,7 @@ internal sealed class ZaEncountersEditSessionService
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                $"Restored web behavior for {FormatPlacementCount(result.RestoredCount)} "
+                $"Restored special spawn behavior for {FormatPlacementCount(result.RestoredCount)} "
                 + "returned to a compatible species.",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}"));
@@ -1498,28 +1498,28 @@ internal sealed class ZaEncountersEditSessionService
     private static string FormatPlacementCount(int count)
     {
         return count == 1
-            ? "1 web placement"
-            : $"{count.ToString(CultureInfo.InvariantCulture)} web placements";
+            ? "1 special placement"
+            : $"{count.ToString(CultureInfo.InvariantCulture)} special placements";
     }
 
-    private static string CreateWebSpawnPlanReason(
-        ZaWebSpawnNormalizationResult result)
+    private static string CreateSpecialSpawnPlanReason(
+        ZaSpecialSpawnNormalizationResult result)
     {
         if (result.NormalizedCount > 0 && result.RestoredCount > 0)
         {
             return $"Convert {FormatPlacementCount(result.NormalizedCount)} to ordinary spawns "
-                + $"and restore web behavior for {FormatPlacementCount(result.RestoredCount)}.";
+                + $"and restore special spawn behavior for {FormatPlacementCount(result.RestoredCount)}.";
         }
 
         if (result.NormalizedCount > 0)
         {
-            return $"Remove spider-specific web behavior from "
+            return $"Remove incompatible special spawn behavior from "
                 + $"{FormatPlacementCount(result.NormalizedCount)}.";
         }
 
         if (result.RestoredCount > 0)
         {
-            return $"Restore web behavior for {FormatPlacementCount(result.RestoredCount)} "
+            return $"Restore special spawn behavior for {FormatPlacementCount(result.RestoredCount)} "
                 + "returned to a compatible species.";
         }
 
@@ -4936,7 +4936,7 @@ internal sealed class ZaEncountersEditSessionService
         };
     }
 
-    private sealed record PreparedWebSpawnNormalization(
+    private sealed record PreparedSpecialSpawnNormalization(
         ZaEncountersWorkflow CurrentWorkflow,
         ZaEncountersWorkflow EffectiveWorkflow,
         ZaWorkflowFile EncounterSource,
@@ -4944,6 +4944,6 @@ internal sealed class ZaEncountersEditSessionService
         ZaPokemonSpawnerDataDocument SpawnerDocument,
         ZaPokemonSpawnerDataDocument BaseSpawnerDocument,
         ZaEncounterDataDocument BaseEncounterDocument,
-        ZaWebSpawnNormalizationResult Result,
+        ZaSpecialSpawnNormalizationResult Result,
         IReadOnlyList<PlanFingerprintSource> SemanticSources);
 }

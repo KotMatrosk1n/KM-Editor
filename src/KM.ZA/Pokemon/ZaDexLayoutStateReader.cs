@@ -17,7 +17,8 @@ internal sealed record ZaDexLayoutState(
     int RegularCount,
     IReadOnlyDictionary<int, int> Assignments,
     ZaWorkflowFile PersonalSource,
-    ZaWorkflowFile ContentsSource)
+    ZaWorkflowFile ContentsSource,
+    ZaWorkflowFile MegaContentsSource)
 {
     public string Fingerprint => ZaDexLayoutStateReader.CreateFingerprint(
         RegularCount,
@@ -27,6 +28,7 @@ internal sealed record ZaDexLayoutState(
     [
         ZaWorkflowFileSource.CreateReference(PersonalSource),
         ZaWorkflowFileSource.CreateReference(ContentsSource),
+        ZaWorkflowFileSource.CreateReference(MegaContentsSource),
     ];
 }
 
@@ -41,14 +43,19 @@ internal static class ZaDexLayoutStateReader
 
         var personalSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
         var contentsSource = fileSource.ReadBase(project, ZaDataPaths.PokedexContentsData);
+        var megaContentsSource = fileSource.ReadBase(
+            project,
+            ZaDataPaths.PokedexMegaContentsData);
         var assignments = ReadAssignments(personalSource.Bytes);
         var regularCount = ReadAndValidateGroups(contentsSource.Bytes, assignments);
+        ValidateMegaContents(megaContentsSource.Bytes, assignments);
 
         return new ZaDexLayoutState(
             regularCount,
             assignments,
             personalSource,
-            contentsSource);
+            contentsSource,
+            megaContentsSource);
     }
 
     public static string CreateFingerprint(
@@ -177,5 +184,21 @@ internal static class ZaDexLayoutStateReader
         }
 
         return regularIndices.Length;
+    }
+
+    private static void ValidateMegaContents(
+        byte[] bytes,
+        IReadOnlyDictionary<int, int> assignments)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentNullException.ThrowIfNull(assignments);
+
+        var rows = ZaPokedexMegaContentsTable.Read(bytes).Rows;
+        if (rows.Any(row => !row.HasKnownGroup)
+            || rows.Select(row => row.Species).Distinct().Except(assignments.Keys).Any())
+        {
+            throw new InvalidDataException(
+                "The base Mega Pokédex contents table has an unsupported group or species.");
+        }
     }
 }

@@ -334,6 +334,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.MovePokemonDexPlacement => DispatchMovePokemonDexPlacement(requestJson),
                 KmCommandNames.ResizePokemonDex => DispatchResizePokemonDex(requestJson),
                 KmCommandNames.StagePokemonDexVanilla => DispatchStagePokemonDexVanilla(requestJson),
+                KmCommandNames.StagePokemonDexMegaSync => DispatchStagePokemonDexMegaSync(requestJson),
                 KmCommandNames.LoadMovesWorkflow => DispatchLoadMovesWorkflow(requestJson),
                 KmCommandNames.UpdateMoveField => DispatchUpdateMoveField(requestJson),
                 KmCommandNames.UpdateMoveFields => DispatchUpdateMoveFields(requestJson),
@@ -823,6 +824,21 @@ public sealed class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = ZaBridgeMapper.ToDtoDexVanilla(
             zaWorkflowService.StagePokemonDexVanilla(
+                paths,
+                session));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStagePokemonDexMegaSync(string requestJson)
+    {
+        var request = DeserializeRequest<StagePokemonDexMegaSyncRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDtoDexMegaSync(
+            zaWorkflowService.StagePokemonDexMegaSync(
                 paths,
                 session));
 
@@ -4252,6 +4268,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.MovePokemonDexPlacement or
             KmCommandNames.ResizePokemonDex or
             KmCommandNames.StagePokemonDexVanilla or
+            KmCommandNames.StagePokemonDexMegaSync or
             KmCommandNames.StageItemVanilla or
             KmCommandNames.StageMoveVanilla or
             KmCommandNames.StageEncounterSlotVanilla or
@@ -4283,6 +4300,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.MovePokemonDexPlacement or
             KmCommandNames.ResizePokemonDex or
             KmCommandNames.StagePokemonDexVanilla or
+            KmCommandNames.StagePokemonDexMegaSync or
             KmCommandNames.LoadTrainersWorkflow or
             KmCommandNames.UpdateTrainerField or
             KmCommandNames.UpdateTrainerFields or

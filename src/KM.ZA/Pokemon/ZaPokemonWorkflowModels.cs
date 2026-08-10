@@ -212,6 +212,7 @@ public sealed record ZaPokemonDexEditor(
     bool IsVanillaLayout,
     bool CanReturnToVanilla,
     string? ReturnToVanillaBlockedReason,
+    bool CanSyncMegasToRegular,
     string? ExecutableBuildId,
     int? ExecutableRegularCount,
     int RegularCount,
@@ -219,6 +220,7 @@ public sealed record ZaPokemonDexEditor(
     IReadOnlyList<ZaPokemonDexPlacement> Placements,
     ZaPokemonProvenance? PersonalProvenance,
     ZaPokemonProvenance? ContentsProvenance,
+    ZaPokemonProvenance? MegaContentsProvenance,
     ZaPokemonProvenance? ExecutableProvenance,
     string? VanillaLayoutFingerprint);
 
