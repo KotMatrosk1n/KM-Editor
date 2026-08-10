@@ -11,6 +11,8 @@ public static class ZaDataPaths
     public const string AlphaMoveTable = "world/ik_data/field/oyabun/oyabun_waza/oyabun_waza.bin";
     public const string PokedexContentsData =
         "world/exl/pokedex_contents_data/pokedex_contents_data/pokedex_contents_data.bin";
+    public const string PokedexMegaContentsData =
+        "world/exl/pokedex_contents_data/pokedex_mega_contents_data/pokedex_mega_contents_data.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";
     public const string BattleMoveParameterArray =
         "param_ai/data/battle/personal_waza_param/personal_waza_param_array.bin";

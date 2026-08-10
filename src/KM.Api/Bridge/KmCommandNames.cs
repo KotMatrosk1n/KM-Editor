@@ -24,6 +24,7 @@ public static class KmCommandNames
     public const string MovePokemonDexPlacement = "pokemon.dex.move";
     public const string ResizePokemonDex = "pokemon.dex.resize";
     public const string StagePokemonDexVanilla = "pokemon.dex.vanilla.stage";
+    public const string StagePokemonDexMegaSync = "pokemon.dex.megas.sync.stage";
     public const string LoadMovesWorkflow = "moves.load";
     public const string UpdateMoveField = "moves.field.update";
     public const string UpdateMoveFields = "moves.fields.update";

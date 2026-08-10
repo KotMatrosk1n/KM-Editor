@@ -343,6 +343,7 @@ internal sealed class ZaPokemonWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
         ZaWorkflowFile? pokedexSource = null;
+        ZaWorkflowFile? pokedexMegaSource = null;
         ZaWorkflowFile? alphaMoveSource = null;
         var labels = ZaTextLabelLookup.None();
         var pokemon = Array.Empty<ZaPokemonRecord>();
@@ -477,16 +478,27 @@ internal sealed class ZaPokemonWorkflowService
             try
             {
                 pokedexSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
+                pokedexMegaSource = fileSource.Read(project, ZaDataPaths.PokedexMegaContentsData);
                 dexEditor = AddVanillaLayoutStatus(
                     project,
-                    CreateDexEditor(project, pokemon, source, pokedexSource));
+                    CreateDexEditor(
+                        project,
+                        pokemon,
+                        source,
+                        pokedexSource,
+                        pokedexMegaSource));
             }
             catch (Exception exception) when (
                 exception is IOException or InvalidDataException or ArgumentException or OverflowException)
             {
                 var blockedReason =
                     $"Pokédex placement is unavailable because its active slot mapping could not be verified: {exception.Message}";
-                dexEditor = CreateBlockedDexEditor(project, blockedReason, source, pokedexSource);
+                dexEditor = CreateBlockedDexEditor(
+                    project,
+                    blockedReason,
+                    source,
+                    pokedexSource,
+                    pokedexMegaSource);
                 diagnostics.Add(ZaWorkflowSupport.Warning(
                     blockedReason,
                     $"romfs/{ZaDataPaths.PokedexContentsData}"));
@@ -517,6 +529,7 @@ internal sealed class ZaPokemonWorkflowService
             pokemon.Sum(record => record.Learnset.Count),
             (source is null ? 0 : 1)
                 + (pokedexSource is null ? 0 : 1)
+                + (pokedexMegaSource is null ? 0 : 1)
                 + (alphaMoveSource is null ? 0 : 1));
 
         return new ZaPokemonWorkflow(
@@ -758,9 +771,11 @@ internal sealed class ZaPokemonWorkflowService
         OpenedProject project,
         IReadOnlyList<ZaPokemonRecord> pokemon,
         ZaWorkflowFile personalSource,
-        ZaWorkflowFile contentsSource)
+        ZaWorkflowFile contentsSource,
+        ZaWorkflowFile megaContentsSource)
     {
         var contents = ZaPokedexContentsTable.Read(contentsSource.Bytes);
+        var megaContents = ZaPokedexMegaContentsTable.Read(megaContentsSource.Bytes);
         var activeSpecies = pokemon
             .Where(record => record.DexPresence.IsPresentInGame)
             .GroupBy(record => record.SpeciesId)
@@ -808,6 +823,18 @@ internal sealed class ZaPokemonWorkflowService
                 "The contents table does not exactly cover the active personal-data species.");
         }
 
+        var unsupportedMegaSpecies = megaContents.Rows
+            .Select(row => row.Species)
+            .Distinct()
+            .Except(activeSpeciesIds)
+            .Order()
+            .ToArray();
+        if (unsupportedMegaSpecies.Length > 0)
+        {
+            throw new InvalidDataException(
+                "The Mega Pokédex contents table references species outside the active Pokédex mapping.");
+        }
+
         var orderedIndices = indexBySpecies.Values.Order().ToArray();
         if (!orderedIndices.SequenceEqual(Enumerable.Range(1, indexBySpecies.Count)))
         {
@@ -816,6 +843,8 @@ internal sealed class ZaPokemonWorkflowService
         }
 
         var groupBySpecies = contentRows.ToDictionary(row => row.Species, row => row.Group);
+        var canSyncMegasToRegular = megaContents.Rows.Any(row =>
+            row.Group != groupBySpecies[row.Species]);
         var regularIndices = indexBySpecies
             .Where(pair => groupBySpecies[pair.Key] == (int)ZaPokedexContentsGroup.Regular)
             .Select(pair => pair.Value)
@@ -868,6 +897,7 @@ internal sealed class ZaPokemonWorkflowService
             IsVanillaLayout: false,
             CanReturnToVanilla: false,
             ReturnToVanillaBlockedReason: null,
+            CanSyncMegasToRegular: canSyncMegasToRegular,
             ExecutableBuildId: executable.BuildId,
             ExecutableRegularCount: executable.RegularCount,
             RegularCount: regularIndices.Length,
@@ -875,6 +905,7 @@ internal sealed class ZaPokemonWorkflowService
             Placements: placements,
             PersonalProvenance: ToProvenance(personalSource),
             ContentsProvenance: ToProvenance(contentsSource),
+            MegaContentsProvenance: ToProvenance(megaContentsSource),
             ExecutableProvenance: executable.Provenance,
             VanillaLayoutFingerprint: null);
     }
@@ -883,7 +914,8 @@ internal sealed class ZaPokemonWorkflowService
         OpenedProject project,
         string blockedReason,
         ZaWorkflowFile? personalSource,
-        ZaWorkflowFile? contentsSource)
+        ZaWorkflowFile? contentsSource,
+        ZaWorkflowFile? megaContentsSource)
     {
         var executable = AnalyzeDexExecutable(
             project,
@@ -897,6 +929,7 @@ internal sealed class ZaPokemonWorkflowService
             IsVanillaLayout: false,
             CanReturnToVanilla: false,
             ReturnToVanillaBlockedReason: blockedReason,
+            CanSyncMegasToRegular: false,
             ExecutableBuildId: executable.BuildId,
             ExecutableRegularCount: executable.RegularCount,
             RegularCount: 0,
@@ -904,6 +937,7 @@ internal sealed class ZaPokemonWorkflowService
             Placements: Array.Empty<ZaPokemonDexPlacement>(),
             PersonalProvenance: personalSource is null ? null : ToProvenance(personalSource),
             ContentsProvenance: contentsSource is null ? null : ToProvenance(contentsSource),
+            MegaContentsProvenance: megaContentsSource is null ? null : ToProvenance(megaContentsSource),
             ExecutableProvenance: executable.Provenance,
             VanillaLayoutFingerprint: null);
     }
@@ -935,12 +969,18 @@ internal sealed class ZaPokemonWorkflowService
             }
 
             var vanillaFingerprint = vanilla.Fingerprint;
-            var isVanilla = string.Equals(
+            var assignmentsMatchVanilla = string.Equals(
                 ZaDexLayoutStateReader.CreateFingerprint(
                     editor.RegularCount,
                     currentAssignments),
                 vanillaFingerprint,
                 StringComparison.Ordinal);
+            var currentMegaContents = fileSource.Read(
+                project,
+                ZaDataPaths.PokedexMegaContentsData);
+            var isVanilla = assignmentsMatchVanilla
+                && currentMegaContents.Bytes.AsSpan()
+                    .SequenceEqual(vanilla.MegaContentsSource.Bytes);
             string? blockedReason = null;
             if (!isVanilla
                 && editor.RegularCount != vanilla.RegularCount
@@ -955,6 +995,7 @@ internal sealed class ZaPokemonWorkflowService
                 IsVanillaLayout = isVanilla,
                 CanReturnToVanilla = !isVanilla && blockedReason is null,
                 ReturnToVanillaBlockedReason = blockedReason,
+                CanSyncMegasToRegular = !isVanilla && editor.CanSyncMegasToRegular,
                 VanillaLayoutFingerprint = vanillaFingerprint,
             };
         }

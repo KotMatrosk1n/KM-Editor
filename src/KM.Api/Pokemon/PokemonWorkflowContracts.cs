@@ -70,6 +70,10 @@ public sealed record StagePokemonDexVanillaRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session);
 
+public sealed record StagePokemonDexMegaSyncRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session);
+
 public sealed record PokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -242,6 +246,7 @@ public sealed record PokemonDexEditorDto(
     bool IsVanillaLayout,
     bool CanReturnToVanilla,
     string? ReturnToVanillaBlockedReason,
+    bool CanSyncMegasToRegular,
     string? ExecutableBuildId,
     int? ExecutableRegularCount,
     int RegularCount,
@@ -304,6 +309,11 @@ public sealed record ResizePokemonDexResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record StagePokemonDexVanillaResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record StagePokemonDexMegaSyncResponse(
     PokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

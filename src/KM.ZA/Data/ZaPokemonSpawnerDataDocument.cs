@@ -248,11 +248,12 @@ internal sealed class ZaPokemonSpawnerDataDocument
         return true;
     }
 
-    public bool TrySetSlotWebSpawnEnabled(
+    public bool TrySetSlotSpecialSpawnEnabled(
         int groupIndex,
         int spawnerIndex,
         int slotIndex,
         ZaPokemonSpawnerEncountDataInfo baseSlot,
+        int normalizedTagCount,
         bool enabled,
         out bool changed,
         out string? error)
@@ -265,11 +266,10 @@ internal sealed class ZaPokemonSpawnerDataDocument
             return false;
         }
 
-        if (baseSlot.PopActionId == 0
-            || baseSlot.Tags.Count != 2
+        if ((uint)normalizedTagCount > (uint)baseSlot.Tags.Count
             || baseSlot.Tags.Any(string.IsNullOrEmpty))
         {
-            error = "The verified base slot does not have a recoverable web-spawn signature.";
+            error = "The verified base slot does not have a recoverable special-spawn signature.";
             return false;
         }
 
@@ -279,17 +279,17 @@ internal sealed class ZaPokemonSpawnerDataDocument
             return false;
         }
 
+        var normalizedTags = baseSlot.Tags.Take(normalizedTagCount).ToArray();
         var hasFullTagList = slot.Tags.SequenceEqual(baseSlot.Tags, StringComparer.Ordinal);
-        var hasNormalizedTagList = slot.Tags.Count == 1
-            && string.Equals(slot.Tags[0], baseSlot.Tags[0], StringComparison.Ordinal);
+        var hasNormalizedTagList = slot.Tags.SequenceEqual(normalizedTags, StringComparer.Ordinal);
         if (!hasFullTagList && !hasNormalizedTagList)
         {
-            error = "The current slot tags do not match the verified web or normalized spawn shape.";
+            error = "The current slot tags do not match the verified special or normalized spawn shape.";
             return false;
         }
 
         var targetPopActionId = enabled ? baseSlot.PopActionId : 0;
-        var targetTagCount = enabled ? baseSlot.Tags.Count : 1;
+        var targetTagCount = enabled ? baseSlot.Tags.Count : normalizedTagCount;
         var changesPopAction = slot.PopActionId != targetPopActionId;
         var changesTagCount = slot.Tags.Count != targetTagCount;
 
@@ -307,9 +307,9 @@ internal sealed class ZaPokemonSpawnerDataDocument
 
         if (enabled
             && changesTagCount
-            && !CanRestoreTrailingTag(slot, baseSlot))
+            && !CanRestoreTrailingTags(slot, baseSlot, normalizedTagCount))
         {
-            error = "The preserved web tag cannot be verified against the clean base slot.";
+            error = "The preserved special-spawn tags cannot be verified against the clean base slot.";
             return false;
         }
 
@@ -324,7 +324,7 @@ internal sealed class ZaPokemonSpawnerDataDocument
             SetInt32(slot.TagListLengthPosition!.Value, targetTagCount);
             slot.Tags = enabled
                 ? baseSlot.Tags.ToArray()
-                : [baseSlot.Tags[0]];
+                : normalizedTags;
         }
 
         changed = changesPopAction || changesTagCount;
@@ -569,9 +569,10 @@ internal sealed class ZaPokemonSpawnerDataDocument
         }
     }
 
-    private bool CanRestoreTrailingTag(
+    private bool CanRestoreTrailingTags(
         ZaPokemonSpawnerEncountDataInfo slot,
-        ZaPokemonSpawnerEncountDataInfo baseSlot)
+        ZaPokemonSpawnerEncountDataInfo baseSlot,
+        int normalizedTagCount)
     {
         if (slot.TagListLengthPosition is null
             || slot.TagListDataPosition is null
@@ -586,15 +587,24 @@ internal sealed class ZaPokemonSpawnerDataDocument
         try
         {
             var reader = new ZaPokemonSpawnerFlatBufferReader(originalBytes);
-            return string.Equals(
-                reader.GetStringVectorElement(
-                    new ZaPokemonSpawnerStringVector(
-                        slot.TagListLengthPosition.Value,
-                        slot.TagListDataPosition.Value,
-                        baseSlot.Tags.Count),
-                    index: 1),
-                baseSlot.Tags[1],
-                StringComparison.Ordinal);
+            var preservedTags = new ZaPokemonSpawnerStringVector(
+                slot.TagListLengthPosition.Value,
+                slot.TagListDataPosition.Value,
+                baseSlot.Tags.Count);
+            for (var index = normalizedTagCount; index < baseSlot.Tags.Count; index++)
+            {
+                if (!string.Equals(
+                    reader.GetStringVectorElement(
+                        preservedTags,
+                        index),
+                    baseSlot.Tags[index],
+                    StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
         catch (Exception exception) when (
             exception is InvalidDataException

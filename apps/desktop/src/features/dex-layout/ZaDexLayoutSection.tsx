@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Info,
   ListOrdered,
+  RefreshCw,
   RotateCcw,
   Save,
   Search,
@@ -22,6 +23,7 @@ import {
   EditorSessionBar,
   EditorSessionBarActions
 } from '../../components/EditorSessionBar';
+import { useModalDialog } from '../../components/useModalDialog';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 
@@ -65,6 +67,7 @@ export function ZaDexLayoutSection({
   onMovePlacement,
   onOpenChanges,
   onResizeDex,
+  onStageMegaSync,
   onStageReturnToVanilla,
   onStartEditSession,
   workflow
@@ -82,6 +85,7 @@ export function ZaDexLayoutSection({
   ) => Promise<boolean>;
   onOpenChanges: () => void;
   onResizeDex: (regularCount: number) => Promise<boolean>;
+  onStageMegaSync: () => void;
   onStageReturnToVanilla: () => void;
   onStartEditSession: () => void;
   workflow: PokemonWorkflow | null;
@@ -108,6 +112,7 @@ export function ZaDexLayoutSection({
     (dexEditor?.regularCount ?? 0) - excludedRegularPlacements.length
   );
   const [searchText, setSearchText] = useState('');
+  const [isMegaSyncConfirmationOpen, setIsMegaSyncConfirmationOpen] = useState(false);
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<number | null>(null);
   const [destinationDexKind, setDestinationDexKind] = useState<DexKind>('regular');
   const [destinationNumberDraft, setDestinationNumberDraft] = useState('');
@@ -291,6 +296,12 @@ export function ZaDexLayoutSection({
     workflowAvailable &&
     dexEditor?.canReturnToVanilla === true &&
     !dexEditor.isVanillaLayout &&
+    hasActiveEditSession &&
+    !hasLocalDraft &&
+    !isWorkflowActionBusy;
+  const canStageMegaSync =
+    workflowAvailable &&
+    dexEditor?.canSyncMegasToRegular === true &&
     hasActiveEditSession &&
     !hasLocalDraft &&
     !isWorkflowActionBusy;
@@ -772,6 +783,22 @@ export function ZaDexLayoutSection({
 
         {workflow && dexEditor ? (
           <div className="type-chart-actions za-dex-layout-workflow-actions">
+            {dexEditor.canSyncMegasToRegular ? (
+              <button
+                className="secondary-button"
+                disabled={!canStageMegaSync}
+                onClick={() => setIsMegaSyncConfirmationOpen(true)}
+                title={translateLiteral(
+                  hasActiveEditSession
+                    ? 'Stage a repair that makes Mega Pokédex membership follow the current Regular and Hyperspace Pokédexes.'
+                    : 'Start editing to stage Mega Pokédex synchronization.'
+                )}
+                type="button"
+              >
+                <RefreshCw aria-hidden="true" size={16} />
+                <span>{translateLiteral('Sync Megas to Regular')}</span>
+              </button>
+            ) : null}
             <button
               aria-busy={isPokemonUpdating || undefined}
               className="danger-button"
@@ -808,7 +835,67 @@ export function ZaDexLayoutSection({
       <DiagnosticsSection
         diagnostics={[...(workflow?.diagnostics ?? []), ...diagnostics]}
       />
+      {isMegaSyncConfirmationOpen ? (
+        <MegaDexSyncConfirmationModal
+          onCancel={() => setIsMegaSyncConfirmationOpen(false)}
+          onConfirm={() => {
+            setIsMegaSyncConfirmationOpen(false);
+            onStageMegaSync();
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+function MegaDexSyncConfirmationModal({
+  onCancel,
+  onConfirm
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { translateLiteral } = useLocalization();
+  const dialogRef = useModalDialog<HTMLElement>({ onClose: onCancel });
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="mega-dex-sync-confirmation-heading"
+        aria-modal="true"
+        className="modal-panel"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <div className="panel-heading">
+          <RefreshCw aria-hidden="true" size={18} />
+          <h2 id="mega-dex-sync-confirmation-heading">
+            {translateLiteral('Sync Megas to Regular')}
+          </h2>
+        </div>
+        <p className="modal-copy">
+          {translateLiteral(
+            "This will update every Mega Evolution's Pokédex membership to match its base species in the current Regular and Hyperspace Pokédexes."
+          )}
+        </p>
+        <p className="modal-copy modal-copy-muted">
+          {translateLiteral(
+            'It will not change species order, Pokédex sizes, personal data, or Regular/Hyperspace membership. The Mega Pokédex change will be staged for review in Changes; no files are written until you approve the change plan.'
+          )}
+        </p>
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>{translateLiteral('Cancel')}</span>
+          </button>
+          <button className="primary-button" onClick={onConfirm} type="button">
+            <RefreshCw aria-hidden="true" size={16} />
+            <span>{translateLiteral('Sync Megas to Regular')}</span>
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
