@@ -594,7 +594,29 @@ public static class SvBridgeMapper
                 workflow.Stats.TotalTextEntryCount,
                 workflow.Stats.DialogueReferenceCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            Categories = workflow.Categories
+                .Select(category => new TextCategoryDto(
+                    category.CategoryId,
+                    category.Label,
+                    category.Description,
+                    category.SourceFileCount))
+                .ToArray(),
+            SelectedCategoryId = workflow.SelectedCategoryId,
+            Languages = workflow.Languages
+                .Select(language => new TextLanguageDto(language.Language, language.Label))
+                .ToArray(),
+            SelectedLanguage = workflow.SelectedLanguage,
+            Page = workflow.Page is null
+                ? null
+                : new TextResultPageDto(
+                    workflow.Page.Offset,
+                    workflow.Page.Limit,
+                    workflow.Page.ReturnedEntryCount,
+                    workflow.Page.HasPrevious,
+                    workflow.Page.HasNext),
+        };
     }
 
     private static PokemonWorkflowDto ToPokemonWorkflowDto(SvPokemonWorkflow workflow)
@@ -1204,7 +1226,8 @@ public static class SvBridgeMapper
             entry.Value,
             entry.CanEdit,
             entry.EditBlockedReason,
-            ToDto(entry.Provenance));
+            ToDto(entry.Provenance),
+            entry.MessageKey);
     }
 
     private static TextEditableFieldDto ToDto(SvTextEditableField field)

@@ -93,6 +93,16 @@ public sealed class SvModMergerWorkflowService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(modSources);
 
+        lock (SvWorkflowFileSource.OutputWriteSyncRoot)
+        {
+            return ApplyCore(paths, modSources);
+        }
+    }
+
+    private SvModMergerApplyResult ApplyCore(
+        ProjectPaths paths,
+        IReadOnlyList<SvModMergerSourceRequest> modSources)
+    {
         var project = projectWorkspaceService.Open(paths);
         var diagnostics = new List<ValidationDiagnostic>();
         var analysis = Analyze(project, modSources, diagnostics);

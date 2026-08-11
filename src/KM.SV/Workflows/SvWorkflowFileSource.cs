@@ -13,6 +13,8 @@ internal sealed class SvWorkflowFileSource
 {
     public const string DescriptorVirtualPath = SvTrinityDescriptorPatcher.DescriptorVirtualPath;
 
+    internal static object OutputWriteSyncRoot { get; } = new();
+
     private readonly SvCacheManager cacheManager;
 
     public SvWorkflowFileSource(SvCacheManager? cacheManager = null)
@@ -266,6 +268,38 @@ internal sealed class SvWorkflowFileSource
         }
     }
 
+    public SvWorkflowArchiveInventory? GetOutputArchiveInventory(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var outputRootPath = project.Paths.OutputRootPath;
+        if (string.IsNullOrWhiteSpace(outputRootPath) || !HasTrinityArchive(outputRootPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var index = SvTrinityArchive.BuildIndex(outputRootPath);
+            return new SvWorkflowArchiveInventory(
+                index.Files
+                    .Select(file => file.PackName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                index.Files.Select(file => file.FileHash).ToHashSet());
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                "romfs/arc/data.trpfd",
+                ProjectFileLayer.Layered,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
+        }
+    }
+
     public static ProjectFileReference CreateReference(SvWorkflowFile file)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -326,12 +360,15 @@ internal sealed class SvWorkflowFileSource
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
-        var targetPath = ResolveOutputPath(paths, virtualRomFsPath, outputMode);
-        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-        File.WriteAllBytes(targetPath, bytes);
-        if (outputMode == SvOutputMode.Standalone)
+        lock (OutputWriteSyncRoot)
         {
-            WritePatchedDescriptor(paths);
+            var targetPath = ResolveOutputPath(paths, virtualRomFsPath, outputMode);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            File.WriteAllBytes(targetPath, bytes);
+            if (outputMode == SvOutputMode.Standalone)
+            {
+                WritePatchedDescriptor(paths);
+            }
         }
     }
 
@@ -608,6 +645,10 @@ internal sealed record SvWorkflowFile(
     byte[] Bytes,
     ProjectFileLayer SourceLayer,
     ProjectFileGraphEntryState FileState);
+
+internal sealed record SvWorkflowArchiveInventory(
+    IReadOnlyList<string> PackNames,
+    IReadOnlySet<ulong> FileHashes);
 
 internal sealed record PlannedWriteInfo(
     string TargetRelativePath,

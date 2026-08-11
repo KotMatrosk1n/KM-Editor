@@ -639,17 +639,17 @@ function createTextWorkflowQuery(
   textLanguage: string | null = null
 ): TextWorkflowQuery | undefined {
   const supportsCategorizedTextQuery =
-    isSwordShieldGame(game) || isPokemonLegendsZAGame(game);
-  if (!isScarletVioletGame(game) && !supportsCategorizedTextQuery) {
+    isSwordShieldGame(game) || isScarletVioletGame(game) || isPokemonLegendsZAGame(game);
+  if (!supportsCategorizedTextQuery) {
     return undefined;
   }
 
   const trimmedSearchText = searchText.trim();
   return {
-    categoryId: supportsCategorizedTextQuery ? categoryId : null,
-    language: supportsCategorizedTextQuery ? textLanguage : null,
+    categoryId,
+    language: textLanguage,
     limit: textWorkflowPageLimit,
-    offset: supportsCategorizedTextQuery ? offset : 0,
+    offset,
     searchText: trimmedSearchText.length > 0 ? trimmedSearchText : null
   };
 }
@@ -18722,6 +18722,62 @@ const textCategoryLocalizationKeys: Readonly<
   'other-scripts': {
     label: 'text.category.other-scripts.label',
     description: 'text.category.other-scripts.description'
+  },
+  'sv-main-story': {
+    label: 'text.category.sv-main-story.label',
+    description: 'text.category.sv-main-story.description'
+  },
+  'sv-side-events-school': {
+    label: 'text.category.sv-side-events-school.label',
+    description: 'text.category.sv-side-events-school.description'
+  },
+  'sv-teal-mask': {
+    label: 'text.category.sv-teal-mask.label',
+    description: 'text.category.sv-teal-mask.description'
+  },
+  'sv-indigo-disk': {
+    label: 'text.category.sv-indigo-disk.label',
+    description: 'text.category.sv-indigo-disk.description'
+  },
+  'sv-field-world': {
+    label: 'text.category.sv-field-world.label',
+    description: 'text.category.sv-field-world.description'
+  },
+  'sv-battles': {
+    label: 'text.category.sv-battles.label',
+    description: 'text.category.sv-battles.description'
+  },
+  'sv-items': {
+    label: 'text.category.sv-items.label',
+    description: 'text.category.sv-items.description'
+  },
+  'sv-pokemon-pokedex': {
+    label: 'text.category.sv-pokemon-pokedex.label',
+    description: 'text.category.sv-pokemon-pokedex.description'
+  },
+  'sv-moves-abilities': {
+    label: 'text.category.sv-moves-abilities.label',
+    description: 'text.category.sv-moves-abilities.description'
+  },
+  'sv-trainers-characters': {
+    label: 'text.category.sv-trainers-characters.label',
+    description: 'text.category.sv-trainers-characters.description'
+  },
+  'sv-locations': {
+    label: 'text.category.sv-locations.label',
+    description: 'text.category.sv-locations.description'
+  },
+  'sv-facilities-activities': {
+    label: 'text.category.sv-facilities-activities.label',
+    description: 'text.category.sv-facilities-activities.description'
+  },
+  'sv-ui-online-shared': {
+    label: 'text.category.sv-ui-online-shared.label',
+    description: 'text.category.sv-ui-online-shared.description'
+  },
+  'sv-other-scripts': {
+    label: 'text.category.sv-other-scripts.label',
+    description: 'text.category.sv-other-scripts.description'
   },
   'swsh-main-story': {
     label: 'text.category.swsh-main-story.label',
