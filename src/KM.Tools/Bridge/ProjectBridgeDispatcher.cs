@@ -238,7 +238,6 @@ public sealed class ProjectBridgeDispatcher
         this.profanityFilterService = profanityFilterService ?? new SwShProfanityFilterService(this.projectWorkspaceService);
         this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
-        this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
         this.tradePokemonEditSessionService = tradePokemonEditSessionService ?? new SwShTradePokemonEditSessionService(this.projectWorkspaceService);
         var resolvedSwShCacheManager = swShWorkflowService?.SharedCacheManager
@@ -248,6 +247,9 @@ public sealed class ProjectBridgeDispatcher
             this.projectWorkspaceService,
             modMergerWorkflowService: this.modMergerWorkflowService,
             cacheManager: resolvedSwShCacheManager);
+        this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(
+            this.projectWorkspaceService,
+            this.swShWorkflowService.SharedTextWorkflowService);
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(
             this.projectWorkspaceService,
             this.swShWorkflowService.SharedPlacementWorkflowService);
@@ -950,7 +952,9 @@ public sealed class ProjectBridgeDispatcher
             ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadText(paths, ToZaTextWorkflowQuery(request.Payload.Query)))
             : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadText(paths, ToSvTextWorkflowQuery(request.Payload.Query)))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadText(paths));
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadText(
+                paths,
+                ToSwShTextWorkflowQuery(request.Payload.Query)));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -980,7 +984,8 @@ public sealed class ProjectBridgeDispatcher
                 paths,
                 session,
                 request.Payload.TextKey,
-                request.Payload.Value));
+                request.Payload.Value,
+                ToSwShTextWorkflowQuery(request.Payload.Query)));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1003,6 +1008,18 @@ public sealed class ProjectBridgeDispatcher
                 query.SearchText,
                 query.Offset ?? 0,
                 query.Limit ?? ZaTextWorkflowService.DefaultQueryLimit,
+                query.CategoryId,
+                query.Language);
+    }
+
+    private static SwShTextWorkflowQuery? ToSwShTextWorkflowQuery(TextWorkflowQueryDto? query)
+    {
+        return query is null
+            ? null
+            : new SwShTextWorkflowQuery(
+                query.SearchText,
+                query.Offset ?? 0,
+                query.Limit ?? SwShTextWorkflowService.DefaultQueryLimit,
                 query.CategoryId,
                 query.Language);
     }

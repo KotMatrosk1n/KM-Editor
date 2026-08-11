@@ -15,6 +15,7 @@ public sealed record SwShTextEntryRecord(
     int TextId,
     string TextKey,
     string Label,
+    string? MessageKey,
     string Language,
     string SourceFile,
     int LineIndex,
@@ -43,10 +44,39 @@ public sealed record SwShTextEditableField(
     int? MinimumLength,
     int? MaximumLength);
 
+public sealed record SwShTextCategoryRecord(
+    string CategoryId,
+    string Label,
+    string Description,
+    int SourceFileCount);
+
+public sealed record SwShTextLanguageRecord(
+    string Language,
+    string Label);
+
+public sealed record SwShTextResultPage(
+    int Offset,
+    int Limit,
+    int ReturnedEntryCount,
+    bool HasPrevious,
+    bool HasNext);
+
+public sealed record SwShTextWorkflowQuery(
+    string? SearchText,
+    int Offset,
+    int Limit,
+    string? CategoryId = null,
+    string? Language = null);
+
 public sealed record SwShTextWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShTextEntryRecord> Entries,
     IReadOnlyList<SwShDialogueReferenceRecord> DialogueReferences,
     IReadOnlyList<SwShTextEditableField> EditableFields,
+    IReadOnlyList<SwShTextCategoryRecord> Categories,
+    string SelectedCategoryId,
+    IReadOnlyList<SwShTextLanguageRecord> Languages,
+    string SelectedLanguage,
+    SwShTextResultPage? Page,
     SwShTextWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

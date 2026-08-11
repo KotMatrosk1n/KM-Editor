@@ -40,16 +40,16 @@ public sealed class SwShTextEditSessionService
         ProjectPaths paths,
         EditSession? session,
         string textKey,
-        string value)
+        string value,
+        SwShTextWorkflowQuery? query = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(textKey);
         ArgumentNullException.ThrowIfNull(value);
 
-        projectWorkspaceService.ClearMemoryCache();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var sourceWorkflow = textWorkflowService.Load(project);
+        var sourceWorkflow = textWorkflowService.Load(project, query);
         var workflow = OverlayPendingEdits(sourceWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -100,22 +100,19 @@ public sealed class SwShTextEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         return Validate(project, session);
     }
 
     private SwShEditSessionValidation Validate(OpenedProject project, EditSession session)
     {
-        var workflow = textWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
         var textEdits = session.PendingEdits.Where(IsTextEdit).ToArray();
+        var summary = textWorkflowService.CreateSummary(project);
 
-        CanEditText(project, workflow, diagnostics);
-
-        foreach (var edit in textEdits)
+        if (CanEditText(project, summary, diagnostics))
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdits(project, textEdits, diagnostics);
         }
 
         if (textEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -384,49 +381,121 @@ public sealed class SwShTextEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static void ValidatePendingEdit(
-        SwShTextWorkflow workflow,
-        PendingEdit edit,
+    private static bool CanEditText(
+        OpenedProject project,
+        SwShWorkflowSummary summary,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(edit.Domain, TextEditDomain, StringComparison.Ordinal))
+        if (!project.Health.CanOpenEditableWorkflows
+            || summary.Availability != SwShWorkflowAvailability.Available)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Pending edit domain '{edit.Domain}' is not supported by the Text workflow.",
-                expected: TextEditDomain));
-            return;
+                "Text edit sessions require valid base paths and a valid output root.",
+                expected: "Editable project paths"));
+            return false;
         }
 
-        if (!string.Equals(edit.Field, TextValueField, StringComparison.Ordinal))
+        foreach (var diagnostic in summary.Diagnostics.Where(diagnostic =>
+                     diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
-            return;
+            diagnostics.Add(diagnostic);
         }
 
-        var entry = workflow.Entries.FirstOrDefault(candidate =>
-            string.Equals(candidate.TextKey, edit.RecordId, StringComparison.Ordinal));
-        if (entry is null)
+        return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
+    }
+
+    private static void ValidatePendingEdits(
+        OpenedProject project,
+        IReadOnlyList<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var validTargets = new List<(PendingEdit Edit, string VirtualPath, int LineIndex)>();
+        foreach (var edit in edits)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pending text edit targets a record that is not loaded.",
-                field: "textKey",
-                expected: "Existing text entry"));
-            return;
+            if (!string.Equals(edit.Domain, TextEditDomain, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending edit domain '{edit.Domain}' is not supported by the Text workflow.",
+                    expected: TextEditDomain));
+                continue;
+            }
+
+            if (!string.Equals(edit.Field, TextValueField, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+                continue;
+            }
+
+            if (!SwShTextWorkflowService.TryGetVirtualPathFromTextKey(
+                edit.RecordId,
+                out var virtualPath,
+                out var lineIndex))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending text edit does not include a valid Sword/Shield message source line.",
+                    field: "textKey",
+                    expected: "Text key in source#line format"));
+                continue;
+            }
+
+            validTargets.Add((edit, virtualPath, lineIndex));
         }
 
-        if (!entry.CanEdit)
+        foreach (var targetGroup in validTargets.GroupBy(
+            target => target.VirtualPath,
+            StringComparer.OrdinalIgnoreCase))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Text entry '{entry.Label}' is read-only: {entry.EditBlockedReason}",
-                field: TextValueField,
-                expected: "Editable text line"));
-            return;
-        }
+            try
+            {
+                var source = SwShTextWorkflowService.ResolveWorkflowFile(project, targetGroup.Key);
+                if (source is null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Pending text edit targets a source table that is not present.",
+                        field: "textKey",
+                        file: targetGroup.Key,
+                        expected: "Existing Sword/Shield message table"));
+                    continue;
+                }
 
-        TryValidateTextValue(edit.NewValue ?? string.Empty, diagnostics);
+                var textFile = SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath));
+                foreach (var target in targetGroup)
+                {
+                    if (target.LineIndex >= textFile.Lines.Count)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            "Pending text edit targets a line that is not present in its source table.",
+                            field: "textKey",
+                            file: target.VirtualPath,
+                            expected: "Existing text line"));
+                        continue;
+                    }
+
+                    TryValidateTextValue(target.Edit.NewValue ?? string.Empty, diagnostics);
+                }
+            }
+            catch (InvalidDataException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Sword/Shield text source file could not be decoded: {exception.Message}",
+                    file: targetGroup.Key,
+                    expected: "Sword/Shield encrypted text table"));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Sword/Shield text source file could not be read: {exception.Message}",
+                    file: targetGroup.Key,
+                    expected: "Readable Sword/Shield message table"));
+            }
+        }
     }
 
     private static PendingEdit? CreatePendingEdit(

@@ -979,7 +979,29 @@ public static class SwShBridgeMapper
                 workflow.Stats.TotalTextEntryCount,
                 workflow.Stats.DialogueReferenceCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            Categories = workflow.Categories
+                .Select(category => new TextCategoryDto(
+                    category.CategoryId,
+                    category.Label,
+                    category.Description,
+                    category.SourceFileCount))
+                .ToArray(),
+            SelectedCategoryId = workflow.SelectedCategoryId,
+            Languages = workflow.Languages
+                .Select(language => new TextLanguageDto(language.Language, language.Label))
+                .ToArray(),
+            SelectedLanguage = workflow.SelectedLanguage,
+            Page = workflow.Page is null
+                ? null
+                : new TextResultPageDto(
+                    workflow.Page.Offset,
+                    workflow.Page.Limit,
+                    workflow.Page.ReturnedEntryCount,
+                    workflow.Page.HasPrevious,
+                    workflow.Page.HasNext),
+        };
     }
 
     private static GiftPokemonWorkflowDto ToGiftPokemonWorkflowDto(SwShGiftPokemonWorkflow workflow)
@@ -2308,7 +2330,8 @@ public static class SwShBridgeMapper
             entry.Value,
             entry.CanEdit,
             entry.EditBlockedReason,
-            ToDto(entry.Provenance));
+            ToDto(entry.Provenance),
+            entry.MessageKey);
     }
 
     private static TextEditableFieldDto ToDto(SwShTextEditableField field)
