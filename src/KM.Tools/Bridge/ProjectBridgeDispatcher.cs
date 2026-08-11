@@ -997,7 +997,9 @@ public sealed class ProjectBridgeDispatcher
             : new SvTextWorkflowQuery(
                 query.SearchText,
                 query.Offset ?? 0,
-                query.Limit ?? SvTextWorkflowService.DefaultQueryLimit);
+                query.Limit ?? SvTextWorkflowService.DefaultQueryLimit,
+                query.CategoryId,
+                query.Language);
     }
 
     private static ZaTextWorkflowQuery? ToZaTextWorkflowQuery(TextWorkflowQueryDto? query)

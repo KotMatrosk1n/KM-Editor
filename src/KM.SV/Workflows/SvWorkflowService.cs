@@ -21,6 +21,9 @@ using KM.SV.Text;
 using KM.SV.Trainers;
 using KM.SV.Trades;
 using KM.SV.TypeChart;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SV.Workflows;
 
@@ -71,7 +74,7 @@ public sealed class SvWorkflowService
         var fileSource = new SvWorkflowFileSource(this.cacheManager);
         itemsWorkflowService = new SvItemsWorkflowService(fileSource);
         movesWorkflowService = new SvMovesWorkflowService(fileSource);
-        textWorkflowService = new SvTextWorkflowService(fileSource);
+        textWorkflowService = new SvTextWorkflowService(fileSource, this.cacheManager);
         pokemonWorkflowService = new SvPokemonWorkflowService(fileSource);
         trainersWorkflowService = new SvTrainersWorkflowService(fileSource);
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
@@ -129,12 +132,15 @@ public sealed class SvWorkflowService
         ProjectPaths? activePaths = null)
     {
         cacheManager.UpdateSettings(mode, maxCacheSizeBytes, activePaths);
+        textWorkflowService.ClearMemoryCache();
         return cacheManager.GetStatus(activePaths);
     }
 
     public SvCacheStatus ClearCache(ProjectPaths? activePaths = null)
     {
-        return cacheManager.Clear(activePaths);
+        var status = cacheManager.Clear(activePaths);
+        textWorkflowService.ClearMemoryCache();
+        return status;
     }
 
     public SvCacheStatus WarmupCacheStep(ProjectPaths paths, int stepIndex)
@@ -146,6 +152,7 @@ public sealed class SvWorkflowService
     {
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
+        textWorkflowService.ClearMemoryCache();
         if (clearReusableDataCaches)
         {
             cacheManager.ClearMemoryCache();
@@ -766,27 +773,47 @@ public sealed class SvWorkflowService
         IReadOnlyList<SvEditSessionDomain> domains,
         SvOutputMode outputMode)
     {
+        return CreateNormalDomainChangePlanSnapshot(paths, session, domains, outputMode).CombinedPlan;
+    }
+
+    private NormalDomainChangePlanSnapshot CreateNormalDomainChangePlanSnapshot(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<SvEditSessionDomain> domains,
+        SvOutputMode outputMode)
+    {
         var validation = ValidateNormalDomains(paths, session, domains);
         var diagnostics = validation.Diagnostics.ToList();
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                new Dictionary<SvEditSessionDomain, ChangePlan>());
         }
 
         var writes = new List<PlannedFileWrite>();
+        var domainPlans = new Dictionary<SvEditSessionDomain, ChangePlan>();
         foreach (var domain in domains)
         {
             var domainPlan = CreateSingleDomainChangePlan(paths, SliceSession(session, domain), domain, outputMode);
+            domainPlans.Add(domain, domainPlan);
             diagnostics.AddRange(domainPlan.Diagnostics);
             writes.AddRange(domainPlan.Writes);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                domainPlans);
         }
 
-        return new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics);
+        return new NormalDomainChangePlanSnapshot(
+            new ChangePlan(
+                session.Id,
+                CombinePlannedWrites(writes, CreatePendingEditFingerprint(session.PendingEdits)),
+                diagnostics),
+            domainPlans);
     }
 
     private ApplyResult ApplyNormalDomainChangePlan(
@@ -796,13 +823,39 @@ public sealed class SvWorkflowService
         IReadOnlyList<SvEditSessionDomain> domains,
         SvOutputMode outputMode)
     {
+        try
+        {
+            lock (SvWorkflowFileSource.OutputWriteSyncRoot)
+            {
+                return ApplyNormalDomainChangePlanCore(
+                    paths,
+                    session,
+                    reviewedPlan,
+                    domains,
+                    outputMode);
+            }
+        }
+        finally
+        {
+            ClearMemoryCaches(clearReusableDataCaches: false);
+        }
+    }
+
+    private ApplyResult ApplyNormalDomainChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        IReadOnlyList<SvEditSessionDomain> domains,
+        SvOutputMode outputMode)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateNormalDomainChangePlan(paths, session, domains, outputMode);
+        var currentSnapshot = CreateNormalDomainChangePlanSnapshot(paths, session, domains, outputMode);
+        var currentPlan = currentSnapshot.CombinedPlan;
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!SvEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -816,18 +869,44 @@ public sealed class SvWorkflowService
             return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        foreach (var domain in domains)
+        var snapshots = CaptureNormalDomainOutputSnapshots(paths, currentPlan.Writes, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            var domainSession = SliceSession(session, domain);
-            var domainPlan = CreateSingleDomainChangePlan(paths, domainSession, domain, outputMode);
-            var result = ApplySingleDomainChangePlan(paths, domainSession, domainPlan, domain, outputMode);
-            diagnostics.AddRange(result.Diagnostics);
-            writtenFiles.AddRange(result.WrittenFiles);
+            return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
 
-            if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        try
+        {
+            foreach (var domain in domains)
             {
-                break;
+                var domainSession = SliceSession(session, domain);
+                var domainPlan = currentSnapshot.DomainPlans[domain];
+                var result = ApplySingleDomainChangePlan(paths, domainSession, domainPlan, domain, outputMode);
+                diagnostics.AddRange(result.Diagnostics);
+                writtenFiles.AddRange(result.WrittenFiles);
+
+                if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                {
+                    RestoreNormalDomainOutputSnapshots(snapshots, diagnostics);
+                    writtenFiles.Clear();
+                    break;
+                }
             }
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or InvalidOperationException
+            or ArgumentException
+            or NotSupportedException)
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Scarlet/Violet mixed change plan could not be applied: {exception.Message}",
+                "sv.editor",
+                expected: "Readable sources and writable output targets"));
+            RestoreNormalDomainOutputSnapshots(snapshots, diagnostics);
+            writtenFiles.Clear();
         }
 
         return SvEditSessionSupport.CreateApplyResult(
@@ -877,6 +956,13 @@ public sealed class SvWorkflowService
             .Where(domain => domain != SvEditSessionDomain.None)
             .Distinct()
             .ToArray();
+
+        var textIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Text);
+        if (textIndex > 0)
+        {
+            (orderedDomains[0], orderedDomains[textIndex]) =
+                (orderedDomains[textIndex], orderedDomains[0]);
+        }
 
         var itemsIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Items);
         var pokemonIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Pokemon);
@@ -964,35 +1050,201 @@ public sealed class SvWorkflowService
         };
     }
 
-    private static IReadOnlyList<PlannedFileWrite> CombinePlannedWrites(IEnumerable<PlannedFileWrite> writes)
+    private static IReadOnlyList<PlannedFileWrite> CombinePlannedWrites(
+        IEnumerable<PlannedFileWrite> writes,
+        string pendingEditFingerprint)
     {
         return writes
             .GroupBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .Select(group =>
             {
                 var groupedWrites = group.ToArray();
-                if (groupedWrites.Length == 1)
-                {
-                    return groupedWrites[0];
-                }
-
-                return new PlannedFileWrite(
-                    group.Key,
-                    groupedWrites
-                        .SelectMany(write => write.Sources)
-                        .Distinct()
-                        .ToArray(),
-                    groupedWrites.Any(write => write.ReplacesExistingOutput),
-                    string.Join(
-                        " ",
+                var combined = groupedWrites.Length == 1
+                    ? groupedWrites[0]
+                    : new PlannedFileWrite(
+                        group.Key,
                         groupedWrites
-                            .Select(write => write.Reason)
-                            .Where(reason => !string.IsNullOrWhiteSpace(reason))
-                            .Distinct(StringComparer.Ordinal)));
+                            .SelectMany(write => write.Sources)
+                            .Distinct()
+                            .ToArray(),
+                        groupedWrites.Any(write => write.ReplacesExistingOutput),
+                        string.Join(
+                            " ",
+                            groupedWrites
+                                .Select(write => write.Reason)
+                                .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                                .Distinct(StringComparer.Ordinal)),
+                        CombineFingerprintValues(groupedWrites.Select(write => write.SourceFingerprint)));
+                return combined with
+                {
+                    SourceFingerprint = CombineFingerprintValues(
+                        [combined.SourceFingerprint, pendingEditFingerprint]),
+                };
             })
             .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
     }
+
+    private static string? CombineFingerprintValues(IEnumerable<string?> values)
+    {
+        var fingerprints = values
+            .Where(fingerprint => !string.IsNullOrWhiteSpace(fingerprint))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return fingerprints.Length switch
+        {
+            0 => null,
+            1 => fingerprints[0],
+            _ => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                "KM.SV.CombinedChangePlan.v1\n" + string.Join('\n', fingerprints)))),
+        };
+    }
+
+    private static string CreatePendingEditFingerprint(IReadOnlyList<PendingEdit> edits)
+    {
+        var canonical = new StringBuilder("KM.SV.PendingEdits.v1|");
+        AppendFingerprintComponent(canonical, edits.Count.ToString(CultureInfo.InvariantCulture));
+        foreach (var edit in edits
+                     .OrderBy(edit => edit.Domain, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Owner, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.NewValue, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Summary, StringComparer.Ordinal))
+        {
+            AppendFingerprintComponent(canonical, edit.Domain);
+            AppendFingerprintComponent(canonical, edit.Summary);
+            AppendFingerprintComponent(canonical, edit.RecordId);
+            AppendFingerprintComponent(canonical, edit.Field);
+            AppendFingerprintComponent(canonical, edit.NewValue);
+            AppendFingerprintComponent(canonical, edit.Owner);
+            AppendFingerprintComponent(
+                canonical,
+                edit.Sources.Count.ToString(CultureInfo.InvariantCulture));
+            foreach (var source in edit.Sources
+                         .OrderBy(source => source.Layer)
+                         .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+            {
+                AppendFingerprintComponent(
+                    canonical,
+                    ((int)source.Layer).ToString(CultureInfo.InvariantCulture));
+                AppendFingerprintComponent(canonical, source.RelativePath);
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendFingerprintComponent(StringBuilder destination, string? value)
+    {
+        destination.Append(value?.Length ?? -1)
+            .Append(':')
+            .Append(value)
+            .Append('|');
+    }
+
+    private static IReadOnlyList<NormalDomainOutputSnapshot> CaptureNormalDomainOutputSnapshots(
+        ProjectPaths paths,
+        IReadOnlyList<PlannedFileWrite> writes,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            return writes
+                .Select(write => ResolvePlannedOutputPath(paths, write.TargetRelativePath))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(path => File.Exists(path)
+                    ? new NormalDomainOutputSnapshot(
+                        path,
+                        Existed: true,
+                        File.ReadAllBytes(path),
+                        File.GetLastWriteTimeUtc(path))
+                    : new NormalDomainOutputSnapshot(
+                        path,
+                        Existed: false,
+                        Contents: null,
+                        LastWriteTimeUtc: null))
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or ArgumentException
+            or NotSupportedException)
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Scarlet/Violet output rollback state could not be prepared: {exception.Message}",
+                "sv.editor",
+                expected: "Readable and writable output targets"));
+            return [];
+        }
+    }
+
+    private static void RestoreNormalDomainOutputSnapshots(
+        IReadOnlyList<NormalDomainOutputSnapshot> snapshots,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var snapshot in snapshots.Reverse())
+        {
+            try
+            {
+                if (snapshot.Existed)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(snapshot.Path)!);
+                    File.WriteAllBytes(snapshot.Path, snapshot.Contents!);
+                    File.SetLastWriteTimeUtc(snapshot.Path, snapshot.LastWriteTimeUtc!.Value);
+                }
+                else if (File.Exists(snapshot.Path))
+                {
+                    File.Delete(snapshot.Path);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Scarlet/Violet output rollback could not restore a target: {exception.Message}",
+                    "sv.editor",
+                    expected: "Original output state"));
+            }
+        }
+    }
+
+    private static string ResolvePlannedOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException("Set an output root before applying Scarlet/Violet edits.");
+        }
+
+        if (Path.IsPathRooted(targetRelativePath))
+        {
+            throw new InvalidOperationException("Scarlet/Violet output targets must be relative paths.");
+        }
+
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(outputRoot, targetPath)))
+        {
+            throw new InvalidOperationException("Scarlet/Violet output target escapes the output root.");
+        }
+
+        return targetPath;
+    }
+
+    private sealed record NormalDomainOutputSnapshot(
+        string Path,
+        bool Existed,
+        byte[]? Contents,
+        DateTime? LastWriteTimeUtc);
+
+    private sealed record NormalDomainChangePlanSnapshot(
+        ChangePlan CombinedPlan,
+        IReadOnlyDictionary<SvEditSessionDomain, ChangePlan> DomainPlans);
 
     private static SvEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {

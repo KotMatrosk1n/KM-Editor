@@ -20,7 +20,7 @@ public enum SvCacheMode
 
 public sealed class SvCacheManager
 {
-    public const int CacheSchemaVersion = 1;
+    public const int CacheSchemaVersion = 2;
     public const string ParserVersion = "sv-cache-parser-v1";
     public const string DecompressorVersion = "sv-cache-decompressor-v1";
 
@@ -35,6 +35,7 @@ public sealed class SvCacheManager
     private const string WarmupPathsFileName = "warmup-paths.json";
     private const string WarmupStateFileName = "warmup-state.json";
     private const string PayloadDirectoryName = "payloads";
+    private const string ArtifactsDirectoryName = "artifacts";
     private const string MetadataDirectoryName = "metadata";
     private const int TextWarmupBatchSize = 8;
     private static readonly TimeSpan WarmupStepTimeBudget = TimeSpan.FromMilliseconds(35);
@@ -56,6 +57,8 @@ public sealed class SvCacheManager
     private IReadOnlyList<string>? retainedPackNames;
     private SvCacheSourceFingerprint? retainedWarmupPathsSource;
     private IReadOnlyList<string>? retainedWarmupVirtualPaths;
+    private SvCacheSourceFingerprint? retainedBalancedWarmupPathsSource;
+    private IReadOnlyList<string>? retainedBalancedWarmupVirtualPaths;
     private SvCacheSourceFingerprint? retainedWarmupProgressSource;
     private SvCacheMode? retainedWarmupProgressMode;
     private IReadOnlyList<string>? retainedWarmupProgressPaths;
@@ -258,6 +261,9 @@ public sealed class SvCacheManager
                 if (!string.IsNullOrWhiteSpace(virtualPath))
                 {
                     yield return virtualPath;
+                    yield return Path.ChangeExtension(virtualPath, ".tbl")
+                        .Replace(Path.DirectorySeparatorChar, '/')
+                        .Replace(Path.AltDirectorySeparatorChar, '/');
                 }
             }
         }
@@ -374,7 +380,10 @@ public sealed class SvCacheManager
             }
 
             var stopwatch = Stopwatch.StartNew();
-            var warmupVirtualPaths = GetWarmupVirtualPaths(context);
+            var warmupVirtualPaths = SelectWarmupVirtualPaths(
+                settings.Mode,
+                context,
+                GetWarmupVirtualPaths(context));
             if (warmupVirtualPaths.Count == 0)
             {
                 return CreateStatus(settings, context, activeProjectPreserved: false);
@@ -502,6 +511,182 @@ public sealed class SvCacheManager
             EnsureRoot();
             var index = GetBaseTrinityIndex(paths, out var context);
             return GetOrCreatePackNames(context, index);
+        }
+    }
+
+    private IReadOnlyList<string> SelectWarmupVirtualPaths(
+        SvCacheMode mode,
+        SvCacheProjectContext context,
+        IReadOnlyList<string> allPaths)
+    {
+        if (mode == SvCacheMode.Performance)
+        {
+            return allPaths;
+        }
+
+        if (mode == SvCacheMode.Minimal)
+        {
+            return [];
+        }
+
+        if (retainedBalancedWarmupVirtualPaths is not null
+            && retainedBalancedWarmupPathsSource == context.Source)
+        {
+            return retainedBalancedWarmupVirtualPaths;
+        }
+
+        var balancedPaths = allPaths
+            .Where(path => !path.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        retainedBalancedWarmupPathsSource = context.Source;
+        retainedBalancedWarmupVirtualPaths = balancedPaths;
+        return balancedPaths;
+    }
+
+    internal bool TryReadTextArtifact(
+        ProjectPaths paths,
+        string artifactKey,
+        string artifactParserVersion,
+        IReadOnlyList<string> baseVirtualPaths,
+        out byte[] payload)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var descriptor = CreateTextArtifactDescriptor(
+            artifactKey,
+            artifactParserVersion,
+            baseVirtualPaths);
+
+        lock (syncRoot)
+        {
+            try
+            {
+                EnsureRoot();
+                var settings = ReadSettings();
+                if (settings.Mode != SvCacheMode.Performance
+                    || !AreArtifactSourcesArchiveBacked(paths, descriptor.BaseVirtualPaths))
+                {
+                    payload = [];
+                    return false;
+                }
+
+                var context = CreateProjectContext(paths);
+                DeleteObsoleteProjectCaches(context);
+                if (!TryReadTextArtifactCore(
+                    context,
+                    descriptor,
+                    settings.MaxCacheSizeBytes,
+                    out payload))
+                {
+                    return false;
+                }
+
+                EnsureSourceManifestIsPersisted(context);
+                TouchProjectDirectory(context);
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException
+                or JsonException
+                or UnauthorizedAccessException
+                or InvalidDataException)
+            {
+                payload = [];
+                return false;
+            }
+        }
+    }
+
+    internal bool WriteTextArtifact(
+        ProjectPaths paths,
+        string artifactKey,
+        string artifactParserVersion,
+        IReadOnlyList<string> baseVirtualPaths,
+        byte[] payload)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(payload);
+        var descriptor = CreateTextArtifactDescriptor(
+            artifactKey,
+            artifactParserVersion,
+            baseVirtualPaths);
+
+        lock (syncRoot)
+        {
+            SvCacheProjectContext? context = null;
+            try
+            {
+                EnsureRoot();
+                var settings = ReadSettings();
+                if (settings.Mode != SvCacheMode.Performance
+                    || payload.LongLength > settings.MaxCacheSizeBytes
+                    || !AreArtifactSourcesArchiveBacked(paths, descriptor.BaseVirtualPaths))
+                {
+                    return false;
+                }
+
+                context = CreateProjectContext(paths);
+                DeleteObsoleteProjectCaches(context);
+                EnsureSourceManifestIsPersisted(context);
+                WriteTextArtifactCore(context, descriptor, payload);
+
+                if (!TryReadTextArtifactCore(
+                        context,
+                        descriptor,
+                        settings.MaxCacheSizeBytes,
+                        out var verifiedPayload)
+                    || !verifiedPayload.AsSpan().SequenceEqual(payload))
+                {
+                    DeleteTextArtifactPair(context, descriptor);
+                    return false;
+                }
+
+                TouchProjectDirectory(context);
+                PruneIfNeeded(settings, context);
+                return TryReadTextArtifactCore(
+                    context,
+                    descriptor,
+                    settings.MaxCacheSizeBytes,
+                    out _);
+            }
+            catch (Exception exception) when (exception is IOException
+                or JsonException
+                or UnauthorizedAccessException
+                or InvalidDataException)
+            {
+                if (context is not null)
+                {
+                    DeleteTextArtifactPair(context, descriptor);
+                }
+
+                return false;
+            }
+        }
+    }
+
+    internal void InvalidateTextArtifact(
+        ProjectPaths paths,
+        string artifactKey,
+        string artifactParserVersion,
+        IReadOnlyList<string> baseVirtualPaths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var descriptor = CreateTextArtifactDescriptor(
+            artifactKey,
+            artifactParserVersion,
+            baseVirtualPaths);
+
+        lock (syncRoot)
+        {
+            try
+            {
+                EnsureRoot();
+                var context = CreateProjectContext(paths);
+                DeleteTextArtifactPair(context, descriptor);
+            }
+            catch (Exception exception) when (exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException)
+            {
+            }
         }
     }
 
@@ -672,12 +857,36 @@ public sealed class SvCacheManager
         var manifestPath = GetWarmupPathsPath(context);
         if (File.Exists(manifestPath))
         {
-            return false;
+            try
+            {
+                using var stream = OpenJsonReadStream(manifestPath);
+                var existing = JsonSerializer.Deserialize<SvCacheWarmupPathsFile>(stream, JsonOptions);
+                if (existing is not null
+                    && existing.CacheSchemaVersion == CacheSchemaVersion
+                    && existing.Source == context.Source
+                    && IsValidWarmupPathList(existing.VirtualPaths)
+                    && existing.VirtualPaths.SequenceEqual(virtualPaths, StringComparer.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+            catch (Exception exception) when (exception is IOException
+                or JsonException
+                or UnauthorizedAccessException)
+            {
+            }
         }
 
         WriteJsonAtomic(
             manifestPath,
             new SvCacheWarmupPathsFile(CacheSchemaVersion, context.Source, virtualPaths));
+        retainedWarmupProgressSource = null;
+        retainedWarmupProgressMode = null;
+        retainedWarmupProgressPaths = null;
+        retainedCompletedWarmupPaths = null;
+        retainedBalancedWarmupPathsSource = null;
+        retainedBalancedWarmupVirtualPaths = null;
+        TryDeleteFile(GetWarmupStatePath(context));
         return true;
     }
 
@@ -689,6 +898,8 @@ public sealed class SvCacheManager
         retainedPackNames = null;
         retainedWarmupPathsSource = null;
         retainedWarmupVirtualPaths = null;
+        retainedBalancedWarmupPathsSource = null;
+        retainedBalancedWarmupVirtualPaths = null;
         retainedWarmupProgressSource = null;
         retainedWarmupProgressMode = null;
         retainedWarmupProgressPaths = null;
@@ -869,6 +1080,107 @@ public sealed class SvCacheManager
         }
     }
 
+    private bool TryReadTextArtifactCore(
+        SvCacheProjectContext context,
+        SvTextArtifactDescriptor descriptor,
+        long maximumPayloadSize,
+        out byte[] payload)
+    {
+        var payloadPath = GetTextArtifactPayloadPath(context, descriptor);
+        var metadataPath = GetTextArtifactMetadataPath(context, descriptor);
+        if (!File.Exists(payloadPath) || !File.Exists(metadataPath))
+        {
+            DeleteTextArtifactPair(context, descriptor);
+            payload = [];
+            return false;
+        }
+
+        try
+        {
+            SvCacheTextArtifactMetadata? metadata;
+            using (var stream = OpenJsonReadStream(metadataPath))
+            {
+                metadata = JsonSerializer.Deserialize<SvCacheTextArtifactMetadata>(stream, JsonOptions);
+            }
+
+            if (metadata is null
+                || metadata.CacheSchemaVersion != CacheSchemaVersion
+                || metadata.Source != context.Source
+                || !string.Equals(metadata.ArtifactKey, descriptor.ArtifactKey, StringComparison.Ordinal)
+                || !string.Equals(
+                    metadata.ArtifactParserVersion,
+                    descriptor.ArtifactParserVersion,
+                    StringComparison.Ordinal)
+                || metadata.BaseVirtualPaths is null
+                || !metadata.BaseVirtualPaths.SequenceEqual(
+                    descriptor.BaseVirtualPaths,
+                    StringComparer.Ordinal)
+                || metadata.PayloadSize < 0
+                || metadata.PayloadSize > maximumPayloadSize)
+            {
+                DeleteTextArtifactPair(context, descriptor);
+                payload = [];
+                return false;
+            }
+
+            var payloadInfo = new FileInfo(payloadPath);
+            if (!payloadInfo.Exists || payloadInfo.Length != metadata.PayloadSize)
+            {
+                DeleteTextArtifactPair(context, descriptor);
+                payload = [];
+                return false;
+            }
+
+            payload = File.ReadAllBytes(payloadPath);
+            var payloadHash = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+            if (!string.Equals(payloadHash, metadata.PayloadSha256, StringComparison.Ordinal))
+            {
+                DeleteTextArtifactPair(context, descriptor);
+                payload = [];
+                return false;
+            }
+
+            TouchCacheFile(payloadPath);
+            TouchCacheFile(metadataPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException
+            or JsonException
+            or UnauthorizedAccessException)
+        {
+            DeleteTextArtifactPair(context, descriptor);
+            payload = [];
+            return false;
+        }
+    }
+
+    private void WriteTextArtifactCore(
+        SvCacheProjectContext context,
+        SvTextArtifactDescriptor descriptor,
+        byte[] payload)
+    {
+        var metadata = new SvCacheTextArtifactMetadata(
+            CacheSchemaVersion,
+            context.Source,
+            descriptor.ArtifactKey,
+            descriptor.ArtifactParserVersion,
+            descriptor.BaseVirtualPaths,
+            payload.LongLength,
+            Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant(),
+            DateTimeOffset.UtcNow);
+
+        WriteBytesAtomic(GetTextArtifactPayloadPath(context, descriptor), payload);
+        WriteJsonAtomic(GetTextArtifactMetadataPath(context, descriptor), metadata);
+    }
+
+    private void DeleteTextArtifactPair(
+        SvCacheProjectContext context,
+        SvTextArtifactDescriptor descriptor)
+    {
+        TryDeleteFile(GetTextArtifactPayloadPath(context, descriptor));
+        TryDeleteFile(GetTextArtifactMetadataPath(context, descriptor));
+    }
+
     private IReadOnlyList<string> GetWarmupBatch(
         IReadOnlyList<string> warmupVirtualPaths,
         IReadOnlySet<string> completedPaths,
@@ -1007,7 +1319,10 @@ public sealed class SvCacheManager
     {
         var cacheSize = GetCacheContentSize();
         var warmupVirtualPaths = context is not null && settings.Mode != SvCacheMode.Minimal
-            ? GetWarmupVirtualPathsForStatus(context)
+            ? SelectWarmupVirtualPaths(
+                settings.Mode,
+                context,
+                GetWarmupVirtualPathsForStatus(context))
             : Array.Empty<string>();
         var total = warmupVirtualPaths.Count;
         var capacityLimited = context is not null && IsWarmupCapacityLimited(settings, context);
@@ -1066,7 +1381,8 @@ public sealed class SvCacheManager
                 var manifest = JsonSerializer.Deserialize<SvCacheWarmupPathsFile>(stream, JsonOptions);
                 if (manifest is not null
                     && manifest.CacheSchemaVersion == CacheSchemaVersion
-                    && manifest.Source == context.Source)
+                    && manifest.Source == context.Source
+                    && IsValidWarmupPathList(manifest.VirtualPaths))
                 {
                     retainedWarmupPathsSource = context.Source;
                     retainedWarmupVirtualPaths = manifest.VirtualPaths;
@@ -1079,6 +1395,23 @@ public sealed class SvCacheManager
         }
 
         return WarmupVirtualPaths;
+    }
+
+    private static bool IsValidWarmupPathList(IReadOnlyList<string>? virtualPaths)
+    {
+        return virtualPaths is { Count: > 0 }
+            && virtualPaths.All(path =>
+            {
+                if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
+                {
+                    return false;
+                }
+
+                var segments = path.Replace('\\', '/').Split('/');
+                return segments.All(segment => !string.IsNullOrWhiteSpace(segment)
+                    && !string.Equals(segment, ".", StringComparison.Ordinal)
+                    && !string.Equals(segment, "..", StringComparison.Ordinal));
+            });
     }
 
     private HashSet<string> GetOrCreateCompletedWarmupPaths(
@@ -1179,6 +1512,7 @@ public sealed class SvCacheManager
         }
 
         var activeEntriesEvicted = false;
+        var warmupEntriesEvicted = false;
         var activeProjectDirectory = Path.Combine(ProjectsPath, activeProjectKey);
         foreach (var candidate in GetActiveProjectEvictionCandidates(activeProjectDirectory))
         {
@@ -1190,11 +1524,12 @@ public sealed class SvCacheManager
             }
 
             activeEntriesEvicted |= removedAny;
+            warmupEntriesEvicted |= removedAny && candidate.AffectsWarmupCapacity;
 
             currentSize = GetCacheContentSize();
             if (currentSize <= settings.MaxCacheSizeBytes)
             {
-                MarkWarmupCapacityLimitedAfterEviction(settings, activeContext, activeEntriesEvicted);
+                MarkWarmupCapacityLimitedAfterEviction(settings, activeContext, warmupEntriesEvicted);
                 return activeEntriesEvicted;
             }
         }
@@ -1205,10 +1540,11 @@ public sealed class SvCacheManager
             {
                 ClearMemoryCacheCore();
                 activeEntriesEvicted = true;
+                warmupEntriesEvicted = true;
             }
         }
 
-        MarkWarmupCapacityLimitedAfterEviction(settings, activeContext, activeEntriesEvicted);
+        MarkWarmupCapacityLimitedAfterEviction(settings, activeContext, warmupEntriesEvicted);
         return activeEntriesEvicted;
     }
 
@@ -1287,18 +1623,52 @@ public sealed class SvCacheManager
             }
         }
 
+        var artifactDirectory = Path.Combine(projectDirectory, ArtifactsDirectoryName);
+        if (Directory.Exists(artifactDirectory))
+        {
+            var pairedArtifactMetadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var artifactPath in Directory.EnumerateFiles(artifactDirectory, "*.bin"))
+            {
+                var metadataPath = Path.ChangeExtension(artifactPath, ".json");
+                var paths = new List<string> { artifactPath };
+                if (File.Exists(metadataPath))
+                {
+                    paths.Add(metadataPath);
+                }
+
+                pairedArtifactMetadata.Add(metadataPath);
+                candidates.Add(CreateEvictionCandidate(paths, affectsWarmupCapacity: false));
+            }
+
+            foreach (var metadataPath in Directory.EnumerateFiles(artifactDirectory, "*.json"))
+            {
+                if (!pairedArtifactMetadata.Contains(metadataPath))
+                {
+                    candidates.Add(CreateEvictionCandidate(
+                        [metadataPath],
+                        affectsWarmupCapacity: false));
+                }
+            }
+        }
+
         candidates.AddRange(virtualMetadataByKey.Values.Select(path => CreateEvictionCandidate([path])));
 
-        return candidates.OrderBy(candidate => candidate.LastUsedUtc).ToArray();
+        return candidates
+            .OrderBy(candidate => candidate.AffectsWarmupCapacity)
+            .ThenBy(candidate => candidate.LastUsedUtc)
+            .ToArray();
     }
 
-    private static CacheEvictionCandidate CreateEvictionCandidate(IReadOnlyList<string> paths)
+    private static CacheEvictionCandidate CreateEvictionCandidate(
+        IReadOnlyList<string> paths,
+        bool affectsWarmupCapacity = true)
     {
         var files = paths.Select(path => new FileInfo(path)).Where(file => file.Exists).ToArray();
         return new CacheEvictionCandidate(
             files.Select(file => file.FullName).ToArray(),
             files.Length == 0 ? DateTime.MinValue : files.Max(file => file.LastWriteTimeUtc),
-            files.Sum(file => file.Length));
+            files.Sum(file => file.Length),
+            affectsWarmupCapacity);
     }
 
     private void DeleteObsoleteProjectCaches(SvCacheProjectContext activeContext)
@@ -1608,6 +1978,127 @@ public sealed class SvCacheManager
         return normalized;
     }
 
+    private static SvTextArtifactDescriptor CreateTextArtifactDescriptor(
+        string artifactKey,
+        string artifactParserVersion,
+        IReadOnlyList<string> baseVirtualPaths)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(artifactKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(artifactParserVersion);
+        ArgumentNullException.ThrowIfNull(baseVirtualPaths);
+        if (artifactKey.Length > 2048)
+        {
+            throw new ArgumentException("S/V Text artifact keys cannot exceed 2048 characters.", nameof(artifactKey));
+        }
+
+        if (artifactParserVersion.Length > 256)
+        {
+            throw new ArgumentException(
+                "S/V Text artifact parser versions cannot exceed 256 characters.",
+                nameof(artifactParserVersion));
+        }
+
+        if (baseVirtualPaths.Count is < 1 or > 2)
+        {
+            throw new ArgumentException(
+                "S/V Text artifacts require one DAT source and may include one TBL source.",
+                nameof(baseVirtualPaths));
+        }
+
+        var normalizedPaths = baseVirtualPaths
+            .Select(NormalizeTextArtifactSourcePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var dataPathCount = normalizedPaths.Count(
+            path => path.EndsWith(".dat", StringComparison.OrdinalIgnoreCase));
+        var tablePathCount = normalizedPaths.Count(
+            path => path.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase));
+        if (normalizedPaths.Length != baseVirtualPaths.Count
+            || dataPathCount != 1
+            || tablePathCount > 1)
+        {
+            throw new ArgumentException(
+                "S/V Text artifact sources must identify one unique DAT and an optional unique TBL.",
+                nameof(baseVirtualPaths));
+        }
+
+        return new SvTextArtifactDescriptor(
+            artifactKey.Trim(),
+            artifactParserVersion.Trim(),
+            normalizedPaths);
+    }
+
+    private static string NormalizeTextArtifactSourcePath(string virtualPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualPath);
+        var normalized = NormalizeVirtualPath(virtualPath.Trim());
+        var segments = normalized.Split('/');
+        if (segments.Any(segment => string.IsNullOrWhiteSpace(segment) || segment is "." or "..")
+            || !normalized.StartsWith(
+                $"{SvMessagePathResolver.MessageRootPath}/",
+                StringComparison.OrdinalIgnoreCase)
+            || (!normalized.EndsWith(".dat", StringComparison.OrdinalIgnoreCase)
+                && !normalized.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ArgumentException(
+                "S/V Text artifact sources must be safe message DAT or TBL virtual paths.",
+                nameof(virtualPath));
+        }
+
+        return normalized;
+    }
+
+    private static bool AreArtifactSourcesArchiveBacked(
+        ProjectPaths paths,
+        IReadOnlyList<string> baseVirtualPaths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var baseRoot = Path.GetFullPath(paths.BaseRomFsPath);
+            foreach (var virtualPath in baseVirtualPaths)
+            {
+                var loosePath = Path.GetFullPath(Path.Combine(
+                    baseRoot,
+                    virtualPath.Replace('/', Path.DirectorySeparatorChar)));
+                var relativePath = Path.GetRelativePath(baseRoot, loosePath);
+                if (relativePath.StartsWith("..", StringComparison.Ordinal)
+                    || Path.IsPathRooted(relativePath)
+                    || IsLooseArtifactSourceFile(loosePath))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or NotSupportedException
+            or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsLooseArtifactSourceFile(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.Directory) == 0;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+    }
+
     private static string GetVirtualPathKey(string virtualPath)
     {
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(virtualPath))).ToLowerInvariant();
@@ -1616,6 +2107,35 @@ public sealed class SvCacheManager
     private static string GetPayloadDirectory(SvCacheProjectContext context)
     {
         return Path.Combine(context.ProjectDirectory, PayloadDirectoryName);
+    }
+
+    private static string GetTextArtifactDirectory(SvCacheProjectContext context)
+    {
+        return Path.Combine(context.ProjectDirectory, ArtifactsDirectoryName);
+    }
+
+    private static string GetTextArtifactPayloadPath(
+        SvCacheProjectContext context,
+        SvTextArtifactDescriptor descriptor)
+    {
+        return Path.Combine(GetTextArtifactDirectory(context), $"{GetTextArtifactStorageKey(descriptor)}.bin");
+    }
+
+    private static string GetTextArtifactMetadataPath(
+        SvCacheProjectContext context,
+        SvTextArtifactDescriptor descriptor)
+    {
+        return Path.Combine(GetTextArtifactDirectory(context), $"{GetTextArtifactStorageKey(descriptor)}.json");
+    }
+
+    private static string GetTextArtifactStorageKey(SvTextArtifactDescriptor descriptor)
+    {
+        var identity = string.Join(
+            '\n',
+            descriptor.ArtifactParserVersion,
+            descriptor.ArtifactKey,
+            string.Join('\n', descriptor.BaseVirtualPaths));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
     }
 
     private static string GetPayloadPath(SvCacheProjectContext context, string virtualPath)
@@ -1904,6 +2424,16 @@ public sealed class SvCacheManager
         long DecompressedSize,
         DateTimeOffset CreatedAtUtc);
 
+    private sealed record SvCacheTextArtifactMetadata(
+        int CacheSchemaVersion,
+        SvCacheSourceFingerprint Source,
+        string ArtifactKey,
+        string ArtifactParserVersion,
+        IReadOnlyList<string> BaseVirtualPaths,
+        long PayloadSize,
+        string PayloadSha256,
+        DateTimeOffset CreatedAtUtc);
+
     private sealed record SvCacheVirtualFileMetadata(
         int CacheSchemaVersion,
         SvCacheSourceFingerprint Source,
@@ -1916,10 +2446,16 @@ public sealed class SvCacheManager
         string ProjectDirectory,
         SvCacheSourceFingerprint Source);
 
+    private sealed record SvTextArtifactDescriptor(
+        string ArtifactKey,
+        string ArtifactParserVersion,
+        IReadOnlyList<string> BaseVirtualPaths);
+
     private sealed record CacheEvictionCandidate(
         IReadOnlyList<string> Paths,
         DateTime LastUsedUtc,
-        long SizeBytes);
+        long SizeBytes,
+        bool AffectsWarmupCapacity);
 }
 
 public sealed record SvCacheSettings(
