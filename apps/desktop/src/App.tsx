@@ -629,7 +629,7 @@ const gameDefinitions = {
 >;
 
 const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet', 'za'] as const satisfies readonly ProjectGame[];
-const trinityTextWorkflowPageLimit = 500;
+const textWorkflowPageLimit = 500;
 
 function createTextWorkflowQuery(
   game: ProjectGame | null,
@@ -638,17 +638,18 @@ function createTextWorkflowQuery(
   offset = 0,
   textLanguage: string | null = null
 ): TextWorkflowQuery | undefined {
-  if (!isScarletVioletGame(game) && !isPokemonLegendsZAGame(game)) {
+  const supportsCategorizedTextQuery =
+    isSwordShieldGame(game) || isPokemonLegendsZAGame(game);
+  if (!isScarletVioletGame(game) && !supportsCategorizedTextQuery) {
     return undefined;
   }
 
   const trimmedSearchText = searchText.trim();
-  const isLegendsZA = isPokemonLegendsZAGame(game);
   return {
-    categoryId: isLegendsZA ? categoryId : null,
-    language: isLegendsZA ? textLanguage : null,
-    limit: trinityTextWorkflowPageLimit,
-    offset: isLegendsZA ? offset : 0,
+    categoryId: supportsCategorizedTextQuery ? categoryId : null,
+    language: supportsCategorizedTextQuery ? textLanguage : null,
+    limit: textWorkflowPageLimit,
+    offset: supportsCategorizedTextQuery ? offset : 0,
     searchText: trimmedSearchText.length > 0 ? trimmedSearchText : null
   };
 }
@@ -1961,6 +1962,8 @@ export function App({
   const [textCategoryId, setTextCategoryId] = useState<string | null>(null);
   const [textResultOffset, setTextResultOffset] = useState(0);
   const [textLanguage, setTextLanguage] = useState<string | null>(null);
+  const [isTextQueryPending, setIsTextQueryPending] = useState(false);
+  const textQueryRevisionRef = useRef(0);
   const textQueryContextRef = useRef({
     categoryId: textCategoryId,
     language: textLanguage,
@@ -2353,6 +2356,7 @@ export function App({
   const isPokemonLegendsZAProject = isPokemonLegendsZAGame(selectedGame);
   const isSwordShieldProject = selectedGame === 'sword' || selectedGame === 'shield';
   const supportsTrinityOutput = isScarletVioletProject || isPokemonLegendsZAProject;
+  const supportsTextQuery = isSwordShieldProject || supportsTrinityOutput;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
   const trainersWorkflowRef = useRef(trainersWorkflow);
@@ -3211,6 +3215,9 @@ export function App({
     setTextCategoryId(null);
     setTextResultOffset(0);
     setTextLanguage(null);
+    setIsTextQueryPending(false);
+    textQueryRevisionRef.current += 1;
+    skipNormalizedTextQueryReloadRef.current = false;
     clearPendingEditState();
     resetProjectSession();
     clearLoadedWorkflowData();
@@ -4814,7 +4821,12 @@ export function App({
   };
 
   const handleTextWorkflowLoadError = useCallback(
-    (error: unknown) => {
+    (error: unknown, queryRevision = textQueryRevisionRef.current) => {
+      if (queryRevision !== textQueryRevisionRef.current) {
+        return;
+      }
+
+      setIsTextQueryPending(false);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       const committedWorkflow = textWorkflowRef.current;
       setTextCategoryId(committedWorkflow?.selectedCategoryId ?? null);
@@ -4825,7 +4837,12 @@ export function App({
   );
 
   const commitTextWorkflow = useCallback(
-    (workflow: TextWorkflow) => {
+    (workflow: TextWorkflow, queryRevision = textQueryRevisionRef.current) => {
+      if (queryRevision !== textQueryRevisionRef.current) {
+        return;
+      }
+
+      setIsTextQueryPending(false);
       const normalizedContext = {
         categoryId: workflow.selectedCategoryId,
         language: workflow.selectedLanguage,
@@ -4851,6 +4868,7 @@ export function App({
   );
 
   const handleOpenTextWorkflow = async (searchTextOverride = textSearchText) => {
+    const queryRevision = textQueryRevisionRef.current;
     await runRetainedWorkflowLoad(
       'text',
       setIsTextLoading,
@@ -4864,37 +4882,61 @@ export function App({
           textLanguage
         )
       }),
-      (response) => commitTextWorkflow(response.workflow),
+      (response) => commitTextWorkflow(response.workflow, queryRevision),
       undefined,
-      handleTextWorkflowLoadError
+      (error) => handleTextWorkflowLoadError(error, queryRevision)
     );
   };
 
   const handleTextSearchChange = (nextSearchText: string) => {
+    if (nextSearchText === textSearchText && textResultOffset === 0) {
+      return;
+    }
+
+    setIsTextQueryPending(true);
+    textQueryRevisionRef.current += 1;
     setTextResultOffset(0);
     setSelectedTextKey(null);
     setTextSearchText(nextSearchText);
   };
 
   const handleTextCategoryChange = (categoryId: string) => {
+    if (categoryId === textCategoryId && textResultOffset === 0) {
+      return;
+    }
+
+    setIsTextQueryPending(true);
+    textQueryRevisionRef.current += 1;
     setTextCategoryId(categoryId);
     setTextResultOffset(0);
     setSelectedTextKey(null);
   };
 
   const handleTextLanguageChange = (nextLanguage: string) => {
+    if (nextLanguage === textLanguage && textResultOffset === 0) {
+      return;
+    }
+
+    setIsTextQueryPending(true);
+    textQueryRevisionRef.current += 1;
     setTextLanguage(nextLanguage);
     setTextResultOffset(0);
     setSelectedTextKey(null);
   };
 
   const handleTextPageChange = (offset: number) => {
+    if (Math.max(0, offset) === textResultOffset) {
+      return;
+    }
+
+    setIsTextQueryPending(true);
+    textQueryRevisionRef.current += 1;
     setTextResultOffset(Math.max(0, offset));
     setSelectedTextKey(null);
   };
 
   useEffect(() => {
-    if (!supportsTrinityOutput || activeSection !== 'text' || !textWorkflowRef.current) {
+    if (!supportsTextQuery || activeSection !== 'text' || !textWorkflowRef.current) {
       return;
     }
 
@@ -4908,6 +4950,7 @@ export function App({
         return;
       }
 
+      const queryRevision = textQueryRevisionRef.current;
       void runRetainedWorkflowLoad(
         'text',
         setIsTextLoading,
@@ -4921,9 +4964,9 @@ export function App({
             textLanguage
           )
         }),
-        (response) => commitTextWorkflow(response.workflow),
+        (response) => commitTextWorkflow(response.workflow, queryRevision),
         undefined,
-        handleTextWorkflowLoadError
+        (error) => handleTextWorkflowLoadError(error, queryRevision)
       );
     }, 250);
 
@@ -4936,7 +4979,7 @@ export function App({
     runRetainedWorkflowLoad,
     selectedGame,
     setBridgeDiagnostics,
-    supportsTrinityOutput,
+    supportsTextQuery,
     textCategoryId,
     textLanguage,
     textResultOffset,
@@ -8737,6 +8780,7 @@ export function App({
   };
 
   const handleUpdateTextEntry = async (textKey: string, value: string) => {
+    const queryRevision = textQueryRevisionRef.current;
     workflowLoadGenerationRef.current.invalidate('text');
     isTextUpdatingRef.current = true;
     setIsTextUpdating(true);
@@ -8772,7 +8816,7 @@ export function App({
         },
         (updateResponse) => {
           if (updateResponse.didSucceed && updateResponse.workflow) {
-            commitTextWorkflow(updateResponse.workflow);
+            commitTextWorkflow(updateResponse.workflow, queryRevision);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
@@ -10851,6 +10895,7 @@ export function App({
     if (textWorkflow && refreshSections.has('text')) {
       reloadTasks.push(
         async () => {
+          const queryRevision = textQueryRevisionRef.current;
           const response = await bridge.loadTextWorkflow({
             paths,
             query: createTextWorkflowQuery(
@@ -10862,7 +10907,7 @@ export function App({
             )
           });
           if (canCommitRefresh()) {
-            commitTextWorkflow(response.workflow);
+            commitTextWorkflow(response.workflow, queryRevision);
           }
         }
       );
@@ -11928,8 +11973,9 @@ export function App({
               <TextSection
                 editSession={getEditSessionForSection('text')}
                 isEditStarting={isEditStarting}
-                isPagedResultWindow={supportsTrinityOutput}
+                isPagedResultWindow={supportsTextQuery}
                 isTextLoading={isTextLoading}
+                isTextQueryPending={isTextQueryPending}
                 isTextUpdating={isTextUpdating}
                 onCategoryChange={handleTextCategoryChange}
                 onLanguageChange={handleTextLanguageChange}
@@ -18676,6 +18722,62 @@ const textCategoryLocalizationKeys: Readonly<
   'other-scripts': {
     label: 'text.category.other-scripts.label',
     description: 'text.category.other-scripts.description'
+  },
+  'swsh-main-story': {
+    label: 'text.category.swsh-main-story.label',
+    description: 'text.category.swsh-main-story.description'
+  },
+  'swsh-side-events': {
+    label: 'text.category.swsh-side-events.label',
+    description: 'text.category.swsh-side-events.description'
+  },
+  'swsh-isle-of-armor': {
+    label: 'text.category.swsh-isle-of-armor.label',
+    description: 'text.category.swsh-isle-of-armor.description'
+  },
+  'swsh-crown-tundra': {
+    label: 'text.category.swsh-crown-tundra.label',
+    description: 'text.category.swsh-crown-tundra.description'
+  },
+  'swsh-field-world': {
+    label: 'text.category.swsh-field-world.label',
+    description: 'text.category.swsh-field-world.description'
+  },
+  'swsh-battles': {
+    label: 'text.category.swsh-battles.label',
+    description: 'text.category.swsh-battles.description'
+  },
+  'swsh-items': {
+    label: 'text.category.swsh-items.label',
+    description: 'text.category.swsh-items.description'
+  },
+  'swsh-pokemon-pokedex': {
+    label: 'text.category.swsh-pokemon-pokedex.label',
+    description: 'text.category.swsh-pokemon-pokedex.description'
+  },
+  'swsh-moves-abilities': {
+    label: 'text.category.swsh-moves-abilities.label',
+    description: 'text.category.swsh-moves-abilities.description'
+  },
+  'swsh-trainers-characters': {
+    label: 'text.category.swsh-trainers-characters.label',
+    description: 'text.category.swsh-trainers-characters.description'
+  },
+  'swsh-locations': {
+    label: 'text.category.swsh-locations.label',
+    description: 'text.category.swsh-locations.description'
+  },
+  'swsh-facilities-activities': {
+    label: 'text.category.swsh-facilities-activities.label',
+    description: 'text.category.swsh-facilities-activities.description'
+  },
+  'swsh-ui-online-shared': {
+    label: 'text.category.swsh-ui-online-shared.label',
+    description: 'text.category.swsh-ui-online-shared.description'
+  },
+  'swsh-other-scripts': {
+    label: 'text.category.swsh-other-scripts.label',
+    description: 'text.category.swsh-other-scripts.description'
   }
 };
 
@@ -18684,6 +18786,7 @@ function TextSection({
   isEditStarting,
   isPagedResultWindow,
   isTextLoading,
+  isTextQueryPending,
   isTextUpdating,
   onCategoryChange,
   onLanguageChange,
@@ -18702,6 +18805,7 @@ function TextSection({
   isEditStarting: boolean;
   isPagedResultWindow: boolean;
   isTextLoading: boolean;
+  isTextQueryPending: boolean;
   isTextUpdating: boolean;
   onCategoryChange: (categoryId: string) => void;
   onLanguageChange: (language: string) => void;
@@ -18717,7 +18821,10 @@ function TextSection({
   workflow: TextWorkflow | null;
 }) {
   const { t, translateLiteral } = useLocalization();
-  const entries = workflow?.entries ?? [];
+  const entries = useMemo(
+    () => overlayPendingTextValues(workflow?.entries ?? [], editSession),
+    [editSession, workflow?.entries]
+  );
   const filteredEntries = useMemo(
     () => (workflow?.page ? entries : filterTextEntries(entries, searchText)),
     [entries, searchText, workflow?.page]
@@ -18878,7 +18985,9 @@ function TextSection({
 
         {workflow ? (
           <EditorSessionBar
-            canEdit={canEditText && selectedEntry?.canEdit === true}
+            canEdit={
+              canEditText && !isTextQueryPending && selectedEntry?.canEdit === true
+            }
             isEditing={editSession !== null}
             isStarting={isEditStarting}
             label="Text"
@@ -18944,6 +19053,7 @@ function TextSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               entry={selectedEntry}
+              isTextQueryPending={isTextQueryPending}
               isTextUpdating={isTextUpdating}
               onUpdateTextEntry={onUpdateTextEntry}
             />
@@ -18963,6 +19073,7 @@ function SelectedTextPanel({
   editSession,
   editableFields,
   entry,
+  isTextQueryPending,
   isTextUpdating,
   onUpdateTextEntry
 }: {
@@ -18970,6 +19081,7 @@ function SelectedTextPanel({
   editSession: EditSession | null;
   editableFields: TextEditableField[];
   entry: TextEntryRecord | null;
+  isTextQueryPending: boolean;
   isTextUpdating: boolean;
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
 }) {
@@ -18988,7 +19100,12 @@ function SelectedTextPanel({
   const isTextDraftDirty =
     entry !== null && (draftsByTextKey[entry.textKey] ?? entry.value) !== entry.value;
   const isTextInputDisabled =
-    entry === null || !canEditText || editSession === null || isTextUpdating || !entry.canEdit;
+    entry === null ||
+    !canEditText ||
+    editSession === null ||
+    isTextQueryPending ||
+    isTextUpdating ||
+    !entry.canEdit;
   useRegisterEditorDraftDirty(
     'text',
     Object.entries(draftsByTextKey).some(([textKey, value]) => {
@@ -19083,7 +19200,8 @@ function SelectedTextPanel({
   );
 
   const draftState = getTextDraftState(draftValue, entry, valueField);
-  const canSubmit = editSession !== null && draftState.canSubmit;
+  const canSubmit =
+    editSession !== null && !isTextQueryPending && draftState.canSubmit;
   const textDraftCount = Object.keys(draftsByTextKey).length;
   const textLengthHelpId = 'selected-text-canonical-length';
   const maximumTextLength = valueField?.maximumLength ?? null;
@@ -49483,6 +49601,31 @@ function getPendingTextKeys(editSession: EditSession | null) {
       .filter((edit) => edit.domain === 'workflow.text' && edit.recordId)
       .map((edit) => edit.recordId!)
   );
+}
+
+function overlayPendingTextValues(
+  entries: TextEntryRecord[],
+  editSession: EditSession | null
+) {
+  const pendingValues = new Map<string, string>();
+  for (const edit of editSession?.pendingEdits ?? []) {
+    if (
+      edit.domain === 'workflow.text' &&
+      edit.field === 'value' &&
+      edit.recordId
+    ) {
+      pendingValues.set(edit.recordId, edit.newValue ?? '');
+    }
+  }
+
+  if (pendingValues.size === 0) {
+    return entries;
+  }
+
+  return entries.map((entry) => {
+    const pendingValue = pendingValues.get(entry.textKey);
+    return pendingValue === undefined ? entry : { ...entry, value: pendingValue };
+  });
 }
 
 function getPendingTrainerIds(

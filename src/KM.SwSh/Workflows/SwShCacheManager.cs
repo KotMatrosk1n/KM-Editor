@@ -322,6 +322,47 @@ public sealed class SwShCacheManager
         return value;
     }
 
+    public bool IsArtifactPersisted<T>(
+        SwShCacheSourceIdentity source,
+        SwShCacheArtifactDescriptor artifact)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        artifact = NormalizeArtifactDescriptor(artifact);
+        ValidateSourceIdentity(source);
+        var identityKey = GetIdentityKey(source);
+        var artifactKey = GetArtifactKey(artifact);
+        var typeIdentity = GetTypeIdentity(typeof(T));
+
+        lock (syncRoot)
+        {
+            try
+            {
+                EnsureRoot();
+                var settings = ReadSettings();
+                if (!CanPersist(source, artifact, settings))
+                {
+                    return false;
+                }
+
+                DeleteObsoleteSourceCaches(source);
+                return TryReadPersistentArtifact(
+                    source,
+                    artifact,
+                    identityKey,
+                    artifactKey,
+                    typeIdentity,
+                    settings,
+                    out _,
+                    out T _);
+            }
+            catch (Exception exception) when (IsDisposableCacheException(exception))
+            {
+                retainedPersistentCacheSizeBytes = null;
+                return false;
+            }
+        }
+    }
+
     public void SetArtifact<T>(
         SwShCacheSourceIdentity source,
         SwShCacheArtifactDescriptor artifact,

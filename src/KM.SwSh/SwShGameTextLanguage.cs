@@ -8,6 +8,20 @@ internal static class SwShGameTextLanguage
 {
     public const string English = "English";
 
+    public static IReadOnlyList<string> SupportedMessageLanguages { get; } =
+    [
+        English,
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "JPN",
+        "JPN_KANJI",
+        "Korean",
+        "Simp_Chinese",
+        "Trad_Chinese",
+    ];
+
     public static string Resolve(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
