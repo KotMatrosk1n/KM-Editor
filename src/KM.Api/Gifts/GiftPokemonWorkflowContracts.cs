@@ -27,6 +27,11 @@ public sealed record UpdateGiftPokemonFieldsRequest(
     EditSessionDto? Session,
     IReadOnlyList<GiftPokemonFieldUpdateDto> Updates);
 
+public sealed record StageGiftPokemonVanillaRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int GiftIndex);
+
 public sealed record GiftPokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -86,6 +91,12 @@ public sealed record GiftPokemonRecordDto(
     public string EditorFamily { get; init; } = "swsh";
 
     public bool CanEditAlphaSettings { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CanRevertToVanilla { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RevertToVanillaBlockedReason { get; init; }
 
     public IReadOnlyList<GiftPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<GiftPokemonEditableFieldOptionDto>();
@@ -154,6 +165,11 @@ public sealed record UpdateGiftPokemonFieldResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateGiftPokemonFieldsResponse(
+    GiftPokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record StageGiftPokemonVanillaResponse(
     GiftPokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

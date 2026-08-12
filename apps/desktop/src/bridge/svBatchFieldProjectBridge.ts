@@ -4,6 +4,8 @@ import { kmCommandNames } from './contracts';
 import {
   type StageEncounterSlotVanillaRequest,
   type StageEncounterSlotVanillaResponse,
+  type StageGiftPokemonVanillaRequest,
+  type StageGiftPokemonVanillaResponse,
   type StageItemVanillaRequest,
   type StageItemVanillaResponse,
   type StageMoveVanillaRequest,
@@ -27,6 +29,7 @@ import {
   type UpdateTrainerFieldsRequest,
   type UpdateTrainerFieldsResponse,
   stageEncounterSlotVanillaResponseSchema,
+  stageGiftPokemonVanillaResponseSchema,
   stageItemVanillaResponseSchema,
   stageMoveVanillaResponseSchema,
   updateEncounterSlotFieldsResponseSchema,
@@ -48,6 +51,9 @@ export type SvBatchFieldProjectBridgeApi = {
   stageEncounterSlotVanilla: (
     request: StageEncounterSlotVanillaRequest
   ) => Promise<StageEncounterSlotVanillaResponse>;
+  stageGiftPokemonVanilla: (
+    request: StageGiftPokemonVanillaRequest
+  ) => Promise<StageGiftPokemonVanillaResponse>;
   stageItemVanilla: (request: StageItemVanillaRequest) => Promise<StageItemVanillaResponse>;
   stageMoveVanilla: (request: StageMoveVanillaRequest) => Promise<StageMoveVanillaResponse>;
   updateEncounterSlotFields: (
@@ -85,6 +91,13 @@ export function createSvBatchFieldProjectBridgeApi(
         kmCommandNames.stageEncounterSlotVanilla,
         request,
         stageEncounterSlotVanillaResponseSchema
+      ),
+    stageGiftPokemonVanilla: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageGiftPokemonVanilla,
+        request,
+        stageGiftPokemonVanillaResponseSchema
       ),
     stageItemVanilla: (request) =>
       sendProjectBridgeRequest(

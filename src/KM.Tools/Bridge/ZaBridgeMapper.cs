@@ -423,6 +423,17 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StageGiftPokemonVanillaResponse ToGiftPokemonVanillaDto(
+        ZaGiftPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageGiftPokemonVanillaResponse(
+            ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateTradePokemonFieldResponse ToDto(ZaTradePokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -724,6 +735,8 @@ public static class ZaBridgeMapper
             action.UsesTimingParameters,
             action.CanEdit,
             action.RuntimeState,
+            action.CompatibilityState,
+            action.CompatibilityReason,
             action.LockReason,
             action.PhaseAvailability
                 .Select(availability => new ScriptedBossPhaseAvailabilityDto(
@@ -739,7 +752,14 @@ public static class ZaBridgeMapper
             option.MoveId,
             option.RuntimeMoveId,
             option.Variant,
-            option.Name);
+            option.Name,
+            option.DefaultCompatibilityState,
+            option.SelectorCompatibilities
+                .Select(compatibility => new ScriptedBossMoveCompatibilityDto(
+                    compatibility.SelectorActionId,
+                    compatibility.State,
+                    compatibility.Reason))
+                .ToArray());
     }
 
     private static ShopsWorkflowDto ToShopsWorkflowDto(ZaShopsWorkflow workflow)
@@ -1560,7 +1580,8 @@ public static class ZaBridgeMapper
             option.Label,
             option.ArgumentKind,
             option.ArgumentLabel,
-            option.ArgumentOptions.Select(ToDto).ToArray());
+            option.ArgumentOptions.Select(ToDto).ToArray(),
+            option.UsesLevel);
     }
 
     private static PokemonLearnsetMoveDto ToDto(ZaPokemonLearnsetMove learnsetMove)
@@ -2013,6 +2034,8 @@ public static class ZaBridgeMapper
             EditorFamily = "za",
             AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
             CanEditAlphaSettings = gift.CanEditAlphaSettings,
+            CanRevertToVanilla = gift.CanRevertToVanilla,
+            RevertToVanillaBlockedReason = gift.RevertToVanillaBlockedReason,
             FormOptions = gift.FormOptions.Select(ToDto).ToArray(),
             EventLabel = gift.EventLabel,
             Moves = gift.Moves.Select(ToDto).ToArray(),

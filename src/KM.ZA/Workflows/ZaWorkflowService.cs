@@ -576,6 +576,14 @@ public sealed class ZaWorkflowService
         return giftPokemonEditSessionService.UpdateField(paths, session, giftIndex, field, value);
     }
 
+    public ZaGiftPokemonEditResult StageGiftPokemonVanilla(
+        ProjectPaths paths,
+        EditSession? session,
+        int giftIndex)
+    {
+        return giftPokemonEditSessionService.StageGiftVanilla(paths, session, giftIndex);
+    }
+
     public ZaEncountersEditResult UpdateEncounterSlotField(
         ProjectPaths paths,
         EditSession? session,

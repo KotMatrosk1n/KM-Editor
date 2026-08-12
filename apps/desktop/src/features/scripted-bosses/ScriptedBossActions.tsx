@@ -5,6 +5,7 @@ import { type ReactNode } from 'react';
 import {
   type MoveRecord,
   type ScriptedBossAction,
+  type ScriptedBossMoveOption,
   type ScriptedBossProfile
 } from '../../bridge/contracts';
 import { useLocalization } from '../../localization/LocalizationProvider';
@@ -92,6 +93,8 @@ export function getScriptedBossMoveSearchValues(
       profile.phaseModel.kind,
       action.kind,
       action.runtimeState,
+      action.compatibilityState,
+      action.compatibilityReason ?? '',
       action.lockReason ?? '',
       action.phaseContext ?? '',
       action.selectorActionId?.toString() ?? '',
@@ -125,6 +128,22 @@ export function getScriptedBossMoveSearchValues(
   });
 }
 
+export function getScriptedBossMoveCompatibility(
+  option: ScriptedBossMoveOption,
+  selectorActionId: number
+): {
+  reason: ScriptedBossAction['compatibilityReason'];
+  state: ScriptedBossAction['compatibilityState'];
+} {
+  const compatibility = option.selectorCompatibilities.find(
+    (candidate) => candidate.selectorActionId === selectorActionId
+  );
+  return compatibility ?? {
+    reason: null,
+    state: option.defaultCompatibilityState
+  };
+}
+
 export function ScriptedBossEncounterActions({
   profile,
   profiles,
@@ -139,6 +158,9 @@ export function ScriptedBossEncounterActions({
   const lockedCount = (profile?.actions.length ?? 0) - editableCount;
   const hasBrokenAction = profile?.actions.some(isBrokenScriptedBossAction) ?? false;
   const hasUnavailableAction = profile?.actions.some(isUnavailableScriptedBossAction) ?? false;
+  const hasKnownIncompatibleAction = profile?.actions.some(
+    (action) => action.compatibilityState === 'known-incompatible'
+  ) ?? false;
   const phaseGroups = profile === null ? [] : groupScriptedBossPhases(profile);
   const hasVerifiedPhaseModel = profile?.phaseModel.state === 'verified';
   const hasSingleStageHpBands = Boolean(
@@ -155,13 +177,15 @@ export function ScriptedBossEncounterActions({
             ? 'za-scripted-boss-actions-broken'
             : hasUnavailableAction
               ? 'za-scripted-boss-actions-unavailable'
-              : editableCount > 0
-                ? 'za-scripted-boss-actions-editable'
-                : 'za-scripted-boss-actions-locked'
+              : hasKnownIncompatibleAction
+                ? 'za-scripted-boss-actions-incompatible'
+                : editableCount > 0
+                  ? 'za-scripted-boss-actions-editable'
+                  : 'za-scripted-boss-actions-locked'
       }`}
     >
       <div className="za-scripted-boss-actions-heading">
-        {profile === null || hasBrokenAction || hasUnavailableAction ? (
+        {profile === null || hasBrokenAction || hasUnavailableAction || hasKnownIncompatibleAction ? (
           <AlertTriangle aria-hidden="true" size={18} />
         ) : editableCount > 0 ? (
           <Pencil aria-hidden="true" size={18} />
@@ -178,9 +202,11 @@ export function ScriptedBossEncounterActions({
                   ? 'za.encounters.bossActions.status.brokenHelp'
                   : hasUnavailableAction
                     ? 'za.encounters.bossActions.status.unavailableHelp'
-                    : editableCount > 0
-                      ? 'za.encounters.bossActions.status.editableHelp'
-                      : 'za.encounters.bossActions.status.lockedHelp'
+                    : hasKnownIncompatibleAction
+                      ? 'za.encounters.bossActions.compatibility.profileUnsafeHelp'
+                      : editableCount > 0
+                        ? 'za.encounters.bossActions.status.editableHelp'
+                        : 'za.encounters.bossActions.status.lockedHelp'
             )}
           </p>
         </div>
@@ -206,7 +232,7 @@ export function ScriptedBossEncounterActions({
                     ? 'za-scripted-boss-status-broken'
                     : hasUnavailableAction
                       ? 'za-scripted-boss-status-unavailable'
-                      : 'za-scripted-boss-status-working'
+                      : 'za-scripted-boss-status-runtime-present'
                 }`}
               >
                 {hasBrokenAction || hasUnavailableAction ? (
@@ -222,6 +248,12 @@ export function ScriptedBossEncounterActions({
                       : 'za.encounters.bossActions.status.working'
                 )}
               </span>
+              {hasKnownIncompatibleAction ? (
+                <span className="za-scripted-boss-status-pill za-scripted-boss-compatibility-known-incompatible">
+                  <ShieldAlert aria-hidden="true" size={13} />
+                  {t('za.encounters.bossActions.compatibility.known-incompatible.label')}
+                </span>
+              ) : null}
               <span
                 className={`za-scripted-boss-status-pill ${
                   editableCount > 0
@@ -383,7 +415,7 @@ export function ScriptedBossEncounterActions({
               return (
                 <li
                   className={`${action.canEdit ? 'is-editable' : 'is-locked'} ${
-                    isBroken ? 'is-broken' : isUnavailable ? 'is-unavailable' : 'is-working'
+                    isBroken ? 'is-broken' : isUnavailable ? 'is-unavailable' : 'is-runtime-present'
                   } ${
                     action.variant === null
                       ? ''
@@ -434,7 +466,7 @@ export function ScriptedBossEncounterActions({
                               ? 'za-scripted-boss-status-broken'
                               : isUnavailable
                                 ? 'za-scripted-boss-status-unavailable'
-                                : 'za-scripted-boss-status-working'
+                                : 'za-scripted-boss-status-runtime-present'
                           }`}
                         >
                           {isBroken || isUnavailable ? (
@@ -448,6 +480,28 @@ export function ScriptedBossEncounterActions({
                               : isUnavailable
                                 ? 'za.encounters.bossActions.status.unavailable'
                                 : 'za.encounters.bossActions.status.working'
+                          )}
+                        </span>
+                      ) : null}
+                      {action.compatibilityState !== 'not-applicable' ? (
+                        <span
+                          className={`za-scripted-boss-status-pill za-scripted-boss-compatibility-${action.compatibilityState}`}
+                          title={t(
+                            action.compatibilityReason
+                              ? `za.encounters.bossActions.compatibility.reason.${action.compatibilityReason}`
+                              : `za.encounters.bossActions.compatibility.${action.compatibilityState}.help`
+                          )}
+                        >
+                          {action.compatibilityState === 'base-verified' ||
+                          action.compatibilityState === 'gameplay-tested' ? (
+                            <CheckCircle aria-hidden="true" size={12} />
+                          ) : action.compatibilityState === 'known-incompatible' ? (
+                            <ShieldAlert aria-hidden="true" size={12} />
+                          ) : (
+                            <AlertTriangle aria-hidden="true" size={12} />
+                          )}
+                          {t(
+                            `za.encounters.bossActions.compatibility.${action.compatibilityState}.label`
                           )}
                         </span>
                       ) : null}

@@ -6683,6 +6683,23 @@ internal sealed class ZaPokemonEditSessionService
                 {
                     diagnostics.Add(OperationDiagnostic("Evolution upserts require method, argument, species, form, and level.", "evolution"));
                 }
+                else
+                {
+                    var method = ZaPokemonWorkflowService.GetEvolutionMethodDefinition(operation.Method.Value);
+                    var preservesExistingIgnoredLevel = operation.Action == UpsertAction
+                        && operation.Slot >= 0
+                        && operation.Slot < pokemon.Evolutions.Count
+                        && pokemon.Evolutions[operation.Slot].Method == operation.Method.Value
+                        && pokemon.Evolutions[operation.Slot].Level == operation.Level.Value;
+                    if (!method.UsesLevel
+                        && operation.Level.Value != 0
+                        && !preservesExistingIgnoredLevel)
+                    {
+                        diagnostics.Add(OperationDiagnostic(
+                            $"Evolution method '{method.Name}' does not use the Level field. Set Level to 0, or choose a level-up method such as Level Up Held Item Day/Night.",
+                            "level"));
+                    }
+                }
 
                 if (operation.Action == AddAction && operation.Slot != pokemon.Evolutions.Count)
                 {

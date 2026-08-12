@@ -5084,6 +5084,45 @@ h2 {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
 
+.za-trainer-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 12px;
+  background: #121b2d;
+  border: 1px solid #33415e;
+  border-radius: 8px;
+}
+
+.za-trainer-bulk-actions-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.za-trainer-bulk-actions-copy strong {
+  color: #f4f7fb;
+  font-size: 13px;
+}
+
+.za-trainer-bulk-actions-copy small {
+  color: var(--color-text-soft);
+  line-height: 1.4;
+}
+
+.za-trainer-bulk-actions-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.za-trainer-bulk-actions-buttons .compact-button {
+  white-space: nowrap;
+}
+
 .shiny-lock-toolbar {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px)) auto;
 }
@@ -9598,7 +9637,8 @@ button.sv-encounter-condition-row:hover {
 }
 
 .za-scripted-boss-actions-unavailable,
-.za-scripted-boss-actions-unverified {
+.za-scripted-boss-actions-unverified,
+.za-scripted-boss-actions-incompatible {
   background: rgb(58 43 12 / 52%);
   border-color: rgb(214 168 66 / 38%);
 }
@@ -9625,7 +9665,8 @@ button.sv-encounter-condition-row:hover {
 }
 
 .za-scripted-boss-actions-unavailable .za-scripted-boss-actions-heading > svg,
-.za-scripted-boss-actions-unverified .za-scripted-boss-actions-heading > svg {
+.za-scripted-boss-actions-unverified .za-scripted-boss-actions-heading > svg,
+.za-scripted-boss-actions-incompatible .za-scripted-boss-actions-heading > svg {
   color: var(--color-warning);
 }
 
@@ -9696,7 +9737,10 @@ button.sv-encounter-condition-row:hover {
 }
 
 .za-scripted-boss-status-editable,
-.za-scripted-boss-status-working {
+.za-scripted-boss-status-working,
+.za-scripted-boss-status-runtime-present,
+.za-scripted-boss-compatibility-base-verified,
+.za-scripted-boss-compatibility-gameplay-tested {
   color: #8ce5ce;
   background: rgb(22 83 69 / 46%);
   border-color: rgb(79 181 161 / 42%);
@@ -9712,6 +9756,19 @@ button.sv-encounter-condition-row:hover {
   color: #f2cb70;
   background: rgb(92 67 14 / 44%);
   border-color: rgb(214 168 66 / 40%);
+}
+
+.za-scripted-boss-compatibility-experimental,
+.za-scripted-boss-compatibility-known-incompatible {
+  color: #f2cb70;
+  background: rgb(92 67 14 / 44%);
+  border-color: rgb(214 168 66 / 40%);
+}
+
+.za-scripted-boss-compatibility-known-incompatible {
+  color: #ffaaa5;
+  background: rgb(112 38 35 / 44%);
+  border-color: rgb(229 96 90 / 44%);
 }
 
 .za-scripted-boss-status-locked {
@@ -10124,6 +10181,31 @@ button.sv-encounter-condition-row:hover {
 
 .za-scripted-boss-action-control .editable-field-control {
   width: 100%;
+}
+
+.za-scripted-boss-selection-compatibility {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  color: #b7c3d7;
+  background: rgb(51 63 84 / 34%);
+  border: 1px solid rgb(124 148 184 / 30%);
+  border-radius: 5px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.za-scripted-boss-selection-compatibility.is-base-verified,
+.za-scripted-boss-selection-compatibility.is-gameplay-tested {
+  color: #8ce5ce;
+  background: rgb(22 83 69 / 28%);
+  border-color: rgb(79 181 161 / 34%);
+}
+
+.za-scripted-boss-selection-compatibility.is-experimental {
+  color: #f2cb70;
+  background: rgb(92 67 14 / 28%);
+  border-color: rgb(214 168 66 / 34%);
 }
 
 .za-encounter-advanced-data {
@@ -11607,6 +11689,15 @@ input {
   .swsh-static-encounters-section .shiny-lock-toolbar,
   .sv-static-encounters-section .shiny-lock-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .za-trainer-bulk-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .za-trainer-bulk-actions-buttons {
+    justify-content: flex-start;
   }
 
   .swsh-pokemon-left-stack,

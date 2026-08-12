@@ -173,6 +173,32 @@ internal sealed class ZaGiftPokemonWorkflowService
             gifts = LoadRecords(source, labels, abilityResolver)
                 .Select(gift => WithFormOptions(gift, pokemonAvailability))
                 .ToArray();
+
+            try
+            {
+                var activeDocument = ZaPokemonDataDocument.Parse(source.Bytes);
+                var baseDocument = ZaPokemonDataDocument.Parse(
+                    fileSource.ReadBase(project, ZaDataPaths.PokemonDataArray).Bytes);
+                gifts = gifts
+                    .Select(gift => WithVanillaRestoreAvailability(gift, activeDocument, baseDocument))
+                    .ToArray();
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                const string blockedReason =
+                    "Verified vanilla Gift Pokemon data is unavailable for an exact restore.";
+                gifts = gifts
+                    .Select(gift => gift with
+                    {
+                        CanRevertToVanilla = false,
+                        RevertToVanillaBlockedReason = blockedReason,
+                    })
+                    .ToArray();
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Gift Pokemon restore-to-vanilla is unavailable: {exception.Message}",
+                    $"romfs/{ZaDataPaths.PokemonDataArray}",
+                    expected: "Readable active and verified base Gift Pokemon tables"));
+            }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -359,6 +385,161 @@ internal sealed class ZaGiftPokemonWorkflowService
         return CreateGiftSourceGroups(document).ElementAtOrDefault(giftIndex)?.DisplayEntry;
     }
 
+    internal static bool TryResolveVanillaRestoreRows(
+        ZaPokemonDataDocument activeDocument,
+        ZaPokemonDataDocument baseDocument,
+        int giftIndex,
+        out IReadOnlyList<(ZaPokemonDataEntry Active, ZaPokemonDataEntry Vanilla)> rows,
+        out string? blockedReason)
+    {
+        ArgumentNullException.ThrowIfNull(activeDocument);
+        ArgumentNullException.ThrowIfNull(baseDocument);
+
+        var activeRows = ResolveApplyTargets(activeDocument, giftIndex);
+        if (activeRows.Count == 0)
+        {
+            rows = [];
+            blockedReason = "The selected Gift Pokemon no longer has an exact active source row.";
+            return false;
+        }
+
+        var activeIds = activeRows
+            .Select(row => row.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
+            .ToArray();
+        if (activeIds.Length != activeRows.Count
+            || activeIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != activeIds.Length)
+        {
+            rows = [];
+            blockedReason = "The selected Gift Pokemon does not have unique stable active event IDs.";
+            return false;
+        }
+
+        if (StarterGameplayRowsBySceneRow.TryGetValue(activeIds[0], out var starterGameplayId))
+        {
+            var expectedStarterIds = new[] { activeIds[0], starterGameplayId };
+            if (activeIds.Length != expectedStarterIds.Length
+                || !activeIds.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(expectedStarterIds))
+            {
+                rows = [];
+                blockedReason =
+                    $"Starter event '{activeIds[0]}' is missing its paired gameplay row '{starterGameplayId}'.";
+                return false;
+            }
+        }
+
+        var resolvedRows = new List<(ZaPokemonDataEntry Active, ZaPokemonDataEntry Vanilla)>();
+        foreach (var activeRow in activeRows)
+        {
+            if (string.IsNullOrWhiteSpace(activeRow.Id))
+            {
+                rows = [];
+                blockedReason = "The selected Gift Pokemon has an active source row without a stable event ID.";
+                return false;
+            }
+
+            var activeMatchCount = activeDocument.Entries
+                .Count(candidate => string.Equals(candidate.Id, activeRow.Id, StringComparison.OrdinalIgnoreCase));
+            if (activeMatchCount != 1)
+            {
+                rows = [];
+                blockedReason =
+                    $"Gift event '{activeRow.Id}' does not have one unique row in the active table.";
+                return false;
+            }
+
+            var baseMatches = baseDocument.Entries
+                .Where(candidate => string.Equals(candidate.Id, activeRow.Id, StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToArray();
+            if (baseMatches.Length != 1)
+            {
+                rows = [];
+                blockedReason =
+                    $"Gift event '{activeRow.Id}' does not have one exact matching row in the verified vanilla table.";
+                return false;
+            }
+
+            resolvedRows.Add((activeRow, baseMatches[0]));
+        }
+
+        rows = resolvedRows;
+        blockedReason = null;
+        return true;
+    }
+
+    internal static bool HasSameEditableValues(
+        ZaPokemonDataEntry active,
+        ZaPokemonDataEntry vanilla)
+    {
+        ArgumentNullException.ThrowIfNull(active);
+        ArgumentNullException.ThrowIfNull(vanilla);
+
+        return active.DevNo == vanilla.DevNo
+            && active.MinLevel == vanilla.MinLevel
+            && active.MaxLevel == vanilla.MaxLevel
+            && active.Sex == vanilla.Sex
+            && active.FormNo == vanilla.FormNo
+            && active.Rare == vanilla.Rare
+            && active.Tokusei == vanilla.Tokusei
+            && active.Seikaku == vanilla.Seikaku
+            && active.TalentScale == vanilla.TalentScale
+            && active.TalentVNum == vanilla.TalentVNum
+            && Equals(active.TalentValue, vanilla.TalentValue)
+            && Equals(active.WazaList, vanilla.WazaList)
+            && active.HoldItem == vanilla.HoldItem
+            && (!IsRestorationGiftId(active.Id)
+                || (active.OyabunProbability == vanilla.OyabunProbability
+                    && active.OyabunAdditionalLevel == vanilla.OyabunAdditionalLevel));
+    }
+
+    internal static void RestoreEditableValues(
+        ZaPokemonDataEntry active,
+        ZaPokemonDataEntry vanilla)
+    {
+        ArgumentNullException.ThrowIfNull(active);
+        ArgumentNullException.ThrowIfNull(vanilla);
+
+        active.DevNo = vanilla.DevNo;
+        active.MinLevel = vanilla.MinLevel;
+        active.MaxLevel = vanilla.MaxLevel;
+        active.Sex = vanilla.Sex;
+        active.FormNo = vanilla.FormNo;
+        active.Rare = vanilla.Rare;
+        active.Tokusei = vanilla.Tokusei;
+        active.Seikaku = vanilla.Seikaku;
+        active.TalentScale = vanilla.TalentScale;
+        active.TalentVNum = vanilla.TalentVNum;
+        active.TalentValue = vanilla.TalentValue;
+        active.WazaList = vanilla.WazaList;
+        active.HoldItem = vanilla.HoldItem;
+        if (IsRestorationGiftId(active.Id))
+        {
+            active.OyabunProbability = vanilla.OyabunProbability;
+            active.OyabunAdditionalLevel = vanilla.OyabunAdditionalLevel;
+        }
+    }
+
+    private static ZaGiftPokemonEntry WithVanillaRestoreAvailability(
+        ZaGiftPokemonEntry gift,
+        ZaPokemonDataDocument activeDocument,
+        ZaPokemonDataDocument baseDocument)
+    {
+        var canRevert = TryResolveVanillaRestoreRows(
+            activeDocument,
+            baseDocument,
+            gift.GiftIndex,
+            out _,
+            out var blockedReason);
+        return gift with
+        {
+            CanRevertToVanilla = canRevert,
+            RevertToVanillaBlockedReason = canRevert ? null : blockedReason,
+        };
+    }
+
     private static IReadOnlyList<GiftSourceGroup> CreateGiftSourceGroups(ZaPokemonDataDocument document)
     {
         var entriesById = document.Entries
@@ -397,7 +578,7 @@ internal sealed class ZaGiftPokemonWorkflowService
         ZaTextLabelLookup labels)
     {
         var moves = entry.WazaList?.Values ??
-            [ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNone];
+            [ZaPokemonDataConstants.MoveAuto, ZaPokemonDataConstants.MoveAuto, ZaPokemonDataConstants.MoveAuto, ZaPokemonDataConstants.MoveAuto];
         return moves
             .Take(4)
             .Select((moveId, index) => new ZaGiftPokemonMoveRecord(

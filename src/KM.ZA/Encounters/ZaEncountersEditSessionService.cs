@@ -2017,9 +2017,19 @@ internal sealed class ZaEncountersEditSessionService
         if (option is null)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "The requested move is not a verified working replacement for this selector variant.",
+                "The requested move does not have the required runtime data for this selector variant.",
                 field,
                 "Move with one battle row and a matching timing row for the selector variant"));
+            return null;
+        }
+
+        if (!ValidateBossActionMoveCompatibility(
+                option,
+                selectorActionId,
+                field,
+                addCompatibilityWarning: true,
+                diagnostics))
+        {
             return null;
         }
 
@@ -2126,9 +2136,67 @@ internal sealed class ZaEncountersEditSessionService
             ZaScriptedBossActionCatalog.SelectorUnavailableLockReason =>
                 "This boss action selector could not be verified against the base game and is locked.",
             ZaScriptedBossActionCatalog.RuntimeCatalogUnavailableLockReason =>
-                "Working move replacement data could not be verified, so this selector is locked.",
+                "Move runtime data could not be verified, so this selector is locked.",
             _ => "This boss action is locked and cannot be edited.",
         };
+    }
+
+    private static bool ValidateBossActionMoveCompatibility(
+        ZaScriptedBossMoveOptionRecord option,
+        int selectorActionId,
+        string? field,
+        bool addCompatibilityWarning,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var compatibility = ZaScriptedBossActionCatalog.ResolveMoveCompatibility(
+            option,
+            selectorActionId);
+        if (addCompatibilityWarning
+            && string.Equals(
+                compatibility.State,
+                ZaScriptedBossActionCatalog.KnownIncompatibleCompatibilityState,
+                StringComparison.Ordinal))
+        {
+            var observedBehavior = compatibility.Reason switch
+            {
+                ZaScriptedBossActionCatalog.NoDamageCompatibilityReason =>
+                    "Gameplay testing found that its animation can play without dealing damage for this boss.",
+                ZaScriptedBossActionCatalog.AllyTargetingCompatibilityReason =>
+                    "Gameplay testing found that it can target the allied battler for this boss.",
+                _ => "Gameplay testing found that it is unsafe for this boss controller.",
+            };
+            diagnostics.Add(CreateBossActionWarning(
+                $"{option.Name} has a known compatibility issue for this selector owner set. {observedBehavior}",
+                field,
+                "Review the observed gameplay behavior before using this replacement"));
+        }
+
+        if (string.Equals(
+                compatibility.State,
+                ZaScriptedBossActionCatalog.UnavailableCompatibilityState,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "The requested move could not be classified for this exact selector owner set.",
+                field,
+                "Move compatibility resolved against every owner of the shared selector"));
+            return false;
+        }
+
+        if (addCompatibilityWarning
+            && string.Equals(
+                compatibility.State,
+                ZaScriptedBossActionCatalog.ExperimentalCompatibilityState,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateBossActionWarning(
+                $"{option.Name} has battle and timing runtime data, but this selector owner set has not been gameplay-tested. "
+                    + "Targeting, positioning, animation, and damage behavior remain experimental.",
+                field,
+                "Base-verified or gameplay-tested replacement for gameplay confidence"));
+        }
+
+        return true;
     }
 
     private static ValidationDiagnostic CreateBossActionDiagnostic(
@@ -2138,6 +2206,20 @@ internal sealed class ZaEncountersEditSessionService
     {
         return ZaEditSessionSupport.CreateDiagnostic(
             DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.EncountersDomain,
+            file: $"romfs/{ZaDataPaths.BossMoveSelectorArray}",
+            field: field,
+            expected: expected);
+    }
+
+    private static ValidationDiagnostic CreateBossActionWarning(
+        string message,
+        string? field,
+        string expected)
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Warning,
             message,
             ZaEditSessionSupport.EncountersDomain,
             file: $"romfs/{ZaDataPaths.BossMoveSelectorArray}",
@@ -2390,14 +2472,25 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        if (!workflow.ScriptedBossMoveOptions.Any(option =>
-                option.MoveId == moveId.Value
-                && option.Variant == variant))
+        var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
+            candidate.MoveId == moveId.Value
+            && candidate.Variant == variant);
+        if (option is null)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "Pending boss action edit no longer selects a verified working replacement for its selector variant.",
+                "Pending boss action edit no longer selects a move with complete runtime data for its selector variant.",
                 edit.Field,
                 "Move with one battle row and a matching timing row for the selector variant"));
+            return;
+        }
+
+        if (!ValidateBossActionMoveCompatibility(
+                option,
+                selectorActionId,
+                edit.Field,
+                addCompatibilityWarning: true,
+                diagnostics))
+        {
             return;
         }
 
@@ -3499,6 +3592,10 @@ internal sealed class ZaEncountersEditSessionService
                 return workflow;
             }
 
+            var compatibility = ZaScriptedBossActionCatalog.ResolveMoveCompatibility(
+                option,
+                selectorActionId);
+
             return workflow with
             {
                 ScriptedBosses = workflow.ScriptedBosses
@@ -3512,7 +3609,9 @@ internal sealed class ZaEncountersEditSessionService
                                     RuntimeMoveId = option.RuntimeMoveId,
                                     Variant = option.Variant,
                                     Name = option.Name,
-                                    RuntimeState = ZaScriptedBossActionCatalog.WorkingRuntimeState,
+                                    RuntimeState = ZaScriptedBossActionCatalog.RuntimeDataPresentRuntimeState,
+                                    CompatibilityState = compatibility.State,
+                                    CompatibilityReason = compatibility.Reason,
                                 }
                                 : action)
                             .ToArray(),
@@ -4075,9 +4174,18 @@ internal sealed class ZaEncountersEditSessionService
         if (option is null)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "Pending boss action replacement is no longer verified for its selector variant.",
+                "Pending boss action replacement no longer has complete runtime data for its selector variant.",
                 edit.Field,
-                "Working move replacement for the selector's verified variant"));
+                "Move with battle and timing data for the selector's verified variant"));
+            return;
+        }
+        if (!ValidateBossActionMoveCompatibility(
+                option,
+                selectorActionId,
+                edit.Field,
+                addCompatibilityWarning: false,
+                diagnostics))
+        {
             return;
         }
 
@@ -4168,7 +4276,7 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics.Add(CreateBossActionDiagnostic(
                 "Boss action output verification did not receive a complete selector change set.",
                 field: null,
-                expected: "Complete reviewed boss action edits with verified move variants"));
+                expected: "Complete boss action edits with verified runtime data"));
             return false;
         }
 

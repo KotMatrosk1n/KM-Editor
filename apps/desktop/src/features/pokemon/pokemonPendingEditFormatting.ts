@@ -54,13 +54,18 @@ export function formatPokemonEvolutionPendingValue(
         context
       );
       const species = formatPokemonSpeciesPendingValue(speciesText, context.pokemonWorkflow);
+      const level = methodOption?.usesLevel === false
+        ? null
+        : levelText
+          ? `Lv. ${levelText}`
+          : null;
 
       return [
         method,
         argument,
         species,
         formText ? `Form ${formText}` : null,
-        levelText ? `Lv. ${levelText}` : null
+        level
       ]
         .filter((part): part is string => part !== null && part.length > 0)
         .join(' / ') || formatPendingValue(value);

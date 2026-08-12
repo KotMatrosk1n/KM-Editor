@@ -89,7 +89,8 @@ public sealed record ZaPokemonEvolutionMethodOption(
     string Label,
     string ArgumentKind,
     string ArgumentLabel,
-    IReadOnlyList<ZaPokemonEditableFieldOption> ArgumentOptions);
+    IReadOnlyList<ZaPokemonEditableFieldOption> ArgumentOptions,
+    bool UsesLevel);
 
 public sealed record ZaPokemonLearnsetMove(
     int Slot,

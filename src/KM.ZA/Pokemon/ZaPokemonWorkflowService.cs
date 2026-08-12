@@ -234,15 +234,15 @@ internal sealed class ZaPokemonWorkflowService
 
     private static readonly IReadOnlyList<EvolutionMethodDefinition> EvolutionMethods =
     [
-        new(0, "None", EvolutionArgumentKindNone, "None"),
+        new(0, "None", EvolutionArgumentKindNone, "None", UsesLevel: false),
         new(1, "Level Up Friendship", EvolutionArgumentKindNone, "None"),
         new(2, "Level Up Friendship Morning", EvolutionArgumentKindNone, "None"),
         new(3, "Level Up Friendship Night", EvolutionArgumentKindNone, "None"),
         new(4, "Level Up", EvolutionArgumentKindLevel, "Level"),
-        new(5, "Trade", EvolutionArgumentKindNone, "None"),
-        new(6, "Trade Held Item", EvolutionArgumentKindItem, "Item"),
-        new(7, "Trade Shelmet/Karrablast", EvolutionArgumentKindNone, "None"),
-        new(8, "Use Item", EvolutionArgumentKindItem, "Item"),
+        new(5, "Trade", EvolutionArgumentKindNone, "None", UsesLevel: false),
+        new(6, "Trade Held Item", EvolutionArgumentKindItem, "Item", UsesLevel: false),
+        new(7, "Trade Shelmet/Karrablast", EvolutionArgumentKindNone, "None", UsesLevel: false),
+        new(8, "Use Item", EvolutionArgumentKindItem, "Item", UsesLevel: false),
         new(9, "Level Up Attack > Defense", EvolutionArgumentKindLevel, "Level"),
         new(10, "Level Up Attack = Defense", EvolutionArgumentKindLevel, "Level"),
         new(11, "Level Up Defense > Attack", EvolutionArgumentKindLevel, "Level"),
@@ -251,8 +251,8 @@ internal sealed class ZaPokemonWorkflowService
         new(14, "Level Up Ninjask", EvolutionArgumentKindLevel, "Level"),
         new(15, "Level Up Shedinja", EvolutionArgumentKindLevel, "Level"),
         new(16, "Level Up Beauty", EvolutionArgumentKindValue, "Beauty"),
-        new(17, "Use Item Male", EvolutionArgumentKindItem, "Item"),
-        new(18, "Use Item Female", EvolutionArgumentKindItem, "Item"),
+        new(17, "Use Item Male", EvolutionArgumentKindItem, "Item", UsesLevel: false),
+        new(18, "Use Item Female", EvolutionArgumentKindItem, "Item", UsesLevel: false),
         new(19, "Level Up Held Item Day", EvolutionArgumentKindItem, "Item"),
         new(20, "Level Up Held Item Night", EvolutionArgumentKindItem, "Item"),
         new(21, "Level Up Know Move", EvolutionArgumentKindMove, "Move"),
@@ -269,21 +269,21 @@ internal sealed class ZaPokemonWorkflowService
         new(32, "Level Up Morning", EvolutionArgumentKindLevel, "Level"),
         new(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
         new(34, "Level Up Female Alternate Form", EvolutionArgumentKindLevel, "Level"),
-        new(35, "Unused", EvolutionArgumentKindNone, "None"),
+        new(35, "Unused", EvolutionArgumentKindNone, "None", UsesLevel: false),
         new(36, "Level Up Version", EvolutionArgumentKindValue, "Version branch"),
         new(37, "Level Up Version Day", EvolutionArgumentKindValue, "Version"),
         new(38, "Level Up Version Night", EvolutionArgumentKindValue, "Version"),
         new(39, "Level Up Summit", EvolutionArgumentKindLevel, "Level"),
         new(40, "Level Up Dusk", EvolutionArgumentKindLevel, "Level"),
         new(41, "Level Up Wormhole", EvolutionArgumentKindLevel, "Level"),
-        new(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item"),
-        new(43, "Critical Hits In Battle", EvolutionArgumentKindValue, "Critical hits"),
-        new(44, "HP Lost In Battle", EvolutionArgumentKindValue, "HP lost"),
-        new(45, "Spin", EvolutionArgumentKindNone, "None"),
+        new(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item", UsesLevel: false),
+        new(43, "Critical Hits In Battle", EvolutionArgumentKindValue, "Critical hits", UsesLevel: false),
+        new(44, "HP Lost In Battle", EvolutionArgumentKindValue, "HP lost", UsesLevel: false),
+        new(45, "Spin", EvolutionArgumentKindNone, "None", UsesLevel: false),
         new(46, "Level Up Nature Amped", EvolutionArgumentKindNone, "None"),
         new(47, "Level Up Nature Low Key", EvolutionArgumentKindNone, "None"),
-        new(48, "Tower Of Darkness", EvolutionArgumentKindNone, "None"),
-        new(49, "Tower Of Waters", EvolutionArgumentKindNone, "None"),
+        new(48, "Tower Of Darkness", EvolutionArgumentKindNone, "None", UsesLevel: false),
+        new(49, "Tower Of Waters", EvolutionArgumentKindNone, "None", UsesLevel: false),
         new(50, "Walk 1000 Steps", EvolutionArgumentKindValue, "Steps"),
         new(51, "Level Up In Union Circle", EvolutionArgumentKindLevel, "Level"),
         new(52, "Level Up Maushold Family Of Four", EvolutionArgumentKindLevel, "Level"),
@@ -295,8 +295,8 @@ internal sealed class ZaPokemonWorkflowService
         new(58, "Level Up Know Hyper Drill Three-Segment", EvolutionArgumentKindMove, "Move"),
         new(59, "Take Recoil Damage Male", EvolutionArgumentKindValue, "Damage"),
         new(60, "Take Recoil Damage Female", EvolutionArgumentKindValue, "Damage"),
-        new(61, "Species-Specific Regional Evolution", EvolutionArgumentKindValue, "Rule"),
-        new(62, "Use Barb Barrage 20 Times", EvolutionArgumentKindValue, "Uses"),
+        new(61, "Species-Specific Regional Evolution", EvolutionArgumentKindValue, "Rule", UsesLevel: false),
+        new(62, "Use Barb Barrage 20 Times", EvolutionArgumentKindValue, "Uses", UsesLevel: false),
     ];
 
     private readonly ZaWorkflowFileSource fileSource;
@@ -1722,7 +1722,8 @@ internal sealed class ZaPokemonWorkflowService
                         itemOptions,
                         evolutionItemOptions,
                         moveOptions,
-                        speciesOptions));
+                        speciesOptions),
+                    definition.UsesLevel);
             })
             .ToArray();
     }
@@ -2023,5 +2024,6 @@ internal sealed class ZaPokemonWorkflowService
         int Value,
         string Name,
         string ArgumentKind,
-        string ArgumentLabel);
+        string ArgumentLabel,
+        bool UsesLevel = true);
 }

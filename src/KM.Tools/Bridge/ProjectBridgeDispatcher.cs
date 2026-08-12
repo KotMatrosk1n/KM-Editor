@@ -349,6 +349,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadGiftPokemonWorkflow => DispatchLoadGiftPokemonWorkflow(requestJson),
                 KmCommandNames.UpdateGiftPokemonField => DispatchUpdateGiftPokemonField(requestJson),
                 KmCommandNames.UpdateGiftPokemonFields => DispatchUpdateGiftPokemonFields(requestJson),
+                KmCommandNames.StageGiftPokemonVanilla => DispatchStageGiftPokemonVanilla(requestJson),
                 KmCommandNames.LoadTradePokemonWorkflow => DispatchLoadTradePokemonWorkflow(requestJson),
                 KmCommandNames.UpdateTradePokemonField => DispatchUpdateTradePokemonField(requestJson),
                 KmCommandNames.UpdateTradePokemonFields => DispatchUpdateTradePokemonFields(requestJson),
@@ -1205,6 +1206,21 @@ public sealed class ProjectBridgeDispatcher
             response = SwShBridgeMapper.ToGiftPokemonFieldsDto(
                 giftPokemonEditSessionService.UpdateFields(paths, session, updates));
         }
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageGiftPokemonVanilla(string requestJson)
+    {
+        var request = DeserializeRequest<StageGiftPokemonVanillaRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = ZaBridgeMapper.ToGiftPokemonVanillaDto(
+            zaWorkflowService.StageGiftPokemonVanilla(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                session,
+                request.Payload.GiftIndex));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -4290,6 +4306,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.StagePokemonDexMegaSync or
             KmCommandNames.StageItemVanilla or
             KmCommandNames.StageMoveVanilla or
+            KmCommandNames.StageGiftPokemonVanilla or
             KmCommandNames.StageEncounterSlotVanilla or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
@@ -4329,6 +4346,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadGiftPokemonWorkflow or
             KmCommandNames.UpdateGiftPokemonField or
             KmCommandNames.UpdateGiftPokemonFields or
+            KmCommandNames.StageGiftPokemonVanilla or
             KmCommandNames.LoadTradePokemonWorkflow or
             KmCommandNames.UpdateTradePokemonField or
             KmCommandNames.UpdateTradePokemonFields or
