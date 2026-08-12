@@ -3,6 +3,7 @@
 import { ClipboardCheck, ListChecks, Search, X } from 'lucide-react';
 import { useState } from 'react';
 import { type ProjectHealth, type WorkflowSummary } from '../../bridge/contracts';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import { readOnlyViewerSectionIds } from '../../workflowGameSupport';
 import { workflowDefinitions } from './workflowDefinitions';
@@ -193,7 +194,10 @@ export function WorkflowsSection({
       <section aria-labelledby="workflows-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ListChecks aria-hidden="true" size={18} />
-          <h2 id="workflows-heading">Workflow List</h2>
+          <h2 id="workflows-heading">{translateLiteral('Workflow List')}</h2>
+          <ContextHelp label={translateLiteral('Workflow List')}>
+            {t('workflows.listHelp')}
+          </ContextHelp>
         </div>
         <p className="empty-copy">
           Validate Base RomFS, Base ExeFS, and Output Root before opening editors.
@@ -245,11 +249,14 @@ export function WorkflowsSection({
     <section aria-labelledby="workflows-heading" className="panel wide-panel">
       <div className="panel-heading">
         <ListChecks aria-hidden="true" size={18} />
-        <h2 id="workflows-heading">Workflow List</h2>
+        <h2 id="workflows-heading">{translateLiteral('Workflow List')}</h2>
+        <ContextHelp label={translateLiteral('Workflow List')}>
+          {t('workflows.listHelp')}
+        </ContextHelp>
       </div>
 
       <div className="workflow-hub-toolbar">
-        <label className="search-box workflow-hub-search">
+        <div className="search-box workflow-hub-search">
           <Search aria-hidden="true" size={16} />
           <input
             aria-label={translateLiteral('Search')}
@@ -257,7 +264,10 @@ export function WorkflowsSection({
             placeholder={translateLiteral('Search')}
             value={searchText}
           />
-        </label>
+          <ContextHelp label={translateLiteral('Search')}>
+            {t('workflows.searchHelp')}
+          </ContextHelp>
+        </div>
         {searchText ? (
           <button
             className="secondary-button compact-button"
@@ -314,6 +324,9 @@ export function WorkflowsSection({
                 <span className={`status-pill ${workflowState.statusClass}`}>
                   {translateLiteral(workflowState.label)}
                 </span>
+                <ContextHelp label={translateLiteral(workflowState.label)}>
+                  {t(workflowAvailabilityHelpKeys[workflowState.availability])}
+                </ContextHelp>
                 {workflowAction ? (
                   <button
                     className="secondary-button compact-button"
@@ -400,4 +413,10 @@ const workflowAvailabilityClassNames = {
   available: 'status-ready',
   disabled: 'status-blocked',
   readOnly: 'status-warning'
+} as const;
+
+const workflowAvailabilityHelpKeys = {
+  available: 'workflows.availability.editableHelp',
+  disabled: 'workflows.availability.disabledHelp',
+  readOnly: 'workflows.availability.viewOnlyHelp'
 } as const;

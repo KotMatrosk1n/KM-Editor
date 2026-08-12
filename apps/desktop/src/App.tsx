@@ -303,10 +303,7 @@ import {
 } from './workbenchStore';
 import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
-import {
-  getContextualItemEditableFields,
-  getContextualItemEffectHelp
-} from './itemsEditor';
+import { getContextualItemEditableFields } from './itemsEditor';
 import {
   evaluateMoveFieldsUpdate,
   formatMoveAccuracy,
@@ -358,6 +355,13 @@ import {
   EditorSessionBar,
   EditorSessionBarActions
 } from './components/EditorSessionBar';
+import { FieldLabel } from './components/FieldLabel';
+import { ContextHelp } from './components/ContextHelp';
+import {
+  resolveFieldHelp,
+  type FieldHelpDomain,
+  type FieldHelpGame
+} from './fieldHelpCatalog';
 import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
 import { completeSuccessfulApplyResult } from './applyResultDiagnostics';
 import { useModalDialog } from './components/useModalDialog';
@@ -1110,6 +1114,7 @@ const svCacheLimitOptions = [
 
 const pathFields: Array<{
   field: ProjectPathFieldName;
+  helpKey: string;
   kind: 'directory' | 'file';
   label: string;
   role: ProjectPathRole;
@@ -1117,30 +1122,35 @@ const pathFields: Array<{
 }> = [
   {
     field: 'baseRomFsPath',
+    helpKey: 'projectPaths.help.baseRomFs',
     kind: 'directory',
     label: 'Base RomFS',
     role: 'baseRomFs'
   },
   {
     field: 'baseExeFsPath',
+    helpKey: 'projectPaths.help.baseExeFs',
     kind: 'directory',
     label: 'Base ExeFS',
     role: 'baseExeFs'
   },
   {
     field: 'outputRootPath',
+    helpKey: 'projectPaths.help.outputRoot',
     kind: 'directory',
     label: 'Output Root',
     role: 'outputRoot'
   },
   {
     field: 'saveFilePath',
+    helpKey: 'projectPaths.help.saveFile',
     kind: 'file',
     label: 'Save File (Optional)',
     role: 'saveFile'
   },
   {
     field: 'scarletVioletSupportFolderPath',
+    helpKey: 'projectPaths.help.supportFolder',
     kind: 'directory',
     label: 'oo2core_8_win64.dll Folder (Optional)',
     role: 'scarletVioletSupportFolder',
@@ -1148,6 +1158,7 @@ const pathFields: Array<{
   },
   {
     field: 'pokemonLegendsZASupportFolderPath',
+    helpKey: 'projectPaths.help.supportFolder',
     kind: 'directory',
     label: 'oo2core_8_win64.dll Folder (Optional)',
     role: 'pokemonLegendsZASupportFolder',
@@ -13446,7 +13457,10 @@ function HealthSection({
       <section aria-labelledby="project-gate-heading" className="panel project-gate">
         <div className="panel-heading">
           <FolderOpen aria-hidden="true" size={18} />
-          <h2 id="project-gate-heading">Project Paths</h2>
+          <h2 className="context-help-heading" id="project-gate-heading">
+            <span>Project Paths</span>
+            <ContextHelp label="Project Paths">{t('projectPaths.help.statuses')}</ContextHelp>
+          </h2>
         </div>
 
         <div className="selected-game-banner">
@@ -13454,7 +13468,12 @@ function HealthSection({
             <GameIcon aria-hidden="true" size={22} />
             <span>{gameDefinition.title}</span>
           </div>
-          <code>{gameDefinition.titleId}</code>
+          <span className="context-help-heading">
+            <code>{gameDefinition.titleId}</code>
+            <ContextHelp label={t('projectPaths.titleIdLabel')}>
+              {t('projectPaths.help.titleId')}
+            </ContextHelp>
+          </span>
           <button
             className="secondary-button"
             disabled={isBusy || pendingEditCount > 0}
@@ -13473,7 +13492,11 @@ function HealthSection({
 
             return (
               <div className="path-field" key={pathField.field}>
-                <label htmlFor={inputId}>{pathField.label}</label>
+                <FieldLabel
+                  help={t(pathField.helpKey)}
+                  htmlFor={inputId}
+                  label={pathField.label}
+                />
                 <div className="path-input-row">
                   <input
                     aria-describedby={`${pathField.field}-status`}
@@ -13586,20 +13609,33 @@ function HealthSection({
       <section aria-labelledby="health-heading" className="panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id="health-heading">Health Summary</h2>
+          <h2 className="context-help-heading" id="health-heading">
+            <span>Health Summary</span>
+            <ContextHelp label="Health Summary">{t('health.summaryHelp')}</ContextHelp>
+          </h2>
         </div>
 
         <div className="health-grid">
-          <Metric label="State" value={health ? healthLabels[health.state] : 'No project'} />
           <Metric
+            help={t('health.stateHelp')}
+            label="State"
+            value={health ? healthLabels[health.state] : 'No project'}
+          />
+          <Metric
+            help={t('health.readOnlyHelp')}
             label="Read-only workflows"
             value={health?.canOpenReadOnlyWorkflows ? 'Enabled' : 'Disabled'}
           />
           <Metric
+            help={t('health.writeHelp')}
             label="Write workflows"
             value={health?.canOpenEditableWorkflows ? 'Enabled' : 'Disabled'}
           />
-          <Metric label="Pending changes" value={pendingEditCount.toString()} />
+          <Metric
+            help={t('health.pendingHelp')}
+            label="Pending changes"
+            value={pendingEditCount.toString()}
+          />
         </div>
       </section>
 
@@ -13973,7 +14009,7 @@ function SelectedItemPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { t } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -13982,7 +14018,6 @@ function SelectedItemPanel({
     () => getContextualItemEditableFields(editableFields, editorFamily, item),
     [editableFields, editorFamily, item]
   );
-  const contextualItemEffectHelp = getContextualItemEffectHelp(editorFamily, item);
   const itemFieldGroups = useMemo(
     () => groupNumericEditableFields(contextualEditableFields, getItemEditableFieldGroup),
     [contextualEditableFields]
@@ -14180,11 +14215,6 @@ function SelectedItemPanel({
                   reviewed output.
                 </p>
               ) : null}
-              {contextualItemEffectHelp ? (
-                <p className="field-note">
-                  {translateLiteral(contextualItemEffectHelp)}
-                </p>
-              ) : null}
               {itemFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
                   <legend>{group.group}</legend>
@@ -14212,6 +14242,8 @@ function SelectedItemPanel({
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
+                          helpDomain="items"
+                          helpGame={editorFamily}
                           helpText={field.helpText}
                           idPrefix="item-field"
                           key={field.field}
@@ -14746,7 +14778,7 @@ function ZaPokemonDexPlacementEditor({
   onStageSwap?: (sourceSpeciesId: number, targetSpeciesId: number) => Promise<boolean>;
   pokemon: PokemonRecord;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const currentPlacement =
     dexEditor.placements.find((placement) => placement.speciesId === pokemon.speciesId) ?? null;
   const [destinationDexKind, setDestinationDexKind] =
@@ -14842,8 +14874,12 @@ function ZaPokemonDexPlacementEditor({
           </dl>
 
           <div className="za-pokemon-dex-swap-controls">
-            <label className="path-field" htmlFor="za-pokemon-destination-dex">
-              <span>{translateLiteral('Destination Pokédex')}</span>
+            <div className="path-field">
+              <FieldLabel
+                help={t('fieldHelp.catalog.pokemon.dexDestination')}
+                htmlFor="za-pokemon-destination-dex"
+                label={translateLiteral('Destination Pokédex')}
+              />
               <select
                 disabled={
                   !editSessionActive ||
@@ -14871,12 +14907,16 @@ function ZaPokemonDexPlacementEditor({
                   {translateLiteral('Hyperspace Dex')} ({dexEditor.hyperspaceCount})
                 </option>
               </select>
-            </label>
+            </div>
 
-            <label className="path-field" htmlFor="za-pokemon-destination-slot">
-              <span>{translateLiteral('Occupied destination slot')}</span>
+            <div className="path-field">
+              <FieldLabel
+                help={t('fieldHelp.catalog.pokemon.dexDestination')}
+                htmlFor="za-pokemon-destination-slot"
+                label={translateLiteral('Occupied destination slot')}
+              />
               <SearchableOptionInput
-                ariaLabel="Occupied destination slot"
+                ariaLabel={translateLiteral('Occupied destination slot')}
                 disabled={
                   !editSessionActive ||
                   !canEditPokemon ||
@@ -14893,7 +14933,7 @@ function ZaPokemonDexPlacementEditor({
                 options={destinationOptions}
                 value={targetSpeciesIdDraft}
               />
-            </label>
+            </div>
           </div>
 
           {targetPlacement ? (
@@ -16042,17 +16082,20 @@ function SelectedPokemonPanel({
                       </dd>
                     </div>
                   </dl>
-                  <label
+                  <div
                     className={`path-field editable-field-control ${
                       alphaMoveDraftState.isChanged ? 'editable-field-changed' : ''
                     } ${!alphaMoveDraftState.isValid ? 'editable-field-invalid' : ''} ${
                       alphaMoveDisabledReason ? 'editable-field-disabled' : ''
                     }`}
-                    htmlFor="pokemon-alpha-exclusive-move"
                   >
-                    <span>Alpha-exclusive move</span>
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.alphaMove')}
+                      htmlFor="pokemon-alpha-exclusive-move"
+                      label={translateLiteral('Alpha-exclusive move')}
+                    />
                     <SearchableOptionInput
-                      ariaLabel="Alpha-exclusive move"
+                      ariaLabel={translateLiteral('Alpha-exclusive move')}
                       ariaDescribedBy={alphaMoveDescriptionIds || undefined}
                       ariaInvalid={alphaMoveDraftState.error ? true : undefined}
                       disabled={!canEditAlphaMove}
@@ -16087,7 +16130,7 @@ function SelectedPokemonPanel({
                     ) : !alphaMoveDisabledReason && alphaMoveDraftState.isChanged ? (
                       <small className="editable-field-status">Changed</small>
                     ) : null}
-                  </label>
+                  </div>
                   <div className="draft-action-row">
                     <button
                       className="secondary-button"
@@ -16329,10 +16372,15 @@ function SelectedPokemonPanel({
                               <GripVertical size={15} />
                             </span>
                             <span className="learnset-slot-cell">#{move.slot + 1}</span>
-                            <label className="path-field learnset-inline-field learnset-level-field">
-                              <span>Level</span>
+                            <div className="path-field learnset-inline-field learnset-level-field">
+                              <FieldLabel
+                                help={t('fieldHelp.catalog.pokemon.learnsetLevel')}
+                                htmlFor={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
+                                label={translateLiteral('Level')}
+                              />
                               <input
                                 disabled={!canEditLearnset}
+                                id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
                                 max={learnsetMaximumLevel}
                                 min={0}
                                 onChange={(event) => {
@@ -16342,19 +16390,24 @@ function SelectedPokemonPanel({
                                 type="number"
                                 value={learnsetLevelDraft}
                               />
-                            </label>
+                            </div>
                             <span
                               className="learnset-inline-metadata"
                               data-localization-ignore="true"
                             >
                               {displayMove.masteryLabel ?? ''}
                             </span>
-                            <label className="path-field learnset-inline-field learnset-move-field">
-                              <span>Move</span>
+                            <div className="path-field learnset-inline-field learnset-move-field">
+                              <FieldLabel
+                                help={t('fieldHelp.catalog.pokemon.learnsetMove')}
+                                htmlFor={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}
+                                label={translateLiteral('Move')}
+                              />
                               {learnsetMoveOptionsForDraft.length > 0 ? (
                                 <SearchableOptionInput
-                                  ariaLabel="Move"
+                                  ariaLabel={translateLiteral('Move')}
                                   disabled={!canEditLearnset}
+                                  id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}
                                   onChange={(value) => {
                                     setLearnsetMoveIdDraft(value);
                                     updateSelectedLearnsetDraft({ moveId: value });
@@ -16365,6 +16418,7 @@ function SelectedPokemonPanel({
                               ) : (
                                 <input
                                   disabled={!canEditLearnset}
+                                  id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}
                                   max={pokemonMaximumUshortValue}
                                   min={0}
                                   onChange={(event) => {
@@ -16375,7 +16429,7 @@ function SelectedPokemonPanel({
                                   value={learnsetMoveIdDraft}
                                 />
                               )}
-                            </label>
+                            </div>
                             <div className="learnset-inline-actions">
                               <button
                                 aria-label="Move learnset row up"
@@ -16492,12 +16546,17 @@ function SelectedPokemonPanel({
               )}
 
               <div className="learnset-edit-grid">
-                <label className="path-field">
-                  <span>New move</span>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.pokemon.learnsetMove')}
+                    htmlFor="pokemon-learnset-new-move"
+                    label={translateLiteral('New move')}
+                  />
                   {newLearnsetMoveOptions.length > 0 ? (
                     <SearchableOptionInput
-                      ariaLabel="New move"
+                      ariaLabel={translateLiteral('New move')}
                       disabled={!canEditLearnset}
+                      id="pokemon-learnset-new-move"
                       onChange={setNewLearnsetMoveIdDraft}
                       options={newLearnsetMoveOptions}
                       value={newLearnsetMoveIdDraft}
@@ -16505,6 +16564,7 @@ function SelectedPokemonPanel({
                   ) : (
                     <input
                       disabled={!canEditLearnset}
+                      id="pokemon-learnset-new-move"
                       max={pokemonMaximumUshortValue}
                       min={0}
                       onChange={(event) => setNewLearnsetMoveIdDraft(event.target.value)}
@@ -16512,18 +16572,23 @@ function SelectedPokemonPanel({
                       value={newLearnsetMoveIdDraft}
                     />
                   )}
-                </label>
-                <label className="path-field">
-                  <span>New level</span>
+                </div>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.pokemon.learnsetLevel')}
+                    htmlFor="pokemon-learnset-new-level"
+                    label={translateLiteral('New level')}
+                  />
                   <input
                     disabled={!canEditLearnset}
+                    id="pokemon-learnset-new-level"
                     max={learnsetMaximumLevel}
                     min={0}
                     onChange={(event) => setNewLearnsetLevelDraft(event.target.value)}
                     type="number"
                     value={newLearnsetLevelDraft}
                   />
-                </label>
+                </div>
                 <button
                   aria-label="Add learnset row"
                   className="secondary-button learnset-add-button"
@@ -16555,9 +16620,14 @@ function SelectedPokemonPanel({
             {pokemon.compatibility.length > 0 ? (
               <div className="compatibility-editor">
                 <div className="compatibility-controls">
-                  <label className="path-field">
-                    <span>Compatibility group</span>
+                  <div className="path-field">
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.compatibility')}
+                      htmlFor="pokemon-compatibility-group"
+                      label={translateLiteral('Compatibility group')}
+                    />
                     <select
+                      id="pokemon-compatibility-group"
                       onChange={(event) => setSelectedCompatibilityGroupId(event.target.value)}
                       value={selectedCompatibilityGroup?.groupId ?? ''}
                     >
@@ -16567,7 +16637,7 @@ function SelectedPokemonPanel({
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </div>
                   <label className="search-box compatibility-search">
                     <Search aria-hidden="true" size={16} />
                     <input
@@ -16702,11 +16772,16 @@ function SelectedPokemonPanel({
 
               {selectedEvolution ? (
                 <div className="learnset-edit-grid evolution-edit-grid">
-                  <label className="path-field">
-                    <span>Method</span>
+                  <div className="path-field">
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.evolutionMethod')}
+                      htmlFor="pokemon-evolution-method"
+                      label={translateLiteral('Method')}
+                    />
                     <SearchableOptionInput
-                      ariaLabel="Method"
+                      ariaLabel={translateLiteral('Method')}
                       disabled={!canEditEvolution}
+                      id="pokemon-evolution-method"
                       onChange={(nextMethod) => {
                         const nextOption = findEvolutionMethodOption(
                           selectedEvolutionMethodOptions,
@@ -16727,14 +16802,23 @@ function SelectedPokemonPanel({
                       options={selectedEvolutionMethodOptions}
                       value={evolutionMethodDraft}
                     />
-                  </label>
-                  <label className="path-field">
-                    <span>{selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'}</span>
+                  </div>
+                  <div className="path-field">
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
+                      htmlFor="pokemon-evolution-argument"
+                      label={translateLiteral(
+                        selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
+                      )}
+                    />
                     {usesEvolutionArgumentSelector(selectedEvolutionMethodOption) &&
                     selectedEvolutionArgumentOptions.length > 0 ? (
                       <SearchableOptionInput
-                        ariaLabel={selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'}
+                        ariaLabel={translateLiteral(
+                          selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
+                        )}
                         disabled={!canEditEvolution}
+                        id="pokemon-evolution-argument"
                         onChange={(value) => {
                           setEvolutionArgumentDraft(value);
                           updateSelectedEvolutionDraft({ argument: value });
@@ -16748,6 +16832,7 @@ function SelectedPokemonPanel({
                           !canEditEvolution ||
                           !usesEvolutionArgumentNumberInput(selectedEvolutionMethodOption)
                         }
+                        id="pokemon-evolution-argument"
                         max={65535}
                         min={0}
                         onChange={(event) => {
@@ -16758,13 +16843,18 @@ function SelectedPokemonPanel({
                         value={evolutionArgumentDraft}
                       />
                     )}
-                  </label>
-                  <label className="path-field">
-                    <span>Species</span>
+                  </div>
+                  <div className="path-field">
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
+                      htmlFor="pokemon-evolution-species"
+                      label={translateLiteral('Species')}
+                    />
                     {pokemonSpeciesOptions.length > 0 ? (
                       <SearchableOptionInput
-                        ariaLabel="Species"
+                        ariaLabel={translateLiteral('Species')}
                         disabled={!canEditEvolution}
+                        id="pokemon-evolution-species"
                         onChange={handleSelectedEvolutionSpeciesChange}
                         options={addCurrentPokemonFieldOption(
                           pokemonSpeciesOptions,
@@ -16777,6 +16867,7 @@ function SelectedPokemonPanel({
                     ) : (
                       <input
                         disabled={!canEditEvolution}
+                        id="pokemon-evolution-species"
                         max={65535}
                         min={0}
                         onChange={(event) =>
@@ -16786,12 +16877,17 @@ function SelectedPokemonPanel({
                         value={evolutionSpeciesDraft}
                       />
                     )}
-                  </label>
-                  <label className="path-field">
-                    <span>Form</span>
+                  </div>
+                  <div className="path-field">
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.evolutionTargetForm')}
+                      htmlFor="pokemon-evolution-form"
+                      label={translateLiteral('Form')}
+                    />
                     <SearchableOptionInput
-                      ariaLabel="Form"
+                      ariaLabel={translateLiteral('Form')}
                       disabled={!canEditEvolution}
+                      id="pokemon-evolution-form"
                       onChange={(value) => {
                         setEvolutionFormDraft(value);
                         updateSelectedEvolutionDraft({ form: value });
@@ -16799,15 +16895,24 @@ function SelectedPokemonPanel({
                       options={selectedEvolutionFormOptions}
                       value={evolutionFormDraft}
                     />
-                  </label>
-                  <label className="path-field">
-                    <span>
-                      {selectedEvolutionUsesLevel
-                        ? translateLiteral('Level')
-                        : t('za.pokemon.evolutions.levelNotUsed')}
-                    </span>
+                  </div>
+                  <div className="path-field">
+                    <FieldLabel
+                      help={`${t('fieldHelp.catalog.pokemon.evolutionLevel')}${
+                        selectedEvolutionUsesLevel
+                          ? ''
+                          : ` ${t('za.pokemon.evolutions.levelIgnoredHelp')}`
+                      }`}
+                      htmlFor="pokemon-evolution-level"
+                      label={
+                        selectedEvolutionUsesLevel
+                          ? translateLiteral('Level')
+                          : t('za.pokemon.evolutions.levelNotUsed')
+                      }
+                    />
                     <input
                       disabled={!canEditEvolution || !selectedEvolutionUsesLevel}
+                      id="pokemon-evolution-level"
                       max={evolutionMaximumLevel}
                       min={0}
                       onChange={(event) => {
@@ -16822,7 +16927,7 @@ function SelectedPokemonPanel({
                       type="number"
                       value={evolutionLevelDraft}
                     />
-                  </label>
+                  </div>
                   <div className="learnset-button-row">
                     <button
                       aria-busy={isPokemonUpdating || undefined}
@@ -16934,11 +17039,16 @@ function SelectedPokemonPanel({
               ) : null}
 
               <div className="learnset-edit-grid evolution-edit-grid">
-                <label className="path-field">
-                  <span>New method</span>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.pokemon.evolutionMethod')}
+                    htmlFor="pokemon-new-evolution-method"
+                    label={translateLiteral('New method')}
+                  />
                   <SearchableOptionInput
-                    ariaLabel="New method"
+                    ariaLabel={translateLiteral('New method')}
                     disabled={!canEditEvolution}
+                    id="pokemon-new-evolution-method"
                     onChange={(nextMethod) => {
                       const nextOption = findEvolutionMethodOption(
                         newEvolutionMethodOptions,
@@ -16953,14 +17063,23 @@ function SelectedPokemonPanel({
                     options={newEvolutionMethodOptions}
                     value={newEvolutionMethodDraft}
                   />
-                </label>
-                <label className="path-field">
-                  <span>{newEvolutionMethodOption?.argumentLabel ?? 'New argument'}</span>
+                </div>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
+                    htmlFor="pokemon-new-evolution-argument"
+                    label={translateLiteral(
+                      newEvolutionMethodOption?.argumentLabel ?? 'New argument'
+                    )}
+                  />
                   {usesEvolutionArgumentSelector(newEvolutionMethodOption) &&
                   newEvolutionArgumentOptions.length > 0 ? (
                     <SearchableOptionInput
-                      ariaLabel={newEvolutionMethodOption?.argumentLabel ?? 'New argument'}
+                      ariaLabel={translateLiteral(
+                        newEvolutionMethodOption?.argumentLabel ?? 'New argument'
+                      )}
                       disabled={!canEditEvolution}
+                      id="pokemon-new-evolution-argument"
                       onChange={setNewEvolutionArgumentDraft}
                       options={newEvolutionArgumentOptions}
                       value={newEvolutionArgumentDraft}
@@ -16971,6 +17090,7 @@ function SelectedPokemonPanel({
                         !canEditEvolution ||
                         !usesEvolutionArgumentNumberInput(newEvolutionMethodOption)
                       }
+                      id="pokemon-new-evolution-argument"
                       max={65535}
                       min={0}
                       onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
@@ -16978,13 +17098,18 @@ function SelectedPokemonPanel({
                       value={newEvolutionArgumentDraft}
                     />
                   )}
-                </label>
-                <label className="path-field">
-                  <span>New species</span>
+                </div>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
+                    htmlFor="pokemon-new-evolution-species"
+                    label={translateLiteral('New species')}
+                  />
                   {pokemonSpeciesOptions.length > 0 ? (
                     <SearchableOptionInput
-                      ariaLabel="New species"
+                      ariaLabel={translateLiteral('New species')}
                       disabled={!canEditEvolution}
+                      id="pokemon-new-evolution-species"
                       onChange={handleNewEvolutionSpeciesChange}
                       options={addCurrentPokemonFieldOption(
                         pokemonSpeciesOptions,
@@ -16997,6 +17122,7 @@ function SelectedPokemonPanel({
                   ) : (
                     <input
                       disabled={!canEditEvolution}
+                      id="pokemon-new-evolution-species"
                       max={65535}
                       min={0}
                       onChange={(event) =>
@@ -17006,25 +17132,39 @@ function SelectedPokemonPanel({
                       value={newEvolutionSpeciesDraft}
                     />
                   )}
-                </label>
-                <label className="path-field">
-                  <span>New form</span>
+                </div>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.pokemon.evolutionTargetForm')}
+                    htmlFor="pokemon-new-evolution-form"
+                    label={translateLiteral('New form')}
+                  />
                   <SearchableOptionInput
-                    ariaLabel="New form"
+                    ariaLabel={translateLiteral('New form')}
                     disabled={!canEditEvolution}
+                    id="pokemon-new-evolution-form"
                     onChange={setNewEvolutionFormDraft}
                     options={newEvolutionFormOptions}
                     value={newEvolutionFormDraft}
                   />
-                </label>
-                <label className="path-field">
-                  <span>
-                    {newEvolutionUsesLevel
-                      ? translateLiteral('New level')
-                      : t('za.pokemon.evolutions.levelNotUsed')}
-                  </span>
+                </div>
+                <div className="path-field">
+                  <FieldLabel
+                    help={`${t('fieldHelp.catalog.pokemon.evolutionLevel')}${
+                      newEvolutionUsesLevel
+                        ? ''
+                        : ` ${t('za.pokemon.evolutions.levelIgnoredHelp')}`
+                    }`}
+                    htmlFor="pokemon-new-evolution-level"
+                    label={
+                      newEvolutionUsesLevel
+                        ? translateLiteral('New level')
+                        : t('za.pokemon.evolutions.levelNotUsed')
+                    }
+                  />
                   <input
                     disabled={!canEditEvolution || !newEvolutionUsesLevel}
+                    id="pokemon-new-evolution-level"
                     max={evolutionMaximumLevel}
                     min={0}
                     onChange={(event) => setNewEvolutionLevelDraft(event.target.value)}
@@ -17036,7 +17176,7 @@ function SelectedPokemonPanel({
                     type="number"
                     value={newEvolutionLevelDraft}
                   />
-                </label>
+                </div>
                 <button
                   aria-label="Add evolution row"
                   className="secondary-button learnset-add-button"
@@ -17367,7 +17507,8 @@ function getMoveFieldMember(field: string) {
 
 function formatLocalizedMoveEditableFieldLabel(
   field: { field: string; label: string },
-  t: ReturnType<typeof useLocalization>['t']
+  t: ReturnType<typeof useLocalization>['t'],
+  hasRuntimeData = false
 ) {
   const keyByMember: Record<string, string> = {
     appliesCondition: 'moves.fields.specialConditionFlag',
@@ -17377,7 +17518,7 @@ function formatLocalizedMoveEditableFieldLabel(
     conditionTurnMax: 'moves.fields.runtimeConditionTurnsMax',
     conditionTurnMin: 'moves.fields.runtimeConditionTurnsMin',
     effectCategory: 'moves.fields.behavior',
-    flinch: 'moves.fields.flinch',
+    flinch: hasRuntimeData ? 'moves.fields.flinchShared' : 'moves.fields.flinch',
     shrinkPercent: 'moves.fields.shrink'
   };
   const key = keyByMember[getMoveFieldMember(field.field)];
@@ -17386,14 +17527,23 @@ function formatLocalizedMoveEditableFieldLabel(
 
 function getLocalizedMoveEditableFieldHelp(
   field: { field: string },
-  t: ReturnType<typeof useLocalization>['t']
+  t: ReturnType<typeof useLocalization>['t'],
+  hasRuntimeData = false
 ) {
+  const timingMember = parseMoveTimingField(field.field)?.member;
+  if (timingMember === 'hitPercent') {
+    return t('moves.fieldHelp.timingAccuracy');
+  }
+  if (timingMember === 'cooldown') {
+    return t('moves.fieldHelp.timingCooldown');
+  }
+
   const keyByMember: Record<string, string> = {
     appliesCondition: 'moves.fieldHelp.specialConditionFlag',
     conditionCount: 'moves.fieldHelp.conditionMode',
     conditionId: 'moves.fieldHelp.runtimeCondition',
     effectCategory: 'moves.fieldHelp.behavior',
-    flinch: 'moves.fieldHelp.flinch',
+    flinch: hasRuntimeData ? 'moves.fieldHelp.flinch.za' : 'moves.fieldHelp.flinch',
     shrinkPercent: 'moves.fieldHelp.shrink'
   };
   const key = keyByMember[getMoveFieldMember(field.field)];
@@ -18358,11 +18508,21 @@ function SelectedMovePanel({
             <div className="editable-field-groups">
               {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
                 <fieldset className="editable-field-group">
-                  <legend>{t('moves.runtimeVariant.heading')}</legend>
-                  <label className="path-field editable-field-control">
-                    <span>{t('moves.runtimeVariant.label')}</span>
+                  <legend className="context-help-heading">
+                    <span>{t('moves.runtimeVariant.heading')}</span>
+                    <ContextHelp label={t('moves.runtimeVariant.heading')}>
+                      {t('moves.runtimeVariant.help')} {t('moves.runtimeVariant.draftRetention')}
+                    </ContextHelp>
+                  </legend>
+                  <div className="path-field editable-field-control">
+                    <FieldLabel
+                      help={`${t('moves.runtimeVariant.help')} ${t('moves.runtimeVariant.draftRetention')}`}
+                      htmlFor="move-runtime-variant"
+                      label={t('moves.runtimeVariant.label')}
+                    />
                     <select
                       disabled={isMoveUpdating}
+                      id="move-runtime-variant"
                       onChange={(event) => onSelectRuntimeVariant(Number(event.target.value))}
                       value={selectedRuntimeVariant ?? ''}
                     >
@@ -18372,13 +18532,7 @@ function SelectedMovePanel({
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <p className="field-note">
-                    {t('moves.runtimeVariant.help')}
-                  </p>
-                  <p className="field-note">
-                    {t('moves.runtimeVariant.draftRetention')}
-                  </p>
+                  </div>
                 </fieldset>
               ) : null}
               {selectedRuntimeVariant === 2 ? (
@@ -18386,11 +18540,21 @@ function SelectedMovePanel({
               ) : null}
               {move.hasRuntimeData && timingProfileOptions.length > 1 ? (
                 <fieldset className="editable-field-group">
-                  <legend>{t('moves.timingProfile.heading')}</legend>
-                  <label className="path-field editable-field-control">
-                    <span>{translateLiteral('Profile')}</span>
+                  <legend className="context-help-heading">
+                    <span>{t('moves.timingProfile.heading')}</span>
+                    <ContextHelp label={t('moves.timingProfile.heading')}>
+                      {t('moves.timingProfile.help')}
+                    </ContextHelp>
+                  </legend>
+                  <div className="path-field editable-field-control">
+                    <FieldLabel
+                      help={t('moves.timingProfile.help')}
+                      htmlFor="move-timing-profile"
+                      label={translateLiteral('Profile')}
+                    />
                     <select
                       disabled={isMoveUpdating}
+                      id="move-timing-profile"
                       onChange={(event) => {
                         if (!timingProfileStorageKey) {
                           return;
@@ -18409,17 +18573,26 @@ function SelectedMovePanel({
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <p className="field-note">{t('moves.timingProfile.help')}</p>
+                  </div>
                 </fieldset>
               ) : null}
               {move.hasRuntimeData && timingRowOptions.length > 1 ? (
                 <fieldset className="editable-field-group">
-                  <legend>Timing Row</legend>
-                  <label className="path-field editable-field-control">
-                    <span>Occurrence</span>
+                  <legend className="context-help-heading">
+                    <span>{translateLiteral('Timing Row')}</span>
+                    <ContextHelp label={translateLiteral('Timing Row')}>
+                      {t('moves.timingOccurrence.help')}
+                    </ContextHelp>
+                  </legend>
+                  <div className="path-field editable-field-control">
+                    <FieldLabel
+                      help={t('moves.timingOccurrence.help')}
+                      htmlFor="move-timing-occurrence"
+                      label={translateLiteral('Occurrence')}
+                    />
                     <select
                       disabled={isMoveUpdating}
+                      id="move-timing-occurrence"
                       onChange={(event) => {
                         if (!timingOccurrenceStorageKey) {
                           return;
@@ -18438,8 +18611,7 @@ function SelectedMovePanel({
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <p className="field-note">{t('moves.timingOccurrence.help')}</p>
+                  </div>
                 </fieldset>
               ) : null}
               <fieldset className="editable-field-group">
@@ -18463,56 +18635,71 @@ function SelectedMovePanel({
                 const isRuntimeBehaviorGroup = group.group === 'Runtime Behavior';
                 const isRuntimeEffectsGroup = group.group === 'Runtime Effects';
                 const isRuntimeStatChangesGroup = group.group === 'Runtime Stat Changes';
-                const isFirstAdvancedGroup =
-                  isAdvancedGroup &&
+                const isRuntimeBattleGroup = group.fields.every((field) =>
+                  field.field.startsWith('battle.')
+                );
+                const isAdvancedTimingGroup = group.fields.some((field) => {
+                  const timingField = parseMoveTimingField(field.field);
+                  return timingField !== null && timingField.occurrence !== null;
+                });
+                const isFirstAdvancedTimingGroup =
+                  isAdvancedTimingGroup &&
                   !moveFieldGroups
                     .slice(0, groupIndex)
-                    .some((candidate) => candidate.group.startsWith('Advanced '));
+                    .some((candidate) =>
+                      candidate.fields.some((field) => {
+                        const timingField = parseMoveTimingField(field.field);
+                        return timingField !== null && timingField.occurrence !== null;
+                      })
+                    );
+                const localizedMoveGroupLabel = isPlayerDamageGroup
+                  ? t('moves.playerDamage.groupHeading')
+                  : isConventionalEffectsGroup && move.hasRuntimeData
+                    ? t('moves.groups.sharedConventionalEffects')
+                    : formatLocalizedMoveFieldGroup(group.group, t, translateLiteral);
+                const semanticMoveGroupHelp = isPlayerDamageGroup
+                  ? t(
+                      move.playerDamageRows.length === 1
+                        ? 'moves.playerDamage.groupNote.one'
+                        : 'moves.playerDamage.groupNote.other',
+                      { count: move.playerDamageRows.length }
+                    )
+                  : isConventionalEffectsGroup
+                    ? t(move.hasRuntimeData ? 'moves.flinch.zaHelp' : 'moves.flinch.help')
+                    : isRuntimeBehaviorGroup
+                      ? t('moves.runtimeBehavior.help')
+                      : isRuntimeEffectsGroup
+                        ? t('moves.runtimeEffects.help')
+                        : isFirstAdvancedTimingGroup
+                          ? t('moves.advancedEditor.help')
+                          : null;
+                const runtimeBattleScopeHelp = isRuntimeBattleGroup
+                  ? t('moves.runtimeBattle.scopeHelp')
+                  : null;
+                const localizedMoveGroupHelp =
+                  semanticMoveGroupHelp && runtimeBattleScopeHelp
+                    ? `${semanticMoveGroupHelp} ${runtimeBattleScopeHelp}`
+                    : semanticMoveGroupHelp ?? runtimeBattleScopeHelp;
                 return (
                   <Fragment key={group.group}>
-                    {isFirstAdvancedGroup ? (
-                      <p className="field-note move-advanced-editor-note">
-                        {t('moves.advancedEditor.help')}
-                      </p>
-                    ) : null}
                     <fieldset
                       className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-group' : ''}${isRuntimeEffectsGroup || isRuntimeStatChangesGroup ? ' move-runtime-field-group-wide' : ''}`}
                     >
-                      <legend>
-                        {isPlayerDamageGroup
-                          ? t('moves.playerDamage.groupHeading')
-                          : formatLocalizedMoveFieldGroup(group.group, t, translateLiteral)}
+                      <legend className="context-help-heading">
+                        <span>{localizedMoveGroupLabel}</span>
+                        {localizedMoveGroupHelp ? (
+                          <ContextHelp label={localizedMoveGroupLabel}>
+                            {localizedMoveGroupHelp}
+                          </ContextHelp>
+                        ) : null}
                       </legend>
                       {isPlayerDamageGroup ? (
                         <>
-                          <p className="field-note move-player-damage-group-note">
-                            {t(
-                              move.playerDamageRows.length === 1
-                                ? 'moves.playerDamage.groupNote.one'
-                                : 'moves.playerDamage.groupNote.other',
-                              { count: move.playerDamageRows.length }
-                            )}
-                          </p>
                           <ScriptedBossMoveControllerAvailability
                             move={move}
                             profiles={scriptedBosses}
                           />
                         </>
-                      ) : null}
-                      {isConventionalEffectsGroup ? (
-                        <p className="field-note move-runtime-behavior-note">
-                          {t('moves.flinch.help')}
-                        </p>
-                      ) : null}
-                      {isRuntimeBehaviorGroup ? (
-                        <p className="field-note move-runtime-behavior-note">
-                          {t('moves.runtimeBehavior.help')}
-                        </p>
-                      ) : null}
-                      {isRuntimeEffectsGroup ? (
-                        <p className="field-note move-runtime-behavior-note">
-                          {t('moves.runtimeEffects.help')}
-                        </p>
                       ) : null}
                       {isRuntimeStatChangesGroup && selectedRuntimeStatRecipient ? (
                         <p className="field-note move-runtime-behavior-note">
@@ -18582,10 +18769,12 @@ function SelectedMovePanel({
                             disabledReason={playerDamageDisabledReason}
                             draftState={effectiveDraftState}
                             draftValue={draftValue}
-                            field={field}
-                            helpText={
+                              field={field}
+                              helpDomain="moves"
+                              helpGame="za"
+                              helpText={
                               playerDamageAttackId === null
-                                ? getLocalizedMoveEditableFieldHelp(field, t)
+                                ? getLocalizedMoveEditableFieldHelp(field, t, move.hasRuntimeData)
                                 : t('moves.playerDamage.fieldHelp', {
                                     attackId: playerDamageAttackId,
                                     maximum: field.maximumValue ?? 999,
@@ -18595,7 +18784,7 @@ function SelectedMovePanel({
                             idPrefix="move-field"
                             labelText={
                               playerDamageAttackId === null
-                                ? formatLocalizedMoveEditableFieldLabel(field, t)
+                                ? formatLocalizedMoveEditableFieldLabel(field, t, move.hasRuntimeData)
                                 : t('moves.playerDamage.fieldLabel', {
                                     attackId: playerDamageAttackId
                                   })
@@ -19122,6 +19311,19 @@ function TextSection({
   const activeCategory = categories.find(
     (category) => category.categoryId === activeCategoryId
   );
+  const activeCategoryLocalization = activeCategory
+    ? textCategoryLocalizationKeys[activeCategory.categoryId]
+    : undefined;
+  const activeCategoryLabel = activeCategory
+    ? activeCategoryLocalization
+      ? t(activeCategoryLocalization.label)
+      : translateLiteral(activeCategory.label)
+    : t('text.categories.ariaLabel');
+  const activeCategoryDescription = activeCategory
+    ? activeCategoryLocalization
+      ? t(activeCategoryLocalization.description)
+      : translateLiteral(activeCategory.description)
+    : '';
   const activeLanguage = workflow?.selectedLanguage ?? selectedLanguage ?? '';
   const resultStart = page && page.returnedEntryCount > 0 ? page.offset + 1 : 0;
   const resultEnd = page ? page.offset + page.returnedEntryCount : filteredEntries.length;
@@ -19137,12 +19339,17 @@ function TextSection({
 
         <div className="items-toolbar text-toolbar">
           {workflow && workflow.languages.length > 0 ? (
-            <label className="path-field text-language-field">
-              <span>{t('text.language.label')}</span>
+            <div className="path-field text-language-field">
+              <FieldLabel
+                help={t('text.language.help')}
+                htmlFor="text-game-language"
+                label={t('text.language.label')}
+              />
               <select
                 aria-label={t('text.language.ariaLabel')}
                 data-localization-ignore="true"
                 disabled={isTextLoading || isTextUpdating}
+                id="text-game-language"
                 onChange={(event) => onLanguageChange(event.target.value)}
                 value={activeLanguage}
               >
@@ -19152,7 +19359,7 @@ function TextSection({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           ) : null}
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
@@ -19219,11 +19426,12 @@ function TextSection({
               })}
             </div>
             {activeCategory ? (
-              <p>
-                {textCategoryLocalizationKeys[activeCategory.categoryId]
-                  ? t(textCategoryLocalizationKeys[activeCategory.categoryId].description)
-                  : translateLiteral(activeCategory.description)}
-              </p>
+              <div className="editable-field-label-row text-category-context-help">
+                <strong>{activeCategoryLabel}</strong>
+                <ContextHelp label={activeCategoryLabel}>
+                  {`${t('text.categories.help')} ${activeCategoryDescription}`}
+                </ContextHelp>
+              </div>
             ) : null}
           </nav>
         ) : null}
@@ -20176,7 +20384,7 @@ function SelectedTrainerPanel({
   selectedSlot: number | null;
   trainer: TrainerRecord | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [trainerDraftsByTrainerId, setTrainerDraftsByTrainerId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -20744,24 +20952,36 @@ function SelectedTrainerPanel({
             {trainer.aiFlagStates.length > 0 ? (
               <div className="trainer-ai-flags-panel">
                 <div className="trainer-ai-flags-header">
-                  <strong>AI Flags</strong>
+                  <div className="editable-field-label-row">
+                    <strong>{translateLiteral('AI Flags')}</strong>
+                    <ContextHelp label={translateLiteral('AI Flags')}>
+                      {t('fieldHelp.catalog.trainer.ai')}
+                    </ContextHelp>
+                  </div>
                   <span>{aiFlagsMaskLabel}</span>
                 </div>
                 <div className="trainer-ai-flags-grid">
                   {trainer.aiFlagStates.map((flag) => {
                     const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
+                    const flagInputId = `trainer-${trainer.trainerId}-ai-flag-${flag.bit}`;
+                    const localizedFlagLabel = translateLiteral(flag.label);
+                    const localizedFlagHelp = isReserved
+                      ? `${translateLiteral('Reserved for later research.')} ${translateLiteral(
+                          'Reserved and locked.'
+                        )}`
+                      : translateLiteral(flag.description);
 
                     return (
-                      <label
+                      <div
                         className={`trainer-ai-flag ${
                           isReserved ? 'trainer-ai-flag-disabled' : ''
                         }`}
                         key={flag.bit}
-                        title={isReserved ? 'Reserved for later research.' : flag.description}
                       >
                         <input
                           checked={flag.enabled}
                           disabled={!canToggleAiFlags || isReserved}
+                          id={flagInputId}
                           onChange={(event) => {
                             const nextValue = event.target.checked
                               ? trainer.aiFlags | flag.mask
@@ -20775,11 +20995,17 @@ function SelectedTrainerPanel({
                           }}
                           type="checkbox"
                         />
-                        <span>
-                          <strong>{flag.label}</strong>
-                          <small>{isReserved ? 'Reserved and locked.' : flag.description}</small>
-                        </span>
-                      </label>
+                        <div className="trainer-ai-flag-copy">
+                          <FieldLabel
+                            help={localizedFlagHelp}
+                            htmlFor={flagInputId}
+                            label={localizedFlagLabel}
+                          />
+                          {isReserved ? (
+                            <small>{translateLiteral('Reserved and locked.')}</small>
+                          ) : null}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -20819,6 +21045,8 @@ function SelectedTrainerPanel({
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
+                          helpDomain="trainers"
+                          helpGame={editorFamily}
                           key={field.field}
                           onChange={(value) => {
                             const nextDrafts = {
@@ -20982,8 +21210,10 @@ function SelectedTrainerPanel({
                               draftState={draftState}
                               draftValue={draftValue}
                               field={field}
-                              formOptionContext={selectedPokemonFormOptionContext}
-                              key={field.field}
+                                formOptionContext={selectedPokemonFormOptionContext}
+                                helpDomain="trainers"
+                                helpGame={editorFamily}
+                                key={field.field}
                               labelAdornment={getNatureStatAdornment(
                                 field.field,
                                 pokemonNatureEffects
@@ -21190,6 +21420,8 @@ function TrainerDraftField({
   emptyOptionLabel,
   field,
   formOptionContext,
+  helpDomain,
+  helpGame,
   idPrefix = 'trainer-field',
   labelAdornment,
   onChange
@@ -21202,6 +21434,8 @@ function TrainerDraftField({
   emptyOptionLabel?: string;
   field: NumericEditableField;
   formOptionContext?: SpeciesFormOptionContext;
+  helpDomain?: FieldHelpDomain;
+  helpGame?: FieldHelpGame;
   idPrefix?: string;
   labelAdornment?: ReactNode;
   onChange: (value: string) => void;
@@ -21221,23 +21455,30 @@ function TrainerDraftField({
   const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
   const localizedFieldHelpText = translateLiteral(
-    effectiveDisabledReason ?? getEditableFieldHelp(field, t)
+    effectiveDisabledReason ??
+      getEditableFieldHelp(field, t, {
+        domain: helpDomain,
+        game: helpGame ?? formOptionContext?.gameFamily,
+        label: localizedFieldLabel,
+        optionCount: options.length
+      })
   );
 
   return (
-    <label
+    <div
       className={`path-field editable-field-control ${
         draftState.isChanged ? 'editable-field-changed' : ''
       } ${!draftState.isValid ? 'editable-field-invalid' : ''} ${
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
-      htmlFor={inputId}
       title={localizedFieldHelpText}
     >
-      <span className="editable-field-label-row">
-        <span>{localizedFieldLabel}</span>
-        {labelAdornment}
-      </span>
+      <FieldLabel
+        adornment={labelAdornment}
+        help={localizedFieldHelpText}
+        htmlFor={inputId}
+        label={localizedFieldLabel}
+      />
       {field.valueKind === 'boolean' ? (
         <select
           aria-label={localizedFieldLabel}
@@ -21281,7 +21522,7 @@ function TrainerDraftField({
           {translateLiteral(statusText)}
         </small>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -24461,6 +24702,8 @@ function GiftPokemonDraftField({
   draftValue,
   field,
   formOptionContext,
+  helpDomain,
+  helpGame,
   helpText,
   idPrefix = 'pokemon-instance',
   labelText,
@@ -24475,6 +24718,8 @@ function GiftPokemonDraftField({
   draftValue: string;
   field: NumericEditableField;
   formOptionContext?: SpeciesFormOptionContext;
+  helpDomain?: FieldHelpDomain;
+  helpGame?: FieldHelpGame;
   helpText?: string;
   idPrefix?: string;
   labelText?: string;
@@ -24493,11 +24738,17 @@ function GiftPokemonDraftField({
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
   const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = labelText ?? translateLiteral(field.label);
   const localizedFieldHelpText = effectiveDisabledReason
     ? translateLiteral(effectiveDisabledReason)
-    : helpText ?? translateLiteral(getEditableFieldHelp(field));
+    : helpText ??
+      getEditableFieldHelp(field, t, {
+        domain: helpDomain,
+        game: helpGame ?? formOptionContext?.gameFamily,
+        label: localizedFieldLabel,
+        optionCount: options.length
+      });
   const optionsWithPreservedValue =
     preservedValue === null || preservedValue === undefined
       ? options
@@ -24508,16 +24759,15 @@ function GiftPokemonDraftField({
         );
 
   return (
-    <label
+    <div
       className={`path-field editable-field-control ${
         draftState.isChanged ? 'editable-field-changed' : ''
       } ${!draftState.isValid ? 'editable-field-invalid' : ''} ${
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
-      htmlFor={inputId}
       title={localizedFieldHelpText}
     >
-      <span>{localizedFieldLabel}</span>
+      <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
         <select
           aria-describedby={ariaDescribedBy}
@@ -24574,7 +24824,7 @@ function GiftPokemonDraftField({
           {translateLiteral(statusText)}
         </small>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -25278,6 +25528,8 @@ function SelectedGiftPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={giftFormOptionContext}
+                          helpDomain="gifts"
+                          helpGame={editorFamily}
                           helpText={alphaFieldHelp}
                           key={field.field}
                           labelText={alphaFieldLabel}
@@ -26057,6 +26309,8 @@ function SelectedTradePokemonPanel({
                               ? requestedTradeFormOptionContext
                               : receivedTradeFormOptionContext
                           }
+                          helpDomain="trades"
+                          helpGame={editorFamily}
                           key={field.field}
                           onChange={(value) => {
                             const nextDrafts = {
@@ -26680,6 +26934,8 @@ function SelectedRentalPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={rentalFormOptionContext}
+                          helpDomain="rentals"
+                          helpGame="swsh"
                           key={field.field}
                           onChange={(value) => {
                             const nextDrafts = {
@@ -27813,6 +28069,8 @@ function SelectedDynamaxAdventurePanel({
                             species: encounter.species,
                             speciesId: draftedSpeciesId
                           }}
+                          helpDomain="adventures"
+                          helpGame="swsh"
                           key={field.field}
                           onChange={(value) => handleAdventureDraftChange(field, value)}
                         />
@@ -28562,6 +28820,8 @@ function SelectedStaticEncounterPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={staticEncounterFormOptionContext}
+                          helpDomain="staticEncounters"
+                          helpGame={encounter.editorFamily}
                           key={field.field}
                           onChange={(value) => handleEncounterDraftChange(field, value)}
                         />
@@ -28798,6 +29058,7 @@ function ShopsSection({
             <SelectedShopPanel
               canEditShops={canEditShops}
               editSession={editSession}
+              editorFamily={workflow.editorFamily}
               editableFields={workflow.editableFields}
               isItemUpdating={isItemUpdating}
               isShopUpdating={isShopUpdating}
@@ -28823,6 +29084,7 @@ function ShopsSection({
 function SelectedShopPanel({
   canEditShops,
   editSession,
+  editorFamily,
   editableFields,
   isItemUpdating,
   isShopUpdating,
@@ -28834,6 +29096,7 @@ function SelectedShopPanel({
 }: {
   canEditShops: boolean;
   editSession: EditSession | null;
+  editorFamily: FieldHelpGame;
   editableFields: ShopEditableField[];
   isItemUpdating: boolean;
   isShopUpdating: boolean;
@@ -28848,7 +29111,7 @@ function SelectedShopPanel({
   selectedSlot: number | null;
   shop: ShopRecord | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [inventoryDraftsByShopId, setInventoryDraftsByShopId] = useState<
     Record<string, ShopInventoryDraftState>
   >({});
@@ -29305,6 +29568,9 @@ function SelectedShopPanel({
                     shop.globalPriceField === null;
                   const itemDraftErrorId = `shop-item-${shop.shopId}-${item.key}-error`;
                   const priceDraftErrorId = `shop-price-${shop.shopId}-${item.key}-error`;
+                  const itemInputId = `shop-item-${shop.shopId}-${item.key}`;
+                  const priceInputId = `shop-price-${shop.shopId}-${item.key}`;
+                  const stockInputId = `shop-stock-${shop.shopId}-${item.key}`;
 
                   return (
                     <div
@@ -29321,8 +29587,12 @@ function SelectedShopPanel({
                       }}
                     >
                       <span className="shop-slot-index">#{item.displaySlot}</span>
-                      <label className="path-field shop-inventory-item-field">
-                        <span>{translateLiteral(itemIdField?.label ?? 'Item ID')}</span>
+                      <div className="path-field shop-inventory-item-field">
+                        <FieldLabel
+                          help={t('fieldHelp.catalog.shop.inventory')}
+                          htmlFor={itemInputId}
+                          label={translateLiteral(itemIdField?.label ?? 'Item ID')}
+                        />
                         {hasItemIdOptions ? (
                           <SearchableOptionInput
                             ariaDescribedBy={draftError ? itemDraftErrorId : undefined}
@@ -29335,6 +29605,7 @@ function SelectedShopPanel({
                               isShopUpdating ||
                               isItemUpdating
                             }
+                            id={itemInputId}
                             onChange={(value) =>
                               updateCurrentShopDraft((currentDraft) =>
                                 clearShopInventoryRowPriceDraft(
@@ -29379,6 +29650,7 @@ function SelectedShopPanel({
                               isShopUpdating ||
                               isItemUpdating
                             }
+                            id={itemInputId}
                             max={itemIdField?.maximumValue ?? undefined}
                             min={itemIdField?.minimumValue ?? undefined}
                             onChange={(event) =>
@@ -29415,13 +29687,17 @@ function SelectedShopPanel({
                             {translateLiteral(draftError)}
                           </small>
                         ) : null}
-                      </label>
-                      <label
+                      </div>
+                      <div
                         className={`path-field ${
                           isPriceDisabled ? 'shop-read-only-field' : ''
                         }`}
                       >
-                        <span>{translateLiteral(shop.currency)}</span>
+                        <FieldLabel
+                          help={t('fieldHelp.catalog.item.price')}
+                          htmlFor={priceInputId}
+                          label={translateLiteral(shop.currency)}
+                        />
                         <input
                           aria-describedby={priceDraftError ? priceDraftErrorId : undefined}
                           aria-invalid={priceDraftError ? true : undefined}
@@ -29429,6 +29705,7 @@ function SelectedShopPanel({
                             'price'
                           )}`}
                           disabled={isPriceDisabled}
+                          id={priceInputId}
                           max={maximumShopItemPrice}
                           min={0}
                           onChange={(event) =>
@@ -29452,20 +29729,27 @@ function SelectedShopPanel({
                             {translateLiteral(priceDraftError)}
                           </small>
                         ) : null}
-                      </label>
-                      <label className="path-field shop-read-only-field">
-                        <span>{translateLiteral('Stock')}</span>
+                      </div>
+                      <div className="path-field shop-read-only-field">
+                        <FieldLabel
+                          help={translateLiteral(
+                            'Shop inventory data does not expose a limited-stock value here.'
+                          )}
+                          htmlFor={stockInputId}
+                          label={translateLiteral('Stock')}
+                        />
                         <input
                           aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
                             'stock'
                           )}`}
                           disabled
+                          id={stockInputId}
                           title={translateLiteral(
                             'Shop inventory data does not expose a limited-stock value here.'
                           )}
                           value={item.stockLimit ?? translateLiteral('None')}
                         />
-                      </label>
+                      </div>
                       <div className="shop-inventory-row-actions">
                         {item.isKnownItem ? (
                           <button
@@ -29585,17 +29869,25 @@ function SelectedShopPanel({
                       originalValue;
                     const isInvalid = isShopRowFieldDraftInvalid(rowField, draftValue);
                     const errorId = `shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}-error`;
+                    const localizedRowFieldLabel = translateLiteral(rowField.label);
+                    const localizedRowFieldHelp = getEditableFieldHelp(rowField, t, {
+                      domain: 'shops',
+                      game: editorFamily,
+                      label: localizedRowFieldLabel
+                    });
 
                     return (
-                      <label
+                      <div
                         className={`path-field shop-slot-detail-field ${
                           draftValue !== originalValue ? 'editable-field-changed' : ''
                         } ${isInvalid ? 'editable-field-invalid' : ''}`}
                         key={field.field}
                       >
-                        <span className="editable-field-label-row">
-                          <span>{translateLiteral(rowField.label)}</span>
-                        </span>
+                        <FieldLabel
+                          help={localizedRowFieldHelp}
+                          htmlFor={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
+                          label={localizedRowFieldLabel}
+                        />
                         <ShopRowFieldInput
                           ariaDescribedBy={isInvalid ? errorId : undefined}
                           ariaInvalid={isInvalid ? true : undefined}
@@ -29607,6 +29899,8 @@ function SelectedShopPanel({
                           }
                           draftValue={draftValue}
                           field={rowField}
+                          helpGame={editorFamily}
+                          id={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
                           onChange={(value) =>
                             updateCurrentShopDraft((currentDraft) =>
                               updateShopRowFieldDraft(
@@ -29624,7 +29918,7 @@ function SelectedShopPanel({
                             {translateLiteral(getIntegerDraftFieldError(draftValue, rowField))}
                           </small>
                         ) : null}
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
@@ -29632,12 +29926,17 @@ function SelectedShopPanel({
             ) : null}
             {editSession && shop.canEditInventoryOrder ? (
               <div className="shop-inventory-add-row">
-                <label className="path-field shop-inventory-item-field">
-                  <span>{translateLiteral('New item')}</span>
+                <div className="path-field shop-inventory-item-field">
+                  <FieldLabel
+                    help={t('fieldHelp.catalog.shop.inventory')}
+                    htmlFor={`shop-new-item-${shop.shopId}`}
+                    label={translateLiteral('New item')}
+                  />
                   {hasItemIdOptions ? (
                     <SearchableOptionInput
                       ariaLabel={translateLiteral('New shop inventory item')}
                       disabled={!canEditShops || isShopUpdating || isItemUpdating}
+                      id={`shop-new-item-${shop.shopId}`}
                       onChange={(value) =>
                         updateCurrentShopDraft((currentDraft) => ({
                           ...currentDraft,
@@ -29655,6 +29954,7 @@ function SelectedShopPanel({
                     <input
                       aria-label={translateLiteral('New shop inventory item')}
                       disabled={!canEditShops || isShopUpdating || isItemUpdating}
+                      id={`shop-new-item-${shop.shopId}`}
                       max={itemIdField?.maximumValue ?? undefined}
                       min={itemIdField?.minimumValue ?? undefined}
                       onChange={(event) =>
@@ -29667,7 +29967,7 @@ function SelectedShopPanel({
                       value={newItemIdDraft}
                     />
                   )}
-                </label>
+                </div>
                 <button
                   aria-label={translateLiteral('Add shop inventory row')}
                   className="secondary-button learnset-add-button"
@@ -29720,6 +30020,8 @@ function ShopRowFieldInput({
   disabled,
   draftValue,
   field,
+  helpGame,
+  id,
   onChange,
   textOptions
 }: {
@@ -29728,13 +30030,19 @@ function ShopRowFieldInput({
   disabled: boolean;
   draftValue: string;
   field: ShopEditableField;
+  helpGame: FieldHelpGame;
+  id?: string;
   onChange: (value: string) => void;
   textOptions?: Array<{ label: string; value: string }>;
 }) {
   const options = field.options ?? [];
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
+  const localizedFieldHelpText = getEditableFieldHelp(field, t, {
+    domain: 'shops',
+    game: helpGame,
+    label: localizedFieldLabel
+  });
 
   if (textOptions && textOptions.length > 0) {
     return (
@@ -29743,6 +30051,7 @@ function ShopRowFieldInput({
         aria-invalid={ariaInvalid}
         aria-label={localizedFieldLabel}
         disabled={disabled}
+        id={id}
         onChange={(event) => onChange(event.target.value)}
         title={localizedFieldHelpText}
         value={draftValue}
@@ -29763,6 +30072,7 @@ function ShopRowFieldInput({
         ariaInvalid={ariaInvalid}
         ariaLabel={localizedFieldLabel}
         disabled={disabled}
+        id={id}
         onChange={onChange}
         options={addDraftFallbackOption(options, draftValue, draftValue || translateLiteral('Custom value'))}
         title={localizedFieldHelpText}
@@ -29777,6 +30087,7 @@ function ShopRowFieldInput({
       aria-invalid={ariaInvalid}
       aria-label={localizedFieldLabel}
       disabled={disabled}
+      id={id}
       max={field.maximumValue ?? undefined}
       min={field.minimumValue ?? undefined}
       onChange={(event) => onChange(event.target.value)}
@@ -31722,16 +32033,25 @@ function SelectedEncounterPanel({
                   ) : null}
                   {isSvEncounterTable || isZaEncounterTable ? (
                     <div>
-                      <dt
-                        title={
-                          isZaEncounterTable
+                      <dt className="editable-field-label-row">
+                        <span>
+                          {isZaEncounterTable
+                            ? t('za.spawnSettings.listedShareLabel')
+                            : translateLiteral('Share in row')}
+                        </span>
+                        <ContextHelp
+                          label={
+                            isZaEncounterTable
+                              ? t('za.spawnSettings.listedShareLabel')
+                              : translateLiteral('Share in row')
+                          }
+                        >
+                          {isZaEncounterTable
                             ? t('za.spawnSettings.listedShareHelp')
-                            : 'Calculated from this slot\'s lot weight divided by the selected condition row\'s total lot weight.'
-                        }
-                      >
-                        {isZaEncounterTable
-                          ? t('za.spawnSettings.listedShareLabel')
-                          : 'Share in row'}
+                            : translateLiteral(
+                                'Calculated from this slot\'s lot weight divided by the selected condition row\'s total lot weight.'
+                              )}
+                        </ContextHelp>
                       </dt>
                       <dd>
                         {isZaEncounterTable
@@ -31749,10 +32069,13 @@ function SelectedEncounterPanel({
                   ) : null}
                   {isSvEncounterTable ? (
                     <div>
-                      <dt
-                        title="Biome weights, height range, linked group spawn metadata, voice class, and outbreak weight from the S/V encounter row."
-                      >
-                        S/V Conditions
+                      <dt className="editable-field-label-row">
+                        <span>{translateLiteral('S/V Conditions')}</span>
+                        <ContextHelp label={translateLiteral('S/V Conditions')}>
+                          {translateLiteral(
+                            'Biome weights, height range, linked group spawn metadata, voice class, and outbreak weight from the S/V encounter row.'
+                          )}
+                        </ContextHelp>
                       </dt>
                       <dd>{encounterSlot.weather}</dd>
                     </div>
@@ -31880,6 +32203,8 @@ function SelectedEncounterPanel({
                                   ...entry.field,
                                   label: t('za.encounters.bossActions.replacementLabel')
                                 }}
+                                helpDomain="encounters"
+                                helpGame="za"
                                 idPrefix={`boss-action-${action.selectorActionId}`}
                                 onChange={(value) =>
                                   setScriptedBossDraftsBySelectorId((currentDrafts) => {
@@ -31986,6 +32311,8 @@ function SelectedEncounterPanel({
                               draftValue={draftValue}
                               field={field}
                               formOptionContext={encounterFormOptionContext}
+                              helpDomain="encounters"
+                              helpGame={editorFamily}
                               idPrefix="encounter-field"
                               key={field.field}
                               onChange={(value) => {
@@ -32140,11 +32467,12 @@ function SelectedEncounterPanel({
                               Minimum level cannot be higher than maximum level.
                             </small>
                           ) : null}
-                          <button
-                            aria-busy={isEncounterUpdating || undefined}
-                            className="secondary-button"
-                            disabled={!canApplyEncounterLevelsToScope}
-                            onClick={async () => {
+                          {isSwShEncounterTable || isZaEncounterTable ? (
+                            <button
+                              aria-busy={isEncounterUpdating || undefined}
+                              className="secondary-button"
+                              disabled={!canApplyEncounterLevelsToScope}
+                              onClick={async () => {
                               if (!table || !encounterSlot || !encounterDraftKey) {
                                 return;
                               }
@@ -32180,25 +32508,26 @@ function SelectedEncounterPanel({
                                   );
                                 }
                               }
-                            }}
-                            title={
-                              isSwShEncounterTable
-                                ? 'Apply these level changes to every available condition in the current encounter table.'
-                                : "Apply this slot's level changes to every editable table in the current zone."
-                            }
-                            type="button"
-                          >
-                            <BusyActionContent
-                              busyLabel="Applying"
-                              icon={null}
-                              isBusy={isEncounterUpdating}
-                              label={
+                              }}
+                              title={
                                 isSwShEncounterTable
-                                  ? 'Apply to All Conditions'
-                                  : 'Apply to Entire Zone'
+                                  ? 'Apply these level changes to every available condition in the current encounter table.'
+                                  : "Apply this slot's level changes to every editable table in the current zone."
                               }
-                            />
-                          </button>
+                              type="button"
+                            >
+                              <BusyActionContent
+                                busyLabel="Applying"
+                                icon={null}
+                                isBusy={isEncounterUpdating}
+                                label={
+                                  isSwShEncounterTable
+                                    ? 'Apply to All Conditions'
+                                    : 'Apply to Entire Zone'
+                                }
+                              />
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                       {group.group === 'Moves' && isZaEncounterTable ? (
@@ -32830,6 +33159,8 @@ function ZaEncounterPlayerPartnerEditor({
                     draftValue={draftValue}
                     field={field}
                     formOptionContext={formOptionContext}
+                    helpDomain="encounters"
+                    helpGame="za"
                     idPrefix={`za-player-partner-${partner.pokemonDataSourceIndex}`}
                     key={field.field}
                     onChange={(value) => {
@@ -34233,6 +34564,8 @@ function TeraRaidDraftPanel({
                     draftValue={draftValue}
                     field={field}
                     formOptionContext={formOptionContext}
+                    helpDomain="raids"
+                    helpGame="sv"
                     idPrefix="tera-raid-field"
                     key={field.field}
                     onChange={(value) => {
@@ -34863,6 +35196,8 @@ function SelectedRaidBattlePanel({
                                       speciesId: battleSlot.speciesId
                                     }
                               }
+                              helpDomain="raids"
+                              helpGame="swsh"
                               idPrefix="raid-battle-field"
                               key={field.field}
                               onChange={(value) => {
@@ -35427,6 +35762,8 @@ function SelectedRaidRewardPanel({
                               draftState={draftState}
                               draftValue={draftValue}
                               field={field}
+                              helpDomain="raidRewards"
+                              helpGame="swsh"
                               idPrefix="raid-reward-field"
                               key={field.field}
                               onChange={(value) => {
@@ -35789,7 +36126,7 @@ function SelectedBehaviorPanel({
   const [draftsByEntryId, setDraftsByEntryId] = useState<
     Record<string, Record<string, string>>
   >({});
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const behaviorFieldGroups = useMemo(() => groupBehaviorFields(fields), [fields]);
@@ -35984,16 +36321,30 @@ function SelectedBehaviorPanel({
                           : isChanged
                             ? 'Changed'
                             : null;
+                      const localizedBehaviorFieldLabel = translateLiteral(field.label);
+                      const localizedBehaviorFieldHelp = field.description
+                        ? translateLiteral(field.description)
+                        : resolveFieldHelp(t, {
+                            domain: 'behavior',
+                            fieldId: field.field,
+                            label: localizedBehaviorFieldLabel,
+                            maximum: field.maximumValue,
+                            minimum: field.minimumValue,
+                            optionCount: fieldOptions?.length
+                          });
 
                       return (
-                        <label
+                        <div
                           className={`path-field editable-field-control ${
                             isChanged ? 'editable-field-changed' : ''
                           } ${isInvalid ? 'editable-field-invalid' : ''}`}
-                          htmlFor={`behavior-field-${field.field}`}
                           key={field.field}
                         >
-                          <span>{translateLiteral(field.label)}</span>
+                          <FieldLabel
+                            help={localizedBehaviorFieldHelp}
+                            htmlFor={`behavior-field-${field.field}`}
+                            label={localizedBehaviorFieldLabel}
+                          />
                           {fieldOptions && fieldOptions.length > 0 ? (
                             <select
                               aria-label={translateLiteral(field.label)}
@@ -36050,7 +36401,7 @@ function SelectedBehaviorPanel({
                               {translateLiteral(statusText)}
                             </small>
                           ) : null}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
@@ -36510,6 +36861,7 @@ function PlacementSection({
             <SelectedPlacementPanel
               canEditPlacement={canEditPlacement && canInteractWithSelectedPlacement}
               editSession={editSession}
+              editorFamily={editorFamily}
               editableFields={workflow.editableFields}
               isDetailsLoading={remotePaging?.isDetailLoading ?? false}
               isPlacementUpdating={isPlacementUpdating}
@@ -36532,6 +36884,7 @@ function PlacementSection({
 function SelectedPlacementPanel({
   canEditPlacement,
   editSession,
+  editorFamily,
   editableFields,
   isDetailsLoading,
   isPlacementUpdating,
@@ -36542,6 +36895,7 @@ function SelectedPlacementPanel({
 }: {
   canEditPlacement: boolean;
   editSession: EditSession | null;
+  editorFamily: FieldHelpGame;
   editableFields: PlacementEditableField[];
   isDetailsLoading: boolean;
   isPlacementUpdating: boolean;
@@ -36819,17 +37173,22 @@ function SelectedPlacementPanel({
                           : isFieldReadOnly
                             ? 'Read-only'
                             : resolvedDisplayHint;
-                      const fieldHelpText = field.description || getEditableFieldHelp(field);
-                      const localizedFieldHelpText = translateLiteral(fieldHelpText);
+                      const localizedPlacementFieldLabel = translateLiteral(field.label);
+                      const localizedFieldHelpText = field.description
+                        ? translateLiteral(field.description)
+                        : getEditableFieldHelp(field, t, {
+                            domain: 'placement',
+                            game: editorFamily,
+                            label: localizedPlacementFieldLabel
+                          });
 
                       return (
-                        <label
+                        <div
                           className={`path-field editable-field-control ${
                             isChanged ? 'editable-field-changed' : ''
                           } ${isInvalid ? 'editable-field-invalid' : ''} ${
                             isFieldReadOnly ? 'editable-field-disabled placement-read-only-field' : ''
                           }`}
-                          htmlFor={`placement-field-${field.field}`}
                           key={field.field}
                           title={
                             isFieldReadOnly
@@ -36840,7 +37199,11 @@ function SelectedPlacementPanel({
                               : localizedFieldHelpText
                           }
                         >
-                          <span>{translateLiteral(field.label)}</span>
+                          <FieldLabel
+                            help={localizedFieldHelpText}
+                            htmlFor={`placement-field-${field.field}`}
+                            label={localizedPlacementFieldLabel}
+                          />
                           {isFieldReadOnly ? (
                             <input
                               aria-label={translateLiteral(field.label)}
@@ -36900,7 +37263,7 @@ function SelectedPlacementPanel({
                               {translateLiteral(statusText)}
                             </small>
                           ) : null}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
@@ -37113,6 +37476,7 @@ function FlagworkSaveSection({
   selectedSaveBlockId: string | null;
   workflow: FlagworkSaveWorkflow | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const filteredFlags = filterFlagRecords(workflow?.flags ?? [], searchText);
   const filteredSaveBlocks = filterSaveBlockRecords(workflow?.saveBlocks ?? [], searchText);
   const selectedFlag =
@@ -37146,6 +37510,9 @@ function FlagworkSaveSection({
         <div className="panel-heading">
           <Save aria-hidden="true" size={18} />
           <h2 id="flagwork-save-heading">Flagwork and Save Inspectors</h2>
+          <ContextHelp label={translateLiteral('Flagwork and Save Inspectors')}>
+            {t('flagworkSave.viewerHelp')}
+          </ContextHelp>
         </div>
 
         <div className="items-toolbar flagwork-toolbar">
@@ -37265,6 +37632,7 @@ function SelectedFlagworkSavePanel({
   saveBlock: SaveBlockRecord | null;
   saveFile: SaveFileRecord | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const provenance = saveBlock?.provenance ?? flag?.provenance ?? null;
 
   return (
@@ -37294,7 +37662,12 @@ function SelectedFlagworkSavePanel({
               <dd>{flag?.hash ?? saveBlock?.hash ?? 'n/a'}</dd>
             </div>
             <div>
-              <dt>Low32 key</dt>
+              <dt className="editable-field-label-row">
+                <span>{translateLiteral('Low32 key')}</span>
+                <ContextHelp label={translateLiteral('Low32 key')}>
+                  {t('flagworkSave.low32Help')}
+                </ContextHelp>
+              </dt>
               <dd>{flag?.low32Key ?? saveBlock?.key ?? 'n/a'}</dd>
             </div>
             <div>
@@ -37302,7 +37675,12 @@ function SelectedFlagworkSavePanel({
               <dd>{saveBlock?.name ?? 'n/a'}</dd>
             </div>
             <div>
-              <dt>Value kind</dt>
+              <dt className="editable-field-label-row">
+                <span>{translateLiteral('Value kind')}</span>
+                <ContextHelp label={translateLiteral('Value kind')}>
+                  {t('flagworkSave.valueKindHelp')}
+                </ContextHelp>
+              </dt>
               <dd>{saveBlock?.valueKind ?? flag?.valueKind ?? 'n/a'}</dd>
             </div>
             <div>
@@ -37386,6 +37764,7 @@ function BagHookSection({
   selectedSlot: number | null;
   workflow: BagHookWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const selectedRecord =
     workflow?.slots.find((slot) => slot.slot === selectedSlot) ?? workflow?.slots[0] ?? null;
   const stagedBagHookEdit = editSession?.pendingEdits.find(
@@ -37437,18 +37816,22 @@ function BagHookSection({
       <section aria-labelledby="bag-hook-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Wrench aria-hidden="true" size={18} />
-          <h2 id="bag-hook-heading">Bag Hook</h2>
+          <h2 className="context-help-heading" id="bag-hook-heading">
+            <span>Bag Hook</span>
+            <ContextHelp label={translateLiteral('Bag Hook')}>
+              <p>
+                {translateLiteral(
+                  'Bag Hook installs the shared AMX startup hook required by Royal Candy and Starting Items. It grants nothing by itself; slot 1 is reserved for Royal Candy and slots 2-20 are reserved for Starting Items.'
+                )}
+              </p>
+              <p>
+                {translateLiteral(
+                  'Uninstalling Bag Hook removes dependent Royal Candy and Starting Items output. If Royal Candy also patched ExeFS, only Royal Candy-owned ExeFS bytes are restored and independent Catch Cap bytes are preserved.'
+                )}
+              </p>
+            </ContextHelp>
+          </h2>
         </div>
-        <p className="workflow-description">
-          Bag Hook installs the shared AMX startup hook required by Royal Candy and Starting
-          Items. It grants nothing by itself; slot 1 is reserved for Royal Candy and slots 2-20
-          are reserved for Starting Items.
-        </p>
-        <p className="workflow-description">
-          Uninstalling Bag Hook removes dependent Royal Candy and Starting Items output. If Royal
-          Candy also patched ExeFS, only Royal Candy-owned ExeFS bytes are restored and independent
-          Catch Cap bytes are preserved.
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
@@ -37718,17 +38101,22 @@ function IvScreenSection({
       <section aria-labelledby="iv-screen-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Dna aria-hidden="true" size={18} />
-          <h2 id="iv-screen-heading">IV Screen</h2>
+          <h2 className="context-help-heading" id="iv-screen-heading">
+            <span>IV Screen</span>
+            <ContextHelp label={translateLiteral('IV Screen')}>
+              <p>
+                {translateLiteral(
+                  'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. Install and uninstall touch only exact IV Screen-owned bytes.'
+                )}
+              </p>
+              <p>
+                {translateLiteral(
+                  'In game, open a Pokemon Summary, move to the stats graph page, then press X to toggle from normal stats to raw IV numbers. Press X again on that same page to return to the normal stats view.'
+                )}
+              </p>
+            </ContextHelp>
+          </h2>
         </div>
-        <p className="workflow-description">
-          Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph.
-          Install and uninstall touch only exact IV Screen-owned bytes.
-        </p>
-        <p className="workflow-description">
-          In game, open a Pokemon Summary, move to the stats graph page, then press X to
-          toggle from normal stats to raw IV numbers. Press X again on that same page to
-          return to the normal stats view.
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
@@ -37939,7 +38327,7 @@ function HyperTrainingSection({
   panelOutput: WorkflowPanelOutput;
   workflow: HyperTrainingWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const minimumAllowed = workflow?.levelRule.minimumAllowedLevel ?? 1;
   const maximumAllowed = workflow?.levelRule.maximumAllowedLevel ?? 100;
   const vanillaMinimumLevel = workflow?.levelRule.vanillaMinimumLevel ?? 100;
@@ -38039,12 +38427,15 @@ function HyperTrainingSection({
       <section aria-labelledby="hyper-training-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Dumbbell aria-hidden="true" size={18} />
-          <h2 id="hyper-training-heading">Hyper Training</h2>
+          <h2 className="context-help-heading" id="hyper-training-heading">
+            <span>Hyper Training</span>
+            <ContextHelp label={translateLiteral('Hyper Training')}>
+              {translateLiteral(
+                'Hyper Training edits the Battle Tower NPC script, the paired English NPC dialogue, and the party/box picker cutoff checks.'
+              )}
+            </ContextHelp>
+          </h2>
         </div>
-        <p className="workflow-description">
-          Hyper Training edits the Battle Tower NPC script, the paired English NPC
-          dialogue, and the party/box picker cutoff checks.
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
@@ -38096,7 +38487,12 @@ function HyperTrainingSection({
             <div className="flagwork-stack">
               <div className="hyper-training-control">
                 <div className="hyper-training-level-readout">
-                  <span>Minimum level</span>
+                  <div className="editable-field-label-row">
+                    <span>{translateLiteral('Minimum level')}</span>
+                    <ContextHelp label={translateLiteral('Minimum level')}>
+                      {t('hyperTraining.minimumLevelHelp')}
+                    </ContextHelp>
+                  </div>
                   <strong>Lv. {sliderValue}</strong>
                 </div>
                 <input
@@ -38111,11 +38507,16 @@ function HyperTrainingSection({
                   value={sliderValue}
                 />
                 <div className="hyper-training-input-row">
-                  <label className="table-cell-control">
-                    <span>Cutoff</span>
+                  <div className="table-cell-control">
+                    <FieldLabel
+                      help={t('hyperTraining.cutoffHelp')}
+                      htmlFor="hyper-training-cutoff"
+                      label={translateLiteral('Cutoff')}
+                    />
                     <input
                       aria-invalid={levelError ? 'true' : undefined}
                       disabled={areCutoffInputsLocked}
+                      id="hyper-training-cutoff"
                       max={maximumAllowed}
                       min={minimumAllowed}
                       onBlur={() => {
@@ -38128,7 +38529,7 @@ function HyperTrainingSection({
                       type="number"
                       value={levelInput}
                     />
-                  </label>
+                  </div>
                   <button
                     aria-busy={isStaging || undefined}
                     className="primary-button"
@@ -38500,13 +38901,15 @@ function CatchCapSection({
       <section aria-labelledby="catch-cap-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id="catch-cap-heading">{translateLiteral('Catch Cap Editor')}</h2>
+          <h2 className="context-help-heading" id="catch-cap-heading">
+            <span>{translateLiteral('Catch Cap Editor')}</span>
+            <ContextHelp label={translateLiteral('Catch Cap Editor')}>
+              {translateLiteral(
+                'Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100 because the game treats full badge completion as catch any level. Review before apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.'
+              )}
+            </ContextHelp>
+          </h2>
         </div>
-        <p className="workflow-description">
-          {translateLiteral(
-            'Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100 because the game treats full badge completion as catch any level. Review before apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.'
-          )}
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
@@ -39390,13 +39793,15 @@ function RoyalCandySection({
       <section aria-labelledby="royal-candy-heading" className="panel wide-panel">
         <div className="panel-heading">
           <CheckCircle aria-hidden="true" size={18} />
-          <h2 id="royal-candy-heading">{translateLiteral('Royal Candy Workflows')}</h2>
+          <h2 className="context-help-heading" id="royal-candy-heading">
+            <span>{translateLiteral('Royal Candy Workflows')}</span>
+            <ContextHelp label={translateLiteral('Royal Candy Workflows')}>
+              {translateLiteral(
+                'Royal Candy requires Bag Hook and always uses Bag Hook slot 1. Install workflows also patch reserved Royal Candy regions in exefs/main; use Remove Royal Candy to clear slot 1 and restore only Royal Candy-owned ExeFS bytes.'
+              )}
+            </ContextHelp>
+          </h2>
         </div>
-        <p className="workflow-description">
-          {translateLiteral(
-            'Royal Candy requires Bag Hook and always uses Bag Hook slot 1. Install workflows also patch reserved Royal Candy regions in exefs/main; use Remove Royal Candy to clear slot 1 and restore only Royal Candy-owned ExeFS bytes.'
-          )}
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <label className="search-box items-search">
@@ -40008,6 +40413,7 @@ function StartingItemsSection({
   selectedSlot: number | null;
   workflow: StartingItemsWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [grantInputs, setGrantInputs] = useState<
     Record<number, { itemId: string; quantity: string }>
   >({});
@@ -40166,16 +40572,22 @@ function StartingItemsSection({
       <section aria-labelledby="starting-items-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Package aria-hidden="true" size={18} />
-          <h2 id="starting-items-heading">Starting Items</h2>
+          <h2 className="context-help-heading" id="starting-items-heading">
+            <span>Starting Items</span>
+            <ContextHelp label={translateLiteral('Starting Items')}>
+              <p>
+                {translateLiteral(
+                  'Starting Items requires Bag Hook and uses only slots 2-20. Slot 1 is never used here because it is reserved for Royal Candy, and key item quantities are locked to 1.'
+                )}
+              </p>
+              <p>
+                {translateLiteral(
+                  'To remove Starting Items, set the occupied Starting Items slots back to No item, then stage, review, and apply. Bag Hook and Royal Candy are not removed.'
+                )}
+              </p>
+            </ContextHelp>
+          </h2>
         </div>
-        <p className="workflow-description">
-          Starting Items requires Bag Hook and uses only slots 2-20. Slot 1 is never used here
-          because it is reserved for Royal Candy, and key item quantities are locked to 1.
-        </p>
-        <p className="workflow-description">
-          To remove Starting Items, set the occupied Starting Items slots back to No item, then
-          stage, review, and apply. Bag Hook and Royal Candy are not removed.
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
@@ -41126,7 +41538,14 @@ function SvModMergerSection({
       >
         <div className="panel-heading">
           <Layers aria-hidden="true" size={18} />
-          <h2 id="sv-mod-merger-heading">{heading}</h2>
+          <h2 className="context-help-heading" id="sv-mod-merger-heading">
+            <span>{heading}</span>
+            <ContextHelp label={heading}>
+              {translateLiteral(
+                'Sources apply top to bottom; lower enabled sources win when smart merge falls back.'
+              )}
+            </ContextHelp>
+          </h2>
         </div>
 
         <div className="editor-toolbar">
@@ -41191,11 +41610,6 @@ function SvModMergerSection({
           <Metric label="Overrides" value={String(workflow?.stats.overrideCount ?? 0)} />
         </div>
 
-        <p className="mod-merger-priority-copy">
-          {translateLiteral(
-            'Sources apply top to bottom; lower enabled sources win when smart merge falls back.'
-          )}
-        </p>
         <div className="workflow-list">
           {modSources.length === 0 ? (
             <p className="empty-copy">{emptySourceCopy}</p>
@@ -41392,6 +41806,7 @@ function ModMergerSection({
   selectedDirectory2Files: Set<string>;
   workflow: ModMergerWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const directory1Files = workflow?.directory1Files ?? [];
   const directory2Files = workflow?.directory2Files ?? [];
   const effectiveOutputRootPath = (workflow?.outputRootPath ?? outputRootPath.trim()) || null;
@@ -41431,16 +41846,26 @@ function ModMergerSection({
       >
         <div className="panel-heading">
           <Layers aria-hidden="true" size={18} />
-          <h2 id="mod-merger-heading">Mod Merger</h2>
+          <h2 className="context-help-heading" id="mod-merger-heading">
+            <span>Mod Merger</span>
+            <ContextHelp label={translateLiteral('Mod Merger')}>
+              {translateLiteral(
+                'Apply writes merged files directly under the Output Root, preserves their romfs folder structure, and leaves unrelated output files unchanged.'
+              )}
+            </ContextHelp>
+          </h2>
         </div>
 
         <div className="mod-merger-directory-grid">
           <div className="mod-merger-directory-control">
-            <strong>Mod Directory 1</strong>
-            <p>
-              Choose the first mod folder. The merger scans its RomFS files and ignores
-              ExeFS content.
-            </p>
+            <strong className="context-help-heading">
+              <span>Mod Directory 1</span>
+              <ContextHelp label={translateLiteral('Mod Directory 1')}>
+                {translateLiteral(
+                  'Choose the first mod folder. The merger scans its RomFS files and ignores ExeFS content.'
+                )}
+              </ContextHelp>
+            </strong>
             <button
               aria-busy={isLoading || undefined}
               className="secondary-button"
@@ -41462,11 +41887,14 @@ function ModMergerSection({
           </div>
 
           <div className="mod-merger-directory-control">
-            <strong>Mod Directory 2</strong>
-            <p>
-              Choose the second mod folder. Select the same relative file paths on both
-              sides before staging.
-            </p>
+            <strong className="context-help-heading">
+              <span>Mod Directory 2</span>
+              <ContextHelp label={translateLiteral('Mod Directory 2')}>
+                {translateLiteral(
+                  'Choose the second mod folder. Select the same relative file paths on both sides before staging.'
+                )}
+              </ContextHelp>
+            </strong>
             <button
               aria-busy={isLoading || undefined}
               className="secondary-button"
@@ -41939,9 +42367,20 @@ function SpreadsheetImportSection({
       <section aria-labelledby="spreadsheet-import-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Upload aria-hidden="true" size={18} />
-          <h2 id="spreadsheet-import-heading">Dump Importer</h2>
+          <h2 className="context-help-heading" id="spreadsheet-import-heading">
+            <span>Dump Importer</span>
+            <ContextHelp label={translateLiteral('Dump Importer')}>
+              {t('dumpImporter.sourceHelp')}
+            </ContextHelp>
+          </h2>
         </div>
 
+        <div className="context-help-heading spreadsheet-import-progress-heading">
+          <strong>{translateLiteral('Import progress')}</strong>
+          <ContextHelp label={translateLiteral('Import progress')}>
+            {t('dumpImporter.progressHelp')}
+          </ContextHelp>
+        </div>
         <ol aria-label="Dump Importer" className="changes-progress spreadsheet-import-progress">
           {importProgressSteps.map((step, index) => (
             <li
@@ -41961,10 +42400,12 @@ function SpreadsheetImportSection({
             value={workflow ? workflow.stats.totalProfileCount.toString() : '0'}
           />
           <Metric
+            help={t('dumpImporter.acceptedHelp')}
             label="Accepted"
             value={preview ? preview.acceptedRowCount.toString() : '0'}
           />
           <Metric
+            help={t('dumpImporter.importedHelp')}
             label={t('dumpImporter.importedChanges')}
             value={importPendingEditCount.toString()}
           />
@@ -41978,13 +42419,18 @@ function SpreadsheetImportSection({
           >
             <div className="flagwork-stack">
               <div className="spreadsheet-source-panel">
-                <label className="path-field">
-                  <span>CSV, TSV, or JSON source path</span>
+                <div className="path-field">
+                  <FieldLabel
+                    help={t('dumpImporter.sourceHelp')}
+                    htmlFor="dump-import-source-path"
+                    label={translateLiteral('CSV, TSV, or JSON source path')}
+                  />
                   <div className="spreadsheet-source-input-row">
                     <input
                       aria-label="CSV, TSV, or JSON source path"
                       data-localization-ignore="true"
                       disabled={isPreviewing}
+                      id="dump-import-source-path"
                       onChange={(event) => onSourcePathChange(event.target.value)}
                       placeholder={translateLiteral('items.csv, items.tsv, or items.json')}
                       type="text"
@@ -42001,7 +42447,7 @@ function SpreadsheetImportSection({
                       <FolderOpen aria-hidden="true" size={18} />
                     </button>
                   </div>
-                </label>
+                </div>
                 <button
                   className="primary-button spreadsheet-preview-button"
                   disabled={!canPreview || isPreviewing}
@@ -42272,8 +42718,8 @@ function SettingsSection({
   const cacheTitle = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.title')
     : isPokemonLegendsZAGame(selectedGame)
-      ? 'Pokemon Legends Z-A Data Cache'
-      : 'Scarlet/Violet Data Cache';
+      ? translateLiteral('Pokemon Legends Z-A Data Cache')
+      : translateLiteral('Scarlet/Violet Data Cache');
   const cacheModeLabel = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.modeLabel')
     : isPokemonLegendsZAGame(selectedGame)
@@ -42430,8 +42876,10 @@ function SettingsSection({
           <div className="settings-subsection-heading">
             <Layers aria-hidden="true" size={18} />
             <div>
-              <h3 id="sv-cache-settings-heading">{cacheTitle}</h3>
-              <p>{cacheDescription}</p>
+              <h3 className="context-help-heading" id="sv-cache-settings-heading">
+                <span>{cacheTitle}</span>
+                <ContextHelp label={cacheTitle}>{cacheDescription}</ContextHelp>
+              </h3>
             </div>
           </div>
 
@@ -42469,10 +42917,15 @@ function SettingsSection({
           </div>
 
           <div className="sv-cache-settings-row">
-            <label className="path-field sv-cache-limit-field">
-              <span>Maximum cache size</span>
+            <div className="path-field sv-cache-limit-field">
+              <FieldLabel
+                help={t('settings.cache.limitHelp')}
+                htmlFor="settings-cache-limit"
+                label={translateLiteral('Maximum cache size')}
+              />
               <select
                 disabled={isSvCacheClearing}
+                id="settings-cache-limit"
                 onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
                 value={activeCacheLimit}
               >
@@ -42482,10 +42935,15 @@ function SettingsSection({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
             <div aria-live="polite" className="metric sv-cache-size-metric">
-              <span className="metric-label">{t('settings.cache.size.currentLabel')}</span>
+              <span className="metric-label context-help-heading">
+                <span>{t('settings.cache.size.currentLabel')}</span>
+                <ContextHelp label={t('settings.cache.size.currentLabel')}>
+                  {t('settings.cache.size.currentHelp')}
+                </ContextHelp>
+              </span>
               <span
                 className={`metric-value metric-value-small sv-cache-size-value${
                   svCacheRefreshTick > 0 ? ' sv-cache-size-value-refreshed' : ''
@@ -43682,7 +44140,7 @@ function getFileName(path: string) {
 }
 
 function filterItems(items: ItemRecord[], searchText: string) {
-  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const normalizedSearch = normalizeItemSearchValue(searchText);
 
   if (normalizedSearch.length === 0) {
     return items;
@@ -43722,8 +44180,15 @@ function filterItems(items: ItemRecord[], searchText: string) {
         group.label,
         ...group.details.flatMap((detail) => [detail.label, detail.value])
       ])
-    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+    ].some((value) => normalizeItemSearchValue(value).includes(normalizedSearch))
   );
+}
+
+function normalizeItemSearchValue(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\u2018\u2019\u02bc\uff07]/g, "'");
 }
 
 function parseMachineItemName(name: string) {
@@ -48561,20 +49026,26 @@ function PokemonPersonalFieldInput({
     formOptionContext,
     currentValue
   );
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
-  const localizedHelpText = translateLiteral(disabledReason ?? getEditableFieldHelp(field));
+  const localizedHelpText = disabledReason
+    ? translateLiteral(disabledReason)
+    : getEditableFieldHelp(field, t, {
+        domain: 'pokemon',
+        game: formOptionContext?.gameFamily,
+        label: localizedFieldLabel,
+        optionCount: options.length
+      });
 
   return (
-    <label
+    <div
       className={`path-field editable-field-control ${
         draftState.isChanged ? 'editable-field-changed' : ''
       } ${!draftState.isValid ? 'editable-field-invalid' : ''} ${
         disabledReason ? 'editable-field-disabled' : ''
       }`}
-      htmlFor={inputId}
     >
-      <span>{localizedFieldLabel}</span>
+      <FieldLabel help={localizedHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
         <select
           aria-label={localizedFieldLabel}
@@ -48617,7 +49088,7 @@ function PokemonPersonalFieldInput({
           {translateLiteral(statusText)}
         </small>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -48890,6 +49361,14 @@ function SearchableOptionInput({
   );
   const [query, setQuery] = useState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
+  const inputTitle = useMemo(() => {
+    const titleParts = hasUserQuery ? [] : [formattedValue];
+    if (localizedTitle) {
+      titleParts.push(localizedTitle);
+    }
+
+    return titleParts.filter((part) => part.length > 0).join('\n\n') || undefined;
+  }, [formattedValue, hasUserQuery, localizedTitle]);
   const optionQuery = hasUserQuery ? query : '';
   const trimmedOptionQuery = optionQuery.trim().toLocaleLowerCase();
   const hasEmptyOption = localizedEmptyOptionLabel !== undefined;
@@ -49020,7 +49499,7 @@ function SearchableOptionInput({
             }
           }
         }}
-        title={localizedTitle}
+        title={inputTitle}
         type="text"
         value={query}
       />
@@ -49035,6 +49514,7 @@ function SearchableOptionInput({
           setIsOpen((current) => (current && !hasUserQuery ? false : true));
         }}
         tabIndex={-1}
+        title={inputTitle}
         type="button"
       >
         <ChevronDown aria-hidden="true" size={16} />
@@ -49050,6 +49530,7 @@ function SearchableOptionInput({
                 selectEmptyOption();
               }}
               role="option"
+              title={localizedEmptyOptionLabel}
               type="button"
             >
               <span>{localizedEmptyOptionLabel}</span>
@@ -49064,6 +49545,7 @@ function SearchableOptionInput({
                 selectOption(option);
               }}
               role="option"
+              title={option.label}
               type="button"
             >
               <span>{option.label}</span>
@@ -49698,102 +50180,24 @@ function toPokemonSpriteIdPart(value: string) {
 
 function getEditableFieldHelp(
   field: EditableFieldWithOptions,
-  localize?: ReturnType<typeof useLocalization>['t']
-) {
-  if (field.field === zaLastHandFieldName && localize) {
-    return localize('za.trainers.lastHand.help');
+  localize: ReturnType<typeof useLocalization>['t'],
+  context?: {
+    domain?: FieldHelpDomain;
+    game?: FieldHelpGame;
+    label?: string;
+    optionCount?: number;
   }
-
-  const specificHelp: Record<string, string> = {
-    aiFlags: 'Battle AI behavior bitmask. Use the named AI flag checkboxes when they are shown.',
-    canUseMove: 'Controls whether the move is enabled. Enabling a base-disabled move does not restore missing battle animations, resources, or learnset references; verify its required game assets before using it.',
-    canDynamax: 'Whether this Pokemon is allowed to Dynamax in trainer battles.',
-    canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
-    [trainerCanTerastallizeFieldName]: 'S/V trainer-level flag that allows the trainer to Terastallize. The target comes from party Pokemon with a fixed Tera type.',
-    [zaMegaEvolutionFieldName]: 'Whether this Z-A trainer battle enables Mega Evolution behavior.',
-    [zaRankFieldName]: 'Z-A trainer rank value.',
-    dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
-    conditionCount: 'How the runtime condition duration is handled. Effect-defined preserves move-specific timing; Persistent and Timed use their authored runtime behavior.',
-    conditionId: 'Runtime condition identifier. This selector contains every condition ID verified in the Z-A runtime battle table and remains separate from the conventional move condition list.',
-    conditionTurnMax: 'Maximum runtime condition duration. Valid game values are 0 through 15; 0 is effect-defined.',
-    conditionTurnMin: 'Minimum runtime condition duration. Valid game values are 0 through 15; 0 is effect-defined.',
-    criticalRank: 'Runtime critical-hit tier. Z-A uses only ranks 0, 1, 2, and 6.',
-    damageDrainRatio: 'Percentage of damage converted into drained HP.',
-    damageRecoverRatio: 'Signed percentage of dealt damage returned to or taken from the user. Positive values recover HP; negative values cause recoil.',
-    effectCategory: 'Selects the verified runtime move behavior. This category also determines whether stat changes affect the user, the hit targets, or the move target.',
-    effectSequence: 'Advanced raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet; preserve it unless the move has been verified in game.',
-    [itemBattlePouchFieldName]: 'Controls the battle item category: none, Balls, or usable battle items.',
-    [itemCureStatusFlagsFieldName]: 'Raw cure-status bitmask. Use the named cure controls so unrelated bits remain intact.',
-    [itemFieldFlagsFieldName]: 'Legacy name for Battle pouch. It remains visible only for compatibility.',
-    flinch: 'The conventional flinch probability read by battle logic. It is not calculated from the separate runtime stagger / shrink value. A held item can supply 10% only when this value is zero.',
-    gift: 'Unknown raw Gen 8 trainer header value. It is read-only because no game behavior has been verified for it.',
-    hpRecoverRatio: 'Percentage of maximum HP restored by the move. Valid values are 0 through 100.',
-    inflictPercent: 'Percent chance to inflict the selected condition or secondary effect. Zero on a move with an inflict effect means it is a primary effect with no separate chance roll.',
-    money: 'Stored trainer money value. Sword/Shield payout semantics are not verified, so KM exposes the raw rate.',
-    power: 'Move power is stored as an unsigned byte. The supported range is 0 through 255.',
-    quality: 'Advanced effect-quality value. When named options are unavailable, preserve this raw value unless the move has been verified in game.',
-    rawHealing: 'Advanced signed raw HP behavior. Positive values restore that percentage of HP; negative values cost that percentage of HP. Preserve the value unless the move has been verified in game.',
-    rawInflictCount: 'Duration mode for the inflicted condition/effect. Sword/Shield exposes five known modes.',
-    recoil: 'Signed drain/recoil percent. Positive values drain HP; negative values deal recoil. The effect sequence determines the exact battle behavior.',
-    specialMoveId: 'Gift table special move field.',
-    shrinkPercent: 'Separate real-time stagger / shrink reaction chance. It is not a display-scaled flinch chance and is never calculated from conventional Flinch.',
-    stat1: 'First stat-change slot. Runtime moves support three stat-change slots.',
-    stat1Percent: 'Percent chance for stat-change slot 1 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
-    stat1Stage: 'Stage delta for stat-change slot 1. Positive raises the stat; negative lowers it.',
-    stat2: 'Second stat-change slot. Use when a move changes more than one stat.',
-    stat2Percent: 'Percent chance for stat-change slot 2 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
-    stat2Stage: 'Stage delta for stat-change slot 2. Positive raises the stat; negative lowers it.',
-    stat3: 'Third and final runtime move stat-change slot.',
-    stat3Percent: 'Percent chance for stat-change slot 3 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
-    turnMax: 'Maximum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
-    turnMin: 'Minimum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
-    stat3Stage: 'Stage delta for stat-change slot 3. Positive raises the stat; negative lowers it.',
-    appliesCondition: 'Special runtime flag whose general-purpose meaning is not verified. It is not the master switch for runtime conditions; most condition-bearing moves leave it disabled.',
-    'timing.cooldown': 'Cooldown in seconds between move uses. The verified range is 0 through 60; the step controls adjust it by 0.1 seconds.',
-    'timing.effectTime': 'Timing offset for the move effect. This is stored as a bounded 32-bit floating-point value.',
-    'timing.effectValue': 'Raw move-effect timing parameter, bounded to the values supported by the runtime table.',
-    'timing.projectileCountMax': 'Maximum number of projectiles. It must be at least the minimum projectile count.',
-    'timing.projectileCountMin': 'Minimum number of projectiles. It cannot exceed the maximum projectile count.',
-    'timing.rangeMax': 'Maximum targeting range. It must be at least the minimum range.',
-    'timing.rangeMin': 'Minimum targeting range. It cannot exceed the maximum range.',
-    'timing.spawnLocator': 'Verified spawn-locator entry. The editor stores the selected locator index and the backend resolves its exact game string.',
-    'timing.hitPercent': 'Runtime move accuracy as a percentage from 0 through 100.',
-    valueEffectRatio: 'Runtime value-effect ratio. It is editable only through the bounded values verified in the Z-A battle table.',
-    [itemUseFlags1FieldName]: 'Raw item use bitmask. Locked from direct editing; use the decoded PP restore, HP restore, and EV flag fields instead.',
-    [itemUseFlags2FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details; bits 5-7 remain unknown.',
-    zaConditionKind: 'Z-A shop unlock condition type for this inventory slot.',
-    zaConditionComparison: 'Comparison used by the selected Z-A shop unlock condition. Value 5 is greater than or equal.',
-    zaConditionArguments: 'Arguments for the selected Z-A condition. Scenario phase uses a phase value, flag condition uses a flag id, work value uses a work id, and have item uses item id plus optional count.'
-  };
-  const range =
-    field.minimumValue === null || field.maximumValue === null
-      ? null
-      : field.minimumValue === undefined || field.maximumValue === undefined
-        ? null
-        : `${field.minimumValue}-${field.maximumValue}`;
-  const optionCount = field.options?.length ?? 0;
-  const optionHint = optionCount > 0 ? `${optionCount} available option${optionCount === 1 ? '' : 's'}` : null;
-  const normalizedFieldName = field.field
-    ?.replace(/^battle\.\d+\./, '')
-    .replace(/^timing\.\d+\./, 'timing.');
-  const specificText =
-    field.field === healFieldName && field.label.toLocaleLowerCase().includes('flag')
-      ? 'Unknown raw Gen 8 trainer header flag. It is read-only because no game behavior has been verified for it.'
-      : field.field === healFieldName
-        ? 'True if the move is treated as a healing move for battle rules and move interactions.'
-        : normalizedFieldName
-          ? specificHelp[normalizedFieldName]
-          : null;
-
-  return [
-    field.label,
-    specificText,
-    range ? `Allowed range: ${range}` : null,
-    optionHint
-  ]
-    .filter((part): part is string => Boolean(part))
-    .map((part) => part.replace(/\.+$/, ''))
-    .join('. ');
+) {
+  return resolveFieldHelp(localize, {
+    domain: context?.domain,
+    fieldId: field.field,
+    game: context?.game,
+    label: context?.label ?? field.label,
+    maximum: field.maximumValue,
+    minimum: field.minimumValue,
+    optionCount: context?.optionCount ?? field.options?.length,
+    optionValues: field.options?.map((option) => option.value)
+  });
 }
 
 function getContextualFieldOptions(

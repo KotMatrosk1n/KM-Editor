@@ -6,6 +6,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import {
   type EditSession,
   type ProjectGame
@@ -40,7 +41,7 @@ export function FashionUnlockSection({
   stagingAction: FashionUnlockAction | null;
   workflow: FashionUnlockWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pendingAction = getCanonicalFashionUnlockPendingAction(editSession, workflow);
   const isInstallStaged = pendingAction === 'install';
   const isUninstallStaged = pendingAction === 'uninstall';
@@ -89,26 +90,49 @@ export function FashionUnlockSection({
         <div className="panel-heading">
           <Shirt aria-hidden="true" size={18} />
           <h2 id="fashion-unlock-heading">Fashion Unlock</h2>
+          <ContextHelp label={translateLiteral('Fashion Unlock')}>
+            <p>
+              {translateLiteral(
+                isScarletViolet
+                  ? 'Fashion Unlock makes Scarlet/Violet dress-up ownership checks return unlocked at runtime, without editing the save file.'
+                  : 'Fashion Unlock makes Sword/Shield fashion ownership checks return unlocked at runtime, without importing a PKHeX save block.'
+              )}
+            </p>
+            <p>
+              {translateLiteral(
+                isScarletViolet
+                  ? 'KM edits only the verified dress-up ownership check bytes in exefs/main; acquired clothing data in the save file stays untouched.'
+                  : 'KM edits only the verified ownership getter bytes in exefs/main; gender is not selected because the check result is forced after the save has already loaded.'
+              )}
+            </p>
+          </ContextHelp>
         </div>
-        <p className="workflow-description">
-          {isScarletViolet
-            ? 'Fashion Unlock makes Scarlet/Violet dress-up ownership checks return unlocked at runtime, without editing the save file.'
-            : 'Fashion Unlock makes Sword/Shield fashion ownership checks return unlocked at runtime, without importing a PKHeX save block.'}
-        </p>
-        <p className="workflow-description">
-          {isScarletViolet
-            ? 'KM edits only the verified dress-up ownership check bytes in exefs/main; acquired clothing data in the save file stays untouched.'
-            : 'KM edits only the verified ownership getter bytes in exefs/main; gender is not selected because the check result is forced after the save has already loaded.'}
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
-          <Metric label="Install" value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'} />
           <Metric
+            help={translateLiteral(
+              isScarletViolet
+                ? 'Fashion Unlock makes Scarlet/Violet dress-up ownership checks return unlocked at runtime, without editing the save file.'
+                : 'Fashion Unlock makes Sword/Shield fashion ownership checks return unlocked at runtime, without importing a PKHeX save block.'
+            )}
+            label="Install"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric
+            help={translateLiteral(
+              isScarletViolet
+                ? 'KM edits only the verified dress-up ownership check bytes in exefs/main; acquired clothing data in the save file stays untouched.'
+                : 'KM edits only the verified ownership getter bytes in exefs/main; gender is not selected because the check result is forced after the save has already loaded.'
+            )}
             label={primaryOffsetLabel}
             value={primaryOffsetValue ?? 'Not loaded'}
             valueIsRaw={primaryOffsetValue !== undefined}
           />
-          <Metric label="Reserved regions" value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'} />
+          <Metric
+            help={t('advancedWorkflows.reservedRegionsHelp')}
+            label="Reserved regions"
+            value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
+          />
         </div>
 
         {workflow ? (

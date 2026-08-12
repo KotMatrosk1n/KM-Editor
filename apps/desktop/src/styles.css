@@ -830,10 +830,12 @@ h2 {
   display: grid;
   gap: 3px;
   width: 100%;
-  min-width: min(280px, calc(100vw - 48px));
+  min-width: 0;
+  max-width: 100%;
   max-height: 240px;
   padding: 6px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #101828;
   border: 1px solid var(--color-border-strong);
   border-radius: 8px;
@@ -852,6 +854,7 @@ h2 {
   cursor: pointer;
   font-size: 13px;
   font-weight: 800;
+  line-height: 1.35;
   text-align: left;
 }
 
@@ -873,9 +876,9 @@ h2 {
 .searchable-option-row span {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .searchable-option-row small {
@@ -1064,6 +1067,9 @@ h2 {
 }
 
 .metric-label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
   min-width: 0;
   overflow-wrap: anywhere;
   color: #9aa7bd;
@@ -2143,6 +2149,12 @@ h2 {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.game-dump-category-check > .editable-field-label-row {
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
 }
 
 .game-dump-category-check small {
@@ -3721,21 +3733,29 @@ h2 {
 
 .editable-field-label-row {
   position: relative;
-  display: block;
+  display: flex;
+  gap: 5px;
+  align-items: center;
   min-width: 0;
-  padding-right: 18px;
+}
+
+.editable-field-label-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.editable-field-label-row .nature-stat-arrow {
+  margin-left: auto;
 }
 
 .nature-stat-arrow {
-  position: absolute;
-  top: 50%;
-  right: 0;
+  position: static;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 14px;
   height: 14px;
-  transform: translateY(-50%);
+  transform: none;
 }
 
 .nature-stat-arrow-up {
@@ -4804,11 +4824,15 @@ h2 {
   font-size: 9px;
 }
 
-.text-category-browser > p {
-  margin: 0;
+.text-category-context-help {
   color: var(--color-text-soft);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.text-category-context-help > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .text-page-bar {
@@ -5434,15 +5458,16 @@ h2 {
   margin-top: 2px;
 }
 
-.trainer-ai-flag span {
+.trainer-ai-flag-copy {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.trainer-ai-flag strong {
+.trainer-ai-flag-copy .editable-field-label-row > label {
   color: #f4f7fb;
   font-size: 13px;
+  font-weight: 800;
 }
 
 .trainer-ai-flag small {
@@ -5761,7 +5786,9 @@ h2 {
 }
 
 .shop-slot-detail-field .editable-field-label-row {
-  display: block;
+  display: flex;
+  gap: 5px;
+  align-items: center;
   padding-right: 0;
   color: #d7deea;
   font-size: 13px;
@@ -5776,8 +5803,8 @@ h2 {
 .shop-row-field-grid .editable-field-label-row {
   display: flex;
   gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-start;
   padding-right: 0;
 }
 
@@ -5785,6 +5812,7 @@ h2 {
   position: static;
   flex: 0 0 auto;
   max-width: 45%;
+  margin-left: auto;
   overflow: hidden;
   color: #9aa7bd;
   text-overflow: ellipsis;
@@ -5792,7 +5820,7 @@ h2 {
 }
 
 .shop-row-field-grid .shop-slot-detail-field .editable-field-label-row {
-  display: block;
+  display: flex;
   padding-right: 0;
 }
 
@@ -6563,7 +6591,7 @@ h2 {
 }
 
 .shiny-rate-current span,
-.shiny-rate-custom label > span:first-child {
+.shiny-rate-custom > div:first-child > .editable-field-label-row {
   color: #aeb8ca;
   font-size: 11px;
   font-weight: 900;
@@ -6670,7 +6698,7 @@ h2 {
   border-radius: 8px;
 }
 
-.shiny-rate-custom label {
+.shiny-rate-custom > div:first-child {
   display: grid;
   gap: 7px;
   min-width: 0;
@@ -8039,6 +8067,10 @@ h2 {
   accent-color: var(--color-gold);
 }
 
+.randomizer-checkbox .editable-field-label-row {
+  flex: 1 1 auto;
+}
+
 .randomizer-checkbox span {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -8533,6 +8565,12 @@ h2 {
 .spreadsheet-import-toolbar {
   grid-template-columns: repeat(3, minmax(120px, 160px));
   justify-content: end;
+}
+
+.spreadsheet-import-progress-heading {
+  margin-bottom: -6px;
+  color: var(--color-text-soft);
+  font-size: 13px;
 }
 
 .spreadsheet-import-layout:not(.spreadsheet-import-layout-previewed) {

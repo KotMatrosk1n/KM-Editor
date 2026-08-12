@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
+import { type ReactNode } from 'react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticMessage } from '../diagnostics';
 import { useLocalization } from '../localization';
+import { ContextHelp } from './ContextHelp';
 
 export type WorkflowPanelOutput = {
   actionDiagnostics: ApiDiagnostic[];
@@ -12,10 +14,12 @@ export type WorkflowPanelOutput = {
 };
 
 export function Metric({
+  help,
   label,
   value,
   valueIsRaw = false
 }: {
+  help?: ReactNode;
   label: string;
   value: string;
   valueIsRaw?: boolean;
@@ -24,7 +28,10 @@ export function Metric({
 
   return (
     <div className="metric">
-      <span className="metric-label">{translateLiteral(label)}</span>
+      <span className="metric-label">
+        <span>{translateLiteral(label)}</span>
+        {help ? <ContextHelp label={translateLiteral(label)}>{help}</ContextHelp> : null}
+      </span>
       <span
         className="metric-value metric-value-small"
         data-localization-ignore={valueIsRaw ? 'true' : undefined}
@@ -36,7 +43,7 @@ export function Metric({
 }
 
 export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const hasErrors = applyResult.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
   const hasWarnings = applyResult.diagnostics.some(
     (diagnostic) => diagnostic.severity === 'warning'
@@ -61,8 +68,16 @@ export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }
       </div>
 
       <div className="change-plan-status">
-        <Metric label="Status" value={status} />
-        <Metric label="Written files" value={applyResult.writtenFiles.length.toString()} />
+        <Metric
+          help={t('workflowPanels.metric.applyStatusHelp')}
+          label="Status"
+          value={status}
+        />
+        <Metric
+          help={t('workflowPanels.metric.writtenFilesHelp')}
+          label="Written files"
+          value={applyResult.writtenFiles.length.toString()}
+        />
       </div>
 
       {applyResult.writtenFiles.length > 0 ? (
@@ -109,18 +124,29 @@ export function WorkflowPanelOutputSections({
 }
 
 export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
 
   return (
     <section aria-labelledby="change-plan-heading" className="panel wide-panel">
       <div className="panel-heading">
         <ClipboardCheck aria-hidden="true" size={18} />
         <h2 id="change-plan-heading">{translateLiteral('Output Plan')}</h2>
+        <ContextHelp label={translateLiteral('Output Plan')}>
+          {t('workflowPanels.outputPlanHelp')}
+        </ContextHelp>
       </div>
 
       <div className="change-plan-status">
-        <Metric label="Plan status" value={changePlan.canApply ? 'Ready' : 'Needs fixes'} />
-        <Metric label="Target files" value={changePlan.writes.length.toString()} />
+        <Metric
+          help={t('workflowPanels.metric.planStatusHelp')}
+          label="Plan status"
+          value={changePlan.canApply ? 'Ready' : 'Needs fixes'}
+        />
+        <Metric
+          help={t('workflowPanels.metric.targetFilesHelp')}
+          label="Target files"
+          value={changePlan.writes.length.toString()}
+        />
       </div>
 
       {changePlan.writes.length > 0 ? (
@@ -170,7 +196,7 @@ export function DiagnosticsSection({
   scrollAfterEntries?: number;
 }) {
   const isScrollable = scrollAfterEntries !== undefined && diagnostics.length > scrollAfterEntries;
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const groups = [
     {
       diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
@@ -198,6 +224,9 @@ export function DiagnosticsSection({
       <div className="panel-heading">
         <Activity aria-hidden="true" size={18} />
         <h2 id="diagnostics-heading">{translateLiteral('Diagnostics')}</h2>
+        <ContextHelp label={translateLiteral('Diagnostics')}>
+          {t('workflowPanels.diagnosticsHelp')}
+        </ContextHelp>
       </div>
 
       <div className={`diagnostic-groups ${isScrollable ? 'diagnostic-list-scrollable' : ''}`}>

@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocalization } from '../localization';
+import { ContextHelp } from './ContextHelp';
 
 type EditorSessionActionsContextValue = {
   actionHost: HTMLDivElement | null;
@@ -73,7 +74,7 @@ export function EditorSessionBar({
   onStart,
   readOnlyReason
 }: EditorSessionBarProps) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const actionContext = useContext(EditorSessionActionsContext);
   const labelId = useId();
   if (!actionContext) {
@@ -88,12 +89,8 @@ export function EditorSessionBar({
       : state === 'viewing'
         ? 'status-pill-info'
         : 'status-blocked';
-  const explanation =
-    state === 'readOnly'
-      ? readOnlyReason?.trim() || 'Editing is unavailable.'
-      : state === 'editing'
-        ? 'Change controls are enabled. Stage changes when ready; files are not written until Review and Apply.'
-        : 'Start editing to enable change controls. Nothing is written until Review and Apply.';
+  const readOnlyExplanation =
+    state === 'readOnly' ? readOnlyReason?.trim() || 'Editing is unavailable.' : null;
   return (
     <section
       aria-labelledby={labelId}
@@ -109,8 +106,13 @@ export function EditorSessionBar({
           {translateLiteral(statusLabel)}
         </span>
         <div className="editor-session-bar-copy">
-          <strong id={labelId}>{translateLiteral(label)}</strong>
-          <p>{translateLiteral(explanation)}</p>
+          <span className="editor-session-bar-title">
+            <strong id={labelId}>{translateLiteral(label)}</strong>
+            <ContextHelp label={translateLiteral(label)}>
+              {t('editorSession.lifecycleHelp')}
+            </ContextHelp>
+          </span>
+          {readOnlyExplanation ? <p>{translateLiteral(readOnlyExplanation)}</p> : null}
         </div>
       </div>
 

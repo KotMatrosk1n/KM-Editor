@@ -15,6 +15,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import {
   formatBagHookStatus,
@@ -48,7 +49,7 @@ export function GymUniformRemovalSection({
   stagingAction: GymUniformRemovalAction | null;
   workflow: GymUniformRemovalWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pendingAction = getCanonicalGymUniformRemovalPendingAction(editSession, workflow);
   const isInstallStaged = pendingAction === 'install';
   const isUninstallStaged = pendingAction === 'uninstall';
@@ -90,31 +91,45 @@ export function GymUniformRemovalSection({
         <div className="panel-heading">
           <Shirt aria-hidden="true" size={18} />
           <h2 id="gym-uniform-removal-heading">Gym Uniform Removal</h2>
+          <ContextHelp label={translateLiteral('Gym Uniform Removal')}>
+            <p>
+              {translateLiteral(
+                'Gym Uniform Removal keeps gym challenge and gym leader battle scripts from switching the player into the gym uniform.'
+              )}
+            </p>
+            <p>
+              {translateLiteral(
+                'KM writes a build-ID IPS patch in exefs, so Eden/Yuzu applies the handler override at load time while the current outfit stays on.'
+              )}
+            </p>
+          </ContextHelp>
         </div>
-        <p className="workflow-description">
-          Gym Uniform Removal keeps gym challenge and gym leader battle scripts from
-          switching the player into the gym uniform.
-        </p>
-        <p className="workflow-description">
-          KM writes a build-ID IPS patch in exefs, so Eden/Yuzu applies the handler
-          override at load time while the current outfit stays on.
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
+            help={translateLiteral(
+              'Gym Uniform Removal keeps gym challenge and gym leader battle scripts from switching the player into the gym uniform.'
+            )}
             label="Install"
             value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
           />
           <Metric
+            help={translateLiteral(
+              'KM writes a build-ID IPS patch in exefs, so Eden/Yuzu applies the handler override at load time while the current outfit stays on.'
+            )}
             label="IPS artifact"
             value={workflow ? formatIpsArtifactState(workflow.ipsArtifactState) : 'Not loaded'}
           />
           <Metric
+            help={translateLiteral(
+              'The IPS patch makes the handler return success, and the outfit does not change.'
+            )}
             label="Patch site"
             value={workflow?.patchOffsetHex ?? 'Not loaded'}
             valueIsRaw={workflow !== null}
           />
           <Metric
+            help={t('advancedWorkflows.reservedRegionsHelp')}
             label="Reserved regions"
             value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
           />

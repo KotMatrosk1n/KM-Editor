@@ -31,6 +31,8 @@ import {
   type RestoreRandomizerResponse
 } from '../../bridge/contracts';
 import { ApplyResultSection, DiagnosticsSection, Metric } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
+import { FieldLabel } from '../../components/FieldLabel';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import { RandomizerConfirmationModal } from './RandomizerConfirmationModal';
@@ -648,25 +650,23 @@ export function RandomizerSection({
         </div>
 
         <div className="randomizer-seed-row">
-          <label
-            className="path-field"
-            title={t('randomizer.seed.baseHelp')}
-          >
-            <span>Base Seed</span>
+          <div className="path-field">
+            <FieldLabel
+              help={t('randomizer.seed.baseHelp')}
+              htmlFor="randomizer-base-seed"
+              label="Base Seed"
+            />
             <input
-              aria-describedby="randomizer-base-seed-help"
               aria-label="Base Seed"
               disabled={isConfigurationLocked}
+              id="randomizer-base-seed"
               maxLength={20}
               onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
               placeholder="Optional, 20 characters max"
               title={t('randomizer.seed.baseHelp')}
               value={userSeed}
             />
-            <small className="randomizer-help-copy" id="randomizer-base-seed-help">
-              {t('randomizer.seed.baseHelp')}
-            </small>
-          </label>
+          </div>
         </div>
 
         <div aria-atomic="true" aria-live="polite" className="randomizer-metrics">
@@ -719,32 +719,40 @@ export function RandomizerSection({
               <div className="panel-heading">
                 <Icon aria-hidden="true" size={18} />
                 <h2 id={`randomizer-${category.id}-heading`}>{category.label}</h2>
+                <ContextHelp label={category.label}>{category.help}</ContextHelp>
               </div>
               <div className="randomizer-option-grid">
-                <label className="randomizer-checkbox" title={category.help}>
+                <div className="randomizer-checkbox">
                   <input
                     checked={categoryEnabled}
                     disabled={isConfigurationLocked}
+                    id={`randomizer-${category.id}-enabled`}
                     onChange={() => handleToggleOption(category.enabledKey)}
                     title={category.help}
                     type="checkbox"
                   />
-                  <span>{category.enabledLabel}</span>
-                </label>
+                  <FieldLabel
+                    help={category.help}
+                    htmlFor={`randomizer-${category.id}-enabled`}
+                    label={category.enabledLabel}
+                  />
+                </div>
                 {category.fields.map((field) => {
                   const isFieldChecked = categoryEnabled && options[field.key];
+                  const inputId = `randomizer-${category.id}-${field.key}`;
 
                   return (
-                    <label className="randomizer-checkbox" key={field.key} title={field.help}>
+                    <div className="randomizer-checkbox" key={field.key}>
                       <input
                         checked={isFieldChecked}
                         disabled={isConfigurationLocked || !categoryEnabled}
+                        id={inputId}
                         onChange={() => handleToggleOption(field.key)}
                         title={field.help}
                         type="checkbox"
                       />
-                      <span>{field.label}</span>
-                    </label>
+                      <FieldLabel help={field.help} htmlFor={inputId} label={field.label} />
+                    </div>
                   );
                 })}
               </div>
@@ -758,18 +766,22 @@ export function RandomizerSection({
           <h2 id="randomizer-encounters-heading">Encounters and Rewards</h2>
         </div>
         <div className="randomizer-option-grid">
-          {randomizerEncounterOptions.map((option) => (
-            <label className="randomizer-checkbox" key={option.key} title={option.help}>
-              <input
-                checked={options[option.key]}
-                disabled={isConfigurationLocked}
-                onChange={() => handleToggleOption(option.key)}
-                title={option.help}
-                type="checkbox"
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
+          {randomizerEncounterOptions.map((option) => {
+            const inputId = `randomizer-encounter-${option.key}`;
+            return (
+              <div className="randomizer-checkbox" key={option.key}>
+                <input
+                  checked={options[option.key]}
+                  disabled={isConfigurationLocked}
+                  id={inputId}
+                  onChange={() => handleToggleOption(option.key)}
+                  title={option.help}
+                  type="checkbox"
+                />
+                <FieldLabel help={option.help} htmlFor={inputId} label={option.label} />
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -779,33 +791,37 @@ export function RandomizerSection({
           <h2 id="randomizer-type-chart-heading">Type Chart</h2>
         </div>
         <div className="randomizer-option-grid">
-          <label
-            className="randomizer-checkbox"
-            title="Randomize the Sword/Shield type-effectiveness table in exefs/main."
-          >
+          <div className="randomizer-checkbox">
             <input
               checked={options.randomizeTypeChart}
               disabled={isConfigurationLocked}
+              id="randomizer-type-chart-enabled"
               onChange={() => handleToggleOption('randomizeTypeChart')}
               title="Randomize the Sword/Shield type-effectiveness table in exefs/main."
               type="checkbox"
             />
-            <span>Randomize Type Chart</span>
-          </label>
+            <FieldLabel
+              help="Randomize the Sword/Shield type-effectiveness table in exefs/main."
+              htmlFor="randomizer-type-chart-enabled"
+              label="Randomize Type Chart"
+            />
+          </div>
           {randomizerTypeChartOptions.map((option) => {
             const isChecked = options.randomizeTypeChart && options[option.key];
+            const inputId = `randomizer-type-chart-${option.key}`;
 
             return (
-              <label className="randomizer-checkbox" key={option.key} title={option.help}>
+              <div className="randomizer-checkbox" key={option.key}>
                 <input
                   checked={isChecked}
                   disabled={isConfigurationLocked || !options.randomizeTypeChart}
+                  id={inputId}
                   onChange={() => handleToggleOption(option.key)}
                   title={option.help}
                   type="checkbox"
                 />
-                <span>{option.label}</span>
-              </label>
+                <FieldLabel help={option.help} htmlFor={inputId} label={option.label} />
+              </div>
             );
           })}
         </div>
@@ -848,10 +864,11 @@ export function RandomizerSection({
         </div>
         <div className="randomizer-output-seed">
           <div className="randomizer-output-seed-heading">
-            <span>
-              <span>{translateLiteral('Generated')}</span>{' '}
-              <span>{translateLiteral('Randomizer Seed')}</span>
-            </span>
+            <FieldLabel
+              help={t('randomizer.seed.generatedHelp')}
+              htmlFor="randomizer-generated-seed"
+              label={`${translateLiteral('Generated')} ${translateLiteral('Randomizer Seed')}`}
+            />
             <button
               className="secondary-button"
               disabled={!canCopySeed}
@@ -873,12 +890,9 @@ export function RandomizerSection({
               </span>
             </button>
           </div>
-          <p className="randomizer-help-copy" id="randomizer-generated-seed-help">
-            {t('randomizer.seed.generatedHelp')}
-          </p>
           <textarea
-            aria-describedby="randomizer-generated-seed-help"
             aria-label="Randomizer Seed"
+            id="randomizer-generated-seed"
             readOnly
             rows={4}
             title={t('randomizer.seed.generatedHelp')}
@@ -886,24 +900,22 @@ export function RandomizerSection({
           />
         </div>
         <div className="randomizer-shared-seed-row">
-          <label
-            className="path-field"
-            title={t('randomizer.seed.sharedHelp')}
-          >
-            <span>Shared Randomization Seed</span>
+          <div className="path-field">
+            <FieldLabel
+              help={t('randomizer.seed.sharedHelp')}
+              htmlFor="randomizer-shared-seed"
+              label="Shared Randomization Seed"
+            />
             <textarea
-              aria-describedby="randomizer-shared-seed-help"
               aria-label="Shared Randomization Seed"
               disabled={isConfigurationLocked}
+              id="randomizer-shared-seed"
               onChange={(event) => setImportSeedText(event.currentTarget.value)}
               rows={3}
               title={t('randomizer.seed.sharedHelp')}
               value={importSeedText}
             />
-            <small className="randomizer-help-copy" id="randomizer-shared-seed-help">
-              {t('randomizer.seed.sharedHelp')}
-            </small>
-          </label>
+          </div>
           <button
             className="purple-button"
             disabled={!canApplySharedSeed}
