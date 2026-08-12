@@ -122,6 +122,7 @@ internal static class ZaScriptedBossActionCatalog
             ["303:1"] = new HashSet<int> { 14, 98, 242, 442, 583, 605 },
             ["323:1"] = new HashSet<int> { 29, 414 },
             ["334:1"] = new HashSet<int> { 239, 340, 406, 413, 585 },
+            ["354:1"] = new HashSet<int> { 109, 247, 421, 425, 566 },
             ["359:1"] = new HashSet<int> { 163, 399, 403 },
             ["478:1"] = new HashSet<int> { 59, 196, 247, 261, 556, 566 },
             ["689:1"] = new HashSet<int> { 127, 157, 370, 612 },
@@ -241,7 +242,11 @@ internal static class ZaScriptedBossActionCatalog
         Profile(323, 1,
             BattleMove(29),
             BattleMove(414),
-            ScriptedMechanic("volcanic-eruption", "Volcanic eruption sequence")),
+            ContextOnlyScriptedMechanic(
+                "volcanic-eruption",
+                "Volcanic eruption sequence",
+                "bomb-rock-deployed",
+                1)),
         Profile(71, 1,
             BattleMove(22),
             BattleMove(188),
@@ -261,7 +266,7 @@ internal static class ZaScriptedBossActionCatalog
             BattleMove(421),
             BattleMove(425),
             BattleMove(566),
-            ScriptedMechanic("clone-sequence", "Double Team clone sequence")),
+            ScriptedMechanic("clone-sequence", "Double Team clone sequence", 1)),
         Profile(303, 1,
             BattleMove(14),
             BattleMove(98),
@@ -703,7 +708,7 @@ internal static class ZaScriptedBossActionCatalog
                 NotApplicableRuntimeState,
                 ControllerScriptLockReason,
                 PhaseAvailability: ProjectPhaseAvailability(profile, action),
-                PhaseContext: null);
+                PhaseContext: ProjectPhaseContext(profile, action));
         }
 
         ZaBossMoveSelectorRow? activeRow = null;
@@ -764,6 +769,11 @@ internal static class ZaScriptedBossActionCatalog
 
     private static string? ProjectPhaseContext(ProfileDefinition profile, ActionDefinition action)
     {
+        if (action.PhaseContext is not null)
+        {
+            return action.PhaseContext;
+        }
+
         return action.ContextOnlyStages is not null
             || (action.AvailableStages is null
                 && action.VanillaMoveId is not null
@@ -1118,6 +1128,31 @@ internal static class ZaScriptedBossActionCatalog
                 : availableStages.ToHashSet());
     }
 
+    private static ActionDefinition ContextOnlyScriptedMechanic(
+        string key,
+        string name,
+        string phaseContext,
+        params int[] availableStages)
+    {
+        var stages = availableStages.Length == 0
+            ? new HashSet<int> { 1 }
+            : availableStages.ToHashSet();
+        return new ActionDefinition(
+            $"{ScriptedMechanicKind}:{key}",
+            ScriptedMechanicKind,
+            SelectorActionId: null,
+            VanillaMoveId: null,
+            Variant: null,
+            name,
+            UsesBattleParameters: false,
+            UsesTimingParameters: false,
+            AvailableStages: stages)
+        {
+            ContextOnlyStages = stages,
+            PhaseContext = phaseContext,
+        };
+    }
+
     private sealed record ProfileDefinition(
         string Key,
         string LineageKey,
@@ -1149,5 +1184,7 @@ internal static class ZaScriptedBossActionCatalog
         IReadOnlySet<int>? AvailableStages = null)
     {
         public IReadOnlySet<int>? ContextOnlyStages { get; init; }
+
+        public string? PhaseContext { get; init; }
     }
 }

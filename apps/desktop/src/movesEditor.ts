@@ -37,6 +37,12 @@ export type MoveRuntimeView = {
   variant: number;
 };
 
+export type MoveRuntimeStatRecipient =
+  | { kind: 'hit-targets' }
+  | { kind: 'move-target'; targetName: string }
+  | { kind: 'scripted' }
+  | { kind: 'user' };
+
 export const moveFieldsNotStagedAtomicallyMessage =
   'Move changes were not staged atomically. No move drafts were cleared.';
 
@@ -399,8 +405,16 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
 
   if (field.field.startsWith('battle.')) {
     const [, , member = ''] = field.field.split('.', 3);
+    if (member === 'effectCategory') {
+      return 'Runtime Behavior';
+    }
+
     if (member.startsWith('stat')) {
       return 'Runtime Stat Changes';
+    }
+
+    if (member === 'appliesCondition' || member === 'valueEffectRatio') {
+      return 'Advanced Battle Behavior';
     }
 
     if (field.valueKind === 'boolean') {
@@ -416,11 +430,11 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
       return 'Runtime Effects';
     }
 
-    if (member === 'effectCategory' || member === 'valueEffectRatio') {
-      return 'Advanced Battle Behavior';
-    }
-
     return 'Runtime Core';
+  }
+
+  if (field.field === 'flinch') {
+    return 'Conventional Effects';
   }
 
   if (
@@ -446,7 +460,6 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
     field.field === 'rawInflictCount' ||
     field.field === 'turnMin' ||
     field.field === 'turnMax' ||
-    field.field === 'flinch' ||
     field.field === 'recoil' ||
     (field.field === 'quality' && field.options.length > 0)
   ) {
@@ -574,6 +587,77 @@ export function getMoveRelationalValidationIssues(
     }
   }
 
+  const battleVariants = new Set(
+    fields.flatMap((field) => {
+      const match = /^battle\.(\d+)\./.exec(field.field);
+      return match ? [Number(match[1])] : [];
+    })
+  );
+  for (const variant of battleVariants) {
+    const prefix = `battle.${variant}.`;
+    const stats = [1, 2, 3].map((slot) => ({
+      fields: [
+        `${prefix}stat${slot}`,
+        `${prefix}stat${slot}Stage`,
+        `${prefix}stat${slot}Percent`
+      ],
+      percent: projectedValue(`${prefix}stat${slot}Percent`),
+      slot,
+      stage: projectedValue(`${prefix}stat${slot}Stage`),
+      stat: projectedValue(`${prefix}stat${slot}`)
+    }));
+    const statFieldsAreVisible = stats.every((stat) =>
+      stat.fields.every((field) => visibleFieldNames.has(field))
+    );
+    if (!statFieldsAreVisible) {
+      continue;
+    }
+
+    const occupiedStats = stats.filter((stat) => stat.stat !== null && stat.stat !== 0);
+    for (const stat of stats) {
+      if (stat.stat === null || stat.stage === null || stat.percent === null) {
+        continue;
+      }
+
+      const isValidUnused = stat.stat === 0 && stat.stage === 0 && stat.percent === 0;
+      const isValidOccupied = stat.stat !== 0 && stat.stage !== 0;
+      if (!isValidUnused && !isValidOccupied) {
+        issues.push({
+          fields: stat.fields,
+          message: `Stat-change slot ${stat.slot} must be completely empty or include a stat and stage change.`
+        });
+      }
+    }
+
+    const firstEmptySlot = stats.findIndex((stat) => stat.stat === 0);
+    if (
+      firstEmptySlot >= 0 &&
+      stats.slice(firstEmptySlot + 1).some((stat) => stat.stat !== null && stat.stat !== 0)
+    ) {
+      issues.push({
+        fields: stats.flatMap((stat) => stat.fields),
+        message: 'Stat changes must use consecutive slots without an empty gap.'
+      });
+    }
+
+    const duplicateStats = occupiedStats.filter(
+      (stat, index) => occupiedStats.findIndex((candidate) => candidate.stat === stat.stat) !== index
+    );
+    if (duplicateStats.length > 0) {
+      issues.push({
+        fields: occupiedStats.flatMap((stat) => stat.fields),
+        message: 'Each stat can appear in only one stat-change slot.'
+      });
+    }
+
+    if (occupiedStats.some((stat) => stat.stat === 9) && occupiedStats.length > 1) {
+      issues.push({
+        fields: occupiedStats.flatMap((stat) => stat.fields),
+        message: 'All Stats must be the only occupied stat-change slot.'
+      });
+    }
+  }
+
   const timingPrefixes = new Set(fields.flatMap((field) => {
     const timingField = parseMoveTimingField(field.field);
     if (!timingField || timingField.occurrence === null) {
@@ -629,6 +713,24 @@ export function getMoveRelationalValidationIssues(
   }
 
   return issues;
+}
+
+export function getMoveRuntimeStatRecipient(
+  effectCategory: number,
+  targetName: string
+): MoveRuntimeStatRecipient {
+  switch (effectCategory) {
+    case 7:
+      return { kind: 'user' };
+    case 6:
+      return { kind: 'hit-targets' };
+    case 0:
+    case 2:
+    case 5:
+      return { kind: 'move-target', targetName };
+    default:
+      return { kind: 'scripted' };
+  }
 }
 
 export function formatMoveAccuracy(accuracy: number) {

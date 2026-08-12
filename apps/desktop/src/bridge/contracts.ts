@@ -1686,7 +1686,7 @@ export const scriptedBossActionSchema = z
     moveId: z.number().int().min(0).max(999).nullable(),
     name: z.string(),
     phaseAvailability: z.array(scriptedBossPhaseAvailabilitySchema),
-    phaseContext: z.enum(['after-stun']).nullable(),
+    phaseContext: z.enum(['after-stun', 'bomb-rock-deployed']).nullable(),
     runtimeMoveId: z.number().int().nullable(),
     runtimeState: z.enum([
       'working',

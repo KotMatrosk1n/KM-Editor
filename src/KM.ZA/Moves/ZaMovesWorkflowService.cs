@@ -159,7 +159,7 @@ internal sealed class ZaMovesWorkflowService
         [24] = "Throat Chop",
         [42] = "Tar Shot",
         [46] = "Salt Cure",
-        [65535] = "Tri Attack Status",
+        [47] = "Dire Claw random status",
     };
 
     private static readonly IReadOnlyDictionary<int, string> RuntimeConditionNames =
@@ -240,7 +240,20 @@ internal sealed class ZaMovesWorkflowService
             .ToArray();
 
     private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeEffectCategoryOptions =
-        CreateRawOptions(0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13);
+    [
+        new(0, "0 General / move-specific behavior"),
+        new(1, "1 Condition-only status move"),
+        new(2, "2 Stat or condition status move"),
+        new(3, "3 HP recovery or regeneration"),
+        new(4, "4 Damage plus condition or hit reaction"),
+        new(5, "5 Combined status effect"),
+        new(6, "6 Damage plus hit-target stat change"),
+        new(7, "7 Damage plus user-side effect"),
+        new(8, "8 Draining damage"),
+        new(11, "11 Field or side effect"),
+        new(12, "12 Forced switch"),
+        new(13, "13 Special or scripted status"),
+    ];
 
     private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeValueEffectRatioOptions =
         CreateRawOptions(0, 2, 8, 15, 20);
@@ -304,7 +317,7 @@ internal sealed class ZaMovesWorkflowService
         Field(TurnMaxField, "Maximum inflict turns", "integer", byte.MinValue, byte.MaxValue),
         Field(InflictField, "Inflicted condition", "integer", ushort.MinValue, ushort.MaxValue, InflictOptions),
         Field(InflictPercentField, "Inflict chance (%)", "integer", byte.MinValue, byte.MaxValue),
-        Field(FlinchField, "Flinch chance (%)", "integer", byte.MinValue, byte.MaxValue),
+        Field(FlinchField, "Conventional flinch chance (%)", "integer", 0, 100),
         Field(EffectSequenceField, "Effect sequence ID", "integer", ushort.MinValue, ushort.MaxValue),
         Field(RecoilField, "Recoil/drain (%)", "integer", sbyte.MinValue, sbyte.MaxValue),
         Field(RawHealingField, "Healing behavior", "integer", sbyte.MinValue, sbyte.MaxValue),
@@ -356,6 +369,15 @@ internal sealed class ZaMovesWorkflowService
         Field(CantUseTwiceField, "Cannot use twice in a row", "boolean", 0, 1, BooleanOptions),
     ];
 
+    // The legacy Waza catalog contains more understood fields, but only the
+    // conventional flinch byte has completed executable and round-trip
+    // verification for editing. Keep the public base-table write surface
+    // deliberately smaller than the internal preservation model.
+    private static readonly IReadOnlyList<ZaMoveEditableField> WazaEditableFields =
+        EditableFields
+            .Where(field => string.Equals(field.Field, FlinchField, StringComparison.Ordinal))
+            .ToArray();
+
     private static readonly IReadOnlyList<ZaMoveEditableField> RuntimeBaseEditableFields =
     [
         .. CreateRuntimeVariantFields(0),
@@ -392,6 +414,7 @@ internal sealed class ZaMovesWorkflowService
 
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
+        ZaWorkflowFile? baseSource = null;
         ZaWorkflowFile? battleSource = null;
         ZaWorkflowFile? timingSource = null;
         ZaWorkflowFile? playerDamageSource = null;
@@ -414,6 +437,7 @@ internal sealed class ZaMovesWorkflowService
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.MoveDataArray);
+            baseSource = fileSource.ReadBase(project, ZaDataPaths.MoveDataArray);
             battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
             timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
 
@@ -533,7 +557,18 @@ internal sealed class ZaMovesWorkflowService
                     basePlayerDamageData))
                 .ToArray();
 
+            var vanillaFlinchByMoveId = LoadRecords(baseSource, labels)
+                .GroupBy(move => move.MoveId)
+                .Where(group => group.Count() == 1)
+                .ToDictionary(group => group.Key, group => group.Single().Flinch);
             moves = LoadRecords(source, labels)
+                .Select(move => vanillaFlinchByMoveId.TryGetValue(move.MoveId, out var vanillaFlinch)
+                    ? move with
+                    {
+                        VanillaFlinch = vanillaFlinch,
+                        WazaFlinchDiffersFromVanilla = move.Flinch != vanillaFlinch,
+                    }
+                    : move)
                 .Select(move => AddRuntimeData(
                     move,
                     battleByMove.GetValueOrDefault(move.MoveId) ?? [],
@@ -579,7 +614,7 @@ internal sealed class ZaMovesWorkflowService
         return new ZaMovesWorkflow(
             summary,
             moves,
-            runtimeEditableFields,
+            [.. WazaEditableFields, .. runtimeEditableFields],
             new ZaMovesWorkflowStats(
                 moves.Length,
                 moves.Count(move => move.CanUseMove),
@@ -597,7 +632,9 @@ internal sealed class ZaMovesWorkflowService
 
     internal static ZaMoveEditableField? GetEditableField(string? field)
     {
-        var exact = RuntimeBaseEditableFields.FirstOrDefault(candidate =>
+        var exact = WazaEditableFields
+            .Concat(RuntimeBaseEditableFields)
+            .FirstOrDefault(candidate =>
             string.Equals(candidate.Field, field, StringComparison.Ordinal));
         if (exact is not null)
         {
@@ -642,6 +679,10 @@ internal sealed class ZaMovesWorkflowService
             && occurrence is not null
             && ZaRuntimeMoveData.IsProjectileMember(member);
     }
+
+    internal static bool IsWazaEditableField(string? field) =>
+        WazaEditableFields.Any(candidate =>
+            string.Equals(candidate.Field, field, StringComparison.Ordinal));
 
     internal static string FormatType(int type) => FormatIndexed(type, TypeNames, "Type");
 
@@ -722,8 +763,8 @@ internal sealed class ZaMovesWorkflowService
             move.Flinch,
             move.EffectSequence,
             move.Recoil,
-            move.RawHealing,
-            ToStatChangeRecords(move.StatChanges),
+            move.SelfHeal,
+            ToStatChangeRecords(move.StatAmps),
             flags,
             new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
@@ -759,6 +800,12 @@ internal sealed class ZaMovesWorkflowService
             ?? timingRecords.FirstOrDefault();
         var primary = variants.FirstOrDefault(variant => variant.Variant == 0) ?? variants.FirstOrDefault();
         var vanillaValues = new List<ZaMoveVanillaFieldValue>();
+        if (move.VanillaFlinch is { } vanillaFlinch)
+        {
+            vanillaValues.Add(new ZaMoveVanillaFieldValue(
+                FlinchField,
+                vanillaFlinch.ToString(CultureInfo.InvariantCulture)));
+        }
         var runtimeBossMoveId = move.MoveId is >= 0 and < 1000
             ? checked(2000 + move.MoveId)
             : 0;
@@ -863,15 +910,17 @@ internal sealed class ZaMovesWorkflowService
                 StringComparison.Ordinal);
         var projectileCatalogBlocksRestore = !playerDamageInvocationCatalogsVerified
             && (timingDiffersFromVanilla || playerDamageDiffersFromVanilla);
-        var canRevertToVanilla = hasRuntimeData
-            && hasMatchingVariantShape
-            && hasMatchingTiming
-            && hasMatchingPlayerDamageShape
-            && !projectileCatalogBlocksRestore;
+        var hasRestorableData = hasRuntimeData || move.WazaFlinchDiffersFromVanilla;
+        var canRevertToVanilla = hasRestorableData
+            && (!hasRuntimeData
+                || (hasMatchingVariantShape
+                    && hasMatchingTiming
+                    && hasMatchingPlayerDamageShape
+                    && !projectileCatalogBlocksRestore));
         var revertBlockedReason = canRevertToVanilla
             ? null
-            : !hasRuntimeData
-                ? "This move does not have editable runtime battle, timing, or player damage data."
+            : !hasRestorableData
+                ? "This move does not have changed conventional flinch data or editable runtime battle, timing, or player damage data."
                 : !hasMatchingVariantShape
                     ? "The active and verified vanilla files do not contain one exact matching occurrence shape of unambiguous runtime variants for this move."
                     : !hasMatchingTiming
@@ -981,6 +1030,8 @@ internal sealed class ZaMovesWorkflowService
             RuntimeBattleDiffersFromVanilla = battleDiffersFromVanilla,
             RuntimeTimingDiffersFromVanilla = timingDiffersFromVanilla,
             RuntimePlayerDamageDiffersFromVanilla = playerDamageDiffersFromVanilla,
+            VanillaFlinch = move.VanillaFlinch,
+            WazaFlinchDiffersFromVanilla = move.WazaFlinchDiffersFromVanilla,
             CanRevertToVanilla = canRevertToVanilla,
             RevertToVanillaBlockedReason = revertBlockedReason,
         };
@@ -1085,11 +1136,11 @@ internal sealed class ZaMovesWorkflowService
             new(SheerForceField, "Boosted By Sheer Force", move.FlagSheerForce),
             new(SlicingField, "Slicing Move", move.FlagSlicing),
             new(WindField, "Wind Move", move.FlagWind),
-            new("unknown56", "Unknown Flag 56", move.Unknown56),
             new("unknown57", "Unknown Flag 57", move.Unknown57),
             new("unknown58", "Unknown Flag 58", move.Unknown58),
             new("unknown59", "Unknown Flag 59", move.Unknown59),
             new("unknown60", "Unknown Flag 60", move.Unknown60),
+            new("unknown61", "Unknown Flag 61", move.Unknown61),
             new(CantUseTwiceField, "Cannot Use Twice In A Row", move.FlagCantUseTwice),
         ];
     }
@@ -1116,26 +1167,26 @@ internal sealed class ZaMovesWorkflowService
         var prefix = $"battle.{variant.ToString(CultureInfo.InvariantCulture)}.";
         return
         [
-            Field(prefix + "effectCategory", "Effect category (raw)", "integer", 0, 13, RuntimeEffectCategoryOptions),
+            Field(prefix + "effectCategory", "Move behavior", "integer", 0, 13, RuntimeEffectCategoryOptions),
             Field(prefix + "type", "Type", "integer", 0, 17, TypeOptions),
             Field(prefix + "damageType", "Damage class", "integer", 0, 2, CategoryOptions),
             Field(prefix + "power", "Power", "integer", 0, byte.MaxValue),
             Field(prefix + "criticalRank", "Critical rank", "integer", 0, 6, RuntimeCriticalRankOptions),
             Field(prefix + "hpRecoverRatio", "HP recovery (%)", "integer", 0, 100),
-            Field(prefix + "shrinkPercent", "Shrink (%)", "integer", 0, 100),
-            Field(prefix + "conditionId", "Condition", "integer", 0, 46, RuntimeConditionOptions),
-            Field(prefix + "conditionPercent", "Condition chance (%)", "integer", 0, 100),
-            Field(prefix + "conditionCount", "Condition duration mode", "integer", 0, 2, RuntimeConditionModeOptions),
-            Field(prefix + "conditionTurnMin", "Minimum condition turns", "integer", 0, 15),
-            Field(prefix + "conditionTurnMax", "Maximum condition turns", "integer", 0, 15),
+            Field(prefix + "shrinkPercent", "Runtime stagger / shrink chance (%)", "integer", 0, 100),
+            Field(prefix + "conditionId", "Runtime condition", "integer", 0, 46, RuntimeConditionOptions),
+            Field(prefix + "conditionPercent", "Runtime condition chance (%)", "integer", 0, 100),
+            Field(prefix + "conditionCount", "Condition handling mode", "integer", 0, 2, RuntimeConditionModeOptions),
+            Field(prefix + "conditionTurnMin", "Minimum runtime condition turns", "integer", 0, 15),
+            Field(prefix + "conditionTurnMax", "Maximum runtime condition turns", "integer", 0, 15),
             Field(prefix + "stat1", "Stat change 1: Stat", "integer", 0, 9, RuntimeStatOptions),
-            Field(prefix + "stat1Stage", "Stat change 1: Stage delta", "integer", -6, 6),
+            Field(prefix + "stat1Stage", "Stat change 1: Stage delta", "integer", -1, 1),
             Field(prefix + "stat1Percent", "Stat change 1: Chance (%)", "integer", 0, 100),
             Field(prefix + "stat2", "Stat change 2: Stat", "integer", 0, 9, RuntimeStatOptions),
-            Field(prefix + "stat2Stage", "Stat change 2: Stage delta", "integer", -6, 6),
+            Field(prefix + "stat2Stage", "Stat change 2: Stage delta", "integer", -1, 1),
             Field(prefix + "stat2Percent", "Stat change 2: Chance (%)", "integer", 0, 100),
             Field(prefix + "stat3", "Stat change 3: Stat", "integer", 0, 9, RuntimeStatOptions),
-            Field(prefix + "stat3Stage", "Stat change 3: Stage delta", "integer", -6, 6),
+            Field(prefix + "stat3Stage", "Stat change 3: Stage delta", "integer", -1, 1),
             Field(prefix + "stat3Percent", "Stat change 3: Chance (%)", "integer", 0, 100),
             Field(prefix + "damageRecoverRatio", "Recovery / recoil (%)", "integer", -100, 100),
             Field(prefix + "damageDrainRatio", "Damage drained as HP (%)", "integer", 0, 100),
@@ -1149,7 +1200,7 @@ internal sealed class ZaMovesWorkflowService
             Field(prefix + "restoresHp", "Restores HP", "boolean", 0, 1, BooleanOptions),
             Field(prefix + "allowedWhileHealBlocked", "Allowed while heal blocked", "boolean", 0, 1, BooleanOptions),
             Field(prefix + "callableByMetronome", "Callable by Metronome", "boolean", 0, 1, BooleanOptions),
-            Field(prefix + "appliesCondition", "Applies condition", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "appliesCondition", "Special condition flag (advanced)", "boolean", 0, 1, BooleanOptions),
             Field(prefix + "blockedByProtect", "Blocked by Protect", "boolean", 0, 1, BooleanOptions),
             Field(prefix + "cannotKnockOut", "Cannot knock out", "boolean", 0, 1, BooleanOptions),
             Field(prefix + "valueEffectRatio", "Value effect ratio (raw)", "integer", 0, 20, RuntimeValueEffectRatioOptions),

@@ -551,6 +551,8 @@ export function ScriptedBossEncounterActions({
                           {t(
                             action.phaseContext === 'after-stun'
                               ? 'za.encounters.bossActions.phase.context.after-stun'
+                              : action.phaseContext === 'bomb-rock-deployed'
+                                ? 'za.encounters.bossActions.phase.context.bomb-rock-deployed'
                               : 'za.encounters.bossActions.phase.contextOnlyHelp',
                             { phases: contextOnlyPhaseLabels }
                           )}
@@ -745,9 +747,13 @@ function ScriptedBossMoveOwnerAvailabilityList({
                   {t(`moves.bossOwners.phaseModel.${profile.phaseModel.state}`)}
                 </span>
               )}
-              {action.phaseContext === 'after-stun' ? (
+              {action.phaseContext ? (
                 <small className="move-scripted-boss-owner-context">
-                  {t('moves.bossOwners.afterStunContext')}
+                  {t(
+                    action.phaseContext === 'bomb-rock-deployed'
+                      ? 'moves.bossOwners.bombRockDeployedContext'
+                      : 'moves.bossOwners.afterStunContext'
+                  )}
                 </small>
               ) : null}
             </div>

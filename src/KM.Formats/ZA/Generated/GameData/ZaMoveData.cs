@@ -31,11 +31,11 @@ public struct ZaMoveData : IFlatbufferObject
   public byte Flinch { get { int o = __p.__offset(30); return o != 0 ? __p.bb.Get(o + __p.bb_pos) : (byte)0; } }
   public ushort EffectSequence { get { int o = __p.__offset(32); return o != 0 ? __p.bb.GetUshort(o + __p.bb_pos) : (ushort)0; } }
   public sbyte Recoil { get { int o = __p.__offset(34); return o != 0 ? __p.bb.GetSbyte(o + __p.bb_pos) : (sbyte)0; } }
-  public sbyte RawHealing { get { int o = __p.__offset(36); return o != 0 ? __p.bb.GetSbyte(o + __p.bb_pos) : (sbyte)0; } }
-  public byte RawTarget { get { int o = __p.__offset(38); return o != 0 ? __p.bb.Get(o + __p.bb_pos) : (byte)0; } }
-  public ZaMoveStatChanges? StatChanges { get { int o = __p.__offset(40); return o != 0 ? (ZaMoveStatChanges?)(new ZaMoveStatChanges()).__assign(o + __p.bb_pos, __p.bb) : null; } }
-  public sbyte Affinity { get { int o = __p.__offset(42); return o != 0 ? __p.bb.GetSbyte(o + __p.bb_pos) : (sbyte)0; } }
-  public bool Unknown20 { get { int o = __p.__offset(44); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public sbyte SelfHeal { get { int o = __p.__offset(36); return o != 0 ? __p.bb.GetSbyte(o + __p.bb_pos) : (sbyte)0; } }
+  public byte DamageHeal { get { int o = __p.__offset(38); return o != 0 ? __p.bb.Get(o + __p.bb_pos) : (byte)0; } }
+  public byte RawTarget { get { int o = __p.__offset(40); return o != 0 ? __p.bb.Get(o + __p.bb_pos) : (byte)0; } }
+  public ZaMoveStatChanges? StatAmps { get { int o = __p.__offset(42); return o != 0 ? (ZaMoveStatChanges?)(new ZaMoveStatChanges()).__assign(o + __p.bb_pos, __p.bb) : null; } }
+  public sbyte Affinity { get { int o = __p.__offset(44); return o != 0 ? __p.bb.GetSbyte(o + __p.bb_pos) : (sbyte)0; } }
   public bool FlagMakesContact { get { int o = __p.__offset(46); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   public bool FlagCharge { get { int o = __p.__offset(48); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   public bool FlagRecharge { get { int o = __p.__offset(50); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
@@ -72,21 +72,21 @@ public struct ZaMoveData : IFlatbufferObject
   public bool FlagSheerForce { get { int o = __p.__offset(112); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   public bool FlagSlicing { get { int o = __p.__offset(114); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   public bool FlagWind { get { int o = __p.__offset(116); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unknown56 { get { int o = __p.__offset(118); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unknown57 { get { int o = __p.__offset(120); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unknown58 { get { int o = __p.__offset(122); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unknown59 { get { int o = __p.__offset(124); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unknown60 { get { int o = __p.__offset(126); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused61 { get { int o = __p.__offset(128); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused62 { get { int o = __p.__offset(130); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused63 { get { int o = __p.__offset(132); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused64 { get { int o = __p.__offset(134); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused65 { get { int o = __p.__offset(136); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused66 { get { int o = __p.__offset(138); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused67 { get { int o = __p.__offset(140); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused68 { get { int o = __p.__offset(142); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused69 { get { int o = __p.__offset(144); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public bool Unused70 { get { int o = __p.__offset(146); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unknown57 { get { int o = __p.__offset(118); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unknown58 { get { int o = __p.__offset(120); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unknown59 { get { int o = __p.__offset(122); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unknown60 { get { int o = __p.__offset(124); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unknown61 { get { int o = __p.__offset(126); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused62 { get { int o = __p.__offset(128); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused63 { get { int o = __p.__offset(130); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused64 { get { int o = __p.__offset(132); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused65 { get { int o = __p.__offset(134); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused66 { get { int o = __p.__offset(136); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused67 { get { int o = __p.__offset(138); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused68 { get { int o = __p.__offset(140); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused69 { get { int o = __p.__offset(142); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused70 { get { int o = __p.__offset(144); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  public bool Unused71 { get { int o = __p.__offset(146); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   public bool FlagCantUseTwice { get { int o = __p.__offset(148); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
 
   public static void StartZaMoveData(FlatBufferBuilder builder) { builder.StartTable(73); }
@@ -106,11 +106,11 @@ public struct ZaMoveData : IFlatbufferObject
   public static void AddFlinch(FlatBufferBuilder builder, byte flinch) { builder.AddByte(13, flinch, 0); }
   public static void AddEffectSequence(FlatBufferBuilder builder, ushort effectSequence) { builder.AddUshort(14, effectSequence, 0); }
   public static void AddRecoil(FlatBufferBuilder builder, sbyte recoil) { builder.AddSbyte(15, recoil, 0); }
-  public static void AddRawHealing(FlatBufferBuilder builder, sbyte rawHealing) { builder.AddSbyte(16, rawHealing, 0); }
-  public static void AddRawTarget(FlatBufferBuilder builder, byte rawTarget) { builder.AddByte(17, rawTarget, 0); }
-  public static void AddStatChanges(FlatBufferBuilder builder, Offset<ZaMoveStatChanges> statChangesOffset) { builder.AddStruct(18, statChangesOffset.Value, 0); }
-  public static void AddAffinity(FlatBufferBuilder builder, sbyte affinity) { builder.AddSbyte(19, affinity, 0); }
-  public static void AddUnknown20(FlatBufferBuilder builder, bool unknown20) { builder.AddBool(20, unknown20, false); }
+  public static void AddSelfHeal(FlatBufferBuilder builder, sbyte selfHeal) { builder.AddSbyte(16, selfHeal, 0); }
+  public static void AddDamageHeal(FlatBufferBuilder builder, byte damageHeal) { builder.AddByte(17, damageHeal, 0); }
+  public static void AddRawTarget(FlatBufferBuilder builder, byte rawTarget) { builder.AddByte(18, rawTarget, 0); }
+  public static void AddStatAmps(FlatBufferBuilder builder, Offset<ZaMoveStatChanges> statAmpsOffset) { builder.AddStruct(19, statAmpsOffset.Value, 0); }
+  public static void AddAffinity(FlatBufferBuilder builder, sbyte affinity) { builder.AddSbyte(20, affinity, 0); }
   public static void AddFlagMakesContact(FlatBufferBuilder builder, bool flagMakesContact) { builder.AddBool(21, flagMakesContact, false); }
   public static void AddFlagCharge(FlatBufferBuilder builder, bool flagCharge) { builder.AddBool(22, flagCharge, false); }
   public static void AddFlagRecharge(FlatBufferBuilder builder, bool flagRecharge) { builder.AddBool(23, flagRecharge, false); }
@@ -147,24 +147,26 @@ public struct ZaMoveData : IFlatbufferObject
   public static void AddFlagSheerForce(FlatBufferBuilder builder, bool flagSheerForce) { builder.AddBool(54, flagSheerForce, false); }
   public static void AddFlagSlicing(FlatBufferBuilder builder, bool flagSlicing) { builder.AddBool(55, flagSlicing, false); }
   public static void AddFlagWind(FlatBufferBuilder builder, bool flagWind) { builder.AddBool(56, flagWind, false); }
-  public static void AddUnknown56(FlatBufferBuilder builder, bool unknown56) { builder.AddBool(57, unknown56, false); }
-  public static void AddUnknown57(FlatBufferBuilder builder, bool unknown57) { builder.AddBool(58, unknown57, false); }
-  public static void AddUnknown58(FlatBufferBuilder builder, bool unknown58) { builder.AddBool(59, unknown58, false); }
-  public static void AddUnknown59(FlatBufferBuilder builder, bool unknown59) { builder.AddBool(60, unknown59, false); }
-  public static void AddUnknown60(FlatBufferBuilder builder, bool unknown60) { builder.AddBool(61, unknown60, false); }
-  public static void AddUnused61(FlatBufferBuilder builder, bool unused61) { builder.AddBool(62, unused61, false); }
-  public static void AddUnused62(FlatBufferBuilder builder, bool unused62) { builder.AddBool(63, unused62, false); }
-  public static void AddUnused63(FlatBufferBuilder builder, bool unused63) { builder.AddBool(64, unused63, false); }
-  public static void AddUnused64(FlatBufferBuilder builder, bool unused64) { builder.AddBool(65, unused64, false); }
-  public static void AddUnused65(FlatBufferBuilder builder, bool unused65) { builder.AddBool(66, unused65, false); }
-  public static void AddUnused66(FlatBufferBuilder builder, bool unused66) { builder.AddBool(67, unused66, false); }
-  public static void AddUnused67(FlatBufferBuilder builder, bool unused67) { builder.AddBool(68, unused67, false); }
-  public static void AddUnused68(FlatBufferBuilder builder, bool unused68) { builder.AddBool(69, unused68, false); }
-  public static void AddUnused69(FlatBufferBuilder builder, bool unused69) { builder.AddBool(70, unused69, false); }
-  public static void AddUnused70(FlatBufferBuilder builder, bool unused70) { builder.AddBool(71, unused70, false); }
+  public static void AddUnknown57(FlatBufferBuilder builder, bool unknown57) { builder.AddBool(57, unknown57, false); }
+  public static void AddUnknown58(FlatBufferBuilder builder, bool unknown58) { builder.AddBool(58, unknown58, false); }
+  public static void AddUnknown59(FlatBufferBuilder builder, bool unknown59) { builder.AddBool(59, unknown59, false); }
+  public static void AddUnknown60(FlatBufferBuilder builder, bool unknown60) { builder.AddBool(60, unknown60, false); }
+  public static void AddUnknown61(FlatBufferBuilder builder, bool unknown61) { builder.AddBool(61, unknown61, false); }
+  public static void AddUnused62(FlatBufferBuilder builder, bool unused62) { builder.AddBool(62, unused62, false); }
+  public static void AddUnused63(FlatBufferBuilder builder, bool unused63) { builder.AddBool(63, unused63, false); }
+  public static void AddUnused64(FlatBufferBuilder builder, bool unused64) { builder.AddBool(64, unused64, false); }
+  public static void AddUnused65(FlatBufferBuilder builder, bool unused65) { builder.AddBool(65, unused65, false); }
+  public static void AddUnused66(FlatBufferBuilder builder, bool unused66) { builder.AddBool(66, unused66, false); }
+  public static void AddUnused67(FlatBufferBuilder builder, bool unused67) { builder.AddBool(67, unused67, false); }
+  public static void AddUnused68(FlatBufferBuilder builder, bool unused68) { builder.AddBool(68, unused68, false); }
+  public static void AddUnused69(FlatBufferBuilder builder, bool unused69) { builder.AddBool(69, unused69, false); }
+  public static void AddUnused70(FlatBufferBuilder builder, bool unused70) { builder.AddBool(70, unused70, false); }
+  public static void AddUnused71(FlatBufferBuilder builder, bool unused71) { builder.AddBool(71, unused71, false); }
   public static void AddFlagCantUseTwice(FlatBufferBuilder builder, bool flagCantUseTwice) { builder.AddBool(72, flagCantUseTwice, false); }
   public static Offset<ZaMoveData> EndZaMoveData(FlatBufferBuilder builder) {
     int o = builder.EndTable();
+    builder.Required(o, 26);  // Inflict
+    builder.Required(o, 42);  // StatAmps
     return new Offset<ZaMoveData>(o);
   }
 }
@@ -186,16 +188,16 @@ static public class ZaMoveDataVerify
       && verifier.VerifyField(tablePos, 20 /*Priority*/, 1 /*sbyte*/, 1, false)
       && verifier.VerifyField(tablePos, 22 /*HitMax*/, 1 /*byte*/, 1, false)
       && verifier.VerifyField(tablePos, 24 /*HitMin*/, 1 /*byte*/, 1, false)
-      && verifier.VerifyField(tablePos, 26 /*Inflict*/, 6 /*ZaMoveInflict*/, 2, false)
+      && verifier.VerifyField(tablePos, 26 /*Inflict*/, 6 /*ZaMoveInflict*/, 2, true)
       && verifier.VerifyField(tablePos, 28 /*CritStage*/, 1 /*byte*/, 1, false)
       && verifier.VerifyField(tablePos, 30 /*Flinch*/, 1 /*byte*/, 1, false)
       && verifier.VerifyField(tablePos, 32 /*EffectSequence*/, 2 /*ushort*/, 2, false)
       && verifier.VerifyField(tablePos, 34 /*Recoil*/, 1 /*sbyte*/, 1, false)
-      && verifier.VerifyField(tablePos, 36 /*RawHealing*/, 1 /*sbyte*/, 1, false)
-      && verifier.VerifyField(tablePos, 38 /*RawTarget*/, 1 /*byte*/, 1, false)
-      && verifier.VerifyField(tablePos, 40 /*StatChanges*/, 9 /*ZaMoveStatChanges*/, 1, false)
-      && verifier.VerifyField(tablePos, 42 /*Affinity*/, 1 /*sbyte*/, 1, false)
-      && verifier.VerifyField(tablePos, 44 /*Unknown20*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 36 /*SelfHeal*/, 1 /*sbyte*/, 1, false)
+      && verifier.VerifyField(tablePos, 38 /*DamageHeal*/, 1 /*byte*/, 1, false)
+      && verifier.VerifyField(tablePos, 40 /*RawTarget*/, 1 /*byte*/, 1, false)
+      && verifier.VerifyField(tablePos, 42 /*StatAmps*/, 9 /*ZaMoveStatChanges*/, 1, true)
+      && verifier.VerifyField(tablePos, 44 /*Affinity*/, 1 /*sbyte*/, 1, false)
       && verifier.VerifyField(tablePos, 46 /*FlagMakesContact*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 48 /*FlagCharge*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 50 /*FlagRecharge*/, 1 /*bool*/, 1, false)
@@ -232,21 +234,21 @@ static public class ZaMoveDataVerify
       && verifier.VerifyField(tablePos, 112 /*FlagSheerForce*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 114 /*FlagSlicing*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 116 /*FlagWind*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 118 /*Unknown56*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 120 /*Unknown57*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 122 /*Unknown58*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 124 /*Unknown59*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 126 /*Unknown60*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 128 /*Unused61*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 130 /*Unused62*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 132 /*Unused63*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 134 /*Unused64*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 136 /*Unused65*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 138 /*Unused66*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 140 /*Unused67*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 142 /*Unused68*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 144 /*Unused69*/, 1 /*bool*/, 1, false)
-      && verifier.VerifyField(tablePos, 146 /*Unused70*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 118 /*Unknown57*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 120 /*Unknown58*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 122 /*Unknown59*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 124 /*Unknown60*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 126 /*Unknown61*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 128 /*Unused62*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 130 /*Unused63*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 132 /*Unused64*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 134 /*Unused65*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 136 /*Unused66*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 138 /*Unused67*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 140 /*Unused68*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 142 /*Unused69*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 144 /*Unused70*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 146 /*Unused71*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 148 /*FlagCantUseTwice*/, 1 /*bool*/, 1, false)
       && verifier.VerifyTableEnd(tablePos);
   }
