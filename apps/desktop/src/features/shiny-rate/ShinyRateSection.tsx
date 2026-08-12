@@ -13,6 +13,8 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { FieldLabel } from '../../components/FieldLabel';
+import { useLocalization } from '../../localization';
 import {
   formatFileState,
   formatSourceLayer
@@ -64,6 +66,7 @@ export function ShinyRateSection({
   panelOutput: WorkflowPanelOutput;
   workflow: ShinyRateWorkflow | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const stagedSelection = useMemo(
     () => getCanonicalShinyRatePendingSelection(editSession),
     [editSession]
@@ -231,14 +234,30 @@ export function ShinyRateSection({
             </div>
 
             <div className="shiny-rate-custom">
-              <label>
-                <span>Custom</span>
+              <div>
+                <FieldLabel
+                  help={
+                    <>
+                      {t('workflowHelp.shinyRate.customOdds')}
+                      {customCalculation ? (
+                        <>
+                          <br />
+                          <br />
+                          {customCalculation.summary}
+                        </>
+                      ) : null}
+                    </>
+                  }
+                  htmlFor="shiny-rate-custom-denominator"
+                  label={translateLiteral('Custom shiny odds denominator')}
+                />
                 <span className="shiny-rate-fraction">
                   1/
                   <input
                     aria-label="Custom shiny odds denominator"
                     aria-invalid={customCalculation === null ? 'true' : undefined}
                     disabled={!canEdit}
+                    id="shiny-rate-custom-denominator"
                     inputMode="numeric"
                     max={workflow.rateRule.maximumCustomDenominator}
                     min={workflow.rateRule.minimumCustomDenominator}
@@ -254,7 +273,7 @@ export function ShinyRateSection({
                     value={customDenominator}
                   />
                 </span>
-              </label>
+              </div>
               <div className="shiny-rate-custom-result">
                 <span>{customCalculation?.summary ?? 'Enter odds from 1/2 to 1/4096.'}</span>
                 <button

@@ -13,6 +13,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -59,7 +60,7 @@ export function TypeChartSection({
   panelOutput: WorkflowPanelOutput;
   workflow: TypeChartWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
   const vanillaValues = useMemo(() => getTypeChartVanillaValues(workflow), [workflow]);
   const stagedState = useMemo(
@@ -156,6 +157,9 @@ export function TypeChartSection({
         <div className="panel-heading">
           <Swords aria-hidden="true" size={18} />
           <h2 id="type-chart-heading">Type Chart</h2>
+          <ContextHelp label={translateLiteral('Type Chart')}>
+            {t('workflowHelp.typeChart.cells')}
+          </ContextHelp>
         </div>
 
         <div className="items-toolbar exefs-toolbar">

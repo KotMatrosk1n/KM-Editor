@@ -15,6 +15,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { FieldLabel } from '../../components/FieldLabel';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
@@ -580,6 +581,7 @@ function NpcItemGiftCard({
   quantityValue: string;
   selection: NpcItemGiftSelection | undefined;
 }) {
+  const { t, translateLiteral } = useLocalization();
   if (!selection) {
     return null;
   }
@@ -619,27 +621,39 @@ function NpcItemGiftCard({
         {gift.items.map((item) => {
           const selectedItem = selection.items.find((entry) => entry.slotId === item.slotId);
           const selectedItemId = selectedItem?.itemId ?? item.itemId;
+          const itemInputId = `npc-item-gift-${gift.giftId}-${item.slotId}`;
+          const itemLabel = translateLiteral(gift.items.length > 1 ? item.label : 'Item');
           return (
-            <label className="npc-item-gift-field" key={`${gift.giftId}:${item.slotId}`}>
-              <span>{gift.items.length > 1 ? item.label : 'Item'}</span>
+            <div className="npc-item-gift-field" key={`${gift.giftId}:${item.slotId}`}>
+              <FieldLabel
+                help={t('workflowHelp.npcItemGift.item')}
+                htmlFor={itemInputId}
+                label={itemLabel}
+              />
               <NpcItemGiftItemPicker
                 aria-label={`${gift.label} ${item.label}`}
                 disabled={disabled}
+                inputId={itemInputId}
                 onChange={(itemId) => onItemChange(gift.giftId, item.slotId, itemId)}
                 options={getSelectableItemOptions(itemOptions, selectedItemId, item.itemName)}
                 value={selectedItemId}
               />
-            </label>
+            </div>
           );
         })}
 
-        <label className="npc-item-gift-field is-amount">
-          <span>Amount</span>
+        <div className="npc-item-gift-field is-amount">
+          <FieldLabel
+            help={t('workflowHelp.npcItemGift.amount')}
+            htmlFor={`npc-item-gift-${gift.giftId}-amount`}
+            label={translateLiteral('Amount')}
+          />
           <input
             aria-describedby={quantityError ? quantityErrorId : undefined}
             aria-invalid={quantityError}
             aria-label={`${gift.label} amount`}
             disabled={disabled || !gift.canEditQuantity || hasKnownKeyItem}
+            id={`npc-item-gift-${gift.giftId}-amount`}
             inputMode="numeric"
             onBlur={() => onQuantityBlur(gift.giftId)}
             onChange={(event) => onQuantityChange(gift.giftId, event.target.value)}
@@ -656,7 +670,7 @@ function NpcItemGiftCard({
               Enter a whole number from 1 to 999.
             </small>
           ) : null}
-        </label>
+        </div>
       </div>
 
       <div className="npc-item-gift-defaults">
@@ -681,12 +695,14 @@ function NpcItemGiftCard({
 function NpcItemGiftItemPicker({
   'aria-label': ariaLabel,
   disabled,
+  inputId,
   onChange,
   options,
   value
 }: {
   'aria-label': string;
   disabled: boolean;
+  inputId: string;
   onChange: (value: number) => void;
   options: NpcItemGiftSelectableItemOption[];
   value: number;
@@ -832,6 +848,7 @@ function NpcItemGiftItemPicker({
         aria-label={ariaLabel}
         autoComplete="off"
         disabled={disabled}
+        id={inputId}
         inputMode="search"
         onBlur={() => commitTypedOption(false)}
         onChange={(event) => handleInputChange(event.target.value)}

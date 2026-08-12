@@ -20,6 +20,8 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
+import { FieldLabel } from '../../components/FieldLabel';
 import { useLocalization } from '../../localization';
 import {
   formatFileState,
@@ -219,11 +221,14 @@ export function AngeFightSection({
           <div className="ange-fight-editor">
             <div className="ange-fight-intro">
               <div>
-                <strong>Direct fight values</strong>
-                <p>
-                  Edit both flowers and every mapped direct-damage attack used by the
-                  Ange encounter.
-                </p>
+                <span className="editable-field-label-row">
+                  <strong>Direct fight values</strong>
+                  <ContextHelp label="Direct fight values">
+                    {translateLiteral(
+                      'Edit both flowers and every mapped direct-damage attack used by the Ange encounter.'
+                    )}
+                  </ContextHelp>
+                </span>
               </div>
               <p className="ange-fight-ember-note">
                 Ember uses the normal move system and is intentionally not editable here.
@@ -258,7 +263,9 @@ export function AngeFightSection({
               <div className="ange-fight-group-heading">
                 <div>
                   <h3 id="ange-flower-hp-heading">Flower HP</h3>
-                  <p>Each flower has its own independent HP value.</p>
+                  <ContextHelp label="Flower HP">
+                    {translateLiteral('Each flower has its own independent HP value.')}
+                  </ContextHelp>
                 </div>
               </div>
               <div className="ange-fight-flower-grid">
@@ -271,8 +278,10 @@ export function AngeFightSection({
                     <NumberField
                       disabled={!canEdit}
                       invalid={parseInt32(value, 1) === null}
+                      inputId={`ange-fight-${flower.flowerId}-flower-hp`}
                       key={flower.flowerId}
                       label={translateLiteral(flower.label)}
+                      help="Each flower has its own independent HP value."
                       minimum={1}
                       onChange={(nextValue) =>
                         updateFlowerHp(flower.flowerId, nextValue)
@@ -289,7 +298,11 @@ export function AngeFightSection({
               <div className="ange-fight-group-heading">
                 <div>
                   <h3 id="ange-damage-heading">Attack Damage</h3>
-                  <p>Pokémon damage and player damage are stored separately.</p>
+                  <ContextHelp label="Attack Damage">
+                    {translateLiteral(
+                      'Pokémon damage and player damage are stored separately.'
+                    )}
+                  </ContextHelp>
                 </div>
                 <span className="ange-fight-count-pill">
                   <strong data-localization-ignore="true">
@@ -485,6 +498,8 @@ function AngeFightAttackCard({
       <div className="ange-fight-damage-grid">
         <NumberField
           disabled={disabled}
+          help="Pokémon damage and player damage are stored separately."
+          inputId={`ange-fight-${attack.attackId}-pokemon-damage`}
           invalid={parseInt32(pokemonDamage, 0) === null}
           label="Damage to Pokémon"
           minimum={0}
@@ -494,6 +509,8 @@ function AngeFightAttackCard({
         />
         <NumberField
           disabled={disabled}
+          help="Pokémon damage and player damage are stored separately."
+          inputId={`ange-fight-${attack.attackId}-player-damage`}
           invalid={parseInt32(playerDamage, 0) === null}
           label="Damage to player"
           minimum={0}
@@ -525,6 +542,8 @@ function AngeFightAttackCard({
 
 function NumberField({
   disabled,
+  help,
+  inputId,
   invalid,
   label,
   minimum,
@@ -533,6 +552,8 @@ function NumberField({
   vanillaValue
 }: {
   disabled: boolean;
+  help: string;
+  inputId: string;
   invalid: boolean;
   label: string;
   minimum: number;
@@ -544,12 +565,17 @@ function NumberField({
   const localizedLabel = translateLiteral(label);
 
   return (
-    <label className="ange-fight-number-field">
-      <span>{localizedLabel}</span>
+    <div className="ange-fight-number-field">
+      <FieldLabel
+        help={translateLiteral(help)}
+        htmlFor={inputId}
+        label={localizedLabel}
+      />
       <input
         aria-label={localizedLabel}
         aria-invalid={invalid ? 'true' : undefined}
         disabled={disabled}
+        id={inputId}
         inputMode="numeric"
         max={int32Maximum}
         min={minimum}
@@ -574,7 +600,7 @@ function NumberField({
           </>
         )}
       </small>
-    </label>
+    </div>
   );
 }
 

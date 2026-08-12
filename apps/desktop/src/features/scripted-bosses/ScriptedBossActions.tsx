@@ -8,6 +8,7 @@ import {
   type ScriptedBossMoveOption,
   type ScriptedBossProfile
 } from '../../bridge/contracts';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization/LocalizationProvider';
 
 const phaseAvailabilityStates = [
@@ -217,12 +218,18 @@ export function ScriptedBossEncounterActions({
           <div className="za-scripted-boss-profile-summary">
             <div>
               <strong>{profile.name}</strong>
-              <span>
-                {t(
+              <span className="editable-field-label-row">
+                <span>{t(
                   profile.scope === 'base-rogue-mega'
                     ? 'za.encounters.bossActions.scope.base'
                     : 'za.encounters.bossActions.scope.verified'
-                )}
+                )}</span>
+                <ContextHelp label={t('za.encounters.bossActions.heading')}>
+                  {t('za.encounters.bossActions.poolHelp')}
+                  <br />
+                  <br />
+                  {t('za.encounters.bossActions.scopeHelp')}
+                </ContextHelp>
               </span>
             </div>
             <div className="za-scripted-boss-profile-statuses">
@@ -280,20 +287,16 @@ export function ScriptedBossEncounterActions({
               })}
             </span>
           </div>
-          <p className="za-scripted-boss-pool-help">
-            {t('za.encounters.bossActions.poolHelp')}
-          </p>
-          <p className="za-scripted-boss-pool-help">
-            {t('za.encounters.bossActions.scopeHelp')}
-          </p>
           {hasVerifiedPhaseModel ? (
             <div className="za-scripted-boss-phase-guide" role="note">
               <div className="za-scripted-boss-phase-guide-heading">
-                <strong>{t('za.encounters.bossActions.phase.heading')}</strong>
-                <span>
+                <span className="editable-field-label-row">
+                  <strong>{t('za.encounters.bossActions.phase.heading')}</strong>
+                  <ContextHelp label={t('za.encounters.bossActions.phase.heading')}>
                   {t(
                     `za.encounters.bossActions.phase.help.${profile.phaseModel.kind}`
                   )}
+                  </ContextHelp>
                 </span>
               </div>
               <div className="za-scripted-boss-phase-legend" role="list">
@@ -484,26 +487,34 @@ export function ScriptedBossEncounterActions({
                         </span>
                       ) : null}
                       {action.compatibilityState !== 'not-applicable' ? (
-                        <span
-                          className={`za-scripted-boss-status-pill za-scripted-boss-compatibility-${action.compatibilityState}`}
-                          title={t(
-                            action.compatibilityReason
-                              ? `za.encounters.bossActions.compatibility.reason.${action.compatibilityReason}`
-                              : `za.encounters.bossActions.compatibility.${action.compatibilityState}.help`
-                          )}
-                        >
-                          {action.compatibilityState === 'base-verified' ||
-                          action.compatibilityState === 'gameplay-tested' ? (
-                            <CheckCircle aria-hidden="true" size={12} />
-                          ) : action.compatibilityState === 'known-incompatible' ? (
-                            <ShieldAlert aria-hidden="true" size={12} />
-                          ) : (
-                            <AlertTriangle aria-hidden="true" size={12} />
-                          )}
-                          {t(
-                            `za.encounters.bossActions.compatibility.${action.compatibilityState}.label`
-                          )}
-                        </span>
+                        <>
+                          <span
+                            className={`za-scripted-boss-status-pill za-scripted-boss-compatibility-${action.compatibilityState}`}
+                          >
+                            {action.compatibilityState === 'base-verified' ||
+                            action.compatibilityState === 'gameplay-tested' ? (
+                              <CheckCircle aria-hidden="true" size={12} />
+                            ) : action.compatibilityState === 'known-incompatible' ? (
+                              <ShieldAlert aria-hidden="true" size={12} />
+                            ) : (
+                              <AlertTriangle aria-hidden="true" size={12} />
+                            )}
+                            {t(
+                              `za.encounters.bossActions.compatibility.${action.compatibilityState}.label`
+                            )}
+                          </span>
+                          <ContextHelp
+                            label={t(
+                              `za.encounters.bossActions.compatibility.${action.compatibilityState}.label`
+                            )}
+                          >
+                            {t(
+                              action.compatibilityReason
+                                ? `za.encounters.bossActions.compatibility.reason.${action.compatibilityReason}`
+                                : `za.encounters.bossActions.compatibility.${action.compatibilityState}.help`
+                            )}
+                          </ContextHelp>
+                        </>
                       ) : null}
                     </div>
                   </div>

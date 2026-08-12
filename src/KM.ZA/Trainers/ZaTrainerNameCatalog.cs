@@ -133,6 +133,8 @@ internal static class ZaTrainerNameCatalog
             ["Ev_m10_2000_mizu"] = RivalNameKeys,
             ["Ev_m10_9710"] = "oldboss",
             ["Ev_sub_003_001"] = "sub_121",
+            ["Ev_sub_086_010"] = "sub_085",
+            ["Ev_sub_087_010"] = "sub_085",
             ["Ev_sub_140_020_hono"] = RivalNameKeys,
             ["Ev_sub_140_020_kusa"] = RivalNameKeys,
             ["Ev_sub_140_020_mizu"] = RivalNameKeys,

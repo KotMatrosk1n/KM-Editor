@@ -23,6 +23,8 @@ import {
   EditorSessionBar,
   EditorSessionBarActions
 } from '../../components/EditorSessionBar';
+import { ContextHelp } from '../../components/ContextHelp';
+import { FieldLabel } from '../../components/FieldLabel';
 import { useModalDialog } from '../../components/useModalDialog';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -580,14 +582,16 @@ export function ZaDexLayoutSection({
               >
                 <div className="za-dex-layout-inspector-heading">
                   <div>
-                    <h3 id="za-dex-layout-resize-heading">
-                      {translateLiteral('Resize Pokédexes')}
-                    </h3>
-                    <p>
-                      {translateLiteral(
-                        'Both sizes are linked and must total 364. Each Pokédex can contain 1 to 363 entries.'
-                      )}
-                    </p>
+                    <div className="editable-field-label-row">
+                      <h3 id="za-dex-layout-resize-heading">
+                        {translateLiteral('Resize Pokédexes')}
+                      </h3>
+                      <ContextHelp label={translateLiteral('Resize Pokédexes')}>
+                        {translateLiteral(
+                          'Both sizes are linked and must total 364. Each Pokédex can contain 1 to 363 entries.'
+                        )}
+                      </ContextHelp>
+                    </div>
                   </div>
                 </div>
 
@@ -630,14 +634,16 @@ export function ZaDexLayoutSection({
               >
               <div className="za-dex-layout-inspector-heading">
                 <div>
-                  <h3 id="za-dex-layout-move-heading">
-                    {translateLiteral('Move selected entry')}
-                  </h3>
-                  <p>
-                    {translateLiteral(
-                      'Choose the destination Pokédex and exact displayed number.'
-                    )}
-                  </p>
+                  <div className="editable-field-label-row">
+                    <h3 id="za-dex-layout-move-heading">
+                      {translateLiteral('Move selected entry')}
+                    </h3>
+                    <ContextHelp label={translateLiteral('Move selected entry')}>
+                      {translateLiteral(
+                        'Choose the destination Pokédex and exact displayed number.'
+                      )}
+                    </ContextHelp>
+                  </div>
                 </div>
               </div>
 
@@ -662,8 +668,14 @@ export function ZaDexLayoutSection({
                   </dl>
 
                   <div className="za-dex-layout-destination">
-                    <label className="path-field" htmlFor="za-dex-layout-destination-dex">
-                      <span>{translateLiteral('Destination Pokédex')}</span>
+                    <div className="path-field">
+                      <FieldLabel
+                        help={translateLiteral(
+                          'Choose the destination Pokédex and exact displayed number.'
+                        )}
+                        htmlFor="za-dex-layout-destination-dex"
+                        label={translateLiteral('Destination Pokédex')}
+                      />
                       <select
                         disabled={
                           !hasActiveEditSession ||
@@ -701,10 +713,16 @@ export function ZaDexLayoutSection({
                           {translateLiteral('Hyperspace Dex')} ({dexEditor.hyperspaceCount})
                         </option>
                       </select>
-                    </label>
+                    </div>
 
-                    <label className="path-field" htmlFor="za-dex-layout-destination-number">
-                      <span>{translateLiteral('Destination number')}</span>
+                    <div className="path-field">
+                      <FieldLabel
+                        help={translateLiteral(
+                          'The selected species moves to the requested number and intervening entries shift automatically.'
+                        )}
+                        htmlFor="za-dex-layout-destination-number"
+                        label={translateLiteral('Destination number')}
+                      />
                       <input
                         aria-invalid={
                           destinationNumberDraft.length > 0 &&
@@ -737,7 +755,7 @@ export function ZaDexLayoutSection({
                           1-{maximumDestination}
                         </span>
                       </small>
-                    </label>
+                    </div>
                   </div>
 
                   {preview ? (
@@ -916,12 +934,16 @@ function DexSizeControl({
   const inputId = `za-dex-layout-${dexKind}-size`;
 
   return (
-    <label className="path-field za-dex-layout-size-control" htmlFor={inputId}>
-      <span>
-        {translateLiteral(
+    <div className="path-field za-dex-layout-size-control">
+      <FieldLabel
+        help={translateLiteral(
+          'Both sizes are linked and must total 364. Each Pokédex can contain 1 to 363 entries.'
+        )}
+        htmlFor={inputId}
+        label={translateLiteral(
           dexKind === 'regular' ? 'Regular Dex Size' : 'Hyperspace Dex Size'
         )}
-      </span>
+      />
       <input
         aria-invalid={!isValid ? 'true' : undefined}
         disabled={disabled}
@@ -934,11 +956,7 @@ function DexSizeControl({
         type="number"
         value={value}
       />
-      <small>
-        {translateLiteral('Valid range')}: 1-{MAXIMUM_DEX_SIZE}.{' '}
-        {translateLiteral('Both sizes always total 364.')}
-      </small>
-    </label>
+    </div>
   );
 }
 

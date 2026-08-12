@@ -14,6 +14,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { FieldLabel } from '../../components/FieldLabel';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -378,6 +379,8 @@ function FairyGymBoostCard({
   selection: FairyGymBoostSelection;
   translateLiteral: (literal: string) => string;
 }) {
+  const { t } = useLocalization();
+  const outcomeInputId = `fairy-gym-outcome-${boost.boostId}`;
   return (
     <article className="fairy-gym-boost-card">
       <div className="fairy-gym-boost-card-heading">
@@ -398,11 +401,16 @@ function FairyGymBoostCard({
         </span>
       </div>
 
-      <label className="fairy-gym-outcome-control">
-        <span>Outcome</span>
+      <div className="fairy-gym-outcome-control">
+        <FieldLabel
+          help={t('workflowHelp.fairyGym.outcome')}
+          htmlFor={outcomeInputId}
+          label={translateLiteral('Outcome')}
+        />
         <select
           aria-label={`${boost.answerText} outcome`}
           disabled={disabled}
+          id={outcomeInputId}
           onChange={(event) => onChange(boost.boostId, event.currentTarget.value)}
           value={selectionToValue(selection)}
         >
@@ -412,7 +420,7 @@ function FairyGymBoostCard({
             </option>
           ))}
         </select>
-      </label>
+      </div>
     </article>
   );
 }

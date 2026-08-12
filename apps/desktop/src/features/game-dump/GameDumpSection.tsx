@@ -15,6 +15,7 @@ import {
 } from '../../bridge/gameDumpContracts';
 import { type ProjectBridge } from '../../bridge/projectBridge';
 import type { DesktopServices } from '../../desktopServices';
+import { FieldLabel } from '../../components/FieldLabel';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
@@ -361,13 +362,18 @@ export function GameDumpSection({
             <h3>{translateLiteral('Destination')}</h3>
           </div>
           <div className="game-dump-destination-panel">
-            <label className="path-field game-dump-destination-field">
-              <span>{translateLiteral('Destination folder')}</span>
+            <div className="path-field game-dump-destination-field">
+              <FieldLabel
+                help={t('workflowHelp.gameDump.destination')}
+                htmlFor="game-dump-destination-folder"
+                label={translateLiteral('Destination folder')}
+              />
               <div className="game-dump-destination-input-row">
                 <input
                   aria-label={translateLiteral('Destination folder')}
                   data-localization-ignore="true"
                   disabled={isGenerating}
+                  id="game-dump-destination-folder"
                   onChange={(event) => updateDestinationFolder(event.target.value)}
                   placeholder={translateLiteral('Select a destination folder')}
                   type="text"
@@ -404,7 +410,7 @@ export function GameDumpSection({
                   <RefreshCw aria-hidden="true" size={18} />
                 </button>
               </div>
-            </label>
+            </div>
           </div>
 
           <div className="game-dump-step-heading">
@@ -519,17 +525,20 @@ export function GameDumpSection({
               const blockedReason =
                 category.diagnostics.find((diagnostic) => diagnostic.severity === 'error')
                   ?.message ?? category.diagnostics[0]?.message;
-              const languageHelpId = `game-dump-language-help-${category.id}`;
+              const categoryInputId = `game-dump-category-${category.id}`;
+              const formatInputId = `game-dump-format-${category.id}`;
+              const languageInputId = `game-dump-language-${category.id}`;
 
               return (
                 <article
                   className={`game-dump-category ${state.selected ? 'is-selected' : ''}`}
                   key={category.id}
                 >
-                  <label className="game-dump-category-check">
+                  <div className="game-dump-category-check">
                     <input
                       checked={state.selected && category.isAvailable}
                       disabled={!category.isAvailable || isLoading || isGenerating}
+                      id={categoryInputId}
                       onChange={(event) => {
                         invalidateGeneratedState();
                         setSelectionState((current) => ({
@@ -546,11 +555,12 @@ export function GameDumpSection({
                       }}
                       type="checkbox"
                     />
-                    <span>
-                      <strong>{translateLiteral(category.label)}</strong>
-                      <small>{translateLiteral(category.description)}</small>
-                    </span>
-                  </label>
+                    <FieldLabel
+                      help={translateLiteral(category.description)}
+                      htmlFor={categoryInputId}
+                      label={translateLiteral(category.label)}
+                    />
+                  </div>
                   <div
                     className={`game-dump-category-controls${
                       category.languageOptions ? ' has-language-options' : ''
@@ -559,13 +569,18 @@ export function GameDumpSection({
                     <span className={`status-pill ${category.isAvailable ? 'status-ready' : 'status-blocked'}`}>
                       {translateLiteral(category.isAvailable ? 'Available' : 'Unavailable')}
                     </span>
-                    <label className="path-field game-dump-format-field">
-                      <span>{translateLiteral('Format')}</span>
+                    <div className="path-field game-dump-format-field">
+                      <FieldLabel
+                        help={t('workflowHelp.gameDump.format')}
+                        htmlFor={formatInputId}
+                        label={translateLiteral('Format')}
+                      />
                       <select
                         aria-label={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
                         disabled={
                           !category.isAvailable || !state.selected || isLoading || isGenerating
                         }
+                        id={formatInputId}
                         onChange={(event) => {
                           invalidateGeneratedState();
                           setSelectionState((current) => ({
@@ -588,12 +603,15 @@ export function GameDumpSection({
                           </option>
                         ))}
                       </select>
-                    </label>
+                    </div>
                     {category.languageOptions ? (
-                      <label className="path-field game-dump-language-field">
-                        <span>{t('gameDump.language.label')}</span>
+                      <div className="path-field game-dump-language-field">
+                        <FieldLabel
+                          help={t('gameDump.language.help')}
+                          htmlFor={languageInputId}
+                          label={t('gameDump.language.label')}
+                        />
                         <select
-                          aria-describedby={languageHelpId}
                           aria-label={`${translateLiteral(category.label)} ${t(
                             'gameDump.language.label'
                           )}`}
@@ -601,6 +619,7 @@ export function GameDumpSection({
                           disabled={
                             !category.isAvailable || !state.selected || isLoading || isGenerating
                           }
+                          id={languageInputId}
                           onChange={(event) => {
                             invalidateGeneratedState();
                             const languageCodes =
@@ -631,8 +650,7 @@ export function GameDumpSection({
                             </option>
                           ))}
                         </select>
-                        <small id={languageHelpId}>{t('gameDump.language.help')}</small>
-                      </label>
+                      </div>
                     ) : null}
                   </div>
                   {blockedReason ? (

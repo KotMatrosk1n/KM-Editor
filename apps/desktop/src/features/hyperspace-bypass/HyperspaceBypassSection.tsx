@@ -6,11 +6,13 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import {
   type EditSession,
   type ProjectGame
 } from '../../bridge/contracts';
 import { type HyperspaceBypassWorkflow } from '../../bridge/hyperspaceBypassContracts';
+import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 export function HyperspaceBypassSection({
@@ -36,6 +38,7 @@ export function HyperspaceBypassSection({
   panelOutput: WorkflowPanelOutput;
   workflow: HyperspaceBypassWorkflow | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const stagedEdit = editSession?.pendingEdits.find((edit) => edit.domain === 'workflow.hyperspaceBypass');
   const isInstallStaged = stagedEdit?.recordId === 'hyperspace-bypass-v1-install';
   const isUninstallStaged = stagedEdit?.recordId === 'hyperspace-bypass-v1-uninstall';
@@ -57,18 +60,40 @@ export function HyperspaceBypassSection({
         <div className="panel-heading">
           <Sparkle aria-hidden="true" size={18} />
           <h2 id="hyperspace-bypass-heading">Hyperspace Bypass</h2>
+          <ContextHelp label={translateLiteral('Hyperspace Bypass')}>
+            <p>
+              {translateLiteral(
+                'Hyperspace Bypass makes Scarlet/Violet skip the Hoopa species and form gate for Hyperspace Hole and Hyperspace Fury.'
+              )}
+            </p>
+            <p>
+              {translateLiteral(
+                'KM edits only the verified runtime gate branch in exefs/main; move data, learnsets, and personal data stay untouched.'
+              )}
+            </p>
+          </ContextHelp>
         </div>
-        <p className="workflow-description">
-          Hyperspace Bypass makes Scarlet/Violet skip the Hoopa species and form gate for Hyperspace Hole and Hyperspace Fury.
-        </p>
-        <p className="workflow-description">
-          KM edits only the verified runtime gate branch in exefs/main; move data, learnsets, and personal data stay untouched.
-        </p>
 
         <div className="items-toolbar exefs-toolbar">
-          <Metric label="Install" value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'} />
-          <Metric label="Patch site" value={workflow?.patchOffsetHex ?? 'Not loaded'} />
-          <Metric label="Reserved regions" value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'} />
+          <Metric
+            help={translateLiteral(
+              'Hyperspace Bypass makes Scarlet/Violet skip the Hoopa species and form gate for Hyperspace Hole and Hyperspace Fury.'
+            )}
+            label="Install"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric
+            help={translateLiteral(
+              'KM edits only the verified runtime gate branch in exefs/main; move data, learnsets, and personal data stay untouched.'
+            )}
+            label="Patch site"
+            value={workflow?.patchOffsetHex ?? 'Not loaded'}
+          />
+          <Metric
+            help={t('advancedWorkflows.reservedRegionsHelp')}
+            label="Reserved regions"
+            value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
+          />
         </div>
 
         {workflow ? (
