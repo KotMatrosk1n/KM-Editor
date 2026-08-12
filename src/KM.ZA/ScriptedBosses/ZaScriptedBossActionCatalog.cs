@@ -40,6 +40,8 @@ public sealed record ZaScriptedBossActionRecord(
     bool UsesTimingParameters,
     bool CanEdit,
     string RuntimeState,
+    string CompatibilityState,
+    string? CompatibilityReason,
     string? LockReason,
     IReadOnlyList<ZaScriptedBossPhaseAvailabilityRecord> PhaseAvailability,
     string? PhaseContext);
@@ -58,7 +60,14 @@ public sealed record ZaScriptedBossMoveOptionRecord(
     int MoveId,
     int RuntimeMoveId,
     int Variant,
-    string Name);
+    string Name,
+    string DefaultCompatibilityState,
+    IReadOnlyList<ZaScriptedBossMoveCompatibilityRecord> SelectorCompatibilities);
+
+public sealed record ZaScriptedBossMoveCompatibilityRecord(
+    int SelectorActionId,
+    string State,
+    string? Reason);
 
 internal sealed record ZaScriptedBossCatalogProjection(
     IReadOnlyList<ZaScriptedBossProfileRecord> Profiles,
@@ -74,7 +83,7 @@ internal static class ZaScriptedBossActionCatalog
     public const string BaseRogueMegaScope = "base-rogue-mega";
     public const string VerifiedScriptedBossScope = "verified-scripted-boss";
 
-    public const string WorkingRuntimeState = "working";
+    public const string RuntimeDataPresentRuntimeState = "runtime-data-present";
     public const string MissingBattleRuntimeState = "missing-battle";
     public const string MissingTimingRuntimeState = "missing-timing";
     public const string MissingBattleAndTimingRuntimeState = "missing-battle-and-timing";
@@ -82,6 +91,16 @@ internal static class ZaScriptedBossActionCatalog
     public const string InvalidReferenceRuntimeState = "invalid-reference";
     public const string UnavailableRuntimeState = "unavailable";
     public const string NotApplicableRuntimeState = "not-applicable";
+
+    public const string BaseVerifiedCompatibilityState = "base-verified";
+    public const string GameplayTestedCompatibilityState = "gameplay-tested";
+    public const string KnownIncompatibleCompatibilityState = "known-incompatible";
+    public const string ExperimentalCompatibilityState = "experimental";
+    public const string UnavailableCompatibilityState = "unavailable";
+    public const string NotApplicableCompatibilityState = "not-applicable";
+
+    public const string NoDamageCompatibilityReason = "no-damage";
+    public const string AllyTargetingCompatibilityReason = "ally-targeting";
 
     public const string VerifiedPhaseModelState = "verified";
     public const string AvailablePhaseState = "available";
@@ -104,6 +123,26 @@ internal static class ZaScriptedBossActionCatalog
     private const int NormalMoveVariant = 0;
     private const int PlusMoveVariant = 1;
     private const int BossMoveVariant = 2;
+
+    // Gameplay evidence is recorded per boss profile, then aggregated across the exact owner set
+    // of each selector. A move tested for one boss must not be promoted for an untested shared owner.
+    private static readonly IReadOnlyDictionary<(string ProfileKey, int MoveId), CompatibilityEvidence>
+        ReviewedCompatibilityEvidence =
+            new Dictionary<(string ProfileKey, int MoveId), CompatibilityEvidence>
+            {
+                [("323:1", 53)] = new(
+                    GameplayTestedCompatibilityState,
+                    Reason: null), // Camerupt + Flamethrower
+                [("323:1", 126)] = new(
+                    KnownIncompatibleCompatibilityState,
+                    NoDamageCompatibilityReason), // Camerupt + Fire Blast
+                [("71:1", 482)] = new(
+                    GameplayTestedCompatibilityState,
+                    Reason: null), // Victreebel + Sludge Wave
+                [("71:1", 398)] = new(
+                    KnownIncompatibleCompatibilityState,
+                    AllyTargetingCompatibilityReason), // Victreebel + Poison Jab
+            };
     // Actual boss spawners replace the executable's fallback thresholds. Ordinary encounters use
     // two HP phases (50 < HP <= 100 and 0 < HP <= 50), while multi-form encounters can define a
     // separate schedule for each chained battle stage. Availability is therefore profile- and
@@ -518,7 +557,9 @@ internal static class ZaScriptedBossActionCatalog
                     key.MoveId,
                     ToRuntimeMoveId(key.MoveId, key.Variant),
                     key.Variant,
-                    labels.Move(key.MoveId)))
+                    labels.Move(key.MoveId),
+                    ExperimentalCompatibilityState,
+                    CreateSelectorCompatibilities(key.MoveId, key.Variant)))
                 .ToArray();
 
         return new ZaScriptedBossCatalogProjection(
@@ -573,6 +614,21 @@ internal static class ZaScriptedBossActionCatalog
     public static string CreateEditField(int selectorActionId)
     {
         return $"bossAction.{selectorActionId}.moveId";
+    }
+
+    public static ZaScriptedBossMoveCompatibilityRecord ResolveMoveCompatibility(
+        ZaScriptedBossMoveOptionRecord option,
+        int selectorActionId)
+    {
+        ArgumentNullException.ThrowIfNull(option);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(selectorActionId);
+
+        return option.SelectorCompatibilities.FirstOrDefault(compatibility =>
+                compatibility.SelectorActionId == selectorActionId)
+            ?? new ZaScriptedBossMoveCompatibilityRecord(
+                selectorActionId,
+                option.DefaultCompatibilityState,
+                Reason: null);
     }
 
     public static bool TryParseEditField(string? field, out int selectorActionId)
@@ -706,6 +762,8 @@ internal static class ZaScriptedBossActionCatalog
                 action.UsesTimingParameters,
                 CanEdit: false,
                 NotApplicableRuntimeState,
+                NotApplicableCompatibilityState,
+                CompatibilityReason: null,
                 ControllerScriptLockReason,
                 PhaseAvailability: ProjectPhaseAvailability(profile, action),
                 PhaseContext: ProjectPhaseContext(profile, action));
@@ -748,6 +806,11 @@ internal static class ZaScriptedBossActionCatalog
         var name = moveId is null
             ? labels.Move(action.VanillaMoveId!.Value)
             : labels.Move(moveId.Value);
+        var compatibility = action.Kind != BattleMoveKind
+            ? new CompatibilityEvidence(NotApplicableCompatibilityState, Reason: null)
+            : moveId is null
+                ? new CompatibilityEvidence(UnavailableCompatibilityState, Reason: null)
+                : ResolveCompatibility(action.SelectorActionId!.Value, moveId.Value, variant);
 
         return new ZaScriptedBossActionRecord(
             action.Key,
@@ -762,6 +825,8 @@ internal static class ZaScriptedBossActionCatalog
             action.UsesTimingParameters,
             canEdit,
             runtimeState,
+            compatibility.State,
+            compatibility.Reason,
             lockReason,
             ProjectPhaseAvailability(profile, action),
             ProjectPhaseContext(profile, action));
@@ -853,6 +918,86 @@ internal static class ZaScriptedBossActionCatalog
             .ToArray();
     }
 
+    private static IReadOnlyList<ZaScriptedBossMoveCompatibilityRecord> CreateSelectorCompatibilities(
+        int moveId,
+        int variant)
+    {
+        return Profiles
+            .SelectMany(profile => profile.Actions.Select(action => (Profile: profile, Action: action)))
+            .Where(owner => owner.Action.SelectorActionId is not null)
+            .Select(owner => owner.Action.SelectorActionId!.Value)
+            .Distinct()
+            .Order()
+            .Select(selectorActionId =>
+            {
+                var evidence = ResolveCompatibility(selectorActionId, moveId, variant);
+                return new ZaScriptedBossMoveCompatibilityRecord(
+                    selectorActionId,
+                    evidence.State,
+                    evidence.Reason);
+            })
+            .Where(compatibility =>
+                !string.Equals(
+                    compatibility.State,
+                    ExperimentalCompatibilityState,
+                    StringComparison.Ordinal)
+                && !string.Equals(
+                    compatibility.State,
+                    UnavailableCompatibilityState,
+                    StringComparison.Ordinal))
+            .ToArray();
+    }
+
+    private static CompatibilityEvidence ResolveCompatibility(
+        int selectorActionId,
+        int moveId,
+        int variant)
+    {
+        var owners = Profiles
+            .SelectMany(profile => profile.Actions
+                .Where(action => action.SelectorActionId == selectorActionId)
+                .Select(action => (Profile: profile, Action: action)))
+            .ToArray();
+        if (owners.Length == 0
+            || owners.Any(owner =>
+                !string.Equals(owner.Action.Kind, BattleMoveKind, StringComparison.Ordinal)
+                || owner.Action.Variant != variant))
+        {
+            return new CompatibilityEvidence(UnavailableCompatibilityState, Reason: null);
+        }
+
+        if (owners.All(owner => owner.Action.VanillaMoveId == moveId))
+        {
+            return new CompatibilityEvidence(BaseVerifiedCompatibilityState, Reason: null);
+        }
+
+        var ownerProfiles = owners
+            .Select(owner => owner.Profile.Key)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var reviewedEvidence = ownerProfiles
+            .Select(profileKey => ReviewedCompatibilityEvidence.TryGetValue(
+                (profileKey, moveId),
+                out var evidence)
+                    ? evidence
+                    : null)
+            .ToArray();
+        if (reviewedEvidence.FirstOrDefault(evidence => string.Equals(
+                evidence?.State,
+                KnownIncompatibleCompatibilityState,
+                StringComparison.Ordinal)) is { } knownIncompatible)
+        {
+            return knownIncompatible;
+        }
+
+        return reviewedEvidence.All(evidence => string.Equals(
+                evidence?.State,
+                GameplayTestedCompatibilityState,
+                StringComparison.Ordinal))
+            ? new CompatibilityEvidence(GameplayTestedCompatibilityState, Reason: null)
+            : new CompatibilityEvidence(ExperimentalCompatibilityState, Reason: null);
+    }
+
     private static string CreateRuntimeState(
         ActionDefinition action,
         int? moveId,
@@ -880,7 +1025,7 @@ internal static class ZaScriptedBossActionCatalog
 
         return (hasBattle, hasTiming) switch
         {
-            (true, true) => WorkingRuntimeState,
+            (true, true) => RuntimeDataPresentRuntimeState,
             (false, true) => MissingBattleRuntimeState,
             (true, false) => MissingTimingRuntimeState,
             _ => MissingBattleAndTimingRuntimeState,
@@ -1171,6 +1316,10 @@ internal static class ZaScriptedBossActionCatalog
         int Form,
         int MinimumHpPercent,
         int MaximumHpPercent);
+
+    private sealed record CompatibilityEvidence(
+        string State,
+        string? Reason);
 
     private sealed record ActionDefinition(
         string Key,

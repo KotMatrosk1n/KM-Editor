@@ -132,6 +132,18 @@ export const updateGiftPokemonFieldsResponseSchema = z.strictObject({
   workflow: giftPokemonWorkflowSchema
 });
 
+export const stageGiftPokemonVanillaRequestSchema = z.strictObject({
+  giftIndex: z.number().int().nonnegative(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageGiftPokemonVanillaResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: giftPokemonWorkflowSchema
+});
+
 export const tradePokemonFieldUpdateSchema = z.strictObject({
   field: z.string(),
   tradeIndex: z.number().int().nonnegative(),
@@ -241,6 +253,12 @@ export type UpdateGiftPokemonFieldsRequest = z.infer<
 >;
 export type UpdateGiftPokemonFieldsResponse = z.infer<
   typeof updateGiftPokemonFieldsResponseSchema
+>;
+export type StageGiftPokemonVanillaRequest = z.infer<
+  typeof stageGiftPokemonVanillaRequestSchema
+>;
+export type StageGiftPokemonVanillaResponse = z.infer<
+  typeof stageGiftPokemonVanillaResponseSchema
 >;
 export type TradePokemonFieldUpdate = z.infer<typeof tradePokemonFieldUpdateSchema>;
 export type UpdateTradePokemonFieldsRequest = z.infer<

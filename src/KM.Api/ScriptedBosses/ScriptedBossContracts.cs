@@ -34,6 +34,8 @@ public sealed record ScriptedBossActionDto(
     bool UsesTimingParameters,
     bool CanEdit,
     string RuntimeState,
+    string CompatibilityState,
+    string? CompatibilityReason,
     string? LockReason,
     IReadOnlyList<ScriptedBossPhaseAvailabilityDto> PhaseAvailability,
     string? PhaseContext);
@@ -52,4 +54,11 @@ public sealed record ScriptedBossMoveOptionDto(
     int MoveId,
     int RuntimeMoveId,
     int Variant,
-    string Name);
+    string Name,
+    string DefaultCompatibilityState,
+    IReadOnlyList<ScriptedBossMoveCompatibilityDto> SelectorCompatibilities);
+
+public sealed record ScriptedBossMoveCompatibilityDto(
+    int SelectorActionId,
+    string State,
+    string? Reason);

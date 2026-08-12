@@ -1101,7 +1101,8 @@ public static class SvBridgeMapper
             option.Label,
             option.ArgumentKind,
             option.ArgumentLabel,
-            option.ArgumentOptions.Select(ToDto).ToArray());
+            option.ArgumentOptions.Select(ToDto).ToArray(),
+            UsesLevel: true);
     }
 
     private static PokemonLearnsetMoveDto ToDto(SvPokemonLearnsetMove learnsetMove)

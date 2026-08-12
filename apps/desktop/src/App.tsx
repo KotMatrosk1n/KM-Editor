@@ -230,6 +230,7 @@ import {
 } from './bridge/contracts';
 import {
   findScriptedBossProfile,
+  getScriptedBossMoveCompatibility,
   getScriptedBossMoveSearchValues,
   ScriptedBossEncounterActions,
   ScriptedBossMoveControllerAvailability,
@@ -1460,6 +1461,7 @@ const trainerTeraTypeFieldName = 'teraType';
 const zaRankFieldName = 'rank';
 const zaMegaEvolutionFieldName = 'megaEvolution';
 const zaLastHandFieldName = 'lastHand';
+const zaCoreTrainerAiMask = (1 << 0) | (1 << 1) | (1 << 2);
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const supportSearchProgressEvent = 'km-editor://support-file-search-progress';
 const trainerDataFieldNames = [
@@ -9021,6 +9023,64 @@ export function App({
     }
   };
 
+  const handleStageGiftPokemonVanilla = async (giftIndex: number) => {
+    setIsGiftPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    const originalEditSessionSection = editSessionSection;
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const originalSession = session;
+          const originalWorkflow = giftPokemonWorkflowRef.current;
+          const updateResponse = await bridge.stageGiftPokemonVanilla({
+            giftIndex,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          const successfulSession =
+            updateResponse.session.pendingEdits.length > 0 ? updateResponse.session : null;
+          const successfulSessionSection =
+            successfulSession?.pendingEdits.some(
+              (edit) => edit.domain === 'workflow.giftPokemon'
+            ) === true
+              ? 'giftPokemon'
+              : originalEditSessionSection;
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? successfulSession : originalSession,
+            sessionSection: didSucceed
+              ? successfulSession === null
+                ? null
+                : successfulSessionSection
+              : originalEditSessionSection,
+            workflow: didSucceed ? updateResponse.workflow : originalWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setGiftPokemonWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.sessionSection);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        },
+        getEditSessionForSection('giftPokemon')
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsGiftPokemonUpdating(false);
+    }
+  };
+
   const handleRemoveGiftPokemonShinyLocks = async (
     giftIndexes: number[],
     resetValue: string
@@ -12059,6 +12119,9 @@ export function App({
                 onSelectGift={setSelectedGiftPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveGiftPokemonShinyLocks={handleRemoveGiftPokemonShinyLocks}
+                onStageGiftPokemonVanilla={
+                  isPokemonLegendsZAProject ? handleStageGiftPokemonVanilla : undefined
+                }
                 onUpdateGiftPokemonFields={handleUpdateGiftPokemonFields}
                 pokemonWorkflow={pokemonWorkflow}
                 searchText={giftPokemonSearchText}
@@ -14963,7 +15026,7 @@ function SelectedPokemonPanel({
   pokemon: PokemonRecord | null;
   pokemonRecords: PokemonRecord[];
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const personalDraftDefaults = useMemo(
     () => createPokemonPersonalDrafts(pokemon, editableFields),
     [editableFields, pokemon]
@@ -15099,6 +15162,7 @@ function SelectedPokemonPanel({
     () => findEvolutionMethodOption(selectedEvolutionMethodOptions, evolutionMethodDraft),
     [evolutionMethodDraft, selectedEvolutionMethodOptions]
   );
+  const selectedEvolutionUsesLevel = selectedEvolutionMethodOption?.usesLevel ?? true;
   const selectedEvolutionArgumentOptions = useMemo(
     () => addCurrentPokemonFieldOption(
       selectedEvolutionMethodOption?.argumentOptions ?? [],
@@ -15119,6 +15183,7 @@ function SelectedPokemonPanel({
     () => findEvolutionMethodOption(newEvolutionMethodOptions, newEvolutionMethodDraft),
     [newEvolutionMethodDraft, newEvolutionMethodOptions]
   );
+  const newEvolutionUsesLevel = newEvolutionMethodOption?.usesLevel ?? true;
   const newEvolutionArgumentOptions = useMemo(
     () => addCurrentPokemonFieldOption(
       newEvolutionMethodOption?.argumentOptions ?? [],
@@ -15640,6 +15705,7 @@ function SelectedPokemonPanel({
     isIntegerInRange(parsedNewEvolutionSpecies, 0, pokemonMaximumUshortValue) &&
     isIntegerInRange(parsedNewEvolutionForm, 0, evolutionMaximumForm) &&
     isIntegerInRange(parsedNewEvolutionLevel, 0, evolutionMaximumLevel) &&
+    (newEvolutionUsesLevel || parsedNewEvolutionLevel === 0) &&
     (editorFamily !== 'swsh' ||
       isValidSwShEvolutionAddition(
         parsedNewEvolutionMethod,
@@ -16555,6 +16621,9 @@ function SelectedPokemonPanel({
               {orderedEvolutions.length > 0 ? (
                 <ul className="learnset-list">
                   {orderedEvolutions.map((evolution) => {
+                    const evolutionMethodOption = evolutionMethodOptions.find(
+                      (option) => option.value === evolution.method
+                    );
                     const evolutionSpeciesLabel = formatReferenceLabel(
                       pokemonSpeciesLabels,
                       evolution.species,
@@ -16603,7 +16672,19 @@ function SelectedPokemonPanel({
                           <span data-localization-ignore="true" title={evolutionFormLabel}>
                             {evolutionFormLabel}
                           </span>
-                          <span>Lv. {evolution.level}</span>
+                          <span
+                            title={
+                              evolutionMethodOption?.usesLevel === false
+                                ? t('za.pokemon.evolutions.storedLevelNotUsed', {
+                                    level: evolution.level
+                                  })
+                                : undefined
+                            }
+                          >
+                            {evolutionMethodOption?.usesLevel === false
+                              ? t('za.pokemon.evolutions.levelNotUsed')
+                              : `Lv. ${evolution.level}`}
+                          </span>
                           <span
                             data-localization-ignore="true"
                             title={formatEvolutionArgumentSummary(evolution)}
@@ -16634,8 +16715,12 @@ function SelectedPokemonPanel({
                         const nextArgument = getDefaultEvolutionArgumentDraft(nextOption);
                         setEvolutionMethodDraft(nextMethod);
                         setEvolutionArgumentDraft(nextArgument);
+                        if (nextOption?.usesLevel === false) {
+                          setEvolutionLevelDraft('0');
+                        }
                         updateSelectedEvolutionDraft({
                           argument: nextArgument,
+                          ...(nextOption?.usesLevel === false ? { level: '0' } : {}),
                           method: nextMethod
                         });
                       }}
@@ -16716,15 +16801,24 @@ function SelectedPokemonPanel({
                     />
                   </label>
                   <label className="path-field">
-                    <span>Level</span>
+                    <span>
+                      {selectedEvolutionUsesLevel
+                        ? translateLiteral('Level')
+                        : t('za.pokemon.evolutions.levelNotUsed')}
+                    </span>
                     <input
-                      disabled={!canEditEvolution}
+                      disabled={!canEditEvolution || !selectedEvolutionUsesLevel}
                       max={evolutionMaximumLevel}
                       min={0}
                       onChange={(event) => {
                         setEvolutionLevelDraft(event.target.value);
                         updateSelectedEvolutionDraft({ level: event.target.value });
                       }}
+                      title={
+                        selectedEvolutionUsesLevel
+                          ? undefined
+                          : t('za.pokemon.evolutions.levelIgnoredHelp')
+                      }
                       type="number"
                       value={evolutionLevelDraft}
                     />
@@ -16852,6 +16946,9 @@ function SelectedPokemonPanel({
                       );
                       setNewEvolutionMethodDraft(nextMethod);
                       setNewEvolutionArgumentDraft(getDefaultEvolutionArgumentDraft(nextOption));
+                      if (nextOption?.usesLevel === false) {
+                        setNewEvolutionLevelDraft('0');
+                      }
                     }}
                     options={newEvolutionMethodOptions}
                     value={newEvolutionMethodDraft}
@@ -16921,12 +17018,21 @@ function SelectedPokemonPanel({
                   />
                 </label>
                 <label className="path-field">
-                  <span>New level</span>
+                  <span>
+                    {newEvolutionUsesLevel
+                      ? translateLiteral('New level')
+                      : t('za.pokemon.evolutions.levelNotUsed')}
+                  </span>
                   <input
-                    disabled={!canEditEvolution}
+                    disabled={!canEditEvolution || !newEvolutionUsesLevel}
                     max={evolutionMaximumLevel}
                     min={0}
                     onChange={(event) => setNewEvolutionLevelDraft(event.target.value)}
+                    title={
+                      newEvolutionUsesLevel
+                        ? undefined
+                        : t('za.pokemon.evolutions.levelIgnoredHelp')
+                    }
                     type="number"
                     value={newEvolutionLevelDraft}
                   />
@@ -19566,6 +19672,8 @@ type TrainerFieldUpdate = {
   value: string;
 };
 
+type ZaTrainerBulkAction = 'enableCoreAi' | 'enableLastHand';
+
 type TrainersSectionProps = {
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
@@ -19621,6 +19729,7 @@ function TrainersSection({
   selectedTrainerId,
   workflow
 }: TrainersSectionProps) {
+  const { t } = useLocalization();
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [selectedTrainerCategoryId, setSelectedTrainerCategoryId] = useState('all');
   const trainers = workflow?.trainers ?? [];
@@ -19663,6 +19772,61 @@ function TrainersSection({
     () => getPendingTrainerIds(editSession, trainers),
     [editSession, trainers]
   );
+  const [zaBulkConfirmation, setZaBulkConfirmation] =
+    useState<ZaTrainerBulkAction | null>(null);
+  const zaLastHandBulkUpdates = useMemo<TrainerFieldUpdate[]>(
+    () =>
+      editorFamily === 'za'
+        ? trainers
+            .filter((trainer) => trainer.zaLastHand !== true)
+            .map((trainer) => ({
+              field: zaLastHandFieldName,
+              slot: null,
+              trainerId: trainer.trainerId,
+              value: '1'
+            }))
+        : [],
+    [editorFamily, trainers]
+  );
+  const zaCoreAiBulkUpdates = useMemo<TrainerFieldUpdate[]>(
+    () =>
+      editorFamily === 'za'
+        ? trainers.flatMap((trainer) => {
+            const nextFlags = trainer.aiFlags | zaCoreTrainerAiMask;
+            return nextFlags === trainer.aiFlags
+              ? []
+              : [
+                  {
+                    field: aiFlagsFieldName,
+                    slot: null,
+                    trainerId: trainer.trainerId,
+                    value: nextFlags.toString()
+                  }
+                ];
+          })
+        : [],
+    [editorFamily, trainers]
+  );
+  const canRunZaTrainerBulkAction =
+    editorFamily === 'za' &&
+    editSession !== null &&
+    canEditTrainers &&
+    !isTrainerUpdating;
+
+  const confirmZaTrainerBulkAction = async () => {
+    if (!zaBulkConfirmation) {
+      return;
+    }
+
+    const updates =
+      zaBulkConfirmation === 'enableLastHand'
+        ? zaLastHandBulkUpdates
+        : zaCoreAiBulkUpdates;
+    setZaBulkConfirmation(null);
+    if (updates.length > 0) {
+      await onUpdateTrainerFields(updates);
+    }
+  };
 
   useEffect(() => {
     if (!selectedTrainer) {
@@ -19730,6 +19894,53 @@ function TrainersSection({
             label="Trainers"
             onStart={onStartEditSession}
           />
+        ) : null}
+
+        {workflow && editorFamily === 'za' ? (
+          <div className="za-trainer-bulk-actions">
+            <div className="za-trainer-bulk-actions-copy">
+              <strong>{t('za.trainers.bulk.heading')}</strong>
+              <small>{t('za.trainers.bulk.scopeHelp')}</small>
+            </div>
+            <div className="za-trainer-bulk-actions-buttons">
+              <button
+                className="primary-button compact-button"
+                disabled={!canRunZaTrainerBulkAction || zaLastHandBulkUpdates.length === 0}
+                onClick={() => setZaBulkConfirmation('enableLastHand')}
+                title={
+                  editSession === null
+                    ? t('za.trainers.bulk.startSessionHelp')
+                    : zaLastHandBulkUpdates.length === 0
+                      ? t('za.trainers.bulk.lastHandAlreadyEnabled')
+                      : t('za.trainers.bulk.lastHandEnableCount', {
+                          count: zaLastHandBulkUpdates.length
+                        })
+                }
+                type="button"
+              >
+                <ListChecks aria-hidden="true" size={14} />
+                <span>{t('za.trainers.bulk.lastHandAction')}</span>
+              </button>
+              <button
+                className="primary-button compact-button"
+                disabled={!canRunZaTrainerBulkAction || zaCoreAiBulkUpdates.length === 0}
+                onClick={() => setZaBulkConfirmation('enableCoreAi')}
+                title={
+                  editSession === null
+                    ? t('za.trainers.bulk.startSessionHelp')
+                    : zaCoreAiBulkUpdates.length === 0
+                      ? t('za.trainers.bulk.coreAlreadyEnabled')
+                      : t('za.trainers.bulk.coreEnableCount', {
+                          count: zaCoreAiBulkUpdates.length
+                        })
+                }
+                type="button"
+              >
+                <ShieldCheck aria-hidden="true" size={14} />
+                <span>{t('za.trainers.bulk.coreAction')}</span>
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {workflow ? (
@@ -19836,7 +20047,98 @@ function TrainersSection({
       </section>
 
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {zaBulkConfirmation && workflow ? (
+        <ZaTrainerBulkConfirmationModal
+          action={zaBulkConfirmation}
+          affectedCount={
+            zaBulkConfirmation === 'enableLastHand'
+              ? zaLastHandBulkUpdates.length
+              : zaCoreAiBulkUpdates.length
+          }
+          isUpdating={isTrainerUpdating}
+          onCancel={() => setZaBulkConfirmation(null)}
+          onConfirm={confirmZaTrainerBulkAction}
+          totalCount={trainers.length}
+        />
+      ) : null}
     </>
+  );
+}
+
+function ZaTrainerBulkConfirmationModal({
+  action,
+  affectedCount,
+  isUpdating,
+  onCancel,
+  onConfirm,
+  totalCount
+}: {
+  action: ZaTrainerBulkAction;
+  affectedCount: number;
+  isUpdating: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  totalCount: number;
+}) {
+  const dialogRef = useModalDialog({ onClose: onCancel });
+  const { t, translateLiteral } = useLocalization();
+  const enablesLastHand = action === 'enableLastHand';
+  const headingId = `za-trainer-bulk-${action}-heading`;
+  const title = enablesLastHand
+    ? t('za.trainers.bulk.lastHandConfirmTitle')
+    : t('za.trainers.bulk.coreConfirmTitle');
+  const description = enablesLastHand
+    ? t('za.trainers.bulk.lastHandConfirmDescription', { affectedCount, totalCount })
+    : t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount });
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby={headingId}
+        aria-modal="true"
+        className="modal-panel"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <div className="panel-heading">
+          {enablesLastHand ? (
+            <ListChecks aria-hidden="true" size={18} />
+          ) : (
+            <ShieldCheck aria-hidden="true" size={18} />
+          )}
+          <h2 id={headingId}>{title}</h2>
+        </div>
+        <p className="modal-copy">{description}</p>
+        <p className="modal-copy modal-copy-muted">{t('za.trainers.bulk.stagingHelp')}</p>
+        <div className="modal-actions">
+          <button
+            aria-busy={isUpdating || undefined}
+            className="primary-button"
+            disabled={isUpdating || affectedCount === 0}
+            onClick={onConfirm}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel={translateLiteral('Staging')}
+              icon={
+                enablesLastHand ? (
+                  <ListChecks aria-hidden="true" size={16} />
+                ) : (
+                  <ShieldCheck aria-hidden="true" size={16} />
+                )
+              }
+              isBusy={isUpdating}
+              label={t('za.trainers.bulk.confirmUpdates', { count: affectedCount })}
+            />
+          </button>
+          <button className="secondary-button" disabled={isUpdating} onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>{translateLiteral('Cancel')}</span>
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -20916,10 +21218,10 @@ function TrainerDraftField({
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
   const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
   const localizedFieldHelpText = translateLiteral(
-    effectiveDisabledReason ?? getEditableFieldHelp(field)
+    effectiveDisabledReason ?? getEditableFieldHelp(field, t)
   );
 
   return (
@@ -24356,6 +24658,7 @@ function GiftPokemonSection({
   onSelectGift,
   onStartEditSession,
   onRemoveGiftPokemonShinyLocks,
+  onStageGiftPokemonVanilla,
   onUpdateGiftPokemonFields,
   pokemonWorkflow,
   searchText,
@@ -24372,6 +24675,7 @@ function GiftPokemonSection({
     giftIndexes: number[],
     resetValue: string
   ) => Promise<boolean>;
+  onStageGiftPokemonVanilla?: (giftIndex: number) => Promise<boolean>;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -24519,6 +24823,7 @@ function GiftPokemonSection({
               editorFamily={editorFamily}
               gift={selectedGift}
               isGiftPokemonUpdating={isGiftPokemonUpdating}
+              onStageGiftPokemonVanilla={onStageGiftPokemonVanilla}
               onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
             />
@@ -24560,6 +24865,7 @@ function SelectedGiftPokemonPanel({
   editorFamily,
   gift,
   isGiftPokemonUpdating,
+  onStageGiftPokemonVanilla,
   onUpdateGiftPokemonFields,
   pokemonWorkflow
 }: {
@@ -24569,6 +24875,7 @@ function SelectedGiftPokemonPanel({
   editorFamily: EditorUiFamily;
   gift: GiftPokemonRecord | null;
   isGiftPokemonUpdating: boolean;
+  onStageGiftPokemonVanilla?: (giftIndex: number) => Promise<boolean>;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -24765,6 +25072,20 @@ function SelectedGiftPokemonPanel({
     !isGiftPokemonUpdating &&
     giftDraftSummary.changedFields.length > 0 &&
     giftDraftSummary.invalidFields.length === 0;
+  const hasSelectedGiftLocalDrafts =
+    gift !== null && giftDraftsByIndex[gift.giftIndex.toString()] !== undefined;
+  const giftRevertMessage = hasSelectedGiftLocalDrafts
+    ? t('za.gifts.revertDraftBlocked')
+    : gift?.revertToVanillaBlockedReason ??
+      t('za.gifts.revertHelp');
+  const canRevertSelectedGift =
+    gift !== null &&
+    onStageGiftPokemonVanilla !== undefined &&
+    gift.canRevertToVanilla === true &&
+    canEditGifts &&
+    editSession !== null &&
+    !hasSelectedGiftLocalDrafts &&
+    !isGiftPokemonUpdating;
 
   useEffect(() => {
     if (!gift) {
@@ -24838,7 +25159,7 @@ function SelectedGiftPokemonPanel({
               <>
                 <div>
                   <dt>Moves</dt>
-                  <dd>{formatGiftPokemonMoves(gift)}</dd>
+                  <dd>{formatGiftPokemonMoves(gift, t)}</dd>
                 </div>
                 {gift.teraTypeLabel !== null ? (
                   <div>
@@ -25119,6 +25440,41 @@ function SelectedGiftPokemonPanel({
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(giftDraftSummary)}</span>
               </EditorSessionBarActions>
+            ) : null}
+            {onStageGiftPokemonVanilla ? (
+              <div className="za-encounter-revert-action">
+                <button
+                  aria-busy={isGiftPokemonUpdating || undefined}
+                  className="danger-button"
+                  disabled={!canRevertSelectedGift}
+                  onClick={async () => {
+                    const didRestore = await onStageGiftPokemonVanilla(gift.giftIndex);
+                    if (didRestore) {
+                      setGiftDraftsByIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, gift.giftIndex)
+                      );
+                    }
+                  }}
+                  title={giftRevertMessage}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={t('za.encounters.reverting')}
+                    icon={<RotateCcw aria-hidden="true" size={16} />}
+                    isBusy={isGiftPokemonUpdating}
+                    label={t('za.encounters.revertToVanilla')}
+                  />
+                </button>
+                <small
+                  className={
+                    hasSelectedGiftLocalDrafts
+                      ? 'editable-field-error'
+                      : 'editable-field-status'
+                  }
+                >
+                  {giftRevertMessage}
+                </small>
+              </div>
             ) : null}
 
           </div>
@@ -30619,10 +30975,26 @@ function SelectedEncounterPanel({
       }
 
       seenSelectorIds.add(action.selectorActionId);
-      const options: EditableFieldOption[] = scriptedBossMoveOptions
+      const classifiedOptions = scriptedBossMoveOptions
         .filter((option) => option.variant === action.variant)
         .map((option) => ({
-          label: `${option.moveId} ${option.name}`,
+          compatibility: getScriptedBossMoveCompatibility(
+            option,
+            action.selectorActionId!
+          ),
+          option
+        }));
+      const compatibilityByMoveId = new Map(
+        classifiedOptions.map(({ compatibility, option }) => [
+          option.moveId,
+          compatibility
+        ])
+      );
+      const options: EditableFieldOption[] = classifiedOptions
+        .map(({ compatibility, option }) => ({
+          label: `${option.moveId} ${option.name} - ${t(
+            `za.encounters.bossActions.compatibility.${compatibility.state}.label`
+          )}`,
           value: option.moveId
         }));
       if (
@@ -30630,7 +31002,9 @@ function SelectedEncounterPanel({
         !options.some((option) => option.value === action.moveId)
       ) {
         options.push({
-          label: `${action.moveId} ${action.name}`,
+          label: `${action.moveId} ${action.name} - ${t(
+            `za.encounters.bossActions.compatibility.${action.compatibilityState}.label`
+          )}`,
           value: action.moveId
         });
         options.sort((left, right) => left.value - right.value);
@@ -30639,6 +31013,7 @@ function SelectedEncounterPanel({
       return [
         {
           action,
+          compatibilityByMoveId,
           field: {
             field: `bossAction.${action.selectorActionId}.moveId`,
             label: action.name,
@@ -30650,7 +31025,7 @@ function SelectedEncounterPanel({
         }
       ];
     });
-  }, [scriptedBossMoveOptions, scriptedBossProfile]);
+  }, [scriptedBossMoveOptions, scriptedBossProfile, t]);
   const scriptedBossDrafts = useMemo(
     () =>
       Object.fromEntries(
@@ -31466,6 +31841,16 @@ function SelectedEncounterPanel({
                             action.moveId,
                             entry.field
                           );
+                          const selectedMoveId = Number.parseInt(draftValue, 10);
+                          const selectedCompatibility = Number.isInteger(selectedMoveId)
+                            ? entry.compatibilityByMoveId.get(selectedMoveId) ??
+                              (selectedMoveId === action.moveId
+                                ? {
+                                    reason: action.compatibilityReason,
+                                    state: action.compatibilityState
+                                  }
+                                : null)
+                            : null;
 
                           return (
                             <div className="za-scripted-boss-action-control">
@@ -31511,6 +31896,25 @@ function SelectedEncounterPanel({
                                   })
                                 }
                               />
+                              {selectedCompatibility ? (
+                                <div
+                                  className={`za-scripted-boss-selection-compatibility is-${selectedCompatibility.state}`}
+                                  role="note"
+                                >
+                                  <strong>
+                                    {t(
+                                      `za.encounters.bossActions.compatibility.${selectedCompatibility.state}.label`
+                                    )}
+                                  </strong>
+                                  <span>
+                                    {t(
+                                      selectedCompatibility.reason
+                                        ? `za.encounters.bossActions.compatibility.reason.${selectedCompatibility.reason}`
+                                        : `za.encounters.bossActions.compatibility.${selectedCompatibility.state}.help`
+                                    )}
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
                           );
                         }}
@@ -43766,6 +44170,10 @@ function reviewPokemonEvolutionDrafts(
         !isIntegerInRange(form, 0, getPokemonEvolutionMaximumForm(gameFamily))) ||
       (levelChanged &&
         !isIntegerInRange(level, 0, getPokemonEvolutionMaximumLevel(gameFamily))) ||
+      (gameFamily === 'za' &&
+        methodOption?.usesLevel === false &&
+        level !== 0 &&
+        (methodChanged || levelChanged)) ||
       (gameFamily === 'swsh' &&
         methodChanged &&
         !isValidSwShEvolutionMethod(method, evolutionMethodOptions)) ||
@@ -44053,6 +44461,7 @@ function addCurrentEvolutionMethodOption(
       argumentLabel: 'Argument',
       argumentOptions: [],
       label: `${parsedValue.toString().padStart(3, '0')} Method ${parsedValue}`,
+      usesLevel: true,
       value: parsedValue
     }
   ];
@@ -46554,6 +46963,8 @@ function filterEncounterTables(
             action.selectorActionId?.toString() ?? '',
             action.kind,
             action.runtimeState,
+            action.compatibilityState,
+            action.compatibilityReason ?? '',
             action.lockReason ?? '',
             action.phaseContext ?? '',
             action.variant?.toString() ?? '',
@@ -49285,14 +49696,20 @@ function toPokemonSpriteIdPart(value: string) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
-function getEditableFieldHelp(field: EditableFieldWithOptions) {
+function getEditableFieldHelp(
+  field: EditableFieldWithOptions,
+  localize?: ReturnType<typeof useLocalization>['t']
+) {
+  if (field.field === zaLastHandFieldName && localize) {
+    return localize('za.trainers.lastHand.help');
+  }
+
   const specificHelp: Record<string, string> = {
     aiFlags: 'Battle AI behavior bitmask. Use the named AI flag checkboxes when they are shown.',
     canUseMove: 'Controls whether the move is enabled. Enabling a base-disabled move does not restore missing battle animations, resources, or learnset references; verify its required game assets before using it.',
     canDynamax: 'Whether this Pokemon is allowed to Dynamax in trainer battles.',
     canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
     [trainerCanTerastallizeFieldName]: 'S/V trainer-level flag that allows the trainer to Terastallize. The target comes from party Pokemon with a fixed Tera type.',
-    [zaLastHandFieldName]: 'Z-A trainer flag preserved from trainer data. Battle behavior still needs more research.',
     [zaMegaEvolutionFieldName]: 'Whether this Z-A trainer battle enables Mega Evolution behavior.',
     [zaRankFieldName]: 'Z-A trainer rank value.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
@@ -50947,7 +51364,10 @@ function formatGiftPokemonIvs(gift: GiftPokemonRecord) {
   ].join(' / ');
 }
 
-function formatGiftPokemonMoves(gift: GiftPokemonRecord) {
+function formatGiftPokemonMoves(
+  gift: GiftPokemonRecord,
+  localize: ReturnType<typeof useLocalization>['t']
+) {
   const moves = [...gift.moves]
     .sort((left, right) => left.slot - right.slot)
     .filter((move) => move.moveId > 0)
@@ -50955,6 +51375,18 @@ function formatGiftPokemonMoves(gift: GiftPokemonRecord) {
 
   if (moves.length > 0) {
     return moves.join(' / ');
+  }
+
+  if (
+    gift.editorFamily === 'za' &&
+    gift.moves.length > 0 &&
+    gift.moves.every((move) => move.moveId === 0)
+  ) {
+    return localize('za.gifts.moves.gameDefaultAuto');
+  }
+
+  if (gift.editorFamily === 'za') {
+    return localize('za.encounters.advanced.none');
   }
 
   return gift.moves.some((move) => move.moveId < 0) ? 'Game default / none' : 'None';

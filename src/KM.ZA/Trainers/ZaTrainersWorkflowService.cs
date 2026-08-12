@@ -132,7 +132,7 @@ internal sealed class ZaTrainersWorkflowService
         CreateField(MoneyField, "Money rate", 0, byte.MaxValue),
         CreateField(AiFlagsField, "AI flags", 0, byte.MaxValue),
         CreateField(MegaEvolutionField, "Mega Evolution", 0, 1, BooleanOptions, "boolean"),
-        CreateField(LastHandField, "Last hand", 0, 1, BooleanOptions, "boolean"),
+        CreateField(LastHandField, "Last Hand", 0, 1, BooleanOptions, "boolean"),
         CreateField(FormField, "Form", 0, short.MaxValue),
         CreateField(LevelField, "Level", 0, 100),
         CreateField(GenderField, "Gender", 0, 2, GenderOptions),
@@ -487,7 +487,7 @@ internal sealed class ZaTrainersWorkflowService
         var definitions = new[]
         {
             (0, "Basic", "Enables baseline move selection and battle decisions."),
-            (1, "High", "Uses stronger scoring for move choice, targets, and matchup checks."),
+            (1, "Strong", "Uses stronger scoring for move choice, targets, and matchup checks."),
             (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions."),
             (3, "Double", "Uses double-battle-aware partner, target, and spread move logic."),
             (4, "Raid", "Uses raid-style AI checks for encounters that share raid battle behavior."),

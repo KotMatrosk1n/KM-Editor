@@ -24,7 +24,7 @@ export const kmCommandNameValues = [
   'trainers.load',
   'trainers.field.update', 'trainers.fields.update',
   'giftPokemon.load',
-  'giftPokemon.field.update', 'giftPokemon.fields.update',
+  'giftPokemon.field.update', 'giftPokemon.fields.update', 'giftPokemon.gift.vanilla.stage',
   'tradePokemon.load',
   'tradePokemon.field.update', 'tradePokemon.fields.update',
   'staticEncounters.load',
@@ -156,6 +156,7 @@ export const kmCommandNames = {
   loadGiftPokemonWorkflow: 'giftPokemon.load',
   updateGiftPokemonField: 'giftPokemon.field.update',
   updateGiftPokemonFields: 'giftPokemon.fields.update',
+  stageGiftPokemonVanilla: 'giftPokemon.gift.vanilla.stage',
   loadTradePokemonWorkflow: 'tradePokemon.load',
   updateTradePokemonField: 'tradePokemon.field.update',
   updateTradePokemonFields: 'tradePokemon.fields.update',
@@ -1066,6 +1067,7 @@ export const pokemonEvolutionMethodOptionSchema = z.strictObject({
   argumentLabel: z.string(),
   argumentOptions: z.array(pokemonEditableFieldOptionSchema),
   label: z.string(),
+  usesLevel: z.boolean(),
   value: z.number().int()
 });
 
@@ -1673,6 +1675,15 @@ export const scriptedBossPhaseModelSchema = z.strictObject({
 export const scriptedBossActionSchema = z
   .strictObject({
     canEdit: z.boolean(),
+    compatibilityReason: z.enum(['no-damage', 'ally-targeting']).nullable(),
+    compatibilityState: z.enum([
+      'base-verified',
+      'gameplay-tested',
+      'known-incompatible',
+      'experimental',
+      'unavailable',
+      'not-applicable'
+    ]),
     key: z.string(),
     kind: z.enum(['battle-move', 'movement-helper', 'scripted-mechanic']),
     lockReason: z
@@ -1689,7 +1700,7 @@ export const scriptedBossActionSchema = z
     phaseContext: z.enum(['after-stun', 'bomb-rock-deployed']).nullable(),
     runtimeMoveId: z.number().int().nullable(),
     runtimeState: z.enum([
-      'working',
+      'runtime-data-present',
       'missing-battle',
       'missing-timing',
       'missing-battle-and-timing',
@@ -1735,6 +1746,28 @@ export const scriptedBossActionSchema = z
       });
     }
 
+    if (
+      action.compatibilityState === 'known-incompatible' &&
+      action.compatibilityReason === null
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Known-incompatible boss actions require an observed behavior reason.',
+        path: ['compatibilityReason']
+      });
+    }
+
+    if (
+      action.compatibilityState !== 'known-incompatible' &&
+      action.compatibilityReason !== null
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only known-incompatible boss actions can declare a compatibility reason.',
+        path: ['compatibilityReason']
+      });
+    }
+
     if (action.canEdit) {
       if (action.kind !== 'battle-move') {
         context.addIssue({
@@ -1773,12 +1806,56 @@ export const scriptedBossActionSchema = z
     }
   });
 
-export const scriptedBossMoveOptionSchema = z.strictObject({
-  moveId: z.number().int().min(0).max(999),
-  name: z.string(),
-  runtimeMoveId: z.number().int().min(0).max(2999),
-  variant: z.union([z.literal(0), z.literal(1), z.literal(2)])
+export const scriptedBossMoveCompatibilitySchema = z.strictObject({
+  reason: z.enum(['no-damage', 'ally-targeting']).nullable(),
+  selectorActionId: z.number().int().positive(),
+  state: z.enum(['base-verified', 'gameplay-tested', 'known-incompatible'])
 });
+
+export const scriptedBossMoveOptionSchema = z
+  .strictObject({
+    defaultCompatibilityState: z.literal('experimental'),
+    moveId: z.number().int().min(0).max(999),
+    name: z.string(),
+    runtimeMoveId: z.number().int().min(0).max(2999),
+    selectorCompatibilities: z.array(scriptedBossMoveCompatibilitySchema),
+    variant: z.union([z.literal(0), z.literal(1), z.literal(2)])
+  })
+  .superRefine((option, context) => {
+    const selectorIds = option.selectorCompatibilities.map(
+      (compatibility) => compatibility.selectorActionId
+    );
+    if (new Set(selectorIds).size !== selectorIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Boss move compatibility cannot repeat a selector action ID.',
+        path: ['selectorCompatibilities']
+      });
+    }
+
+    option.selectorCompatibilities.forEach((compatibility, index) => {
+      if (
+        compatibility.state === 'known-incompatible' &&
+        compatibility.reason === null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Known-incompatible boss move choices require an observed behavior reason.',
+          path: ['selectorCompatibilities', index, 'reason']
+        });
+      }
+      if (
+        compatibility.state !== 'known-incompatible' &&
+        compatibility.reason !== null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Only known-incompatible boss move choices can declare a reason.',
+          path: ['selectorCompatibilities', index, 'reason']
+        });
+      }
+    });
+  });
 
 export const scriptedBossProfileSchema = z
   .strictObject({
@@ -2216,6 +2293,7 @@ export const giftPokemonRecordSchema = z.strictObject({
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
   canEditAlphaSettings: z.boolean().default(false),
+  canRevertToVanilla: z.boolean().nullable().default(null),
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
   editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
@@ -2238,6 +2316,7 @@ export const giftPokemonRecordSchema = z.strictObject({
   nature: z.number().int(),
   natureLabel: z.string(),
   provenance: giftPokemonProvenanceSchema,
+  revertToVanillaBlockedReason: z.string().nullable().default(null),
   scaleMode: z.number().int().nullable().default(null),
   scaleModeLabel: z.string().nullable().default(null),
   scaleValue: z.number().int().nullable().default(null),

@@ -2207,7 +2207,8 @@ public static class SwShBridgeMapper
             option.Label,
             option.ArgumentKind,
             option.ArgumentLabel,
-            option.ArgumentOptions.Select(ToDto).ToArray());
+            option.ArgumentOptions.Select(ToDto).ToArray(),
+            UsesLevel: true);
     }
 
     private static PokemonLearnsetMoveDto ToDto(SwShPokemonLearnsetMove learnsetMove)

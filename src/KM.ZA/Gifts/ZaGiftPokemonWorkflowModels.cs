@@ -58,6 +58,10 @@ public sealed record ZaGiftPokemonEntry(
 
     public bool CanEditAlphaSettings { get; init; }
 
+    public bool CanRevertToVanilla { get; init; }
+
+    public string? RevertToVanillaBlockedReason { get; init; }
+
     public IReadOnlyList<ZaGiftPokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaGiftPokemonEditableFieldOption>();
 

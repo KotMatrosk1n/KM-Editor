@@ -153,7 +153,8 @@ public sealed record PokemonEvolutionMethodOptionDto(
     string Label,
     string ArgumentKind,
     string ArgumentLabel,
-    IReadOnlyList<PokemonEditableFieldOptionDto> ArgumentOptions);
+    IReadOnlyList<PokemonEditableFieldOptionDto> ArgumentOptions,
+    bool UsesLevel);
 
 public sealed record PokemonLearnsetMoveDto(
     int Slot,
