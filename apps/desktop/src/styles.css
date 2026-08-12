@@ -4129,6 +4129,16 @@ h2 {
   grid-column: 1 / -1;
 }
 
+.move-runtime-field-group-wide {
+  grid-column: 1 / -1;
+}
+
+.move-runtime-behavior-note {
+  margin: 0 0 12px;
+  color: var(--color-text-soft);
+  line-height: 1.45;
+}
+
 .move-advanced-field-group {
   grid-column: 1 / -1;
 }

@@ -303,6 +303,10 @@ import {
 import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
 import {
+  getContextualItemEditableFields,
+  getContextualItemEffectHelp
+} from './itemsEditor';
+import {
   evaluateMoveFieldsUpdate,
   formatMoveAccuracy,
   formatMoveEffectChance,
@@ -314,6 +318,7 @@ import {
   getMoveEditableFieldGroup,
   getMoveEditableFieldLabel,
   getMoveRelationalValidationIssues,
+  getMoveRuntimeStatRecipient,
   getMoveRuntimeVariants,
   getMoveRuntimeView,
   isMoveProjectileField,
@@ -13905,26 +13910,31 @@ function SelectedItemPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
+  const contextualEditableFields = useMemo(
+    () => getContextualItemEditableFields(editableFields, editorFamily, item),
+    [editableFields, editorFamily, item]
+  );
+  const contextualItemEffectHelp = getContextualItemEffectHelp(editorFamily, item);
   const itemFieldGroups = useMemo(
-    () => groupNumericEditableFields(editableFields, getItemEditableFieldGroup),
-    [editableFields]
+    () => groupNumericEditableFields(contextualEditableFields, getItemEditableFieldGroup),
+    [contextualEditableFields]
   );
   const itemDraftDefaults = useMemo(
     () =>
       item
         ? Object.fromEntries(
-            editableFields.map((field) => [
+            contextualEditableFields.map((field) => [
               field.field,
               (getEditableItemFieldValue(item, field.field) ?? '').toString()
             ])
           )
         : {},
-    [editableFields, item]
+    [contextualEditableFields, item]
   );
   const itemDraftKey = item ? getItemStorageDraftKey(item) : null;
   const sparseFieldDrafts =
@@ -13933,20 +13943,20 @@ function SelectedItemPanel({
   const writableItemFields = useMemo(
     () =>
       new Set(
-        editableFields
+        contextualEditableFields
           .filter((field) => getItemFieldDisabledReason(field, editorFamily, item) === null)
           .map((field) => field.field)
       ),
-    [editableFields, editorFamily, item]
+    [contextualEditableFields, editorFamily, item]
   );
   const itemDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
-        editableFields,
+        contextualEditableFields,
         fieldDrafts,
         item ? (field) => getEditableItemFieldValue(item, field) : null
       ),
-    [editableFields, fieldDrafts, item]
+    [contextualEditableFields, fieldDrafts, item]
   );
   const stagedItemChanges = useMemo(
     () => normalizeLinkedItemPriceChanges(itemDraftSummary.changedFields),
@@ -14107,6 +14117,11 @@ function SelectedItemPanel({
                   reviewed output.
                 </p>
               ) : null}
+              {contextualItemEffectHelp ? (
+                <p className="field-note">
+                  {translateLiteral(contextualItemEffectHelp)}
+                </p>
+              ) : null}
               {itemFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
                   <legend>{group.group}</legend>
@@ -14134,6 +14149,7 @@ function SelectedItemPanel({
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
+                          helpText={field.helpText}
                           idPrefix="item-field"
                           key={field.field}
                           onChange={(value) => {
@@ -17239,6 +17255,60 @@ function formatLocalizedMoveRuntimeVariantLabel(
   }
 }
 
+function getMoveFieldMember(field: string) {
+  return field.replace(/^battle\.\d+\./, '');
+}
+
+function formatLocalizedMoveEditableFieldLabel(
+  field: { field: string; label: string },
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  const keyByMember: Record<string, string> = {
+    appliesCondition: 'moves.fields.specialConditionFlag',
+    conditionCount: 'moves.fields.conditionMode',
+    conditionId: 'moves.fields.runtimeCondition',
+    conditionPercent: 'moves.fields.runtimeConditionChance',
+    conditionTurnMax: 'moves.fields.runtimeConditionTurnsMax',
+    conditionTurnMin: 'moves.fields.runtimeConditionTurnsMin',
+    effectCategory: 'moves.fields.behavior',
+    flinch: 'moves.fields.flinch',
+    shrinkPercent: 'moves.fields.shrink'
+  };
+  const key = keyByMember[getMoveFieldMember(field.field)];
+  return key ? t(key) : undefined;
+}
+
+function getLocalizedMoveEditableFieldHelp(
+  field: { field: string },
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  const keyByMember: Record<string, string> = {
+    appliesCondition: 'moves.fieldHelp.specialConditionFlag',
+    conditionCount: 'moves.fieldHelp.conditionMode',
+    conditionId: 'moves.fieldHelp.runtimeCondition',
+    effectCategory: 'moves.fieldHelp.behavior',
+    flinch: 'moves.fieldHelp.flinch',
+    shrinkPercent: 'moves.fieldHelp.shrink'
+  };
+  const key = keyByMember[getMoveFieldMember(field.field)];
+  return key ? t(key) : undefined;
+}
+
+function formatLocalizedMoveFieldGroup(
+  group: string,
+  t: ReturnType<typeof useLocalization>['t'],
+  translateLiteral: ReturnType<typeof useLocalization>['translateLiteral']
+) {
+  const keyByGroup: Record<string, string> = {
+    'Conventional Effects': 'moves.groups.conventionalEffects',
+    'Runtime Behavior': 'moves.groups.runtimeBehavior',
+    'Runtime Effects': 'moves.groups.runtimeEffects',
+    'Runtime Stat Changes': 'moves.groups.runtimeStatChanges'
+  };
+  const key = keyByGroup[group];
+  return key ? t(key) : translateLiteral(group);
+}
+
 function formatMovePlayerDamageHitInterval(value: number, language: string) {
   return value.toLocaleString(language, {
     maximumFractionDigits: 4,
@@ -17932,6 +18002,18 @@ function SelectedMovePanel({
         ...(moveDraftsByMoveId[moveDraftStorageKey] ?? {})
       }
     : {};
+  const selectedRuntimeEffectCategory = selectedRuntimeView?.battleRow
+    ? (() => {
+        const field = `battle.${selectedRuntimeView.variant}.effectCategory`;
+        const draft = moveDrafts[field]?.trim();
+        const value = draft ? Number(draft) : selectedRuntimeView.battleRow.effectCategory;
+        return Number.isFinite(value) ? value : selectedRuntimeView.battleRow.effectCategory;
+      })()
+    : null;
+  const selectedRuntimeStatRecipient =
+    move && selectedRuntimeEffectCategory !== null
+      ? getMoveRuntimeStatRecipient(selectedRuntimeEffectCategory, move.targetName)
+      : null;
   const moveDraftContext = useMemo<DraftStateContext | undefined>(
     () =>
       move
@@ -18271,6 +18353,10 @@ function SelectedMovePanel({
                 const isFlagsGroup = group.group.endsWith('Flags');
                 const isAdvancedGroup = group.group.startsWith('Advanced ');
                 const isPlayerDamageGroup = group.group === 'Boss Player Damage';
+                const isConventionalEffectsGroup = group.group === 'Conventional Effects';
+                const isRuntimeBehaviorGroup = group.group === 'Runtime Behavior';
+                const isRuntimeEffectsGroup = group.group === 'Runtime Effects';
+                const isRuntimeStatChangesGroup = group.group === 'Runtime Stat Changes';
                 const isFirstAdvancedGroup =
                   isAdvancedGroup &&
                   !moveFieldGroups
@@ -18284,12 +18370,12 @@ function SelectedMovePanel({
                       </p>
                     ) : null}
                     <fieldset
-                      className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-group' : ''}`}
+                      className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-group' : ''}${isRuntimeEffectsGroup || isRuntimeStatChangesGroup ? ' move-runtime-field-group-wide' : ''}`}
                     >
                       <legend>
                         {isPlayerDamageGroup
                           ? t('moves.playerDamage.groupHeading')
-                          : translateLiteral(group.group)}
+                          : formatLocalizedMoveFieldGroup(group.group, t, translateLiteral)}
                       </legend>
                       {isPlayerDamageGroup ? (
                         <>
@@ -18306,6 +18392,36 @@ function SelectedMovePanel({
                             profiles={scriptedBosses}
                           />
                         </>
+                      ) : null}
+                      {isConventionalEffectsGroup ? (
+                        <p className="field-note move-runtime-behavior-note">
+                          {t('moves.flinch.help')}
+                        </p>
+                      ) : null}
+                      {isRuntimeBehaviorGroup ? (
+                        <p className="field-note move-runtime-behavior-note">
+                          {t('moves.runtimeBehavior.help')}
+                        </p>
+                      ) : null}
+                      {isRuntimeEffectsGroup ? (
+                        <p className="field-note move-runtime-behavior-note">
+                          {t('moves.runtimeEffects.help')}
+                        </p>
+                      ) : null}
+                      {isRuntimeStatChangesGroup && selectedRuntimeStatRecipient ? (
+                        <p className="field-note move-runtime-behavior-note">
+                          <strong>{t('moves.statRecipient.label')}:</strong>{' '}
+                          {selectedRuntimeStatRecipient.kind === 'user'
+                            ? t('moves.statRecipient.user')
+                            : selectedRuntimeStatRecipient.kind === 'hit-targets'
+                              ? t('moves.statRecipient.hitTargets')
+                              : selectedRuntimeStatRecipient.kind === 'move-target'
+                                ? t('moves.statRecipient.moveTarget', {
+                                    target: translateLiteral(selectedRuntimeStatRecipient.targetName)
+                                  })
+                                : t('moves.statRecipient.scripted')}{' '}
+                          {t('moves.statRecipient.help')}
+                        </p>
                       ) : null}
                       <div
                         className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-grid' : ''}`}
@@ -18363,7 +18479,7 @@ function SelectedMovePanel({
                             field={field}
                             helpText={
                               playerDamageAttackId === null
-                                ? undefined
+                                ? getLocalizedMoveEditableFieldHelp(field, t)
                                 : t('moves.playerDamage.fieldHelp', {
                                     attackId: playerDamageAttackId,
                                     maximum: field.maximumValue ?? 999,
@@ -18373,7 +18489,7 @@ function SelectedMovePanel({
                             idPrefix="move-field"
                             labelText={
                               playerDamageAttackId === null
-                                ? undefined
+                                ? formatLocalizedMoveEditableFieldLabel(field, t)
                                 : t('moves.playerDamage.fieldLabel', {
                                     attackId: playerDamageAttackId
                                   })
@@ -23512,8 +23628,12 @@ function groupNumericEditableFields<TField extends NumericEditableField>(
   return groups;
 }
 
-function getItemEditableFieldGroup(field: ItemEditableField) {
+function getItemEditableFieldGroup(field: ItemEditableField & { group?: string }) {
   const fieldName = field.field.toLocaleLowerCase();
+
+  if (field.group) {
+    return field.group;
+  }
 
   if (
     field.field === itemMachineMoveIdFieldName ||
@@ -23570,6 +23690,8 @@ function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
   groups: Array<{ group: string; fields: TField[] }>
 ) {
   const runtimeOrder = [
+    'Conventional Effects',
+    'Runtime Behavior',
     'Runtime Core',
     'Runtime Effects',
     'Runtime Stat Changes',
@@ -23674,7 +23796,7 @@ function getEncounterEditableFieldGroup(field: NumericEditableField) {
   }
 
   if (zaEncounterStrengthenFieldNames.has(field.field)) {
-    return 'Boss Strength Multipliers';
+    return 'Strength Multipliers';
   }
 
   if (zaEncounterMoveFieldNames.has(field.field)) {
@@ -30121,9 +30243,6 @@ function SelectedEncounterPanel({
   const { language, t, translateLiteral } = useLocalization();
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
-  const isZaBossTable = Boolean(
-    isZaEncounterTable && table && isZaBossEncounterTable(table)
-  );
   const isZaScriptedBossTable = Boolean(
     isZaEncounterTable && table && isZaScriptedBossEncounterTable(table)
   );
@@ -30144,7 +30263,7 @@ function SelectedEncounterPanel({
           (field) =>
             (!isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)) &&
             (!zaEncounterStrengthenFieldNames.has(field.field) ||
-              (isZaBossTable && encounterSlot?.canEditStrengthenValues === true))
+              encounterSlot?.canEditStrengthenValues === true)
         )
         .map((field) => {
           const numericField = toNumericEditableControlField(
@@ -30176,7 +30295,6 @@ function SelectedEncounterPanel({
       encounterSlot?.species,
       encounterSlot?.speciesId,
       encounterSlot?.canEditStrengthenValues,
-      isZaBossTable,
       isZaScriptedBossTable,
       t
     ]
@@ -30452,7 +30570,7 @@ function SelectedEncounterPanel({
           (field) =>
             (!isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)) &&
             (!zaEncounterStrengthenFieldNames.has(field.field) ||
-              (isZaBossTable && encounterSlot?.canEditStrengthenValues === true))
+              encounterSlot?.canEditStrengthenValues === true)
         )
         .map((field) => {
           const numericField = toNumericEditableControlField(
@@ -30475,7 +30593,6 @@ function SelectedEncounterPanel({
       encounterFormOptionContext,
       encounterSlot,
       editorFamily,
-      isZaBossTable,
       isZaScriptedBossTable,
       t
     ]
@@ -31406,7 +31523,7 @@ function SelectedEncounterPanel({
                         isZaEncounterTable &&
                         (group.group === 'IVs' ||
                           group.group === 'Moves' ||
-                          group.group === 'Boss Strength Multipliers')
+                          group.group === 'Strength Multipliers')
                           ? 'za-encounter-field-group-wide'
                           : ''
                       }`}
@@ -31417,7 +31534,7 @@ function SelectedEncounterPanel({
                           ? t('za.spawnSettings.slotGroup')
                           : group.group === 'Spawner Population'
                             ? t('za.spawnSettings.populationGroup')
-                            : group.group === 'Boss Strength Multipliers'
+                            : group.group === 'Strength Multipliers'
                               ? t('za.encounters.strengthen.heading')
                             : translateLiteral(group.group)}
                       </legend>
@@ -31696,7 +31813,7 @@ function SelectedEncounterPanel({
                           </small>
                         </div>
                       ) : null}
-                      {group.group === 'Boss Strength Multipliers' && isZaEncounterTable ? (
+                      {group.group === 'Strength Multipliers' && isZaEncounterTable ? (
                         <div className="field-group-action-row za-spawner-field-note">
                           <small className="editable-field-status">
                             {t('za.encounters.strengthen.help')}
@@ -31760,7 +31877,7 @@ function SelectedEncounterPanel({
                           )}
                         </dd>
                       </div>
-                      {!isZaBossTable || encounterSlot.canEditStrengthenValues !== true ? (
+                      {encounterSlot.canEditStrengthenValues !== true ? (
                         <div>
                           <dt>{t('za.encounters.advanced.strengthenValues')}</dt>
                           <dd>
@@ -49179,19 +49296,19 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     [zaMegaEvolutionFieldName]: 'Whether this Z-A trainer battle enables Mega Evolution behavior.',
     [zaRankFieldName]: 'Z-A trainer rank value.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
-    conditionCount: 'Runtime condition duration mode. Use only the game-defined Effect-defined, Persistent, or Timed option.',
-    conditionId: 'Runtime condition identifier. Only condition IDs verified in the Z-A battle table are selectable.',
+    conditionCount: 'How the runtime condition duration is handled. Effect-defined preserves move-specific timing; Persistent and Timed use their authored runtime behavior.',
+    conditionId: 'Runtime condition identifier. This selector contains every condition ID verified in the Z-A runtime battle table and remains separate from the conventional move condition list.',
     conditionTurnMax: 'Maximum runtime condition duration. Valid game values are 0 through 15; 0 is effect-defined.',
     conditionTurnMin: 'Minimum runtime condition duration. Valid game values are 0 through 15; 0 is effect-defined.',
     criticalRank: 'Runtime critical-hit tier. Z-A uses only ranks 0, 1, 2, and 6.',
     damageDrainRatio: 'Percentage of damage converted into drained HP.',
     damageRecoverRatio: 'Signed percentage of dealt damage returned to or taken from the user. Positive values recover HP; negative values cause recoil.',
-    effectCategory: 'Runtime battle-effect category. Only category IDs verified in the Z-A battle table are selectable.',
+    effectCategory: 'Selects the verified runtime move behavior. This category also determines whether stat changes affect the user, the hit targets, or the move target.',
     effectSequence: 'Advanced raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet; preserve it unless the move has been verified in game.',
     [itemBattlePouchFieldName]: 'Controls the battle item category: none, Balls, or usable battle items.',
     [itemCureStatusFlagsFieldName]: 'Raw cure-status bitmask. Use the named cure controls so unrelated bits remain intact.',
     [itemFieldFlagsFieldName]: 'Legacy name for Battle pouch. It remains visible only for compatibility.',
-    flinch: 'Percent chance that the move causes flinching.',
+    flinch: 'The conventional flinch probability read by battle logic. It is not calculated from the separate runtime stagger / shrink value. A held item can supply 10% only when this value is zero.',
     gift: 'Unknown raw Gen 8 trainer header value. It is read-only because no game behavior has been verified for it.',
     hpRecoverRatio: 'Percentage of maximum HP restored by the move. Valid values are 0 through 100.',
     inflictPercent: 'Percent chance to inflict the selected condition or secondary effect. Zero on a move with an inflict effect means it is a primary effect with no separate chance roll.',
@@ -49202,7 +49319,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     rawInflictCount: 'Duration mode for the inflicted condition/effect. Sword/Shield exposes five known modes.',
     recoil: 'Signed drain/recoil percent. Positive values drain HP; negative values deal recoil. The effect sequence determines the exact battle behavior.',
     specialMoveId: 'Gift table special move field.',
-    shrinkPercent: 'Runtime size-reduction percentage. Valid values are 0 through 100.',
+    shrinkPercent: 'Separate real-time stagger / shrink reaction chance. It is not a display-scaled flinch chance and is never calculated from conventional Flinch.',
     stat1: 'First stat-change slot. Runtime moves support three stat-change slots.',
     stat1Percent: 'Percent chance for stat-change slot 1 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
     stat1Stage: 'Stage delta for stat-change slot 1. Positive raises the stat; negative lowers it.',
@@ -49214,6 +49331,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     turnMax: 'Maximum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
     turnMin: 'Minimum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
     stat3Stage: 'Stage delta for stat-change slot 3. Positive raises the stat; negative lowers it.',
+    appliesCondition: 'Special runtime flag whose general-purpose meaning is not verified. It is not the master switch for runtime conditions; most condition-bearing moves leave it disabled.',
     'timing.cooldown': 'Cooldown in seconds between move uses. The verified range is 0 through 60; the step controls adjust it by 0.1 seconds.',
     'timing.effectTime': 'Timing offset for the move effect. This is stored as a bounded 32-bit floating-point value.',
     'timing.effectValue': 'Raw move-effect timing parameter, bounded to the values supported by the runtime table.',

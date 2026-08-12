@@ -35,6 +35,7 @@ public struct ZaMoveDataArray : IFlatbufferObject
   public static void StartValuesVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<ZaMoveDataArray> EndZaMoveDataArray(FlatBufferBuilder builder) {
     int o = builder.EndTable();
+    builder.Required(o, 4);  // Values
     return new Offset<ZaMoveDataArray>(o);
   }
   public static void FinishZaMoveDataArrayBuffer(FlatBufferBuilder builder, Offset<ZaMoveDataArray> offset) { builder.Finish(offset.Value); }
@@ -47,7 +48,7 @@ static public class ZaMoveDataArrayVerify
   static public bool Verify(Google.FlatBuffers.Verifier verifier, uint tablePos)
   {
     return verifier.VerifyTableStart(tablePos)
-      && verifier.VerifyVectorOfTables(tablePos, 4 /*Values*/, ZaMoveDataVerify.Verify, false)
+      && verifier.VerifyVectorOfTables(tablePos, 4 /*Values*/, ZaMoveDataVerify.Verify, true)
       && verifier.VerifyTableEnd(tablePos);
   }
 }

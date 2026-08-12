@@ -1745,7 +1745,7 @@ internal sealed class ZaEncountersEditSessionService
 
         if (!allowVerifiedVanillaSharedValue
             && IsStrengthenField(normalizedField)
-            && !ValidateStrengthenFieldEditability(table, slot, normalizedField, diagnostics))
+            && !ValidateStrengthenFieldEditability(slot, normalizedField, diagnostics))
         {
             return null;
         }
@@ -2926,25 +2926,21 @@ internal sealed class ZaEncountersEditSessionService
     }
 
     private static bool ValidateStrengthenFieldEditability(
-        ZaEncounterTableRecord table,
         ZaEncounterSlotRecord slot,
         string? field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (IsBossEncounterTable(table) && slot.CanEditStrengthenValues)
+        if (slot.CanEditStrengthenValues)
         {
             return true;
         }
 
-        var message = !IsBossEncounterTable(table)
-            ? "Strengthen multipliers can only be edited from a verified boss encounter placement."
-            : "Boss strengthen multipliers are read-only because the source encounter row does not contain six non-negative, runtime-representable values.";
         diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
             DiagnosticSeverity.Error,
-            message,
+            "Strengthen multipliers are read-only because the source encounter row does not contain six non-negative, runtime-representable values.",
             ZaEditSessionSupport.EncountersDomain,
             field: field,
-            expected: "Materialized boss StrengthenValue data with HP from 0 through 65535 and the other stats from 0 through 255"));
+            expected: "Materialized StrengthenValue data with HP from 0 through 65535 and the other stats from 0 through 255"));
         return false;
     }
 
@@ -2954,32 +2950,23 @@ internal sealed class ZaEncountersEditSessionService
         string? field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var editableBossPlacement = workflow.Tables
-            .Where(IsBossEncounterTable)
+        var editablePlacement = workflow.Tables
             .SelectMany(table => table.Slots)
             .Any(slot =>
                 slot.PokemonDataSourceIndex == sourceIndex
                 && slot.CanEditStrengthenValues);
-        if (editableBossPlacement)
+        if (editablePlacement)
         {
             return true;
         }
 
         diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
             DiagnosticSeverity.Error,
-            "Pending boss strengthen edit no longer targets a materialized, runtime-representable boss StrengthenValue row.",
+            "Pending strengthen edit no longer targets a placed, materialized, runtime-representable StrengthenValue row.",
             ZaEditSessionSupport.EncountersDomain,
             field: field,
-            expected: "Loaded boss placement with six non-negative strengthen controls"));
+            expected: "Loaded encounter placement with six non-negative strengthen controls"));
         return false;
-    }
-
-    private static bool IsBossEncounterTable(ZaEncounterTableRecord table)
-    {
-        return !string.IsNullOrWhiteSpace(table.BossBattleContextKey)
-            || table.LocationKey?.StartsWith("boss_", StringComparison.OrdinalIgnoreCase) == true
-            || table.RawSpawnerId?.StartsWith("btl_spn_boss_", StringComparison.OrdinalIgnoreCase) == true
-            || table.RawSpawnerId?.StartsWith("spn_boss_", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static string GetSourcePathForField(string? field)
@@ -4860,15 +4847,9 @@ internal sealed class ZaEncountersEditSessionService
         ZaEncounterDataEntry row,
         Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
     {
-        row.StrengthenValue = update(
-            row.StrengthenValue
-                ?? new ZaPokemonDataStatsRecord(
-                    ZaEncountersWorkflowService.MinimumStrengthenValue,
-                    ZaEncountersWorkflowService.MinimumStrengthenValue,
-                    ZaEncountersWorkflowService.MinimumStrengthenValue,
-                    ZaEncountersWorkflowService.MinimumStrengthenValue,
-                    ZaEncountersWorkflowService.MinimumStrengthenValue,
-                    ZaEncountersWorkflowService.MinimumStrengthenValue));
+        row.StrengthenValue = update(row.StrengthenValue
+            ?? throw new InvalidDataException(
+                "Encounter StrengthenValue storage disappeared before the reviewed edit was applied."));
     }
 
     private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)
@@ -4920,10 +4901,10 @@ internal sealed class ZaEncountersEditSessionService
                 or ZaEncountersWorkflowService.StrengthenSpecialDefenseField
                 or ZaEncountersWorkflowService.StrengthenSpeedField =>
                 value == ZaEncountersWorkflowService.MinimumStrengthenValue
-                    ? $"Disable the shared boss {field.Label.ToLowerInvariant()} override for every placement linked to {slot.EncounterRecordId}."
+                    ? $"Disable the shared {field.Label.ToLowerInvariant()} override for every placement linked to {slot.EncounterRecordId}."
                     : string.Create(
                         CultureInfo.InvariantCulture,
-                        $"Set the shared boss {field.Label.ToLowerInvariant()} to {value / 10m:0.0}x (stored {value}) for every placement linked to {slot.EncounterRecordId}."),
+                        $"Set the shared {field.Label.ToLowerInvariant()} to {value / 10m:0.0}x (stored {value}) for every placement linked to {slot.EncounterRecordId}."),
             ZaEncountersWorkflowService.WeightField =>
                 $"Set {table.Location} slot {slot.Slot + 1} weight to {value}.",
             ZaEncountersWorkflowService.SlotMaxCountField =>

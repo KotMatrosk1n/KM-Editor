@@ -4,6 +4,8 @@ namespace KM.ZA.Moves;
 
 internal static class ZaMovesDiagnosticCodes
 {
+    public const string WazaVerificationFailed = "KM-ZA-MOVES-WAZA-VERIFICATION-FAILED";
+    public const string WazaPreservationFailed = "KM-ZA-MOVES-WAZA-PRESERVATION-FAILED";
     public const string RuntimeVariantAmbiguous = "KM-ZA-MOVES-RUNTIME-VARIANT-AMBIGUOUS";
     public const string RuntimeRestoreVerificationFailed = "KM-ZA-MOVES-RUNTIME-RESTORE-VERIFICATION-FAILED";
     public const string RuntimeVariantVerificationFailed = "KM-ZA-MOVES-RUNTIME-VARIANT-VERIFICATION-FAILED";

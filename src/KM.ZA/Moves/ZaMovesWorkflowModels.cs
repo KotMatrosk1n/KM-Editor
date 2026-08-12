@@ -235,6 +235,10 @@ public sealed record ZaMoveRecord(
 
     internal bool RuntimePlayerDamageDiffersFromVanilla { get; init; }
 
+    internal int? VanillaFlinch { get; init; }
+
+    internal bool WazaFlinchDiffersFromVanilla { get; init; }
+
     public bool HasRuntimeData => RuntimeVariants.Count > 0 || TimingRows.Count > 0 || PlayerDamageRows.Count > 0;
 
     public bool CanRevertToVanilla { get; init; }

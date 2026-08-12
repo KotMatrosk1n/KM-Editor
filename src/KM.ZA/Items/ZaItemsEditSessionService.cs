@@ -1917,6 +1917,15 @@ internal sealed class ZaItemsEditSessionService
         }
 
         var editableField = GetEditableField(workflow, normalizedField)!;
+        if (!ZaItemEffectRules.ValidateFieldValue(
+                item,
+                editableField,
+                parsedValue.Value,
+                diagnostics))
+        {
+            return null;
+        }
+
         if (!isVerifiedBaseRestore
             && !CanEditTechnicalMachineField(item, editableField, diagnostics))
         {
@@ -1945,9 +1954,10 @@ internal sealed class ZaItemsEditSessionService
                 StringComparison.Ordinal)
             && item.FieldValues.GetValueOrDefault(normalizedField) == parsedValue.Value
             && HasTechnicalMachineRepair(workflow);
+        var fieldLabel = ZaItemEffectRules.ResolveFieldLabel(item.ItemId, editableField);
         var summary = stagesTechnicalMachineRepair
             ? "Apply the detected legacy KM Editor TM output repair."
-            : $"Set {item.Name} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.";
+            : $"Set {item.Name} {fieldLabel.ToLowerInvariant()} to {parsedValue.Value}.";
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.ItemsDomain,
             summary,
@@ -2192,6 +2202,15 @@ internal sealed class ZaItemsEditSessionService
 
         if (TryParseEditableValue(workflow, edit.Field, edit.NewValue, diagnostics) is { } value)
         {
+            if (!ZaItemEffectRules.ValidateFieldValue(
+                    item,
+                    editableField,
+                    value,
+                    diagnostics))
+            {
+                return;
+            }
+
             if (!isVerifiedBaseRestore)
             {
                 _ = CanStageTechnicalMachineShapeEdit(

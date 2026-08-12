@@ -35,7 +35,7 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
     private const string MaterializationReason =
         "A changed vanilla value cannot be written because its source scalar is not safely materialized.";
     private const string StrengthenShapeReason =
-        "This encounter has a non-vanilla StrengthenValue block that cannot be removed by scalar restoration.";
+        "This encounter's StrengthenValue storage shape differs from vanilla and cannot be restored safely.";
     private const string ValueReason =
         "The verified vanilla values are not valid for the currently loaded game data.";
 
@@ -133,7 +133,7 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             return false;
         }
 
-        if (currentRow.StrengthenValue is not null && baseRow.StrengthenValue is null)
+        if ((currentRow.StrengthenValue is null) != (baseRow.StrengthenValue is null))
         {
             blockedReason = StrengthenShapeReason;
             return false;

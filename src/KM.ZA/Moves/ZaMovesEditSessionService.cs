@@ -213,6 +213,38 @@ internal sealed class ZaMovesEditSessionService
         var updatedSession = currentSession with { PendingEdits = retainedEdits };
         var stagedTableCount = 0;
 
+        if (targetMove.WazaFlinchDiffersFromVanilla)
+        {
+            if (targetMove.VanillaFlinch is not { } vanillaFlinch)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Verified vanilla conventional flinch data is unavailable for the selected move.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: ZaMovesWorkflowService.FlinchField,
+                    expected: "One exact verified vanilla Waza row"));
+                return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(
+                updatedSession,
+                new PendingEdit(
+                    ZaEditSessionSupport.MovesDomain,
+                    $"Restore {targetMove.Name} conventional flinch chance to verified vanilla.",
+                    [
+                        new ProjectFileReference(
+                            targetMove.Provenance.SourceLayer,
+                            targetMove.Provenance.SourceFile),
+                        new ProjectFileReference(
+                            ProjectFileLayer.Base,
+                            ZaDataPaths.MoveDataArray),
+                    ],
+                    recordId,
+                    ZaMovesWorkflowService.FlinchField,
+                    vanillaFlinch.ToString(CultureInfo.InvariantCulture)));
+            stagedTableCount++;
+        }
+
         if (targetMove.RuntimeBattleDiffersFromVanilla)
         {
             if (targetMove.RuntimeBattleVanillaFingerprint is not { } fingerprint)
@@ -300,7 +332,7 @@ internal sealed class ZaMovesEditSessionService
         }
 
         var message = stagedTableCount > 0
-            ? $"Staged complete verified vanilla runtime rows from {stagedTableCount.ToString(CultureInfo.InvariantCulture)} table{(stagedTableCount == 1 ? string.Empty : "s")} for the selected move."
+            ? $"Staged verified vanilla move data from {stagedTableCount.ToString(CultureInfo.InvariantCulture)} source table{(stagedTableCount == 1 ? string.Empty : "s")} for the selected move."
             : removedEditCount > 0
                 ? "The selected move already matches verified vanilla values. Its pending edits were cleared."
                 : "The selected move already matches verified vanilla values.";
@@ -380,6 +412,7 @@ internal sealed class ZaMovesEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var workflow = movesWorkflowService.Load(project);
             var writes = new List<PlannedFileWrite>();
+            AddWazaWrite(writes);
             AddRuntimeWrite(ZaDataPaths.BattleMoveParameterArray, ZaRuntimeMoveData.BattlePrefix, "battle parameters", writes);
             AddRuntimeWrite(ZaDataPaths.MoveTimingParameterArray, ZaRuntimeMoveData.TimingPrefix, "timing parameters", writes);
             AddRuntimeWrite(ZaDataPaths.AiAttackParamArray, ZaMovePlayerDamageDataDocument.FieldPrefix, "player-damage", writes);
@@ -398,6 +431,50 @@ internal sealed class ZaMovesEditSessionService
                 $"Change plan preview contains {writes.Count} target files.",
                 ZaEditSessionSupport.MovesDomain));
             return new ChangePlan(session.Id, writes, diagnostics);
+
+            void AddWazaWrite(ICollection<PlannedFileWrite> target)
+            {
+                var edits = session.PendingEdits
+                    .Where(IsWazaEdit)
+                    .ToArray();
+                if (edits.Length == 0)
+                {
+                    return;
+                }
+
+                var source = fileSource.Read(project, ZaDataPaths.MoveDataArray);
+                var baseSource = edits.Any(edit => HasBaseSource(edit, ZaDataPaths.MoveDataArray))
+                    ? fileSource.ReadBase(project, ZaDataPaths.MoveDataArray)
+                    : null;
+                var sourceReferences = new[]
+                    {
+                        new ProjectFileReference(source.SourceLayer, source.RelativePath),
+                    }
+                    .Concat(edits.SelectMany(edit => edit.Sources)
+                        .Where(reference =>
+                            reference.Layer == ProjectFileLayer.Base
+                            && HasMatchingPath(reference.RelativePath, ZaDataPaths.MoveDataArray)))
+                    .Distinct()
+                    .ToArray();
+                var info = ZaWorkflowFileSource.CreatePlannedWrite(
+                    paths,
+                    ZaDataPaths.MoveDataArray,
+                    sourceReferences,
+                    outputMode);
+                target.Add(new PlannedFileWrite(
+                    info.TargetRelativePath,
+                    info.Sources,
+                    info.ReplacesExistingOutput,
+                    $"Apply {edits.Length} pending move conventional flinch edits.",
+                    CreateRuntimePlanFingerprint(
+                        paths,
+                        ZaDataPaths.MoveDataArray,
+                        source,
+                        baseSource,
+                        [],
+                        edits,
+                        outputMode)));
+            }
 
             void AddRuntimeWrite(
                 string path,
@@ -525,6 +602,15 @@ internal sealed class ZaMovesEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var workflow = movesWorkflowService.Load(project);
+            var wazaEdits = session.PendingEdits
+                .Where(IsWazaEdit)
+                .ToArray();
+            var wazaSource = wazaEdits.Length > 0
+                ? fileSource.Read(project, ZaDataPaths.MoveDataArray)
+                : null;
+            var wazaBaseSource = wazaEdits.Any(edit => HasBaseSource(edit, ZaDataPaths.MoveDataArray))
+                ? fileSource.ReadBase(project, ZaDataPaths.MoveDataArray)
+                : null;
             var battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
             var timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
             var battleEdits = session.PendingEdits
@@ -571,7 +657,17 @@ internal sealed class ZaMovesEditSessionService
                     fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray),
                 }
                 : [];
-            if ((battleEdits.Length > 0
+            if ((wazaEdits.Length > 0
+                    && !RuntimeSourceMatchesPlan(
+                        paths,
+                        currentPlan,
+                        ZaDataPaths.MoveDataArray,
+                        wazaSource!,
+                        wazaBaseSource,
+                        [],
+                        wazaEdits,
+                        outputMode))
+                || (battleEdits.Length > 0
                     && !RuntimeSourceMatchesPlan(
                         paths,
                         currentPlan,
@@ -606,7 +702,7 @@ internal sealed class ZaMovesEditSessionService
                     DiagnosticSeverity.Error,
                     "Move source or destination changed after review. Review the change plan again before applying.",
                     ZaEditSessionSupport.MovesDomain,
-                    expected: "The exact reviewed runtime move source and output target"));
+                    expected: "The exact reviewed move source and output target"));
                 return ZaEditSessionSupport.CreateApplyResult(
                     applyId,
                     appliedAt,
@@ -615,6 +711,8 @@ internal sealed class ZaMovesEditSessionService
                     diagnostics);
             }
 
+            var originalWazaRows = wazaSource is null ? null : ReadRows(wazaSource.Bytes);
+            var wazaRows = wazaSource is null ? null : ReadRows(wazaSource.Bytes);
             var battleTable = ZaRuntimeMoveData.ReadBattle(battleSource.Bytes);
             var timingTable = ZaRuntimeMoveData.ReadTiming(timingSource.Bytes);
             var baseBattleTable = battleBaseSource is null
@@ -632,7 +730,11 @@ internal sealed class ZaMovesEditSessionService
             var playerDamageValues = playerDamageDocument?.Values.ToList();
             foreach (var edit in session.PendingEdits.OrderBy(edit => IsRuntimeRestoreEdit(edit) ? 0 : 1))
             {
-                if (IsPlayerDamageVanillaRestoreEdit(edit)
+                if (IsWazaEdit(edit))
+                {
+                    ApplyEdit(wazaRows!, edit, diagnostics);
+                }
+                else if (IsPlayerDamageVanillaRestoreEdit(edit)
                     || ZaMovePlayerDamageDataDocument.TryParseField(edit.Field, out _))
                 {
                     ApplyPlayerDamageEdit(
@@ -673,6 +775,19 @@ internal sealed class ZaMovesEditSessionService
             var expectedPlayerDamageRestores = CreateExpectedPlayerDamageRestoreFingerprints(
                 playerDamageValues,
                 playerDamageEdits);
+            if (wazaEdits.Length > 0)
+            {
+                var wazaBytes = WriteRows(wazaRows!);
+                ValidateWazaOutput(
+                    originalWazaRows!,
+                    wazaBytes,
+                    wazaEdits,
+                    diagnostics);
+                writes.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.MoveDataArray,
+                    wazaBytes));
+            }
+
             if (battleEdits.Length > 0)
             {
                 var battleBytes = battleTable.SerializeToBinary();
@@ -772,6 +887,7 @@ internal sealed class ZaMovesEditSessionService
         }
 
         var editableField = ZaMovesWorkflowService.GetEditableField(workflow, normalizedField)!;
+        var isWazaField = ZaMovesWorkflowService.IsWazaEditableField(normalizedField);
         var isBattleField = normalizedField.StartsWith(
             ZaRuntimeMoveData.BattlePrefix,
             StringComparison.Ordinal);
@@ -785,12 +901,16 @@ internal sealed class ZaMovesEditSessionService
         }
 
         var targetSource = new ProjectFileReference(
-                isBattleField
+                isWazaField
+                    ? move.Provenance.SourceLayer
+                    : isBattleField
                     ? move.RuntimeBattleSourceLayer
                     : isPlayerDamageField
                         ? move.RuntimePlayerDamageSourceLayer
                         : move.RuntimeTimingSourceLayer,
-                isBattleField
+                isWazaField
+                    ? ZaDataPaths.MoveDataArray
+                    : isBattleField
                     ? ZaDataPaths.BattleMoveParameterArray
                     : isPlayerDamageField
                         ? ZaDataPaths.AiAttackParamArray
@@ -984,26 +1104,68 @@ internal sealed class ZaMovesEditSessionService
                         expected: "Restores HP enabled when HP recovery is nonzero"));
                 }
 
-                foreach (var stat in variant.StatChanges)
+                var hasEditedStatChange = variant.StatChanges.Any(stat =>
                 {
                     var statPrefix = $"stat{stat.Slot}";
-                    if (!editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix))
-                        && !editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix + "Stage"))
-                        && !editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix + "Percent")))
+                    return editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix))
+                        || editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix + "Stage"))
+                        || editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix + "Percent"));
+                });
+                if (hasEditedStatChange)
+                {
+                    var encounteredUnused = false;
+                    var occupiedStats = new List<int>();
+                    foreach (var stat in variant.StatChanges.OrderBy(stat => stat.Slot))
                     {
-                        continue;
+                        var validUnused = stat.Stat == 0 && stat.Stage == 0 && stat.Percent == 0;
+                        var validOccupied = stat.Stat != 0 && stat.Stage != 0;
+                        if (!validUnused && !validOccupied)
+                        {
+                            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} has an incomplete stat change in slot {stat.Slot}.",
+                                ZaEditSessionSupport.MovesDomain,
+                                field: ZaRuntimeMoveData.BattleField(variant.Variant, $"stat{stat.Slot}"),
+                                expected: "Unused stat with zero stage/chance, or occupied stat with a nonzero stage"));
+                            continue;
+                        }
+
+                        if (validUnused)
+                        {
+                            encounteredUnused = true;
+                            continue;
+                        }
+
+                        occupiedStats.Add(stat.Stat);
+                        if (encounteredUnused)
+                        {
+                            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} has a stat change after an empty slot.",
+                                ZaEditSessionSupport.MovesDomain,
+                                field: ZaRuntimeMoveData.BattleField(variant.Variant, $"stat{stat.Slot}"),
+                                expected: "Stat changes packed contiguously from slot 1"));
+                        }
                     }
 
-                    var validUnused = stat.Stat == 0 && stat.Stage == 0 && stat.Percent == 0;
-                    var validOccupied = stat.Stat != 0 && stat.Stage != 0;
-                    if (!validUnused && !validOccupied)
+                    if (occupiedStats.Count != occupiedStats.Distinct().Count())
                     {
                         diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                             DiagnosticSeverity.Error,
-                            $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} has an incomplete stat change in slot {stat.Slot}.",
+                            $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} repeats the same stat in more than one slot.",
                             ZaEditSessionSupport.MovesDomain,
-                            field: ZaRuntimeMoveData.BattleField(variant.Variant, $"stat{stat.Slot}"),
-                            expected: "Unused stat with zero stage/chance, or occupied stat with a nonzero stage"));
+                            field: ZaRuntimeMoveData.BattleField(variant.Variant, "stat1"),
+                            expected: "Each changed stat selected at most once"));
+                    }
+
+                    if (occupiedStats.Contains(9) && occupiedStats.Count > 1)
+                    {
+                        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} combines All Stats with another stat change.",
+                            ZaEditSessionSupport.MovesDomain,
+                            field: ZaRuntimeMoveData.BattleField(variant.Variant, "stat1"),
+                            expected: "All Stats used by itself, or individual stats without All Stats"));
                     }
                 }
             }
@@ -1531,6 +1693,11 @@ internal sealed class ZaMovesEditSessionService
 
     private static string? GetEditableValue(ZaMoveRecord move, string field)
     {
+        if (string.Equals(field, ZaMovesWorkflowService.FlinchField, StringComparison.Ordinal))
+        {
+            return move.Flinch.ToString(CultureInfo.InvariantCulture);
+        }
+
         if (ZaMovePlayerDamageDataDocument.TryParseField(field, out var attackId))
         {
             var playerDamage = move.PlayerDamageRows
@@ -1581,8 +1748,12 @@ internal sealed class ZaMovesEditSessionService
         }
 
         var activeSourceLayer = edit.Field.StartsWith(
-            ZaRuntimeMoveData.BattlePrefix,
+            ZaMovesWorkflowService.FlinchField,
             StringComparison.Ordinal)
+                ? move.Provenance.SourceLayer
+                : edit.Field.StartsWith(
+                    ZaRuntimeMoveData.BattlePrefix,
+                    StringComparison.Ordinal)
                 ? move.RuntimeBattleSourceLayer
                 : edit.Field.StartsWith(
                     ZaMovePlayerDamageDataDocument.FieldPrefix,
@@ -1613,7 +1784,9 @@ internal sealed class ZaMovesEditSessionService
 
     private static bool HasVanillaRestoreSourceMarker(PendingEdit edit, string field)
     {
-        var virtualPath = field.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
+        var virtualPath = string.Equals(field, ZaMovesWorkflowService.FlinchField, StringComparison.Ordinal)
+            ? ZaDataPaths.MoveDataArray
+            : field.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
             ? ZaDataPaths.BattleMoveParameterArray
             : field.StartsWith(ZaMovePlayerDamageDataDocument.FieldPrefix, StringComparison.Ordinal)
                 ? ZaDataPaths.AiAttackParamArray
@@ -1635,6 +1808,11 @@ internal sealed class ZaMovesEditSessionService
         string field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (ZaMovesWorkflowService.IsWazaEditableField(field))
+        {
+            return true;
+        }
+
         var isPlayerDamage = ZaMovePlayerDamageDataDocument.TryParseField(field, out var attackId);
         if (isPlayerDamage)
         {
@@ -1758,7 +1936,12 @@ internal sealed class ZaMovesEditSessionService
         {
             Moves = workflow.Moves
                 .Select(move => move.MoveId == moveId
-                    ? OverlayRuntimeMoveField(workflow, move, edit.Field!, value)
+                    ? ZaMovesWorkflowService.IsWazaEditableField(edit.Field)
+                        ? OverlayMoveField(
+                            move,
+                            edit.Field!,
+                            int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture))
+                        : OverlayRuntimeMoveField(workflow, move, edit.Field!, value)
                     : move)
                 .ToArray(),
         };
@@ -2348,6 +2531,10 @@ internal sealed class ZaMovesEditSessionService
                 || IsRuntimeRestoreEditForPath(edit, virtualPath));
     }
 
+    private static bool IsWazaEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+        && ZaMovesWorkflowService.IsWazaEditableField(edit.Field);
+
     private static bool IsRuntimeRestoreEditForPath(PendingEdit edit, string virtualPath)
     {
         return string.Equals(virtualPath, ZaDataPaths.BattleMoveParameterArray, StringComparison.Ordinal)
@@ -2728,6 +2915,78 @@ internal sealed class ZaMovesEditSessionService
             expected: "Supported runtime move field"));
     }
 
+    private static void ValidateWazaOutput(
+        IReadOnlyList<MoveRow> originalRows,
+        byte[] outputBytes,
+        IReadOnlyList<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var outputRows = ReadRows(outputBytes);
+        if (originalRows.Count != outputRows.Count
+            || !originalRows.Select(row => row.MoveId).SequenceEqual(outputRows.Select(row => row.MoveId)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Serialized Waza output changed the move row identity or occurrence shape.",
+                ZaEditSessionSupport.MovesDomain,
+                field: ZaMovesWorkflowService.FlinchField,
+                expected: "The exact original Waza row order and move IDs",
+                code: ZaMovesDiagnosticCodes.WazaPreservationFailed));
+            return;
+        }
+
+        foreach (var edit in edits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+                || !byte.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedFlinch))
+            {
+                continue;
+            }
+
+            var matches = outputRows.Where(row => row.MoveId == moveId).ToArray();
+            if (matches.Length != 1 || matches[0].Flinch != expectedFlinch)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Serialized Waza output did not retain the conventional flinch chance for move {moveId}.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: ZaMovesWorkflowService.FlinchField,
+                    expected: edit.NewValue,
+                    code: ZaMovesDiagnosticCodes.WazaVerificationFailed));
+            }
+        }
+
+        // Canonicalize both sides through the same exact-schema writer after
+        // restoring the edited Flinch byte in the output model. Equality then
+        // proves that every other Waza scalar, struct byte, flag, and row was
+        // preserved semantically by this narrowly scoped edit.
+        foreach (var edit in edits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId))
+            {
+                continue;
+            }
+
+            var originalMatches = originalRows.Where(row => row.MoveId == moveId).ToArray();
+            var outputMatches = outputRows.Where(row => row.MoveId == moveId).ToArray();
+            if (originalMatches.Length == 1 && outputMatches.Length == 1)
+            {
+                outputMatches[0].Flinch = originalMatches[0].Flinch;
+            }
+        }
+
+        if (!WriteRows(originalRows).AsSpan().SequenceEqual(WriteRows(outputRows)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Serialized Waza output changed data outside the selected conventional flinch fields.",
+                ZaEditSessionSupport.MovesDomain,
+                field: ZaMovesWorkflowService.FlinchField,
+                expected: "All non-Flinch Waza data preserved exactly",
+                code: ZaMovesDiagnosticCodes.WazaPreservationFailed));
+        }
+    }
+
     private static void ValidateRuntimeOutput(
         ZaMovesWorkflow workflow,
         byte[]? battleBytes,
@@ -2942,7 +3201,7 @@ internal sealed class ZaMovesEditSessionService
                 row.Recoil = checked((sbyte)value);
                 break;
             case ZaMovesWorkflowService.RawHealingField:
-                row.RawHealing = checked((sbyte)value);
+                row.SelfHeal = checked((sbyte)value);
                 break;
             case ZaMovesWorkflowService.Stat1Field:
                 row.StatChanges.Stat1 = checked((sbyte)value);
@@ -3139,11 +3398,11 @@ internal sealed class ZaMovesEditSessionService
         public byte Flinch { get; set; }
         public ushort EffectSequence { get; set; }
         public sbyte Recoil { get; set; }
-        public sbyte RawHealing { get; set; }
+        public sbyte SelfHeal { get; set; }
+        public byte DamageHeal { get; init; }
         public byte RawTarget { get; set; }
         public StatChangesRow StatChanges { get; } = new();
         public sbyte Affinity { get; init; }
-        public bool Unknown20 { get; init; }
         public bool FlagMakesContact { get; set; }
         public bool FlagCharge { get; set; }
         public bool FlagRecharge { get; set; }
@@ -3180,12 +3439,11 @@ internal sealed class ZaMovesEditSessionService
         public bool FlagSheerForce { get; set; }
         public bool FlagSlicing { get; set; }
         public bool FlagWind { get; set; }
-        public bool Unknown56 { get; init; }
         public bool Unknown57 { get; init; }
         public bool Unknown58 { get; init; }
         public bool Unknown59 { get; init; }
         public bool Unknown60 { get; init; }
-        public bool Unused61 { get; init; }
+        public bool Unknown61 { get; init; }
         public bool Unused62 { get; init; }
         public bool Unused63 { get; init; }
         public bool Unused64 { get; init; }
@@ -3195,6 +3453,7 @@ internal sealed class ZaMovesEditSessionService
         public bool Unused68 { get; init; }
         public bool Unused69 { get; init; }
         public bool Unused70 { get; init; }
+        public bool Unused71 { get; init; }
         public bool FlagCantUseTwice { get; set; }
 
         public static MoveRow From(ZaMoveData row)
@@ -3216,10 +3475,10 @@ internal sealed class ZaMovesEditSessionService
                 Flinch = row.Flinch,
                 EffectSequence = row.EffectSequence,
                 Recoil = row.Recoil,
-                RawHealing = row.RawHealing,
+                SelfHeal = row.SelfHeal,
+                DamageHeal = row.DamageHeal,
                 RawTarget = row.RawTarget,
                 Affinity = row.Affinity,
-                Unknown20 = row.Unknown20,
                 FlagMakesContact = row.FlagMakesContact,
                 FlagCharge = row.FlagCharge,
                 FlagRecharge = row.FlagRecharge,
@@ -3256,12 +3515,11 @@ internal sealed class ZaMovesEditSessionService
                 FlagSheerForce = row.FlagSheerForce,
                 FlagSlicing = row.FlagSlicing,
                 FlagWind = row.FlagWind,
-                Unknown56 = row.Unknown56,
                 Unknown57 = row.Unknown57,
                 Unknown58 = row.Unknown58,
                 Unknown59 = row.Unknown59,
                 Unknown60 = row.Unknown60,
-                Unused61 = row.Unused61,
+                Unknown61 = row.Unknown61,
                 Unused62 = row.Unused62,
                 Unused63 = row.Unused63,
                 Unused64 = row.Unused64,
@@ -3271,6 +3529,7 @@ internal sealed class ZaMovesEditSessionService
                 Unused68 = row.Unused68,
                 Unused69 = row.Unused69,
                 Unused70 = row.Unused70,
+                Unused71 = row.Unused71,
                 FlagCantUseTwice = row.FlagCantUseTwice,
             };
 
@@ -3279,7 +3538,7 @@ internal sealed class ZaMovesEditSessionService
                 result.Inflict.CopyFrom(inflict);
             }
 
-            if (row.StatChanges is { } statChanges)
+            if (row.StatAmps is { } statChanges)
             {
                 result.StatChanges.CopyFrom(statChanges);
             }
@@ -3291,6 +3550,7 @@ internal sealed class ZaMovesEditSessionService
         {
             ZaMoveData.StartZaMoveData(builder);
             ZaMoveData.AddFlagCantUseTwice(builder, FlagCantUseTwice);
+            ZaMoveData.AddUnused71(builder, Unused71);
             ZaMoveData.AddUnused70(builder, Unused70);
             ZaMoveData.AddUnused69(builder, Unused69);
             ZaMoveData.AddUnused68(builder, Unused68);
@@ -3300,12 +3560,11 @@ internal sealed class ZaMovesEditSessionService
             ZaMoveData.AddUnused64(builder, Unused64);
             ZaMoveData.AddUnused63(builder, Unused63);
             ZaMoveData.AddUnused62(builder, Unused62);
-            ZaMoveData.AddUnused61(builder, Unused61);
+            ZaMoveData.AddUnknown61(builder, Unknown61);
             ZaMoveData.AddUnknown60(builder, Unknown60);
             ZaMoveData.AddUnknown59(builder, Unknown59);
             ZaMoveData.AddUnknown58(builder, Unknown58);
             ZaMoveData.AddUnknown57(builder, Unknown57);
-            ZaMoveData.AddUnknown56(builder, Unknown56);
             ZaMoveData.AddFlagWind(builder, FlagWind);
             ZaMoveData.AddFlagSlicing(builder, FlagSlicing);
             ZaMoveData.AddFlagSheerForce(builder, FlagSheerForce);
@@ -3342,11 +3601,11 @@ internal sealed class ZaMovesEditSessionService
             ZaMoveData.AddFlagRecharge(builder, FlagRecharge);
             ZaMoveData.AddFlagCharge(builder, FlagCharge);
             ZaMoveData.AddFlagMakesContact(builder, FlagMakesContact);
-            ZaMoveData.AddUnknown20(builder, Unknown20);
             ZaMoveData.AddAffinity(builder, Affinity);
-            ZaMoveData.AddStatChanges(builder, StatChanges.Write(builder));
+            ZaMoveData.AddStatAmps(builder, StatChanges.Write(builder));
             ZaMoveData.AddRawTarget(builder, RawTarget);
-            ZaMoveData.AddRawHealing(builder, RawHealing);
+            ZaMoveData.AddDamageHeal(builder, DamageHeal);
+            ZaMoveData.AddSelfHeal(builder, SelfHeal);
             ZaMoveData.AddRecoil(builder, Recoil);
             ZaMoveData.AddEffectSequence(builder, EffectSequence);
             ZaMoveData.AddFlinch(builder, Flinch);
