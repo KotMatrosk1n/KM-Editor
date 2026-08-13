@@ -347,6 +347,15 @@ export function resolveFieldHelp(t: FieldHelpTranslator, input: FieldHelpInput):
   });
 }
 
+/**
+ * Returns the concise semantic sentence used directly on editable controls. Rich
+ * question-mark help continues to use resolveFieldHelp so ranges and option counts
+ * remain available without making every field hover verbose.
+ */
+export function resolveFieldHoverHelp(t: FieldHelpTranslator, input: FieldHelpInput): string {
+  return t(resolveSemanticKey(input, normalizeFieldId(input.fieldId)));
+}
+
 function resolveSemanticKey(input: FieldHelpInput, field: string): FieldHelpKey {
   if (input.context?.toLocaleLowerCase().includes('unverified')) {
     return 'fieldHelp.catalog.raw.unverified';

@@ -59,30 +59,7 @@
 }
 
 .context-help-popover {
-  position: fixed;
-  z-index: 10000;
-  top: var(--context-help-top);
-  left: var(--context-help-left);
-  box-sizing: border-box;
-  display: grid;
-  width: min(420px, calc(100vw - 24px));
-  min-width: 0;
-  max-width: calc(100vw - 24px);
-  max-height: calc(100vh - 24px);
-  gap: 8px;
-  padding: 13px 15px 15px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  color: #dbe6fb;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  background: #0b111d;
-  border: 1px solid #55627a;
-  border-radius: 9px;
-  box-shadow: 0 14px 38px rgb(0 0 0 / 58%);
+  isolation: isolate;
 }
 
 .context-help-title {
@@ -110,8 +87,7 @@
 }
 
 @media (forced-colors: active) {
-  .context-help-trigger,
-  .context-help-popover {
+  .context-help-trigger {
     border: 1px solid CanvasText;
   }
 
