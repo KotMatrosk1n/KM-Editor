@@ -16,6 +16,7 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { FieldLabel } from '../../components/FieldLabel';
+import { HoverTooltip } from '../../components/HoverTooltip';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
@@ -833,11 +834,12 @@ function NpcItemGiftItemPicker({
   };
 
   return (
-    <div
-      className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
-      ref={containerRef}
-    >
-      <input
+    <HoverTooltip content={hasMenu ? undefined : formattedValue} describe={false} placement="above">
+      <div
+        className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
+        ref={containerRef}
+      >
+        <input
         aria-activedescendant={
           activeItemId === null ? undefined : `${listboxId}-item-${activeItemId}`
         }
@@ -877,12 +879,11 @@ function NpcItemGiftItemPicker({
             commitTypedOption(true);
           }
         }}
-        role="combobox"
-        title={formattedValue}
-        type="text"
-        value={query}
-      />
-      <button
+          role="combobox"
+          type="text"
+          value={query}
+        />
+        <button
         aria-label={`Show ${ariaLabel} options`}
         className="searchable-option-toggle"
         disabled={disabled}
@@ -897,41 +898,48 @@ function NpcItemGiftItemPicker({
         }}
         tabIndex={-1}
         type="button"
-      >
-        <ChevronDown aria-hidden="true" size={16} />
-      </button>
-      {hasMenu ? (
-        <div className="searchable-option-menu" id={listboxId} role="listbox">
-          {filteredOptions.map((option) => (
-            <button
-              aria-disabled={option.isUnavailable}
-              aria-selected={value === option.itemId}
-              className={`searchable-option-row ${
-                activeItemId === option.itemId ? 'is-active' : ''
-              }`}
-              disabled={option.isUnavailable}
-              id={`${listboxId}-item-${option.itemId}`}
-              key={`${ariaLabel}:${option.itemId}`}
-              onMouseEnter={() => {
-                if (!option.isUnavailable) {
-                  setActiveItemId(option.itemId);
-                }
-              }}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                selectOption(option);
-              }}
-              role="option"
-              tabIndex={-1}
-              type="button"
-            >
-              <span>{option.label}</span>
-              <small>{option.category}</small>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+        >
+          <ChevronDown aria-hidden="true" size={16} />
+        </button>
+        {hasMenu ? (
+          <div className="searchable-option-menu" id={listboxId} role="listbox">
+            {filteredOptions.map((option) => (
+              <HoverTooltip
+                content={option.label}
+                describe={false}
+                key={`${ariaLabel}:${option.itemId}`}
+                placement="above"
+              >
+                <button
+                  aria-disabled={option.isUnavailable}
+                  aria-selected={value === option.itemId}
+                  className={`searchable-option-row ${
+                    activeItemId === option.itemId ? 'is-active' : ''
+                  }`}
+                  disabled={option.isUnavailable}
+                  id={`${listboxId}-item-${option.itemId}`}
+                  onMouseEnter={() => {
+                    if (!option.isUnavailable) {
+                      setActiveItemId(option.itemId);
+                    }
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectOption(option);
+                  }}
+                  role="option"
+                  tabIndex={-1}
+                  type="button"
+                >
+                  <span>{option.label}</span>
+                  <small>{option.category}</small>
+                </button>
+              </HoverTooltip>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </HoverTooltip>
   );
 }
 

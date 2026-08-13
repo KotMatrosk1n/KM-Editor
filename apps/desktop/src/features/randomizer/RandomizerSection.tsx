@@ -33,6 +33,7 @@ import {
 import { ApplyResultSection, DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
 import { FieldLabel } from '../../components/FieldLabel';
+import { HoverTooltip } from '../../components/HoverTooltip';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import { RandomizerConfirmationModal } from './RandomizerConfirmationModal';
@@ -656,16 +657,17 @@ export function RandomizerSection({
               htmlFor="randomizer-base-seed"
               label="Base Seed"
             />
-            <input
-              aria-label="Base Seed"
-              disabled={isConfigurationLocked}
-              id="randomizer-base-seed"
-              maxLength={20}
-              onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
-              placeholder="Optional, 20 characters max"
-              title={t('randomizer.seed.baseHelp')}
-              value={userSeed}
-            />
+            <HoverTooltip content={t('randomizer.seed.baseHelp')}>
+              <input
+                aria-label="Base Seed"
+                disabled={isConfigurationLocked}
+                id="randomizer-base-seed"
+                maxLength={20}
+                onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
+                placeholder="Optional, 20 characters max"
+                value={userSeed}
+              />
+            </HoverTooltip>
           </div>
         </div>
 
@@ -723,14 +725,15 @@ export function RandomizerSection({
               </div>
               <div className="randomizer-option-grid">
                 <div className="randomizer-checkbox">
-                  <input
-                    checked={categoryEnabled}
-                    disabled={isConfigurationLocked}
-                    id={`randomizer-${category.id}-enabled`}
-                    onChange={() => handleToggleOption(category.enabledKey)}
-                    title={category.help}
-                    type="checkbox"
-                  />
+                  <HoverTooltip content={category.help}>
+                    <input
+                      checked={categoryEnabled}
+                      disabled={isConfigurationLocked}
+                      id={`randomizer-${category.id}-enabled`}
+                      onChange={() => handleToggleOption(category.enabledKey)}
+                      type="checkbox"
+                    />
+                  </HoverTooltip>
                   <FieldLabel
                     help={category.help}
                     htmlFor={`randomizer-${category.id}-enabled`}
@@ -743,14 +746,15 @@ export function RandomizerSection({
 
                   return (
                     <div className="randomizer-checkbox" key={field.key}>
-                      <input
-                        checked={isFieldChecked}
-                        disabled={isConfigurationLocked || !categoryEnabled}
-                        id={inputId}
-                        onChange={() => handleToggleOption(field.key)}
-                        title={field.help}
-                        type="checkbox"
-                      />
+                      <HoverTooltip content={field.help}>
+                        <input
+                          checked={isFieldChecked}
+                          disabled={isConfigurationLocked || !categoryEnabled}
+                          id={inputId}
+                          onChange={() => handleToggleOption(field.key)}
+                          type="checkbox"
+                        />
+                      </HoverTooltip>
                       <FieldLabel help={field.help} htmlFor={inputId} label={field.label} />
                     </div>
                   );
@@ -770,14 +774,15 @@ export function RandomizerSection({
             const inputId = `randomizer-encounter-${option.key}`;
             return (
               <div className="randomizer-checkbox" key={option.key}>
-                <input
-                  checked={options[option.key]}
-                  disabled={isConfigurationLocked}
-                  id={inputId}
-                  onChange={() => handleToggleOption(option.key)}
-                  title={option.help}
-                  type="checkbox"
-                />
+                <HoverTooltip content={option.help}>
+                  <input
+                    checked={options[option.key]}
+                    disabled={isConfigurationLocked}
+                    id={inputId}
+                    onChange={() => handleToggleOption(option.key)}
+                    type="checkbox"
+                  />
+                </HoverTooltip>
                 <FieldLabel help={option.help} htmlFor={inputId} label={option.label} />
               </div>
             );
@@ -792,14 +797,15 @@ export function RandomizerSection({
         </div>
         <div className="randomizer-option-grid">
           <div className="randomizer-checkbox">
-            <input
-              checked={options.randomizeTypeChart}
-              disabled={isConfigurationLocked}
-              id="randomizer-type-chart-enabled"
-              onChange={() => handleToggleOption('randomizeTypeChart')}
-              title="Randomize the Sword/Shield type-effectiveness table in exefs/main."
-              type="checkbox"
-            />
+            <HoverTooltip content="Randomize the Sword/Shield type-effectiveness table in exefs/main.">
+              <input
+                checked={options.randomizeTypeChart}
+                disabled={isConfigurationLocked}
+                id="randomizer-type-chart-enabled"
+                onChange={() => handleToggleOption('randomizeTypeChart')}
+                type="checkbox"
+              />
+            </HoverTooltip>
             <FieldLabel
               help="Randomize the Sword/Shield type-effectiveness table in exefs/main."
               htmlFor="randomizer-type-chart-enabled"
@@ -812,14 +818,15 @@ export function RandomizerSection({
 
             return (
               <div className="randomizer-checkbox" key={option.key}>
-                <input
-                  checked={isChecked}
-                  disabled={isConfigurationLocked || !options.randomizeTypeChart}
-                  id={inputId}
-                  onChange={() => handleToggleOption(option.key)}
-                  title={option.help}
-                  type="checkbox"
-                />
+                <HoverTooltip content={option.help}>
+                  <input
+                    checked={isChecked}
+                    disabled={isConfigurationLocked || !options.randomizeTypeChart}
+                    id={inputId}
+                    onChange={() => handleToggleOption(option.key)}
+                    type="checkbox"
+                  />
+                </HoverTooltip>
                 <FieldLabel help={option.help} htmlFor={inputId} label={option.label} />
               </div>
             );
@@ -890,14 +897,15 @@ export function RandomizerSection({
               </span>
             </button>
           </div>
-          <textarea
-            aria-label="Randomizer Seed"
-            id="randomizer-generated-seed"
-            readOnly
-            rows={4}
-            title={t('randomizer.seed.generatedHelp')}
-            value={seedOutput}
-          />
+          <HoverTooltip content={t('randomizer.seed.generatedHelp')}>
+            <textarea
+              aria-label="Randomizer Seed"
+              id="randomizer-generated-seed"
+              readOnly
+              rows={4}
+              value={seedOutput}
+            />
+          </HoverTooltip>
         </div>
         <div className="randomizer-shared-seed-row">
           <div className="path-field">
@@ -906,15 +914,16 @@ export function RandomizerSection({
               htmlFor="randomizer-shared-seed"
               label="Shared Randomization Seed"
             />
-            <textarea
-              aria-label="Shared Randomization Seed"
-              disabled={isConfigurationLocked}
-              id="randomizer-shared-seed"
-              onChange={(event) => setImportSeedText(event.currentTarget.value)}
-              rows={3}
-              title={t('randomizer.seed.sharedHelp')}
-              value={importSeedText}
-            />
+            <HoverTooltip content={t('randomizer.seed.sharedHelp')}>
+              <textarea
+                aria-label="Shared Randomization Seed"
+                disabled={isConfigurationLocked}
+                id="randomizer-shared-seed"
+                onChange={(event) => setImportSeedText(event.currentTarget.value)}
+                rows={3}
+                value={importSeedText}
+              />
+            </HoverTooltip>
           </div>
           <button
             className="purple-button"

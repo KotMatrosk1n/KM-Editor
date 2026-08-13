@@ -15,6 +15,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useLocalization } from '../localization/LocalizationProvider';
 import './ContextHelp.css';
+import './Tooltip.css';
 
 type ContextHelpPosition = {
   left: number;
@@ -236,7 +237,8 @@ export function ContextHelp({ children, className, label }: ContextHelpProps) {
       {isOpen
         ? createPortal(
             <div
-              className="context-help-popover"
+              className="tooltip-surface tooltip-surface-rich context-help-popover"
+              data-positioned="true"
               data-placement={placement}
               id={`${tooltipId}-popover`}
               onPointerEnter={clearCloseTimer}
@@ -245,8 +247,8 @@ export function ContextHelp({ children, className, label }: ContextHelpProps) {
               role="tooltip"
               style={
                 {
-                  '--context-help-left': `${position.left}px`,
-                  '--context-help-top': `${position.top}px`
+                  '--tooltip-left': `${position.left}px`,
+                  '--tooltip-top': `${position.top}px`
                 } as CSSProperties
               }
             >

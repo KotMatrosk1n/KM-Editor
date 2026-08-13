@@ -357,8 +357,10 @@ import {
 } from './components/EditorSessionBar';
 import { FieldLabel } from './components/FieldLabel';
 import { ContextHelp } from './components/ContextHelp';
+import { HoverTooltip } from './components/HoverTooltip';
 import {
   resolveFieldHelp,
+  resolveFieldHoverHelp,
   type FieldHelpDomain,
   type FieldHelpGame
 } from './fieldHelpCatalog';
@@ -16112,10 +16114,6 @@ function SelectedPokemonPanel({
                         });
                       }}
                       options={alphaMove.options}
-                      title={translateLiteral(
-                        alphaMoveDisabledReason ??
-                          'Alpha Pokemon receive this move in their first move slot with its Plus version.'
-                      )}
                       value={alphaMoveDraft}
                     />
                     {alphaMoveDisabledReason ? (
@@ -21463,6 +21461,14 @@ function TrainerDraftField({
         optionCount: options.length
       })
   );
+  const localizedFieldHoverText = effectiveDisabledReason
+    ? translateLiteral(effectiveDisabledReason)
+    : getEditableFieldHoverHelp(field, t, {
+        domain: helpDomain,
+        game: helpGame ?? formOptionContext?.gameFamily,
+        label: localizedFieldLabel,
+        optionCount: options.length
+      });
 
   return (
     <div
@@ -21471,7 +21477,6 @@ function TrainerDraftField({
       } ${!draftState.isValid ? 'editable-field-invalid' : ''} ${
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
-      title={localizedFieldHelpText}
     >
       <FieldLabel
         adornment={labelAdornment}
@@ -21480,17 +21485,18 @@ function TrainerDraftField({
         label={localizedFieldLabel}
       />
       {field.valueKind === 'boolean' ? (
-        <select
-          aria-label={localizedFieldLabel}
-          disabled={effectiveDisabled}
-          id={inputId}
-          onChange={(event) => onChange(event.target.value)}
-          title={localizedFieldHelpText}
-          value={draftValue === '1' ? '1' : '0'}
-        >
-          <option value="1">{translateLiteral('Yes')}</option>
-          <option value="0">{translateLiteral('No')}</option>
-        </select>
+        <HoverTooltip content={localizedFieldHoverText}>
+          <select
+            aria-label={localizedFieldLabel}
+            disabled={effectiveDisabled}
+            id={inputId}
+            onChange={(event) => onChange(event.target.value)}
+            value={draftValue === '1' ? '1' : '0'}
+          >
+            <option value="1">{translateLiteral('Yes')}</option>
+            <option value="0">{translateLiteral('No')}</option>
+          </select>
+        </HoverTooltip>
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaLabel={field.label}
@@ -21499,21 +21505,21 @@ function TrainerDraftField({
           id={inputId}
           onChange={onChange}
           options={options}
-          title={localizedFieldHelpText}
           value={draftValue}
         />
       ) : (
-        <input
-          aria-label={localizedFieldLabel}
-          disabled={effectiveDisabled}
-          id={inputId}
-          max={field.maximumValue ?? undefined}
-          min={field.minimumValue ?? undefined}
-          onChange={(event) => onChange(event.target.value)}
-          title={localizedFieldHelpText}
-          type="number"
-          value={draftValue}
-        />
+        <HoverTooltip content={localizedFieldHoverText}>
+          <input
+            aria-label={localizedFieldLabel}
+            disabled={effectiveDisabled}
+            id={inputId}
+            max={field.maximumValue ?? undefined}
+            min={field.minimumValue ?? undefined}
+            onChange={(event) => onChange(event.target.value)}
+            type="number"
+            value={draftValue}
+          />
+        </HoverTooltip>
       )}
       {effectiveDisabledReason ? (
         <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
@@ -24749,6 +24755,14 @@ function GiftPokemonDraftField({
         label: localizedFieldLabel,
         optionCount: options.length
       });
+  const localizedFieldHoverText = effectiveDisabledReason
+    ? translateLiteral(effectiveDisabledReason)
+    : getEditableFieldHoverHelp(field, t, {
+        domain: helpDomain,
+        game: helpGame ?? formOptionContext?.gameFamily,
+        label: localizedFieldLabel,
+        optionCount: options.length
+      });
   const optionsWithPreservedValue =
     preservedValue === null || preservedValue === undefined
       ? options
@@ -24765,22 +24779,22 @@ function GiftPokemonDraftField({
       } ${!draftState.isValid ? 'editable-field-invalid' : ''} ${
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
-      title={localizedFieldHelpText}
     >
       <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
-        <select
-          aria-describedby={ariaDescribedBy}
-          aria-label={localizedFieldLabel}
-          disabled={effectiveDisabled}
-          id={inputId}
-          onChange={(event) => onChange(event.target.value)}
-          title={localizedFieldHelpText}
-          value={draftValue === '1' ? '1' : '0'}
-        >
-          <option value="1">{translateLiteral('Yes')}</option>
-          <option value="0">{translateLiteral('No')}</option>
-        </select>
+        <HoverTooltip content={localizedFieldHoverText}>
+          <select
+            aria-describedby={ariaDescribedBy}
+            aria-label={localizedFieldLabel}
+            disabled={effectiveDisabled}
+            id={inputId}
+            onChange={(event) => onChange(event.target.value)}
+            value={draftValue === '1' ? '1' : '0'}
+          >
+            <option value="1">{translateLiteral('Yes')}</option>
+            <option value="0">{translateLiteral('No')}</option>
+          </select>
+        </HoverTooltip>
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaDescribedBy={ariaDescribedBy}
@@ -24793,29 +24807,29 @@ function GiftPokemonDraftField({
             draftValue,
             field.label
           )}
-          title={localizedFieldHelpText}
           value={draftValue}
         />
       ) : (
-        <input
-          aria-describedby={ariaDescribedBy}
-          aria-label={localizedFieldLabel}
-          disabled={effectiveDisabled}
-          id={inputId}
-          max={field.maximumValue ?? undefined}
-          min={field.minimumValue ?? undefined}
-          onChange={(event) => onChange(event.target.value)}
-          step={
-            parseMoveTimingField(field.field)?.member === 'cooldown'
-              ? 0.1
-              : field.valueKind === 'number'
-                ? 'any'
-                : 1
-          }
-          title={localizedFieldHelpText}
-          type="number"
-          value={draftValue}
-        />
+        <HoverTooltip content={localizedFieldHoverText}>
+          <input
+            aria-describedby={ariaDescribedBy}
+            aria-label={localizedFieldLabel}
+            disabled={effectiveDisabled}
+            id={inputId}
+            max={field.maximumValue ?? undefined}
+            min={field.minimumValue ?? undefined}
+            onChange={(event) => onChange(event.target.value)}
+            step={
+              parseMoveTimingField(field.field)?.member === 'cooldown'
+                ? 0.1
+                : field.valueKind === 'number'
+                  ? 'any'
+                  : 1
+            }
+            type="number"
+            value={draftValue}
+          />
+        </HoverTooltip>
       )}
       {effectiveDisabledReason ? (
         <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
@@ -29698,32 +29712,35 @@ function SelectedShopPanel({
                           htmlFor={priceInputId}
                           label={translateLiteral(shop.currency)}
                         />
-                        <input
-                          aria-describedby={priceDraftError ? priceDraftErrorId : undefined}
-                          aria-invalid={priceDraftError ? true : undefined}
-                          aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
-                            'price'
-                          )}`}
-                          disabled={isPriceDisabled}
-                          id={priceInputId}
-                          max={maximumShopItemPrice}
-                          min={0}
-                          onChange={(event) =>
-                            updateCurrentShopDraft((currentDraft) =>
-                              setShopItemPriceDraft(
-                                currentDraft,
-                                shopInventoryRows,
-                                item,
-                                event.target.value
-                              )
-                            )
-                          }
-                          title={translateLiteral(
+                        <HoverTooltip
+                          content={translateLiteral(
                             'Changes the item price used wherever this currency is accepted.'
                           )}
-                          type="number"
-                          value={item.priceDraft}
-                        />
+                        >
+                          <input
+                            aria-describedby={priceDraftError ? priceDraftErrorId : undefined}
+                            aria-invalid={priceDraftError ? true : undefined}
+                            aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
+                              'price'
+                            )}`}
+                            disabled={isPriceDisabled}
+                            id={priceInputId}
+                            max={maximumShopItemPrice}
+                            min={0}
+                            onChange={(event) =>
+                              updateCurrentShopDraft((currentDraft) =>
+                                setShopItemPriceDraft(
+                                  currentDraft,
+                                  shopInventoryRows,
+                                  item,
+                                  event.target.value
+                                )
+                              )
+                            }
+                            type="number"
+                            value={item.priceDraft}
+                          />
+                        </HoverTooltip>
                         {priceDraftError ? (
                           <small className="editable-field-error" id={priceDraftErrorId}>
                             {translateLiteral(priceDraftError)}
@@ -29738,17 +29755,20 @@ function SelectedShopPanel({
                           htmlFor={stockInputId}
                           label={translateLiteral('Stock')}
                         />
-                        <input
-                          aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
-                            'stock'
-                          )}`}
-                          disabled
-                          id={stockInputId}
-                          title={translateLiteral(
+                        <HoverTooltip
+                          content={translateLiteral(
                             'Shop inventory data does not expose a limited-stock value here.'
                           )}
-                          value={item.stockLimit ?? translateLiteral('None')}
-                        />
+                        >
+                          <input
+                            aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
+                              'stock'
+                            )}`}
+                            disabled
+                            id={stockInputId}
+                            value={item.stockLimit ?? translateLiteral('None')}
+                          />
+                        </HoverTooltip>
                       </div>
                       <div className="shop-inventory-row-actions">
                         {item.isKnownItem ? (
@@ -30038,7 +30058,7 @@ function ShopRowFieldInput({
   const options = field.options ?? [];
   const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = getEditableFieldHelp(field, t, {
+  const localizedFieldHoverText = getEditableFieldHoverHelp(field, t, {
     domain: 'shops',
     game: helpGame,
     label: localizedFieldLabel
@@ -30046,22 +30066,23 @@ function ShopRowFieldInput({
 
   if (textOptions && textOptions.length > 0) {
     return (
-      <select
-        aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid}
-        aria-label={localizedFieldLabel}
-        disabled={disabled}
-        id={id}
-        onChange={(event) => onChange(event.target.value)}
-        title={localizedFieldHelpText}
-        value={draftValue}
-      >
-        {textOptions.map((option) => (
-          <option key={option.value} value={option.value}>
-            {translateLiteral(option.label)}
-          </option>
-        ))}
-      </select>
+      <HoverTooltip content={localizedFieldHoverText}>
+        <select
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid}
+          aria-label={localizedFieldLabel}
+          disabled={disabled}
+          id={id}
+          onChange={(event) => onChange(event.target.value)}
+          value={draftValue}
+        >
+          {textOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {translateLiteral(option.label)}
+            </option>
+          ))}
+        </select>
+      </HoverTooltip>
     );
   }
 
@@ -30075,26 +30096,26 @@ function ShopRowFieldInput({
         id={id}
         onChange={onChange}
         options={addDraftFallbackOption(options, draftValue, draftValue || translateLiteral('Custom value'))}
-        title={localizedFieldHelpText}
         value={draftValue}
       />
     );
   }
 
   return (
-    <input
-      aria-describedby={ariaDescribedBy}
-      aria-invalid={ariaInvalid}
-      aria-label={localizedFieldLabel}
-      disabled={disabled}
-      id={id}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      onChange={(event) => onChange(event.target.value)}
-      title={localizedFieldHelpText}
-      type={field.valueKind === 'text' ? 'text' : 'number'}
-      value={draftValue}
-    />
+    <HoverTooltip content={localizedFieldHoverText}>
+      <input
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
+        aria-label={localizedFieldLabel}
+        disabled={disabled}
+        id={id}
+        max={field.maximumValue ?? undefined}
+        min={field.minimumValue ?? undefined}
+        onChange={(event) => onChange(event.target.value)}
+        type={field.valueKind === 'text' ? 'text' : 'number'}
+        value={draftValue}
+      />
+    </HoverTooltip>
   );
 }
 
@@ -31784,30 +31805,33 @@ function SelectedEncounterPanel({
                   const hasPendingChanges = areaTab.tableIds.some((tableId) =>
                     pendingTableIds.has(tableId)
                   );
+                  const areaTooltip = areaTab.isAvailable
+                    ? areaTab.title
+                    : `${areaTab.label} encounters are not available for this location.`;
                   return (
-                    <button
-                      aria-label={`${areaTab.label}${hasPendingChanges ? ' (pending changes)' : ''}`}
-                      aria-selected={areaTab.label === table.area}
-                      className={`condition-tab-button ${
-                        areaTab.isAvailable ? '' : 'condition-tab-button-unavailable'
-                      } ${hasPendingChanges ? 'condition-tab-button-pending' : ''}`}
-                      disabled={!areaTab.isAvailable}
+                    <HoverTooltip
+                      content={areaTooltip}
+                      detail="full"
                       key={areaTab.label}
-                      onClick={() => {
-                        if (areaTab.tableId) {
-                          onSelectTable(areaTab.tableId);
-                        }
-                      }}
-                      role="tab"
-                      title={
-                        areaTab.isAvailable
-                          ? areaTab.title
-                          : `${areaTab.label} encounters are not available for this location.`
-                      }
-                      type="button"
                     >
-                      {areaTab.label}
-                    </button>
+                      <button
+                        aria-label={`${areaTab.label}${hasPendingChanges ? ' (pending changes)' : ''}`}
+                        aria-selected={areaTab.label === table.area}
+                        className={`condition-tab-button ${
+                          areaTab.isAvailable ? '' : 'condition-tab-button-unavailable'
+                        } ${hasPendingChanges ? 'condition-tab-button-pending' : ''}`}
+                        disabled={!areaTab.isAvailable}
+                        onClick={() => {
+                          if (areaTab.tableId) {
+                            onSelectTable(areaTab.tableId);
+                          }
+                        }}
+                        role="tab"
+                        type="button"
+                      >
+                        {areaTab.label}
+                      </button>
+                    </HoverTooltip>
                   );
                 })}
               </div>
@@ -31822,30 +31846,33 @@ function SelectedEncounterPanel({
                 {conditionTabs.map((conditionTab) => {
                   const hasPendingChanges =
                     conditionTab.tableId !== null && pendingTableIds.has(conditionTab.tableId);
+                  const conditionTooltip = conditionTab.isAvailable
+                    ? conditionTab.label
+                    : `${conditionTab.label} is not available for this location.`;
                   return (
-                    <button
-                      aria-label={`${conditionTab.label}${hasPendingChanges ? ' (pending changes)' : ''}`}
-                      aria-selected={conditionTab.tableId === table.tableId}
-                      className={`condition-tab-button ${
-                        conditionTab.isAvailable ? '' : 'condition-tab-button-unavailable'
-                      } ${hasPendingChanges ? 'condition-tab-button-pending' : ''}`}
-                      disabled={!conditionTab.isAvailable}
+                    <HoverTooltip
+                      content={conditionTooltip}
+                      detail="full"
                       key={conditionTab.label}
-                      onClick={() => {
-                        if (conditionTab.tableId) {
-                          onSelectTable(conditionTab.tableId);
-                        }
-                      }}
-                      role="tab"
-                      title={
-                        conditionTab.isAvailable
-                          ? conditionTab.label
-                          : `${conditionTab.label} is not available for this location.`
-                      }
-                      type="button"
                     >
-                      {conditionTab.label}
-                    </button>
+                      <button
+                        aria-label={`${conditionTab.label}${hasPendingChanges ? ' (pending changes)' : ''}`}
+                        aria-selected={conditionTab.tableId === table.tableId}
+                        className={`condition-tab-button ${
+                          conditionTab.isAvailable ? '' : 'condition-tab-button-unavailable'
+                        } ${hasPendingChanges ? 'condition-tab-button-pending' : ''}`}
+                        disabled={!conditionTab.isAvailable}
+                        onClick={() => {
+                          if (conditionTab.tableId) {
+                            onSelectTable(conditionTab.tableId);
+                          }
+                        }}
+                        role="tab"
+                        type="button"
+                      >
+                        {conditionTab.label}
+                      </button>
+                    </HoverTooltip>
                   );
                 })}
               </div>
@@ -33363,30 +33390,31 @@ function SvEncounterConditionBrowser({
           <span role="columnheader">Total weight</span>
         </div>
         {conditionRows.map((row) => (
-          <button
-            aria-pressed={row.tableId === table.tableId}
-            className={`sv-encounter-condition-row ${
-              row.tableId === table.tableId ? 'sv-encounter-condition-row-selected' : ''
-            }`}
-            key={row.tableId}
-            onClick={() => {
-              if (row.tableId !== table.tableId) {
-                onSelectTable(row.tableId);
-              }
-            }}
-            role="row"
-            title={row.label}
-            type="button"
-          >
-            <span role="cell">{row.area}</span>
-            <span role="cell">{row.gameVersion}</span>
-            <span role="cell">{row.terrain}</span>
-            <span role="cell">{row.time}</span>
-            <span role="cell">{row.biome}</span>
-            <span role="cell">{row.flag}</span>
-            <span role="cell">{row.slotCount}</span>
-            <span role="cell">{row.totalWeight}</span>
-          </button>
+          <HoverTooltip content={row.label} describe={false} detail="full" key={row.tableId}>
+            <button
+              aria-label={row.label}
+              aria-pressed={row.tableId === table.tableId}
+              className={`sv-encounter-condition-row ${
+                row.tableId === table.tableId ? 'sv-encounter-condition-row-selected' : ''
+              }`}
+              onClick={() => {
+                if (row.tableId !== table.tableId) {
+                  onSelectTable(row.tableId);
+                }
+              }}
+              role="row"
+              type="button"
+            >
+              <span role="cell">{row.area}</span>
+              <span role="cell">{row.gameVersion}</span>
+              <span role="cell">{row.terrain}</span>
+              <span role="cell">{row.time}</span>
+              <span role="cell">{row.biome}</span>
+              <span role="cell">{row.flag}</span>
+              <span role="cell">{row.slotCount}</span>
+              <span role="cell">{row.totalWeight}</span>
+            </button>
+          </HoverTooltip>
         ))}
       </div>
     </section>
@@ -33561,21 +33589,21 @@ function ZaEncounterGroupBrowser({
             aria-label="Dimension wild pools"
           >
             {dimensionWildData.poolTabs.map((poolTab) => (
-              <button
-                aria-selected={poolTab.isSelected}
-                className="condition-tab-button"
-                key={poolTab.key}
-                onClick={() => {
-                  if (poolTab.tableId !== table.tableId) {
-                    selectReferenceForTable(poolTab.tableId);
-                  }
-                }}
-                role="tab"
-                title={poolTab.title}
-                type="button"
-              >
-                {poolTab.label}
-              </button>
+              <HoverTooltip content={poolTab.title} detail="full" key={poolTab.key}>
+                <button
+                  aria-selected={poolTab.isSelected}
+                  className="condition-tab-button"
+                  onClick={() => {
+                    if (poolTab.tableId !== table.tableId) {
+                      selectReferenceForTable(poolTab.tableId);
+                    }
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  {poolTab.label}
+                </button>
+              </HoverTooltip>
             ))}
           </div>
 
@@ -33585,21 +33613,21 @@ function ZaEncounterGroupBrowser({
             aria-label="Dimension wild ranks"
           >
             {dimensionWildData.rankTabs.map((rankTab) => (
-              <button
-                aria-selected={rankTab.isSelected}
-                className="condition-tab-button"
-                key={rankTab.key}
-                onClick={() => {
-                  if (rankTab.tableId !== table.tableId) {
-                    selectReferenceForTable(rankTab.tableId);
-                  }
-                }}
-                role="tab"
-                title={rankTab.title}
-                type="button"
-              >
-                {rankTab.label}
-              </button>
+              <HoverTooltip content={rankTab.title} detail="full" key={rankTab.key}>
+                <button
+                  aria-selected={rankTab.isSelected}
+                  className="condition-tab-button"
+                  onClick={() => {
+                    if (rankTab.tableId !== table.tableId) {
+                      selectReferenceForTable(rankTab.tableId);
+                    }
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  {rankTab.label}
+                </button>
+              </HoverTooltip>
             ))}
           </div>
         </>
@@ -33612,25 +33640,25 @@ function ZaEncounterGroupBrowser({
           aria-label="Spawner groups"
         >
           {spawnerCategoryData.categoryTabs.map((categoryTab) => (
-            <button
-              aria-selected={categoryTab.isSelected}
-              className="condition-tab-button"
-              key={categoryTab.key}
-              onClick={() => {
-                setSelectedSpawnerCategory({
-                  key: categoryTab.key,
-                  zoneKey: selectedZoneKey
-                });
-                if (categoryTab.tableId !== table.tableId) {
-                  selectReferenceForTable(categoryTab.tableId);
-                }
-              }}
-              role="tab"
-              title={categoryTab.title}
-              type="button"
-            >
-              {categoryTab.label}
-            </button>
+            <HoverTooltip content={categoryTab.title} detail="full" key={categoryTab.key}>
+              <button
+                aria-selected={categoryTab.isSelected}
+                className="condition-tab-button"
+                onClick={() => {
+                  setSelectedSpawnerCategory({
+                    key: categoryTab.key,
+                    zoneKey: selectedZoneKey
+                  });
+                  if (categoryTab.tableId !== table.tableId) {
+                    selectReferenceForTable(categoryTab.tableId);
+                  }
+                }}
+                role="tab"
+                type="button"
+              >
+                {categoryTab.label}
+              </button>
+            </HoverTooltip>
           ))}
         </div>
       ) : null}
@@ -33749,40 +33777,45 @@ function ZaEncounterGroupBrowser({
                 : ''
             }`;
             return (
-              <button
-                aria-label={placementSummary}
-                aria-pressed={isSelected}
-                className={`za-encounter-placement-row ${
-                  isSelected ? 'za-encounter-placement-row-selected' : ''
-                } ${placementLayoutClass}`}
+              <HoverTooltip
+                content={placementSummary}
+                describe={false}
+                detail="full"
                 key={`${placement.table.tableId}:${placement.slot.slot}`}
-                onClick={() =>
-                  onSelectReference(placement.table.tableId, placement.slot.slot)
-                }
-                role="row"
-                title={placementSummary}
-                type="button"
               >
-                <span role="cell">{placementLabel}</span>
-                <span role="cell">{placement.slot.slot + 1}</span>
-                <span role="cell">{placement.slot.weight}</span>
-                <span role="cell">{placementConditions}</span>
-                {placementAlphaChanceLabel ? (
-                  <span role="cell">{placementAlphaChanceLabel}</span>
-                ) : null}
-                {selectedCompletionState !== 'notApplicable' ? (
-                  <span
-                    className={
-                      placementCompletionLabel
-                        ? `za-wild-zone-completion-status za-wild-zone-completion-status-${placementCompletionState}`
-                        : undefined
-                    }
-                    role="cell"
-                  >
-                    {placementCompletionLabel}
-                  </span>
-                ) : null}
-              </button>
+                <button
+                  aria-label={placementSummary}
+                  aria-pressed={isSelected}
+                  className={`za-encounter-placement-row ${
+                    isSelected ? 'za-encounter-placement-row-selected' : ''
+                  } ${placementLayoutClass}`}
+                  onClick={() =>
+                    onSelectReference(placement.table.tableId, placement.slot.slot)
+                  }
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{placementLabel}</span>
+                  <span role="cell">{placement.slot.slot + 1}</span>
+                  <span role="cell">{placement.slot.weight}</span>
+                  <span role="cell">{placementConditions}</span>
+                  {placementAlphaChanceLabel ? (
+                    <span role="cell">{placementAlphaChanceLabel}</span>
+                  ) : null}
+                  {selectedCompletionState !== 'notApplicable' ? (
+                    <span
+                      className={
+                        placementCompletionLabel
+                          ? `za-wild-zone-completion-status za-wild-zone-completion-status-${placementCompletionState}`
+                          : undefined
+                      }
+                      role="cell"
+                    >
+                      {placementCompletionLabel}
+                    </span>
+                  ) : null}
+                </button>
+              </HoverTooltip>
             );
           })}
         </div>
@@ -36332,6 +36365,16 @@ function SelectedBehaviorPanel({
                             minimum: field.minimumValue,
                             optionCount: fieldOptions?.length
                           });
+                      const localizedBehaviorFieldHover = field.description
+                        ? translateLiteral(field.description)
+                        : resolveFieldHoverHelp(t, {
+                            domain: 'behavior',
+                            fieldId: field.field,
+                            label: localizedBehaviorFieldLabel,
+                            maximum: field.maximumValue,
+                            minimum: field.minimumValue,
+                            optionCount: fieldOptions?.length
+                          });
 
                       return (
                         <div
@@ -36346,51 +36389,53 @@ function SelectedBehaviorPanel({
                             label={localizedBehaviorFieldLabel}
                           />
                           {fieldOptions && fieldOptions.length > 0 ? (
-                            <select
-                              aria-label={translateLiteral(field.label)}
-                              disabled={isDisabled}
-                              id={`behavior-field-${field.field}`}
-                              onChange={(event) =>
-                                handleBehaviorDraftChange(field, event.target.value)
-                              }
-                              title={translateLiteral(field.description)}
-                              value={draftValue}
-                            >
-                              {addBehaviorDraftFallbackOption(
-                                fieldOptions,
-                                draftValue,
-                                currentValue
-                              ).map((option) => (
-                                <option
-                                  data-localization-ignore={
-                                    field.field === 'behavior' || field.field === 'form'
-                                      ? undefined
-                                      : 'true'
-                                  }
-                                  key={`${field.field}-${option.value}`}
-                                  value={option.value}
-                                >
-                                  {field.field === 'behavior' || field.field === 'form'
-                                    ? translateLiteral(option.label)
-                                    : option.label}
-                                </option>
-                              ))}
-                            </select>
+                            <HoverTooltip content={localizedBehaviorFieldHover}>
+                              <select
+                                aria-label={translateLiteral(field.label)}
+                                disabled={isDisabled}
+                                id={`behavior-field-${field.field}`}
+                                onChange={(event) =>
+                                  handleBehaviorDraftChange(field, event.target.value)
+                                }
+                                value={draftValue}
+                              >
+                                {addBehaviorDraftFallbackOption(
+                                  fieldOptions,
+                                  draftValue,
+                                  currentValue
+                                ).map((option) => (
+                                  <option
+                                    data-localization-ignore={
+                                      field.field === 'behavior' || field.field === 'form'
+                                        ? undefined
+                                        : 'true'
+                                    }
+                                    key={`${field.field}-${option.value}`}
+                                    value={option.value}
+                                  >
+                                    {field.field === 'behavior' || field.field === 'form'
+                                      ? translateLiteral(option.label)
+                                      : option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </HoverTooltip>
                           ) : (
-                            <input
-                              aria-label={translateLiteral(field.label)}
-                              disabled={isDisabled}
-                              id={`behavior-field-${field.field}`}
-                              max={field.valueKind === 'string' ? undefined : field.maximumValue}
-                              min={field.valueKind === 'string' ? undefined : field.minimumValue}
-                              onChange={(event) =>
-                                handleBehaviorDraftChange(field, event.target.value)
-                              }
-                              step={field.valueKind === 'integer' ? 1 : 'any'}
-                              title={translateLiteral(field.description)}
-                              type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
-                              value={draftValue}
-                            />
+                            <HoverTooltip content={localizedBehaviorFieldHover}>
+                              <input
+                                aria-label={translateLiteral(field.label)}
+                                disabled={isDisabled}
+                                id={`behavior-field-${field.field}`}
+                                max={field.valueKind === 'string' ? undefined : field.maximumValue}
+                                min={field.valueKind === 'string' ? undefined : field.minimumValue}
+                                onChange={(event) =>
+                                  handleBehaviorDraftChange(field, event.target.value)
+                                }
+                                step={field.valueKind === 'integer' ? 1 : 'any'}
+                                type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
+                                value={draftValue}
+                              />
+                            </HoverTooltip>
                           )}
                           {statusText ? (
                             <small
@@ -37181,6 +37226,18 @@ function SelectedPlacementPanel({
                             game: editorFamily,
                             label: localizedPlacementFieldLabel
                           });
+                      const localizedFieldHoverText = isFieldReadOnly
+                        ? translateLiteral(
+                            field.description ||
+                              'This Placement field is visible but not editable yet.'
+                          )
+                        : field.description
+                          ? translateLiteral(field.description)
+                          : getEditableFieldHoverHelp(field, t, {
+                              domain: 'placement',
+                              game: editorFamily,
+                              label: localizedPlacementFieldLabel
+                            });
 
                       return (
                         <div
@@ -37190,14 +37247,6 @@ function SelectedPlacementPanel({
                             isFieldReadOnly ? 'editable-field-disabled placement-read-only-field' : ''
                           }`}
                           key={field.field}
-                          title={
-                            isFieldReadOnly
-                              ? translateLiteral(
-                                  field.description ||
-                                    'This Placement field is visible but not editable yet.'
-                                )
-                              : localizedFieldHelpText
-                          }
                         >
                           <FieldLabel
                             help={localizedFieldHelpText}
@@ -37205,13 +37254,15 @@ function SelectedPlacementPanel({
                             label={localizedPlacementFieldLabel}
                           />
                           {isFieldReadOnly ? (
-                            <input
-                              aria-label={translateLiteral(field.label)}
-                              disabled
-                              id={`placement-field-${field.field}`}
-                              type="text"
-                              value={translateLiteral(field.displayValue || field.value)}
-                            />
+                            <HoverTooltip content={localizedFieldHoverText}>
+                              <input
+                                aria-label={translateLiteral(field.label)}
+                                disabled
+                                id={`placement-field-${field.field}`}
+                                type="text"
+                                value={translateLiteral(field.displayValue || field.value)}
+                              />
+                            </HoverTooltip>
                           ) : fieldOptions.length > 0 ? (
                             <SearchableOptionInput
                               ariaLabel={field.label}
@@ -37230,29 +37281,29 @@ function SelectedPlacementPanel({
                                 draftValue,
                                 `${field.label} ${draftValue}`
                               )}
-                              title={localizedFieldHelpText}
                               value={draftValue}
                             />
                           ) : (
-                            <input
-                              aria-label={translateLiteral(field.label)}
-                              disabled={
-                                !canEditPlacement ||
-                                editSession === null ||
-                                isPlacementUpdating ||
-                                isFieldReadOnly
-                              }
-                              id={`placement-field-${field.field}`}
-                              onChange={(event) =>
-                                handlePlacementDraftChange(field, event.target.value)
-                              }
-                              step={field.valueKind === 'integer' ? 1 : 'any'}
-                              title={localizedFieldHelpText}
-                              max={isTextLikePlacementField ? undefined : field.maximumValue}
-                              min={isTextLikePlacementField ? undefined : field.minimumValue}
-                              type={isTextLikePlacementField ? 'text' : 'number'}
-                              value={draftValue}
-                            />
+                            <HoverTooltip content={localizedFieldHoverText}>
+                              <input
+                                aria-label={translateLiteral(field.label)}
+                                disabled={
+                                  !canEditPlacement ||
+                                  editSession === null ||
+                                  isPlacementUpdating ||
+                                  isFieldReadOnly
+                                }
+                                id={`placement-field-${field.field}`}
+                                onChange={(event) =>
+                                  handlePlacementDraftChange(field, event.target.value)
+                                }
+                                step={field.valueKind === 'integer' ? 1 : 'any'}
+                                max={isTextLikePlacementField ? undefined : field.maximumValue}
+                                min={isTextLikePlacementField ? undefined : field.minimumValue}
+                                type={isTextLikePlacementField ? 'text' : 'number'}
+                                value={draftValue}
+                              />
+                            </HoverTooltip>
                           )}
                           {statusText ? (
                             <small
@@ -49036,6 +49087,14 @@ function PokemonPersonalFieldInput({
         label: localizedFieldLabel,
         optionCount: options.length
       });
+  const localizedHoverText = disabledReason
+    ? translateLiteral(disabledReason)
+    : getEditableFieldHoverHelp(field, t, {
+        domain: 'pokemon',
+        game: formOptionContext?.gameFamily,
+        label: localizedFieldLabel,
+        optionCount: options.length
+      });
 
   return (
     <div
@@ -49047,17 +49106,18 @@ function PokemonPersonalFieldInput({
     >
       <FieldLabel help={localizedHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
-        <select
-          aria-label={localizedFieldLabel}
-          disabled={disabled}
-          id={inputId}
-          onChange={(event) => onChange(event.target.value)}
-          title={localizedHelpText}
-          value={draftValue === '1' ? '1' : '0'}
-        >
-          <option value="1">{translateLiteral('Yes')}</option>
-          <option value="0">{translateLiteral('No')}</option>
-        </select>
+        <HoverTooltip content={localizedHoverText}>
+          <select
+            aria-label={localizedFieldLabel}
+            disabled={disabled}
+            id={inputId}
+            onChange={(event) => onChange(event.target.value)}
+            value={draftValue === '1' ? '1' : '0'}
+          >
+            <option value="1">{translateLiteral('Yes')}</option>
+            <option value="0">{translateLiteral('No')}</option>
+          </select>
+        </HoverTooltip>
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaLabel={field.label}
@@ -49065,21 +49125,21 @@ function PokemonPersonalFieldInput({
           id={inputId}
           onChange={onChange}
           options={addCurrentPokemonFieldOption(options, draftValue, field.label)}
-          title={localizedHelpText}
           value={draftValue}
         />
       ) : (
-        <input
-          aria-label={localizedFieldLabel}
-          disabled={disabled}
-          id={inputId}
-          max={field.maximumValue ?? undefined}
-          min={field.minimumValue ?? undefined}
-          onChange={(event) => onChange(event.target.value)}
-          title={localizedHelpText}
-          type="number"
-          value={draftValue}
-        />
+        <HoverTooltip content={localizedHoverText}>
+          <input
+            aria-label={localizedFieldLabel}
+            disabled={disabled}
+            id={inputId}
+            max={field.maximumValue ?? undefined}
+            min={field.minimumValue ?? undefined}
+            onChange={(event) => onChange(event.target.value)}
+            type="number"
+            value={draftValue}
+          />
+        </HoverTooltip>
       )}
       {disabledReason ? (
         <small className="editable-field-status">{translateLiteral(disabledReason)}</small>
@@ -49329,7 +49389,6 @@ function SearchableOptionInput({
   onChange,
   onFocus,
   options,
-  title,
   value
 }: {
   ariaLabel: string;
@@ -49341,7 +49400,6 @@ function SearchableOptionInput({
   onChange: (value: string) => void;
   onFocus?: () => void;
   options: EditableFieldOption[];
-  title?: string;
   value: string;
 }) {
   const { translateLiteral } = useLocalization();
@@ -49350,7 +49408,6 @@ function SearchableOptionInput({
   const localizedAriaLabel = translateLiteral(ariaLabel);
   const localizedEmptyOptionLabel =
     emptyOptionLabel !== undefined ? translateLiteral(emptyOptionLabel) : undefined;
-  const localizedTitle = title !== undefined ? translateLiteral(title) : undefined;
   const localizedOptions = useMemo(
     () => options.map((option) => ({ ...option, label: translateLiteral(option.label) })),
     [options, translateLiteral]
@@ -49361,14 +49418,7 @@ function SearchableOptionInput({
   );
   const [query, setQuery] = useState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
-  const inputTitle = useMemo(() => {
-    const titleParts = hasUserQuery ? [] : [formattedValue];
-    if (localizedTitle) {
-      titleParts.push(localizedTitle);
-    }
-
-    return titleParts.filter((part) => part.length > 0).join('\n\n') || undefined;
-  }, [formattedValue, hasUserQuery, localizedTitle]);
+  const inputTooltipText = hasUserQuery ? undefined : formattedValue || undefined;
   const optionQuery = hasUserQuery ? query : '';
   const trimmedOptionQuery = optionQuery.trim().toLocaleLowerCase();
   const hasEmptyOption = localizedEmptyOptionLabel !== undefined;
@@ -49454,106 +49504,116 @@ function SearchableOptionInput({
   };
 
   return (
-    <div
-      className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
-      ref={containerRef}
+    <HoverTooltip
+      content={hasMenu ? undefined : inputTooltipText}
+      describe={false}
+      placement="above"
     >
-      <input
-        aria-describedby={ariaDescribedBy}
-        aria-expanded={hasMenu}
-        aria-label={localizedAriaLabel}
-        aria-haspopup="listbox"
-        aria-invalid={ariaInvalid}
-        autoComplete="off"
-        disabled={disabled}
-        id={id}
-        inputMode="search"
-        onBlur={commitTypedOption}
-        onChange={(event) => handleInputChange(event.target.value)}
-        onFocus={() => {
-          setQuery(formattedValue);
-          setHasUserQuery(false);
-          setIsOpen(true);
-          onFocus?.();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            setIsOpen(false);
-            return;
-          }
-
-          if (event.key === 'Enter' && filteredOptions.length > 0) {
-            event.preventDefault();
-            const trimmedQuery = query.trim();
-            const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
-            const isDigitLeadingQuery = /^\d/.test(trimmedQuery);
-            const optionToCommit =
-              exactOption ??
-              (filteredOptions.length === 1 || !isDigitLeadingQuery
-                ? filteredOptions[0]
-                : null);
-            if (optionToCommit) {
-              selectOption(optionToCommit);
-            } else {
-              setIsOpen(false);
-            }
-          }
-        }}
-        title={inputTitle}
-        type="text"
-        value={query}
-      />
-      <button
-        aria-label={translateLiteral(`Show ${ariaLabel} options`)}
-        className="searchable-option-toggle"
-        disabled={disabled}
-        onMouseDown={(event) => {
-          event.preventDefault();
-          setQuery(formattedValue);
-          setHasUserQuery(false);
-          setIsOpen((current) => (current && !hasUserQuery ? false : true));
-        }}
-        tabIndex={-1}
-        title={inputTitle}
-        type="button"
+      <div
+        className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
+        ref={containerRef}
       >
-        <ChevronDown aria-hidden="true" size={16} />
-      </button>
-      {hasMenu ? (
-        <div className="searchable-option-menu" role="listbox">
-          {emptyOptionMatches ? (
-            <button
-              className="searchable-option-row"
-              key={`${ariaLabel}:empty`}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                selectEmptyOption();
-              }}
-              role="option"
-              title={localizedEmptyOptionLabel}
-              type="button"
-            >
-              <span>{localizedEmptyOptionLabel}</span>
-            </button>
-          ) : null}
-          {filteredOptions.map((option) => (
-            <button
-              className="searchable-option-row"
-              key={`${ariaLabel}:${option.value}`}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                selectOption(option);
-              }}
-              role="option"
-              title={option.label}
-              type="button"
-            >
-              <span>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+        <input
+          aria-describedby={ariaDescribedBy}
+          aria-expanded={hasMenu}
+          aria-label={localizedAriaLabel}
+          aria-haspopup="listbox"
+          aria-invalid={ariaInvalid}
+          autoComplete="off"
+          disabled={disabled}
+          id={id}
+          inputMode="search"
+          onBlur={commitTypedOption}
+          onChange={(event) => handleInputChange(event.target.value)}
+          onFocus={() => {
+            setQuery(formattedValue);
+            setHasUserQuery(false);
+            setIsOpen(true);
+            onFocus?.();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setIsOpen(false);
+              return;
+            }
+
+            if (event.key === 'Enter' && filteredOptions.length > 0) {
+              event.preventDefault();
+              const trimmedQuery = query.trim();
+              const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
+              const isDigitLeadingQuery = /^\d/.test(trimmedQuery);
+              const optionToCommit =
+                exactOption ??
+                (filteredOptions.length === 1 || !isDigitLeadingQuery
+                  ? filteredOptions[0]
+                  : null);
+              if (optionToCommit) {
+                selectOption(optionToCommit);
+              } else {
+                setIsOpen(false);
+              }
+            }
+          }}
+          type="text"
+          value={query}
+        />
+        <button
+          aria-label={translateLiteral(`Show ${ariaLabel} options`)}
+          className="searchable-option-toggle"
+          disabled={disabled}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            setQuery(formattedValue);
+            setHasUserQuery(false);
+            setIsOpen((current) => (current && !hasUserQuery ? false : true));
+          }}
+          tabIndex={-1}
+          type="button"
+        >
+          <ChevronDown aria-hidden="true" size={16} />
+        </button>
+        {hasMenu ? (
+          <div className="searchable-option-menu" role="listbox">
+            {emptyOptionMatches ? (
+              <HoverTooltip content={localizedEmptyOptionLabel} describe={false} placement="above">
+                <button
+                  className="searchable-option-row"
+                  key={`${ariaLabel}:empty`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectEmptyOption();
+                  }}
+                  role="option"
+                  type="button"
+                >
+                  <span>{localizedEmptyOptionLabel}</span>
+                </button>
+              </HoverTooltip>
+            ) : null}
+            {filteredOptions.map((option) => (
+              <HoverTooltip
+                content={option.label}
+                describe={false}
+                key={`${ariaLabel}:${option.value}`}
+                placement="above"
+              >
+                <button
+                  className="searchable-option-row"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectOption(option);
+                  }}
+                  role="option"
+                  type="button"
+                >
+                  <span>{option.label}</span>
+                </button>
+              </HoverTooltip>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </HoverTooltip>
   );
 }
 
@@ -50189,6 +50249,28 @@ function getEditableFieldHelp(
   }
 ) {
   return resolveFieldHelp(localize, {
+    domain: context?.domain,
+    fieldId: field.field,
+    game: context?.game,
+    label: context?.label ?? field.label,
+    maximum: field.maximumValue,
+    minimum: field.minimumValue,
+    optionCount: context?.optionCount ?? field.options?.length,
+    optionValues: field.options?.map((option) => option.value)
+  });
+}
+
+function getEditableFieldHoverHelp(
+  field: EditableFieldWithOptions,
+  localize: ReturnType<typeof useLocalization>['t'],
+  context?: {
+    domain?: FieldHelpDomain;
+    game?: FieldHelpGame;
+    label?: string;
+    optionCount?: number;
+  }
+) {
+  return resolveFieldHoverHelp(localize, {
     domain: context?.domain,
     fieldId: field.field,
     game: context?.game,
