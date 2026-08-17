@@ -1445,6 +1445,7 @@ const ivFieldNames = [
   'ivSpecialDefense',
   'ivSpeed'
 ] as const;
+const maximumPokemonIvTotal = maximumPokemonIvValue * ivFieldNames.length;
 const statFieldKeysByEditableField = {
   evHp: 'hp',
   evAttack: 'attack',
@@ -20729,11 +20730,12 @@ function SelectedTrainerPanel({
   const contextMenuPokemonHasInvalidDrafts = Boolean(
     contextMenuPokemon &&
       contextMenuPokemonValues &&
-      getTrainerDraftSummary(
+      hasInvalidTrainerPokemonDrafts(
+        editorFamily,
         contextualPokemonFields,
         contextMenuPokemonValues,
         (field) => getEditablePokemonFieldValue(contextMenuPokemon, field)
-      ).invalidFields.length > 0
+      )
   );
   const contextMenuCopyDisabledReason =
     contextMenuCommonDisabledReason ??
@@ -20764,6 +20766,12 @@ function SelectedTrainerPanel({
         trainer: partySlotClipboard.sourceTrainerName
       })
     : null;
+  const partySlotClipboardCopiedLabel = partySlotClipboard
+    ? t('trainers.partyClipboard.copiedFeedback', {
+        slot: partySlotClipboard.sourceSlotLabel,
+        trainer: partySlotClipboard.sourceTrainerName
+      })
+    : null;
   const contextMenuTargetLabel =
     trainer && contextMenuPokemon
       ? t('trainers.partyClipboard.targetSummary', {
@@ -20789,6 +20797,17 @@ function SelectedTrainerPanel({
       ),
     [contextualPokemonFields, pokemonDrafts, selectedPokemon]
   );
+  const pokemonHasInvalidEvTotal = useMemo(
+    () =>
+      editorFamily === 'za' &&
+      selectedPokemon !== null &&
+      hasChangedPokemonEvTotalOverLimit(
+        contextualPokemonFields,
+        pokemonDrafts,
+        (field) => getEditablePokemonFieldValue(selectedPokemon, field)
+      ),
+    [contextualPokemonFields, editorFamily, pokemonDrafts, selectedPokemon]
+  );
   const canSaveTrainerDrafts =
     trainer !== null &&
     editSession !== null &&
@@ -20803,7 +20822,8 @@ function SelectedTrainerPanel({
     canEditTrainers &&
     !isTrainerUpdating &&
     pokemonDraftSummary.changedFields.length > 0 &&
-    pokemonDraftSummary.invalidFields.length === 0;
+    pokemonDraftSummary.invalidFields.length === 0 &&
+    !pokemonHasInvalidEvTotal;
   const trainerMaxIvUpdates = useMemo(
     () => createTrainerMaxIvUpdates(trainer, contextualPokemonFields),
     [contextualPokemonFields, trainer]
@@ -20896,7 +20916,7 @@ function SelectedTrainerPanel({
   };
 
   const stagePokemonDrafts = async () => {
-    if (!trainer || !selectedPokemon) {
+    if (!canSavePokemonDrafts || !trainer || !selectedPokemon) {
       return;
     }
 
@@ -20976,12 +20996,7 @@ function SelectedTrainerPanel({
       sourceTrainerName: trainer.name,
       values: contextMenuPokemonValues
     });
-    setPartySlotClipboardFeedback(
-      t('trainers.partyClipboard.copiedFeedback', {
-        slot: sourceSlotLabel,
-        trainer: trainer.name
-      })
-    );
+    setPartySlotClipboardFeedback(null);
   };
 
   const pastePartySlot = () => {
@@ -21304,8 +21319,14 @@ function SelectedTrainerPanel({
                 className="trainer-party-clipboard-status"
                 role="status"
               >
-                <span>
-                  {partySlotClipboardSourceLabel ??
+                <span
+                  className={
+                    partySlotClipboardCopiedLabel
+                      ? 'trainer-party-clipboard-source is-copied'
+                      : 'trainer-party-clipboard-source'
+                  }
+                >
+                  {partySlotClipboardCopiedLabel ??
                     t('trainers.partyClipboard.discoveryHint')}
                 </span>
                 {partySlotClipboardFeedback ? (
@@ -21453,12 +21474,22 @@ function SelectedTrainerPanel({
                         <span className="editable-field-group-legend-content">
                           <span>{group.group}</span>
                           {editorFamily === 'za' && group.group === 'Stats - EVs' ? (
-                            <PokemonEvTotal
+                            <PokemonStatTotal
                               drafts={pokemonDrafts}
                               fields={group.fields}
                               getValue={(fieldName) =>
                                 getEditablePokemonFieldValue(selectedPokemon, fieldName)
                               }
+                              kind="ev"
+                            />
+                          ) : editorFamily === 'za' && group.group === 'Stats - IVs' ? (
+                            <PokemonStatTotal
+                              drafts={pokemonDrafts}
+                              fields={group.fields}
+                              getValue={(fieldName) =>
+                                getEditablePokemonFieldValue(selectedPokemon, fieldName)
+                              }
+                              kind="iv"
                             />
                           ) : null}
                         </span>
@@ -21662,65 +21693,126 @@ type TrainerDraftChange = {
   value: string;
 };
 
-function PokemonEvTotal({
-  drafts,
-  fields,
-  getValue
-}: {
-  drafts: Record<string, string>;
-  fields: NumericEditableField[];
-  getValue: (fieldName: string) => number | null;
-}) {
-  const { t } = useLocalization();
-  const evFields = evFieldNames
+type PokemonStatTotalState = {
+  hasChangedValue: boolean;
+  isAvailable: boolean;
+  isOverLimit: boolean;
+  total: number;
+};
+
+function getPokemonStatTotalState(
+  drafts: Record<string, string>,
+  fields: NumericEditableField[],
+  getValue: (fieldName: string) => number | null,
+  kind: 'ev' | 'iv'
+): PokemonStatTotalState | null {
+  const fieldNames = kind === 'ev' ? evFieldNames : ivFieldNames;
+  const maximumTotal = kind === 'ev' ? maximumPokemonEvTotal : maximumPokemonIvTotal;
+  const statFields = fieldNames
     .map((fieldName) => fields.find((field) => field.field === fieldName) ?? null)
     .filter((field): field is NumericEditableField => field !== null);
-  if (evFields.length !== evFieldNames.length) {
+  if (statFields.length !== fieldNames.length) {
     return null;
   }
 
+  let hasChangedValue = false;
   let total = 0;
-  let isAvailable = true;
-  for (const field of evFields) {
+  for (const field of statFields) {
     const currentValue = getValue(field.field);
     const draftValue = Object.prototype.hasOwnProperty.call(drafts, field.field)
       ? drafts[field.field]
       : currentValue?.toString() ?? '';
     const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
-    const parsedValue = draftState.normalizedValue === null
-      ? null
-      : parseEditableIntegerDraft(draftState.normalizedValue, field.options);
-    if (!draftState.isValid || parsedValue === null) {
-      isAvailable = false;
-      break;
+    const parsedValue =
+      draftState.normalizedValue === null
+        ? null
+        : parseEditableIntegerDraft(draftState.normalizedValue, field.options);
+    if (
+      !draftState.isValid ||
+      parsedValue === null ||
+      (kind === 'iv' && parsedValue === -1)
+    ) {
+      return {
+        hasChangedValue: hasChangedValue || draftState.isChanged,
+        isAvailable: false,
+        isOverLimit: false,
+        total: 0
+      };
     }
 
+    hasChangedValue ||= draftState.isChanged;
     total += parsedValue;
   }
 
-  const isOverLimit = isAvailable && total > maximumPokemonEvTotal;
+  return {
+    hasChangedValue,
+    isAvailable: true,
+    isOverLimit: total > maximumTotal,
+    total
+  };
+}
+
+function hasChangedPokemonEvTotalOverLimit(
+  fields: NumericEditableField[],
+  drafts: Record<string, string>,
+  getValue: (fieldName: string) => number | null
+) {
+  const state = getPokemonStatTotalState(drafts, fields, getValue, 'ev');
+  return state?.hasChangedValue === true && state.isOverLimit;
+}
+
+function hasInvalidTrainerPokemonDrafts(
+  editorFamily: EditorUiFamily,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>,
+  getValue: (fieldName: string) => number | null
+) {
+  const summary = getTrainerDraftSummary(fields, drafts, getValue);
+  return (
+    summary.invalidFields.length > 0 ||
+    (editorFamily === 'za' && hasChangedPokemonEvTotalOverLimit(fields, drafts, getValue))
+  );
+}
+
+function PokemonStatTotal({
+  drafts,
+  fields,
+  getValue,
+  kind
+}: {
+  drafts: Record<string, string>;
+  fields: NumericEditableField[];
+  getValue: (fieldName: string) => number | null;
+  kind: 'ev' | 'iv';
+}) {
+  const { t } = useLocalization();
+  const state = getPokemonStatTotalState(drafts, fields, getValue, kind);
+  if (state === null) {
+    return null;
+  }
+
+  const maximumTotal = kind === 'ev' ? maximumPokemonEvTotal : maximumPokemonIvTotal;
+  const value = state.isAvailable
+    ? kind === 'ev'
+      ? t('pokemon.evTotal.value', { maximum: maximumTotal, total: state.total })
+      : t('pokemon.ivTotal.value', { maximum: maximumTotal, total: state.total })
+    : kind === 'ev'
+      ? t('pokemon.evTotal.unavailable')
+      : t('pokemon.ivTotal.unavailable');
+  const overLimit = state.isOverLimit
+    ? kind === 'ev'
+      ? t('pokemon.evTotal.overLimit', { amount: state.total - maximumTotal })
+      : t('pokemon.ivTotal.overLimit', { amount: state.total - maximumTotal })
+    : null;
   return (
     <span
       aria-atomic="true"
       aria-live="polite"
-      className={`pokemon-ev-total ${isOverLimit ? 'is-over-limit' : ''}`}
+      className={`pokemon-stat-total ${state.isOverLimit ? 'is-over-limit' : ''}`}
       role="status"
     >
-      <span>
-        {isAvailable
-          ? t('pokemon.evTotal.value', {
-              maximum: maximumPokemonEvTotal,
-              total
-            })
-          : t('pokemon.evTotal.unavailable')}
-      </span>
-      {isOverLimit ? (
-        <span className="pokemon-ev-total-over-limit">
-          {t('pokemon.evTotal.overLimit', {
-            amount: total - maximumPokemonEvTotal
-          })}
-        </span>
-      ) : null}
+      <span>{value}</span>
+      {overLimit ? <span className="pokemon-stat-total-over-limit">{overLimit}</span> : null}
     </span>
   );
 }
