@@ -43,6 +43,9 @@ internal sealed class ZaTrainersWorkflowService
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string IvSpeedField = "ivSpeed";
     public const string ShinyField = "shiny";
+    internal const int MaximumPokemonEvValue = 252;
+    internal const int MaximumPokemonEvTotal = 510;
+    internal const int MaximumPokemonIvValue = 31;
 
     private static readonly IReadOnlyList<ZaTrainerEditableFieldOption> BooleanOptions =
     [
@@ -138,18 +141,18 @@ internal sealed class ZaTrainersWorkflowService
         CreateField(GenderField, "Gender", 0, 2, GenderOptions),
         CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaTrainerAbilitySet.Empty)),
         CreateField(NatureField, "Nature", -1, 25, NatureOptions),
-        CreateField(EvHpField, "HP EV", 0, int.MaxValue),
-        CreateField(EvAttackField, "Attack EV", 0, int.MaxValue),
-        CreateField(EvDefenseField, "Defense EV", 0, int.MaxValue),
-        CreateField(EvSpecialAttackField, "Sp. Atk EV", 0, int.MaxValue),
-        CreateField(EvSpecialDefenseField, "Sp. Def EV", 0, int.MaxValue),
-        CreateField(EvSpeedField, "Speed EV", 0, int.MaxValue),
-        CreateField(IvHpField, "HP IV", -1, int.MaxValue),
-        CreateField(IvAttackField, "Attack IV", -1, int.MaxValue),
-        CreateField(IvDefenseField, "Defense IV", -1, int.MaxValue),
-        CreateField(IvSpecialAttackField, "Sp. Atk IV", -1, int.MaxValue),
-        CreateField(IvSpecialDefenseField, "Sp. Def IV", -1, int.MaxValue),
-        CreateField(IvSpeedField, "Speed IV", -1, int.MaxValue),
+        CreateField(EvHpField, "HP EV", 0, MaximumPokemonEvValue),
+        CreateField(EvAttackField, "Attack EV", 0, MaximumPokemonEvValue),
+        CreateField(EvDefenseField, "Defense EV", 0, MaximumPokemonEvValue),
+        CreateField(EvSpecialAttackField, "Sp. Atk EV", 0, MaximumPokemonEvValue),
+        CreateField(EvSpecialDefenseField, "Sp. Def EV", 0, MaximumPokemonEvValue),
+        CreateField(EvSpeedField, "Speed EV", 0, MaximumPokemonEvValue),
+        CreateField(IvHpField, "HP IV", -1, MaximumPokemonIvValue),
+        CreateField(IvAttackField, "Attack IV", -1, MaximumPokemonIvValue),
+        CreateField(IvDefenseField, "Defense IV", -1, MaximumPokemonIvValue),
+        CreateField(IvSpecialAttackField, "Sp. Atk IV", -1, MaximumPokemonIvValue),
+        CreateField(IvSpecialDefenseField, "Sp. Def IV", -1, MaximumPokemonIvValue),
+        CreateField(IvSpeedField, "Speed IV", -1, MaximumPokemonIvValue),
         CreateField(ShinyField, "Shiny mode", 0, 1, ShinyModeOptions),
     ];
 

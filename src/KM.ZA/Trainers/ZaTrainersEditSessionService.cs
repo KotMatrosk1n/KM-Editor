@@ -84,6 +84,7 @@ internal sealed class ZaTrainersEditSessionService
             diagnostics);
         ValidateFinalSpeciesFormPairs(loadedWorkflow, projectedWorkflow, diagnostics);
         ValidateTrainerMeowsticSexForms(loadedWorkflow, projectedWorkflow, diagnostics);
+        ValidateFinalPokemonStatLimits(projectedWorkflow, updatedSession.PendingEdits, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
@@ -166,6 +167,7 @@ internal sealed class ZaTrainersEditSessionService
             diagnostics);
         ValidateFinalSpeciesFormPairs(loadedWorkflow, projectedWorkflow, diagnostics);
         ValidateTrainerMeowsticSexForms(loadedWorkflow, projectedWorkflow, diagnostics);
+        ValidateFinalPokemonStatLimits(projectedWorkflow, updatedSession.PendingEdits, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
@@ -206,6 +208,7 @@ internal sealed class ZaTrainersEditSessionService
         var projectedWorkflow = OverlayPendingEdits(project, workflow, validEdits, diagnostics);
         ValidateFinalSpeciesFormPairs(workflow, projectedWorkflow, diagnostics);
         ValidateTrainerMeowsticSexForms(workflow, projectedWorkflow, diagnostics);
+        ValidateFinalPokemonStatLimits(projectedWorkflow, validEdits, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -614,6 +617,105 @@ internal sealed class ZaTrainersEditSessionService
             2 => form is 1 or 3,
             _ => true,
         };
+    }
+
+    private static void ValidateFinalPokemonStatLimits(
+        ZaTrainersWorkflow projectedWorkflow,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var editedEvSlots = new HashSet<(int TrainerId, int Slot)>();
+        var editedIvSlots = new HashSet<(int TrainerId, int Slot)>();
+        foreach (var edit in edits)
+        {
+            if ((!IsEvField(edit.Field) && !IsIvField(edit.Field))
+                || !TryParseTeamRecordId(edit.RecordId, out var trainerId, out var slot))
+            {
+                continue;
+            }
+
+            var identity = (TrainerId: trainerId, Slot: slot);
+            if (IsEvField(edit.Field))
+            {
+                editedEvSlots.Add(identity);
+            }
+            else
+            {
+                editedIvSlots.Add(identity);
+            }
+        }
+
+        foreach (var identity in editedEvSlots.Concat(editedIvSlots).Distinct())
+        {
+            var trainer = projectedWorkflow.Trainers.FirstOrDefault(
+                candidate => candidate.TrainerId == identity.TrainerId);
+            var pokemon = trainer?.Team.FirstOrDefault(candidate => candidate.Slot == identity.Slot);
+            if (trainer is null || pokemon is null)
+            {
+                continue;
+            }
+
+            if (editedEvSlots.Contains(identity))
+            {
+                var evValues = new[]
+                {
+                    pokemon.Evs.HP,
+                    pokemon.Evs.Attack,
+                    pokemon.Evs.Defense,
+                    pokemon.Evs.SpecialAttack,
+                    pokemon.Evs.SpecialDefense,
+                    pokemon.Evs.Speed,
+                };
+                if (evValues.Any(value => value < 0 || value > ZaTrainersWorkflowService.MaximumPokemonEvValue))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{trainer.Name} slot {identity.Slot} has an EV outside the supported 0 to "
+                        + $"{ZaTrainersWorkflowService.MaximumPokemonEvValue} range.",
+                        ZaEditSessionSupport.TrainersDomain,
+                        file: trainer.Provenance.TeamSourceFile,
+                        field: "evs",
+                        expected: $"Every EV from 0 to {ZaTrainersWorkflowService.MaximumPokemonEvValue}"));
+                }
+
+                var total = evValues.Aggregate(0L, (sum, value) => sum + value);
+                if (total > ZaTrainersWorkflowService.MaximumPokemonEvTotal)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{trainer.Name} slot {identity.Slot} has {total} total EVs; "
+                        + $"a Pokemon may use at most {ZaTrainersWorkflowService.MaximumPokemonEvTotal}.",
+                        ZaEditSessionSupport.TrainersDomain,
+                        file: trainer.Provenance.TeamSourceFile,
+                        field: "evs",
+                        expected: $"Combined EV total of {ZaTrainersWorkflowService.MaximumPokemonEvTotal} or less"));
+                }
+            }
+
+            if (editedIvSlots.Contains(identity))
+            {
+                var ivValues = new[]
+                {
+                    pokemon.Ivs.HP,
+                    pokemon.Ivs.Attack,
+                    pokemon.Ivs.Defense,
+                    pokemon.Ivs.SpecialAttack,
+                    pokemon.Ivs.SpecialDefense,
+                    pokemon.Ivs.Speed,
+                };
+                if (ivValues.Any(value => value < -1 || value > ZaTrainersWorkflowService.MaximumPokemonIvValue))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{trainer.Name} slot {identity.Slot} has an IV outside the supported -1 or 0 to "
+                        + $"{ZaTrainersWorkflowService.MaximumPokemonIvValue} range.",
+                        ZaEditSessionSupport.TrainersDomain,
+                        file: trainer.Provenance.TeamSourceFile,
+                        field: "ivs",
+                        expected: $"Every IV set to -1 or from 0 to {ZaTrainersWorkflowService.MaximumPokemonIvValue}"));
+                }
+            }
+        }
     }
 
     private ZaTrainersWorkflow OverlayPendingEdits(
@@ -1136,6 +1238,28 @@ internal sealed class ZaTrainersEditSessionService
             ZaTrainersWorkflowService.IvSpecialDefenseField or
             ZaTrainersWorkflowService.IvSpeedField or
             ZaTrainersWorkflowService.ShinyField;
+    }
+
+    private static bool IsEvField(string? field)
+    {
+        return field is
+            ZaTrainersWorkflowService.EvHpField or
+            ZaTrainersWorkflowService.EvAttackField or
+            ZaTrainersWorkflowService.EvDefenseField or
+            ZaTrainersWorkflowService.EvSpecialAttackField or
+            ZaTrainersWorkflowService.EvSpecialDefenseField or
+            ZaTrainersWorkflowService.EvSpeedField;
+    }
+
+    private static bool IsIvField(string? field)
+    {
+        return field is
+            ZaTrainersWorkflowService.IvHpField or
+            ZaTrainersWorkflowService.IvAttackField or
+            ZaTrainersWorkflowService.IvDefenseField or
+            ZaTrainersWorkflowService.IvSpecialAttackField or
+            ZaTrainersWorkflowService.IvSpecialDefenseField or
+            ZaTrainersWorkflowService.IvSpeedField;
     }
 
     private static bool IsSpeciesFormField(string? field)

@@ -3398,7 +3398,7 @@ h2 {
   gap: 7px;
 }
 
-.pokemon-ev-total {
+.pokemon-stat-total {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3415,13 +3415,13 @@ h2 {
   text-transform: none;
 }
 
-.pokemon-ev-total.is-over-limit {
+.pokemon-stat-total.is-over-limit {
   color: var(--color-danger);
   background: rgb(255 107 107 / 12%);
   border-color: rgb(255 107 107 / 65%);
 }
 
-.pokemon-ev-total-over-limit {
+.pokemon-stat-total-over-limit {
   font-weight: 900;
 }
 
@@ -5540,6 +5540,11 @@ h2 {
 .trainer-party-clipboard-status span,
 .trainer-party-clipboard-status small {
   overflow-wrap: anywhere;
+}
+
+.trainer-party-clipboard-source.is-copied {
+  color: var(--color-gold);
+  font-weight: 800;
 }
 
 .trainer-party-clipboard-status small {
