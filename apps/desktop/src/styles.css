@@ -581,6 +581,10 @@ button > span {
   white-space: normal;
 }
 
+.tooltip-icon-visibility-control {
+  white-space: nowrap;
+}
+
 .title-block {
   min-width: 0;
 }
@@ -5489,6 +5493,26 @@ h2 {
   font-size: 14px;
 }
 
+.trainer-party-clipboard-status {
+  display: grid;
+  flex: 1 1 240px;
+  gap: 2px;
+  min-width: 0;
+  color: var(--color-text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.trainer-party-clipboard-status span,
+.trainer-party-clipboard-status small {
+  overflow-wrap: anywhere;
+}
+
+.trainer-party-clipboard-status small {
+  color: var(--color-gold);
+  font-weight: 800;
+}
+
 .trainer-party-header .trainer-max-iv-button {
   margin-left: auto;
 }
@@ -5545,6 +5569,17 @@ h2 {
   color: rgb(244 247 251 / 82%);
 }
 
+.trainer-party-card-copy-source {
+  border-color: var(--color-gold);
+  box-shadow: inset 0 0 0 1px var(--color-gold);
+}
+
+.trainer-party-card-copy-source[aria-pressed="true"] {
+  box-shadow:
+    inset 0 3px 0 var(--color-gold),
+    inset 0 0 0 1px var(--color-gold);
+}
+
 .trainer-party-sprite {
   width: 48px;
   height: 48px;
@@ -5560,6 +5595,105 @@ h2 {
   border-radius: 8px;
   font: inherit;
   font-weight: 700;
+}
+
+.trainer-party-context-menu {
+  position: fixed;
+  z-index: 90;
+  top: var(--trainer-context-menu-top);
+  left: var(--trainer-context-menu-left);
+  display: grid;
+  gap: 4px;
+  width: min(320px, calc(100vw - 20px));
+  padding: 6px;
+  color: var(--color-text);
+  background: #101828;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgb(0 0 0 / 52%);
+  opacity: 0;
+  outline: none;
+}
+
+.trainer-party-context-menu[data-positioned="true"] {
+  opacity: 1;
+}
+
+.trainer-party-context-menu-heading {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px 8px;
+  border-bottom: 1px solid #34435f;
+}
+
+.trainer-party-context-menu-heading strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.trainer-party-context-menu-heading small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.trainer-party-context-menu > button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 9px;
+  color: var(--color-text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trainer-party-context-menu > button:hover,
+.trainer-party-context-menu > button:focus-visible {
+  background: linear-gradient(135deg, #27217a, #4f46e5);
+  outline: none;
+}
+
+.trainer-party-context-menu > button:focus-visible {
+  box-shadow: inset 0 0 0 2px rgb(248 200 79 / 68%);
+}
+
+.trainer-party-context-menu > button[aria-disabled="true"] {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.trainer-party-context-menu > button[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.trainer-party-context-menu > button > svg {
+  margin-top: 1px;
+}
+
+.trainer-party-context-menu > button > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trainer-party-context-menu > button strong {
+  font-size: 13px;
+}
+
+.trainer-party-context-menu > button small {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .shops-toolbar {
@@ -9826,6 +9960,39 @@ button.sv-encounter-condition-row:hover {
   font-size: 11px;
 }
 
+.za-scripted-move-ownership-notice {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px;
+  color: #f0db9d;
+  background: rgb(72 49 10 / 44%);
+  border: 1px solid rgb(214 168 66 / 38%);
+  border-radius: 6px;
+}
+
+.za-scripted-move-ownership-notice > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.za-scripted-move-ownership-notice > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.za-scripted-move-ownership-notice strong {
+  font-size: 12px;
+}
+
+.za-scripted-move-ownership-notice p {
+  margin: 0;
+  color: #d8cba8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .za-scripted-boss-pool-help,
 .za-scripted-boss-replacement-caveat,
 .za-scripted-boss-unmapped {
@@ -10106,6 +10273,10 @@ button.sv-encounter-condition-row:hover {
 
 .za-scripted-boss-action-lock-reason {
   color: #d6c28d;
+}
+
+.za-scripted-boss-affected-scope {
+  color: #d8c58e;
 }
 
 .za-scripted-boss-phase-availability {

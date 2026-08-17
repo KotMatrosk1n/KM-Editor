@@ -1672,8 +1672,19 @@ export const scriptedBossPhaseModelSchema = z.strictObject({
   state: z.enum(['verified', 'unverified', 'verified-none'])
 });
 
+export const scriptedBossAffectedScopeSchema = z.strictObject({
+  battleContexts: z.array(
+    z.enum(['story', 'simulation', 'simulation-dlc', 'rematch', 'rush'])
+  ),
+  includesPrimaryController: z.boolean(),
+  key: z.string().min(1),
+  label: z.string().min(1),
+  speciesIds: z.array(z.number().int().positive())
+});
+
 export const scriptedBossActionSchema = z
   .strictObject({
+    affectedScopes: z.array(scriptedBossAffectedScopeSchema).default([]),
     canEdit: z.boolean(),
     compatibilityReason: z.enum(['no-damage', 'ally-targeting']).nullable(),
     compatibilityState: z.enum([
@@ -1865,7 +1876,11 @@ export const scriptedBossProfileSchema = z
     lineageKey: z.string(),
     name: z.string(),
     phaseModel: scriptedBossPhaseModelSchema,
-    scope: z.enum(['base-rogue-mega', 'verified-scripted-boss']),
+    scope: z.enum([
+      'base-rogue-mega',
+      'verified-scripted-boss',
+      'verified-scripted-follower'
+    ]),
     speciesId: z.number().int().nonnegative()
   })
   .superRefine((profile, context) => {
@@ -3698,6 +3713,20 @@ const encounterPhaseConditionSchema = z.strictObject({
   values: z.array(z.string())
 });
 
+export const scriptedEncounterMoveOwnershipSchema = z.strictObject({
+  affectedScopes: z.array(scriptedBossAffectedScopeSchema),
+  authority: z.enum([
+    'dedicated-follower-action-template',
+    'shared-primary-controller'
+  ]),
+  caveat: z.string().min(1),
+  encounterMoveListAuthoritative: z.literal(false),
+  profileKey: z.string().min(1),
+  profileName: z.string().min(1),
+  selectorActionIds: z.array(z.number().int().positive()).min(1),
+  state: z.literal('scripted-controller')
+});
+
 export const encounterEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
@@ -3761,6 +3790,7 @@ export const encounterTableRecordSchema = z.strictObject({
   playerPartner: encounterPlayerPartnerRecordSchema.nullable().optional(),
   provenance: encounterProvenanceSchema,
   rawSpawnerId: z.string().nullable().optional(),
+  scriptedMoveOwnership: scriptedEncounterMoveOwnershipSchema.nullable().optional(),
   slots: z.array(encounterSlotRecordSchema),
   spawnerCategory: z
     .enum(['spawnGroup', 'spawnPoint', 'specialEncounter', 'alpha', 'other'])
@@ -5978,8 +6008,12 @@ export type MoveRecord = z.infer<typeof moveRecordSchema>;
 export type MoveStatChangeRecord = z.infer<typeof moveStatChangeRecordSchema>;
 export type MovesWorkflow = z.infer<typeof movesWorkflowSchema>;
 export type ScriptedBossAction = z.infer<typeof scriptedBossActionSchema>;
+export type ScriptedBossAffectedScope = z.infer<typeof scriptedBossAffectedScopeSchema>;
 export type ScriptedBossMoveOption = z.infer<typeof scriptedBossMoveOptionSchema>;
 export type ScriptedBossProfile = z.infer<typeof scriptedBossProfileSchema>;
+export type ScriptedEncounterMoveOwnership = z.infer<
+  typeof scriptedEncounterMoveOwnershipSchema
+>;
 export type TextEditableField = z.infer<typeof textEditableFieldSchema>;
 export type TextEntryRecord = z.infer<typeof textEntryRecordSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;

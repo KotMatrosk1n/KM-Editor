@@ -95,6 +95,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -358,6 +359,14 @@ import {
 import { FieldLabel } from './components/FieldLabel';
 import { ContextHelp } from './components/ContextHelp';
 import { HoverTooltip } from './components/HoverTooltip';
+import {
+  TooltipIconVisibilityControl,
+  TooltipIconVisibilityProvider
+} from './components/TooltipIconVisibility';
+import {
+  TrainerPartySlotContextMenu,
+  trainerPartySlotContextMenuId
+} from './components/TrainerPartySlotContextMenu';
 import {
   resolveFieldHelp,
   resolveFieldHoverHelp,
@@ -9890,7 +9899,7 @@ export function App({
           const nextDiagnostics: ApiDiagnostic[] = [];
           let didSucceed = true;
 
-          for (const change of rowFieldChanges) {
+          for (const change of inventoryChanges) {
             const updateResponse = await bridge.updateShopInventoryItem({
               field: change.field,
               paths: createProjectPaths(draftPaths),
@@ -9910,7 +9919,7 @@ export function App({
           }
 
           if (didSucceed) {
-            for (const change of inventoryChanges) {
+            for (const change of rowFieldChanges) {
               const updateResponse = await bridge.updateShopInventoryItem({
                 field: change.field,
                 paths: createProjectPaths(draftPaths),
@@ -11567,6 +11576,7 @@ export function App({
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
     <EditorSessionActionsProvider>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
+    <TooltipIconVisibilityProvider sectionId={activeSection}>
     <main
       className={`app-shell editor-layout-${editorLayout}${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
     >
@@ -11759,6 +11769,7 @@ export function App({
           </div>
 
           <div className="toolbar-actions">
+            {activeSectionIsEditor ? <TooltipIconVisibilityControl /> : null}
             {activeWikiUrl ? (
               <button
                 aria-label={`Go to Wiki for ${activeSectionLabel ?? 'current view'}`}
@@ -13108,6 +13119,7 @@ export function App({
         />
       ) : null}
     </main>
+    </TooltipIconVisibilityProvider>
     </EditorDraftDirtyContext.Provider>
     </EditorSessionActionsProvider>
     </CancelEditSessionContext.Provider>
@@ -19878,6 +19890,23 @@ type TrainerFieldUpdate = {
   value: string;
 };
 
+type TrainerPokemonSlotClipboard = {
+  editorFamily: EditorUiFamily;
+  sourceSlot: number;
+  sourceSlotLabel: string;
+  sourceTrainerId: number;
+  sourceTrainerName: string;
+  values: Record<string, string>;
+};
+
+type TrainerPartySlotContextMenuState = {
+  left: number;
+  slot: number;
+  top: number;
+  trainerId: number;
+  triggerElement: HTMLButtonElement;
+};
+
 type ZaTrainerBulkAction = 'enableCoreAi' | 'enableLastHand';
 
 type TrainersSectionProps = {
@@ -20389,6 +20418,13 @@ function SelectedTrainerPanel({
   const [pokemonDraftsByTrainerSlot, setPokemonDraftsByTrainerSlot] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [partySlotClipboard, setPartySlotClipboard] =
+    useState<TrainerPokemonSlotClipboard | null>(null);
+  const [partySlotContextMenu, setPartySlotContextMenu] =
+    useState<TrainerPartySlotContextMenuState | null>(null);
+  const [partySlotClipboardFeedback, setPartySlotClipboardFeedback] = useState<string | null>(
+    null
+  );
   const cancelActiveEditSession = useCancelActiveEditSession();
   const trainerFields = useMemo(
     () =>
@@ -20655,6 +20691,86 @@ function SelectedTrainerPanel({
       (pokemon) => pokemon.slot < selectedPokemon.slot && pokemon.speciesId === 0
     );
   }, [selectedPokemon, trainer]);
+  const contextMenuPokemon =
+    partySlotContextMenu && trainer?.trainerId === partySlotContextMenu.trainerId
+      ? trainer.team.find((pokemon) => pokemon.slot === partySlotContextMenu.slot) ?? null
+      : null;
+  const contextMenuPokemonDraftKey =
+    trainer && contextMenuPokemon ? `${trainer.trainerId}:${contextMenuPokemon.slot}` : null;
+  const contextMenuPokemonDrafts =
+    contextMenuPokemonDraftKey === null
+      ? undefined
+      : pokemonDraftsByTrainerSlot[contextMenuPokemonDraftKey];
+  const contextMenuPokemonValues =
+    contextMenuPokemon === null
+      ? null
+      : createTrainerPokemonSlotClipboardValues(
+          contextMenuPokemon,
+          pokemonFields,
+          contextMenuPokemonDrafts
+        );
+  const contextMenuTargetBlockedByPreviousSlot = Boolean(
+    trainer &&
+      contextMenuPokemon &&
+      trainer.team.some(
+        (pokemon) => pokemon.slot < contextMenuPokemon.slot && pokemon.speciesId === 0
+      )
+  );
+  const contextMenuCommonDisabledReason =
+    !canEditTrainers || pokemonFields.length === 0
+      ? t('trainers.partyClipboard.unavailableReason')
+      : editSession === null
+        ? t('trainers.partyClipboard.startSessionReason')
+        : isTrainerUpdating
+          ? t('trainers.partyClipboard.busyReason')
+          : contextMenuPokemon === null
+            ? t('trainers.partyClipboard.unavailableReason')
+            : undefined;
+  const contextMenuPokemonHasInvalidDrafts = Boolean(
+    contextMenuPokemon &&
+      contextMenuPokemonValues &&
+      getTrainerDraftSummary(
+        contextualPokemonFields,
+        contextMenuPokemonValues,
+        (field) => getEditablePokemonFieldValue(contextMenuPokemon, field)
+      ).invalidFields.length > 0
+  );
+  const contextMenuCopyDisabledReason =
+    contextMenuCommonDisabledReason ??
+    (contextMenuPokemon &&
+    contextMenuPokemonValues &&
+    isTrainerPokemonSlotEmpty(contextMenuPokemon, contextMenuPokemonValues, pokemonFields)
+      ? t('trainers.partyClipboard.emptySourceReason')
+      : contextMenuPokemonHasInvalidDrafts
+        ? t('trainers.partyClipboard.invalidSourceReason')
+        : undefined);
+  const contextMenuPasteDisabledReason =
+    contextMenuCommonDisabledReason ??
+    (partySlotClipboard === null
+      ? t('trainers.partyClipboard.noSourceReason')
+      : partySlotClipboard.editorFamily !== editorFamily
+        ? t('trainers.partyClipboard.incompatibleReason')
+        : trainer &&
+            contextMenuPokemon &&
+            partySlotClipboard.sourceTrainerId === trainer.trainerId &&
+            partySlotClipboard.sourceSlot === contextMenuPokemon.slot
+          ? t('trainers.partyClipboard.sameSlotReason')
+          : contextMenuTargetBlockedByPreviousSlot
+            ? t('trainers.partyClipboard.blockedTargetReason')
+            : undefined);
+  const partySlotClipboardSourceLabel = partySlotClipboard
+    ? t('trainers.partyClipboard.sourceSummary', {
+        slot: partySlotClipboard.sourceSlotLabel,
+        trainer: partySlotClipboard.sourceTrainerName
+      })
+    : null;
+  const contextMenuTargetLabel =
+    trainer && contextMenuPokemon
+      ? t('trainers.partyClipboard.targetSummary', {
+          slot: formatTrainerSlotNumber(contextMenuPokemon.slot, editorFamily),
+          trainer: trainer.name
+        })
+      : t('trainers.partyClipboard.unavailableTarget');
   const trainerDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -20712,6 +20828,32 @@ function SelectedTrainerPanel({
     countFieldDraftRecords(trainerDraftsByTrainerId) > 0 ||
       countFieldDraftRecords(pokemonDraftsByTrainerSlot) > 0
   );
+
+  const closePartySlotContextMenu = useCallback(() => {
+    setPartySlotContextMenu(null);
+  }, []);
+
+  useEffect(() => {
+    setPartySlotContextMenu(null);
+  }, [trainer?.trainerId]);
+
+  useEffect(() => {
+    if (editSession !== null) {
+      return;
+    }
+
+    setPartySlotClipboard(null);
+    setPartySlotClipboardFeedback(null);
+    setPartySlotContextMenu(null);
+  }, [editSession]);
+
+  useEffect(() => {
+    setPartySlotClipboard((currentClipboard) =>
+      currentClipboard?.editorFamily === editorFamily ? currentClipboard : null
+    );
+    setPartySlotClipboardFeedback(null);
+    setPartySlotContextMenu(null);
+  }, [editorFamily]);
 
   useEffect(() => {
     if (!trainer) {
@@ -20790,6 +20932,94 @@ function SelectedTrainerPanel({
         )
       );
     }
+  };
+
+  const openPartySlotContextMenu = (
+    pokemon: TrainerPokemonRecord,
+    triggerElement: HTMLButtonElement,
+    left: number,
+    top: number
+  ) => {
+    if (!trainer) {
+      return;
+    }
+
+    onSelectSlot(pokemon.slot);
+    setPartySlotContextMenu({
+      left,
+      slot: pokemon.slot,
+      top,
+      trainerId: trainer.trainerId,
+      triggerElement
+    });
+  };
+
+  const copyPartySlot = () => {
+    if (
+      contextMenuCopyDisabledReason !== undefined ||
+      !trainer ||
+      !contextMenuPokemon ||
+      !contextMenuPokemonValues
+    ) {
+      return;
+    }
+
+    const sourceSlotLabel = formatTrainerSlotNumber(
+      contextMenuPokemon.slot,
+      editorFamily
+    ).toString();
+    setPartySlotClipboard({
+      editorFamily,
+      sourceSlot: contextMenuPokemon.slot,
+      sourceSlotLabel,
+      sourceTrainerId: trainer.trainerId,
+      sourceTrainerName: trainer.name,
+      values: contextMenuPokemonValues
+    });
+    setPartySlotClipboardFeedback(
+      t('trainers.partyClipboard.copiedFeedback', {
+        slot: sourceSlotLabel,
+        trainer: trainer.name
+      })
+    );
+  };
+
+  const pastePartySlot = () => {
+    if (
+      contextMenuPasteDisabledReason !== undefined ||
+      !trainer ||
+      !contextMenuPokemon ||
+      !contextMenuPokemonDraftKey ||
+      !partySlotClipboard
+    ) {
+      return;
+    }
+
+    const destinationDefaults = createTrainerPokemonSlotClipboardValues(
+      contextMenuPokemon,
+      pokemonFields
+    );
+    const nextDrafts = Object.fromEntries(
+      pokemonFields.map((field) => [
+        field.field,
+        partySlotClipboard.values[field.field] ?? destinationDefaults[field.field] ?? ''
+      ])
+    );
+    setPokemonDraftsByTrainerSlot((currentDrafts) =>
+      setFieldDraftRecord(
+        currentDrafts,
+        contextMenuPokemonDraftKey,
+        nextDrafts,
+        destinationDefaults
+      )
+    );
+    onSelectSlot(contextMenuPokemon.slot);
+    setPartySlotClipboardFeedback(
+      t('trainers.partyClipboard.pastedFeedback', {
+        slot: formatTrainerSlotNumber(contextMenuPokemon.slot, editorFamily),
+        trainer: trainer.name
+      })
+    );
   };
 
   const cancelTrainerEdit = () =>
@@ -21069,6 +21299,19 @@ function SelectedTrainerPanel({
             </div>
             <div className="trainer-party-header">
               <strong>Party</strong>
+              <div
+                aria-live="polite"
+                className="trainer-party-clipboard-status"
+                role="status"
+              >
+                <span>
+                  {partySlotClipboardSourceLabel ??
+                    t('trainers.partyClipboard.discoveryHint')}
+                </span>
+                {partySlotClipboardFeedback ? (
+                  <small>{partySlotClipboardFeedback}</small>
+                ) : null}
+              </div>
               <button
                 aria-busy={isTrainerUpdating || undefined}
                 className="primary-button compact-button trainer-max-iv-button"
@@ -21112,13 +21355,55 @@ function SelectedTrainerPanel({
                         editorFamily
                       );
                   const slotLabel = `Slot ${formatTrainerSlotNumber(pokemon.slot, editorFamily)}`;
+                  const isCopiedSource = Boolean(
+                    partySlotClipboard?.sourceTrainerId === trainer.trainerId &&
+                      partySlotClipboard.sourceSlot === pokemon.slot
+                  );
+                  const isContextMenuTarget = Boolean(
+                    partySlotContextMenu?.trainerId === trainer.trainerId &&
+                      partySlotContextMenu.slot === pokemon.slot
+                  );
 
                   return (
                     <button
+                      aria-controls={
+                        isContextMenuTarget ? trainerPartySlotContextMenuId : undefined
+                      }
+                      aria-expanded={isContextMenuTarget || undefined}
+                      aria-haspopup="menu"
+                      aria-keyshortcuts="Shift+F10"
                       aria-pressed={selectedSlot === pokemon.slot}
-                      className="trainer-party-card"
+                      className={`trainer-party-card ${
+                        isCopiedSource ? 'trainer-party-card-copy-source' : ''
+                      }`.trim()}
                       key={pokemon.slot}
                       onClick={() => onSelectSlot(pokemon.slot)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        openPartySlotContextMenu(
+                          pokemon,
+                          event.currentTarget,
+                          event.clientX,
+                          event.clientY
+                        );
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== 'ContextMenu' &&
+                          !(event.shiftKey && event.key === 'F10')
+                        ) {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        openPartySlotContextMenu(
+                          pokemon,
+                          event.currentTarget,
+                          bounds.left + Math.min(28, bounds.width / 2),
+                          bounds.top + Math.min(28, bounds.height / 2)
+                        );
+                      }}
                       type="button"
                     >
                       <PokemonSprite
@@ -21333,6 +21618,20 @@ function SelectedTrainerPanel({
       ) : (
         <p className="empty-copy">No trainer selected.</p>
       )}
+      {partySlotContextMenu ? (
+        <TrainerPartySlotContextMenu
+          copyDisabledReason={contextMenuCopyDisabledReason}
+          left={partySlotContextMenu.left}
+          onClose={closePartySlotContextMenu}
+          onCopy={copyPartySlot}
+          onPaste={pastePartySlot}
+          pasteDisabledReason={contextMenuPasteDisabledReason}
+          sourceLabel={partySlotClipboardSourceLabel ?? undefined}
+          targetLabel={contextMenuTargetLabel}
+          top={partySlotContextMenu.top}
+          triggerElement={partySlotContextMenu.triggerElement}
+        />
+      ) : null}
     </aside>
   );
 }
@@ -21908,6 +22207,33 @@ function getEditableTrainerIvFields(fields: TrainerEditableField[]) {
 
 function formatTrainerSlotNumber(slot: number, editorFamily: EditorUiFamily) {
   return editorFamily === 'swsh' ? slot : slot + 1;
+}
+
+function createTrainerPokemonSlotClipboardValues(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts?: Record<string, string>
+) {
+  return Object.fromEntries(
+    fields.map((field) => [
+      field.field,
+      drafts?.[field.field] ??
+        (getEditablePokemonFieldValue(pokemon, field.field) ?? '').toString()
+    ])
+  );
+}
+
+function isTrainerPokemonSlotEmpty(
+  pokemon: TrainerPokemonRecord,
+  values: Record<string, string>,
+  fields: TrainerEditableField[]
+) {
+  const speciesField = fields.find((field) => field.field === speciesIdFieldName);
+  const draftedSpeciesId = parseEditableIntegerDraft(
+    values[speciesIdFieldName] ?? pokemon.speciesId.toString(),
+    speciesField?.options
+  );
+  return (draftedSpeciesId ?? pokemon.speciesId) === 0;
 }
 
 function createTrainerPrizeMoneyOptions(highestLevel: number): EditableFieldOption[] {
@@ -30931,16 +31257,27 @@ function SelectedEncounterPanel({
   const { language, t, translateLiteral } = useLocalization();
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const scriptedMoveOwnership = isZaEncounterTable
+    ? table?.scriptedMoveOwnership ?? null
+    : null;
+  const hasNonAuthoritativeScriptedMoveOwnership =
+    scriptedMoveOwnership?.encounterMoveListAuthoritative === false;
   const isZaScriptedBossTable = Boolean(
-    isZaEncounterTable && table && isZaScriptedBossEncounterTable(table)
+    isZaEncounterTable &&
+      table &&
+      (isZaScriptedBossEncounterTable(table) || hasNonAuthoritativeScriptedMoveOwnership)
   );
   const scriptedBossProfile = isZaScriptedBossTable && encounterSlot
-    ? findScriptedBossProfile(
-        scriptedBosses,
-        encounterSlot.speciesId,
-        encounterSlot.form,
-        table ? getZaBossEncounterLineageKey(table) : null
-      )
+    ? hasNonAuthoritativeScriptedMoveOwnership && scriptedMoveOwnership
+      ? scriptedBosses.find(
+          (profile) => profile.key === scriptedMoveOwnership.profileKey
+        ) ?? null
+      : findScriptedBossProfile(
+          scriptedBosses,
+          encounterSlot.speciesId,
+          encounterSlot.form,
+          table ? getZaBossEncounterLineageKey(table) : null
+        )
     : null;
   const isVerifiedZaScriptedBoss = isZaScriptedBossTable && scriptedBossProfile !== null;
   const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
@@ -32162,6 +32499,7 @@ function SelectedEncounterPanel({
                     <fieldset className="editable-field-group za-scripted-boss-field-group">
                       <legend>{t('za.encounters.bossActions.heading')}</legend>
                       <ScriptedBossEncounterActions
+                        moveOwnership={scriptedMoveOwnership}
                         profile={scriptedBossProfile}
                         profiles={scriptedBosses}
                         renderActionControl={(action: ScriptedBossAction) => {
@@ -47432,14 +47770,18 @@ function filterEncounterTables(
           ]
         : []),
       ...table.slots.flatMap((slot) => {
-        const profile = isZaScriptedBossEncounterTable(table)
-          ? findScriptedBossProfile(
-              scriptedBosses,
-              slot.speciesId,
-              slot.form,
-              getZaBossEncounterLineageKey(table)
-            )
-          : null;
+        const profile = table.scriptedMoveOwnership
+          ? scriptedBosses.find(
+              (candidate) => candidate.key === table.scriptedMoveOwnership?.profileKey
+            ) ?? null
+          : isZaScriptedBossEncounterTable(table)
+            ? findScriptedBossProfile(
+                scriptedBosses,
+                slot.speciesId,
+                slot.form,
+                getZaBossEncounterLineageKey(table)
+              )
+            : null;
         const profileSearchValues = profile
           ? [
               profile.key,
@@ -49404,7 +49746,12 @@ function SearchableOptionInput({
 }) {
   const { translateLiteral } = useLocalization();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const generatedId = `searchable-option-${useId().replace(/:/g, '')}`;
+  const inputId = id ?? generatedId;
+  const listboxId = `${inputId}-listbox`;
   const [isOpen, setIsOpen] = useState(false);
+  const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
   const localizedAriaLabel = translateLiteral(ariaLabel);
   const localizedEmptyOptionLabel =
     emptyOptionLabel !== undefined ? translateLiteral(emptyOptionLabel) : undefined;
@@ -49430,7 +49777,27 @@ function SearchableOptionInput({
     () => getSmartOptionMatches(optionQuery, localizedOptions),
     [localizedOptions, optionQuery]
   );
-  const hasMenu = isOpen && !disabled && (emptyOptionMatches || filteredOptions.length > 0);
+  const menuItems = useMemo(
+    () => [
+      ...(emptyOptionMatches
+        ? [
+            {
+              key: 'empty',
+              kind: 'empty' as const,
+              label: localizedEmptyOptionLabel ?? ''
+            }
+          ]
+        : []),
+      ...filteredOptions.map((option) => ({
+        key: `option-${option.value}`,
+        kind: 'option' as const,
+        label: option.label,
+        option
+      }))
+    ],
+    [emptyOptionMatches, filteredOptions, localizedEmptyOptionLabel]
+  );
+  const hasMenu = isOpen && !disabled && menuItems.length > 0;
 
   useEffect(() => {
     if (!isOpen) {
@@ -49442,8 +49809,31 @@ function SearchableOptionInput({
   useEffect(() => {
     if (disabled) {
       setIsOpen(false);
+      setActiveOptionIndex(-1);
     }
   }, [disabled]);
+
+  useEffect(() => {
+    if (!hasMenu) {
+      setActiveOptionIndex(-1);
+      return;
+    }
+
+    setActiveOptionIndex((currentIndex) =>
+      currentIndex >= menuItems.length ? menuItems.length - 1 : currentIndex
+    );
+  }, [hasMenu, menuItems.length]);
+
+  useLayoutEffect(() => {
+    if (!hasMenu || activeOptionIndex < 0) {
+      return;
+    }
+
+    const activeOption = menuRef.current?.querySelector<HTMLElement>(
+      `[data-option-index="${activeOptionIndex}"]`
+    );
+    activeOption?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionIndex, hasMenu]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -49453,6 +49843,7 @@ function SearchableOptionInput({
     const handlePointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
+        setActiveOptionIndex(-1);
       }
     };
 
@@ -49472,6 +49863,19 @@ function SearchableOptionInput({
     setQuery(localizedEmptyOptionLabel ?? '');
     setHasUserQuery(false);
     setIsOpen(false);
+  };
+
+  const selectMenuItem = (index: number) => {
+    const item = menuItems[index];
+    if (!item) {
+      return;
+    }
+
+    if (item.kind === 'empty') {
+      selectEmptyOption();
+    } else {
+      selectOption(item.option);
+    }
   };
 
   const commitTypedOption = () => {
@@ -49498,6 +49902,7 @@ function SearchableOptionInput({
     setQuery(nextValue);
     setHasUserQuery(true);
     setIsOpen(true);
+    setActiveOptionIndex(-1);
     onChange(
       normalizeExactOptionInputValue(nextValue, localizedOptions, localizedEmptyOptionLabel)
     );
@@ -49514,6 +49919,13 @@ function SearchableOptionInput({
         ref={containerRef}
       >
         <input
+          aria-activedescendant={
+            hasMenu && activeOptionIndex >= 0
+              ? `${listboxId}-option-${activeOptionIndex}`
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls={listboxId}
           aria-describedby={ariaDescribedBy}
           aria-expanded={hasMenu}
           aria-label={localizedAriaLabel}
@@ -49521,7 +49933,7 @@ function SearchableOptionInput({
           aria-invalid={ariaInvalid}
           autoComplete="off"
           disabled={disabled}
-          id={id}
+          id={inputId}
           inputMode="search"
           onBlur={commitTypedOption}
           onChange={(event) => handleInputChange(event.target.value)}
@@ -49529,17 +49941,54 @@ function SearchableOptionInput({
             setQuery(formattedValue);
             setHasUserQuery(false);
             setIsOpen(true);
+            setActiveOptionIndex(-1);
             onFocus?.();
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Escape') {
+            if (event.key === 'Escape' && isOpen) {
+              event.preventDefault();
+              event.stopPropagation();
               setIsOpen(false);
+              setActiveOptionIndex(-1);
               return;
             }
 
-            if (event.key === 'Enter' && filteredOptions.length > 0) {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
               event.preventDefault();
+              setIsOpen(true);
+              setActiveOptionIndex((currentIndex) => {
+                if (menuItems.length === 0) {
+                  return -1;
+                }
+
+                if (event.key === 'ArrowDown') {
+                  return currentIndex < 0 ? 0 : (currentIndex + 1) % menuItems.length;
+                }
+
+                return currentIndex < 0
+                  ? menuItems.length - 1
+                  : (currentIndex - 1 + menuItems.length) % menuItems.length;
+              });
+              return;
+            }
+
+            if (event.key === 'Enter' && menuItems.length > 0) {
+              event.preventDefault();
+              if (hasMenu && activeOptionIndex >= 0) {
+                selectMenuItem(activeOptionIndex);
+                return;
+              }
+
               const trimmedQuery = query.trim();
+              if (
+                localizedEmptyOptionLabel !== undefined &&
+                trimmedQuery.toLocaleLowerCase() ===
+                  localizedEmptyOptionLabel.toLocaleLowerCase()
+              ) {
+                selectEmptyOption();
+                return;
+              }
+
               const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
               const isDigitLeadingQuery = /^\d/.test(trimmedQuery);
               const optionToCommit =
@@ -49554,6 +50003,7 @@ function SearchableOptionInput({
               }
             }
           }}
+          role="combobox"
           type="text"
           value={query}
         />
@@ -49565,6 +50015,7 @@ function SearchableOptionInput({
             event.preventDefault();
             setQuery(formattedValue);
             setHasUserQuery(false);
+            setActiveOptionIndex(-1);
             setIsOpen((current) => (current && !hasUserQuery ? false : true));
           }}
           tabIndex={-1}
@@ -49573,43 +50024,41 @@ function SearchableOptionInput({
           <ChevronDown aria-hidden="true" size={16} />
         </button>
         {hasMenu ? (
-          <div className="searchable-option-menu" role="listbox">
-            {emptyOptionMatches ? (
-              <HoverTooltip content={localizedEmptyOptionLabel} describe={false} placement="above">
+          <div
+            aria-label={localizedAriaLabel}
+            className="searchable-option-menu"
+            id={listboxId}
+            ref={menuRef}
+            role="listbox"
+          >
+            {menuItems.map((item, index) => {
+              const isSelected =
+                item.kind === 'empty'
+                  ? value.trim().length === 0
+                  : item.option.value.toString() === value.trim();
+
+              return (
                 <button
-                  className="searchable-option-row"
-                  key={`${ariaLabel}:empty`}
+                  aria-selected={isSelected}
+                  className={`searchable-option-row ${
+                    activeOptionIndex === index ? 'is-active' : ''
+                  }`.trim()}
+                  data-option-index={index}
+                  id={`${listboxId}-option-${index}`}
+                  key={`${ariaLabel}:${item.key}`}
                   onMouseDown={(event) => {
                     event.preventDefault();
-                    selectEmptyOption();
+                    selectMenuItem(index);
                   }}
+                  onPointerMove={() => setActiveOptionIndex(index)}
                   role="option"
+                  tabIndex={-1}
                   type="button"
                 >
-                  <span>{localizedEmptyOptionLabel}</span>
+                  <span>{item.label}</span>
                 </button>
-              </HoverTooltip>
-            ) : null}
-            {filteredOptions.map((option) => (
-              <HoverTooltip
-                content={option.label}
-                describe={false}
-                key={`${ariaLabel}:${option.value}`}
-                placement="above"
-              >
-                <button
-                  className="searchable-option-row"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    selectOption(option);
-                  }}
-                  role="option"
-                  type="button"
-                >
-                  <span>{option.label}</span>
-                </button>
-              </HoverTooltip>
-            ))}
+              );
+            })}
           </div>
         ) : null}
       </div>
@@ -50084,6 +50533,8 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['necrozma-dawn-wings', 'necrozma-dawnwings'],
   ['necrozma-(ultra-necrozma)', 'necrozma-ultra'],
   ['necrozma-ultra-necrozma', 'necrozma-ultra'],
+  ['toxtricity-low-key-form', 'toxtricity-lowkey'],
+  ['toxtricity-low-key', 'toxtricity-lowkey'],
   ['toxtricity-low-key-gmax', 'toxtricity-gmax'],
   ['basculin-blue-striped', 'basculin-bluestriped'],
   ['basculin-white-striped', 'basculin-whitestriped'],

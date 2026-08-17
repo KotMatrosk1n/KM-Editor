@@ -1716,6 +1716,16 @@ internal sealed class ZaEncountersEditSessionService
                 diagnostics);
         }
 
+        if (!allowVerifiedVanillaSharedValue
+            && IsEncounterMoveField(normalizedField)
+            && table.ScriptedMoveOwnership is { EncounterMoveListAuthoritative: false } ownership)
+        {
+            diagnostics.Add(CreateScriptedMoveOwnershipDiagnostic(
+                ownership,
+                normalizedField));
+            return null;
+        }
+
         var editableField = ResolveEditableField(
             workflow,
             normalizedField,
@@ -1947,20 +1957,29 @@ internal sealed class ZaEncountersEditSessionService
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!IsPrimaryBossController(table.RawSpawnerId))
+        var scriptedMoveOwnership = table.ScriptedMoveOwnership;
+        var stagesFromPrimaryController = IsPrimaryBossController(table.RawSpawnerId);
+        var stagesFromVerifiedFollower = scriptedMoveOwnership is not null
+            && scriptedMoveOwnership.SelectorActionIds.Contains(selectorActionId);
+        if (!stagesFromPrimaryController && !stagesFromVerifiedFollower)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
-                "Boss action edits must be staged from the primary scripted boss controller encounter.",
+                "Boss action edits must be staged from their primary controller or an exactly matched scripted follower encounter.",
                 field,
-                "Selected primary btl_spn_boss_* controller"));
+                "Selected primary btl_spn_boss_* controller or verified scriptedMoveOwnership selector"));
             return null;
         }
 
-        var profile = ZaScriptedBossActionCatalog.FindProfile(
-            workflow.ScriptedBosses,
-            table.RawSpawnerId,
-            slot.SpeciesId,
-            slot.Form);
+        var profile = stagesFromPrimaryController
+            ? ZaScriptedBossActionCatalog.FindProfile(
+                workflow.ScriptedBosses,
+                table.RawSpawnerId,
+                slot.SpeciesId,
+                slot.Form)
+            : workflow.ScriptedBosses.FirstOrDefault(candidate => string.Equals(
+                candidate.Key,
+                scriptedMoveOwnership!.ProfileKey,
+                StringComparison.Ordinal));
         var action = profile?.Actions.FirstOrDefault(candidate =>
             candidate.SelectorActionId == selectorActionId);
         if (profile is null || action is null)
@@ -2067,6 +2086,15 @@ internal sealed class ZaEncountersEditSessionService
         };
         var summary = $"Set scripted boss selector action {selectorActionId.ToString(CultureInfo.InvariantCulture)} "
             + $"from {action.Name} to {option.Name}. Affected profiles: {impact}.";
+        var affectedScopeLabels = action.AffectedScopes
+            .Select(scope => scope.Label)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (affectedScopeLabels.Length > 0)
+        {
+            summary += $" Global affected scope: {string.Join(", ", affectedScopeLabels)}.";
+        }
 
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.EncountersDomain,
@@ -2315,6 +2343,19 @@ internal sealed class ZaEncountersEditSessionService
                 ZaEditSessionSupport.EncountersDomain,
                 field: "slot",
                 expected: "Existing Pokemon Legends Z-A encounter data row"));
+            return;
+        }
+
+        if (!isVerifiedVanillaValue
+            && IsEncounterMoveField(edit.Field)
+            && TryResolveScriptedMoveOwnership(
+                workflow,
+                sourceIndex,
+                out var scriptedMoveOwnership))
+        {
+            diagnostics.Add(CreateScriptedMoveOwnershipDiagnostic(
+                scriptedMoveOwnership,
+                edit.Field));
             return;
         }
 
@@ -2836,6 +2877,48 @@ internal sealed class ZaEncountersEditSessionService
             or ZaEncountersWorkflowService.StrengthenSpeedField
             or ZaEncountersWorkflowService.VanillaTalentScaleField
             or ZaEncountersWorkflowService.VanillaTalentVCountField;
+    }
+
+    private static bool IsEncounterMoveField(string? field)
+    {
+        return field is ZaEncountersWorkflowService.Move1IdField
+            or ZaEncountersWorkflowService.Move2IdField
+            or ZaEncountersWorkflowService.Move3IdField
+            or ZaEncountersWorkflowService.Move4IdField;
+    }
+
+    private static bool TryResolveScriptedMoveOwnership(
+        ZaEncountersWorkflow workflow,
+        int sourceIndex,
+        out ZaScriptedEncounterMoveOwnershipRecord ownership)
+    {
+        ownership = workflow.Tables
+            .Where(table => table.ScriptedMoveOwnership is
+                { EncounterMoveListAuthoritative: false })
+            .Where(table => table.Slots.Any(slot =>
+                slot.PokemonDataSourceIndex == sourceIndex))
+            .Select(table => table.ScriptedMoveOwnership)
+            .OfType<ZaScriptedEncounterMoveOwnershipRecord>()
+            .FirstOrDefault()!;
+        return ownership is not null;
+    }
+
+    private static ValidationDiagnostic CreateScriptedMoveOwnershipDiagnostic(
+        ZaScriptedEncounterMoveOwnershipRecord ownership,
+        string? field)
+    {
+        var selectors = string.Join(
+            ", ",
+            ownership.SelectorActionIds.Select(selectorActionId =>
+                ZaScriptedBossActionCatalog.CreateEditField(selectorActionId)));
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "This encounter move list is not authoritative for this verified scripted encounter. "
+                + ownership.Caveat,
+            ZaEditSessionSupport.EncountersDomain,
+            file: $"romfs/{ZaDataPaths.EncountDataArray}",
+            field: field,
+            expected: $"Edit the authoritative selector field instead: {selectors}");
     }
 
     private static bool IsStrengthenField(string? field)

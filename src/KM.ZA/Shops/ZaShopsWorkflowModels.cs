@@ -22,7 +22,9 @@ public sealed record ZaShopInventoryRecord(
     IReadOnlyDictionary<string, string> FieldDisplayValues,
     IReadOnlyList<string> SupportedFields,
     string? PriceField,
-    bool CanEditPrice);
+    bool CanEditPrice,
+    int SourceIndex,
+    string RowId);
 
 public sealed record ZaShopRecord(
     string ShopId,

@@ -1597,7 +1597,8 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.ShopId,
                 request.Payload.Slot,
                 request.Payload.Field,
-                request.Payload.Value));
+                request.Payload.Value,
+                request.Payload.RowId));
         }
         else if (IsScarletViolet(paths))
         {

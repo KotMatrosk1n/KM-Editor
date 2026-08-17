@@ -194,6 +194,7 @@ internal sealed class ZaEncountersWorkflowService
             fileSource,
             labels,
             diagnostics);
+        tables = AttachScriptedMoveOwnership(tables, scriptedBossCatalog.Profiles);
         var editableFields = CreateEditableFields(labels, pokemonAvailability);
         if (tables.Any(ZaEncounterPlayerPartnerCatalog.IsTargetTable))
         {
@@ -231,6 +232,34 @@ internal sealed class ZaEncountersWorkflowService
             OutzoneAvailability = outzoneAvailability,
         };
         return AddVanillaRestoreAvailability(project, workflow);
+    }
+
+    private static ZaEncounterTableRecord[] AttachScriptedMoveOwnership(
+        IReadOnlyList<ZaEncounterTableRecord> tables,
+        IReadOnlyList<ZaScriptedBossProfileRecord> profiles)
+    {
+        return tables
+            .Select(table =>
+            {
+                var resolvedOwnerships = table.Slots
+                    .Select(slot => ZaScriptedEncounterMoveOwnershipCatalog.Resolve(
+                        profiles,
+                        table.RawSpawnerId,
+                        slot.EncounterDataId,
+                        slot.SpeciesId,
+                        slot.Form))
+                    .ToArray();
+                var ownerships = resolvedOwnerships
+                    .OfType<ZaScriptedEncounterMoveOwnershipRecord>()
+                    .DistinctBy(ownership => ownership.ProfileKey, StringComparer.Ordinal)
+                    .ToArray();
+                return resolvedOwnerships.Length > 0
+                    && resolvedOwnerships.All(ownership => ownership is not null)
+                    && ownerships.Length == 1
+                    ? table with { ScriptedMoveOwnership = ownerships[0] }
+                    : table;
+            })
+            .ToArray();
     }
 
     private ZaEncountersWorkflow AddVanillaRestoreAvailability(
