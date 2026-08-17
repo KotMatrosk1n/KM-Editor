@@ -44,7 +44,10 @@ public sealed record ZaScriptedBossActionRecord(
     string? CompatibilityReason,
     string? LockReason,
     IReadOnlyList<ZaScriptedBossPhaseAvailabilityRecord> PhaseAvailability,
-    string? PhaseContext);
+    string? PhaseContext)
+{
+    public IReadOnlyList<ZaScriptedBossAffectedScopeRecord> AffectedScopes { get; init; } = [];
+}
 
 public sealed record ZaScriptedBossProfileRecord(
     string Key,
@@ -82,6 +85,7 @@ internal static class ZaScriptedBossActionCatalog
     public const string ScriptedMechanicKind = "scripted-mechanic";
     public const string BaseRogueMegaScope = "base-rogue-mega";
     public const string VerifiedScriptedBossScope = "verified-scripted-boss";
+    public const string VerifiedScriptedFollowerScope = "verified-scripted-follower";
 
     public const string RuntimeDataPresentRuntimeState = "runtime-data-present";
     public const string MissingBattleRuntimeState = "missing-battle";
@@ -294,6 +298,22 @@ internal static class ZaScriptedBossActionCatalog
             BattleMove(42),
             BattleMove(398),
             BattleMove(679)),
+        ScriptedFollowerProfile(
+            "14:0:boss_0015:follower",
+            "boss_0015_follower_kakuna",
+            14,
+            0,
+            SelectorBattleMove(22312, 106, NormalMoveVariant),
+            SelectorBattleMove(17629, 81, NormalMoveVariant),
+            SelectorBattleMove(17536, 40, NormalMoveVariant)),
+        ScriptedFollowerProfile(
+            "15:0:boss_0015:follower",
+            "boss_0015_follower_beedrill",
+            15,
+            0,
+            SelectorBattleMove(17629, 81, NormalMoveVariant),
+            SelectorBattleMove(17536, 40, NormalMoveVariant),
+            SelectorBattleMove(22313, 42, NormalMoveVariant)),
         Profile(701, 1,
             BattleMove(332),
             BattleMove(280),
@@ -829,7 +849,12 @@ internal static class ZaScriptedBossActionCatalog
             compatibility.Reason,
             lockReason,
             ProjectPhaseAvailability(profile, action),
-            ProjectPhaseContext(profile, action));
+            ProjectPhaseContext(profile, action))
+        {
+            AffectedScopes = action.SelectorActionId is { } selectorActionId
+                ? ZaScriptedEncounterMoveOwnershipCatalog.GetAffectedScopes(selectorActionId)
+                : [],
+        };
     }
 
     private static string? ProjectPhaseContext(ProfileDefinition profile, ActionDefinition action)
@@ -1138,6 +1163,24 @@ internal static class ZaScriptedBossActionCatalog
                     : BattleStagesPhaseModelKind
                 : HpBandsPhaseModelKind,
             phases,
+            actions);
+    }
+
+    private static ProfileDefinition ScriptedFollowerProfile(
+        string key,
+        string lineageKey,
+        int speciesId,
+        int form,
+        params ActionDefinition[] actions)
+    {
+        return new ProfileDefinition(
+            key,
+            lineageKey,
+            speciesId,
+            form,
+            VerifiedScriptedFollowerScope,
+            BattleStagesPhaseModelKind,
+            FullStagePhases((speciesId, form)),
             actions);
     }
 

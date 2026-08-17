@@ -5,8 +5,10 @@ import { type ReactNode } from 'react';
 import {
   type MoveRecord,
   type ScriptedBossAction,
+  type ScriptedBossAffectedScope,
   type ScriptedBossMoveOption,
-  type ScriptedBossProfile
+  type ScriptedBossProfile,
+  type ScriptedEncounterMoveOwnership
 } from '../../bridge/contracts';
 import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization/LocalizationProvider';
@@ -146,10 +148,12 @@ export function getScriptedBossMoveCompatibility(
 }
 
 export function ScriptedBossEncounterActions({
+  moveOwnership,
   profile,
   profiles,
   renderActionControl
 }: {
+  moveOwnership?: ScriptedEncounterMoveOwnership | null;
   profile: ScriptedBossProfile | null;
   profiles: ScriptedBossProfile[];
   renderActionControl?: (action: ScriptedBossAction) => ReactNode;
@@ -167,6 +171,9 @@ export function ScriptedBossEncounterActions({
   const hasSingleStageHpBands = Boolean(
     profile?.phaseModel.kind === 'hp-bands' && phaseGroups.length === 1
   );
+  const profileName = profile?.scope === 'verified-scripted-follower'
+    ? t('za.encounters.bossActions.followerProfileName', { pokemon: profile.name })
+    : profile?.name;
 
   return (
     <section
@@ -217,11 +224,13 @@ export function ScriptedBossEncounterActions({
         <>
           <div className="za-scripted-boss-profile-summary">
             <div>
-              <strong>{profile.name}</strong>
+              <strong>{profileName}</strong>
               <span className="editable-field-label-row">
                 <span>{t(
                   profile.scope === 'base-rogue-mega'
                     ? 'za.encounters.bossActions.scope.base'
+                    : profile.scope === 'verified-scripted-follower'
+                      ? 'za.encounters.bossActions.scope.follower'
                     : 'za.encounters.bossActions.scope.verified'
                 )}</span>
                 <ContextHelp label={t('za.encounters.bossActions.heading')}>
@@ -382,6 +391,27 @@ export function ScriptedBossEncounterActions({
               </div>
             </div>
           )}
+          {moveOwnership ? (
+            <div className="za-scripted-move-ownership-notice" role="note">
+              <ShieldAlert aria-hidden="true" size={18} />
+              <div>
+                <strong>
+                  {t(
+                    moveOwnership.authority === 'shared-primary-controller'
+                      ? 'za.encounters.bossActions.ownership.sharedPrimary.title'
+                      : 'za.encounters.bossActions.ownership.follower.title'
+                  )}
+                </strong>
+                <p>
+                  {t(
+                    moveOwnership.authority === 'shared-primary-controller'
+                      ? 'za.encounters.bossActions.ownership.sharedPrimary.help'
+                      : 'za.encounters.bossActions.ownership.follower.help'
+                  )}
+                </p>
+              </div>
+            </div>
+          ) : null}
           {editableCount > 0 ? (
             <p className="za-scripted-boss-replacement-caveat">
               {t('za.encounters.bossActions.replacementCaveat')}
@@ -554,6 +584,16 @@ export function ScriptedBossEncounterActions({
                       {t('za.encounters.bossActions.sharedBy', {
                         count: sharedOwners.length,
                         owners: sharedOwners.map((owner) => owner.name).join(', ')
+                      })}
+                    </small>
+                  ) : null}
+
+                  {action.affectedScopes.length > 0 ? (
+                    <small className="za-scripted-boss-action-detail za-scripted-boss-affected-scope">
+                      {t('za.encounters.bossActions.ownership.affectedScope', {
+                        scope: action.affectedScopes
+                          .map((scope) => formatScriptedBossAffectedScope(scope, t))
+                          .join('; ')
                       })}
                     </small>
                   ) : null}
@@ -874,6 +914,24 @@ function formatScriptedBossActionPhaseLabel(
         name: phase.stageName,
         stage: phase.stage
       });
+}
+
+function formatScriptedBossAffectedScope(
+  scope: ScriptedBossAffectedScope,
+  t: Localize
+) {
+  switch (scope.key) {
+    case 'beedrill-battle-kakuna-and-beedrill-followers':
+      return t('za.encounters.bossActions.ownership.scope.beedrillSharedFollowers');
+    case 'beedrill-battle-kakuna-followers':
+      return t('za.encounters.bossActions.ownership.scope.kakunaFollowers');
+    case 'beedrill-battle-beedrill-followers':
+      return t('za.encounters.bossActions.ownership.scope.beedrillFollowers');
+    case 'banette-primary-and-clone-controllers':
+      return t('za.encounters.bossActions.ownership.scope.banettePrimaryAndClones');
+    default:
+      return scope.label;
+  }
 }
 
 function formatScriptedBossRuntimeVariantKey(variant: number) {

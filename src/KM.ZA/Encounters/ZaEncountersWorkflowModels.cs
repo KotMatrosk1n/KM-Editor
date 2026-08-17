@@ -156,6 +156,8 @@ public sealed record ZaEncounterTableRecord(
     public IReadOnlyList<ZaBossBattleContext>? BossBattleContexts { get; init; }
 
     public ZaEncounterPlayerPartnerRecord? PlayerPartner { get; init; }
+
+    public ZaScriptedEncounterMoveOwnershipRecord? ScriptedMoveOwnership { get; init; }
 }
 
 public sealed record ZaEncounterPhaseCondition(

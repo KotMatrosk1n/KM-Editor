@@ -743,7 +743,21 @@ public static class ZaBridgeMapper
                     availability.PhaseKey,
                     availability.State))
                 .ToArray(),
-            action.PhaseContext);
+            action.PhaseContext)
+        {
+            AffectedScopes = action.AffectedScopes.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static ScriptedBossAffectedScopeDto ToDto(
+        ZaScriptedBossAffectedScopeRecord scope)
+    {
+        return new ScriptedBossAffectedScopeDto(
+            scope.Key,
+            scope.Label,
+            scope.BattleContexts,
+            scope.SpeciesIds,
+            scope.IncludesPrimaryController);
     }
 
     private static ScriptedBossMoveOptionDto ToDto(ZaScriptedBossMoveOptionRecord option)
@@ -896,6 +910,17 @@ public static class ZaBridgeMapper
             PlayerPartner = table.PlayerPartner is null
                 ? null
                 : ToDto(table.PlayerPartner),
+            ScriptedMoveOwnership = table.ScriptedMoveOwnership is null
+                ? null
+                : new ScriptedEncounterMoveOwnershipDto(
+                    table.ScriptedMoveOwnership.State,
+                    table.ScriptedMoveOwnership.Authority,
+                    table.ScriptedMoveOwnership.ProfileKey,
+                    table.ScriptedMoveOwnership.ProfileName,
+                    table.ScriptedMoveOwnership.EncounterMoveListAuthoritative,
+                    table.ScriptedMoveOwnership.Caveat,
+                    table.ScriptedMoveOwnership.SelectorActionIds,
+                    table.ScriptedMoveOwnership.AffectedScopes.Select(ToDto).ToArray()),
         };
     }
 
@@ -1921,6 +1946,7 @@ public static class ZaBridgeMapper
             SupportedFields = inventoryItem.SupportedFields,
             PriceField = inventoryItem.PriceField,
             CanEditPrice = inventoryItem.CanEditPrice,
+            RowId = inventoryItem.RowId,
         };
     }
 

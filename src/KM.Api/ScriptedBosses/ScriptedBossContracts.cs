@@ -21,6 +21,13 @@ public sealed record ScriptedBossPhaseAvailabilityDto(
     string PhaseKey,
     string State);
 
+public sealed record ScriptedBossAffectedScopeDto(
+    string Key,
+    string Label,
+    IReadOnlyList<string> BattleContexts,
+    IReadOnlyList<int> SpeciesIds,
+    bool IncludesPrimaryController);
+
 public sealed record ScriptedBossActionDto(
     string Key,
     string Kind,
@@ -38,7 +45,20 @@ public sealed record ScriptedBossActionDto(
     string? CompatibilityReason,
     string? LockReason,
     IReadOnlyList<ScriptedBossPhaseAvailabilityDto> PhaseAvailability,
-    string? PhaseContext);
+    string? PhaseContext)
+{
+    public IReadOnlyList<ScriptedBossAffectedScopeDto> AffectedScopes { get; init; } = [];
+}
+
+public sealed record ScriptedEncounterMoveOwnershipDto(
+    string State,
+    string Authority,
+    string ProfileKey,
+    string ProfileName,
+    bool EncounterMoveListAuthoritative,
+    string Caveat,
+    IReadOnlyList<int> SelectorActionIds,
+    IReadOnlyList<ScriptedBossAffectedScopeDto> AffectedScopes);
 
 public sealed record ScriptedBossProfileDto(
     string Key,

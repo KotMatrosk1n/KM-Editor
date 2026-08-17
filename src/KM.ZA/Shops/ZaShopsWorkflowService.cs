@@ -24,9 +24,12 @@ internal sealed class ZaShopsWorkflowService
     public const string ConditionArgumentsField = "zaConditionArguments";
     public const int MinimumItemId = 0;
     public const int MaximumItemId = 65_535;
+    public const string SourceRowIdPrefix = "source:";
+    public const string NewRowIdPrefix = "new:";
 
     private const string WorkflowLabel = "Shops";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A shop inventories, display order, currencies, and unlock conditions.";
+    private const string RecordRowIdentityPrefix = "row:";
 
     private static readonly IReadOnlyList<string> RowSupportedFields =
     [
@@ -153,20 +156,84 @@ internal sealed class ZaShopsWorkflowService
     public static string CreateInventoryRecordId(string shopId, int slot) =>
         string.Create(CultureInfo.InvariantCulture, $"{shopId}#{slot}");
 
+    public static string CreateInventoryRecordId(string shopId, int slot, string rowId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rowId);
+        if (!IsValidRowId(rowId))
+        {
+            throw new ArgumentException("Shop row identity is not valid.", nameof(rowId));
+        }
+
+        var positionalId = CreateInventoryRecordId(shopId, slot);
+        return string.Create(CultureInfo.InvariantCulture, $"{positionalId}#{RecordRowIdentityPrefix}{rowId}");
+    }
+
+    public static string CreateSourceRowId(int sourceIndex) =>
+        string.Create(CultureInfo.InvariantCulture, $"{SourceRowIdPrefix}{sourceIndex}");
+
+    public static bool IsValidRowId(string? rowId) =>
+        TryParseRowNumber(rowId, SourceRowIdPrefix, allowZero: true, out _)
+        || TryParseRowNumber(rowId, NewRowIdPrefix, allowZero: false, out _);
+
     public static bool TryParseInventoryRecordId(string? recordId, out string shopId, out int slot)
+    {
+        return TryParseInventoryRecordRowId(recordId, out shopId, out slot, out _);
+    }
+
+    public static bool TryParseInventoryRecordRowId(
+        string? recordId,
+        out string shopId,
+        out int slot,
+        out string? rowId)
     {
         shopId = string.Empty;
         slot = 0;
+        rowId = null;
 
-        var separatorIndex = recordId?.LastIndexOf('#') ?? -1;
-        if (separatorIndex <= 0 || separatorIndex >= recordId!.Length - 1)
+        if (string.IsNullOrEmpty(recordId))
         {
             return false;
         }
 
-        shopId = recordId[..separatorIndex];
-        return int.TryParse(recordId[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
+        var positionalId = recordId;
+        var identitySeparatorIndex = recordId.LastIndexOf('#');
+        if (identitySeparatorIndex > 0)
+        {
+            var identity = recordId[(identitySeparatorIndex + 1)..];
+            if (identity.StartsWith(RecordRowIdentityPrefix, StringComparison.Ordinal))
+            {
+                var parsedRowId = identity[RecordRowIdentityPrefix.Length..];
+                if (!IsValidRowId(parsedRowId))
+                {
+                    return false;
+                }
+
+                rowId = parsedRowId;
+                positionalId = recordId[..identitySeparatorIndex];
+            }
+        }
+
+        var separatorIndex = positionalId.LastIndexOf('#');
+        if (separatorIndex <= 0 || separatorIndex >= positionalId.Length - 1)
+        {
+            return false;
+        }
+
+        shopId = positionalId[..separatorIndex];
+        return int.TryParse(positionalId[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
             && slot >= 1;
+    }
+
+    private static bool TryParseRowNumber(
+        string? rowId,
+        string prefix,
+        bool allowZero,
+        out int value)
+    {
+        value = 0;
+        return rowId?.StartsWith(prefix, StringComparison.Ordinal) == true
+            && int.TryParse(rowId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out value)
+            && (allowZero ? value >= 0 : value >= 1);
     }
 
     public static bool TryGetMasterShopId(string shopId, out string masterShopId)
@@ -416,7 +483,9 @@ internal sealed class ZaShopsWorkflowService
             displays,
             RowSupportedFields,
             PriceField: null,
-            CanEditPrice: false);
+            CanEditPrice: false,
+            row.SourceIndex,
+            row.RowId);
     }
 
     private static ResolvedItem ResolveItem(
@@ -584,7 +653,7 @@ internal sealed class ZaShopsWorkflowService
         return
         [
             CreateField(ItemIdField, "Item", "integer", MinimumItemId, MaximumItemId, itemOptions),
-            CreateField(DisplayIndexField, "Display order", "integer", 0, int.MaxValue),
+            CreateField(DisplayIndexField, "Display order", "integer", 1, int.MaxValue),
             CreateField(ConditionKindField, "First condition", "integer", 0, 4, ConditionKindOptions),
             CreateField(ConditionComparisonField, "Condition comparison", "integer", 0, int.MaxValue, ConditionComparisonOptions),
             CreateField(ConditionArgumentsField, "Condition arguments", "text", null, null),
@@ -728,12 +797,14 @@ internal sealed class ZaShopsWorkflowService
             int sourceIndex,
             uint itemId,
             uint displayIndex,
-            IReadOnlyList<ShopConditionGroup> conditions)
+            IReadOnlyList<ShopConditionGroup> conditions,
+            string? rowId = null)
         {
             SourceIndex = sourceIndex;
             ItemId = itemId;
             DisplayIndex = displayIndex;
             Conditions = conditions.ToList();
+            RowId = rowId ?? CreateSourceRowId(sourceIndex);
         }
 
         public int SourceIndex { get; }
@@ -741,6 +812,8 @@ internal sealed class ZaShopsWorkflowService
         public uint ItemId { get; set; }
 
         public uint DisplayIndex { get; set; }
+
+        public string RowId { get; }
 
         public List<ShopConditionGroup> Conditions { get; }
 

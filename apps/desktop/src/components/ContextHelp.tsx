@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocalization } from '../localization/LocalizationProvider';
+import { useTooltipIconVisibility } from './TooltipIconVisibility';
 import './ContextHelp.css';
 import './Tooltip.css';
 
@@ -32,7 +33,12 @@ const contextHelpEdgeGap = 12;
 const contextHelpTriggerGap = 8;
 const contextHelpCloseDelayMilliseconds = 140;
 
-export function ContextHelp({ children, className, label }: ContextHelpProps) {
+export function ContextHelp(props: ContextHelpProps) {
+  const { showIcons } = useTooltipIconVisibility();
+  return showIcons ? <VisibleContextHelp {...props} /> : null;
+}
+
+function VisibleContextHelp({ children, className, label }: ContextHelpProps) {
   const { t, translateLiteral } = useLocalization();
   const localizedLabel = translateLiteral(label);
   const localizedDescription = getContextHelpText(children, translateLiteral);

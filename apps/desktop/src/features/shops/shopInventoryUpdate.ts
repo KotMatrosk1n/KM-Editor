@@ -18,15 +18,15 @@ export function createShopInventoryUpdateValue(
 ) {
   const includedFinalRows = finalRows.filter((row) => row.itemId !== 0);
 
-  if (editorFamily !== 'sv') {
+  if (editorFamily !== 'sv' && editorFamily !== 'za') {
     const finalItemIds = includedFinalRows.map((row) => row.itemId);
     const originalItemIds = originalRows.map((row) => row.itemId);
     return areArraysEqual(finalItemIds, originalItemIds) ? null : finalItemIds.join(',');
   }
 
   if (
-    originalRows.some((row) => !isSvShopRowId(row.rowId)) ||
-    includedFinalRows.some((row) => !isSvShopRowId(row.rowId))
+    originalRows.some((row) => !isStableShopRowId(row.rowId)) ||
+    includedFinalRows.some((row) => !isStableShopRowId(row.rowId))
   ) {
     return null;
   }
@@ -100,7 +100,7 @@ export function getNextShopInventoryDraftId(
   return highestDraftId + 1;
 }
 
-function isSvShopRowId(rowId: string | null): rowId is string {
+function isStableShopRowId(rowId: string | null): rowId is string {
   return rowId !== null && /^(?:source|new):\d+$/.test(rowId);
 }
 
