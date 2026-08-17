@@ -111,8 +111,9 @@ internal static class ZaScriptedEncounterMoveOwnershipCatalog
             Form: 1,
             SharedPrimaryControllerAuthority,
             "Banette clones use the primary Banette controller selectors. There is no independent "
-                + "clone move pool: changing one listed selector affects the primary boss and every "
-                + "scripted clone in all listed battle contexts.",
+                + "clone move pool. These values are a read-only projection of the primary Rogue Mega "
+                + "Banette actions. Edit that primary encounter to change the boss and every scripted "
+                + "clone in all listed battle contexts.",
             [17631, 17617, 17616, 17618, 17634],
             CreatePlacements(
                 ("spn_boss_0354_01_follower01", "ect_boss_0354_01_follower01"),

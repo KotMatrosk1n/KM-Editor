@@ -159,7 +159,12 @@ export function ScriptedBossEncounterActions({
   renderActionControl?: (action: ScriptedBossAction) => ReactNode;
 }) {
   const { t } = useLocalization();
-  const editableCount = profile?.actions.filter((action) => action.canEdit).length ?? 0;
+  const isReadOnlySharedPrimaryProjection =
+    moveOwnership?.authority === 'shared-primary-controller';
+  const editableCount =
+    profile?.actions.filter(
+      (action) => action.canEdit && !isReadOnlySharedPrimaryProjection
+    ).length ?? 0;
   const lockedCount = (profile?.actions.length ?? 0) - editableCount;
   const hasBrokenAction = profile?.actions.some(isBrokenScriptedBossAction) ?? false;
   const hasUnavailableAction = profile?.actions.some(isUnavailableScriptedBossAction) ?? false;
@@ -207,14 +212,22 @@ export function ScriptedBossEncounterActions({
               profile === null
                 ? 'za.encounters.bossActions.status.unverifiedHelp'
                 : hasBrokenAction
-                  ? 'za.encounters.bossActions.status.brokenHelp'
+                  ? isReadOnlySharedPrimaryProjection
+                    ? 'za.encounters.bossActions.ownership.sharedPrimary.brokenHelp'
+                    : 'za.encounters.bossActions.status.brokenHelp'
                   : hasUnavailableAction
-                    ? 'za.encounters.bossActions.status.unavailableHelp'
+                    ? isReadOnlySharedPrimaryProjection
+                      ? 'za.encounters.bossActions.ownership.sharedPrimary.unavailableHelp'
+                      : 'za.encounters.bossActions.status.unavailableHelp'
                     : hasKnownIncompatibleAction
-                      ? 'za.encounters.bossActions.compatibility.profileUnsafeHelp'
-                      : editableCount > 0
-                        ? 'za.encounters.bossActions.status.editableHelp'
-                        : 'za.encounters.bossActions.status.lockedHelp'
+                      ? isReadOnlySharedPrimaryProjection
+                        ? 'za.encounters.bossActions.ownership.sharedPrimary.incompatibleHelp'
+                        : 'za.encounters.bossActions.compatibility.profileUnsafeHelp'
+                      : isReadOnlySharedPrimaryProjection
+                        ? 'za.encounters.bossActions.ownership.sharedPrimary.lockedHelp'
+                        : editableCount > 0
+                          ? 'za.encounters.bossActions.status.editableHelp'
+                          : 'za.encounters.bossActions.status.lockedHelp'
             )}
           </p>
         </div>
@@ -419,6 +432,8 @@ export function ScriptedBossEncounterActions({
           ) : null}
           <ul className="za-scripted-boss-action-list">
             {profile.actions.map((action) => {
+              const isActionEditable =
+                action.canEdit && !isReadOnlySharedPrimaryProjection;
               const sharedOwners = action.selectorActionId === null
                 ? []
                 : getScriptedBossActionOwners(profiles, action.selectorActionId);
@@ -447,7 +462,7 @@ export function ScriptedBossEncounterActions({
 
               return (
                 <li
-                  className={`${action.canEdit ? 'is-editable' : 'is-locked'} ${
+                  className={`${isActionEditable ? 'is-editable' : 'is-locked'} ${
                     isBroken ? 'is-broken' : isUnavailable ? 'is-unavailable' : 'is-runtime-present'
                   } ${
                     action.variant === null
@@ -476,18 +491,18 @@ export function ScriptedBossEncounterActions({
                       ) : null}
                       <span
                         className={`za-scripted-boss-status-pill ${
-                          action.canEdit
+                          isActionEditable
                             ? 'za-scripted-boss-status-editable'
                             : 'za-scripted-boss-status-locked'
                         }`}
                       >
-                        {action.canEdit ? (
+                        {isActionEditable ? (
                           <Pencil aria-hidden="true" size={12} />
                         ) : (
                           <Lock aria-hidden="true" size={12} />
                         )}
                         {t(
-                          action.canEdit
+                          isActionEditable
                             ? 'za.encounters.bossActions.status.editable'
                             : 'za.encounters.bossActions.status.locked'
                         )}
@@ -543,6 +558,15 @@ export function ScriptedBossEncounterActions({
                                 ? `za.encounters.bossActions.compatibility.reason.${action.compatibilityReason}`
                                 : `za.encounters.bossActions.compatibility.${action.compatibilityState}.help`
                             )}
+                            {isReadOnlySharedPrimaryProjection ? (
+                              <>
+                                <br />
+                                <br />
+                                {t(
+                                  'za.encounters.bossActions.ownership.sharedPrimary.compatibilityHelp'
+                                )}
+                              </>
+                            ) : null}
                           </ContextHelp>
                         </>
                       ) : null}
@@ -560,10 +584,14 @@ export function ScriptedBossEncounterActions({
                     <code>
                       {t(
                         action.runtimeMoveId !== null
-                          ? 'za.encounters.bossActions.invalidReference'
+                          ? isReadOnlySharedPrimaryProjection
+                            ? 'za.encounters.bossActions.ownership.sharedPrimary.invalidReference'
+                            : 'za.encounters.bossActions.invalidReference'
                           : action.selectorActionId === null
                             ? 'za.encounters.bossActions.noRuntimeRow'
-                            : 'za.encounters.bossActions.unavailableReference',
+                            : isReadOnlySharedPrimaryProjection
+                              ? 'za.encounters.bossActions.ownership.sharedPrimary.unavailableReference'
+                              : 'za.encounters.bossActions.unavailableReference',
                         action.runtimeMoveId !== null
                           ? { runtimeId: action.runtimeMoveId }
                           : undefined
@@ -666,13 +694,17 @@ export function ScriptedBossEncounterActions({
                     </div>
                   ) : null}
 
-                  {!action.canEdit && action.lockReason ? (
+                  {isReadOnlySharedPrimaryProjection ? (
+                    <small className="za-scripted-boss-action-lock-reason">
+                      {t('za.encounters.bossActions.ownership.sharedPrimary.actionLocked')}
+                    </small>
+                  ) : !action.canEdit && action.lockReason ? (
                     <small className="za-scripted-boss-action-lock-reason">
                       {t(`za.encounters.bossActions.lockReason.${action.lockReason}`)}
                     </small>
                   ) : null}
 
-                  {renderActionControl?.(action)}
+                  {isActionEditable ? renderActionControl?.(action) : null}
                 </li>
               );
             })}

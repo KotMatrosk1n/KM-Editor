@@ -21449,7 +21449,20 @@ function SelectedTrainerPanel({
                 <div className="editable-field-groups">
                   {pokemonFieldGroups.map((group) => (
                     <fieldset className="editable-field-group" key={group.group}>
-                      <legend>{group.group}</legend>
+                      <legend>
+                        <span className="editable-field-group-legend-content">
+                          <span>{group.group}</span>
+                          {editorFamily === 'za' && group.group === 'Stats - EVs' ? (
+                            <PokemonEvTotal
+                              drafts={pokemonDrafts}
+                              fields={group.fields}
+                              getValue={(fieldName) =>
+                                getEditablePokemonFieldValue(selectedPokemon, fieldName)
+                              }
+                            />
+                          ) : null}
+                        </span>
+                      </legend>
                       <div className="editable-field-grid">
                         {group.fields.map((field) => {
                           const currentValue = getEditablePokemonFieldValue(
@@ -21648,6 +21661,69 @@ type TrainerDraftChange = {
   label: string;
   value: string;
 };
+
+function PokemonEvTotal({
+  drafts,
+  fields,
+  getValue
+}: {
+  drafts: Record<string, string>;
+  fields: NumericEditableField[];
+  getValue: (fieldName: string) => number | null;
+}) {
+  const { t } = useLocalization();
+  const evFields = evFieldNames
+    .map((fieldName) => fields.find((field) => field.field === fieldName) ?? null)
+    .filter((field): field is NumericEditableField => field !== null);
+  if (evFields.length !== evFieldNames.length) {
+    return null;
+  }
+
+  let total = 0;
+  let isAvailable = true;
+  for (const field of evFields) {
+    const currentValue = getValue(field.field);
+    const draftValue = Object.prototype.hasOwnProperty.call(drafts, field.field)
+      ? drafts[field.field]
+      : currentValue?.toString() ?? '';
+    const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
+    const parsedValue = draftState.normalizedValue === null
+      ? null
+      : parseEditableIntegerDraft(draftState.normalizedValue, field.options);
+    if (!draftState.isValid || parsedValue === null) {
+      isAvailable = false;
+      break;
+    }
+
+    total += parsedValue;
+  }
+
+  const isOverLimit = isAvailable && total > maximumPokemonEvTotal;
+  return (
+    <span
+      aria-atomic="true"
+      aria-live="polite"
+      className={`pokemon-ev-total ${isOverLimit ? 'is-over-limit' : ''}`}
+      role="status"
+    >
+      <span>
+        {isAvailable
+          ? t('pokemon.evTotal.value', {
+              maximum: maximumPokemonEvTotal,
+              total
+            })
+          : t('pokemon.evTotal.unavailable')}
+      </span>
+      {isOverLimit ? (
+        <span className="pokemon-ev-total-over-limit">
+          {t('pokemon.evTotal.overLimit', {
+            amount: total - maximumPokemonEvTotal
+          })}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 type ProjectedTrainerPokemonStats = {
   baseStats: NonNullable<TrainerPokemonRecord['baseStats']>;
@@ -31627,7 +31703,10 @@ function SelectedEncounterPanel({
     [encounterFields]
   );
   const scriptedBossActionEditorEntries = useMemo(() => {
-    if (!scriptedBossProfile) {
+    if (
+      !scriptedBossProfile ||
+      scriptedMoveOwnership?.authority === 'shared-primary-controller'
+    ) {
       return [];
     }
 
@@ -31694,7 +31773,7 @@ function SelectedEncounterPanel({
         }
       ];
     });
-  }, [scriptedBossMoveOptions, scriptedBossProfile, t]);
+  }, [scriptedBossMoveOptions, scriptedBossProfile, scriptedMoveOwnership, t]);
   const scriptedBossDrafts = useMemo(
     () =>
       Object.fromEntries(
@@ -32504,6 +32583,7 @@ function SelectedEncounterPanel({
                         profiles={scriptedBosses}
                         renderActionControl={(action: ScriptedBossAction) => {
                           if (
+                            scriptedMoveOwnership?.authority === 'shared-primary-controller' ||
                             action.selectorActionId === null ||
                             !action.canEdit ||
                             action.kind !== 'battle-move' ||
