@@ -17,6 +17,11 @@ namespace KM.ZA.Encounters;
 
 internal sealed class ZaEncountersEditSessionService
 {
+    private const string BossActionPrimaryControllerOwnerPrefix =
+        "za.encounters.boss-action.primary-controller:";
+    private const string BossActionDedicatedFollowerOwnerPrefix =
+        "za.encounters.boss-action.dedicated-follower:";
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
     private readonly ZaEncountersWorkflowService encountersWorkflowService;
@@ -1294,7 +1299,7 @@ internal sealed class ZaEncountersEditSessionService
         IReadOnlyList<PendingEdit> edits)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendFingerprintValue(hash, "KM.ZA.Encounters.ChangeSet.v1");
+        AppendFingerprintValue(hash, "KM.ZA.Encounters.ChangeSet.v2");
         AppendFingerprintValue(hash, edits.Count.ToString(CultureInfo.InvariantCulture));
         foreach (var edit in edits
             .OrderBy(candidate => candidate.Domain, StringComparer.Ordinal)
@@ -1306,6 +1311,7 @@ internal sealed class ZaEncountersEditSessionService
             AppendFingerprintValue(hash, edit.RecordId);
             AppendFingerprintValue(hash, edit.Field);
             AppendFingerprintValue(hash, edit.NewValue);
+            AppendFingerprintValue(hash, edit.Owner);
             var sources = edit.Sources
                 .OrderBy(source => source.Layer)
                 .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
@@ -1441,7 +1447,7 @@ internal sealed class ZaEncountersEditSessionService
                 $"A special placement could not be reconciled safely. {error}",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}",
-                expected: "Verified native special placement or byte-preserving ordinary-spawn conversion"));
+                expected: "Verified compatible special placement or byte-preserving ordinary-spawn conversion"));
         }
     }
 
@@ -1464,7 +1470,7 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 $"The reviewed Wild Encounters output will restore special spawn behavior for "
-                + $"{FormatPlacementCount(result.RestoredCount)} returned to a compatible species.",
+                + $"{FormatPlacementCount(result.RestoredCount)} using a verified compatible species.",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}"));
         }
@@ -1489,7 +1495,7 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 $"Restored special spawn behavior for {FormatPlacementCount(result.RestoredCount)} "
-                + "returned to a compatible species.",
+                + "using a verified compatible species.",
                 ZaEditSessionSupport.EncountersDomain,
                 file: $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}"));
         }
@@ -1520,7 +1526,7 @@ internal sealed class ZaEncountersEditSessionService
         if (result.RestoredCount > 0)
         {
             return $"Restore special spawn behavior for {FormatPlacementCount(result.RestoredCount)} "
-                + "returned to a compatible species.";
+                + "using a verified compatible species.";
         }
 
         return "Preserve the reviewed Wild Encounters spawner output.";
@@ -1960,7 +1966,26 @@ internal sealed class ZaEncountersEditSessionService
         var scriptedMoveOwnership = table.ScriptedMoveOwnership;
         var stagesFromPrimaryController = IsPrimaryBossController(table.RawSpawnerId);
         var stagesFromVerifiedFollower = scriptedMoveOwnership is not null
+            && string.Equals(
+                scriptedMoveOwnership.Authority,
+                ZaScriptedEncounterMoveOwnershipCatalog.DedicatedFollowerActionTemplateAuthority,
+                StringComparison.Ordinal)
             && scriptedMoveOwnership.SelectorActionIds.Contains(selectorActionId);
+        if (!stagesFromPrimaryController
+            && scriptedMoveOwnership is not null
+            && string.Equals(
+                scriptedMoveOwnership.Authority,
+                ZaScriptedEncounterMoveOwnershipCatalog.SharedPrimaryControllerAuthority,
+                StringComparison.Ordinal)
+            && scriptedMoveOwnership.SelectorActionIds.Contains(selectorActionId))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "This clone mirrors the primary Rogue Mega Banette controller and has no independent move selectors. Edit Boss Actions on the primary Rogue Mega Banette encounter instead.",
+                field,
+                "Primary Rogue Mega Banette Boss Actions editor"));
+            return null;
+        }
+
         if (!stagesFromPrimaryController && !stagesFromVerifiedFollower)
         {
             diagnostics.Add(CreateBossActionDiagnostic(
@@ -2096,6 +2121,15 @@ internal sealed class ZaEncountersEditSessionService
             summary += $" Global affected scope: {string.Join(", ", affectedScopeLabels)}.";
         }
 
+        var owner = stagesFromPrimaryController
+            ? CreateBossActionOwner(
+                BossActionPrimaryControllerOwnerPrefix,
+                table.RawSpawnerId!,
+                profile.Key)
+            : CreateBossActionOwner(
+                BossActionDedicatedFollowerOwnerPrefix,
+                table.RawSpawnerId!,
+                profile.Key);
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.EncountersDomain,
             summary,
@@ -2104,7 +2138,10 @@ internal sealed class ZaEncountersEditSessionService
                 selectorSource.RelativePath),
             ZaScriptedBossActionCatalog.CreateRecordId(selectorActionId),
             field,
-            parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+            parsedValue.Value.ToString(CultureInfo.InvariantCulture)) with
+        {
+            Owner = owner,
+        };
     }
 
     private static bool IsPrimaryBossController(string? rawSpawnerId)
@@ -2122,6 +2159,90 @@ internal sealed class ZaEncountersEditSessionService
             .Any(token => token.StartsWith(
                 "follower",
                 StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsAuthorizedBossActionPendingEdit(
+        ZaEncountersWorkflow workflow,
+        PendingEdit edit,
+        int selectorActionId)
+    {
+        if (TryParseBossActionOwner(
+                edit.Owner,
+                BossActionPrimaryControllerOwnerPrefix,
+                out var rawSpawnerId,
+                out var profileKey))
+        {
+            var profile = workflow.ScriptedBosses.FirstOrDefault(candidate =>
+                string.Equals(candidate.Key, profileKey, StringComparison.Ordinal));
+            return profile is not null
+                && workflow.Tables.Any(table =>
+                    string.Equals(
+                        table.RawSpawnerId,
+                        rawSpawnerId,
+                        StringComparison.Ordinal)
+                    && IsPrimaryBossController(table.RawSpawnerId))
+                && string.Equals(
+                    ZaScriptedBossActionCatalog.FindProfile(
+                        workflow.ScriptedBosses,
+                        rawSpawnerId,
+                        profile.SpeciesId,
+                        profile.Form)?.Key,
+                    profileKey,
+                    StringComparison.Ordinal)
+                && profile.Actions.Any(action =>
+                    action.SelectorActionId == selectorActionId);
+        }
+
+        if (TryParseBossActionOwner(
+                edit.Owner,
+                BossActionDedicatedFollowerOwnerPrefix,
+                out rawSpawnerId,
+                out profileKey))
+        {
+            return workflow.Tables.Any(table =>
+                string.Equals(table.RawSpawnerId, rawSpawnerId, StringComparison.Ordinal)
+                && table.ScriptedMoveOwnership is { } ownership
+                && string.Equals(
+                    ownership.Authority,
+                    ZaScriptedEncounterMoveOwnershipCatalog.DedicatedFollowerActionTemplateAuthority,
+                    StringComparison.Ordinal)
+                && string.Equals(ownership.ProfileKey, profileKey, StringComparison.Ordinal)
+                && ownership.SelectorActionIds.Contains(selectorActionId));
+        }
+
+        return false;
+    }
+
+    private static string CreateBossActionOwner(
+        string prefix,
+        string rawSpawnerId,
+        string profileKey)
+    {
+        return $"{prefix}{rawSpawnerId}|{profileKey}";
+    }
+
+    private static bool TryParseBossActionOwner(
+        string? owner,
+        string prefix,
+        out string rawSpawnerId,
+        out string profileKey)
+    {
+        rawSpawnerId = string.Empty;
+        profileKey = string.Empty;
+        if (owner?.StartsWith(prefix, StringComparison.Ordinal) != true)
+        {
+            return false;
+        }
+
+        var separatorIndex = owner.IndexOf('|', prefix.Length);
+        if (separatorIndex <= prefix.Length || separatorIndex == owner.Length - 1)
+        {
+            return false;
+        }
+
+        rawSpawnerId = owner[prefix.Length..separatorIndex];
+        profileKey = owner[(separatorIndex + 1)..];
+        return true;
     }
 
     private static bool TryResolveEditableBossActionOwners(
@@ -2462,6 +2583,15 @@ internal sealed class ZaEncountersEditSessionService
                 "Pending boss action edit has a mismatched or missing selector record ID.",
                 edit.Field,
                 ZaScriptedBossActionCatalog.CreateRecordId(selectorActionId)));
+            return;
+        }
+
+        if (!IsAuthorizedBossActionPendingEdit(workflow, edit, selectorActionId))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action edit is missing a current, verified editing origin. Stage it again from the primary boss or a dedicated follower controller.",
+                edit.Field,
+                "Current primary-controller or dedicated-follower ownership marker"));
             return;
         }
 
@@ -2907,10 +3037,16 @@ internal sealed class ZaEncountersEditSessionService
         ZaScriptedEncounterMoveOwnershipRecord ownership,
         string? field)
     {
-        var selectors = string.Join(
-            ", ",
-            ownership.SelectorActionIds.Select(selectorActionId =>
-                ZaScriptedBossActionCatalog.CreateEditField(selectorActionId)));
+        var usesSharedPrimaryController = string.Equals(
+            ownership.Authority,
+            ZaScriptedEncounterMoveOwnershipCatalog.SharedPrimaryControllerAuthority,
+            StringComparison.Ordinal);
+        var expected = usesSharedPrimaryController
+            ? "Edit Boss Actions on the primary Rogue Mega Banette encounter"
+            : $"Edit the authoritative selector field instead: {string.Join(
+                ", ",
+                ownership.SelectorActionIds.Select(selectorActionId =>
+                    ZaScriptedBossActionCatalog.CreateEditField(selectorActionId)))}";
         return ZaEditSessionSupport.CreateDiagnostic(
             DiagnosticSeverity.Error,
             "This encounter move list is not authoritative for this verified scripted encounter. "
@@ -2918,7 +3054,7 @@ internal sealed class ZaEncountersEditSessionService
             ZaEditSessionSupport.EncountersDomain,
             file: $"romfs/{ZaDataPaths.EncountDataArray}",
             field: field,
-            expected: $"Edit the authoritative selector field instead: {selectors}");
+            expected: expected);
     }
 
     private static bool IsStrengthenField(string? field)
@@ -3656,7 +3792,8 @@ internal sealed class ZaEncountersEditSessionService
             && ZaScriptedBossActionCatalog.TryParseRecordId(
                 edit.RecordId,
                 out var recordSelectorActionId)
-            && selectorActionId == recordSelectorActionId)
+            && selectorActionId == recordSelectorActionId
+            && IsAuthorizedBossActionPendingEdit(workflow, edit, selectorActionId))
         {
             if (!TryResolveEditableBossActionOwners(
                     workflow,
@@ -4224,6 +4361,7 @@ internal sealed class ZaEncountersEditSessionService
                 edit.RecordId,
                 out var recordSelectorActionId)
             || selectorActionId != recordSelectorActionId
+            || !IsAuthorizedBossActionPendingEdit(workflow, edit, selectorActionId)
             || !int.TryParse(
                 edit.NewValue,
                 NumberStyles.AllowLeadingSign,
@@ -4338,6 +4476,8 @@ internal sealed class ZaEncountersEditSessionService
                     && workflow.ScriptedBossMoveOptions.Any(option =>
                         option.MoveId == moveId
                         && option.Variant == variant);
+                var hasAuthorizedOwner = hasActionId
+                    && IsAuthorizedBossActionPendingEdit(workflow, edit, actionId);
                 return (
                     hasActionId,
                     actionId,
@@ -4346,6 +4486,7 @@ internal sealed class ZaEncountersEditSessionService
                     hasVariant,
                     variant,
                     hasOption,
+                    hasAuthorizedOwner,
                     edit.Field);
             })
             .ToArray();
@@ -4354,7 +4495,8 @@ internal sealed class ZaEncountersEditSessionService
                 !edit.hasActionId
                 || !edit.hasMoveId
                 || !edit.hasVariant
-                || !edit.hasOption))
+                || !edit.hasOption
+                || !edit.hasAuthorizedOwner))
         {
             diagnostics.Add(CreateBossActionDiagnostic(
                 "Boss action output verification did not receive a complete selector change set.",

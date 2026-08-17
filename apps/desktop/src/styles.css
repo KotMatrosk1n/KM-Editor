@@ -3391,6 +3391,40 @@ h2 {
   text-transform: uppercase;
 }
 
+.editable-field-group-legend-content {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.pokemon-ev-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  color: #dbe6fb;
+  background: rgb(85 98 122 / 20%);
+  border: 1px solid rgb(85 98 122 / 72%);
+  border-radius: 999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: normal;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.pokemon-ev-total.is-over-limit {
+  color: var(--color-danger);
+  background: rgb(255 107 107 / 12%);
+  border-color: rgb(255 107 107 / 65%);
+}
+
+.pokemon-ev-total-over-limit {
+  font-weight: 900;
+}
+
 .editable-field-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 156px), 1fr));

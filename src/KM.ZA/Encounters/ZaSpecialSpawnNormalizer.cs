@@ -18,6 +18,24 @@ internal static class ZaSpecialSpawnNormalizer
     private const string TemperamentChangeTag = "野生ポケ_温厚６に変更";
     private const string ImmobileTag = "野生ポケ_温厚６_不動";
     private const string ObjectBoundTag = "野生ポケ_オブジェクト";
+    private const int SquawkabillySpeciesId = 960;
+
+    // These pairs are verified to support a compatibility group even though they do not
+    // occur in that group's clean base placements. Keep them separate from the base pairs:
+    // a current output may already have been normalized before the pair was verified, and
+    // must pass through reconciliation once so its base action and tags can be restored.
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<SpeciesFormPair>>
+        VerifiedCompatiblePairs = new Dictionary<string, IReadOnlyList<SpeciesFormPair>>(
+            StringComparer.Ordinal)
+        {
+            ["perched-bird"] =
+            [
+                new SpeciesFormPair(SquawkabillySpeciesId, 0),
+                new SpeciesFormPair(SquawkabillySpeciesId, 1),
+                new SpeciesFormPair(SquawkabillySpeciesId, 2),
+                new SpeciesFormPair(SquawkabillySpeciesId, 3),
+            ],
+        };
 
     // Compatibility filtering is intentionally limited to geometry-bound attachments.
     // Floating offsets, berry eating, rest, sleep, and object-bound poses work across
@@ -163,7 +181,7 @@ internal static class ZaSpecialSpawnNormalizer
         var effectivePairs = CreatePairMap(effectiveWorkflow);
         var baseEncounterRows = CreateEncounterRowMap(baseEncounterDocument);
         var baseSpecialSlots = FindBaseSpecialSlots(baseSpawnerDocument, baseEncounterRows);
-        var compatiblePairs = baseSpecialSlots
+        var nativeBasePairs = baseSpecialSlots
             .Where(candidate =>
                 candidate.Definition.Policy == SpecialSpawnPolicy.FilterByNativePair)
             .GroupBy(candidate => candidate.Definition.CompatibilityGroup, StringComparer.Ordinal)
@@ -171,6 +189,20 @@ internal static class ZaSpecialSpawnNormalizer
                 group => group.Key,
                 group => group.Select(candidate => candidate.NativePair).ToHashSet(),
                 StringComparer.Ordinal);
+        var compatiblePairs = nativeBasePairs.ToDictionary(
+            group => group.Key,
+            group => group.Value.ToHashSet(),
+            StringComparer.Ordinal);
+        foreach (var (compatibilityGroup, verifiedPairs) in VerifiedCompatiblePairs)
+        {
+            if (!compatiblePairs.TryGetValue(compatibilityGroup, out var groupPairs))
+            {
+                groupPairs = [];
+                compatiblePairs.Add(compatibilityGroup, groupPairs);
+            }
+
+            groupPairs.UnionWith(verifiedPairs);
+        }
         var currentSpawners = spawnerDocument.Entries.ToDictionary(
             entry => (entry.GroupIndex, entry.SpawnerIndex));
         var errors = new List<string>();
@@ -209,8 +241,9 @@ internal static class ZaSpecialSpawnNormalizer
                 }
 
                 var profilePairs = compatiblePairs[candidate.Definition.CompatibilityGroup];
+                var nativeProfilePairs = nativeBasePairs[candidate.Definition.CompatibilityGroup];
                 finalUsesSpecialBehavior = profilePairs.Contains(effectivePair);
-                if (finalUsesSpecialBehavior && profilePairs.Contains(currentPair))
+                if (finalUsesSpecialBehavior && nativeProfilePairs.Contains(currentPair))
                 {
                     continue;
                 }
