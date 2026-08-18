@@ -20488,13 +20488,19 @@ function SelectedTrainerPanel({
     ? pokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
     : {};
   const projectedSelectedPokemonSpeciesId = selectedPokemon
-    ? (parseOptionalInteger(
-        pokemonDrafts[speciesIdFieldName] ?? selectedPokemon.speciesId.toString()
+    ? (getProjectedTrainerPokemonFieldValue(
+        selectedPokemon,
+        defaultContextualPokemonFields,
+        pokemonDrafts,
+        speciesIdFieldName
       ) ?? selectedPokemon.speciesId)
     : null;
   const projectedSelectedPokemonGender = selectedPokemon
-    ? (parseOptionalInteger(
-        pokemonDrafts[genderFieldName] ?? selectedPokemon.gender.toString()
+    ? (getProjectedTrainerPokemonFieldValue(
+        selectedPokemon,
+        defaultContextualPokemonFields,
+        pokemonDrafts,
+        genderFieldName
       ) ?? selectedPokemon.gender)
     : null;
   const isSelectedZaTrainerMeowstic = Boolean(
@@ -20587,8 +20593,8 @@ function SelectedTrainerPanel({
     [pokemonFields, selectedPokemonFormOptionContext]
   );
   const projectedTrainerHighestLevel = useMemo(
-    () => getProjectedTrainerHighestLevel(trainer, selectedSlot, pokemonDrafts),
-    [pokemonDrafts, selectedSlot, trainer]
+    () => getProjectedTrainerHighestLevel(trainer, pokemonFields, pokemonDraftsByTrainerSlot),
+    [pokemonDraftsByTrainerSlot, pokemonFields, trainer]
   );
   const contextualTrainerFields = useMemo(
     () =>
@@ -20600,12 +20606,12 @@ function SelectedTrainerPanel({
                 editorFamily === 'swsh'
                   ? 'Prize money rate'
                   : editorFamily === 'za'
-                    ? field.label
-                    : 'Prize money',
+                    ? 'Base prize money'
+                    : field.label,
               options:
-                editorFamily === 'swsh' || editorFamily === 'za'
-                  ? field.options
-                  : createTrainerPrizeMoneyOptions(projectedTrainerHighestLevel)
+                editorFamily === 'za'
+                  ? createZaTrainerPrizeMoneyOptions(projectedTrainerHighestLevel)
+                  : field.options
             }
           : field
       ),
@@ -21352,27 +21358,37 @@ function SelectedTrainerPanel({
             {trainer.team.length > 0 ? (
               <div className="trainer-party-card-grid" aria-label="Trainer party Pokemon">
                 {trainer.team.map((pokemon) => {
-                  const isEmptySlot = pokemon.speciesId === 0;
+                  const cardDrafts =
+                    pokemonDraftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {};
+                  const hasCardDrafts = Object.keys(cardDrafts).length > 0;
+                  const projectedPokemon = getProjectedTrainerPokemonCardIdentity(
+                    pokemon,
+                    pokemonFields,
+                    cardDrafts,
+                    pokemonWorkflow,
+                    editorFamily
+                  );
+                  const isEmptySlot = projectedPokemon.speciesId === 0;
                   const isDynamicZaTrainerMeowstic =
                     editorFamily === 'za' &&
-                    pokemon.speciesId === zaMeowsticSpeciesId &&
-                    pokemon.gender === 0;
+                    projectedPokemon.speciesId === zaMeowsticSpeciesId &&
+                    projectedPokemon.gender === 0;
                   const pokemonLabel = isEmptySlot
                     ? 'Empty slot'
                     : isDynamicZaTrainerMeowstic
                       ? t('za.trainers.meowstic.cardLabel')
                       : formatSpeciesFormLabel(
-                          pokemon.species,
-                          pokemon.form,
-                          pokemon.speciesId,
+                          projectedPokemon.species,
+                          projectedPokemon.form,
+                          projectedPokemon.speciesId,
                           editorFamily
                         );
                   const pokemonSpriteLabel = isEmptySlot
                     ? 'None'
                     : formatSpeciesFormLabel(
-                        pokemon.spriteName ?? pokemon.species,
-                        pokemon.form,
-                        pokemon.speciesId,
+                        projectedPokemon.spriteName ?? projectedPokemon.species,
+                        projectedPokemon.form,
+                        projectedPokemon.speciesId,
                         editorFamily
                       );
                   const slotLabel = `Slot ${formatTrainerSlotNumber(pokemon.slot, editorFamily)}`;
@@ -21430,15 +21446,18 @@ function SelectedTrainerPanel({
                       <PokemonSprite
                         editorFamily={editorFamily}
                         className="trainer-party-sprite"
-                        form={pokemon.form}
+                        form={projectedPokemon.form}
                         name={pokemonLabel}
-                        speciesId={pokemon.speciesId}
-                        spriteName={pokemon.spriteName ?? pokemonSpriteLabel}
+                        speciesId={projectedPokemon.speciesId}
+                        spriteName={projectedPokemon.spriteName ?? pokemonSpriteLabel}
                       />
                       <strong data-localization-ignore="true">
                         {isEmptySlot ? slotLabel : pokemonLabel}
                       </strong>
-                      <span>{isEmptySlot ? 'None' : `Lv. ${pokemon.level}`}</span>
+                      <span>
+                        {isEmptySlot ? 'None' : `Lv. ${projectedPokemon.level}`}
+                        {hasCardDrafts ? ` (${translateLiteral('Draft')})` : ''}
+                      </span>
                     </button>
                   );
                 })}
@@ -21509,7 +21528,8 @@ function SelectedTrainerPanel({
                           const isDynamaxDependentField = dynamaxDependentFieldNames.includes(
                             field.field as (typeof dynamaxDependentFieldNames)[number]
                           );
-                          const selectedPokemonSlotIsEmpty = selectedPokemon.speciesId === 0;
+                          const selectedPokemonSlotIsEmpty =
+                            projectedSelectedPokemonSpeciesId === 0;
                           const disabledReason =
                             selectedPokemonBlockedByPreviousSlot
                               ? 'Fill the previous party slot first.'
@@ -21577,7 +21597,14 @@ function SelectedTrainerPanel({
                                         selectedPokemon.form.toString()
                                     ) ?? selectedPokemon.form;
 
-                                  if (
+                                  if (targetSpeciesId === 0) {
+                                    for (const dependentField of defaultContextualPokemonFields) {
+                                      if (dependentField.field !== speciesIdFieldName) {
+                                        nextDrafts[dependentField.field] =
+                                          pokemonDraftDefaults[dependentField.field] ?? '';
+                                      }
+                                    }
+                                  } else if (
                                     formField &&
                                     targetSpeciesId !== null &&
                                     targetSpeciesId !== previousSpeciesId
@@ -22256,8 +22283,8 @@ function clampInteger(value: number, minimum: number, maximum: number) {
 
 function getProjectedTrainerHighestLevel(
   trainer: TrainerRecord | null,
-  selectedSlot: number | null,
-  pokemonDrafts: Record<string, string>
+  fields: TrainerEditableField[],
+  draftsByTrainerSlot: Record<string, Record<string, string>>
 ) {
   if (!trainer || trainer.team.length === 0) {
     return 0;
@@ -22265,12 +22292,18 @@ function getProjectedTrainerHighestLevel(
 
   return Math.max(
     ...trainer.team.map((pokemon) => {
-      if (pokemon.slot !== selectedSlot) {
-        return pokemon.level;
+      const drafts = draftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {};
+      const speciesId =
+        getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName) ??
+        pokemon.speciesId;
+      if (speciesId === 0) {
+        return 0;
       }
 
-      const draftedLevel = Number.parseInt(pokemonDrafts[levelFieldName] ?? '', 10);
-      return Number.isInteger(draftedLevel) ? draftedLevel : pokemon.level;
+      return (
+        getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, levelFieldName) ??
+        pokemon.level
+      );
     })
   );
 }
@@ -22404,11 +22437,11 @@ function isTrainerPokemonSlotEmpty(
   return (draftedSpeciesId ?? pokemon.speciesId) === 0;
 }
 
-function createTrainerPrizeMoneyOptions(highestLevel: number): EditableFieldOption[] {
-  const normalizedHighestLevel = Math.max(0, highestLevel);
+function createZaTrainerPrizeMoneyOptions(highestLevel: number): EditableFieldOption[] {
+  const normalizedHighestLevel = Math.max(1, highestLevel);
 
   return Array.from({ length: 256 }, (_, rate) => {
-    const payout = getTrainerPrizeMoney(normalizedHighestLevel, rate);
+    const payout = getZaTrainerBasePrizeMoney(normalizedHighestLevel, rate);
 
     return {
       label: `$${payout.toLocaleString()} (rate ${rate})`,
@@ -22417,7 +22450,7 @@ function createTrainerPrizeMoneyOptions(highestLevel: number): EditableFieldOpti
   });
 }
 
-function getTrainerPrizeMoney(highestLevel: number, rate: number) {
+function getZaTrainerBasePrizeMoney(highestLevel: number, rate: number) {
   return highestLevel * rate * 4;
 }
 
@@ -22532,6 +22565,56 @@ function getNatureStatEffects(
   const normalizedNature =
     (editorFamily === 'sv' || editorFamily === 'za') && nature > 0 ? nature - 1 : nature;
   return effects[normalizedNature] ?? { up: null, down: null };
+}
+
+function getProjectedTrainerPokemonCardIdentity(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts: Record<string, string>,
+  pokemonWorkflow: PokemonWorkflow | null,
+  editorFamily: EditorUiFamily
+) {
+  const speciesId =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName) ??
+    pokemon.speciesId;
+  const form =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, formFieldName) ?? pokemon.form;
+  const gender =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, genderFieldName) ??
+    pokemon.gender;
+  const level =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, levelFieldName) ?? pokemon.level;
+  const referencePokemon =
+    pokemonWorkflow?.pokemon.find(
+      (candidate) => candidate.speciesId === speciesId && candidate.form === form
+    ) ??
+    pokemonWorkflow?.pokemon.find(
+      (candidate) => candidate.speciesId === speciesId && candidate.form === 0
+    ) ??
+    null;
+  const speciesContext = createDraftSpeciesFormOptionContext(
+    fields.find((field) => field.field === speciesIdFieldName),
+    drafts[speciesIdFieldName],
+    pokemon.species,
+    pokemon.speciesId,
+    undefined,
+    editorFamily,
+    undefined,
+    pokemon.formOptions
+  );
+  const usesCurrentIdentity = speciesId === pokemon.speciesId && form === pokemon.form;
+
+  return {
+    form,
+    gender,
+    level,
+    species:
+      referencePokemon?.name ??
+      (speciesId === pokemon.speciesId ? pokemon.species : speciesContext.species),
+    speciesId,
+    spriteName:
+      referencePokemon?.spriteName ?? (usesCurrentIdentity ? pokemon.spriteName : null)
+  };
 }
 
 function getProjectedTrainerPokemonStats(

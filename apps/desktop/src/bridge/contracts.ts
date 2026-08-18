@@ -2227,7 +2227,7 @@ export const trainerRecordSchema = z.strictObject({
   itemIds: z.array(z.number().int().nonnegative()).default([]),
   items: z.array(z.string()).default([]),
   location: z.string(),
-  money: z.number().int().nonnegative().default(0),
+  money: z.number().int().default(0),
   name: z.string(),
   provenance: trainerProvenanceSchema,
   team: z.array(trainerPokemonRecordSchema),

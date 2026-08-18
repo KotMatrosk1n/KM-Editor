@@ -415,7 +415,13 @@ function resolveGameFieldKey(input: FieldHelpInput, field: string): FieldHelpKey
       return 'fieldHelp.catalog.raw.unverified';
     }
     if (input.game === 'swsh' && field === 'money') {
-      return 'fieldHelp.catalog.trainer.money';
+      return 'fieldHelp.catalog.trainer.money.swsh';
+    }
+    if (input.game === 'sv' && field === 'money') {
+      return 'fieldHelp.catalog.trainer.money.sv';
+    }
+    if (input.game === 'za' && field === 'money') {
+      return 'fieldHelp.catalog.trainer.money.za';
     }
   }
 
