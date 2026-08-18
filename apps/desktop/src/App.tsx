@@ -477,16 +477,16 @@ const textControlInserts = [
     value: '\\t'
   },
   {
-    display: '\\c\\n',
+    display: '\\c',
     labelKey: 'text.controls.waitClear.label',
     titleKey: 'text.controls.waitClear.insertHelp',
-    value: '\\c\\n'
+    value: '\\c'
   },
   {
-    display: '\\r\\n',
+    display: '\\r',
     labelKey: 'text.controls.waitScroll.label',
     titleKey: 'text.controls.waitScroll.insertHelp',
-    value: '\\r\\n'
+    value: '\\r'
   }
 ] as const;
 
