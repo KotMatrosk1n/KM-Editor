@@ -1245,7 +1245,11 @@ internal sealed class ZaEncountersEditSessionService
                 paths,
                 outputWrites,
                 outputMode,
-                reviewedStandaloneDescriptorBytes);
+                reviewedStandaloneDescriptorBytes,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             if (encounterDocument is not null)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.EncountDataArray, outputMode));
@@ -1283,7 +1287,7 @@ internal sealed class ZaEncountersEditSessionService
                 normalizationState.Result,
                 diagnostics);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

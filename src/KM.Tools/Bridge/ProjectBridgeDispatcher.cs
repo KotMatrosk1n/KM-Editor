@@ -24,6 +24,7 @@ using KM.Api.IvScreen;
 using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.NpcItemGift;
+using KM.Api.Output;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.ProfanityFilter;
@@ -50,6 +51,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.GameDump;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.Core.Workspace;
 using KM.SwSh.Behavior;
@@ -109,7 +111,7 @@ namespace KM.Tools.Bridge;
 
 public sealed class ProjectBridgeDispatcher
 {
-    private const int MaximumBridgeRequestCharacters = 16 * 1024 * 1024;
+    internal const int MaximumBridgeRequestCharacters = 16 * 1024 * 1024;
     private static readonly object SwShApplySyncRoot = new();
     private static readonly JsonSerializerOptions RequestSerializerOptions =
         new(BridgeJson.SerializerOptions)
@@ -164,6 +166,8 @@ public sealed class ProjectBridgeDispatcher
     private readonly SvWorkflowService svWorkflowService;
     private readonly ZaWorkflowService zaWorkflowService;
     private readonly WorkspaceDraftApplicationService workspaceDraftApplicationService;
+    private readonly OutputSafetyApplicationService outputSafetyApplicationService;
+    private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -210,7 +214,9 @@ public sealed class ProjectBridgeDispatcher
         SvWorkflowService? svWorkflowService = null,
         ZaWorkflowService? zaWorkflowService = null,
         SwShCacheManager? swShCacheManager = null,
-        WorkspaceDraftApplicationService? workspaceDraftApplicationService = null)
+        WorkspaceDraftApplicationService? workspaceDraftApplicationService = null,
+        OutputSafetyApplicationService? outputSafetyApplicationService = null,
+        ProjectRelocationApplicationService? projectRelocationApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -269,11 +275,25 @@ public sealed class ProjectBridgeDispatcher
         this.zaGameDumpService = zaGameDumpService ?? new ZaGameDumpService(this.zaWorkflowService);
         this.workspaceDraftApplicationService = workspaceDraftApplicationService
             ?? new WorkspaceDraftApplicationService();
+        this.outputSafetyApplicationService = outputSafetyApplicationService
+            ?? new OutputSafetyApplicationService();
+        this.projectRelocationApplicationService = projectRelocationApplicationService
+            ?? new ProjectRelocationApplicationService(
+                workspaceDraftService: this.workspaceDraftApplicationService,
+                outputSafetyService: this.outputSafetyApplicationService);
     }
 
     public string Dispatch(string requestJson)
     {
         return DispatchForLongLivedRunner(requestJson).ResponseJson;
+    }
+
+    internal static string SerializeRequestTooLargeFailure()
+    {
+        return SerializeFailure(
+            BridgeErrorCodes.RequestTooLarge,
+            "Bridge request JSON exceeds the supported size limit.",
+            requestId: null);
     }
 
     internal (string ResponseJson, bool RequiresDispatcherReset) DispatchForLongLivedRunner(
@@ -292,10 +312,7 @@ public sealed class ProjectBridgeDispatcher
         if (requestJson.Length > MaximumBridgeRequestCharacters)
         {
             return (
-                SerializeFailure(
-                    BridgeErrorCodes.RequestTooLarge,
-                    "Bridge request JSON exceeds the supported size limit.",
-                    requestId: null),
+                SerializeRequestTooLargeFailure(),
                 RequiresDispatcherReset: false);
         }
 
@@ -492,6 +509,20 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
+                KmCommandNames.GetOutputRecoveryStatus => DispatchGetOutputRecoveryStatus(requestJson),
+                KmCommandNames.ReconcileOutputRecovery => DispatchReconcileOutputRecovery(requestJson),
+                KmCommandNames.ScanOutputIntegrity => DispatchScanOutputIntegrity(requestJson),
+                KmCommandNames.PreviewOutputCleanup => DispatchPreviewOutputCleanup(requestJson),
+                KmCommandNames.ApplyOutputCleanup => DispatchApplyOutputCleanup(requestJson),
+                KmCommandNames.ListOutputHistory => DispatchListOutputHistory(requestJson),
+                KmCommandNames.ListOutputCheckpoints => DispatchListOutputCheckpoints(requestJson),
+                KmCommandNames.CreateOutputCheckpoint => DispatchCreateOutputCheckpoint(requestJson),
+                KmCommandNames.PreviewOutputCheckpointRestore => DispatchPreviewOutputCheckpointRestore(requestJson),
+                KmCommandNames.RestoreOutputCheckpoint => DispatchRestoreOutputCheckpoint(requestJson),
+                KmCommandNames.DeleteOutputCheckpoint => DispatchDeleteOutputCheckpoint(requestJson),
+                KmCommandNames.PreviewProjectRelocation => DispatchPreviewProjectRelocation(requestJson),
+                KmCommandNames.ApplyProjectRelocation => DispatchApplyProjectRelocation(requestJson),
+                KmCommandNames.BuildSupportReport => DispatchBuildSupportReport(requestJson),
                 null => SerializeFailure(BridgeErrorCodes.MissingCommand, "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
                     BridgeErrorCodes.UnsupportedCommand,
@@ -535,6 +566,207 @@ public sealed class ProjectBridgeDispatcher
                     requestId),
                 RequiresDispatcherReset: false);
         }
+        catch (OutputScopeMismatchException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputConcurrentModification,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputReviewExpiredException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputConcurrentModification,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputOwnershipUnprovenException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputOwnershipUnproven,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputOwnershipConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputOwnershipUnproven,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputCheckpointNotFoundException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputCheckpointNotFound,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputCheckpointConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputCheckpointConflict,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputCheckpointAlreadyCurrentException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputCheckpointConflict,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (ProjectRelocationReviewMismatchException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.ProjectRelocationMismatch,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (ProjectRelocationConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.ProjectRelocationConflict,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputPreimageConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputConcurrentModification,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputReviewStateConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputConcurrentModification,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputStateRevisionConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputConcurrentModification,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputRecoveryRequiredException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputRecoveryRequired,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputRootLockTimeoutException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputRootBusy,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputPathSecurityException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputUnsafePath,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputLimitExceededException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputLimitExceeded,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (ZaOutputApplyNotCommittedException exception)
+        {
+            var code = exception.Result.Outcome == OutputApplyOutcome.RecoveryRequired
+                ? BridgeErrorCodes.OutputRecoveryRequired
+                : BridgeErrorCodes.IoFailed;
+            return (
+                SerializeFailure(
+                    code,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (ProjectFileGraphDiscoveryException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputLimitExceeded,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (OutputCoordinatorException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.IoFailed,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (ArgumentException exception) when (IsOutputSafetyCommand(command))
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.DataInvalid,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (UnauthorizedAccessException) when (IsOutputSafetyCommand(command))
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.AccessDenied,
+                    "The output operation could not access the selected output root.",
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (IOException) when (IsOutputSafetyCommand(command))
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.IoFailed,
+                    "The output operation could not complete because an input or output operation failed.",
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
         catch (Exception exception) when (!IsFatal(exception))
         {
             var diagnostic = BridgeUnexpectedFailureClassifier.Classify(
@@ -555,9 +787,13 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<OpenProjectRequest>(requestJson);
         var openedProject = projectWorkspaceService.Open(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var health = ReconcileOutputOnProjectActivation(
+            openedProject.Id.ToString(),
+            request.Payload.Paths,
+            ProjectBridgeMapper.ToDto(openedProject.Health));
         var response = new OpenProjectResponse(
             openedProject.Id.ToString(),
-            ProjectBridgeMapper.ToDto(openedProject.Health),
+            health,
             ProjectBridgeMapper.ToDto(openedProject.FileGraph));
 
         return SerializeSuccess(response, request.RequestId);
@@ -599,16 +835,257 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchGetOutputRecoveryStatus(string requestJson)
+    {
+        var request = DeserializeRequest<GetOutputRecoveryStatusRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .GetRecoveryStatusAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchReconcileOutputRecovery(string requestJson)
+    {
+        var request = DeserializeRequest<ReconcileOutputRecoveryRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .ReconcileRecoveryAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchScanOutputIntegrity(string requestJson)
+    {
+        var request = DeserializeRequest<ScanOutputIntegrityRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .ScanIntegrityAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewOutputCleanup(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewOutputCleanupRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .PreviewCleanupAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyOutputCleanup(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyOutputCleanupRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .ApplyCleanupAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchListOutputHistory(string requestJson)
+    {
+        var request = DeserializeRequest<ListOutputHistoryRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .ListHistoryAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchListOutputCheckpoints(string requestJson)
+    {
+        var request = DeserializeRequest<ListOutputCheckpointsRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .ListCheckpointsAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchCreateOutputCheckpoint(string requestJson)
+    {
+        var request = DeserializeRequest<CreateOutputCheckpointRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .CreateCheckpointAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewOutputCheckpointRestore(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewOutputCheckpointRestoreRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .PreviewCheckpointRestoreAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchRestoreOutputCheckpoint(string requestJson)
+    {
+        var request = DeserializeRequest<RestoreOutputCheckpointRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .RestoreCheckpointAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchDeleteOutputCheckpoint(string requestJson)
+    {
+        var request = DeserializeRequest<DeleteOutputCheckpointRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .DeleteCheckpointAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewProjectRelocation(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewProjectRelocationRequest>(requestJson);
+        var response = projectRelocationApplicationService
+            .PreviewAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyProjectRelocation(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyProjectRelocationRequest>(requestJson);
+        var response = projectRelocationApplicationService
+            .ApplyAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchBuildSupportReport(string requestJson)
+    {
+        var request = DeserializeRequest<BuildSupportReportRequest>(requestJson);
+        var response = outputSafetyApplicationService
+            .BuildSupportReportAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchValidateProject(string requestJson)
     {
         var request = DeserializeRequest<ValidateProjectRequest>(requestJson);
         var validatedProject = projectWorkspaceService.ValidateAndOpen(
             ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var health = ReconcileOutputOnProjectActivation(
+            validatedProject.Id.ToString(),
+            request.Payload.Paths,
+            ProjectBridgeMapper.ToDto(validatedProject.Health));
         var response = new ValidateProjectResponse(
             validatedProject.Id.ToString(),
-            ProjectBridgeMapper.ToDto(validatedProject.Health));
+            health);
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private ProjectHealthDto ReconcileOutputOnProjectActivation(
+        string projectId,
+        ProjectPathsDto paths,
+        ProjectHealthDto health)
+    {
+        if (!health.CanOpenEditableWorkflows)
+        {
+            return health;
+        }
+
+        try
+        {
+            var scope = new OutputScopeDto(projectId, paths);
+            var recovery = outputSafetyApplicationService
+                .GetRecoveryStatusAsync(new GetOutputRecoveryStatusRequest(scope))
+                .GetAwaiter()
+                .GetResult()
+                .Status;
+            if (recovery.RequiresRecovery)
+            {
+                return health with
+                {
+                    Diagnostics = health.Diagnostics.Concat(recovery.Diagnostics).ToArray(),
+                };
+            }
+
+            if (recovery.Transactions.Any(
+                    transaction => transaction.Phase == OutputTransactionPhaseDto.RecoveryRequired))
+            {
+                return health with
+                {
+                    Diagnostics = health.Diagnostics.Concat(recovery.Diagnostics).ToArray(),
+                };
+            }
+
+            var dispositions = recovery.Transactions
+                .Select(transaction => transaction.Disposition)
+                .ToArray();
+            if (!dispositions.Any(disposition => disposition is
+                    OutputRecoveryDispositionDto.FinalizeCommit or
+                    OutputRecoveryDispositionDto.RollBack))
+            {
+                return health;
+            }
+
+            var reconciled = outputSafetyApplicationService
+                .ReconcileRecoveryAsync(new ReconcileOutputRecoveryRequest(scope, recovery.Revision))
+                .GetAwaiter()
+                .GetResult();
+            if (reconciled.Status.RequiresRecovery
+                || reconciled.Status.PendingReconciliationCount > 0)
+            {
+                return health with
+                {
+                    Diagnostics = health.Diagnostics
+                        .Concat(reconciled.Status.Diagnostics)
+                        .ToArray(),
+                };
+            }
+
+            var rolledBack = dispositions.Contains(OutputRecoveryDispositionDto.RollBack);
+            var diagnostic = new ApiDiagnostic(
+                rolledBack ? ApiDiagnosticSeverity.Warning : ApiDiagnosticSeverity.Info,
+                rolledBack
+                    ? "An interrupted output transaction was safely rolled back during project activation."
+                    : "An interrupted output transaction was safely finalized during project activation.",
+                Domain: "output.recovery")
+            {
+                Code = rolledBack
+                    ? "KM-OUTPUT-RECOVERY-ROLLED-BACK"
+                    : "KM-OUTPUT-RECOVERY-FINALIZED",
+            };
+            return health with
+            {
+                Diagnostics = health.Diagnostics.Append(diagnostic).ToArray(),
+            };
+        }
+        catch (Exception exception) when (exception is
+            OutputCoordinatorException or
+            OutputScopeMismatchException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            var diagnostic = new ApiDiagnostic(
+                ApiDiagnosticSeverity.Error,
+                "Output recovery status could not be verified. Applying changes remains blocked until it can be checked.",
+                Domain: "output.recovery")
+            {
+                Code = "KM-OUTPUT-RECOVERY-STATUS-UNAVAILABLE",
+            };
+            return health with
+            {
+                Diagnostics = health.Diagnostics.Append(diagnostic).ToArray(),
+            };
+        }
     }
 
     private string DispatchRefreshFileGraph(string requestJson)
@@ -2940,17 +3417,19 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplyModMergeRequest>(requestJson);
-        var result = modMergerWorkflowService.ApplyReviewed(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.ModDirectory1,
-            request.Payload.ModDirectory2,
-            request.Payload.SelectedDirectory1Files,
-            request.Payload.SelectedDirectory2Files,
-            request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
-                resolution.ConflictId,
-                resolution.Source)).ToArray(),
-            request.Payload.MergeMode,
-            request.Payload.ReviewToken);
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => modMergerWorkflowService.ApplyReviewed(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                request.Payload.ModDirectory1,
+                request.Payload.ModDirectory2,
+                request.Payload.SelectedDirectory1Files,
+                request.Payload.SelectedDirectory2Files,
+                request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
+                    resolution.ConflictId,
+                    resolution.Source)).ToArray(),
+                request.Payload.MergeMode,
+                request.Payload.ReviewToken));
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2981,9 +3460,11 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplySvModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplySvModMergeRequest>(requestJson);
-        var result = svWorkflowService.ApplyModMerge(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.ModSources.Select(ToCore).ToArray());
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => svWorkflowService.ApplyModMerge(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                request.Payload.ModSources.Select(ToCore).ToArray()));
         var response = SvBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -3014,9 +3495,11 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyZaModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplyZaModMergeRequest>(requestJson);
-        var result = zaWorkflowService.ApplyModMerge(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.ModSources.Select(ToCore).ToArray());
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => zaWorkflowService.ApplyModMerge(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                request.Payload.ModSources.Select(ToCore).ToArray()));
         var response = ZaBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -3172,7 +3655,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<ApplyFpsPatchRequest>(requestJson);
-        var result = fpsPatchService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => fpsPatchService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new ApplyFpsPatchResponse(
             ToDto(result.Status),
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -3183,7 +3668,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchRestoreFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<RestoreFpsPatchRequest>(requestJson);
-        var result = fpsPatchService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => fpsPatchService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new RestoreFpsPatchResponse(
             ToDto(result.Status),
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -3203,7 +3690,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyProfanityFilter(string requestJson)
     {
         var request = DeserializeRequest<ApplyProfanityFilterRequest>(requestJson);
-        var result = profanityFilterService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => profanityFilterService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new ApplyProfanityFilterResponse(
             ToDto(result.Status),
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -3214,7 +3703,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchRestoreProfanityFilter(string requestJson)
     {
         var request = DeserializeRequest<RestoreProfanityFilterRequest>(requestJson);
-        var result = profanityFilterService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => profanityFilterService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new RestoreProfanityFilterResponse(
             ToDto(result.Status),
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -3237,9 +3728,11 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyRandomizer(string requestJson)
     {
         var request = DeserializeRequest<ApplyRandomizerRequest>(requestJson);
-        var result = randomizerService.Apply(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            ToCore(request.Payload.Config));
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => randomizerService.Apply(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                ToCore(request.Payload.Config)));
         var response = new ApplyRandomizerResponse(
             result.Seed,
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -3250,7 +3743,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchRestoreRandomizer(string requestJson)
     {
         var request = DeserializeRequest<RestoreRandomizerRequest>(requestJson);
-        var result = randomizerService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var result = ExecuteExclusiveOutputOperation(
+            request.Payload.Paths,
+            () => randomizerService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new RestoreRandomizerResponse(EditSessionBridgeMapper.ToDto(result));
 
         return SerializeSuccess(response, request.RequestId);
@@ -3422,12 +3917,33 @@ public sealed class ProjectBridgeDispatcher
         var isScarletViolet = IsScarletViolet(paths);
         var applyResult = isPokemonLegendsZA
             ? zaWorkflowService.ApplyChangePlan(paths, session, changePlan, ZaBridgeMapper.ToCore(request.Payload.OutputMode))
-            : isScarletViolet
-            ? svWorkflowService.ApplyChangePlan(paths, session, changePlan, SvBridgeMapper.ToCore(request.Payload.OutputMode))
-            : ApplyVerifiedSwShChangePlan(paths, session, changePlan);
+            : ExecuteExclusiveOutputOperation(
+                request.Payload.Paths,
+                () => isScarletViolet
+                    ? svWorkflowService.ApplyChangePlan(
+                        paths,
+                        session,
+                        changePlan,
+                        SvBridgeMapper.ToCore(request.Payload.OutputMode))
+                    : ApplyVerifiedSwShChangePlan(paths, session, changePlan));
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private TResult ExecuteExclusiveOutputOperation<TResult>(
+        ProjectPathsDto paths,
+        Func<TResult> operation)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(operation);
+        var projectId = ProjectIdentity.FromPaths(ProjectBridgeMapper.ToCore(paths));
+        return outputSafetyApplicationService
+            .ExecuteExclusiveOutputOperationAsync(
+                new OutputScopeDto(projectId.Value, paths),
+                operation)
+            .GetAwaiter()
+            .GetResult();
     }
 
     private ApplyResult ApplyVerifiedSwShChangePlan(
@@ -4273,8 +4789,35 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.ApplyModMerge or
             KmCommandNames.ApplySvModMerge or
             KmCommandNames.ApplyZaModMerge or
+            KmCommandNames.ApplyFpsPatch or
+            KmCommandNames.RestoreFpsPatch or
+            KmCommandNames.ApplyProfanityFilter or
+            KmCommandNames.RestoreProfanityFilter or
             KmCommandNames.ApplyRandomizer or
-            KmCommandNames.RestoreRandomizer;
+            KmCommandNames.RestoreRandomizer or
+            KmCommandNames.ReconcileOutputRecovery or
+            KmCommandNames.ApplyOutputCleanup or
+            KmCommandNames.RestoreOutputCheckpoint or
+            KmCommandNames.ApplyProjectRelocation;
+    }
+
+    private static bool IsOutputSafetyCommand(string? command)
+    {
+        return command is
+            KmCommandNames.GetOutputRecoveryStatus or
+            KmCommandNames.ReconcileOutputRecovery or
+            KmCommandNames.ScanOutputIntegrity or
+            KmCommandNames.PreviewOutputCleanup or
+            KmCommandNames.ApplyOutputCleanup or
+            KmCommandNames.ListOutputHistory or
+            KmCommandNames.ListOutputCheckpoints or
+            KmCommandNames.CreateOutputCheckpoint or
+            KmCommandNames.PreviewOutputCheckpointRestore or
+            KmCommandNames.RestoreOutputCheckpoint or
+            KmCommandNames.DeleteOutputCheckpoint or
+            KmCommandNames.PreviewProjectRelocation or
+            KmCommandNames.ApplyProjectRelocation or
+            KmCommandNames.BuildSupportReport;
     }
 
     private static bool IsSwordShieldOnlyCommand(string command)

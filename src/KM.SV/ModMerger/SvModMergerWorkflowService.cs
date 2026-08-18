@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.Formats.SV;
 using KM.SV.Workflows;
@@ -509,11 +510,25 @@ public sealed class SvModMergerWorkflowService
         {
             if (Directory.Exists(source.SourcePath))
             {
+                if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(
+                        source.SourcePath,
+                        isDirectory: true))
+                {
+                    return null;
+                }
+
                 return TryReadFolderBytes(source.SourcePath, relativePath);
             }
 
             if (File.Exists(source.SourcePath))
             {
+                if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(
+                        source.SourcePath,
+                        isDirectory: false))
+                {
+                    return null;
+                }
+
                 return TryReadArchiveBytes(source.SourcePath, relativePath, diagnostics);
             }
         }
@@ -532,6 +547,11 @@ public sealed class SvModMergerWorkflowService
     private static byte[]? TryReadFolderBytes(string sourcePath, string relativePath)
     {
         var root = ResolveFolderContentRoot(sourcePath);
+        if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(root, isDirectory: true))
+        {
+            return null;
+        }
+
         var pathInsideRomFs = StripRomFsPrefix(relativePath).Replace('/', Path.DirectorySeparatorChar);
         var targetPath = Path.GetFullPath(Path.Combine(root, pathInsideRomFs));
         var rootFullPath = Path.GetFullPath(root);
@@ -541,7 +561,10 @@ public sealed class SvModMergerWorkflowService
             return null;
         }
 
-        return File.Exists(targetPath) ? File.ReadAllBytes(targetPath) : null;
+        return File.Exists(targetPath)
+               && OutputMetadataNamespace.IsSafeExistingPayloadPath(targetPath, isDirectory: false)
+            ? File.ReadAllBytes(targetPath)
+            : null;
     }
 
     private static byte[]? TryReadArchiveBytes(
@@ -549,6 +572,11 @@ public sealed class SvModMergerWorkflowService
         string relativePath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(sourcePath, isDirectory: false))
+        {
+            return null;
+        }
+
         byte[]? result = null;
         using var stream = File.OpenRead(sourcePath);
         using var reader = ReaderFactory.OpenReader(stream, new ReaderOptions());
@@ -592,11 +620,21 @@ public sealed class SvModMergerWorkflowService
         {
             if (Directory.Exists(source.Path))
             {
+                if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(source.Path, isDirectory: true))
+                {
+                    return [];
+                }
+
                 return EnumerateFolderFiles(source, diagnostics);
             }
 
             if (File.Exists(source.Path))
             {
+                if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(source.Path, isDirectory: false))
+                {
+                    return [];
+                }
+
                 return EnumerateArchiveFiles(source, diagnostics);
             }
 
@@ -623,6 +661,11 @@ public sealed class SvModMergerWorkflowService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var root = ResolveFolderContentRoot(source.Path);
+        if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(root, isDirectory: true))
+        {
+            return [];
+        }
+
         var files = new List<SourceFileRecord>();
         foreach (var filePath in Directory.EnumerateFiles(root, "*", RecursiveEnumeration))
         {
@@ -690,6 +733,8 @@ public sealed class SvModMergerWorkflowService
 
         return Directory
             .EnumerateDirectories(folderPath, "romfs", RecursiveEnumeration)
+            .Where(path => !OutputMetadataNamespace.ContainsReservedSegment(
+                Path.GetRelativePath(folderPath, path)))
             .OrderBy(path => path.Length)
             .FirstOrDefault() ?? folderPath;
     }
@@ -708,7 +753,8 @@ public sealed class SvModMergerWorkflowService
         var segments = normalized
             .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToArray();
-        if (segments.Length == 0)
+        if (segments.Length == 0
+            || OutputMetadataNamespace.ContainsReservedSegment(string.Join('/', segments)))
         {
             return null;
         }
@@ -908,7 +954,9 @@ public sealed class SvModMergerWorkflowService
         string relativePath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (Path.IsPathRooted(relativePath) || !relativePath.StartsWith(RomFsPrefix, StringComparison.OrdinalIgnoreCase))
+        if (Path.IsPathRooted(relativePath)
+            || !relativePath.StartsWith(RomFsPrefix, StringComparison.OrdinalIgnoreCase)
+            || OutputMetadataNamespace.ContainsReservedSegment(relativePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -928,6 +976,16 @@ public sealed class SvModMergerWorkflowService
                 "Merged output path escapes Output Root.",
                 file: relativePath,
                 expected: "Output path inside Output Root"));
+            return null;
+        }
+
+        if (!OutputMetadataNamespace.IsSafePayloadDestinationPath(targetPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Merged output path traverses a symbolic link or junction.",
+                file: relativePath,
+                expected: "Physical output path inside Output Root"));
             return null;
         }
 

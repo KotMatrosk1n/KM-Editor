@@ -23,7 +23,17 @@ const expectedBridgeErrorCodes = new Set<KmErrorCode>([
   swshDynamaxAdventuresErrorCodes.seedLimitInvalid,
   swshDynamaxAdventuresErrorCodes.startSeedInvalid,
   swshPlacementErrorCodes.catalogStale,
-  projectBridgeErrorCodes.gameMismatch
+  projectBridgeErrorCodes.gameMismatch,
+  projectBridgeErrorCodes.outputCheckpointConflict,
+  projectBridgeErrorCodes.outputCheckpointNotFound,
+  projectBridgeErrorCodes.outputConcurrentModification,
+  projectBridgeErrorCodes.outputLimitExceeded,
+  projectBridgeErrorCodes.outputOwnershipUnproven,
+  projectBridgeErrorCodes.outputRecoveryRequired,
+  projectBridgeErrorCodes.outputRootBusy,
+  projectBridgeErrorCodes.outputUnsafePath,
+  projectBridgeErrorCodes.projectRelocationConflict,
+  projectBridgeErrorCodes.projectRelocationMismatch
 ]);
 
 export function toProjectBridgeDiagnostics(

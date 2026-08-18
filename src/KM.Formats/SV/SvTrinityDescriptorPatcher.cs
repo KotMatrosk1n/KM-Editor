@@ -142,10 +142,23 @@ public static class SvTrinityDescriptorPatcher
         }
 
         var root = Path.GetFullPath(romFsRoot);
+        ValidateLayeredRomFsRoot(root);
         return Directory
             .EnumerateFiles(root, "*", RecursiveEnumeration)
             .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
             .Where(path => !string.Equals(path, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ValidateLayeredRomFsRoot(string root)
+    {
+        var info = new DirectoryInfo(root);
+        info.Refresh();
+        if (!info.Exists
+            || (info.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                && !string.IsNullOrEmpty(info.LinkTarget)))
+        {
+            throw new InvalidDataException("The layered RomFS root is not a safe physical directory.");
+        }
     }
 
     private static string ResolveRomFsRoot(string path)

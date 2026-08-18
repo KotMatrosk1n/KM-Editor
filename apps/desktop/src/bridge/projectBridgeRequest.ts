@@ -11,6 +11,8 @@ import { ProjectBridgeError } from './projectBridgeError';
 
 export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
 
+const maximumProjectBridgeRequestBytes = 16 * 1024 * 1024;
+
 export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny>(
   transport: ProjectBridgeTransport,
   command: KmCommandName,
@@ -18,9 +20,28 @@ export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny
   payloadSchema: TPayloadSchema
 ): Promise<z.infer<TPayloadSchema>> {
   const requestId = createRequestId(command);
+  const requestJson = JSON.stringify({ command, payload, requestId });
+  if (
+    requestJson.length > maximumProjectBridgeRequestBytes ||
+    new TextEncoder().encode(requestJson).byteLength > maximumProjectBridgeRequestBytes
+  ) {
+    throw new ProjectBridgeError(
+      {
+        code: projectBridgeErrorCodes.requestTooLarge,
+        diagnostics: [],
+        message: 'The project bridge request exceeds the supported size limit.'
+      },
+      {
+        command,
+        requestId,
+        responseRequestId: null
+      }
+    );
+  }
+
   let responseJson: string;
   try {
-    responseJson = await transport(JSON.stringify({ command, payload, requestId }));
+    responseJson = await transport(requestJson);
   } catch (error) {
     throw createProjectBridgeProtocolError(
       projectBridgeErrorCodes.transportFailed,

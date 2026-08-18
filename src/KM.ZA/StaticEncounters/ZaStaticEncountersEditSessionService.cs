@@ -238,7 +238,15 @@ internal sealed class ZaStaticEncountersEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.EncountDataArray, document.Write(), outputMode);
+            ZaWorkflowFileSource.Write(
+                paths,
+                ZaDataPaths.EncountDataArray,
+                document.Write(),
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.EncountDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -249,7 +257,7 @@ internal sealed class ZaStaticEncountersEditSessionService
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage("Static Encounters", outputMode)));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

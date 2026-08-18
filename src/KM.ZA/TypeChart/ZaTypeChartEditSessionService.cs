@@ -278,10 +278,18 @@ public sealed class ZaTypeChartEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        Func<bool> revalidateReviewedState = () =>
+            ReviewedPlanMatchesCurrentPlan(
+                reviewedPlan,
+                CreateChangePlan(paths, session, outputMode));
         var pendingEdit = session.PendingEdits.Single();
         if (IsUninstallEdit(pendingEdit))
         {
-            ApplyUninstall(paths, writtenFiles, diagnostics);
+            ApplyUninstall(
+                paths,
+                writtenFiles,
+                diagnostics,
+                revalidateReviewedState);
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
@@ -291,7 +299,12 @@ public sealed class ZaTypeChartEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        ApplyMain(paths, values, writtenFiles, diagnostics);
+        ApplyMain(
+            paths,
+            values,
+            writtenFiles,
+            diagnostics,
+            revalidateReviewedState);
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
@@ -299,7 +312,8 @@ public sealed class ZaTypeChartEditSessionService
         ProjectPaths paths,
         IReadOnlyList<int> values,
         ICollection<ProjectFileReference> writtenFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<bool> revalidateReviewedState)
     {
         var project = projectWorkspaceService.Open(paths);
         var source = ZaTypeChartWorkflowService.ResolveWorkflowFile(project, ZaTypeChartWorkflowService.ExeFsMainPath);
@@ -333,7 +347,8 @@ public sealed class ZaTypeChartEditSessionService
                         Array.Empty<ZaWorkflowFileWrite>(),
                         Array.Empty<string>(),
                         [new ZaStandaloneOutputMutation(ZaTypeChartWorkflowService.ExeFsMainPath, output)]);
-                });
+                },
+                revalidateReviewedState: revalidateReviewedState);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -347,7 +362,7 @@ public sealed class ZaTypeChartEditSessionService
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Supported Pokemon Legends Z-A exefs/main with one legal 18x18 type chart table"));
         }
-        catch (IOException exception)
+        catch (IOException exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -368,7 +383,8 @@ public sealed class ZaTypeChartEditSessionService
     private static void ApplyUninstall(
         ProjectPaths paths,
         ICollection<ProjectFileReference> writtenFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<bool> revalidateReviewedState)
     {
         var targetPath = ResolveOutputPath(paths, diagnostics);
         var basePath = ZaExeFsMainFileResolver.ResolveBasePath(paths);
@@ -428,7 +444,8 @@ public sealed class ZaTypeChartEditSessionService
                         [new ZaStandaloneOutputMutation(
                             ZaTypeChartWorkflowService.ExeFsMainPath,
                             outputBytes)]);
-                });
+                },
+                revalidateReviewedState: revalidateReviewedState);
 
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
@@ -443,7 +460,7 @@ public sealed class ZaTypeChartEditSessionService
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Supported Pokemon Legends Z-A exefs/main NSO"));
         }
-        catch (IOException exception)
+        catch (IOException exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

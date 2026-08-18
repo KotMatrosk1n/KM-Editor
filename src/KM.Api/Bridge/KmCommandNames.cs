@@ -164,4 +164,18 @@ public static class KmCommandNames
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";
+    public const string GetOutputRecoveryStatus = "output.recovery.status";
+    public const string ReconcileOutputRecovery = "output.recovery.reconcile";
+    public const string ScanOutputIntegrity = "output.integrity.scan";
+    public const string PreviewOutputCleanup = "output.cleanup.preview";
+    public const string ApplyOutputCleanup = "output.cleanup.apply";
+    public const string ListOutputHistory = "output.history.list";
+    public const string ListOutputCheckpoints = "output.checkpoint.list";
+    public const string CreateOutputCheckpoint = "output.checkpoint.create";
+    public const string PreviewOutputCheckpointRestore = "output.checkpoint.restore.preview";
+    public const string RestoreOutputCheckpoint = "output.checkpoint.restore";
+    public const string DeleteOutputCheckpoint = "output.checkpoint.delete";
+    public const string PreviewProjectRelocation = "project.relocation.preview";
+    public const string ApplyProjectRelocation = "project.relocation.apply";
+    public const string BuildSupportReport = "support.report.build";
 }

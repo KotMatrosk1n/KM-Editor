@@ -117,6 +117,20 @@ export const kmCommandNameValues = [
   'workspace.drafts.read',
   'workspace.drafts.write',
   'workspace.drafts.delete',
+  'output.recovery.status',
+  'output.recovery.reconcile',
+  'output.integrity.scan',
+  'output.cleanup.preview',
+  'output.cleanup.apply',
+  'output.history.list',
+  'output.checkpoint.list',
+  'output.checkpoint.create',
+  'output.checkpoint.restore.preview',
+  'output.checkpoint.restore',
+  'output.checkpoint.delete',
+  'project.relocation.preview',
+  'project.relocation.apply',
+  'support.report.build',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -253,6 +267,20 @@ export const kmCommandNames = {
   readWorkspaceDrafts: 'workspace.drafts.read',
   writeWorkspaceDrafts: 'workspace.drafts.write',
   deleteWorkspaceDrafts: 'workspace.drafts.delete',
+  getOutputRecoveryStatus: 'output.recovery.status',
+  reconcileOutputRecovery: 'output.recovery.reconcile',
+  scanOutputIntegrity: 'output.integrity.scan',
+  previewOutputCleanup: 'output.cleanup.preview',
+  applyOutputCleanup: 'output.cleanup.apply',
+  listOutputHistory: 'output.history.list',
+  listOutputCheckpoints: 'output.checkpoint.list',
+  createOutputCheckpoint: 'output.checkpoint.create',
+  previewOutputCheckpointRestore: 'output.checkpoint.restore.preview',
+  restoreOutputCheckpoint: 'output.checkpoint.restore',
+  deleteOutputCheckpoint: 'output.checkpoint.delete',
+  previewProjectRelocation: 'project.relocation.preview',
+  applyProjectRelocation: 'project.relocation.apply',
+  buildSupportReport: 'support.report.build',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -5923,9 +5951,23 @@ export const createChangePlanResponseSchema = z.strictObject({
   changePlan: changePlanSchema
 });
 
+export const outputTransactionResultSchema = z.strictObject({
+  completedAtUtc: z.string().refine(
+    (value) =>
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value) &&
+      Number.isFinite(Date.parse(value)),
+    { message: 'Expected an ISO 8601 timestamp with an offset.' }
+  ),
+  outcome: z.enum(['committed', 'rolledBack', 'recoveryRequired']),
+  outcomeCode: kmErrorCodeSchema.nullable(),
+  targetCount: z.number().int().nonnegative(),
+  transactionId: z.string().regex(/^[a-f0-9]{32}$/u)
+});
+
 export const applyResultSchema = z.strictObject({
   applyId: z.string(),
   diagnostics: z.array(apiDiagnosticSchema),
+  outputTransaction: outputTransactionResultSchema.nullable().optional().default(null),
   writtenFiles: z.array(z.string())
 });
 
@@ -5987,6 +6029,7 @@ export type ApiError = z.infer<typeof apiErrorSchema>;
 export type ApplyChangePlanRequest = z.infer<typeof applyChangePlanRequestSchema>;
 export type ApplyChangePlanResponse = z.infer<typeof applyChangePlanResponseSchema>;
 export type ApplyResult = z.infer<typeof applyResultSchema>;
+export type OutputTransactionResult = z.infer<typeof outputTransactionResultSchema>;
 export type ChangePlan = z.infer<typeof changePlanSchema>;
 export type ChangePlanOutputMode = z.infer<typeof changePlanOutputModeSchema>;
 export type CreateChangePlanRequest = z.infer<typeof createChangePlanRequestSchema>;

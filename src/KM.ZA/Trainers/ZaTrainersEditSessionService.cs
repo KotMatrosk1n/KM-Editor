@@ -293,7 +293,15 @@ internal sealed class ZaTrainersEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.TrainerDataArray, WriteRows(rows), outputMode);
+            ZaWorkflowFileSource.Write(
+                paths,
+                ZaDataPaths.TrainerDataArray,
+                WriteRows(rows),
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.TrainerDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -305,7 +313,7 @@ internal sealed class ZaTrainersEditSessionService
                 ZaEditSessionSupport.CreateApplyOutputMessage("Trainers", outputMode),
                 ZaEditSessionSupport.TrainersDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

@@ -500,7 +500,11 @@ internal sealed class ZaAngeFightEditSessionService
                     .ToArray(),
                 outputMode,
                 descriptorPreview,
-                deleteDescriptor);
+                deleteDescriptor,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
 
             writtenFiles.AddRange(retainedOutputs.Select(output =>
                 ZaEditSessionSupport.GeneratedReference(
@@ -526,7 +530,7 @@ internal sealed class ZaAngeFightEditSessionService
                         ZaAngeFightWorkflowService.WorkflowLabel,
                         outputMode)));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

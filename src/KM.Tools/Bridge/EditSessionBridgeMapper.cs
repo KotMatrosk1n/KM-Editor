@@ -5,6 +5,7 @@ using KM.Api.Diagnostics;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 
 namespace KM.Tools.Bridge;
 
@@ -98,7 +99,26 @@ public static class EditSessionBridgeMapper
         return new ApplyResultDto(
             applyResult.ApplyId,
             applyResult.WrittenFiles.Select(file => file.RelativePath).ToArray(),
-            applyResult.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            applyResult.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            applyResult.OutputTransaction is null
+                ? null
+                : new OutputTransactionResultDto(
+                    applyResult.OutputTransaction.TransactionId.Value,
+                    ToDto(applyResult.OutputTransaction.Outcome),
+                    applyResult.OutputTransaction.Receipt.CompletedAtUtc,
+                    applyResult.OutputTransaction.Receipt.Targets.Length,
+                    applyResult.OutputTransaction.Receipt.OutcomeCode));
+    }
+
+    private static OutputApplyOutcomeDto ToDto(OutputApplyOutcome outcome)
+    {
+        return outcome switch
+        {
+            OutputApplyOutcome.Committed => OutputApplyOutcomeDto.Committed,
+            OutputApplyOutcome.RolledBack => OutputApplyOutcomeDto.RolledBack,
+            OutputApplyOutcome.RecoveryRequired => OutputApplyOutcomeDto.RecoveryRequired,
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
+        };
     }
 
     private static PlannedFileWriteDto ToDto(PlannedFileWrite write)

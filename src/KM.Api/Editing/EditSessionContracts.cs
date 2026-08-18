@@ -75,7 +75,22 @@ public sealed record PlannedFileWriteDto(
 public sealed record ApplyResultDto(
     string ApplyId,
     IReadOnlyList<string> WrittenFiles,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics,
+    OutputTransactionResultDto? OutputTransaction = null);
+
+public enum OutputApplyOutcomeDto
+{
+    Committed,
+    RolledBack,
+    RecoveryRequired,
+}
+
+public sealed record OutputTransactionResultDto(
+    string TransactionId,
+    OutputApplyOutcomeDto Outcome,
+    DateTimeOffset CompletedAtUtc,
+    int TargetCount,
+    string? OutcomeCode);
 
 public enum ChangePlanOutputModeDto
 {

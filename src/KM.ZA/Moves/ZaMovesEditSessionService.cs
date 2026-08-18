@@ -838,7 +838,14 @@ internal sealed class ZaMovesEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, [], diagnostics);
             }
 
-            ZaWorkflowFileSource.WriteBatch(paths, writes, outputMode);
+            ZaWorkflowFileSource.WriteBatch(
+                paths,
+                writes,
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             foreach (var write in writes)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(write.VirtualPath, outputMode));
@@ -854,7 +861,7 @@ internal sealed class ZaMovesEditSessionService
                 ZaEditSessionSupport.CreateApplyOutputMessage("Moves", outputMode),
                 ZaEditSessionSupport.MovesDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

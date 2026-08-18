@@ -43,15 +43,22 @@ export function Metric({
 }
 
 export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
-  const { t, translateLiteral } = useLocalization();
-  const hasErrors = applyResult.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+  const { language, t, translateLiteral } = useLocalization();
+  const outputTransaction = applyResult.outputTransaction;
+  const hasErrors =
+    applyResult.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+    outputTransaction?.outcome === 'recoveryRequired';
   const hasWarnings = applyResult.diagnostics.some(
     (diagnostic) => diagnostic.severity === 'warning'
-  );
+  ) || outputTransaction?.outcome === 'rolledBack';
   const status = hasErrors
-    ? 'Error'
+    ? outputTransaction?.outcome === 'recoveryRequired'
+      ? t('workflowPanels.outputTransaction.outcome.recoveryRequired')
+      : 'Error'
     : hasWarnings
-      ? 'Warning'
+      ? outputTransaction?.outcome === 'rolledBack'
+        ? t('workflowPanels.outputTransaction.outcome.rolledBack')
+        : 'Warning'
       : applyResult.writtenFiles.length > 0
         ? 'Written'
         : 'No changes';
@@ -78,7 +85,43 @@ export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }
           label="Written files"
           value={applyResult.writtenFiles.length.toString()}
         />
+        {outputTransaction ? (
+          <Metric
+            label={t('workflowPanels.outputTransaction.label')}
+            value={t(`workflowPanels.outputTransaction.outcome.${outputTransaction.outcome}`)}
+          />
+        ) : null}
       </div>
+
+      {outputTransaction ? (
+        <div className={`output-transaction-summary output-transaction-${outputTransaction.outcome}`}>
+          <p>
+            {t('workflowPanels.outputTransaction.summary', {
+              count: outputTransaction.targetCount,
+              outcome: t(`workflowPanels.outputTransaction.outcome.${outputTransaction.outcome}`),
+              time: new Intl.DateTimeFormat(language, {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+              }).format(new Date(outputTransaction.completedAtUtc))
+            })}
+          </p>
+          <details>
+            <summary>{t('workflowPanels.outputTransaction.details')}</summary>
+            <dl>
+              <div>
+                <dt>{t('workflowPanels.outputTransaction.id')}</dt>
+                <dd data-localization-ignore="true">{outputTransaction.transactionId}</dd>
+              </div>
+              {outputTransaction.outcomeCode ? (
+                <div>
+                  <dt>{t('workflowPanels.outputTransaction.outcomeCode')}</dt>
+                  <dd data-localization-ignore="true">{outputTransaction.outcomeCode}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </details>
+        </div>
+      ) : null}
 
       {applyResult.writtenFiles.length > 0 ? (
         <ul className="written-file-list">
@@ -256,7 +299,7 @@ export function DiagnosticsSection({
                       </code>
                     ) : null}
                     {diagnostic.code ? ' ' : null}
-                    {formatDiagnosticMessage(diagnostic, translateLiteral)}
+                    {formatDiagnosticMessage(diagnostic, translateLiteral, t)}
                   </span>
                 </li>
               ))}

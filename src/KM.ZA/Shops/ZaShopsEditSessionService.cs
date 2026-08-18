@@ -372,7 +372,11 @@ internal sealed class ZaShopsEditSessionService
                         Array.Empty<string>(),
                         Array.Empty<ZaStandaloneOutputMutation>(),
                         reviewedDescriptorBytes);
-                });
+                },
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
 
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ShopItemLineupArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
@@ -384,7 +388,7 @@ internal sealed class ZaShopsEditSessionService
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage("Shops", outputMode)));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             if (!planBecameStale)
             {
