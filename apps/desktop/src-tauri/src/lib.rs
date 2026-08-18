@@ -534,7 +534,11 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
 
     if matches!(
         command,
-        "project.open" | "project.validate" | "project.fileGraph.refresh" | "workflow.list"
+        "project.open"
+            | "project.validate"
+            | "project.fileGraph.refresh"
+            | "workflow.list"
+            | "workspace.drafts.read"
     ) {
         return Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT);
     }

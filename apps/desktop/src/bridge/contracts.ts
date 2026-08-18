@@ -114,6 +114,9 @@ export const kmCommandNameValues = [
   'randomizer.restore',
   'gameDump.load',
   'gameDump.run',
+  'workspace.drafts.read',
+  'workspace.drafts.write',
+  'workspace.drafts.delete',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -247,6 +250,9 @@ export const kmCommandNames = {
   applyRandomizer: 'randomizer.apply',
   restoreRandomizer: 'randomizer.restore',
   loadGameDumpWorkflow: 'gameDump.load', runGameDump: 'gameDump.run',
+  readWorkspaceDrafts: 'workspace.drafts.read',
+  writeWorkspaceDrafts: 'workspace.drafts.write',
+  deleteWorkspaceDrafts: 'workspace.drafts.delete',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -796,7 +802,8 @@ export const openProjectResponseSchema = z.strictObject({
 });
 
 export const validateProjectResponseSchema = z.strictObject({
-  health: projectHealthSchema
+  health: projectHealthSchema,
+  projectId: z.string()
 });
 
 export const refreshFileGraphResponseSchema = z.strictObject({

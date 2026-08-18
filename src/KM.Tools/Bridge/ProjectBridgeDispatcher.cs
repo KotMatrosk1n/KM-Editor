@@ -44,12 +44,14 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
+using KM.Api.Workspace;
 using KM.Api.ZaCache;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.GameDump;
 using KM.Core.Projects;
+using KM.Core.Workspace;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
@@ -99,6 +101,7 @@ using KM.ZA.Text;
 using KM.ZA.Trades;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
+using KM.Tools.Application;
 using System.Globalization;
 using System.Text.Json;
 
@@ -106,6 +109,7 @@ namespace KM.Tools.Bridge;
 
 public sealed class ProjectBridgeDispatcher
 {
+    private const int MaximumBridgeRequestCharacters = 16 * 1024 * 1024;
     private static readonly object SwShApplySyncRoot = new();
     private static readonly JsonSerializerOptions RequestSerializerOptions =
         new(BridgeJson.SerializerOptions)
@@ -159,6 +163,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShWorkflowService swShWorkflowService;
     private readonly SvWorkflowService svWorkflowService;
     private readonly ZaWorkflowService zaWorkflowService;
+    private readonly WorkspaceDraftApplicationService workspaceDraftApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -204,7 +209,8 @@ public sealed class ProjectBridgeDispatcher
         SwShWorkflowService? swShWorkflowService = null,
         SvWorkflowService? svWorkflowService = null,
         ZaWorkflowService? zaWorkflowService = null,
-        SwShCacheManager? swShCacheManager = null)
+        SwShCacheManager? swShCacheManager = null,
+        WorkspaceDraftApplicationService? workspaceDraftApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -261,6 +267,8 @@ public sealed class ProjectBridgeDispatcher
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
         this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
         this.zaGameDumpService = zaGameDumpService ?? new ZaGameDumpService(this.zaWorkflowService);
+        this.workspaceDraftApplicationService = workspaceDraftApplicationService
+            ?? new WorkspaceDraftApplicationService();
     }
 
     public string Dispatch(string requestJson)
@@ -277,6 +285,16 @@ public sealed class ProjectBridgeDispatcher
                 SerializeFailure(
                     BridgeErrorCodes.EmptyRequest,
                     "Bridge request JSON cannot be empty.",
+                    requestId: null),
+                RequiresDispatcherReset: false);
+        }
+
+        if (requestJson.Length > MaximumBridgeRequestCharacters)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.RequestTooLarge,
+                    "Bridge request JSON exceeds the supported size limit.",
                     requestId: null),
                 RequiresDispatcherReset: false);
         }
@@ -471,6 +489,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
                 KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson),
+                KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
+                KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
+                KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
                 null => SerializeFailure(BridgeErrorCodes.MissingCommand, "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
                     BridgeErrorCodes.UnsupportedCommand,
@@ -491,6 +512,25 @@ public sealed class ProjectBridgeDispatcher
             return (
                 SerializeFailure(
                     code,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+
+        catch (WorkspaceDraftValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.DataInvalid,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (WorkspaceDocumentStoreException exception)
+        {
+            return (
+                SerializeFailure(
+                    GetWorkspaceErrorCode(exception),
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -523,11 +563,50 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchReadWorkspaceDrafts(string requestJson)
+    {
+        var request = DeserializeRequest<ReadWorkspaceDraftsRequest>(requestJson);
+        var response = workspaceDraftApplicationService
+            .ReadAsync(request.Payload.ProjectId)
+            .GetAwaiter()
+            .GetResult();
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchWriteWorkspaceDrafts(string requestJson)
+    {
+        var request = DeserializeRequest<WriteWorkspaceDraftsRequest>(requestJson);
+        var response = workspaceDraftApplicationService
+            .WriteAsync(
+                request.Payload.ProjectId,
+                request.Payload.Document,
+                request.Payload.ExpectedETag)
+            .GetAwaiter()
+            .GetResult();
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchDeleteWorkspaceDrafts(string requestJson)
+    {
+        var request = DeserializeRequest<DeleteWorkspaceDraftsRequest>(requestJson);
+        var response = workspaceDraftApplicationService
+            .DeleteAsync(request.Payload.ProjectId, request.Payload.ExpectedETag)
+            .GetAwaiter()
+            .GetResult();
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchValidateProject(string requestJson)
     {
         var request = DeserializeRequest<ValidateProjectRequest>(requestJson);
-        var health = projectWorkspaceService.Validate(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = new ValidateProjectResponse(ProjectBridgeMapper.ToDto(health));
+        var validatedProject = projectWorkspaceService.ValidateAndOpen(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new ValidateProjectResponse(
+            validatedProject.Id.ToString(),
+            ProjectBridgeMapper.ToDto(validatedProject.Health));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -4657,6 +4736,19 @@ public sealed class ProjectBridgeDispatcher
         }
 
         return exception.InnerException is not null && IsFatal(exception.InnerException);
+    }
+
+    private static string GetWorkspaceErrorCode(WorkspaceDocumentStoreException exception)
+    {
+        return exception switch
+        {
+            WorkspaceDocumentConflictException => BridgeErrorCodes.WorkspaceConflict,
+            WorkspaceDocumentSecurityException => BridgeErrorCodes.AccessDenied,
+            WorkspaceDocumentFormatException => BridgeErrorCodes.DataInvalid,
+            UnsupportedWorkspaceDocumentVersionException => BridgeErrorCodes.DataInvalid,
+            WorkspaceDocumentTooLargeException => BridgeErrorCodes.DataInvalid,
+            _ => BridgeErrorCodes.IoFailed,
+        };
     }
 
     private static string SerializeSuccess<TPayload>(TPayload payload, string? requestId)

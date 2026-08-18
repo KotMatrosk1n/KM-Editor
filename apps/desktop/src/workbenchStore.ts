@@ -47,44 +47,8 @@ import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContract
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { createLoadedWorkflowEvictionState } from './workflowRetention';
-export type WorkbenchSection =
-  | 'health'
-  | 'workflows'
-  | 'items'
-  | 'pokemon'
-  | 'dexLayout'
-  | 'moves'
-  | 'text'
-  | 'trainers'
-  | 'giftPokemon'
-  | 'tradePokemon'
-  | 'staticEncounters'
-  | 'rentalPokemon'
-  | 'dynamaxAdventures'
-  | 'shops'
-  | 'encounters'
-  | 'teraRaids'
-  | 'raidBattles'
-  | 'raidRewards'
-  | 'raidBonusRewards'
-  | 'placement'
-  | 'behavior'
-  | 'flagworkSave'
-  | 'bagHook'
-  | 'catchCap'
-  | 'hyperTraining'
-  | 'shinyRate'
-  | 'typeChart'
-  | 'angeFight'
-  | 'fairyGymBoosts'
-  | 'fashionUnlock' | 'gymUniformRemoval' | 'hyperspaceBypass' | 'ivScreen'
-  | 'exefsPatches'
-  | 'royalCandy' | 'startingItems' | 'npcItemGift'
-  | 'spreadsheetImport'
-  | 'modMerger'
-  | 'fpsPatch' | 'profanityFilter' | 'randomizer' | 'gameDump'
-  | 'changes'
-  | 'settings';
+import type { WorkbenchSection } from './workbench/workbenchSections';
+export type { WorkbenchSection } from './workbench/workbenchSections';
 export type ProjectPathDraft = {
   baseExeFsPath: string;
   baseRomFsPath: string;
@@ -100,7 +64,7 @@ type ValidatedProjectPathCache = Partial<Record<ProjectGame, ProjectPathDraftVal
 const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
 const validatedProjectPathCacheStorageKey = 'km-editor.validated-project-path-cache.v1';
 export type OpenProjectState = {
-  fileGraph: ProjectFileGraph;
+  fileGraph?: ProjectFileGraph;
   health: ProjectHealth;
   projectId: string;
 };
@@ -145,6 +109,7 @@ type WorkbenchState = {
   placementWorkflow: PlacementWorkflow | null;
   pokemonSearchText: string;
   pokemonWorkflow: PokemonWorkflow | null;
+  projectHealth: ProjectHealth | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   teraRaidSearchText: string;
   teraRaidsWorkflow: TeraRaidsWorkflow | null;
@@ -491,6 +456,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     ...createLoadedWorkflowResetState(),
     activeSection: 'health',
     openProject: null,
+    projectHealth: null,
     projectStatus: 'idle',
     workflows: []
   };
@@ -539,6 +505,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   placementWorkflow: null,
   pokemonSearchText: '',
   pokemonWorkflow: null,
+  projectHealth: null,
   projectStatus: 'idle',
   teraRaidSearchText: '',
   teraRaidsWorkflow: null,
@@ -768,109 +735,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setTrainerSearchText: (trainerSearchText) => set({ trainerSearchText }),
   setOpenProject: (openProject) =>
     set({
-      applyResult: null,
-      changePlan: null,
-      editSession: null,
-      editValidationDiagnostics: [],
-      bagHookWorkflow: null,
-      encounterSearchText: '',
-      encountersWorkflow: null,
-      catchCapWorkflow: null,
-      hyperTrainingWorkflow: null,
-      shinyRateWorkflow: null,
-      typeChartWorkflow: null,
-      angeFightWorkflow: null,
-      fairyGymBoostsWorkflow: null,
-      fashionUnlockWorkflow: null,
-      gymUniformRemovalWorkflow: null,
-      ivScreenWorkflow: null,
-      exeFsPatchSearchText: '',
-      exeFsPatchWorkflow: null,
-      flagworkSaveSearchText: '',
-      flagworkSaveWorkflow: null,
-      giftPokemonSearchText: '',
-      giftPokemonWorkflow: null,
-      tradePokemonSearchText: '',
-      tradePokemonWorkflow: null,
-      staticEncounterSearchText: '',
-      staticEncountersWorkflow: null,
-      rentalPokemonSearchText: '',
-      rentalPokemonWorkflow: null,
-      dynamaxAdventureSearchText: '',
-      dynamaxAdventuresWorkflow: null,
-      itemSearchText: '',
-      itemsWorkflow: null,
-      movesSearchText: '',
-      movesWorkflow: null,
+      ...createProjectSessionResetState(),
+      activeSection: 'health',
       openProject,
-      behaviorSearchText: '',
-      behaviorWorkflow: null,
-      placementSearchText: '',
-      placementWorkflow: null,
-      pokemonSearchText: '',
-      pokemonWorkflow: null,
-      projectStatus: 'open',
-      raidRewardSearchText: '',
-      raidRewardsWorkflow: null,
-      raidBonusRewardSearchText: '',
-      raidBonusRewardsWorkflow: null,
-      royalCandySearchText: '',
-      royalCandyWorkflow: null,
-      startingItemsWorkflow: null, npcItemGiftWorkflow: null,
-      spreadsheetImportPreview: null,
-      spreadsheetImportSearchText: '',
-      spreadsheetImportSourcePath: '',
-      spreadsheetImportWorkflow: null,
-      selectedEncounterTableId: null,
-      selectedBagHookSlot: null,
-      selectedExeFsCheckId: null,
-      selectedExeFsPatchId: null,
-      selectedCatchCapBadgeCount: null,
-      selectedGiftPokemonIndex: null,
-      selectedTradePokemonIndex: null,
-      selectedStaticEncounterIndex: null,
-      selectedRentalPokemonIndex: null,
-      selectedDynamaxAdventureEntryIndex: null,
-      selectedRoyalCandyCheckId: null,
-      selectedRoyalCandyWorkflowId: null,
-      selectedStartingItemSlot: null,
-      selectedSpreadsheetImportProfileId: null,
-      selectedFlagId: null,
-      selectedItemId: null,
-      selectedMoveId: null,
-      selectedPokemonPersonalId: null,
-      selectedBehaviorEntryId: null,
-      selectedPlacementObjectId: null,
-      selectedRaidRewardTableId: null,
-      selectedRaidBonusRewardTableId: null,
-      selectedSaveBlockId: null,
-      selectedShopId: null,
-      selectedTextKey: null,
-      selectedTrainerId: null,
-      shopSearchText: '',
-      shopsWorkflow: null,
-      textSearchText: '',
-      textWorkflow: null,
-      trainerSearchText: '',
-      trainersWorkflow: null
+      projectHealth: openProject.health,
+      projectStatus: 'open'
     }),
   setProjectHealth: (health) =>
-    set((state) => ({
-      openProject: state.openProject
-        ? {
-            ...state.openProject,
-            health
-          }
-        : {
-            fileGraph: {
-              entries: [],
-              summary: health.fileGraph
-            },
-            health,
-            projectId: 'pending-project'
-          },
-      projectStatus: 'idle'
-    })),
+    set({
+      ...createProjectSessionResetState(),
+      projectHealth: health,
+    }),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
   evictLoadedWorkflowSections: (sections) => set(createLoadedWorkflowEvictionState(sections)),
   resetLoadedWorkflowData: () => set(createLoadedWorkflowResetState()),

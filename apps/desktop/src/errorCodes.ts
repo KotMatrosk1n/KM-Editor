@@ -27,11 +27,13 @@ export const projectBridgeErrorCodes = {
   missingCommand: 'KM-BRIDGE-MISSING-COMMAND',
   missingPayload: 'KM-BRIDGE-RESPONSE-PAYLOAD-MISSING',
   missingRequestId: 'KM-BRIDGE-RESPONSE-REQUEST-ID-MISSING',
+  requestTooLarge: 'KM-BRIDGE-REQUEST-TOO-LARGE',
   requestIdMismatch: 'KM-BRIDGE-RESPONSE-REQUEST-ID-MISMATCH',
   resourceMissing: 'KM-BRIDGE-RESOURCE-MISSING',
   transportFailed: 'KM-BRIDGE-TRANSPORT-FAILED',
   unsupportedCommand: 'KM-BRIDGE-UNSUPPORTED-COMMAND',
-  unexpected: 'KM-BRIDGE-UNEXPECTED'
+  unexpected: 'KM-BRIDGE-UNEXPECTED',
+  workspaceConcurrentModification: 'KM-WORKSPACE-CONCURRENT-MODIFICATION'
 } as const satisfies Record<string, KmErrorCode>;
 
 export const swshDynamaxAdventuresErrorCodes = {
