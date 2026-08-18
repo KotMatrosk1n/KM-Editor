@@ -6,10 +6,6 @@ import {
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
-  BadgeCheck,
-  BadgePlus,
-  Cable,
-  Candy,
   CheckCircle,
   ChevronDown,
   ClipboardCheck,
@@ -17,45 +13,31 @@ import {
   Download,
   Dumbbell,
   ExternalLink,
-  Flower2,
   FolderOpen,
   Gem,
-  Gift,
   GitMerge,
   GripVertical,
-  HandCoins,
   Languages,
   Layers,
-  ListOrdered,
   ListChecks,
   MapPinned,
   MapPin,
   MessageSquareOff,
   Package,
-  PackagePlus,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
-  ScanLine,
   Search,
   Settings as SettingsIcon,
-  Shirt,
-  Shield,
   ShieldCheck,
-  Shuffle,
   Sparkle,
   Sparkles,
   Swords,
-  Store,
   Table2,
   Trash2,
-  Trees,
   Upload,
   UsersRound,
-  Waypoints,
   Wrench,
   X,
   Zap,
@@ -360,9 +342,10 @@ import { FieldLabel } from './components/FieldLabel';
 import { ContextHelp } from './components/ContextHelp';
 import { HoverTooltip } from './components/HoverTooltip';
 import {
-  TooltipIconVisibilityControl,
   TooltipIconVisibilityProvider
 } from './components/TooltipIconVisibility';
+import { AppSidebar } from './components/AppSidebar';
+import { WorkspaceHeader } from './components/WorkspaceHeader';
 import {
   TrainerPartySlotContextMenu,
   trainerPartySlotContextMenuId
@@ -456,6 +439,18 @@ import { AngeFightSection } from './features/ange-fight/AngeFightSection';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
 import { calculatePendingPayloadSha256 } from './utils/pendingPayloadHash';
 import { getSectionWikiUrl } from './wikiLinks';
+import { getWorkbenchCapabilityRegistration } from './workbench/capabilityRegistry';
+import {
+  createWorkbenchNavigationController,
+  type WorkbenchNavigationGuardState
+} from './workbench/navigationController';
+import {
+  createWorkbenchLocation,
+  createSectionLocation,
+  workbenchLocationsEqual,
+  type WorkbenchLocation
+} from './workbench/workbenchLocation';
+import { projectGameToFamily } from './workbench/semanticContracts';
 
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
@@ -674,245 +669,6 @@ function createTextWorkflowQuery(
     searchText: trimmedSearchText.length > 0 ? trimmedSearchText : null
   };
 }
-
-const sections: Array<{
-  id: WorkbenchSection;
-  label: string;
-  icon: LucideIcon;
-}> = [
-  {
-    id: 'health',
-    label: 'Project Setup',
-    icon: Activity
-  },
-  {
-    id: 'workflows',
-    label: 'Workflows',
-    icon: ListChecks
-  },
-  {
-    id: 'items',
-    label: 'Items',
-    icon: Package
-  },
-  {
-    id: 'pokemon',
-    label: 'Pokemon',
-    icon: Dna
-  },
-  {
-    id: 'moves',
-    label: 'Moves',
-    icon: Zap
-  },
-  {
-    id: 'trainers',
-    label: 'Trainers',
-    icon: UsersRound
-  },
-  {
-    id: 'giftPokemon',
-    label: 'Gift Pokemon',
-    icon: Gift
-  },
-  {
-    id: 'tradePokemon',
-    label: 'Trade Pokemon',
-    icon: ArrowLeftRight
-  },
-  {
-    id: 'staticEncounters',
-    label: 'Static Encounters',
-    icon: MapPin
-  },
-  {
-    id: 'rentalPokemon',
-    label: 'Rental Pokemon',
-    icon: Dna
-  },
-  {
-    id: 'dynamaxAdventures',
-    label: 'Dynamax Adventures',
-    icon: Waypoints
-  },
-  {
-    id: 'shops',
-    label: 'Shops',
-    icon: Store
-  },
-  {
-    id: 'encounters',
-    label: 'Wild Encounters',
-    icon: Trees
-  },
-  {
-    id: 'teraRaids',
-    label: 'Tera Raids',
-    icon: Gem
-  },
-  {
-    id: 'raidBattles',
-    label: 'Raid Battles',
-    icon: Shield
-  },
-  {
-    id: 'raidRewards',
-    label: 'Raid Rewards',
-    icon: BadgePlus
-  },
-  {
-    id: 'raidBonusRewards',
-    label: 'Raid Bonus Rewards',
-    icon: BadgeCheck
-  },
-  {
-    id: 'placement',
-    label: 'Placement',
-    icon: MapPinned
-  },
-  {
-    id: 'behavior',
-    label: 'Behavior',
-    icon: Activity
-  },
-  {
-    id: 'text',
-    label: 'Text',
-    icon: ListChecks
-  },
-  {
-    id: 'flagworkSave',
-    label: 'Flagwork / Save',
-    icon: Save
-  },
-  {
-    id: 'bagHook',
-    label: 'Bag Hook',
-    icon: Cable
-  },
-  {
-    id: 'royalCandy',
-    label: 'Royal Candy',
-    icon: Candy
-  },
-  {
-    id: 'startingItems',
-    label: 'Starting Items',
-    icon: PackagePlus
-  },
-  {
-    id: 'npcItemGift',
-    label: 'NPC Item Gift',
-    icon: HandCoins
-  },
-  {
-    id: 'catchCap',
-    label: 'Catch Cap',
-    icon: ShieldCheck
-  },
-  {
-    id: 'ivScreen',
-    label: 'IV Screen',
-    icon: ScanLine
-  },
-  {
-    id: 'hyperTraining',
-    label: 'Hyper Training',
-    icon: Dumbbell
-  },
-  {
-    id: 'shinyRate',
-    label: 'Shiny Rate',
-    icon: Sparkle
-  },
-  {
-    id: 'typeChart',
-    label: 'Type Chart',
-    icon: Table2
-  },
-  {
-    id: 'dexLayout',
-    label: 'Dex Layout',
-    icon: ListOrdered
-  },
-  {
-    id: 'angeFight',
-    label: 'Ange Fight',
-    icon: Flower2
-  },
-  {
-    id: 'fairyGymBoosts',
-    label: 'Fairy Gym Boosts',
-    icon: Sparkles
-  },
-  {
-    id: 'fashionUnlock',
-    label: 'Fashion Unlock',
-    icon: Shirt
-  },
-  {
-    id: 'gymUniformRemoval',
-    label: 'Gym Uniform Removal',
-    icon: Shirt
-  },
-  {
-    id: 'hyperspaceBypass',
-    label: 'Hyperspace Bypass',
-    icon: Sparkle
-  },
-  {
-    id: 'exefsPatches',
-    label: 'ExeFS Patches',
-    icon: Wrench
-  },
-  {
-    id: 'fpsPatch',
-    label: '60FPS Patch',
-    icon: Zap
-  },
-  {
-    id: 'profanityFilter',
-    label: 'Profanity Filter Bypass',
-    icon: MessageSquareOff
-  },
-  {
-    id: 'gameDump',
-    label: 'Game Dump',
-    icon: Download
-  },
-  {
-    id: 'spreadsheetImport',
-    label: 'Dump Importer',
-    icon: Upload
-  },
-  {
-    id: 'modMerger',
-    label: 'Mod Merger',
-    icon: GitMerge
-  },
-  {
-    id: 'randomizer',
-    label: 'Randomizer',
-    icon: Shuffle
-  },
-  {
-    id: 'changes',
-    label: 'Changes',
-    icon: ClipboardCheck
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: SettingsIcon
-  }
-];
-
-const primaryNavigationSections = sections.filter(
-  (section) => section.id === 'health' || section.id === 'workflows'
-);
-const utilityNavigationSections = sections.filter((section) =>
-  section.id === 'changes' || section.id === 'settings'
-);
 
 const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Editor/releases';
 const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
@@ -2081,6 +1837,7 @@ export function App({
   const placementWorkflow = useWorkbenchStore((state) => state.placementWorkflow);
   const pokemonSearchText = useWorkbenchStore((state) => state.pokemonSearchText);
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
+  const projectHealth = useWorkbenchStore((state) => state.projectHealth);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const teraRaidSearchText = useWorkbenchStore((state) => state.teraRaidSearchText);
   const teraRaidsWorkflow = useWorkbenchStore((state) => state.teraRaidsWorkflow);
@@ -2271,6 +2028,7 @@ export function App({
   );
   const setPokemonSearchText = useWorkbenchStore((state) => state.setPokemonSearchText);
   const setPokemonWorkflow = useWorkbenchStore((state) => state.setPokemonWorkflow);
+  const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setTeraRaidSearchText = useWorkbenchStore((state) => state.setTeraRaidSearchText);
@@ -2380,8 +2138,34 @@ export function App({
   const setTrainerSearchText = useWorkbenchStore((state) => state.setTrainerSearchText);
   const setTrainersWorkflow = useWorkbenchStore((state) => state.setTrainersWorkflow);
   const setWorkflows = useWorkbenchStore((state) => state.setWorkflows);
-  const health = openProject?.health ?? null;
+  const health = projectHealth;
   const selectedGame = draftPaths.selectedGame;
+  const activeProjectId = openProject?.projectId ?? null;
+  const [activeLocation, setActiveLocation] = useState<WorkbenchLocation>(() =>
+    createSectionLocation(activeSection, {
+      game: selectedGame,
+      projectId: activeProjectId
+    })
+  );
+  useEffect(() => {
+    setActiveLocation((currentLocation) =>
+      currentLocation.section === activeSection &&
+      currentLocation.game === selectedGame &&
+      currentLocation.projectId === activeProjectId
+        ? currentLocation
+        : createSectionLocation(activeSection, {
+            game: selectedGame,
+            projectId: activeProjectId
+          })
+    );
+  }, [activeProjectId, activeSection, selectedGame]);
+  const commitWorkbenchLocation = useCallback(
+    (location: WorkbenchLocation) => {
+      setActiveLocation(location);
+      setActiveSection(location.section);
+    },
+    [setActiveSection]
+  );
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
   const isPokemonLegendsZAProject = isPokemonLegendsZAGame(selectedGame);
   const isSwordShieldProject = selectedGame === 'sword' || selectedGame === 'shield';
@@ -2409,11 +2193,11 @@ export function App({
       new Set<WorkbenchSection>(
         gameScopedWorkflows
           .filter((workflow) => workflow.availability !== 'disabled')
-          .map((workflow) => workflow.id as WorkbenchSection)
+          .map((workflow) => workflow.id)
       ),
     [gameScopedWorkflows]
   );
-  const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
+  const activeSectionLabel = getWorkbenchCapabilityRegistration(activeSection).label;
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const activeWikiUrl = getSectionWikiUrl(activeSection, selectedGame);
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
@@ -2565,6 +2349,7 @@ export function App({
   const [lazyLoadedWorkflowSections, setLazyLoadedWorkflowSections] = useState<
     Set<WorkbenchSection>
   >(() => new Set());
+  const lazyWorkflowRetryCountRef = useRef(new Map<WorkbenchSection, number>());
   const [validatedEditSessionSignature, setValidatedEditSessionSignature] = useState<
     string | null
   >(null);
@@ -2658,6 +2443,10 @@ export function App({
   const sidebarToggleRef = useRef<HTMLButtonElement | null>(null);
   const shouldRestoreSidebarToggleFocusRef = useRef(false);
   const cancelDiscardActionRef = useRef<(() => void) | null>(null);
+  const pendingNavigationCommitActionRef = useRef<{
+    destination: WorkbenchLocation;
+    onCommit: () => void;
+  } | null>(null);
   const activeModMergerRetentionValue = useMemo(() => {
     if (isScarletVioletProject) {
       if (!svModMergerWorkflow && !svModMergerPreview) {
@@ -3027,6 +2816,7 @@ export function App({
 
       for (const section of evictedSections) {
         workflowLoadGenerationRef.current.invalidate(section);
+        lazyWorkflowRetryCountRef.current.delete(section);
       }
       workflowRecencyRef.current = removeWorkflowRecency(
         workflowRecencyRef.current,
@@ -3070,6 +2860,9 @@ export function App({
       onError: (error: unknown) => void = (error) =>
         setBridgeDiagnostics(toBridgeDiagnostics(error))
     ) => {
+      const lazyLoadScope = isWorkflowSection(activeSection)
+        ? resolveWorkflowDataSection(activeSection)
+        : section;
       const token = workflowLoadGenerationRef.current.begin(section);
       const previousLoad = workflowLoadTailRef.current.catch(() => undefined);
       let releaseLoadTurn: () => void = () => {};
@@ -3101,6 +2894,7 @@ export function App({
         const response = await load();
         if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
           commit(response);
+          lazyWorkflowRetryCountRef.current.delete(lazyLoadScope);
           workflowRecencyRef.current = touchWorkflowRecency(
             workflowRecencyRef.current,
             section
@@ -3115,6 +2909,23 @@ export function App({
       } catch (error) {
         if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
           onError(error);
+          const retryCount = lazyWorkflowRetryCountRef.current.get(lazyLoadScope) ?? 0;
+          if (retryCount < 1) {
+            lazyWorkflowRetryCountRef.current.set(lazyLoadScope, retryCount + 1);
+            setLazyLoadedWorkflowSections((currentSections) => {
+              if (
+                !currentSections.has(section) &&
+                !currentSections.has(lazyLoadScope)
+              ) {
+                return currentSections;
+              }
+
+              const nextSections = new Set(currentSections);
+              nextSections.delete(section);
+              nextSections.delete(lazyLoadScope);
+              return nextSections;
+            });
+          }
         }
       } finally {
         releaseLoadTurn();
@@ -3126,7 +2937,7 @@ export function App({
         }
       }
     },
-    [setBridgeDiagnostics]
+    [activeSection, setBridgeDiagnostics]
   );
 
   useEffect(() => {
@@ -3161,6 +2972,9 @@ export function App({
     previousActiveWorkflowSectionRef.current = activeSection;
     const previousRetainedSection = resolveRetainedWorkflowSection(previousSection);
     const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
+    if (previousRetainedSection !== activeRetainedSection && previousRetainedSection) {
+      lazyWorkflowRetryCountRef.current.delete(previousRetainedSection);
+    }
     if (
       previousRetainedSection === activeRetainedSection ||
       previousRetainedSection === null ||
@@ -3186,6 +3000,7 @@ export function App({
 
   const clearLoadedWorkflowData = useCallback(() => {
     workflowLoadGenerationRef.current.invalidateAll();
+    lazyWorkflowRetryCountRef.current.clear();
     workflowRecencyRef.current = [];
     resetLoadedWorkflowData();
     setSvModMergerWorkflow(null);
@@ -3312,11 +3127,17 @@ export function App({
 
   const requestEditorExit = useCallback(
     (destination: WorkbenchSection | null, kind: ExitPromptState['kind']) => {
+      const destinationLocation = destination
+        ? createSectionLocation(destination, {
+            game: selectedGame,
+            projectId: activeProjectId
+          })
+        : null;
       if (editSession || (kind === 'editor' && activeEditorHasLocalDrafts)) {
         setExitPrompt({
           allowGoToChanges:
             !activeSectionOwnsAdvancedEditSession && !activeEditorHasLocalDrafts,
-          destination,
+          destination: destinationLocation,
           discardPendingSession: activeSectionOwnsAdvancedEditSession,
           kind,
           mode: 'confirm',
@@ -3325,142 +3146,97 @@ export function App({
         return;
       }
 
-      if (kind === 'editor' && destination) {
-        setActiveSection(destination);
+      if (kind === 'editor' && destinationLocation) {
+        commitWorkbenchLocation(destinationLocation);
       }
     },
     [
       activeSection,
+      activeProjectId,
       activeEditorHasLocalDrafts,
       activeSectionOwnsAdvancedEditSession,
+      commitWorkbenchLocation,
       editSession,
-      setActiveSection
+      selectedGame
     ]
+  );
+
+  const navigationGuardStateRef = useRef<WorkbenchNavigationGuardState | null>(null);
+  navigationGuardStateRef.current = {
+    activeEditorHasLocalDrafts,
+    activeLocation,
+    activeSectionIsEditor,
+    activeSectionOwnsAdvancedEditSession,
+    activeSectionOwnsDexLayoutEditSession,
+    activeSectionOwnsEditSession,
+    canShareEditSessionWith: (section) =>
+      editSessionCanBeSharedAcrossNormalEditors &&
+      isSharedStagedEditorSection(section, selectedGame),
+    editSessionSection,
+    hasCriticalWriteOperation,
+    hasEditSession: editSession !== null,
+    isDestinationAvailable: (location) =>
+      location.game === selectedGame &&
+      location.projectId === activeProjectId &&
+      (!isWorkflowSection(location.section) ||
+        isWorkflowNavigationVisibleForGame(
+          location.section,
+          selectedGame,
+          availableWorkflowSectionIds
+        )),
+    isEditSessionOperationBusy,
+    pendingEditCount
+  };
+  const navigationControllerRef = useRef(
+    createWorkbenchNavigationController(() => {
+      const guardState = navigationGuardStateRef.current;
+      if (!guardState) {
+        throw new Error('Workbench navigation guard state is unavailable.');
+      }
+      return guardState;
+    })
+  );
+
+  const handleNavigateLocation = useCallback(
+    (destination: WorkbenchLocation, onCommit?: () => void) => {
+      const decision = navigationControllerRef.current.request(destination);
+      if (decision.kind === 'commit') {
+        pendingNavigationCommitActionRef.current = null;
+        if (decision.clearPendingState) {
+          clearPendingEditState();
+        }
+        commitWorkbenchLocation(decision.location);
+        onCommit?.();
+      } else if (decision.kind === 'prompt') {
+        pendingNavigationCommitActionRef.current = onCommit
+          ? { destination, onCommit }
+          : null;
+        setExitPrompt(decision.prompt);
+      } else if (decision.kind === 'unchanged') {
+        pendingNavigationCommitActionRef.current = null;
+        onCommit?.();
+      } else {
+        pendingNavigationCommitActionRef.current = null;
+      }
+      return decision;
+    },
+    [clearPendingEditState, commitWorkbenchLocation]
   );
 
   const handleNavigateSection = useCallback(
     (destination: WorkbenchSection) => {
-      if (destination === activeSection) {
+      if (destination === activeLocation.section) {
         return;
       }
 
-      if (isEditSessionOperationBusy || hasCriticalWriteOperation) {
-        return;
-      }
-
-      if (
-        isWorkflowSection(destination) &&
-        !isWorkflowNavigationVisibleForGame(
-          destination,
-          selectedGame,
-          availableWorkflowSectionIds
-        )
-      ) {
-        return;
-      }
-
-      const isCrossingDexLayoutBoundary =
-        (activeSection === 'dexLayout') !== (destination === 'dexLayout');
-      const isLeavingEmptyDexLayoutSession =
-        isCrossingDexLayoutBoundary &&
-        activeSectionOwnsDexLayoutEditSession &&
-        pendingEditCount === 0 &&
-        !activeEditorHasLocalDrafts;
-      if (isLeavingEmptyDexLayoutSession) {
-        clearPendingEditState();
-        setActiveSection(destination);
-        return;
-      }
-
-      const isMovingStagedDexLayoutToChanges =
-        activeSection === 'dexLayout' &&
-        destination === 'changes' &&
-        pendingEditCount > 0 &&
-        !activeEditorHasLocalDrafts;
-      const hasDexLayoutBoundaryEdits =
-        pendingEditCount > 0 ||
-        (activeSection === 'dexLayout' && activeEditorHasLocalDrafts);
-      if (
-        isCrossingDexLayoutBoundary &&
-        hasDexLayoutBoundaryEdits &&
-        !isMovingStagedDexLayoutToChanges
-      ) {
-        setExitPrompt({
-          allowGoToChanges:
-            activeSection !== 'dexLayout' &&
-            !activeSectionOwnsAdvancedEditSession &&
-            !activeEditorHasLocalDrafts,
-          destination,
-          discardPendingSession:
-            pendingEditCount > 0 || activeSectionOwnsDexLayoutEditSession,
-          kind: 'editorSwitch',
-          mode: 'confirm',
-          stageOnlyDexLayout: activeSection === 'dexLayout'
-        });
-        return;
-      }
-
-      const destinationOwnsEditSession =
-        editSession !== null &&
-        (destination === editSessionSection ||
-          (editSessionCanBeSharedAcrossNormalEditors &&
-            isSharedStagedEditorSection(destination, selectedGame)));
-      const isLeavingActiveEditSession =
-        destination !== 'changes' &&
-        editSession !== null &&
-        !destinationOwnsEditSession &&
-        (
-          activeSectionOwnsEditSession ||
-          activeSection === 'changes' ||
-          activeSectionIsEditor
-        );
-      const isLeavingAdvancedEditorForChanges =
-        destination === 'changes' &&
-        activeSectionOwnsAdvancedEditSession &&
-        !isMovingStagedDexLayoutToChanges;
-
-      if (isLeavingActiveEditSession || isLeavingAdvancedEditorForChanges) {
-        setExitPrompt({
-          allowGoToChanges:
-            !activeSectionOwnsAdvancedEditSession && !activeEditorHasLocalDrafts,
-          destination,
-          discardPendingSession: true,
-          kind: 'editorSwitch',
-          mode: 'confirm',
-          stageOnlyDexLayout: activeSection === 'dexLayout'
-        });
-        return;
-      }
-
-      if (destination !== 'changes' && activeSectionIsEditor && activeEditorHasLocalDrafts) {
-        setExitPrompt({
-          destination,
-          kind: 'editorSwitch',
-          mode: 'confirm'
-        });
-        return;
-      }
-
-      setActiveSection(destination);
+      return handleNavigateLocation(
+        createSectionLocation(destination, {
+          game: selectedGame,
+          projectId: activeProjectId
+        })
+      );
     },
-    [
-      activeEditorHasLocalDrafts,
-      activeSection,
-      activeSectionIsEditor,
-      activeSectionOwnsEditSession,
-      activeSectionOwnsAdvancedEditSession,
-      activeSectionOwnsDexLayoutEditSession,
-      availableWorkflowSectionIds,
-      clearPendingEditState,
-      editSession,
-      editSessionCanBeSharedAcrossNormalEditors,
-      editSessionSection,
-      hasCriticalWriteOperation,
-      isEditSessionOperationBusy,
-      pendingEditCount,
-      selectedGame,
-      setActiveSection
-    ]
+    [activeLocation.section, activeProjectId, handleNavigateLocation, selectedGame]
   );
 
   const handleCloseActiveEditor = useCallback(() => {
@@ -3482,6 +3258,7 @@ export function App({
     }
 
     if (prompt.kind === 'cancel') {
+      pendingNavigationCommitActionRef.current = null;
       cancelDiscardActionRef.current?.();
       cancelDiscardActionRef.current = null;
       clearPendingEditState();
@@ -3506,7 +3283,15 @@ export function App({
       setExitPrompt(null);
 
       if (prompt.destination) {
-        setActiveSection(prompt.destination);
+        commitWorkbenchLocation(prompt.destination);
+        const pendingNavigationCommit = pendingNavigationCommitActionRef.current;
+        pendingNavigationCommitActionRef.current = null;
+        if (
+          pendingNavigationCommit &&
+          workbenchLocationsEqual(pendingNavigationCommit.destination, prompt.destination)
+        ) {
+          pendingNavigationCommit.onCommit();
+        }
       }
       return;
     }
@@ -3517,7 +3302,8 @@ export function App({
     setExitPrompt(null);
 
     if (prompt.kind === 'editor' && prompt.destination) {
-      setActiveSection(prompt.destination);
+      commitWorkbenchLocation(prompt.destination);
+      pendingNavigationCommitActionRef.current = null;
       return;
     }
 
@@ -3547,7 +3333,7 @@ export function App({
     isChangePlanApplying,
     isChangePlanCreating,
     isSessionValidating,
-    setActiveSection,
+    commitWorkbenchLocation,
     setBridgeDiagnostics
   ]);
 
@@ -3558,11 +3344,13 @@ export function App({
       }
 
       if (prompt.kind === 'cancel') {
+        pendingNavigationCommitActionRef.current = null;
         cancelDiscardActionRef.current = null;
         return null;
       }
 
       if (prompt.allowGoToChanges === false) {
+        pendingNavigationCommitActionRef.current = null;
         cancelDiscardActionRef.current = null;
         return null;
       }
@@ -3572,15 +3360,22 @@ export function App({
   }, []);
 
   const handleStayAfterExitDecline = useCallback(() => {
+    pendingNavigationCommitActionRef.current = null;
     cancelDiscardActionRef.current = null;
     setExitPrompt(null);
   }, []);
 
   const handleGoToChangesAfterExitDecline = useCallback(() => {
+    pendingNavigationCommitActionRef.current = null;
     cancelDiscardActionRef.current = null;
-    setActiveSection('changes');
+    commitWorkbenchLocation(
+      createSectionLocation('changes', {
+        game: selectedGame,
+        projectId: activeProjectId
+      })
+    );
     setExitPrompt(null);
-  }, [setActiveSection]);
+  }, [activeProjectId, commitWorkbenchLocation, selectedGame]);
 
   useEffect(() => {
     editSessionRef.current = editSession;
@@ -3761,8 +3556,13 @@ export function App({
       return;
     }
 
-    setActiveSection('workflows');
-  }, [activeSection, activeSectionCanStayMounted, hasCriticalWriteOperation, setActiveSection]);
+    handleNavigateSection('workflows');
+  }, [
+    activeSection,
+    activeSectionCanStayMounted,
+    handleNavigateSection,
+    hasCriticalWriteOperation
+  ]);
 
   const startSvCacheWarmup = useCallback(
     async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
@@ -4047,6 +3847,35 @@ export function App({
     }
   }, [bridge, desktopServices, evictUnprotectedWorkflowPayloads, selectedGame]);
 
+  const activateValidatedProject = async (
+    paths: ReturnType<typeof toProjectPaths>,
+    validatedProject: Awaited<ReturnType<ProjectBridge['validateProject']>>,
+    canCommitActivation: () => boolean
+  ) => {
+    if (!canCommitActivation()) {
+      return null;
+    }
+
+    resetLoadedProjectState();
+    if (!validatedProject.health.canOpenReadOnlyWorkflows) {
+      setProjectHealth(validatedProject.health);
+      setWorkflows([]);
+      return null;
+    }
+
+    setOpenProject(validatedProject);
+    await refreshWorkflows(
+      paths,
+      validatedProject.health.canOpenReadOnlyWorkflows,
+      canCommitActivation
+    );
+    if (!canCommitActivation()) {
+      return null;
+    }
+
+    return validatedProject;
+  };
+
   const handleValidateProject = async () => {
     const runId = projectValidationRunRef.current + 1;
     projectValidationRunRef.current = runId;
@@ -4063,17 +3892,17 @@ export function App({
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(draftPaths);
       }
-      resetLoadedProjectState();
-      setProjectHealth(response.health);
-      await refreshWorkflows(
+      const activatedProject = await activateValidatedProject(
         paths,
-        response.health.canOpenReadOnlyWorkflows,
+        response,
         () => projectValidationRunRef.current === runId
       );
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      void startSvCacheWarmup(paths, response.health);
+      if (activatedProject) {
+        void startSvCacheWarmup(paths, activatedProject.health);
+      }
     } catch (error) {
       if (projectValidationRunRef.current !== runId) {
         return;
@@ -4258,6 +4087,7 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
+      resetLoadedProjectState();
       setProjectHealth(validationResponse.health);
 
       if (!validationResponse.health.canOpenReadOnlyWorkflows) {
@@ -4302,17 +4132,17 @@ export function App({
           outputRootPath
         });
       }
-      resetLoadedProjectState();
-      setProjectHealth(nextResponse.health);
-      await refreshWorkflows(
+      const activatedProject = await activateValidatedProject(
         nextPaths,
-        nextResponse.health.canOpenReadOnlyWorkflows,
+        nextResponse,
         () => projectValidationRunRef.current === runId
       );
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      void startSvCacheWarmup(nextPaths, nextResponse.health);
+      if (activatedProject) {
+        void startSvCacheWarmup(nextPaths, activatedProject.health);
+      }
     } catch (error) {
       if (projectValidationRunRef.current !== runId) {
         return;
@@ -4432,11 +4262,9 @@ export function App({
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(nextDraftPaths);
       }
-      resetLoadedProjectState();
-      setProjectHealth(response.health);
-      await refreshWorkflows(
+      const activatedProject = await activateValidatedProject(
         paths,
-        response.health.canOpenReadOnlyWorkflows,
+        response,
         () =>
           supportSearchRunRef.current === runId &&
           projectValidationRunRef.current === projectRunId
@@ -4447,7 +4275,9 @@ export function App({
       ) {
         return;
       }
-      void startSvCacheWarmup(paths, response.health);
+      if (activatedProject) {
+        void startSvCacheWarmup(paths, activatedProject.health);
+      }
       setBridgeDiagnostics([
         {
           domain: 'desktop',
@@ -7094,20 +6924,6 @@ export function App({
       }),
       (response) => setZaModMergerWorkflow(response.workflow)
     );
-  };
-
-  const handleOpenModMergerWorkflow = async () => {
-    if (isScarletVioletGame(selectedGame)) {
-      await loadSvModMergerWorkflow(svModSources);
-      return;
-    }
-
-    if (isPokemonLegendsZAGame(selectedGame)) {
-      await loadZaModMergerWorkflow(zaModSources);
-      return;
-    }
-
-    await loadModMergerWorkflow(modMergerDirectory1, modMergerDirectory2);
   };
 
   useEffect(() => {
@@ -9997,9 +9813,26 @@ export function App({
   };
 
   const handleOpenShopItem = (itemId: number) => {
-    setSelectedItemId(itemId);
-    setItemSearchText('');
-    setActiveSection('items');
+    const destination = createWorkbenchLocation({
+      ...(activeProjectId && selectedGame
+        ? {
+            entity: {
+              domain: 'workflow.items',
+              gameFamily: projectGameToFamily(selectedGame),
+              recordId: String(itemId),
+              recordKind: { key: 'item', schemaVersion: 1 },
+              subrecordId: null
+            }
+          }
+        : {}),
+      game: selectedGame,
+      projectId: activeProjectId,
+      section: 'items'
+    });
+    handleNavigateLocation(destination, () => {
+      setSelectedItemId(itemId);
+      setItemSearchText('');
+    });
   };
 
   const handleUpdateEncounterSlotFields = async (
@@ -11508,11 +11341,11 @@ export function App({
     }
   };
 
-  const refreshWorkflows = async (
+  async function refreshWorkflows(
     paths: ReturnType<typeof toProjectPaths>,
     canOpenReadOnlyWorkflows: boolean,
     canCommitRefresh: () => boolean = () => true
-  ) => {
+  ) {
     if (!canOpenReadOnlyWorkflows) {
       if (canCommitRefresh()) {
         setWorkflows([]);
@@ -11524,7 +11357,7 @@ export function App({
     if (canCommitRefresh()) {
       setWorkflows(getGameScopedWorkflowSummaries(response.workflows, paths.selectedGame));
     }
-  };
+  }
 
   const handleSelectGame = useCallback(
     (nextGame: ProjectGame) => {
@@ -11569,9 +11402,6 @@ export function App({
 
   const canShowWorkflowNavigation = Boolean(health?.canOpenReadOnlyWorkflows);
   const canShowEditableWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
-  const sidebarToggleLabel = translateLiteral(
-    isSidebarCompact ? 'Expand sidebar' : 'Collapse sidebar'
-  );
 
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
@@ -11581,174 +11411,26 @@ export function App({
     <main
       className={`app-shell editor-layout-${editorLayout}${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
     >
-      <aside
-        aria-label="Application navigation"
-        className={`sidebar${isSidebarCompact ? ' sidebar-compact' : ''}`}
-        id="application-sidebar"
-      >
-        <div className="brand">
-          <img alt="" aria-hidden="true" className="brand-logo" src={kmLogoUrl} />
-          <span className="brand-copy">
-            <span className="brand-name">
-              <span>KM Editor</span>
-              <span className="brand-version">v{appVersion}</span>
-            </span>
-            <span className="brand-credit">Made by Matroskin</span>
-          </span>
-          <button
-            aria-controls="application-sidebar"
-            aria-expanded={!isSidebarCompact}
-            aria-label={sidebarToggleLabel}
-            aria-pressed={isSidebarCompact}
-            className="sidebar-toggle"
-            onClick={handleToggleSidebar}
-            ref={sidebarToggleRef}
-            title={sidebarToggleLabel}
-            type="button"
-          >
-            {isSidebarCompact ? (
-              <PanelLeftOpen aria-hidden="true" size={18} />
-            ) : (
-              <PanelLeftClose aria-hidden="true" size={18} />
-            )}
-          </button>
-        </div>
-
-        <nav aria-label="Workspace" className="section-nav">
-          <div className="sidebar-navigation-scroll" ref={sidebarNavigationScrollRef}>
-          {primaryNavigationSections.map((section) => {
-            const Icon = section.icon;
-            const isActive = activeSection === section.id;
-
-            return (
-              <button
-                aria-current={isActive ? 'page' : undefined}
-                aria-label={section.label}
-                className="nav-button"
-                disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
-                key={section.id}
-                onClick={() => handleSidebarNavigateSection(section.id)}
-                title={isSidebarCompact ? translateLiteral(section.label) : undefined}
-                type="button"
-              >
-                <Icon aria-hidden="true" size={18} />
-                <span>{section.label}</span>
-              </button>
-            );
-          })}
-
-          {canShowWorkflowNavigation ? workflowNavigationGroups.map((group) => {
-            const visibleSectionIds = group.sectionIds.filter(
-              (sectionId) =>
-                canAccessWorkflowSectionForHealth(
-                  sectionId,
-                  canShowWorkflowNavigation,
-                  canShowEditableWorkflowNavigation
-                ) &&
-                isWorkflowNavigationVisibleForGame(
-                  sectionId,
-                  selectedGame,
-                  availableWorkflowSectionIds
-                )
-            );
-            if (visibleSectionIds.length === 0) {
-              return null;
-            }
-
-            const hasActiveSection = visibleSectionIds.includes(activeSection);
-            const isExpanded =
-              expandedWorkflowGroups.has(group.id) ||
-              (hasActiveSection && suppressedActiveWorkflowGroup !== group.id);
-
-            return (
-              <div
-                className={`nav-workflow-group${hasActiveSection ? ' nav-workflow-group-active' : ''}`}
-                key={group.id}
-              >
-                <button
-                  aria-expanded={isExpanded}
-                  aria-label={translateLiteral(group.label)}
-                  className="nav-group-button"
-                  onClick={() => handleToggleWorkflowGroup(group.id)}
-                  title={isSidebarCompact ? translateLiteral(group.label) : undefined}
-                  type="button"
-                >
-                  <Layers aria-hidden="true" size={16} />
-                  <span>{group.label}</span>
-                </button>
-                {isExpanded ? (
-                  <div className="nav-group-items">
-                    {visibleSectionIds.map((sectionId) => {
-                      const section = sections.find((candidate) => candidate.id === sectionId);
-                      if (!section) {
-                        return null;
-                      }
-
-                      const Icon = section.icon;
-                      const isActive = activeSection === section.id;
-
-                      return (
-                        <button
-                          aria-current={isActive ? 'page' : undefined}
-                          aria-label={section.label}
-                          className="nav-button nav-child-button"
-                          disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
-                          key={section.id}
-                          onClick={() => handleSidebarNavigateSection(section.id)}
-                          title={isSidebarCompact ? translateLiteral(section.label) : undefined}
-                          type="button"
-                        >
-                          <Icon aria-hidden="true" size={16} />
-                          <span>{section.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          }) : null}
-
-          </div>
-
-          <div className="sidebar-utility-nav">
-          {utilityNavigationSections.map((section) => {
-            const Icon = section.icon;
-            const isActive = activeSection === section.id;
-            const hasAvailableUpdate = section.id === 'settings' && availableUpdate !== null;
-            const navigationLabel = hasAvailableUpdate
-              ? `${translateLiteral(section.label)}: ${translateLiteral('Update Available')}`
-              : translateLiteral(section.label);
-
-            return (
-              <button
-                aria-current={isActive ? 'page' : undefined}
-                aria-label={navigationLabel}
-                className="nav-button"
-                disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
-                key={section.id}
-                onClick={() => handleSidebarNavigateSection(section.id)}
-                title={isSidebarCompact ? navigationLabel : undefined}
-                type="button"
-              >
-                <Icon aria-hidden="true" size={18} />
-                <span>{section.label}</span>
-                {section.id === 'changes' && pendingEditCount > 0 ? (
-                  <span className="nav-count" aria-label={`${pendingEditCount} pending changes`}>
-                    {pendingEditCount}
-                  </span>
-                ) : null}
-                {hasAvailableUpdate ? (
-                  <span aria-hidden="true" className="nav-count">
-                    !
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-          </div>
-        </nav>
-      </aside>
+      <AppSidebar
+        activeSection={activeSection}
+        appVersion={appVersion}
+        availableWorkflowSectionIds={availableWorkflowSectionIds}
+        canShowEditableWorkflowNavigation={canShowEditableWorkflowNavigation}
+        canShowWorkflowNavigation={canShowWorkflowNavigation}
+        expandedWorkflowGroups={expandedWorkflowGroups}
+        hasAvailableUpdate={availableUpdate !== null}
+        hasCriticalWriteOperation={hasCriticalWriteOperation}
+        isEditSessionOperationBusy={isEditSessionOperationBusy}
+        isSidebarCompact={isSidebarCompact}
+        onNavigate={handleSidebarNavigateSection}
+        onToggle={handleToggleSidebar}
+        onToggleWorkflowGroup={handleToggleWorkflowGroup}
+        pendingEditCount={pendingEditCount}
+        scrollRef={sidebarNavigationScrollRef}
+        selectedGame={selectedGame}
+        suppressedActiveWorkflowGroup={suppressedActiveWorkflowGroup}
+        toggleRef={sidebarToggleRef}
+      />
 
       {isSidebarConstrained && isSidebarOverlayOpen ? (
         <button
@@ -11763,41 +11445,16 @@ export function App({
         className="workspace"
         inert={isSidebarConstrained && isSidebarOverlayOpen ? true : undefined}
       >
-        <header className="toolbar">
-          <div className="title-block">
-            <p className="project-state">{activeProjectStateLabel}</p>
-            <h1>{activeSectionLabel}</h1>
-          </div>
-
-          <div className="toolbar-actions">
-            {activeSectionIsEditor ? <TooltipIconVisibilityControl /> : null}
-            {activeWikiUrl ? (
-              <button
-                aria-label={`Go to Wiki for ${activeSectionLabel ?? 'current view'}`}
-                className="secondary-button toolbar-wiki-button"
-                onClick={handleOpenActiveWiki}
-                title="Open wiki page"
-                type="button"
-              >
-                <ExternalLink aria-hidden="true" size={16} />
-                <span>Go to Wiki</span>
-              </button>
-            ) : null}
-
-            {activeSectionIsEditor ? (
-              <button
-                aria-label="Close Editor"
-                className="secondary-button icon-button"
-                disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
-                onClick={handleCloseActiveEditor}
-                title="Close editor"
-                type="button"
-              >
-                <X aria-hidden="true" size={18} />
-              </button>
-            ) : null}
-          </div>
-        </header>
+        <WorkspaceHeader
+          activeProjectStateLabel={activeProjectStateLabel}
+          activeSectionIsEditor={activeSectionIsEditor}
+          activeSectionLabel={activeSectionLabel}
+          activeWikiUrl={activeWikiUrl}
+          hasCriticalWriteOperation={hasCriticalWriteOperation}
+          isEditSessionOperationBusy={isEditSessionOperationBusy}
+          onCloseEditor={handleCloseActiveEditor}
+          onOpenWiki={handleOpenActiveWiki}
+        />
 
         <div className="workspace-content">
           {activeSection === 'health' ? (
@@ -11862,43 +11519,57 @@ export function App({
               isNpcItemGiftLoading={isNpcItemGiftLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
               isModMergerLoading={isModMergerLoading}
-              onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
-              onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
-              onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
-              onOpenGiftPokemonWorkflow={handleOpenGiftPokemonWorkflow}
-              onOpenTradePokemonWorkflow={handleOpenTradePokemonWorkflow}
-              onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
-              onOpenRentalPokemonWorkflow={handleOpenRentalPokemonWorkflow}
-              onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
-              onOpenTeraRaidsWorkflow={handleOpenTeraRaidsWorkflow}
-              onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
-              onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
-              onOpenHyperTrainingWorkflow={handleOpenHyperTrainingWorkflow}
-              onOpenShinyRateWorkflow={handleOpenShinyRateWorkflow}
-              onOpenFairyGymBoostsWorkflow={handleOpenFairyGymBoostsWorkflow}
-              onOpenFashionUnlockWorkflow={handleOpenFashionUnlockWorkflow}
-              onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
-              onOpenHyperspaceBypassWorkflow={handleOpenHyperspaceBypassWorkflow}
-              onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
-              onOpenTypeChartWorkflow={handleOpenTypeChartWorkflow}
-              onOpenAngeFightWorkflow={handleOpenAngeFightWorkflow}
-              onOpenItemsWorkflow={handleOpenItemsWorkflow}
-              onOpenMovesWorkflow={handleOpenMovesWorkflow}
-              onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
-              onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
-              onOpenBehaviorWorkflow={handleOpenBehaviorWorkflow}
-              onOpenRaidBattlesWorkflow={handleOpenRaidBattlesWorkflow}
-              onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
-              onOpenRaidBonusRewardsWorkflow={handleOpenRaidBonusRewardsWorkflow}
-              onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
-              onOpenStartingItemsWorkflow={handleOpenStartingItemsWorkflow}
-              onOpenNpcItemGiftWorkflow={handleOpenNpcItemGiftWorkflow}
-              onOpenShopsWorkflow={handleOpenShopsWorkflow}
-              onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
-              onOpenModMergerWorkflow={handleOpenModMergerWorkflow}
-              onOpenTextWorkflow={handleOpenTextWorkflow}
-              onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
-              onOpenChanges={() => handleNavigateSection('changes')}
+              onOpenEncountersWorkflow={() => void handleNavigateSection('encounters')}
+              onOpenExeFsPatchWorkflow={() => void handleNavigateSection('exefsPatches')}
+              onOpenFlagworkSaveWorkflow={() => void handleNavigateSection('flagworkSave')}
+              onOpenGiftPokemonWorkflow={() => void handleNavigateSection('giftPokemon')}
+              onOpenTradePokemonWorkflow={() => void handleNavigateSection('tradePokemon')}
+              onOpenStaticEncountersWorkflow={() =>
+                void handleNavigateSection('staticEncounters')
+              }
+              onOpenRentalPokemonWorkflow={() => void handleNavigateSection('rentalPokemon')}
+              onOpenDynamaxAdventuresWorkflow={() =>
+                void handleNavigateSection('dynamaxAdventures')
+              }
+              onOpenTeraRaidsWorkflow={() => void handleNavigateSection('teraRaids')}
+              onOpenBagHookWorkflow={() => void handleNavigateSection('bagHook')}
+              onOpenCatchCapWorkflow={() => void handleNavigateSection('catchCap')}
+              onOpenHyperTrainingWorkflow={() => void handleNavigateSection('hyperTraining')}
+              onOpenShinyRateWorkflow={() => void handleNavigateSection('shinyRate')}
+              onOpenFairyGymBoostsWorkflow={() =>
+                void handleNavigateSection('fairyGymBoosts')
+              }
+              onOpenFashionUnlockWorkflow={() => void handleNavigateSection('fashionUnlock')}
+              onOpenGymUniformRemovalWorkflow={() =>
+                void handleNavigateSection('gymUniformRemoval')
+              }
+              onOpenHyperspaceBypassWorkflow={() =>
+                void handleNavigateSection('hyperspaceBypass')
+              }
+              onOpenIvScreenWorkflow={() => void handleNavigateSection('ivScreen')}
+              onOpenTypeChartWorkflow={() => void handleNavigateSection('typeChart')}
+              onOpenAngeFightWorkflow={() => void handleNavigateSection('angeFight')}
+              onOpenItemsWorkflow={() => void handleNavigateSection('items')}
+              onOpenMovesWorkflow={() => void handleNavigateSection('moves')}
+              onOpenPokemonWorkflow={() => void handleNavigateSection('pokemon')}
+              onOpenPlacementWorkflow={() => void handleNavigateSection('placement')}
+              onOpenBehaviorWorkflow={() => void handleNavigateSection('behavior')}
+              onOpenRaidBattlesWorkflow={() => void handleNavigateSection('raidBattles')}
+              onOpenRaidRewardsWorkflow={() => void handleNavigateSection('raidRewards')}
+              onOpenRaidBonusRewardsWorkflow={() =>
+                void handleNavigateSection('raidBonusRewards')
+              }
+              onOpenRoyalCandyWorkflow={() => void handleNavigateSection('royalCandy')}
+              onOpenStartingItemsWorkflow={() => void handleNavigateSection('startingItems')}
+              onOpenNpcItemGiftWorkflow={() => void handleNavigateSection('npcItemGift')}
+              onOpenShopsWorkflow={() => void handleNavigateSection('shops')}
+              onOpenSpreadsheetImportWorkflow={() =>
+                void handleNavigateSection('spreadsheetImport')
+              }
+              onOpenModMergerWorkflow={() => void handleNavigateSection('modMerger')}
+              onOpenTextWorkflow={() => void handleNavigateSection('text')}
+              onOpenTrainersWorkflow={() => void handleNavigateSection('trainers')}
+              onOpenChanges={() => void handleNavigateSection('changes')}
               pendingEditCount={pendingEditCount}
               workflows={gameScopedWorkflows}
             />
@@ -49960,7 +49631,7 @@ type ShopInventoryDraftRow = {
 
 type ExitPromptState = {
   allowGoToChanges?: boolean;
-  destination: WorkbenchSection | null;
+  destination: WorkbenchLocation | null;
   discardPendingSession?: boolean;
   kind: 'cancel' | 'editor' | 'editorSwitch' | 'window';
   mode: 'confirm' | 'redirect';

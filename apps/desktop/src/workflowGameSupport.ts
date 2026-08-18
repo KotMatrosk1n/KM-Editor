@@ -41,6 +41,16 @@ import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { type WorkbenchSection } from './workbenchStore';
+import {
+  getWorkbenchCapabilityRegistration,
+  hiddenWorkflowSectionIds,
+  isCapabilityRegisteredForGame,
+  isRegisteredWorkbenchSection,
+  readOnlyViewerSectionIds,
+  standaloneWorkflowSectionIds
+} from './workbench/capabilityRegistry';
+
+export { readOnlyViewerSectionIds, standaloneWorkflowSectionIds } from './workbench/capabilityRegistry';
 
 export type WorkflowNavigationGroup = {
   id:
@@ -100,92 +110,6 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     ]
   }
 ];
-
-const swordShieldWorkflowSectionIds = new Set<WorkbenchSection>([
-  'items',
-  'pokemon',
-  'moves',
-  'text',
-  'trainers',
-  'giftPokemon',
-  'tradePokemon',
-  'staticEncounters',
-  'rentalPokemon',
-  'dynamaxAdventures',
-  'shops',
-  'encounters',
-  'raidBattles',
-  'raidRewards',
-  'raidBonusRewards',
-  'placement',
-  'behavior',
-  'flagworkSave',
-  'bagHook',
-  'catchCap',
-  'hyperTraining',
-  'shinyRate',
-  'typeChart',
-  'fairyGymBoosts',
-  'fashionUnlock',
-  'gymUniformRemoval',
-  'ivScreen',
-  'exefsPatches',
-  'royalCandy',
-  'startingItems',
-  'npcItemGift',
-  'spreadsheetImport',
-  'modMerger',
-  'fpsPatch',
-  'profanityFilter',
-  'randomizer',
-  'gameDump'
-]);
-
-const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
-  'items',
-  'moves',
-  'text',
-  'pokemon',
-  'trainers',
-  'encounters',
-  'teraRaids',
-  'staticEncounters',
-  'shops',
-  'giftPokemon',
-  'tradePokemon',
-  'placement',
-  'typeChart',
-  'fashionUnlock',
-  'hyperspaceBypass',
-  'spreadsheetImport',
-  'modMerger',
-  'gameDump'
-]);
-
-const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
-  'pokemon',
-  'trainers',
-  'encounters',
-  'giftPokemon',
-  'tradePokemon',
-  'moves',
-  'text',
-  'items',
-  'placement',
-  'shops',
-  'dexLayout',
-  'typeChart',
-  'angeFight',
-  'spreadsheetImport',
-  'modMerger',
-  'gameDump'
-]);
-
-export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'profanityFilter', 'randomizer', 'gameDump']);
-
-export const readOnlyViewerSectionIds = new Set<WorkbenchSection>(['flagworkSave']);
-
-const hiddenWorkflowSectionIds = new Set<WorkbenchSection>(['exefsPatches']);
 
 export function canAccessWorkflowSectionForHealth(
   section: WorkbenchSection,
@@ -330,22 +254,6 @@ export type LoadedWorkflowStateBySection = {
   zaModMergerWorkflow: ZaModMergerWorkflow | null;
 };
 
-function getGameWorkflowSectionIds(game: ProjectGame | null | undefined) {
-  if (isScarletVioletGame(game)) {
-    return scarletVioletWorkflowSectionIds;
-  }
-
-  if (isPokemonLegendsZAGame(game)) {
-    return pokemonLegendsZAWorkflowSectionIds;
-  }
-
-  if (game === 'sword' || game === 'shield') {
-    return swordShieldWorkflowSectionIds;
-  }
-
-  return new Set<WorkbenchSection>();
-}
-
 export function isScarletVioletGame(game: ProjectGame | null | undefined) {
   return game === 'scarlet' || game === 'violet';
 }
@@ -362,18 +270,23 @@ export function isWorkflowSupportedForGame(
   section: WorkbenchSection,
   game: ProjectGame | null | undefined
 ) {
-  return getGameWorkflowSectionIds(game).has(section);
+  return isWorkflowSection(section) && isCapabilityRegisteredForGame(section, game);
 }
 
 export function getGameScopedWorkflowSummaries(
   workflows: WorkflowSummary[],
   game: ProjectGame | null | undefined
 ) {
-  const supportedSectionIds = getGameWorkflowSectionIds(game);
-  return workflows.filter((workflow) =>
-    supportedSectionIds.has(workflow.id as WorkbenchSection) &&
-    !hiddenWorkflowSectionIds.has(workflow.id as WorkbenchSection)
-  );
+  return workflows.filter((workflow): workflow is WorkflowSummary & { id: WorkbenchSection } => {
+    if (!isRegisteredWorkbenchSection(workflow.id)) {
+      return false;
+    }
+
+    return (
+      isWorkflowSupportedForGame(workflow.id, game) &&
+      !hiddenWorkflowSectionIds.has(workflow.id)
+    );
+  });
 }
 
 export function getLoadedWorkflowStateForSection(
@@ -465,11 +378,8 @@ export function getLoadedWorkflowStateForSection(
 }
 
 export function isWorkflowSection(section: WorkbenchSection) {
-  return (
-    swordShieldWorkflowSectionIds.has(section) ||
-    scarletVioletWorkflowSectionIds.has(section) ||
-    pokemonLegendsZAWorkflowSectionIds.has(section)
-  );
+  const navigationKind = getWorkbenchCapabilityRegistration(section).navigationKind;
+  return navigationKind === 'workflow' || navigationKind === 'hidden';
 }
 
 export function resolveWorkflowDataSection(section: WorkbenchSection): WorkbenchSection {

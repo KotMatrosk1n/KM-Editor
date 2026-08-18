@@ -10,14 +10,19 @@ public sealed class ProjectWorkspaceService
 
     private readonly ProjectFileGraphBuilder fileGraphBuilder;
     private readonly ProjectValidator validator;
+    private readonly Func<ProjectPaths, ProjectId> projectIdentityFactory;
     private readonly object memoryCacheSyncRoot = new();
     private ProjectPaths? cachedPaths;
     private OpenedProject? cachedProject;
 
-    public ProjectWorkspaceService(ProjectValidator? validator = null, ProjectFileGraphBuilder? fileGraphBuilder = null)
+    public ProjectWorkspaceService(
+        ProjectValidator? validator = null,
+        ProjectFileGraphBuilder? fileGraphBuilder = null,
+        Func<ProjectPaths, ProjectId>? projectIdentityFactory = null)
     {
         this.fileGraphBuilder = fileGraphBuilder ?? new ProjectFileGraphBuilder();
         this.validator = validator ?? new ProjectValidator(this.fileGraphBuilder);
+        this.projectIdentityFactory = projectIdentityFactory ?? ProjectIdentity.FromPaths;
     }
 
     public OpenedProject Open(ProjectPaths paths, DateTimeOffset? openedAt = null)
@@ -37,7 +42,7 @@ public sealed class ProjectWorkspaceService
 
         var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
         var project = new OpenedProject(
-            ProjectId.New(),
+            projectIdentityFactory(paths),
             paths,
             health,
             fileGraph,
@@ -56,13 +61,16 @@ public sealed class ProjectWorkspaceService
 
     public ProjectHealth Validate(ProjectPaths paths)
     {
+        return ValidateAndOpen(paths).Health;
+    }
+
+    public OpenedProject ValidateAndOpen(ProjectPaths paths)
+    {
         ArgumentNullException.ThrowIfNull(paths);
 
         ClearMemoryCache();
         var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
-        CacheOpenedProject(paths, health, fileGraph);
-
-        return health;
+        return CacheOpenedProject(paths, health, fileGraph);
     }
 
     public ProjectFileGraph RefreshFileGraph(ProjectPaths paths)
@@ -76,13 +84,13 @@ public sealed class ProjectWorkspaceService
         return fileGraph;
     }
 
-    private void CacheOpenedProject(
+    private OpenedProject CacheOpenedProject(
         ProjectPaths paths,
         ProjectHealth health,
         ProjectFileGraph fileGraph)
     {
         var project = new OpenedProject(
-            ProjectId.New(),
+            projectIdentityFactory(paths),
             paths,
             health,
             fileGraph,
@@ -93,6 +101,8 @@ public sealed class ProjectWorkspaceService
             cachedPaths = paths;
             cachedProject = project;
         }
+
+        return project;
     }
 
     public void ClearMemoryCache()

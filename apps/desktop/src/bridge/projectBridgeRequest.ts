@@ -61,6 +61,17 @@ export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny
   const response = responseResult.data;
   const responseRequestId = response.requestId ?? null;
   if (responseRequestId === null) {
+    // Request-size rejection happens before the backend parses the envelope, so it
+    // cannot safely recover the request ID. This one deterministic pre-envelope
+    // failure is still attributable to the serialized request sent by this call.
+    if (response.error?.code === projectBridgeErrorCodes.requestTooLarge) {
+      throw new ProjectBridgeError(response.error, {
+        command,
+        requestId,
+        responseRequestId
+      });
+    }
+
     throw createProjectBridgeProtocolError(
       projectBridgeErrorCodes.missingRequestId,
       'The project bridge response did not include its request ID.',

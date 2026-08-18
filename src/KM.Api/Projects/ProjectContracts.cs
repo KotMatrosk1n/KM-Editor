@@ -169,6 +169,8 @@ public sealed record OpenProjectResponse(
     ProjectHealthDto Health,
     ProjectFileGraphDto FileGraph);
 
-public sealed record ValidateProjectResponse(ProjectHealthDto Health);
+public sealed record ValidateProjectResponse(
+    string ProjectId,
+    ProjectHealthDto Health);
 
 public sealed record RefreshFileGraphResponse(ProjectFileGraphDto FileGraph);
