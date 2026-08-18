@@ -15,9 +15,12 @@ use tauri_plugin_shell::ShellExt;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 const MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS: usize = 8;
+const MAX_PROJECT_BRIDGE_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PROJECT_BRIDGE_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 const PROJECT_BRIDGE_RECYCLED_ERROR: &str =
     "Project bridge request was canceled because the bridge was recycled.";
 const PROJECT_BRIDGE_PROJECT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT: Duration = Duration::from_secs(45);
 const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const PROJECT_BRIDGE_REQUEST_RUNNING: usize = 0;
@@ -122,6 +125,7 @@ struct ProjectBridgeIo {
 
 enum ProjectBridgeRequestFailure {
     Retryable(String),
+    NonRetryable(String),
     TimedOut(String),
 }
 
@@ -166,6 +170,10 @@ async fn project_bridge(
     bridge_state: tauri::State<'_, ProjectBridgeState>,
     request_json: String,
 ) -> Result<String, String> {
+    if request_json.len() > MAX_PROJECT_BRIDGE_REQUEST_BYTES {
+        return Err("Project bridge request exceeded the supported size limit.".to_owned());
+    }
+
     let bridge_state = bridge_state.inner().clone();
     let request_permit = bridge_state.try_acquire_request_permit()?;
     let request_generation = bridge_state.generation.load(Ordering::Acquire);
@@ -208,6 +216,7 @@ where
     F: FnMut() -> Result<ProjectBridgeProcess, String>,
 {
     let read_only_timeout = project_bridge_read_only_timeout(request_json);
+    let may_retry = read_only_timeout.is_some();
 
     for attempt in 0..2 {
         let process = get_or_start_project_bridge_process(
@@ -224,10 +233,14 @@ where
         match request_result {
             Ok(response) => return Ok(response),
             Err(ProjectBridgeRequestFailure::TimedOut(error)) => return Err(error),
+            Err(ProjectBridgeRequestFailure::NonRetryable(error)) => {
+                remove_failed_project_bridge_process(bridge_state, &process)?;
+                return Err(error);
+            }
             Err(ProjectBridgeRequestFailure::Retryable(error)) => {
                 remove_failed_project_bridge_process(bridge_state, &process)?;
                 ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
-                if attempt > 0 {
+                if !may_retry || attempt > 0 {
                     return Err(error);
                 }
             }
@@ -357,30 +370,33 @@ impl ProjectBridgeProcess {
             ));
         }
 
-        let request_result = (|| -> Result<String, String> {
-            ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
+        let request_result = (|| -> Result<String, ProjectBridgeRequestFailure> {
+            ensure_project_bridge_request_is_current(bridge_state, request_generation)
+                .map_err(ProjectBridgeRequestFailure::Retryable)?;
             io.stdin
                 .write_all(request_json.as_bytes())
-                .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+                .map_err(|error| {
+                    ProjectBridgeRequestFailure::Retryable(format!(
+                        "Could not send the project bridge request: {error}"
+                    ))
+                })?;
             io.stdin
                 .write_all(b"\n")
                 .and_then(|_| io.stdin.flush())
-                .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+                .map_err(|error| {
+                    ProjectBridgeRequestFailure::Retryable(format!(
+                        "Could not send the project bridge request: {error}"
+                    ))
+                })?;
 
-            let mut response = String::new();
-            let bytes_read = io
-                .stdout
-                .read_line(&mut response)
-                .map_err(|error| format!("Could not read the project bridge response: {error}"))?;
-            if bytes_read == 0 {
-                return Err("Project bridge runner returned an empty response.".to_owned());
-            }
+            let mut response = read_bounded_project_bridge_response(&mut io.stdout)?;
 
             while response.ends_with(['\r', '\n']) {
                 response.pop();
             }
 
-            ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
+            ensure_project_bridge_request_is_current(bridge_state, request_generation)
+                .map_err(ProjectBridgeRequestFailure::Retryable)?;
             Ok(response)
         })();
         let timed_out = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
@@ -392,7 +408,7 @@ impl ProjectBridgeProcess {
             ));
         }
 
-        request_result.map_err(ProjectBridgeRequestFailure::Retryable)
+        request_result
     }
 
     fn allocate_request_token(&self) -> usize {
@@ -412,6 +428,53 @@ impl ProjectBridgeProcess {
         terminate_project_bridge_child(&mut child);
         Ok(())
     }
+}
+
+fn read_bounded_project_bridge_response(
+    reader: &mut impl BufRead,
+) -> Result<String, ProjectBridgeRequestFailure> {
+    let mut response = Vec::with_capacity(8 * 1024);
+    loop {
+        let available = reader.fill_buf().map_err(|error| {
+            ProjectBridgeRequestFailure::Retryable(format!(
+                "Could not read the project bridge response: {error}"
+            ))
+        })?;
+        if available.is_empty() {
+            break;
+        }
+
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let chunk_length = newline.map_or(available.len(), |index| index + 1);
+        let next_length = response.len().checked_add(chunk_length).ok_or_else(|| {
+            ProjectBridgeRequestFailure::NonRetryable(
+                "Project bridge response exceeded the supported size limit.".to_owned(),
+            )
+        })?;
+        if next_length > MAX_PROJECT_BRIDGE_RESPONSE_BYTES {
+            return Err(ProjectBridgeRequestFailure::NonRetryable(
+                "Project bridge response exceeded the supported size limit.".to_owned(),
+            ));
+        }
+
+        response.extend_from_slice(&available[..chunk_length]);
+        reader.consume(chunk_length);
+        if newline.is_some() {
+            break;
+        }
+    }
+
+    if response.is_empty() {
+        return Err(ProjectBridgeRequestFailure::Retryable(
+            "Project bridge runner returned an empty response.".to_owned(),
+        ));
+    }
+
+    String::from_utf8(response).map_err(|_| {
+        ProjectBridgeRequestFailure::Retryable(
+            "Project bridge runner returned a response that was not valid UTF-8.".to_owned(),
+        )
+    })
 }
 
 impl<'a> ProjectBridgeActiveRequest<'a> {
@@ -543,12 +606,22 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
         return Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT);
     }
 
+    if matches!(command, "output.cleanup.preview" | "output.history.list") {
+        return Some(PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT);
+    }
+
     if matches!(
         command,
         "placement.catalog.open"
             | "placement.catalog.query"
             | "swshCache.status"
             | "swshCache.warmup.step"
+            | "output.recovery.status"
+            | "output.integrity.scan"
+            | "output.checkpoint.list"
+            | "output.checkpoint.restore.preview"
+            | "project.relocation.preview"
+            | "support.report.build"
     ) {
         return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);
     }

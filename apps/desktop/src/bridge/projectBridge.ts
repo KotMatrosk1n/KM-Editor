@@ -392,6 +392,10 @@ import {
   createWorkspaceDraftProjectBridgeApi,
   type WorkspaceDraftProjectBridgeApi
 } from './workspaceDraftProjectBridge';
+import {
+  createOutputSafetyProjectBridgeApi,
+  type OutputSafetyProjectBridgeApi
+} from './outputSafetyProjectBridge';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
@@ -693,7 +697,7 @@ export type ProjectBridge = {
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
 } & SvBatchFieldProjectBridgeApi & SvCacheProjectBridgeApi & ZaCacheProjectBridgeApi &
   GameDumpProjectBridgeApi & SwShPlacementProjectBridgeApi & SwShCacheProjectBridgeApi &
-  WorkspaceDraftProjectBridgeApi;
+  WorkspaceDraftProjectBridgeApi & OutputSafetyProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -1539,6 +1543,7 @@ export function createProjectBridge(
     ...createSwShCacheProjectBridgeApi(transport),
     ...createSwShPlacementProjectBridgeApi(transport),
     ...createWorkspaceDraftProjectBridgeApi(transport),
+    ...createOutputSafetyProjectBridgeApi(transport),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,

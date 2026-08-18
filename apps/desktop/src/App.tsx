@@ -388,6 +388,16 @@ import {
 } from './features/catch-cap/catchCapPending';
 import { getIvScreenPendingOperation } from './features/iv-screen/ivScreenPending';
 import { canStageAdvancedEditorAction } from './features/advanced-editors/stageActionGuard';
+import { OutputSafetyPanel } from './features/output-safety/OutputSafetyPanel';
+import { ProjectRelocationPanel } from './features/output-safety/ProjectRelocationPanel';
+import {
+  useOutputSafetyController,
+  type OutputSafetyController
+} from './features/output-safety/useOutputSafetyController';
+import {
+  type ApplyProjectRelocationResponse,
+  type OutputSafetyScope
+} from './bridge/outputSafetyContracts';
 import { GameDumpSection } from './features/game-dump/GameDumpSection';
 import { ZaDexLayoutSection } from './features/dex-layout/ZaDexLayoutSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
@@ -2141,6 +2151,15 @@ export function App({
   const health = projectHealth;
   const selectedGame = draftPaths.selectedGame;
   const activeProjectId = openProject?.projectId ?? null;
+  const outputSafetyScope = useMemo(
+    () => activeProjectId
+      ? {
+          paths: createProjectPaths(draftPaths),
+          projectId: activeProjectId
+        }
+      : null,
+    [activeProjectId, createProjectPaths, draftPaths, language]
+  );
   const [activeLocation, setActiveLocation] = useState<WorkbenchLocation>(() =>
     createSectionLocation(activeSection, {
       game: selectedGame,
@@ -2393,6 +2412,11 @@ export function App({
     isRandomizerApplying ||
     isGameDumpWriting ||
     isSvCacheClearing;
+  const outputSafety = useOutputSafetyController({
+    bridge,
+    externalMutationBusy: hasCriticalWriteOperation,
+    scope: outputSafetyScope
+  });
   const [isSidebarCompactPreference, setIsSidebarCompactPreference] = useState(
     readSidebarCompactPreference
   );
@@ -2592,6 +2616,21 @@ export function App({
     setScopedEditorPanelDiagnostics,
     setScopedEditorPanelStates
   } = useScopedEditorPanelOutput(currentEditSessionSignature);
+  const getOutputSafeScopedEditorPanelOutput = useCallback(
+    (section: WorkbenchSection) => {
+      const panelOutput = getScopedEditorPanelOutput(section);
+      return panelOutput.changePlan && !outputSafety.canApply
+        ? {
+            ...panelOutput,
+            changePlan: {
+              ...panelOutput.changePlan,
+              canApply: false
+            }
+          }
+        : panelOutput;
+    },
+    [getScopedEditorPanelOutput, outputSafety.canApply]
+  );
   const isEditSessionValidated =
     currentEditSessionSignature !== null &&
     currentEditSessionSignature === validatedEditSessionSignature;
@@ -2622,7 +2661,8 @@ export function App({
     !isChangePlanApplying &&
     !isChangePlanCreating &&
     !isEditSessionMutating &&
-    !isSessionValidating;
+    !isSessionValidating &&
+    outputSafety.canApply;
   const activeSectionHasLoadedWorkflow = getLoadedWorkflowStateForSection(activeSection, {
     angeFightWorkflow, bagHookWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionUnlockWorkflow,
@@ -3874,6 +3914,71 @@ export function App({
     }
 
     return validatedProject;
+  };
+
+  const handleProjectRelocated = async (
+    response: ApplyProjectRelocationResponse,
+    candidatePaths: OutputSafetyScope['paths']
+  ) => {
+    const nextSelectedGame = candidatePaths.selectedGame ?? selectedGame;
+    const nextDraftPaths: ProjectPathDraft = {
+      baseExeFsPath: candidatePaths.baseExeFsPath ?? '',
+      baseRomFsPath: candidatePaths.baseRomFsPath ?? '',
+      outputRootPath: candidatePaths.outputRootPath ?? '',
+      pokemonLegendsZASupportFolderPath:
+        candidatePaths.pokemonLegendsZASupportFolderPath ?? '',
+      saveFilePath: candidatePaths.saveFilePath ?? '',
+      scarletVioletSupportFolderPath:
+        candidatePaths.scarletVioletSupportFolderPath ?? '',
+      selectedGame: nextSelectedGame
+    };
+
+    projectValidationRunRef.current += 1;
+    supportSearchRunRef.current += 1;
+    resetLoadedProjectState();
+    draftPathsRef.current = nextDraftPaths;
+    const activatedPaths = createProjectPaths(nextDraftPaths);
+    setDraftPath('baseExeFsPath', nextDraftPaths.baseExeFsPath);
+    setDraftPath('baseRomFsPath', nextDraftPaths.baseRomFsPath);
+    setDraftPath('outputRootPath', nextDraftPaths.outputRootPath);
+    setDraftPath(
+      'pokemonLegendsZASupportFolderPath',
+      nextDraftPaths.pokemonLegendsZASupportFolderPath
+    );
+    setDraftPath('saveFilePath', nextDraftPaths.saveFilePath);
+    setDraftPath(
+      'scarletVioletSupportFolderPath',
+      nextDraftPaths.scarletVioletSupportFolderPath
+    );
+    setOpenProject({
+      health: response.health,
+      projectId: response.projectId
+    });
+    if (response.health.canOpenEditableWorkflows) {
+      rememberValidatedProjectPaths(nextDraftPaths);
+    }
+    setBridgeDiagnostics(response.diagnostics);
+
+    const activationGeneration = projectScopeGenerationRef.current;
+    try {
+      await refreshWorkflows(
+        activatedPaths,
+        response.health.canOpenReadOnlyWorkflows,
+        () => projectScopeGenerationRef.current === activationGeneration
+      );
+    } catch (error) {
+      if (projectScopeGenerationRef.current === activationGeneration) {
+        setBridgeDiagnostics([
+          ...response.diagnostics,
+          ...toBridgeDiagnostics(error)
+        ]);
+      }
+      return;
+    }
+
+    if (projectScopeGenerationRef.current === activationGeneration) {
+      void startSvCacheWarmup(activatedPaths, response.health);
+    }
   };
 
   const handleValidateProject = async () => {
@@ -7318,6 +7423,10 @@ export function App({
   };
 
   const handleApplyModMerge = async () => {
+    if (!outputSafety.canApply) {
+      return;
+    }
+
     if (isScarletVioletGame(selectedGame)) {
       setIsModMergerApplying(true);
       setBridgeDiagnostics([]);
@@ -7338,6 +7447,7 @@ export function App({
         setSvModMergerWorkflow(response.workflow);
         setSvModMergerPreview(response.preview);
         setSvModMergerApplyResult(response);
+        await outputSafety.notifyOutputMutation();
 
         const hasApplyErrors = response.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
@@ -7352,6 +7462,7 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
+        await outputSafety.notifyOutputFailure(error);
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       } finally {
         setIsModMergerApplying(false);
@@ -7381,6 +7492,7 @@ export function App({
         setZaModMergerWorkflow(response.workflow);
         setZaModMergerPreview(response.preview);
         setZaModMergerApplyResult(response);
+        await outputSafety.notifyOutputMutation();
 
         const hasApplyErrors = response.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
@@ -7395,6 +7507,7 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
+        await outputSafety.notifyOutputFailure(error);
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       } finally {
         setIsModMergerApplying(false);
@@ -7433,6 +7546,7 @@ export function App({
       setModMergerWorkflow(response.workflow);
       setModMergerPreview(response.preview);
       setModMergerApplyResult(response);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7447,6 +7561,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsModMergerApplying(false);
@@ -7471,6 +7586,10 @@ export function App({
   };
 
   const handleApplyFpsPatch = async () => {
+    if (!outputSafety.canApply) {
+      return;
+    }
+
     setIsFpsPatchApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -7486,6 +7605,7 @@ export function App({
       const response = await bridge.applyFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7500,6 +7620,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
@@ -7508,6 +7629,10 @@ export function App({
   };
 
   const handleRestoreFpsPatch = async () => {
+    if (!outputSafety.canApply) {
+      return;
+    }
+
     setIsFpsPatchApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -7523,6 +7648,7 @@ export function App({
       const response = await bridge.restoreFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7537,6 +7663,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
@@ -7561,6 +7688,10 @@ export function App({
   };
 
   const handleApplyProfanityFilter = async () => {
+    if (!outputSafety.canApply) {
+      return;
+    }
+
     setIsProfanityFilterApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -7576,6 +7707,7 @@ export function App({
       const response = await bridge.applyProfanityFilter({ paths });
       setProfanityFilterStatus(response.status);
       setApplyResult(response.applyResult);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7590,6 +7722,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsProfanityFilterApplying(false);
@@ -7598,6 +7731,10 @@ export function App({
   };
 
   const handleRestoreProfanityFilter = async () => {
+    if (!outputSafety.canApply) {
+      return;
+    }
+
     setIsProfanityFilterApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -7613,6 +7750,7 @@ export function App({
       const response = await bridge.restoreProfanityFilter({ paths });
       setProfanityFilterStatus(response.status);
       setApplyResult(response.applyResult);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7627,6 +7765,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsProfanityFilterApplying(false);
@@ -7671,6 +7810,7 @@ export function App({
         paths
       });
       setApplyResult(response.applyResult);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7694,8 +7834,10 @@ export function App({
         randomizerProgressSteps.length,
         100
       ));
-
       return response;
+    } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
+      throw error;
     } finally {
       setIsRandomizerApplying(false);
       setWorkProgress(null);
@@ -7717,6 +7859,7 @@ export function App({
       ));
       const response = await bridge.restoreRandomizer({ paths });
       setApplyResult(response.applyResult);
+      await outputSafety.notifyOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -7750,8 +7893,10 @@ export function App({
         randomizerRestoreProgressSteps.length,
         100
       ));
-
       return response;
+    } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
+      throw error;
     } finally {
       setIsRandomizerApplying(false);
       setWorkProgress(null);
@@ -9573,6 +9718,9 @@ export function App({
   };
 
   const handleApplyDynamaxAdventureChangePlan = async () => {
+    if (!outputSafety.canApply) {
+      return;
+    }
     if (!editSession || !visibleDynamaxAdventureChangePlan) {
       return;
     }
@@ -9666,11 +9814,18 @@ export function App({
           }
         }
       }
+      if (
+        completedApplyResult.outputTransaction !== null ||
+        completedApplyResult.writtenFiles.length > 0
+      ) {
+        await outputSafety.notifyOutputMutation();
+      }
     } catch (error) {
       if (!isCurrentReviewedOperation()) {
         return;
       }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      await outputSafety.notifyOutputFailure(error);
     } finally {
       if (editSessionOperationRunRef.current === runId) {
         setIsChangePlanApplying(false);
@@ -10563,7 +10718,7 @@ export function App({
         (diagnostic) => diagnostic.severity === 'warning'
       );
       const shouldRetainApplyResult =
-        !didWriteFiles || hasApplyWarnings;
+        !didWriteFiles || hasApplyWarnings || completedApplyResult.outputTransaction !== null;
 
       if (didWriteFiles) {
         editSessionMutationGenerationRef.current += 1;
@@ -10590,10 +10745,15 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
+      if (didWriteFiles || completedApplyResult.outputTransaction !== null) {
+        await outputSafety.notifyOutputMutation();
+      }
+
       if (!shouldRetainApplyResult) {
         setApplyResult(null);
       }
     } catch (error) {
+      await outputSafety.notifyOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
@@ -11243,7 +11403,12 @@ export function App({
 
   const handleApplyScopedEditorChangePlan = async (section: WorkbenchSection) => {
     const panelOutput = getScopedEditorPanelOutput(section);
-    if (!editSession || !panelOutput.changePlan || !scopedEditorPanelSectionIds.has(section)) {
+    if (
+      !outputSafety.canApply ||
+      !editSession ||
+      !panelOutput.changePlan ||
+      !scopedEditorPanelSectionIds.has(section)
+    ) {
       return;
     }
 
@@ -11320,8 +11485,15 @@ export function App({
         ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
+      if (
+        response.applyResult.outputTransaction !== null ||
+        response.applyResult.writtenFiles.length > 0
+      ) {
+        await outputSafety.notifyOutputMutation();
+      }
     } catch (error) {
       const refreshDiagnostics = toBridgeDiagnostics(error);
+      await outputSafety.notifyOutputFailure(error);
       if (completedApplyResult) {
         setScopedEditorPanelStates((currentStates) => ({
           ...currentStates,
@@ -11471,6 +11643,21 @@ export function App({
               onCreateOutputRootFolder={handleCreateOutputRootFolder}
               onOpenOutputRoot={handleOpenOutputRoot}
               onPickProjectPath={handlePickProjectPath}
+              projectRelocationAction={
+                <ProjectRelocationPanel
+                  bridge={bridge}
+                  canRelocate={
+                    pendingEditCount === 0 &&
+                    editorDraftDirtySections.size === 0 &&
+                    !hasCriticalWriteOperation &&
+                    !isBusy &&
+                    outputSafety.canApply
+                  }
+                  desktopServices={desktopServices}
+                  onRelocated={handleProjectRelocated}
+                  source={outputSafetyScope}
+                />
+              }
               onRequestSupportSearch={handleRequestSupportSearch}
               onSetDraftPath={handleSetDraftPath}
               onValidateProject={handleValidateProject}
@@ -11910,6 +12097,7 @@ export function App({
                 onStageTableRestore={handleStageDynamaxAdventureTableRestore}
                 onUpdateDynamaxAdventureEntryChanges={handleUpdateDynamaxAdventureEntryChanges}
                 onUpdateDynamaxAdventureFields={handleUpdateDynamaxAdventureFields}
+                outputWritesReady={outputSafety.canApply}
                 searchText={dynamaxAdventureSearchText}
                 selectedEntryIndex={selectedDynamaxAdventureEntryIndex}
                 workflow={dynamaxAdventuresWorkflow}
@@ -12207,7 +12395,7 @@ export function App({
                 onSelectSlot={setSelectedBagHookSlot}
                 onStageInstall={handleStageBagHookInstall}
                 onStageUninstall={handleStageBagHookUninstall}
-                panelOutput={getScopedEditorPanelOutput('bagHook')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('bagHook')}
                 selectedSlot={selectedBagHookSlot}
                 workflow={bagHookWorkflow}
               />
@@ -12228,7 +12416,7 @@ export function App({
                 onSelectCap={setSelectedCatchCapBadgeCount}
                 onStageCaps={handleStageCatchCap}
                 onStageUninstall={handleStageCatchCapUninstall}
-                panelOutput={getScopedEditorPanelOutput('catchCap')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('catchCap')}
                 selectedBadgeCount={selectedCatchCapBadgeCount}
                 workflow={catchCapWorkflow}
               />
@@ -12249,7 +12437,7 @@ export function App({
                   registerEditorDraftDirty('hyperTraining', isDirty)
                 }
                 onStageMinimumLevel={handleStageHyperTraining}
-                panelOutput={getScopedEditorPanelOutput('hyperTraining')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('hyperTraining')}
                 workflow={hyperTrainingWorkflow}
               />
             )
@@ -12267,7 +12455,7 @@ export function App({
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('shinyRate')}
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('shinyRate', isDirty)}
                 onStageRate={handleStageShinyRate}
-                panelOutput={getScopedEditorPanelOutput('shinyRate')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('shinyRate')}
                 workflow={shinyRateWorkflow}
               />
             )
@@ -12286,7 +12474,7 @@ export function App({
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('typeChart', isDirty)}
                 onStageChart={handleStageTypeChart}
                 onStageUninstall={handleStageTypeChartUninstall}
-                panelOutput={getScopedEditorPanelOutput('typeChart')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('typeChart')}
                 workflow={typeChartWorkflow}
               />
             )
@@ -12305,7 +12493,7 @@ export function App({
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('angeFight', isDirty)}
                 onStageFight={handleStageAngeFight}
                 onStageUninstall={handleStageAngeFightUninstall}
-                panelOutput={getScopedEditorPanelOutput('angeFight')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('angeFight')}
                 workflow={angeFightWorkflow}
               />
             )
@@ -12325,7 +12513,7 @@ export function App({
                   registerEditorDraftDirty('fairyGymBoosts', isDirty)
                 }
                 onStageBoosts={handleStageFairyGymBoosts}
-                panelOutput={getScopedEditorPanelOutput('fairyGymBoosts')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('fairyGymBoosts')}
                 workflow={fairyGymBoostsWorkflow}
               />
             )
@@ -12342,7 +12530,7 @@ export function App({
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('fashionUnlock')}
                 onStageInstall={handleStageFashionUnlockInstall}
                 onStageUninstall={handleStageFashionUnlockUninstall}
-                panelOutput={getScopedEditorPanelOutput('fashionUnlock')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('fashionUnlock')}
                 selectedGame={selectedGame}
                 stagingAction={fashionUnlockStagingAction}
                 workflow={fashionUnlockWorkflow}
@@ -12361,7 +12549,7 @@ export function App({
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('gymUniformRemoval')}
                 onStageInstall={handleStageGymUniformRemovalInstall}
                 onStageUninstall={handleStageGymUniformRemovalUninstall}
-                panelOutput={getScopedEditorPanelOutput('gymUniformRemoval')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('gymUniformRemoval')}
                 selectedGame={selectedGame}
                 stagingAction={gymUniformRemovalStagingAction}
                 workflow={gymUniformRemovalWorkflow}
@@ -12381,7 +12569,7 @@ export function App({
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('hyperspaceBypass')}
                 onStageInstall={handleStageHyperspaceBypassInstall}
                 onStageUninstall={handleStageHyperspaceBypassUninstall}
-                panelOutput={getScopedEditorPanelOutput('hyperspaceBypass')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('hyperspaceBypass')}
                 workflow={hyperspaceBypassWorkflow}
               />
             )
@@ -12399,7 +12587,7 @@ export function App({
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('ivScreen')}
                 onStageInstall={handleStageIvScreenInstall}
                 onStageUninstall={handleStageIvScreenUninstall}
-                panelOutput={getScopedEditorPanelOutput('ivScreen')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('ivScreen')}
                 workflow={ivScreenWorkflow}
               />
             )
@@ -12437,7 +12625,7 @@ export function App({
                 onSelectCheck={setSelectedRoyalCandyCheckId}
                 onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
                 onStageWorkflow={handleStageRoyalCandyWorkflow}
-                panelOutput={getScopedEditorPanelOutput('royalCandy')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('royalCandy')}
                 searchText={royalCandySearchText}
                 selectedCheckId={selectedRoyalCandyCheckId}
                 selectedWorkflowId={selectedRoyalCandyWorkflowId}
@@ -12461,7 +12649,7 @@ export function App({
                 }
                 onSelectSlot={setSelectedStartingItemSlot}
                 onStageGrants={handleStageStartingItems}
-                panelOutput={getScopedEditorPanelOutput('startingItems')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('startingItems')}
                 selectedSlot={selectedStartingItemSlot}
                 workflow={startingItemsWorkflow}
               />
@@ -12482,7 +12670,7 @@ export function App({
                   registerEditorDraftDirty('npcItemGift', isDirty)
                 }
                 onStageGifts={handleStageNpcItemGifts}
-                panelOutput={getScopedEditorPanelOutput('npcItemGift')}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('npcItemGift')}
                 workflow={npcItemGiftWorkflow}
               />
             )
@@ -12506,7 +12694,7 @@ export function App({
           ) : null}
           {activeSection === 'fpsPatch' ? (
             <FpsPatchSection
-              canApply={health?.canOpenEditableWorkflows ?? false}
+              canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)}
               isApplying={isFpsPatchApplying}
               isLoading={isFpsPatchLoading}
               onApply={handleApplyFpsPatch}
@@ -12518,7 +12706,7 @@ export function App({
           ) : null}
           {activeSection === 'profanityFilter' ? (
             <ProfanityFilterSection
-              canApply={health?.canOpenEditableWorkflows ?? false}
+              canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)}
               isApplying={isProfanityFilterApplying}
               isLoading={isProfanityFilterLoading}
               onApply={handleApplyProfanityFilter}
@@ -12530,7 +12718,7 @@ export function App({
           ) : null}
           {activeSection === 'randomizer' ? (
             <RandomizerSection
-              canApply={health?.canOpenEditableWorkflows ?? false}
+              canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)}
               isApplying={isRandomizerApplying}
               onApplyRandomizer={handleApplyRandomizer}
               onImportSeed={handleImportRandomizerSeed}
@@ -12568,6 +12756,7 @@ export function App({
                   onRemoveSource={handleRemoveSvModSource}
                   onStageMerge={handleStageModMerge}
                   onToggleSource={handleToggleSvModSource}
+                  outputWritesReady={outputSafety.canApply}
                   outputRootPath={draftPaths.outputRootPath}
                   preview={svModMergerPreview}
                   workflow={svModMergerWorkflow}
@@ -12593,6 +12782,7 @@ export function App({
                   onRemoveSource={handleRemoveZaModSource}
                   onStageMerge={handleStageModMerge}
                   onToggleSource={handleToggleZaModSource}
+                  outputWritesReady={outputSafety.canApply}
                   outputRootPath={draftPaths.outputRootPath}
                   preview={zaModMergerPreview}
                   workflow={zaModMergerWorkflow}
@@ -12618,6 +12808,7 @@ export function App({
                 onSelectAll={handleSelectAllModMergerFiles}
                 onStageMerge={handleStageModMerge}
                 onToggleFile={handleToggleModMergerFile}
+                outputWritesReady={outputSafety.canApply}
                 outputRootPath={draftPaths.outputRootPath}
                 preview={modMergerPreview}
                 resolutions={modMergerResolutions}
@@ -12681,6 +12872,7 @@ export function App({
               onRequestTrinityOutput={(mode) => setTrinityOutputConfirmation({ mode })}
               onSaveValidatedChanges={() => handleSaveValidatedChanges()}
               onValidateEditSession={handleValidateEditSession}
+              outputSafety={outputSafety}
             />
           ) : null}
           {activeSection === 'settings' ? (
@@ -13097,6 +13289,7 @@ function HealthSection({
   onSetDraftPath,
   onValidateProject,
   pendingEditCount,
+  projectRelocationAction,
   projectStatus,
   selectedGame,
   svCacheStatus
@@ -13117,6 +13310,7 @@ function HealthSection({
   onSetDraftPath: (field: ProjectPathFieldName, value: string) => void;
   onValidateProject: () => void;
   pendingEditCount: number;
+  projectRelocationAction: ReactNode;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedGame: ProjectGame;
   svCacheStatus: TrinityCacheStatus | null;
@@ -13242,6 +13436,7 @@ function HealthSection({
             <ExternalLink aria-hidden="true" size={18} />
             <span>Open Output Root</span>
           </button>
+          {projectRelocationAction}
           <button
             aria-busy={isOutputRootCreating || undefined}
             className="secondary-button"
@@ -27368,6 +27563,7 @@ function DynamaxAdventuresSection({
   onStageTableRestore,
   onUpdateDynamaxAdventureEntryChanges,
   onUpdateDynamaxAdventureFields,
+  outputWritesReady,
   searchText,
   selectedEntryIndex,
   workflow
@@ -27389,6 +27585,7 @@ function DynamaxAdventuresSection({
   onStageTableRestore: () => Promise<boolean>;
   onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
   onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>) => Promise<boolean>;
+  outputWritesReady: boolean;
   searchText: string;
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
@@ -27677,6 +27874,7 @@ function DynamaxAdventuresSection({
               onPreviewDynamaxAdventureDefaults={onPreviewDynamaxAdventureDefaults}
               onUpdateDynamaxAdventureEntryChanges={onUpdateDynamaxAdventureEntryChanges}
               onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
+              outputWritesReady={outputWritesReady}
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
             </div>
@@ -27711,6 +27909,7 @@ function SelectedDynamaxAdventurePanel({
   onPreviewDynamaxAdventureDefaults,
   onUpdateDynamaxAdventureEntryChanges,
   onUpdateDynamaxAdventureFields,
+  outputWritesReady,
   safeNormalSpeciesOptions
 }: {
   canEditDynamaxAdventures: boolean;
@@ -27728,6 +27927,7 @@ function SelectedDynamaxAdventurePanel({
   onPreviewDynamaxAdventureDefaults: (entryIndex: number, species: number, form: number, level: number) => Promise<PreviewDynamaxAdventureDefaultsResponse | null>;
   onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
   onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>) => Promise<boolean>;
+  outputWritesReady: boolean;
   safeNormalSpeciesOptions: EditableFieldOption[];
 }) {
   const { translateLiteral } = useLocalization();
@@ -27822,6 +28022,7 @@ function SelectedDynamaxAdventurePanel({
     !isChangePlanCreating &&
     !isChangePlanApplying;
   const canApplyPlan =
+    outputWritesReady &&
     hasPendingDynamaxAdventureChange &&
     ownsSolePendingAdventure &&
     changePlan !== null &&
@@ -41818,6 +42019,7 @@ function SvModMergerSection({
   onRemoveSource,
   onStageMerge,
   onToggleSource,
+  outputWritesReady,
   outputRootPath,
   preview,
   workflow
@@ -41837,13 +42039,15 @@ function SvModMergerSection({
   onRemoveSource: (sourceIndex: number) => void;
   onStageMerge: () => void;
   onToggleSource: (sourceIndex: number) => void;
+  outputWritesReady: boolean;
   outputRootPath: string;
   preview: SvModMergerPreview | ZaModMergerPreview | null;
   workflow: SvModMergerWorkflow | ZaModMergerWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
   const canStage = modSources.some((source) => source.isEnabled) && !isStaging && !isLoading;
-  const canApply = Boolean(preview?.canApply) && !isApplying && !isStaging;
+  const canApply =
+    outputWritesReady && Boolean(preview?.canApply) && !isApplying && !isStaging;
 
   return (
     <>
@@ -42088,6 +42292,7 @@ function ModMergerSection({
   onSelectAll,
   onStageMerge,
   onToggleFile,
+  outputWritesReady,
   outputRootPath,
   preview,
   resolutions,
@@ -42114,6 +42319,7 @@ function ModMergerSection({
   onSelectAll: () => void;
   onStageMerge: () => void;
   onToggleFile: (directory: 1 | 2, relativePath: string) => void;
+  outputWritesReady: boolean;
   outputRootPath: string;
   preview: ModMergerPreview | null;
   resolutions: Record<string, ModMergerConflictResolution['source']>;
@@ -42134,7 +42340,8 @@ function ModMergerSection({
   const canSelectAll = directory1Files.length > 0 || directory2Files.length > 0;
   const canStage = Boolean(workflow) && hasSelectedFiles && !isStaging && !isApplying;
   const canReview = Boolean(preview) && hasSelectedFiles && !isStaging && !isApplying;
-  const canApply = Boolean(preview?.canApply) && !isApplying && !isStaging;
+  const canApply =
+    outputWritesReady && Boolean(preview?.canApply) && !isApplying && !isStaging;
   const diagnostics = [
     ...(workflow?.diagnostics ?? []),
     ...(preview?.diagnostics ?? []),
@@ -43404,7 +43611,8 @@ function ChangesSection({
   onRemovePendingEdit,
   onRequestTrinityOutput,
   onSaveValidatedChanges,
-  onValidateEditSession
+  onValidateEditSession,
+  outputSafety
 }: {
   applyResult: ApplyResult | null;
   canSaveValidatedChanges: boolean;
@@ -43424,6 +43632,7 @@ function ChangesSection({
   onRequestTrinityOutput: (mode: ChangePlanOutputMode) => void;
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
+  outputSafety: OutputSafetyController;
 }) {
   const { t, translateLiteral } = useLocalization();
   const pendingEdits = editSession?.pendingEdits ?? [];
@@ -43485,6 +43694,7 @@ function ChangesSection({
 
   return (
     <>
+      <OutputSafetyPanel controller={outputSafety} />
       <section aria-labelledby="changes-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ClipboardCheck aria-hidden="true" size={18} />

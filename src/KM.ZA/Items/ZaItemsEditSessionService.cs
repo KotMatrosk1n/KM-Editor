@@ -4,7 +4,9 @@ using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
@@ -615,6 +617,7 @@ internal sealed class ZaItemsEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -903,11 +906,21 @@ internal sealed class ZaItemsEditSessionService
                 }
             }
 
-            ZaWorkflowFileSource.WriteBatch(
+            outputTransaction = ZaWorkflowFileSource.WriteBatch(
                 paths,
                 outputWrites,
                 outputMode,
-                reviewedStandaloneDescriptorBytes);
+                reviewedStandaloneDescriptorBytes,
+                new ZaOutputApplyContext(
+                    OutputReviewFingerprint.FromChangePlan(currentPlan),
+                    new OwnershipOwnerId("workflow.za.items"),
+                    [new OutputApplyOrigin(
+                        OutputApplyOriginKind.Workflow,
+                        ZaEditSessionSupport.ItemsDomain)]),
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ItemDataArray, outputMode));
             if (conversionBytes is not null)
             {
@@ -980,7 +993,7 @@ internal sealed class ZaItemsEditSessionService
                     file: $"romfs/{ZaDataPaths.ShopItemLineupArray}"));
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -990,7 +1003,13 @@ internal sealed class ZaItemsEditSessionService
                 expected: "Readable source and writable output root"));
         }
 
-        return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return ZaEditSessionSupport.CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles,
+            diagnostics,
+            outputTransaction);
     }
 
     private static void RestoreMintNatureSentinels(

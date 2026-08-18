@@ -477,7 +477,15 @@ internal sealed class ZaGiftPokemonEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PokemonDataArray, outputBytes, outputMode);
+            ZaWorkflowFileSource.Write(
+                paths,
+                ZaDataPaths.PokemonDataArray,
+                outputBytes,
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PokemonDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -489,7 +497,7 @@ internal sealed class ZaGiftPokemonEditSessionService
                 ZaEditSessionSupport.CreateApplyOutputMessage("Gift Pokemon", outputMode),
                 ZaEditSessionSupport.GiftPokemonDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

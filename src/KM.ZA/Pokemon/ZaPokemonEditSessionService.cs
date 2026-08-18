@@ -1965,11 +1965,22 @@ internal sealed class ZaPokemonEditSessionService
                             [new ZaStandaloneOutputMutation(
                                 ZaExeFsReservedRegionLedger.ExeFsMainPath,
                                 mainOutputBytes)]);
-                    });
+                    },
+                    revalidateReviewedState: () =>
+                        ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                            reviewedPlan,
+                            CreateChangePlan(paths, session, outputMode)));
             }
             else
             {
-                ZaWorkflowFileSource.WriteBatch(paths, outputWrites, outputMode);
+                ZaWorkflowFileSource.WriteBatch(
+                    paths,
+                    outputWrites,
+                    outputMode,
+                    revalidateReviewedState: () =>
+                        ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                            reviewedPlan,
+                            CreateChangePlan(paths, session, outputMode)));
             }
 
             if (conversionBytes is not null)
@@ -2042,7 +2053,7 @@ internal sealed class ZaPokemonEditSessionService
                 applyMessage,
                 ZaEditSessionSupport.PokemonDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -2100,7 +2111,11 @@ internal sealed class ZaPokemonEditSessionService
             ZaWorkflowFileSource.WriteBatch(
                 paths,
                 [new ZaWorkflowFileWrite(ZaDataPaths.PokedexMegaContentsData, output)],
-                outputMode);
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
                 ZaDataPaths.PokedexMegaContentsData,
                 outputMode));
@@ -2117,7 +2132,7 @@ internal sealed class ZaPokemonEditSessionService
                     outputMode),
                 ZaEditSessionSupport.PokemonDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -2290,7 +2305,11 @@ internal sealed class ZaPokemonEditSessionService
                         outputWrites,
                         Array.Empty<string>(),
                         Array.Empty<ZaStandaloneOutputMutation>());
-                });
+                },
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
 
             if (wroteConversion)
             {
@@ -2324,7 +2343,7 @@ internal sealed class ZaPokemonEditSessionService
                     outputMode),
                 ZaEditSessionSupport.PokemonDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

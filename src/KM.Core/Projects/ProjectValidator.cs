@@ -21,7 +21,18 @@ public sealed class ProjectValidator
 
     public ProjectHealth Validate(ProjectPaths paths)
     {
-        return Validate(paths, graphPaths => fileGraphBuilder.Build(graphPaths).ToSummary());
+        return Validate(paths, CancellationToken.None);
+    }
+
+    public ProjectHealth Validate(ProjectPaths paths, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        cancellationToken.ThrowIfCancellationRequested();
+        var health = Validate(
+            paths,
+            graphPaths => fileGraphBuilder.Build(graphPaths, cancellationToken).ToSummary());
+        cancellationToken.ThrowIfCancellationRequested();
+        return health;
     }
 
     internal ProjectHealth Validate(
@@ -41,6 +52,25 @@ public sealed class ProjectValidator
         var pokemonLegendsZASupportFolder = ValidateOptionalPokemonLegendsZASupportFolder(
             paths.PokemonLegendsZASupportFolderPath,
             paths.SelectedGame);
+
+        AddPhysicalPathSafetyDiagnostic(baseRomFs, "Base RomFS", isDirectory: true);
+        AddPhysicalPathSafetyDiagnostic(baseExeFs, "Base ExeFS", isDirectory: true);
+        AddPhysicalPathSafetyDiagnostic(outputRoot, "Output root", isDirectory: true);
+        AddPhysicalPathSafetyDiagnostic(saveFile, "Save file", isDirectory: false);
+        if (paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet)
+        {
+            AddPhysicalPathSafetyDiagnostic(
+                scarletVioletSupportFolder,
+                "S/V support folder",
+                isDirectory: true);
+        }
+        else if (paths.SelectedGame is ProjectGame.ZA)
+        {
+            AddPhysicalPathSafetyDiagnostic(
+                pokemonLegendsZASupportFolder,
+                "Pokemon Legends Z-A support folder",
+                isDirectory: true);
+        }
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
@@ -114,6 +144,28 @@ public sealed class ProjectValidator
         return path.Status is ProjectPathStatus.NotSet
             or ProjectPathStatus.Missing
             or ProjectPathStatus.WrongKind;
+    }
+
+    private static void AddPhysicalPathSafetyDiagnostic(
+        PathValidationDraft path,
+        string label,
+        bool isDirectory)
+    {
+        if (!path.IsValid || string.IsNullOrWhiteSpace(path.Path))
+        {
+            return;
+        }
+
+        if (FileSystemPathBoundary.HasSafeExistingChain(path.Path, isDirectory))
+        {
+            return;
+        }
+
+        path.Status = ProjectPathStatus.Unsafe;
+        path.AddDiagnostic(
+            DiagnosticSeverity.Error,
+            $"{label} must not pass through a symbolic link or junction.",
+            expected: "Physical path or Cloud Files placeholder path");
     }
 
     private static PathValidationDraft ValidateRequiredDirectory(

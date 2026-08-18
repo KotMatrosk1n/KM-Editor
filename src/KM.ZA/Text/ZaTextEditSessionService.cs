@@ -276,28 +276,34 @@ public sealed class ZaTextEditSessionService
             return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        foreach (var output in pendingOutputs)
+        if (pendingOutputs.Count > 0)
         {
             try
             {
-                ZaWorkflowFileSource.Write(paths, output.VirtualPath, output.Contents, outputMode);
-                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(output.VirtualPath, outputMode));
+                ZaWorkflowFileSource.WriteBatch(
+                    paths,
+                    pendingOutputs
+                        .Select(output => new ZaWorkflowFileWrite(
+                            output.VirtualPath,
+                            output.Contents))
+                        .ToArray(),
+                    outputMode,
+                    revalidateReviewedState: () =>
+                        ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                            reviewedPlan,
+                            CreateChangePlan(paths, session, outputMode)));
+                writtenFiles.AddRange(pendingOutputs.Select(output =>
+                    ZaEditSessionSupport.GeneratedReference(
+                        output.VirtualPath,
+                        outputMode)));
             }
-            catch (IOException exception)
+            catch (IOException exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pokemon Legends Z-A text output file could not be written: {exception.Message}",
-                    file: $"romfs/{output.VirtualPath}",
-                    expected: "Writable output root"));
+                AddOutputDiagnostics(pendingOutputs, exception, diagnostics);
             }
             catch (UnauthorizedAccessException exception)
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pokemon Legends Z-A text output file could not be written: {exception.Message}",
-                    file: $"romfs/{output.VirtualPath}",
-                    expected: "Writable output root"));
+                AddOutputDiagnostics(pendingOutputs, exception, diagnostics);
             }
         }
 
@@ -319,6 +325,21 @@ public sealed class ZaTextEditSessionService
             currentPlan,
             writtenFiles.Distinct().ToArray(),
             diagnostics);
+    }
+
+    private static void AddOutputDiagnostics(
+        IEnumerable<TextOutput> outputs,
+        Exception exception,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var output in outputs)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon Legends Z-A text output file could not be written: {exception.Message}",
+                file: $"romfs/{output.VirtualPath}",
+                expected: "Writable output root"));
+        }
     }
 
     private static bool CanEditText(

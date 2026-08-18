@@ -4,6 +4,7 @@ using System.Globalization;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 
 namespace KM.ZA.Workflows;
@@ -277,14 +278,16 @@ internal static class ZaEditSessionSupport
         DateTimeOffset appliedAt,
         ChangePlan currentPlan,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        OutputApplyResult? outputTransaction = null)
     {
         return new ApplyResult(
             applyId,
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     public static ProjectFileReference GeneratedReference(
@@ -324,6 +327,12 @@ internal static class ZaEditSessionSupport
             ZaOutputMode.TrinityBypass => $"{workflowName} output was written in Trinity bypass layout.",
             _ => $"{workflowName} output was written.",
         };
+    }
+
+    public static bool IsOutputSafetyException(Exception exception)
+    {
+        return exception is OutputCoordinatorException
+            or ZaOutputApplyNotCommittedException;
     }
 
     public static ValidationDiagnostic CreateDiagnostic(

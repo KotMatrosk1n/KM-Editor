@@ -7,7 +7,9 @@ using System.Text;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Formats.ZA;
 
 namespace KM.ZA.Workflows;
@@ -496,43 +498,51 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
-    public static void Write(
+    public static OutputApplyResult? Write(
         ProjectPaths paths,
         string virtualRomFsPath,
         byte[] bytes,
-        ZaOutputMode outputMode = ZaOutputMode.Standalone)
+        ZaOutputMode outputMode = ZaOutputMode.Standalone,
+        Func<bool>? revalidateReviewedState = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
-        WriteBatch(
+        return WriteBatch(
             paths,
             [new ZaWorkflowFileWrite(virtualRomFsPath, bytes)],
-            outputMode);
+            outputMode,
+            revalidateReviewedState: revalidateReviewedState);
     }
 
-    public static void WriteBatch(
+    public static OutputApplyResult? WriteBatch(
         ProjectPaths paths,
         IReadOnlyList<ZaWorkflowFileWrite> writes,
         ZaOutputMode outputMode = ZaOutputMode.Standalone,
-        byte[]? reviewedStandaloneDescriptorBytes = null)
+        byte[]? reviewedStandaloneDescriptorBytes = null,
+        ZaOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
     {
-        ApplyBatch(
+        return ApplyBatch(
             paths,
             writes,
             Array.Empty<string>(),
             outputMode,
-            reviewedStandaloneDescriptorBytes);
+            reviewedStandaloneDescriptorBytes,
+            applyContext: applyContext,
+            revalidateReviewedState: revalidateReviewedState);
     }
 
-    public static void ApplyBatch(
+    public static OutputApplyResult? ApplyBatch(
         ProjectPaths paths,
         IReadOnlyList<ZaWorkflowFileWrite> writes,
         IReadOnlyList<string> deletes,
         ZaOutputMode outputMode = ZaOutputMode.Standalone,
         byte[]? reviewedStandaloneDescriptorBytes = null,
-        bool deleteStandaloneDescriptor = false)
+        bool deleteStandaloneDescriptor = false,
+        ZaOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
     {
-        ApplyBatchCore(
+        return ApplyBatchCore(
             paths,
             writes,
             deletes,
@@ -541,18 +551,22 @@ internal sealed class ZaWorkflowFileSource
             reviewedStandaloneDescriptorBytes,
             deleteStandaloneDescriptor,
             allowHybridExeFsOutput: false,
-            isolateTrinityModManagerRomFs: false);
+            isolateTrinityModManagerRomFs: false,
+            applyContext: applyContext,
+            revalidateReviewedState: revalidateReviewedState);
     }
 
-    internal static void ApplyStandaloneMixedBatch(
+    internal static OutputApplyResult? ApplyStandaloneMixedBatch(
         ProjectPaths paths,
         IReadOnlyList<ZaWorkflowFileWrite> romFsWrites,
         IReadOnlyList<string> romFsDeletes,
         IReadOnlyList<ZaStandaloneOutputMutation> outputMutations,
         byte[]? reviewedStandaloneDescriptorBytes = null,
-        bool deleteStandaloneDescriptor = false)
+        bool deleteStandaloneDescriptor = false,
+        ZaOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
     {
-        ApplyBatchCore(
+        return ApplyBatchCore(
             paths,
             romFsWrites,
             romFsDeletes,
@@ -561,12 +575,16 @@ internal sealed class ZaWorkflowFileSource
             reviewedStandaloneDescriptorBytes,
             deleteStandaloneDescriptor,
             allowHybridExeFsOutput: false,
-            isolateTrinityModManagerRomFs: false);
+            isolateTrinityModManagerRomFs: false,
+            applyContext: applyContext,
+            revalidateReviewedState: revalidateReviewedState);
     }
 
-    internal static void ApplyStandaloneMixedBatch(
+    internal static OutputApplyResult? ApplyStandaloneMixedBatch(
         ProjectPaths paths,
-        Func<ZaStandaloneMixedBatch> prepareBatch)
+        Func<ZaStandaloneMixedBatch> prepareBatch,
+        ZaOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(prepareBatch);
@@ -575,7 +593,7 @@ internal sealed class ZaWorkflowFileSource
         var batch = prepareBatch()
             ?? throw new InvalidOperationException(
                 "Pokemon Legends Z-A standalone output preparation returned no batch.");
-        ApplyBatchCoreLocked(
+        return ApplyBatchCoreLocked(
             paths,
             batch.RomFsWrites,
             batch.RomFsDeletes,
@@ -584,14 +602,18 @@ internal sealed class ZaWorkflowFileSource
             batch.ReviewedStandaloneDescriptorBytes,
             batch.DeleteStandaloneDescriptor,
             allowHybridExeFsOutput: false,
-            isolateTrinityModManagerRomFs: false);
+            isolateTrinityModManagerRomFs: false,
+            applyContext: applyContext,
+            revalidateReviewedState: revalidateReviewedState);
     }
 
-    internal static void ApplyHybridMixedBatch(
+    internal static OutputApplyResult? ApplyHybridMixedBatch(
         ProjectPaths paths,
         ZaOutputMode outputMode,
         bool isolateTrinityModManagerRomFs,
-        Func<ZaStandaloneMixedBatch> prepareBatch)
+        Func<ZaStandaloneMixedBatch> prepareBatch,
+        ZaOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(prepareBatch);
@@ -607,7 +629,7 @@ internal sealed class ZaWorkflowFileSource
         var batch = prepareBatch()
             ?? throw new InvalidOperationException(
                 "Pokemon Legends Z-A hybrid output preparation returned no batch.");
-        ApplyBatchCoreLocked(
+        return ApplyBatchCoreLocked(
             paths,
             batch.RomFsWrites,
             batch.RomFsDeletes,
@@ -616,10 +638,12 @@ internal sealed class ZaWorkflowFileSource
             batch.ReviewedStandaloneDescriptorBytes,
             batch.DeleteStandaloneDescriptor,
             allowHybridExeFsOutput: true,
-            isolateTrinityModManagerRomFs);
+            isolateTrinityModManagerRomFs,
+            applyContext: applyContext,
+            revalidateReviewedState: revalidateReviewedState);
     }
 
-    private static void ApplyBatchCore(
+    private static OutputApplyResult? ApplyBatchCore(
         ProjectPaths paths,
         IReadOnlyList<ZaWorkflowFileWrite> writes,
         IReadOnlyList<string> deletes,
@@ -628,11 +652,13 @@ internal sealed class ZaWorkflowFileSource
         byte[]? reviewedStandaloneDescriptorBytes,
         bool deleteStandaloneDescriptor,
         bool allowHybridExeFsOutput,
-        bool isolateTrinityModManagerRomFs)
+        bool isolateTrinityModManagerRomFs,
+        ZaOutputApplyContext? applyContext,
+        Func<bool>? revalidateReviewedState)
     {
         ArgumentNullException.ThrowIfNull(paths);
         using var outputLock = AcquireOutputLock(paths);
-        ApplyBatchCoreLocked(
+        return ApplyBatchCoreLocked(
             paths,
             writes,
             deletes,
@@ -641,10 +667,12 @@ internal sealed class ZaWorkflowFileSource
             reviewedStandaloneDescriptorBytes,
             deleteStandaloneDescriptor,
             allowHybridExeFsOutput,
-            isolateTrinityModManagerRomFs);
+            isolateTrinityModManagerRomFs,
+            applyContext,
+            revalidateReviewedState);
     }
 
-    private static void ApplyBatchCoreLocked(
+    private static OutputApplyResult? ApplyBatchCoreLocked(
         ProjectPaths paths,
         IReadOnlyList<ZaWorkflowFileWrite> writes,
         IReadOnlyList<string> deletes,
@@ -653,7 +681,9 @@ internal sealed class ZaWorkflowFileSource
         byte[]? reviewedStandaloneDescriptorBytes,
         bool deleteStandaloneDescriptor,
         bool allowHybridExeFsOutput,
-        bool isolateTrinityModManagerRomFs)
+        bool isolateTrinityModManagerRomFs,
+        ZaOutputApplyContext? applyContext,
+        Func<bool>? revalidateReviewedState)
     {
         ArgumentNullException.ThrowIfNull(writes);
         ArgumentNullException.ThrowIfNull(deletes);
@@ -755,6 +785,7 @@ internal sealed class ZaWorkflowFileSource
         }
 
         List<ZaWorkflowOutputMutation> mutations;
+        OutputDirectoryMembershipSnapshot? standaloneRomFsMembership = null;
         try
         {
             mutations = normalizedWrites
@@ -781,17 +812,28 @@ internal sealed class ZaWorkflowFileSource
             var hasRomFsMutations = normalizedWrites.Length > 0 || normalizedDeletes.Length > 0;
             if (outputMode == ZaOutputMode.Standalone && hasRomFsMutations)
             {
+                standaloneRomFsMembership = CaptureStandaloneRomFsMembership(paths);
+                var layeredVirtualPaths = GetLayeredVirtualPaths(standaloneRomFsMembership);
+                var currentDescriptorBytes = CreatePatchedDescriptorBytes(
+                    paths,
+                    normalizedWrites.Select(write => write.VirtualPath),
+                    normalizedDeletes,
+                    layeredVirtualPaths);
+                if (reviewedStandaloneDescriptorBytes is not null
+                    && !reviewedStandaloneDescriptorBytes.AsSpan().SequenceEqual(currentDescriptorBytes))
+                {
+                    throw new OutputReviewStateConflictException();
+                }
+
                 var descriptorBytes = reviewedStandaloneDescriptorBytes?.ToArray()
-                    ?? CreatePatchedDescriptorBytes(
-                        paths,
-                        normalizedWrites.Select(write => write.VirtualPath),
-                        normalizedDeletes);
+                    ?? currentDescriptorBytes;
                 if (deleteStandaloneDescriptor
-                    && !CanDeleteStandaloneDescriptor(
+                    && !CanDeleteStandaloneDescriptorFromVirtualPaths(
                         paths,
                         descriptorBytes,
                         normalizedWrites.Select(write => write.VirtualPath),
-                        normalizedDeletes))
+                        normalizedDeletes,
+                        layeredVirtualPaths))
                 {
                     throw new InvalidDataException(
                         "Pokemon Legends Z-A standalone descriptor can only be deleted when its reviewed preview matches the verified base descriptor and no standalone overrides remain.");
@@ -823,14 +865,37 @@ internal sealed class ZaWorkflowFileSource
                     "Pokemon Legends Z-A output batch contains duplicate or conflicting resolved targets.");
             }
         }
-        catch (Exception exception)
+        catch (OutputCoordinatorException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            SecurityException or
+            InvalidOperationException or
+            ArgumentException or
+            NotSupportedException or
+            OverflowException)
         {
             throw new IOException(
                 "Pokemon Legends Z-A output batch could not be prepared.",
                 exception);
         }
 
-        PromotePreparedMutations(paths, mutations);
+        return PromotePreparedMutations(
+            paths,
+            mutations,
+            outputMode,
+            applyContext,
+            standaloneRomFsMembership is null
+                ? null
+                : [standaloneRomFsMembership.ToDependency()],
+            revalidateReviewedState);
     }
 
     internal static string ResolveStandaloneOutputPath(
@@ -1024,10 +1089,56 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
+    private static bool CanDeleteStandaloneDescriptorFromVirtualPaths(
+        ProjectPaths paths,
+        byte[] descriptorBytes,
+        IEnumerable<string> plannedWriteVirtualPaths,
+        IEnumerable<string> plannedDeleteVirtualPaths,
+        IEnumerable<string> layeredVirtualPaths)
+    {
+        if (!StandaloneDescriptorMatchesBase(paths, descriptorBytes)
+            || plannedWriteVirtualPaths.Any())
+        {
+            return false;
+        }
+
+        return !ZaTrinityDescriptorPatcher.HasLayeredVirtualPaths(
+            layeredVirtualPaths,
+            plannedDeleteVirtualPaths);
+    }
+
+    private static OutputDirectoryMembershipSnapshot CaptureStandaloneRomFsMembership(
+        ProjectPaths paths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Pokemon Legends Z-A descriptor review requires an output root.");
+        }
+
+        var coordinator = new OutputTransactionCoordinator(paths.OutputRootPath);
+        return coordinator
+            .CaptureDirectoryMembershipAsync(new RelativeOutputPath("romfs"))
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    private static string[] GetLayeredVirtualPaths(OutputDirectoryMembershipSnapshot membership)
+    {
+        const string prefix = "romfs/";
+        return membership.Entries
+            .Where(entry => !entry.IsDirectory)
+            .Select(entry => entry.Path.Value)
+            .Where(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(path => path[prefix.Length..])
+            .ToArray();
+    }
+
     private static byte[] CreatePatchedDescriptorBytes(
         ProjectPaths paths,
         IEnumerable<string> plannedWriteVirtualPaths,
-        IEnumerable<string> plannedDeleteVirtualPaths)
+        IEnumerable<string> plannedDeleteVirtualPaths,
+        IEnumerable<string>? layeredVirtualPaths = null)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
         {
@@ -1039,10 +1150,15 @@ internal sealed class ZaWorkflowFileSource
             throw new InvalidOperationException("Pokemon Legends Z-A descriptor patching requires an output root.");
         }
 
-        var descriptorBytes = ZaTrinityDescriptorPatcher.CreateLayeredDescriptor(
-            paths.BaseRomFsPath,
-            paths.OutputRootPath,
-            plannedDeleteVirtualPaths);
+        var descriptorBytes = layeredVirtualPaths is null
+            ? ZaTrinityDescriptorPatcher.CreateLayeredDescriptor(
+                paths.BaseRomFsPath,
+                paths.OutputRootPath,
+                plannedDeleteVirtualPaths)
+            : ZaTrinityDescriptorPatcher.CreateLayeredDescriptorFromVirtualPaths(
+                paths.BaseRomFsPath,
+                layeredVirtualPaths,
+                plannedDeleteVirtualPaths);
         var plannedHashes = plannedWriteVirtualPaths
             .Select(NormalizeVirtualPath)
             .Select(ZaTrinityPathHasher.HashPath)
@@ -1052,193 +1168,295 @@ internal sealed class ZaWorkflowFileSource
             : ZaTrinityDescriptorPatcher.RemoveFileHashes(descriptorBytes, plannedHashes);
     }
 
-    private static void PromotePreparedMutations(
+    private static OutputApplyResult? PromotePreparedMutations(
         ProjectPaths paths,
-        IReadOnlyList<ZaWorkflowOutputMutation> mutations)
+        IReadOnlyList<ZaWorkflowOutputMutation> mutations,
+        ZaOutputMode outputMode,
+        ZaOutputApplyContext? applyContext,
+        IEnumerable<OutputDirectoryMembershipDependency>? directoryMembershipDependencies = null,
+        Func<bool>? revalidateReviewedState = null)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             throw new InvalidOperationException("Pokemon Legends Z-A output batch requires an output root.");
         }
 
-        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
-        var transactionRoot = Path.GetFullPath(Path.Combine(
-            outputRoot,
-            ".km",
-            "transactions",
-            $"za-output-{Guid.NewGuid():N}"));
-        var relativeTransactionPath = Path.GetRelativePath(outputRoot, transactionRoot);
-        if (PathContainment.IsOutsideRoot(relativeTransactionPath))
+        if (paths.SelectedGame is not ProjectGame.ZA)
         {
-            throw new InvalidOperationException("Pokemon Legends Z-A transaction path escapes the output root.");
+            throw new InvalidOperationException("Pokemon Legends Z-A output requires a matching project game.");
         }
 
-        EnsureNoLinkTraversal(outputRoot, transactionRoot);
-        var prepared = new List<ZaPreparedWorkflowMutation>(mutations.Count);
-        try
+        var outputRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.OutputRootPath));
+        var ownerId = applyContext?.OwnerId ?? new OwnershipOwnerId("workflow.za.output");
+        var preservationRule = new PreservationRuleDescriptor(
+            "za.full-file-rebuild",
+            schemaVersion: 1,
+            preservesUnownedData: true,
+            requiresPreimage: true);
+        var coordinatorOptions = new OutputTransactionCoordinatorOptions();
+        var membershipDependencies = directoryMembershipDependencies?.ToArray()
+            ?? [];
+        var reviewedPreimages = revalidateReviewedState is null
+            ? null
+            : CapturePreparedPreimages(mutations, coordinatorOptions);
+        var reviewStateIsCurrent = true;
+        if (revalidateReviewedState is not null)
         {
-            Directory.CreateDirectory(transactionRoot);
-            for (var index = 0; index < mutations.Count; index++)
-            {
-                var mutation = mutations[index];
-                string? stagedPath = null;
-                var backupPath = Path.Combine(transactionRoot, $"{index:D4}.bak");
-                if (mutation.Bytes is not null)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(mutation.TargetPath)!);
-                    stagedPath = Path.Combine(transactionRoot, $"{index:D4}.new");
-                    File.WriteAllBytes(stagedPath, mutation.Bytes);
-                    if (!File.ReadAllBytes(stagedPath).AsSpan().SequenceEqual(mutation.Bytes))
-                    {
-                        throw new IOException("Prepared Pokemon Legends Z-A output did not verify.");
-                    }
-                }
-                else if (Directory.Exists(mutation.TargetPath))
-                {
-                    throw new IOException(
-                        "Pokemon Legends Z-A output deletion target is a directory.");
-                }
-
-                prepared.Add(new ZaPreparedWorkflowMutation(
-                    mutation.TargetPath,
-                    stagedPath,
-                    backupPath,
-                    mutation.Bytes));
-            }
-        }
-        catch (Exception exception)
-        {
-            TryDeleteTransactionDirectory(outputRoot, transactionRoot);
-            throw new IOException(
-                "Pokemon Legends Z-A output batch could not be staged.",
-                exception);
-        }
-
-        var committed = false;
-        var rollbackComplete = false;
-        try
-        {
-            foreach (var mutation in prepared)
-            {
-                if (File.Exists(mutation.TargetPath))
-                {
-                    File.Move(mutation.TargetPath, mutation.BackupPath);
-                    mutation.OriginalMoved = true;
-                }
-
-                if (mutation.ExpectedBytes is null)
-                {
-                    if (File.Exists(mutation.TargetPath))
-                    {
-                        throw new IOException("Deleted Pokemon Legends Z-A output still exists.");
-                    }
-
-                    continue;
-                }
-
-                File.Move(mutation.StagedPath!, mutation.TargetPath);
-                mutation.StagedPromoted = true;
-                if (!File.ReadAllBytes(mutation.TargetPath).AsSpan().SequenceEqual(mutation.ExpectedBytes))
-                {
-                    throw new IOException("Promoted Pokemon Legends Z-A output did not verify.");
-                }
-            }
-
-            committed = true;
-        }
-        catch (Exception exception)
-        {
-            var rollbackErrors = RollBackPreparedMutations(prepared);
-            rollbackComplete = rollbackErrors.Count == 0;
-            if (rollbackComplete)
-            {
-                throw new IOException(
-                    "Pokemon Legends Z-A output promotion failed; prior output files were restored.",
-                    exception);
-            }
-
-            throw new IOException(
-                "Pokemon Legends Z-A output promotion failed and rollback could not be completed; recovery files were retained.",
-                new AggregateException([exception, .. rollbackErrors]));
-        }
-        finally
-        {
-            if (committed || rollbackComplete)
-            {
-                TryDeleteTransactionDirectory(outputRoot, transactionRoot);
-            }
-        }
-    }
-
-    private static IReadOnlyList<Exception> RollBackPreparedMutations(
-        IReadOnlyList<ZaPreparedWorkflowMutation> prepared)
-    {
-        var errors = new List<Exception>();
-        for (var index = prepared.Count - 1; index >= 0; index--)
-        {
-            var mutation = prepared[index];
             try
             {
-                if (mutation.StagedPromoted && File.Exists(mutation.TargetPath))
-                {
-                    if (mutation.ExpectedBytes is null
-                        || !File.ReadAllBytes(mutation.TargetPath).AsSpan().SequenceEqual(mutation.ExpectedBytes))
-                    {
-                        throw new IOException(
-                            "A promoted Pokemon Legends Z-A output was replaced by another writer; "
-                            + "rollback left that replacement and the recovery backup untouched.");
-                    }
-
-                    File.Delete(mutation.TargetPath);
-                }
-
-                if (mutation.OriginalMoved && File.Exists(mutation.BackupPath))
-                {
-                    if (File.Exists(mutation.TargetPath))
-                    {
-                        throw new IOException(
-                            "A Pokemon Legends Z-A output target changed during rollback; "
-                            + "the recovery backup was retained without overwriting it.");
-                    }
-
-                    File.Move(mutation.BackupPath, mutation.TargetPath);
-                }
+                reviewStateIsCurrent = revalidateReviewedState();
             }
-            catch (Exception exception)
+            catch (OutputCoordinatorException)
             {
-                errors.Add(exception);
+                throw;
+            }
+            catch (Exception exception) when (exception is
+                IOException or
+                UnauthorizedAccessException or
+                SecurityException or
+                InvalidOperationException or
+                ArgumentException or
+                NotSupportedException or
+                OverflowException)
+            {
+                throw new OutputReviewStateConflictException(exception);
+            }
+
+            if (!reviewStateIsCurrent)
+            {
+                throw new OutputReviewStateConflictException();
             }
         }
 
-        return errors;
+        var outputMutations = new List<OutputMutation>(mutations.Count);
+        long plannedWriteBytes = 0;
+        long plannedBackupBytes = 0;
+        foreach (var mutation in mutations)
+        {
+            var relativePathValue = Path.GetRelativePath(outputRoot, Path.GetFullPath(mutation.TargetPath))
+                .Replace(Path.DirectorySeparatorChar, '/');
+            if (PathContainment.IsOutsideRoot(relativePathValue))
+            {
+                throw new OutputPathSecurityException();
+            }
+
+            var relativePath = new RelativeOutputPath(relativePathValue);
+            if (mutation.Bytes?.LongLength > coordinatorOptions.MaximumWriteBytesPerMutation)
+            {
+                throw new OutputLimitExceededException(
+                    "A Pokemon Legends Z-A output target exceeds the configured write limit.");
+            }
+
+            var remainingBackupBytes = coordinatorOptions.MaximumBackupBytesPerApply - plannedBackupBytes;
+            var expectedPreimage = CaptureOutputFileState(
+                mutation.TargetPath,
+                Math.Min(coordinatorOptions.MaximumFingerprintFileBytes, remainingBackupBytes));
+            if (reviewedPreimages is not null
+                && (!reviewedPreimages.TryGetValue(
+                        Path.GetFullPath(mutation.TargetPath),
+                        out var reviewedPreimage)
+                    || reviewedPreimage != expectedPreimage))
+            {
+                throw new OutputPreimageConflictException(relativePath);
+            }
+            var ownership = new OwnedTarget(
+                GameFamily.LegendsZA,
+                new OwnedTargetAddress(relativePath),
+                ownerId,
+                preservationRule);
+            if (mutation.Bytes is null)
+            {
+                if (expectedPreimage.Exists)
+                {
+                    plannedBackupBytes = checked(plannedBackupBytes + expectedPreimage.LengthBytes);
+                    outputMutations.Add(OutputMutation.Delete(
+                        relativePath,
+                        expectedPreimage,
+                        [ownership]));
+                    EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+                }
+
+                continue;
+            }
+
+            var plannedHash = Convert.ToHexStringLower(SHA256.HashData(mutation.Bytes));
+            if (expectedPreimage.Exists
+                && expectedPreimage.LengthBytes == mutation.Bytes.LongLength
+                && string.Equals(expectedPreimage.Sha256, plannedHash, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var nextWriteBytes = checked(plannedWriteBytes + mutation.Bytes.LongLength);
+            if (nextWriteBytes > coordinatorOptions.MaximumWriteBytesPerApply)
+            {
+                throw new OutputLimitExceededException(
+                    "The Pokemon Legends Z-A output batch exceeds the configured write limit.");
+            }
+
+            var nextBackupBytes = checked(plannedBackupBytes + expectedPreimage.LengthBytes);
+            if (nextBackupBytes > coordinatorOptions.MaximumBackupBytesPerApply)
+            {
+                throw new OutputLimitExceededException(
+                    "The Pokemon Legends Z-A output batch exceeds the configured backup limit.");
+            }
+
+            plannedWriteBytes = nextWriteBytes;
+            plannedBackupBytes = nextBackupBytes;
+            outputMutations.Add(OutputMutation.Write(
+                relativePath,
+                mutation.Bytes,
+                expectedPreimage,
+                [ownership]));
+            EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+        }
+
+        if (outputMutations.Count == 0)
+        {
+            var validationCoordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
+            foreach (var dependency in membershipDependencies)
+            {
+                var current = validationCoordinator
+                    .CaptureDirectoryMembershipAsync(dependency.Directory)
+                    .GetAwaiter()
+                    .GetResult();
+                if (current.Revision != dependency.ExpectedRevision)
+                {
+                    throw new OutputStateRevisionConflictException(
+                        dependency.ExpectedRevision,
+                        current.Revision);
+                }
+            }
+
+            return null;
+        }
+
+        var context = applyContext ?? new ZaOutputApplyContext(
+            OutputReviewFingerprint.FromMutations(outputMutations),
+            ownerId,
+            [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, "workflow.za.output")]);
+        var plan = new OutputApplyPlan(
+            ProjectIdentity.FromPaths(paths),
+            GameFamily.LegendsZA,
+            ToOutputModeKey(outputMode),
+            context.SemanticReviewHash,
+            context.Origins,
+            outputMutations,
+            directoryMembershipDependencies: membershipDependencies);
+        var coordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
+        var result = coordinator.ApplyAsync(plan).GetAwaiter().GetResult();
+        if (result.Outcome != OutputApplyOutcome.Committed)
+        {
+            throw new ZaOutputApplyNotCommittedException(result);
+        }
+
+        return result;
     }
 
-    private static bool TryDeleteTransactionDirectory(
-        string outputRoot,
-        string transactionRoot)
+    private static IReadOnlyDictionary<string, OutputFileState> CapturePreparedPreimages(
+        IReadOnlyList<ZaWorkflowOutputMutation> mutations,
+        OutputTransactionCoordinatorOptions options)
     {
-        try
+        var comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var states = new Dictionary<string, OutputFileState>(comparer);
+        long fingerprintedBytes = 0;
+        foreach (var mutation in mutations)
         {
-            var resolvedOutputRoot = Path.GetFullPath(outputRoot);
-            var resolvedTransactionRoot = Path.GetFullPath(transactionRoot);
-            if (PathContainment.IsOutsideRoot(
-                    Path.GetRelativePath(resolvedOutputRoot, resolvedTransactionRoot)))
+            if (mutation.Bytes?.LongLength > options.MaximumWriteBytesPerMutation)
             {
-                return false;
+                throw new OutputLimitExceededException(
+                    "A Pokemon Legends Z-A output target exceeds the configured write limit.");
             }
 
-            EnsureNoLinkTraversal(resolvedOutputRoot, resolvedTransactionRoot);
-            if (Directory.Exists(resolvedTransactionRoot))
+            var remainingBytes = options.MaximumBackupBytesPerApply - fingerprintedBytes;
+            var state = CaptureOutputFileState(
+                mutation.TargetPath,
+                Math.Min(options.MaximumFingerprintFileBytes, remainingBytes));
+            fingerprintedBytes = checked(fingerprintedBytes + state.LengthBytes);
+            if (!states.TryAdd(Path.GetFullPath(mutation.TargetPath), state))
             {
-                Directory.Delete(resolvedTransactionRoot, recursive: true);
+                throw new InvalidDataException(
+                    "Pokemon Legends Z-A output preparation contains duplicate targets.");
+            }
+        }
+
+        return states;
+    }
+
+    private static void EnsureMutationCountWithinLimit(
+        int mutationCount,
+        OutputTransactionCoordinatorOptions options)
+    {
+        if (mutationCount > options.MaximumMutationsPerApply)
+        {
+            throw new OutputLimitExceededException(
+                "The Pokemon Legends Z-A output batch contains too many targets.");
+        }
+    }
+
+    private static OutputFileState CaptureOutputFileState(string targetPath, long maximumBytes)
+    {
+        if (Directory.Exists(targetPath))
+        {
+            throw new IOException("A Pokemon Legends Z-A output target is a directory.");
+        }
+
+        if (!File.Exists(targetPath))
+        {
+            return OutputFileState.Missing;
+        }
+
+        using var stream = new FileStream(
+            targetPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
+        var length = stream.Length;
+        if (maximumBytes < 0 || length > maximumBytes)
+        {
+            throw new OutputLimitExceededException(
+                "A Pokemon Legends Z-A output preimage exceeds the configured backup limit.");
+        }
+
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[128 * 1024];
+        var remaining = length;
+        while (remaining > 0)
+        {
+            var bytesRead = stream.Read(buffer, 0, (int)Math.Min(buffer.LongLength, remaining));
+            if (bytesRead == 0)
+            {
+                throw new IOException(
+                    "A Pokemon Legends Z-A output preimage changed while it was being reviewed.");
             }
 
-            return true;
+            hasher.AppendData(buffer, 0, bytesRead);
+            remaining -= bytesRead;
         }
-        catch (Exception)
+
+        if (stream.ReadByte() != -1)
         {
-            return false;
+            throw new IOException(
+                "A Pokemon Legends Z-A output preimage changed while it was being reviewed.");
         }
+
+        var fingerprint = Convert.ToHexStringLower(hasher.GetHashAndReset());
+        return OutputFileState.Existing(fingerprint, length);
+    }
+
+    private static string ToOutputModeKey(ZaOutputMode outputMode)
+    {
+        return outputMode switch
+        {
+            ZaOutputMode.Standalone => "za.standalone",
+            ZaOutputMode.TrinityModManager => "za.trinity-mod-manager",
+            ZaOutputMode.TrinityBypass => "za.trinity-bypass",
+            _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
+        };
     }
 
     public static ValidationDiagnostic CreateDiagnostic(
@@ -1626,31 +1844,22 @@ internal sealed record ZaWorkflowOutputMutation(
     string TargetPath,
     byte[]? Bytes);
 
-internal sealed class ZaPreparedWorkflowMutation
+internal sealed record ZaOutputApplyContext(
+    string SemanticReviewHash,
+    OwnershipOwnerId OwnerId,
+    IReadOnlyList<OutputApplyOrigin> Origins);
+
+public sealed class ZaOutputApplyNotCommittedException : IOException
 {
-    public ZaPreparedWorkflowMutation(
-        string targetPath,
-        string? stagedPath,
-        string backupPath,
-        byte[]? expectedBytes)
+    public ZaOutputApplyNotCommittedException(OutputApplyResult result)
+        : base(result.Outcome == OutputApplyOutcome.RolledBack
+            ? "Pokemon Legends Z-A output was rolled back and no reviewed changes were kept."
+            : "Pokemon Legends Z-A output requires recovery before another write can begin.")
     {
-        TargetPath = targetPath;
-        StagedPath = stagedPath;
-        BackupPath = backupPath;
-        ExpectedBytes = expectedBytes;
+        Result = result ?? throw new ArgumentNullException(nameof(result));
     }
 
-    public string TargetPath { get; }
-
-    public string? StagedPath { get; }
-
-    public string BackupPath { get; }
-
-    public byte[]? ExpectedBytes { get; }
-
-    public bool OriginalMoved { get; set; }
-
-    public bool StagedPromoted { get; set; }
+    public OutputApplyResult Result { get; }
 }
 
 internal sealed class ZaOutputRootLock : IDisposable

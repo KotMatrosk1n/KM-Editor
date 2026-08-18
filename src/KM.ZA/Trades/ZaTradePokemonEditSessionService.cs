@@ -238,7 +238,15 @@ internal sealed class ZaTradePokemonEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PokemonDataArray, document.Write(), outputMode);
+            ZaWorkflowFileSource.Write(
+                paths,
+                ZaDataPaths.PokemonDataArray,
+                document.Write(),
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PokemonDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -250,7 +258,7 @@ internal sealed class ZaTradePokemonEditSessionService
                 ZaEditSessionSupport.CreateApplyOutputMessage("Trade Pokemon", outputMode),
                 ZaEditSessionSupport.TradePokemonDomain));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

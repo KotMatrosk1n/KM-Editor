@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Output;
 
 namespace KM.Core.Editing;
 
@@ -10,7 +11,8 @@ public sealed record ApplyResult(
     DateTimeOffset AppliedAt,
     IReadOnlyList<ProjectFileReference> WrittenFiles,
     WriteManifest Manifest,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics,
+    OutputApplyResult? OutputTransaction = null);
 
 public sealed record WriteManifest(
     string ApplyId,

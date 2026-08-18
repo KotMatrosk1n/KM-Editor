@@ -6,7 +6,14 @@ import { type ProjectBridge } from './projectBridge';
 export type ProjectScopePaths = OpenProjectRequest['paths'];
 
 type ProjectScopedRequest = {
+  candidatePaths?: ProjectScopePaths | null;
   paths?: ProjectScopePaths | null;
+  scope?: {
+    paths?: ProjectScopePaths | null;
+  } | null;
+  source?: {
+    paths?: ProjectScopePaths | null;
+  } | null;
 };
 
 export class StaleProjectScopeError extends Error {
@@ -124,13 +131,23 @@ export function createProjectScopeKey(paths: ProjectScopePaths) {
 }
 
 function getProjectScopeFromRequest(request: unknown) {
-  if (!isProjectScopedRequest(request) || !request.paths) {
+  if (!isProjectScopedRequest(request)) {
     return null;
   }
 
-  return createProjectScopeKey(request.paths);
+  const paths =
+    request.paths ??
+    request.scope?.paths ??
+    request.source?.paths ??
+    request.candidatePaths ??
+    null;
+  return paths ? createProjectScopeKey(paths) : null;
 }
 
 function isProjectScopedRequest(request: unknown): request is ProjectScopedRequest {
-  return typeof request === 'object' && request !== null && 'paths' in request;
+  return (
+    typeof request === 'object' &&
+    request !== null &&
+    ('paths' in request || 'scope' in request || 'source' in request || 'candidatePaths' in request)
+  );
 }

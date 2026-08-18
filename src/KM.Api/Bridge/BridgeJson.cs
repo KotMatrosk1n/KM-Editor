@@ -3,6 +3,7 @@
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.GameDump;
+using KM.Api.Output;
 using KM.Api.Projects;
 using KM.Api.SvCache;
 using KM.Api.SwShCache;
@@ -27,6 +28,13 @@ public static class BridgeJson
         // Bridge enums cross as readable strings instead of numeric enum values.
         options.Converters.Add(new JsonStringEnumConverter<ApiDiagnosticSeverity>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ChangePlanOutputModeDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<OutputApplyOutcomeDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<OutputTransactionPhaseDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<OutputRecoveryDispositionDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<OutputIntegrityClassificationDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<OutputCleanupDispositionDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<OutputCheckpointCoverageDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ProjectRelocationDocumentStatusDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<FileLayerDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<GameDumpCategoryKindDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<GameDumpFormatDto>(JsonNamingPolicy.CamelCase));

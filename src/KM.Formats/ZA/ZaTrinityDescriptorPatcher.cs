@@ -37,7 +37,27 @@ public static class ZaTrinityDescriptorPatcher
         var excludedPaths = excludedLayeredVirtualPaths
             .Select(NormalizeVirtualPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var layeredFileHashes = EnumerateLayeredVirtualPaths(outputRoot)
+        return CreateLayeredDescriptorFromVirtualPaths(
+            baseRomFsRoot,
+            EnumerateLayeredVirtualPaths(outputRoot),
+            excludedPaths);
+    }
+
+    public static byte[] CreateLayeredDescriptorFromVirtualPaths(
+        string baseRomFsRoot,
+        IEnumerable<string> layeredVirtualPaths,
+        IEnumerable<string> excludedLayeredVirtualPaths)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
+        ArgumentNullException.ThrowIfNull(layeredVirtualPaths);
+        ArgumentNullException.ThrowIfNull(excludedLayeredVirtualPaths);
+
+        var excludedPaths = excludedLayeredVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var layeredFileHashes = layeredVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .Where(path => !string.Equals(path, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase))
             .Where(path => !excludedPaths.Contains(path))
             .Select(ZaTrinityPathHasher.HashPath)
             .ToHashSet();
@@ -73,6 +93,22 @@ public static class ZaTrinityDescriptorPatcher
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return EnumerateLayeredVirtualPaths(outputRoot)
             .Any(path => !excludedPaths.Contains(path));
+    }
+
+    public static bool HasLayeredVirtualPaths(
+        IEnumerable<string> layeredVirtualPaths,
+        IEnumerable<string> excludedLayeredVirtualPaths)
+    {
+        ArgumentNullException.ThrowIfNull(layeredVirtualPaths);
+        ArgumentNullException.ThrowIfNull(excludedLayeredVirtualPaths);
+
+        var excludedPaths = excludedLayeredVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return layeredVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .Any(path => !string.Equals(path, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase)
+                && !excludedPaths.Contains(path));
     }
 
     public static byte[] RemoveFileHashes(byte[] descriptorBytes, IReadOnlySet<ulong> removedHashes)
@@ -182,10 +218,23 @@ public static class ZaTrinityDescriptorPatcher
         }
 
         var root = Path.GetFullPath(romFsRoot);
+        ValidateLayeredRomFsRoot(root);
         return Directory
             .EnumerateFiles(root, "*", RecursiveEnumeration)
             .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
             .Where(path => !string.Equals(path, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ValidateLayeredRomFsRoot(string root)
+    {
+        var info = new DirectoryInfo(root);
+        info.Refresh();
+        if (!info.Exists
+            || (info.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                && !string.IsNullOrEmpty(info.LinkTarget)))
+        {
+            throw new InvalidDataException("The layered RomFS root is not a safe physical directory.");
+        }
     }
 
     private static string ResolveRomFsRoot(string path)

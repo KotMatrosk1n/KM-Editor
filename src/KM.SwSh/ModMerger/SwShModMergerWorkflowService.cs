@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.FpsPatch;
@@ -908,6 +909,8 @@ public sealed class SwShModMergerWorkflowService
         {
             return Directory
                 .EnumerateFiles(romFsRoot, "*", RecursiveEnumeration)
+                .Where(path => !OutputMetadataNamespace.ContainsReservedSegment(
+                    Path.GetRelativePath(romFsRoot, path)))
                 .Select(path => CreateFileRecord(romFsRoot, path))
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -954,7 +957,8 @@ public sealed class SwShModMergerWorkflowService
         }
 
         var fullPath = Path.GetFullPath(directory);
-        if (!Directory.Exists(fullPath))
+        if (!Directory.Exists(fullPath)
+            || !OutputMetadataNamespace.IsSafeExistingPayloadPath(fullPath, isDirectory: true))
         {
             return null;
         }
@@ -965,7 +969,10 @@ public sealed class SwShModMergerWorkflowService
         }
 
         var childRomFs = Path.Combine(fullPath, "romfs");
-        return Directory.Exists(childRomFs) ? childRomFs : null;
+        return Directory.Exists(childRomFs)
+               && OutputMetadataNamespace.IsSafeExistingPayloadPath(childRomFs, isDirectory: true)
+            ? childRomFs
+            : null;
     }
 
     private static string? ResolveModFilePath(
@@ -974,7 +981,8 @@ public sealed class SwShModMergerWorkflowService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var relativeInsideRomFs = GetRelativeInsideRomFs(relativePath);
-        if (Path.IsPathRooted(relativeInsideRomFs))
+        if (Path.IsPathRooted(relativeInsideRomFs)
+            || OutputMetadataNamespace.ContainsReservedSegment(relativePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -986,7 +994,8 @@ public sealed class SwShModMergerWorkflowService
 
         var fullRoot = Path.GetFullPath(romFsRoot);
         var fullPath = Path.GetFullPath(Path.Combine(fullRoot, relativeInsideRomFs));
-        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(fullRoot, fullPath)))
+        if (!OutputMetadataNamespace.IsSafeExistingPayloadPath(fullRoot, isDirectory: true)
+            || PathContainment.IsOutsideRoot(Path.GetRelativePath(fullRoot, fullPath)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -1003,6 +1012,17 @@ public sealed class SwShModMergerWorkflowService
                 "Selected Mod Merger path traverses a symbolic link or junction below the RomFS source.",
                 file: relativePath,
                 expected: "Physical path contained by the selected mod directory"));
+            return null;
+        }
+
+        if (File.Exists(fullPath)
+            && !OutputMetadataNamespace.IsSafeExistingPayloadPath(fullPath, isDirectory: false))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Selected Mod Merger path is not a safe physical source file.",
+                file: relativePath,
+                expected: "Physical file contained by the selected mod directory"));
             return null;
         }
 
@@ -2218,7 +2238,9 @@ public sealed class SwShModMergerWorkflowService
         string relativePath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (Path.IsPathRooted(relativePath) || !relativePath.StartsWith(RomFsPrefix, StringComparison.OrdinalIgnoreCase))
+        if (Path.IsPathRooted(relativePath)
+            || !relativePath.StartsWith(RomFsPrefix, StringComparison.OrdinalIgnoreCase)
+            || OutputMetadataNamespace.ContainsReservedSegment(relativePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -2241,7 +2263,7 @@ public sealed class SwShModMergerWorkflowService
             return null;
         }
 
-        if (TraversesReparsePointBelowRoot(outputRoot, targetPath))
+        if (!OutputMetadataNamespace.IsSafePayloadDestinationPath(targetPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

@@ -282,6 +282,7 @@ internal sealed class ZaPlacementEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
+            var outputWrites = new List<ZaWorkflowFileWrite>();
             foreach (var group in session.PendingEdits.GroupBy(GetEditSourcePath, StringComparer.Ordinal))
             {
                 if (string.IsNullOrWhiteSpace(group.Key))
@@ -293,13 +294,34 @@ internal sealed class ZaPlacementEditSessionService
                     continue;
                 }
 
-                ApplySourceGroup(project, paths, group.Key, group.ToArray(), diagnostics, writtenFiles, outputMode);
+                var output = PrepareSourceGroupOutput(
+                    project,
+                    group.Key,
+                    group.ToArray(),
+                    diagnostics);
+                if (output is not null)
+                {
+                    outputWrites.Add(output);
+                }
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
+
+            ZaWorkflowFileSource.WriteBatch(
+                paths,
+                outputWrites,
+                outputMode,
+                revalidateReviewedState: () =>
+                    ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
+                        reviewedPlan,
+                        CreateChangePlan(paths, session, outputMode)));
+            writtenFiles.AddRange(outputWrites.Select(output =>
+                ZaEditSessionSupport.GeneratedReference(
+                    output.VirtualPath,
+                    outputMode)));
 
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -310,7 +332,7 @@ internal sealed class ZaPlacementEditSessionService
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage(WorkflowName, outputMode)));
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -321,14 +343,11 @@ internal sealed class ZaPlacementEditSessionService
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles.Distinct().ToArray(), diagnostics);
     }
 
-    private void ApplySourceGroup(
+    private ZaWorkflowFileWrite? PrepareSourceGroupOutput(
         OpenedProject project,
-        ProjectPaths paths,
         string sourcePath,
         IReadOnlyList<PendingEdit> edits,
-        ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles,
-        ZaOutputMode outputMode)
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         var source = fileSource.Read(project, sourcePath);
         var document = ZaSpawnerTransformDocument.Parse(source.Bytes);
@@ -349,11 +368,10 @@ internal sealed class ZaPlacementEditSessionService
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return;
+            return null;
         }
 
-        ZaWorkflowFileSource.Write(paths, sourcePath, document.Write(), outputMode);
-        writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(sourcePath, outputMode));
+        return new ZaWorkflowFileWrite(sourcePath, document.Write());
     }
 
     private static PendingEdit? CreatePendingEdit(
