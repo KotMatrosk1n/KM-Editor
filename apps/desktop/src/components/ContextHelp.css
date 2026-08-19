@@ -8,14 +8,14 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  color: #a8b8d6;
+  color: var(--color-text-muted);
   line-height: 1;
   vertical-align: text-bottom;
   cursor: help;
   background: transparent;
   border: 0;
   border-radius: 50%;
-  outline: none;
+  outline: 2px solid transparent;
   font: inherit;
   transition:
     color 120ms ease,
@@ -50,12 +50,12 @@
 .context-help-trigger:hover,
 .context-help-trigger:focus-visible,
 .context-help-trigger[aria-expanded='true'] {
-  color: #f8c84f;
-  background: rgb(248 200 79 / 12%);
+  color: var(--color-focus);
+  background: color-mix(in srgb, var(--color-focus) 12%, transparent);
 }
 
 .context-help-trigger:focus-visible {
-  box-shadow: 0 0 0 2px rgb(248 200 79 / 42%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus) 42%, transparent);
 }
 
 .context-help-popover {
@@ -65,11 +65,11 @@
 .context-help-title {
   display: block;
   padding-bottom: 7px;
-  color: #f4f7ff;
-  font-size: 14px;
+  color: var(--color-text);
+  font-size: 0.875rem;
   font-weight: 850;
   line-height: 1.3;
-  border-bottom: 1px solid #465168;
+  border-bottom: 1px solid var(--color-border-strong);
 }
 
 .context-help-body {

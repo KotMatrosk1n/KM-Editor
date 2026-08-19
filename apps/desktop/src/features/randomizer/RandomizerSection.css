@@ -5,14 +5,14 @@
 .randomizer-result-copy {
   margin: 0;
   color: var(--color-text-soft);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.5;
 }
 
 .randomizer-recovery-panel {
-  border-color: rgb(214 168 66 / 42%);
-  box-shadow: inset 4px 0 0 rgb(214 168 66 / 72%);
+  border-color: rgb(var(--color-gold-rgb) / 42%);
+  box-shadow: inset 4px 0 0 rgb(var(--color-gold-rgb) / 72%);
 }
 
 .randomizer-recovery-panel .randomizer-action-row {

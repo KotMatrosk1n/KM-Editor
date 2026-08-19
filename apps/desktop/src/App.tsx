@@ -278,13 +278,20 @@ import {
   toProjectBridgeDiagnostics
 } from './uiErrorDiagnostics';
 import {
-  getRememberedProjectGames,
+  clearLegacyProjectPathDraft,
+  clearLegacyValidatedProjectPathCache,
+  readLegacyProjectPathState,
   type ProjectPathFieldName,
   type ProjectPathDraft,
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
-import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
+import {
+  supportedLanguages,
+  useLocalization,
+  type CommunityLocalePack,
+  type LanguageCode
+} from './localization';
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
 import { getContextualItemEditableFields } from './itemsEditor';
 import {
@@ -398,7 +405,11 @@ import {
   type ApplyProjectRelocationResponse,
   type OutputSafetyScope
 } from './bridge/outputSafetyContracts';
-import { GameDumpSection } from './features/game-dump/GameDumpSection';
+import {
+  clearLegacyGameDumpDestinations,
+  GameDumpSection,
+  readLegacyGameDumpDestinations
+} from './features/game-dump/GameDumpSection';
 import { ZaDexLayoutSection } from './features/dex-layout/ZaDexLayoutSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
 import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
@@ -440,6 +451,17 @@ import {
 } from './features/shiny-rate/ShinyRateSection';
 import { TrinityOutputConfirmationModal } from './features/trinity-output/TrinityOutputConfirmationModal';
 import { WorkflowsSection } from './features/workflows/WorkflowsSection';
+import { WorkbenchSection as WorkbenchHomeSection } from './features/workbench/WorkbenchSection';
+import {
+  CommandPalette
+} from './features/workbench/CommandPalette';
+import { RecordTabRail } from './features/workbench/RecordTabRail';
+import { AdaptiveInspector } from './features/workbench/AdaptiveInspector';
+import { CapabilityDiscoveryDialog } from './features/workbench/CapabilityDiscoveryDialog';
+import { OutputProfileSwitchDialog } from './features/workbench/OutputProfileSwitchDialog';
+import {
+  ShortcutOverlay
+} from './features/workbench/ShortcutOverlay';
 import {
   TypeChartSection,
   decodeTypeChartPendingValues,
@@ -449,7 +471,9 @@ import { AngeFightSection } from './features/ange-fight/AngeFightSection';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
 import { calculatePendingPayloadSha256 } from './utils/pendingPayloadHash';
 import { getSectionWikiUrl } from './wikiLinks';
-import { getWorkbenchCapabilityRegistration } from './workbench/capabilityRegistry';
+import {
+  getWorkbenchSectionLabelKey
+} from './workbench/capabilityRegistry';
 import {
   createWorkbenchNavigationController,
   type WorkbenchNavigationGuardState
@@ -457,12 +481,67 @@ import {
 import {
   createWorkbenchLocation,
   createSectionLocation,
+  serializeWorkbenchLocation,
   workbenchLocationsEqual,
   type WorkbenchLocation
 } from './workbench/workbenchLocation';
 import { projectGameToFamily } from './workbench/semanticContracts';
+import { DiagnosticNavigationProvider } from './diagnosticActions';
+import { PersonalizationSettingsPanel } from './features/settings/PersonalizationSettingsPanel';
+import { WhatChangedTour } from './features/updates/WhatChangedTour';
+import { shouldShowWhatChangedTour } from './features/updates/whatChangedCatalog';
+import {
+  createStableEntityLocation,
+  isStableLocationTabEligible,
+  parseStableEntitySelection
+} from './workbench/locationAdapterRegistry';
+import {
+  beginWorkspaceBackNavigation,
+  beginWorkspaceForwardNavigation,
+  beginWorkspaceNavigation,
+  closeWorkspaceTab,
+  commitWorkspaceNavigation,
+  createWorkspaceShellState,
+  resetWorkspaceShellScope,
+  workspaceTabKey,
+  type PendingWorkspaceNavigation,
+  type WorkspaceNavigationCommitOptions,
+  type WorkspaceNavigationMode
+} from './workbench/workspaceShellController';
+import {
+  createCapabilityDiscoverySignature,
+  createCapabilityDiscoveryViewModels
+} from './workbench/capabilityDiscovery';
+import {
+  createWorkspaceCommandRegistry,
+  type WorkspaceCommand
+} from './workbench/commandRegistry';
+import type { WorkspaceTargetViewModel } from './workbench/workspaceShellViewModels';
+import {
+  createWorkspaceShortcutRegistry,
+  resolveWorkspaceShortcut
+} from './workbench/shortcutRegistry';
+import {
+  createBridgeBackedPersonalWorkspaceRegistry,
+  type PersonalWorkspaceSnapshot
+} from './workbench/personalWorkspaceRegistry';
+import {
+  workspaceGameDumpDestinationSchema,
+  workspaceMaximumNoteBytes,
+  workspaceRecentProjectProfileSchema,
+  workspaceScopedLocationKey,
+  type WorkspaceApplicationStateDocument,
+  type WorkspaceProjectPersonalStateDocument,
+  type WorkspaceScopedLocation
+} from './bridge/workspacePersonalStateContracts';
+import {
+  applyWorkspaceView,
+  captureWorkspaceView
+} from './workbench/viewAdapterRegistry';
 
 const appVersion = tauriConfig.version;
+const emptyCommunityLocalePacks: readonly CommunityLocalePack[] = [];
+const legacyWorkspaceProjectIdPlaceholder = `km1_${'0'.repeat(64)}`;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 export type EditorUiFamily = 'swsh' | 'sv' | 'za';
 type TrinityCacheMode = SvCacheMode | ZaCacheMode | SwShCacheMode;
@@ -1340,10 +1419,11 @@ type SupportSearchProgressPayload = {
 };
 
 function createSupportSearchWorkProgress(
-  progress: SupportSearchProgressPayload | null
+  progress: SupportSearchProgressPayload | null,
+  formatLocale: string
 ): WorkProgressState {
   const detail = progress
-    ? `${progress.currentPath} · ${progress.searchedDirectories.toLocaleString()} folders · ${progress.searchedFiles.toLocaleString()} files`
+    ? `${progress.currentPath} · ${progress.searchedDirectories.toLocaleString(formatLocale)} folders · ${progress.searchedFiles.toLocaleString(formatLocale)} files`
     : 'Preparing local drive scan';
 
   return {
@@ -1730,6 +1810,13 @@ function getSelectableTextField(
   return null;
 }
 
+function isWorkspaceShortcutEditableTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && (
+    target.isContentEditable ||
+    target.closest('input, textarea, select, [contenteditable="true"]') !== null
+  );
+}
+
 function selectTextFieldContents(field: HTMLInputElement | HTMLTextAreaElement) {
   if (document.activeElement !== field || field.value.length === 0) {
     return;
@@ -1754,7 +1841,99 @@ export function App({
   desktopServices?: DesktopServices;
 } = {}) {
   useSelectEditableFieldContents();
-  const { language, t, translateLiteral } = useLocalization();
+  const {
+    clearIgnoredCommunityLocalePreference,
+    formatLocale,
+    language,
+    setCommunityLocalePacks: setRuntimeCommunityLocalePacks,
+    t,
+    translateLiteral
+  } = useLocalization();
+  const [hasIgnoredPersistedLocalePacks, setHasIgnoredPersistedLocalePacks] = useState(false);
+  const personalWorkspaceRegistry = useMemo(
+    () => createBridgeBackedPersonalWorkspaceRegistry(unscopedBridge, {
+      onDiagnostic: (diagnostic) => {
+        if (diagnostic.localePacks.length === 0) {
+          return;
+        }
+        clearIgnoredCommunityLocalePreference(
+          diagnostic.localePacks.map((localePack) => localePack.id)
+        );
+        setHasIgnoredPersistedLocalePacks(true);
+      }
+    }),
+    [clearIgnoredCommunityLocalePreference, unscopedBridge]
+  );
+  const [applicationWorkspaceSnapshot, setApplicationWorkspaceSnapshot] = useState<
+    PersonalWorkspaceSnapshot<WorkspaceApplicationStateDocument>
+  >({ document: null, etag: null });
+  const [projectWorkspaceSnapshot, setProjectWorkspaceSnapshot] = useState<
+    PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>
+  >({ document: null, etag: null });
+  const [projectWorkspaceOwnerId, setProjectWorkspaceOwnerId] = useState<string | null>(null);
+  const [isApplicationWorkspaceLoading, setIsApplicationWorkspaceLoading] = useState(true);
+  const [isApplicationWorkspaceReady, setIsApplicationWorkspaceReady] = useState(false);
+  const [applicationWorkspaceLoadGeneration, setApplicationWorkspaceLoadGeneration] = useState(0);
+  const [isLegacyWorkspaceMigrationRunning, setIsLegacyWorkspaceMigrationRunning] = useState(false);
+  const [isProjectWorkspaceLoading, setIsProjectWorkspaceLoading] = useState(false);
+  const [personalWorkspaceError, setPersonalWorkspaceError] = useState<string | null>(null);
+  const [unavailableRecentProjectIds, setUnavailableRecentProjectIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const communityLocalePacks =
+    applicationWorkspaceSnapshot.document?.localePacks ?? emptyCommunityLocalePacks;
+  const workspaceShortcuts = useMemo(
+    () => createSafeWorkspaceShortcutRegistry(
+      applicationWorkspaceSnapshot.document?.shortcutOverrides ?? []
+    ),
+    [applicationWorkspaceSnapshot.document?.shortcutOverrides]
+  );
+  const visibleWorkspaceShortcuts = useMemo(
+    () => workspaceShortcuts.flatMap((shortcut) =>
+      shortcut.chord ? [{ ...shortcut, chord: shortcut.chord }] : []
+    ),
+    [workspaceShortcuts]
+  );
+  const [isLocalePackBusy, setIsLocalePackBusy] = useState(false);
+  useEffect(() => {
+    let isCurrent = true;
+    setIsApplicationWorkspaceLoading(true);
+    setIsApplicationWorkspaceReady(false);
+    void personalWorkspaceRegistry.readApplicationState().then(
+      (snapshot) => {
+        if (!isCurrent) return;
+        setApplicationWorkspaceSnapshot(snapshot);
+        setRuntimeCommunityLocalePacks(snapshot.document?.localePacks ?? []);
+        setPersonalWorkspaceError(null);
+        setIsApplicationWorkspaceReady(true);
+        setIsApplicationWorkspaceLoading(false);
+      },
+      (error: unknown) => {
+        if (!isCurrent) return;
+        setPersonalWorkspaceError(getErrorMessage(error));
+        setRuntimeCommunityLocalePacks([]);
+        setIsApplicationWorkspaceReady(false);
+        setIsApplicationWorkspaceLoading(false);
+      }
+    );
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    applicationWorkspaceLoadGeneration,
+    personalWorkspaceRegistry,
+    setRuntimeCommunityLocalePacks
+  ]);
+  const [isWhatChangedTourOpen, setIsWhatChangedTourOpen] = useState(
+    shouldShowWhatChangedTour
+  );
+  const [isCapabilityDiscoveryOpen, setIsCapabilityDiscoveryOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isShortcutOverlayOpen, setIsShortcutOverlayOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteStatusKey, setNoteStatusKey] = useState<string | null>(null);
+  const [isPersonalWorkspaceMutationBusy, setIsPersonalWorkspaceMutationBusy] = useState(false);
+  const [pendingOutputProfileId, setPendingOutputProfileId] = useState<string | null>(null);
   const [textCategoryId, setTextCategoryId] = useState<string | null>(null);
   const [textResultOffset, setTextResultOffset] = useState(0);
   const [textLanguage, setTextLanguage] = useState<string | null>(null);
@@ -1808,6 +1987,160 @@ export function App({
       ),
     [createProjectPaths, unscopedBridge]
   );
+  const legacyMigrationRef = useRef<{
+    promise: Promise<PersonalWorkspaceSnapshot<WorkspaceApplicationStateDocument>>;
+    registry: typeof personalWorkspaceRegistry;
+  } | null>(null);
+  const completedLegacyMigrationRegistryRef = useRef<
+    typeof personalWorkspaceRegistry | null
+  >(null);
+  useEffect(() => {
+    if (
+      isApplicationWorkspaceLoading ||
+      !isApplicationWorkspaceReady ||
+      completedLegacyMigrationRegistryRef.current === personalWorkspaceRegistry
+    ) return;
+    let isCurrent = true;
+    setIsLegacyWorkspaceMigrationRunning(true);
+    if (legacyMigrationRef.current?.registry !== personalWorkspaceRegistry) {
+      legacyMigrationRef.current = {
+        registry: personalWorkspaceRegistry,
+        promise: (async () => {
+          let latestApplicationSnapshot = applicationWorkspaceSnapshot;
+          const dumpDestinations = readLegacyGameDumpDestinations();
+          for (const game of visibleGameSelectionGames) {
+            const destination = dumpDestinations[game];
+            if (!destination) continue;
+            const parsedDestination = workspaceGameDumpDestinationSchema.safeParse({
+              destinationPath: destination,
+              game,
+              updatedAtUtc: new Date().toISOString()
+            });
+            if (!parsedDestination.success) continue;
+            latestApplicationSnapshot =
+              await personalWorkspaceRegistry.setGameDumpDestination(
+                game,
+                parsedDestination.data.destinationPath
+              );
+          }
+          clearLegacyGameDumpDestinations();
+
+          const legacyPaths = readLegacyProjectPathState();
+          const migratedDrafts: ProjectPathDraft[] = [];
+          for (const game of visibleGameSelectionGames) {
+            const values = legacyPaths.validatedByGame[game];
+            if (!values) continue;
+            const candidate: ProjectPathDraft = { ...values, selectedGame: game };
+            const paths = toProjectPaths(candidate, language);
+            const parsedProfile = workspaceRecentProjectProfileSchema.safeParse({
+              game,
+              lastOpenedAtUtc: new Date().toISOString(),
+              name: null,
+              paths,
+              projectId: legacyWorkspaceProjectIdPlaceholder
+            });
+            if (!parsedProfile.success) continue;
+            const validated = await unscopedBridge.validateProject({
+              paths: parsedProfile.data.paths
+            });
+            latestApplicationSnapshot =
+              await personalWorkspaceRegistry.recordRecentProject({
+                game,
+                lastOpenedAtUtc: new Date().toISOString(),
+                name: null,
+                paths: parsedProfile.data.paths,
+                projectId: validated.projectId
+              });
+            migratedDrafts.push(candidate);
+          }
+          clearLegacyValidatedProjectPathCache();
+
+          const hasConfiguredLegacyDraft = hasConfiguredProjectPath(legacyPaths.draft);
+          let canClearLegacyDraft =
+            !hasConfiguredLegacyDraft ||
+            migratedDrafts.some((candidate) =>
+              projectPathValuesEqual(candidate, legacyPaths.draft)
+            );
+          let hasSchemaValidLegacyDraftCandidate = false;
+          if (hasConfiguredLegacyDraft && !canClearLegacyDraft) {
+            for (const game of visibleGameSelectionGames) {
+              const candidate: ProjectPathDraft = {
+                ...legacyPaths.draft,
+                selectedGame: game
+              };
+              const paths = toProjectPaths(candidate, language);
+              const parsedProfile = workspaceRecentProjectProfileSchema.safeParse({
+                game,
+                lastOpenedAtUtc: new Date().toISOString(),
+                name: null,
+                paths,
+                projectId: legacyWorkspaceProjectIdPlaceholder
+              });
+              if (!parsedProfile.success) continue;
+              hasSchemaValidLegacyDraftCandidate = true;
+              const validated = await unscopedBridge.validateProject({
+                paths: parsedProfile.data.paths
+              });
+              if (!validated.health.canOpenReadOnlyWorkflows) continue;
+              latestApplicationSnapshot =
+                await personalWorkspaceRegistry.recordRecentProject({
+                  game,
+                  lastOpenedAtUtc: new Date().toISOString(),
+                  name: null,
+                  paths: parsedProfile.data.paths,
+                  projectId: validated.projectId
+                });
+              canClearLegacyDraft = true;
+              break;
+            }
+          }
+          if (!hasSchemaValidLegacyDraftCandidate) {
+            canClearLegacyDraft = true;
+          }
+          if (canClearLegacyDraft) {
+            clearLegacyProjectPathDraft();
+          }
+          return latestApplicationSnapshot;
+        })()
+      };
+    }
+
+    const migration = legacyMigrationRef.current;
+    if (!migration) return;
+    void migration.promise.then(
+      (snapshot) => {
+        completedLegacyMigrationRegistryRef.current = personalWorkspaceRegistry;
+        if (!isCurrent) return;
+        setApplicationWorkspaceSnapshot(snapshot);
+        setRuntimeCommunityLocalePacks(snapshot.document?.localePacks ?? []);
+        setPersonalWorkspaceError(null);
+        setIsLegacyWorkspaceMigrationRunning(false);
+      },
+      (error: unknown) => {
+        if (legacyMigrationRef.current === migration) {
+          legacyMigrationRef.current = null;
+        }
+        if (isCurrent) {
+          setPersonalWorkspaceError(getErrorMessage(error));
+          setIsApplicationWorkspaceReady(false);
+          setIsLegacyWorkspaceMigrationRunning(false);
+        }
+      }
+    );
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    applicationWorkspaceLoadGeneration,
+    applicationWorkspaceSnapshot,
+    isApplicationWorkspaceLoading,
+    isApplicationWorkspaceReady,
+    language,
+    personalWorkspaceRegistry,
+    setRuntimeCommunityLocalePacks,
+    unscopedBridge
+  ]);
   const editSession = useWorkbenchStore((state) => state.editSession);
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
   const encounterSearchText = useWorkbenchStore((state) => state.encounterSearchText);
@@ -1942,6 +2275,7 @@ export function App({
   const setApplyResult = useWorkbenchStore((state) => state.setApplyResult);
   const setChangePlan = useWorkbenchStore((state) => state.setChangePlan);
   const setDraftPath = useWorkbenchStore((state) => state.setDraftPath);
+  const setProjectPathDraft = useWorkbenchStore((state) => state.setProjectPathDraft);
   const setEditSession = useWorkbenchStore((state) => state.setEditSession);
   const setEditValidationDiagnostics = useWorkbenchStore(
     (state) => state.setEditValidationDiagnostics
@@ -2138,9 +2472,6 @@ export function App({
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
   const setSelectedGame = useWorkbenchStore((state) => state.setSelectedGame);
-  const rememberValidatedProjectPaths = useWorkbenchStore(
-    (state) => state.rememberValidatedProjectPaths
-  );
   const setShopSearchText = useWorkbenchStore((state) => state.setShopSearchText);
   const setShopsWorkflow = useWorkbenchStore((state) => state.setShopsWorkflow);
   const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
@@ -2151,6 +2482,45 @@ export function App({
   const health = projectHealth;
   const selectedGame = draftPaths.selectedGame;
   const activeProjectId = openProject?.projectId ?? null;
+  const activeProjectIdRef = useRef(activeProjectId);
+  activeProjectIdRef.current = activeProjectId;
+  const projectWorkspaceDocument = projectWorkspaceOwnerId === activeProjectId
+    ? projectWorkspaceSnapshot.document
+    : null;
+  const projectWorkspaceLoadRef = useRef(0);
+  useEffect(() => {
+    const loadId = ++projectWorkspaceLoadRef.current;
+    setProjectWorkspaceSnapshot({ document: null, etag: null });
+    setProjectWorkspaceOwnerId(null);
+    if (!activeProjectId || !selectedGame) {
+      setIsProjectWorkspaceLoading(false);
+      return;
+    }
+
+    setIsProjectWorkspaceLoading(true);
+    void personalWorkspaceRegistry.readProjectState(activeProjectId).then(
+      (snapshot) => {
+        if (projectWorkspaceLoadRef.current !== loadId) return;
+        if (snapshot.document && snapshot.document.game !== selectedGame) {
+          setPersonalWorkspaceError('Saved Workbench state belongs to a different game.');
+          setProjectWorkspaceSnapshot({ document: null, etag: null });
+          setProjectWorkspaceOwnerId(null);
+        } else {
+          setProjectWorkspaceSnapshot(snapshot);
+          setProjectWorkspaceOwnerId(activeProjectId);
+          setPersonalWorkspaceError(null);
+        }
+        setIsProjectWorkspaceLoading(false);
+      },
+      (error: unknown) => {
+        if (projectWorkspaceLoadRef.current !== loadId) return;
+        setProjectWorkspaceSnapshot({ document: null, etag: null });
+        setProjectWorkspaceOwnerId(null);
+        setPersonalWorkspaceError(getErrorMessage(error));
+        setIsProjectWorkspaceLoading(false);
+      }
+    );
+  }, [activeProjectId, personalWorkspaceRegistry, selectedGame]);
   const outputSafetyScope = useMemo(
     () => activeProjectId
       ? {
@@ -2166,20 +2536,63 @@ export function App({
       projectId: activeProjectId
     })
   );
+  const [workspaceShellState, setWorkspaceShellState] = useState(() =>
+    createWorkspaceShellState(
+      createSectionLocation(activeSection, {
+        game: selectedGame,
+        projectId: activeProjectId
+      })
+    )
+  );
+  const workspaceShellStateRef = useRef(workspaceShellState);
+  workspaceShellStateRef.current = workspaceShellState;
+  const activeNoteDirtyRef = useRef(false);
+  const flushActiveNoteRef = useRef<() => Promise<boolean>>(async () => true);
+  const workspaceNavigationRequestRevisionRef = useRef(0);
+  const pendingWorkspaceNavigationRef = useRef<{
+    options: WorkspaceNavigationCommitOptions;
+    pending: PendingWorkspaceNavigation;
+  } | null>(null);
   useEffect(() => {
-    setActiveLocation((currentLocation) =>
-      currentLocation.section === activeSection &&
-      currentLocation.game === selectedGame &&
-      currentLocation.projectId === activeProjectId
-        ? currentLocation
-        : createSectionLocation(activeSection, {
-            game: selectedGame,
-            projectId: activeProjectId
-          })
-    );
+    const nextLocation = createSectionLocation(activeSection, {
+      game: selectedGame,
+      projectId: activeProjectId
+    });
+    setActiveLocation((currentLocation) => {
+      if (
+        currentLocation.section === activeSection &&
+        currentLocation.game === selectedGame &&
+        currentLocation.projectId === activeProjectId
+      ) {
+        return currentLocation;
+      }
+      return nextLocation;
+    });
+    const currentScope = workspaceShellStateRef.current.scope;
+    if (currentScope.game !== selectedGame || currentScope.projectId !== activeProjectId) {
+      pendingWorkspaceNavigationRef.current = null;
+      const nextState = resetWorkspaceShellScope(
+        workspaceShellStateRef.current,
+        nextLocation
+      );
+      workspaceShellStateRef.current = nextState;
+      setWorkspaceShellState(nextState);
+    }
   }, [activeProjectId, activeSection, selectedGame]);
   const commitWorkbenchLocation = useCallback(
     (location: WorkbenchLocation) => {
+      const currentState = workspaceShellStateRef.current;
+      const registeredNavigation = pendingWorkspaceNavigationRef.current;
+      let pending = registeredNavigation?.pending ?? null;
+      let options = registeredNavigation?.options ?? {};
+      if (!pending || !workbenchLocationsEqual(pending.target, location)) {
+        pending = beginWorkspaceNavigation(currentState, location);
+        options = {};
+      }
+      pendingWorkspaceNavigationRef.current = null;
+      const result = commitWorkspaceNavigation(currentState, pending, location, options);
+      workspaceShellStateRef.current = result.state;
+      setWorkspaceShellState(result.state);
       setActiveLocation(location);
       setActiveSection(location.section);
     },
@@ -2216,7 +2629,7 @@ export function App({
       ),
     [gameScopedWorkflows]
   );
-  const activeSectionLabel = getWorkbenchCapabilityRegistration(activeSection).label;
+  const activeSectionLabel = t(getWorkbenchSectionLabelKey(activeSection));
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const activeWikiUrl = getSectionWikiUrl(activeSection, selectedGame);
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
@@ -2404,6 +2817,7 @@ export function App({
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
   );
+  const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
   const hasCriticalWriteOperation =
     isChangePlanApplying ||
     isModMergerApplying ||
@@ -2412,6 +2826,8 @@ export function App({
     isRandomizerApplying ||
     isGameDumpWriting ||
     isSvCacheClearing;
+  const openCommandPalette = useCallback(() => setIsCommandPaletteOpen(true), []);
+  const openShortcutOverlay = useCallback(() => setIsShortcutOverlayOpen(true), []);
   const outputSafety = useOutputSafetyController({
     bridge,
     externalMutationBusy: hasCriticalWriteOperation,
@@ -2431,7 +2847,6 @@ export function App({
   const isSidebarCompact = isSidebarConstrained
     ? !isSidebarOverlayOpen
     : isSidebarCompactPreference;
-  const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
   const [expandedWorkflowGroups, setExpandedWorkflowGroups] = useState<
     Set<WorkflowNavigationGroup['id']>
   >(() => readExpandedWorkflowGroups(selectedGame));
@@ -2439,6 +2854,61 @@ export function App({
     setEditorLayout(nextLayout);
     writeEditorLayoutPreference(nextLayout);
   }, []);
+  const handleInstallLocalePack = useCallback(async (pack: CommunityLocalePack) => {
+    setIsLocalePackBusy(true);
+    try {
+      const snapshot = await personalWorkspaceRegistry.installLocalePack(pack);
+      setApplicationWorkspaceSnapshot(snapshot);
+      setRuntimeCommunityLocalePacks(snapshot.document?.localePacks ?? []);
+      setPersonalWorkspaceError(null);
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+      throw error;
+    } finally {
+      setIsLocalePackBusy(false);
+    }
+  }, [personalWorkspaceRegistry, setRuntimeCommunityLocalePacks]);
+  const handleRemoveLocalePack = useCallback(async (packId: string) => {
+    setIsLocalePackBusy(true);
+    try {
+      const snapshot = await personalWorkspaceRegistry.removeLocalePack(packId);
+      setApplicationWorkspaceSnapshot(snapshot);
+      setRuntimeCommunityLocalePacks(snapshot.document?.localePacks ?? [], {
+        definitivelyRemovedPackIds: [packId]
+      });
+      setPersonalWorkspaceError(null);
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+      throw error;
+    } finally {
+      setIsLocalePackBusy(false);
+    }
+  }, [personalWorkspaceRegistry, setRuntimeCommunityLocalePacks]);
+  const handleRememberGameDumpDestination = useCallback(
+    async (game: ProjectGame, destination: string) => {
+      try {
+        const snapshot = await personalWorkspaceRegistry.setGameDumpDestination(
+          game,
+          destination || null
+        );
+        setApplicationWorkspaceSnapshot(snapshot);
+        setPersonalWorkspaceError(null);
+      } catch (error) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    },
+    [personalWorkspaceRegistry]
+  );
+  const handleSetWorkspaceShortcut = useCallback(async (id: string, chord: string) => {
+    const snapshot = await personalWorkspaceRegistry.setShortcutOverride(id, chord);
+    setApplicationWorkspaceSnapshot(snapshot);
+    setPersonalWorkspaceError(null);
+  }, [personalWorkspaceRegistry]);
+  const handleResetWorkspaceShortcut = useCallback(async (id: string) => {
+    const snapshot = await personalWorkspaceRegistry.removeShortcutOverride(id);
+    setApplicationWorkspaceSnapshot(snapshot);
+    setPersonalWorkspaceError(null);
+  }, [personalWorkspaceRegistry]);
   const editSessionRef = useRef<EditSession | null>(editSession);
   const editorDraftDirtySectionsRef = useRef(editorDraftDirtySections);
   const moveEditBaselineValuesRef = useRef<{
@@ -3238,7 +3708,27 @@ export function App({
   );
 
   const handleNavigateLocation = useCallback(
-    (destination: WorkbenchLocation, onCommit?: () => void) => {
+    async (
+      destination: WorkbenchLocation,
+      onCommit?: () => void,
+      mode: Extract<WorkspaceNavigationMode, 'push' | 'replace' | 'inspector'> = 'push',
+      options: WorkspaceNavigationCommitOptions = {},
+      preparedNavigation?: PendingWorkspaceNavigation
+    ) => {
+      const requestRevision = ++workspaceNavigationRequestRevisionRef.current;
+      if (!(await flushActiveNoteRef.current())) {
+        return null;
+      }
+      if (workspaceNavigationRequestRevisionRef.current !== requestRevision) {
+        return null;
+      }
+      const workspaceNavigation =
+        preparedNavigation ??
+        beginWorkspaceNavigation(workspaceShellStateRef.current, destination, mode);
+      pendingWorkspaceNavigationRef.current = {
+        options,
+        pending: workspaceNavigation
+      };
       const decision = navigationControllerRef.current.request(destination);
       if (decision.kind === 'commit') {
         pendingNavigationCommitActionRef.current = null;
@@ -3253,15 +3743,322 @@ export function App({
           : null;
         setExitPrompt(decision.prompt);
       } else if (decision.kind === 'unchanged') {
+        pendingWorkspaceNavigationRef.current = null;
         pendingNavigationCommitActionRef.current = null;
         onCommit?.();
       } else {
+        pendingWorkspaceNavigationRef.current = null;
         pendingNavigationCommitActionRef.current = null;
       }
       return decision;
     },
     [clearPendingEditState, commitWorkbenchLocation]
   );
+
+  const resolveStableLocationCommit = useCallback(
+    (location: WorkbenchLocation): (() => void) | null => {
+      if (!location.entity) {
+        return () => undefined;
+      }
+      const selection = parseStableEntitySelection(location);
+      if (!selection) {
+        return null;
+      }
+      const currentState = useWorkbenchStore.getState();
+      const { recordKind, value } = selection;
+      switch (selection.section) {
+        case 'items':
+          return typeof value === 'number' &&
+            currentState.itemsWorkflow?.items.some((item) => item.itemId === value)
+            ? () => setSelectedItemId(value)
+            : null;
+        case 'pokemon':
+          return typeof value === 'number' &&
+            currentState.pokemonWorkflow?.pokemon.some((pokemon) => pokemon.personalId === value)
+            ? () => setSelectedPokemonPersonalId(value)
+            : null;
+        case 'moves':
+          return typeof value === 'number' &&
+            currentState.movesWorkflow?.moves.some((move) => move.moveId === value)
+            ? () => setSelectedMoveId(value)
+            : null;
+        case 'text':
+          return typeof value === 'string' &&
+            currentState.textWorkflow?.entries.some((entry) => entry.textKey === value)
+            ? () => setSelectedTextKey(value)
+            : null;
+        case 'trainers':
+          return typeof value === 'number' &&
+            currentState.trainersWorkflow?.trainers.some((trainer) => trainer.trainerId === value)
+            ? () => setSelectedTrainerId(value)
+            : null;
+        case 'shops':
+          return typeof value === 'string' &&
+            currentState.shopsWorkflow?.shops.some((shop) => shop.shopId === value)
+            ? () => setSelectedShopId(value)
+            : null;
+        case 'encounters':
+          return typeof value === 'string' &&
+            currentState.encountersWorkflow?.tables.some((table) => table.tableId === value)
+            ? () => setSelectedEncounterTableId(value)
+            : null;
+        case 'teraRaids':
+          return typeof value === 'string' &&
+            currentState.teraRaidsWorkflow?.raids.some((raid) => raid.recordId === value)
+            ? () => setSelectedTeraRaidRecordId(value)
+            : null;
+        case 'raidBattles':
+          return typeof value === 'string' &&
+            currentState.raidBattlesWorkflow?.tables.some((table) => table.tableId === value)
+            ? () => setSelectedRaidBattleTableId(value)
+            : null;
+        case 'raidRewards':
+          return typeof value === 'string' &&
+            currentState.raidRewardsWorkflow?.tables.some((table) => table.tableId === value)
+            ? () => setSelectedRaidRewardTableId(value)
+            : null;
+        case 'raidBonusRewards':
+          return typeof value === 'string' &&
+            currentState.raidBonusRewardsWorkflow?.tables.some((table) => table.tableId === value)
+            ? () => setSelectedRaidBonusRewardTableId(value)
+            : null;
+        case 'placement':
+          return typeof value === 'string' &&
+            currentState.placementWorkflow?.objects.some(
+              (placedObject) => placedObject.objectId === value
+            )
+            ? () => setSelectedPlacementObjectId(value)
+            : null;
+        case 'behavior':
+          return typeof value === 'string' &&
+            currentState.behaviorWorkflow?.entries.some((entry) => entry.entryId === value)
+            ? () => setSelectedBehaviorEntryId(value)
+            : null;
+        case 'flagworkSave':
+          if (typeof value !== 'string' || !currentState.flagworkSaveWorkflow) {
+            return null;
+          }
+          if (
+            recordKind === 'flag' &&
+            currentState.flagworkSaveWorkflow.flags.some((flag) => flag.flagId === value)
+          ) {
+            return () => setSelectedFlagId(value);
+          }
+          if (
+            recordKind === 'save-block' &&
+            currentState.flagworkSaveWorkflow.saveBlocks.some(
+              (block) => block.blockId === value
+            )
+          ) {
+            return () => setSelectedSaveBlockId(value);
+          }
+          return null;
+        case 'exefsPatches':
+          if (typeof value !== 'string' || !currentState.exeFsPatchWorkflow) {
+            return null;
+          }
+          if (
+            recordKind === 'exefs-check' &&
+            currentState.exeFsPatchWorkflow.checks.some((check) => check.checkId === value)
+          ) {
+            return () => setSelectedExeFsCheckId(value);
+          }
+          if (
+            recordKind === 'exefs-patch' &&
+            currentState.exeFsPatchWorkflow.patches.some((patch) => patch.patchId === value)
+          ) {
+            return () => setSelectedExeFsPatchId(value);
+          }
+          return null;
+        case 'royalCandy':
+          if (typeof value !== 'string' || !currentState.royalCandyWorkflow) {
+            return null;
+          }
+          if (
+            recordKind === 'royal-candy-check' &&
+            currentState.royalCandyWorkflow.checks.some((check) => check.checkId === value)
+          ) {
+            return () => setSelectedRoyalCandyCheckId(value);
+          }
+          if (
+            recordKind === 'royal-candy-workflow' &&
+            currentState.royalCandyWorkflow.workflows.some(
+              (workflow) => workflow.workflowId === value
+            )
+          ) {
+            return () => setSelectedRoyalCandyWorkflowId(value);
+          }
+          return null;
+        case 'startingItems':
+          return typeof value === 'number' &&
+            currentState.startingItemsWorkflow?.grants.some((grant) => grant.slot === value)
+            ? () => setSelectedStartingItemSlot(value)
+            : null;
+        default:
+          return null;
+      }
+    },
+    [
+      setSelectedBehaviorEntryId,
+      setSelectedEncounterTableId,
+      setSelectedExeFsCheckId,
+      setSelectedExeFsPatchId,
+      setSelectedFlagId,
+      setSelectedItemId,
+      setSelectedMoveId,
+      setSelectedPlacementObjectId,
+      setSelectedPokemonPersonalId,
+      setSelectedRaidBattleTableId,
+      setSelectedRaidBonusRewardTableId,
+      setSelectedRaidRewardTableId,
+      setSelectedRoyalCandyCheckId,
+      setSelectedRoyalCandyWorkflowId,
+      setSelectedSaveBlockId,
+      setSelectedShopId,
+      setSelectedStartingItemSlot,
+      setSelectedTeraRaidRecordId,
+      setSelectedTextKey,
+      setSelectedTrainerId
+    ]
+  );
+
+  const coldStableLocationCommitResolverRef = useRef<
+    (location: WorkbenchLocation) => Promise<(() => void) | null>
+  >(async () => null);
+  const stableLocationPreparationRevisionRef = useRef(0);
+  const prepareStableLocationCommit = useCallback(
+    async (location: WorkbenchLocation) => {
+      const immediateCommit = resolveStableLocationCommit(location);
+      if (immediateCommit || !location.entity) {
+        return immediateCommit;
+      }
+
+      const guardState = navigationGuardStateRef.current;
+      if (
+        !guardState ||
+        guardState.hasCriticalWriteOperation ||
+        guardState.isEditSessionOperationBusy ||
+        !guardState.isDestinationAvailable(location)
+      ) {
+        return null;
+      }
+
+      const preparationRevision = ++stableLocationPreparationRevisionRef.current;
+      const scopeGeneration = projectScopeGenerationRef.current;
+      const isCurrentRequest = () =>
+        stableLocationPreparationRevisionRef.current === preparationRevision &&
+        projectScopeGenerationRef.current === scopeGeneration &&
+        activeProjectIdRef.current === location.projectId &&
+        draftPathsRef.current.selectedGame === location.game;
+
+      let preparedCommit: (() => void) | null;
+      try {
+        preparedCommit = await coldStableLocationCommitResolverRef.current(location);
+      } catch (error) {
+        if (isCurrentRequest() && !isStaleProjectScopeError(error)) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+        return null;
+      }
+      if (!isCurrentRequest()) {
+        return null;
+      }
+      if (!preparedCommit) {
+        setBridgeDiagnostics([
+          {
+            domain: 'workspace.navigation',
+            message: t('workbench.navigation.targetUnavailable'),
+            severity: 'warning'
+          }
+        ]);
+      }
+      return preparedCommit;
+    },
+    [resolveStableLocationCommit, setBridgeDiagnostics, t]
+  );
+
+  const handleNavigateBack = useCallback(async () => {
+    const pending = beginWorkspaceBackNavigation(workspaceShellStateRef.current);
+    if (!pending) {
+      return;
+    }
+    const onCommit = await prepareStableLocationCommit(pending.target);
+    if (
+      !onCommit ||
+      workspaceShellStateRef.current.revision !== pending.expectedRevision
+    ) {
+      return;
+    }
+    return handleNavigateLocation(
+      pending.target,
+      onCommit,
+      'push',
+      { rememberRecent: false },
+      pending
+    );
+  }, [handleNavigateLocation, prepareStableLocationCommit]);
+
+  const handleNavigateForward = useCallback(async () => {
+    const pending = beginWorkspaceForwardNavigation(workspaceShellStateRef.current);
+    if (!pending) {
+      return;
+    }
+    const onCommit = await prepareStableLocationCommit(pending.target);
+    if (
+      !onCommit ||
+      workspaceShellStateRef.current.revision !== pending.expectedRevision
+    ) {
+      return;
+    }
+    return handleNavigateLocation(
+      pending.target,
+      onCommit,
+      'push',
+      { rememberRecent: false },
+      pending
+    );
+  }, [handleNavigateLocation, prepareStableLocationCommit]);
+  const handleNavigateWorkspaceTarget = useCallback(
+    (location: WorkbenchLocation) => {
+      if (!location.entity) {
+        return handleNavigateLocation(location);
+      }
+      return void (async () => {
+        const onCommit = await prepareStableLocationCommit(location);
+        if (onCommit) {
+          handleNavigateLocation(location, onCommit);
+        }
+      })();
+    },
+    [handleNavigateLocation, prepareStableLocationCommit]
+  );
+  useEffect(() => {
+    const handleWorkspaceShortcut = (event: KeyboardEvent) => {
+      if (
+        hasCriticalWriteOperation ||
+        document.querySelector('[aria-modal="true"]') !== null ||
+        isWorkspaceShortcutEditableTarget(event.target)
+      ) return;
+      const shortcut = resolveWorkspaceShortcut(event, workspaceShortcuts);
+      if (!shortcut) return;
+      event.preventDefault();
+      switch (shortcut.command) {
+        case 'history.back': handleNavigateBack(); break;
+        case 'history.forward': handleNavigateForward(); break;
+        case 'shell.commandPalette': openCommandPalette(); break;
+        case 'shell.shortcuts': openShortcutOverlay(); break;
+      }
+    };
+    window.addEventListener('keydown', handleWorkspaceShortcut);
+    return () => window.removeEventListener('keydown', handleWorkspaceShortcut);
+  }, [
+    handleNavigateBack,
+    handleNavigateForward,
+    hasCriticalWriteOperation,
+    openCommandPalette,
+    openShortcutOverlay,
+    workspaceShortcuts
+  ]);
 
   const handleNavigateSection = useCallback(
     (destination: WorkbenchSection) => {
@@ -3279,12 +4076,1122 @@ export function App({
     [activeLocation.section, activeProjectId, handleNavigateLocation, selectedGame]
   );
 
+  const handleSelectStableLocation = useCallback(
+    (
+      section: WorkbenchSection,
+      value: number | string | null,
+      onCommit: () => void,
+      recordKind?: string
+    ) => {
+      if (!activeProjectId || !selectedGame || value === null) {
+        return handleNavigateLocation(
+          createSectionLocation(section, {
+            game: selectedGame,
+            projectId: activeProjectId
+          }),
+          onCommit,
+          'replace',
+          { rememberRecent: false }
+        );
+      }
+
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        ...(recordKind ? { recordKind } : {}),
+        section,
+        value
+      });
+      const protectedTabKeys = new Set(
+        workspaceShellStateRef.current.tabs
+          .filter((tab) => editorDraftDirtySectionsRef.current.has(tab.location.section))
+          .map((tab) => tab.key)
+      );
+      return handleNavigateLocation(destination, onCommit, 'push', {
+        protectedTabKeys,
+        tabEligible: isStableLocationTabEligible(destination, new Set())
+      });
+    },
+    [activeProjectId, handleNavigateLocation, selectedGame]
+  );
+  const handleSelectItemLocation = useCallback(
+    (itemId: number | null) =>
+      handleSelectStableLocation('items', itemId, () => setSelectedItemId(itemId)),
+    [handleSelectStableLocation, setSelectedItemId]
+  );
+  const handleSelectPokemonLocation = useCallback(
+    (personalId: number | null) =>
+      handleSelectStableLocation('pokemon', personalId, () =>
+        setSelectedPokemonPersonalId(personalId)
+      ),
+    [handleSelectStableLocation, setSelectedPokemonPersonalId]
+  );
+  const handleSelectMoveLocation = useCallback(
+    (moveId: number | null) =>
+      handleSelectStableLocation('moves', moveId, () => setSelectedMoveId(moveId)),
+    [handleSelectStableLocation, setSelectedMoveId]
+  );
+  const handleSelectTextLocation = useCallback(
+    (textKey: string | null) => setSelectedTextKey(textKey),
+    [setSelectedTextKey]
+  );
+  const handleSelectTrainerLocation = useCallback(
+    (trainerId: number | null) =>
+      handleSelectStableLocation('trainers', trainerId, () =>
+        setSelectedTrainerId(trainerId)
+      ),
+    [handleSelectStableLocation, setSelectedTrainerId]
+  );
+  const handleSelectShopLocation = useCallback(
+    (shopId: string | null) =>
+      handleSelectStableLocation('shops', shopId, () => setSelectedShopId(shopId)),
+    [handleSelectStableLocation, setSelectedShopId]
+  );
+  const handleSelectEncounterLocation = useCallback(
+    (tableId: string | null) =>
+      handleSelectStableLocation('encounters', tableId, () =>
+        setSelectedEncounterTableId(tableId)
+      ),
+    [handleSelectStableLocation, setSelectedEncounterTableId]
+  );
+  const handleSelectTeraRaidLocation = useCallback(
+    (recordId: string | null) =>
+      handleSelectStableLocation('teraRaids', recordId, () =>
+        setSelectedTeraRaidRecordId(recordId)
+      ),
+    [handleSelectStableLocation, setSelectedTeraRaidRecordId]
+  );
+  const handleSelectRaidRewardLocation = useCallback(
+    (tableId: string) =>
+      handleSelectStableLocation('raidRewards', tableId, () =>
+        setSelectedRaidRewardTableId(tableId)
+      ),
+    [handleSelectStableLocation, setSelectedRaidRewardTableId]
+  );
+  const handleSelectRaidBonusRewardLocation = useCallback(
+    (tableId: string) =>
+      handleSelectStableLocation('raidBonusRewards', tableId, () =>
+        setSelectedRaidBonusRewardTableId(tableId)
+      ),
+    [handleSelectStableLocation, setSelectedRaidBonusRewardTableId]
+  );
+  const handleSelectRaidBattleLocation = useCallback(
+    (tableId: string | null) =>
+      handleSelectStableLocation('raidBattles', tableId, () =>
+        setSelectedRaidBattleTableId(tableId)
+      ),
+    [handleSelectStableLocation, setSelectedRaidBattleTableId]
+  );
+  const handleSelectPlacementLocation = useCallback(
+    (objectId: string | null) =>
+      handleSelectStableLocation('placement', objectId, () =>
+        setSelectedPlacementObjectId(objectId)
+      ),
+    [handleSelectStableLocation, setSelectedPlacementObjectId]
+  );
+  const handleSelectBehaviorLocation = useCallback(
+    (entryId: string | null) =>
+      handleSelectStableLocation('behavior', entryId, () =>
+        setSelectedBehaviorEntryId(entryId)
+      ),
+    [handleSelectStableLocation, setSelectedBehaviorEntryId]
+  );
+  const handleSelectFlagLocation = useCallback(
+    (flagId: string | null) =>
+      handleSelectStableLocation(
+        'flagworkSave',
+        flagId,
+        () => setSelectedFlagId(flagId),
+        'flag'
+      ),
+    [handleSelectStableLocation, setSelectedFlagId]
+  );
+  const handleSelectSaveBlockLocation = useCallback(
+    (blockId: string | null) =>
+      handleSelectStableLocation(
+        'flagworkSave',
+        blockId,
+        () => setSelectedSaveBlockId(blockId),
+        'save-block'
+      ),
+    [handleSelectStableLocation, setSelectedSaveBlockId]
+  );
+  const handleSelectExeFsCheckLocation = useCallback(
+    (checkId: string | null) =>
+      handleSelectStableLocation(
+        'exefsPatches',
+        checkId,
+        () => setSelectedExeFsCheckId(checkId),
+        'exefs-check'
+      ),
+    [handleSelectStableLocation, setSelectedExeFsCheckId]
+  );
+  const handleSelectExeFsPatchLocation = useCallback(
+    (patchId: string | null) =>
+      handleSelectStableLocation(
+        'exefsPatches',
+        patchId,
+        () => setSelectedExeFsPatchId(patchId),
+        'exefs-patch'
+      ),
+    [handleSelectStableLocation, setSelectedExeFsPatchId]
+  );
+  const handleSelectRoyalCandyCheckLocation = useCallback(
+    (checkId: string | null) =>
+      handleSelectStableLocation(
+        'royalCandy',
+        checkId,
+        () => setSelectedRoyalCandyCheckId(checkId),
+        'royal-candy-check'
+      ),
+    [handleSelectStableLocation, setSelectedRoyalCandyCheckId]
+  );
+  const handleSelectRoyalCandyWorkflowLocation = useCallback(
+    (workflowId: string | null) =>
+      handleSelectStableLocation(
+        'royalCandy',
+        workflowId,
+        () => setSelectedRoyalCandyWorkflowId(workflowId),
+        'royal-candy-workflow'
+      ),
+    [handleSelectStableLocation, setSelectedRoyalCandyWorkflowId]
+  );
+  const handleSelectStartingItemLocation = useCallback(
+    (slot: number | null) =>
+      handleSelectStableLocation(
+        'startingItems',
+        slot,
+        () => setSelectedStartingItemSlot(slot)
+      ),
+    [handleSelectStableLocation, setSelectedStartingItemSlot]
+  );
+  const capabilityDiscovery = useMemo(
+    () =>
+      selectedGame
+        ? createCapabilityDiscoveryViewModels({
+            game: selectedGame,
+            health,
+            workflows: gameScopedWorkflows
+          }).filter((capability) => capability.id !== 'workbench')
+        : [],
+    [gameScopedWorkflows, health, selectedGame]
+  );
+  const capabilityDiscoverySignature = useMemo(
+    () => createCapabilityDiscoverySignature(capabilityDiscovery),
+    [capabilityDiscovery]
+  );
+  useEffect(() => {
+    if (
+      !activeProjectId ||
+      !health?.canOpenReadOnlyWorkflows ||
+      capabilityDiscovery.length === 0
+    ) return;
+    if (
+      readCapabilityDiscoverySignature(activeProjectId) !==
+      capabilityDiscoverySignature
+    ) {
+      setIsCapabilityDiscoveryOpen(true);
+    }
+  }, [
+    activeProjectId,
+    capabilityDiscovery.length,
+    capabilityDiscoverySignature,
+    health?.canOpenReadOnlyWorkflows
+  ]);
+  const handleDismissCapabilityDiscovery = useCallback(() => {
+    if (activeProjectId) {
+      writeCapabilityDiscoverySignature(activeProjectId, capabilityDiscoverySignature);
+    }
+    setIsCapabilityDiscoveryOpen(false);
+  }, [activeProjectId, capabilityDiscoverySignature]);
+  const activeScopedLocation = useMemo(
+    () => activeProjectId && selectedGame && activeLocation.entity
+      ? toScopedWorkspaceLocation(activeLocation)
+      : null,
+    [activeLocation, activeProjectId, selectedGame]
+  );
+  const activeRecordLocation = useMemo(
+    () => activeScopedLocation
+      ? withoutScopedLocationInspector(activeScopedLocation)
+      : null,
+    [activeScopedLocation]
+  );
+  const activePinLocation = activeRecordLocation;
+  const workspaceBookmarks = useMemo<WorkspaceTargetViewModel[]>(
+    () => (projectWorkspaceDocument?.bookmarks ?? [])
+      .filter((bookmark) => bookmark.kind === 'bookmark')
+      .flatMap((bookmark) => {
+        const location = fromScopedWorkspaceLocation(
+          bookmark.location,
+          activeProjectId
+        );
+        return location
+          ? [{
+              description: t(getWorkbenchSectionLabelKey(location.section)),
+              id: bookmark.bookmarkId,
+              label: bookmark.label ?? location.entity?.recordId ?? t(
+                getWorkbenchSectionLabelKey(location.section)
+              ),
+              labelIsRawData: Boolean(bookmark.label || location.entity),
+              location
+            }]
+          : [];
+      }),
+    [activeProjectId, projectWorkspaceDocument?.bookmarks, t]
+  );
+  const workspacePins = useMemo<WorkspaceTargetViewModel[]>(
+    () => (projectWorkspaceDocument?.bookmarks ?? [])
+      .filter((bookmark) => bookmark.kind === 'pin')
+      .flatMap((bookmark) => {
+        const location = fromScopedWorkspaceLocation(
+          withoutScopedLocationInspector(bookmark.location),
+          activeProjectId
+        );
+        return location
+          ? [{
+              description: t(getWorkbenchSectionLabelKey(location.section)),
+              id: bookmark.bookmarkId,
+              label: bookmark.label ?? location.entity?.recordId ?? t(
+                getWorkbenchSectionLabelKey(location.section)
+              ),
+              labelIsRawData: Boolean(bookmark.label || location.entity),
+              location
+            }]
+          : [];
+      }),
+    [activeProjectId, projectWorkspaceDocument?.bookmarks, t]
+  );
+  const persistedRecentTargets = useMemo<WorkspaceTargetViewModel[]>(
+    () => (projectWorkspaceDocument?.recentTargets ?? []).flatMap((recent) => {
+      const location = fromScopedWorkspaceLocation(
+        withoutScopedLocationInspector(recent.location),
+        activeProjectId
+      );
+      return location ? [createWorkspaceTargetViewModel(location, t)] : [];
+    }),
+    [activeProjectId, projectWorkspaceDocument?.recentTargets, t]
+  );
+  const workspaceRecentTargets = useMemo<WorkspaceTargetViewModel[]>(
+    () => {
+      const targets = workspaceShellState.recents.map((location) =>
+        createWorkspaceTargetViewModel(location, t)
+      );
+      const seen = new Set(targets.map((target) => serializeWorkbenchLocation(target.location)));
+      for (const target of persistedRecentTargets) {
+        const key = serializeWorkbenchLocation(target.location);
+        if (seen.add(key)) targets.push(target);
+      }
+      return targets.slice(0, 64);
+    },
+    [persistedRecentTargets, t, workspaceShellState.recents]
+  );
+  const workspaceSavedViews = useMemo(
+    () => (projectWorkspaceDocument?.savedViews ?? []).flatMap((view) => {
+      const target = fromScopedWorkspaceLocation(view.location, activeProjectId);
+      return target ? [{
+        description: t(getWorkbenchSectionLabelKey(target.section)),
+        id: view.viewId,
+        name: view.name,
+        target
+      }] : [];
+    }),
+    [activeProjectId, projectWorkspaceDocument?.savedViews, t]
+  );
+  const workspaceOutputProfiles = useMemo(
+    () => (projectWorkspaceDocument?.outputProfiles ?? []).map((profile) => ({
+      description: profile.outputMode,
+      id: profile.profileId,
+      isActive: projectWorkspaceDocument?.activeOutputProfileId === profile.profileId,
+      name: profile.name
+    })),
+    [projectWorkspaceDocument]
+  );
+  const activeOutputProfile = useMemo(() => {
+    const document = projectWorkspaceDocument;
+    return document?.activeOutputProfileId
+      ? document.outputProfiles.find(
+          (profile) => profile.profileId === document.activeOutputProfileId
+        ) ?? null
+      : null;
+  }, [projectWorkspaceDocument]);
+  const pendingOutputProfile = useMemo(
+    () => pendingOutputProfileId
+      ? projectWorkspaceDocument?.outputProfiles.find(
+          (profile) => profile.profileId === pendingOutputProfileId
+        ) ?? null
+      : null,
+    [pendingOutputProfileId, projectWorkspaceDocument?.outputProfiles]
+  );
+  const workspaceRecentProjects = useMemo(
+    () => (applicationWorkspaceSnapshot.document?.recentProjects ?? []).map((profile) => ({
+      game: profile.game,
+      id: profile.projectId,
+      isAvailable: true,
+      name: profile.name ?? gameDefinitions[profile.game].label,
+      unavailableReason: unavailableRecentProjectIds.has(profile.projectId)
+        ? t('workbench.recentProjects.unavailable')
+        : null
+    })),
+    [applicationWorkspaceSnapshot.document?.recentProjects, t, unavailableRecentProjectIds]
+  );
+  const activeStoredNote = useMemo(
+    () => activeRecordLocation
+      ? projectWorkspaceDocument?.notes.find((note) =>
+          scopedWorkspaceLocationsEqual(
+            withoutScopedLocationInspector(note.location),
+            activeRecordLocation
+          )
+        ) ?? null
+      : null,
+    [activeRecordLocation, projectWorkspaceDocument?.notes]
+  );
+  const activeTargetIsPinned = useMemo(
+    () => activePinLocation !== null &&
+      (projectWorkspaceDocument?.bookmarks ?? []).some(
+        (bookmark) => bookmark.kind === 'pin' &&
+          scopedWorkspaceLocationsEqual(
+            withoutScopedLocationInspector(bookmark.location),
+            activePinLocation
+          )
+      ),
+    [activePinLocation, projectWorkspaceDocument?.bookmarks]
+  );
+  const personalProjectTarget = useMemo(
+    () => activeProjectId && selectedGame && projectWorkspaceOwnerId === activeProjectId
+      ? { game: selectedGame, projectId: activeProjectId }
+      : null,
+    [activeProjectId, projectWorkspaceOwnerId, selectedGame]
+  );
+  const outputProfileReconciliationRef = useRef<string | null>(null);
+  useEffect(() => {
+    const activeProfileId = projectWorkspaceDocument?.activeOutputProfileId ?? null;
+    if (
+      !personalProjectTarget ||
+      !activeProfileId ||
+      activeOutputProfile?.outputRootPath === draftPaths.outputRootPath
+    ) {
+      outputProfileReconciliationRef.current = null;
+      return;
+    }
+    const reconciliationKey = [
+      personalProjectTarget.projectId,
+      activeProfileId,
+      draftPaths.outputRootPath
+    ].join('\u001f');
+    if (outputProfileReconciliationRef.current === reconciliationKey) return;
+    outputProfileReconciliationRef.current = reconciliationKey;
+    const requestedProjectId = personalProjectTarget.projectId;
+    void personalWorkspaceRegistry.setActiveOutputProfile(
+      personalProjectTarget,
+      null,
+      null
+    ).then(
+      (snapshot) => {
+        if (activeProjectIdRef.current === requestedProjectId) {
+          setProjectWorkspaceSnapshot(snapshot);
+          setPersonalWorkspaceError(null);
+        }
+      },
+      (error: unknown) => {
+        if (outputProfileReconciliationRef.current === reconciliationKey) {
+          outputProfileReconciliationRef.current = null;
+        }
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    );
+  }, [
+    activeOutputProfile?.outputRootPath,
+    draftPaths.outputRootPath,
+    personalProjectTarget,
+    personalWorkspaceRegistry,
+    projectWorkspaceDocument?.activeOutputProfileId
+  ]);
+  const activeScopedLocationKey = activeRecordLocation && activeProjectId
+    ? `${activeProjectId}:${workspaceScopedLocationKey(activeRecordLocation)}`
+    : null;
+  const activeScopedLocationKeyRef = useRef(activeScopedLocationKey);
+  activeScopedLocationKeyRef.current = activeScopedLocationKey;
+  const noteDraftRef = useRef(noteDraft);
+  noteDraftRef.current = noteDraft;
+  const hydratedNoteLocationRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isProjectWorkspaceLoading) {
+      hydratedNoteLocationRef.current = null;
+      return;
+    }
+    if (hydratedNoteLocationRef.current === activeScopedLocationKey) return;
+    hydratedNoteLocationRef.current = activeScopedLocationKey;
+    setNoteDraft(activeStoredNote?.body ?? '');
+    setNoteStatusKey(null);
+  }, [activeScopedLocationKey, activeStoredNote?.body, isProjectWorkspaceLoading]);
+
+  const activeNoteIsDirty = noteDraft !== (activeStoredNote?.body ?? '');
+  activeNoteDirtyRef.current = activeNoteIsDirty;
+  const noteSaveRevisionRef = useRef(0);
+  const activeNoteSavePromiseRef = useRef<Promise<boolean> | null>(null);
+  const saveActiveNote = useCallback(async (): Promise<boolean> => {
+    if (activeNoteSavePromiseRef.current) {
+      return activeNoteSavePromiseRef.current;
+    }
+    if (!activeNoteIsDirty) return true;
+    if (
+      isPersonalWorkspaceMutationBusy ||
+      !personalProjectTarget ||
+      !activeRecordLocation ||
+      !activeScopedLocationKey
+    ) {
+      setNoteStatusKey('workbench.notes.saveError');
+      return false;
+    }
+    const requestedProjectId = personalProjectTarget.projectId;
+    const requestedLocationKey = activeScopedLocationKey;
+    const saveRevision = ++noteSaveRevisionRef.current;
+    setIsPersonalWorkspaceMutationBusy(true);
+    setNoteStatusKey('workbench.notes.saving');
+    const savePromise = (async () => {
+      let latestSnapshot = projectWorkspaceSnapshot;
+      let storedNote = activeStoredNote;
+      const noteId = storedNote?.noteId ?? createWorkspaceEntryId();
+      try {
+        while (true) {
+          const requestedNoteDraft = noteDraftRef.current;
+          if (requestedNoteDraft === (storedNote?.body ?? '')) {
+            activeNoteDirtyRef.current = false;
+            setNoteStatusKey('workbench.notes.saved');
+            setPersonalWorkspaceError(null);
+            return true;
+          }
+          latestSnapshot = requestedNoteDraft.length === 0 && storedNote
+            ? await personalWorkspaceRegistry.removeNote(
+                personalProjectTarget,
+                storedNote.noteId
+              )
+            : await personalWorkspaceRegistry.saveNote(personalProjectTarget, {
+                body: requestedNoteDraft,
+                location: activeRecordLocation,
+                noteId,
+                updatedAtUtc: new Date().toISOString()
+              });
+          const isCurrentProject = activeProjectIdRef.current === requestedProjectId;
+          const isCurrentLocation =
+            activeScopedLocationKeyRef.current === requestedLocationKey;
+          if (noteSaveRevisionRef.current === saveRevision && isCurrentProject) {
+            setProjectWorkspaceSnapshot(latestSnapshot);
+          }
+          if (
+            noteSaveRevisionRef.current !== saveRevision ||
+            !isCurrentProject ||
+            !isCurrentLocation
+          ) {
+            return true;
+          }
+          storedNote = latestSnapshot.document?.notes.find((candidate) =>
+            scopedWorkspaceLocationsEqual(
+              withoutScopedLocationInspector(candidate.location),
+              activeRecordLocation
+            )
+          ) ?? null;
+          if (noteDraftRef.current === requestedNoteDraft) {
+            activeNoteDirtyRef.current = false;
+            setNoteStatusKey('workbench.notes.saved');
+            setPersonalWorkspaceError(null);
+            return true;
+          }
+          activeNoteDirtyRef.current = true;
+          setNoteStatusKey('workbench.notes.saving');
+        }
+      } catch (error) {
+        if (
+          noteSaveRevisionRef.current === saveRevision &&
+          activeProjectIdRef.current === requestedProjectId &&
+          activeScopedLocationKeyRef.current === requestedLocationKey
+        ) {
+          setNoteStatusKey('workbench.notes.saveError');
+          setPersonalWorkspaceError(getErrorMessage(error));
+        }
+        return false;
+      } finally {
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
+    })();
+    activeNoteSavePromiseRef.current = savePromise;
+    const didSave = await savePromise;
+    if (activeNoteSavePromiseRef.current === savePromise) {
+      activeNoteSavePromiseRef.current = null;
+    }
+    return didSave;
+  }, [
+    activeNoteIsDirty,
+    activeRecordLocation,
+    activeScopedLocationKey,
+    activeStoredNote,
+    isPersonalWorkspaceMutationBusy,
+    personalProjectTarget,
+    personalWorkspaceRegistry,
+    projectWorkspaceSnapshot
+  ]);
+  flushActiveNoteRef.current = saveActiveNote;
+  useEffect(() => {
+    if (
+      !activeRecordLocation ||
+      !personalProjectTarget ||
+      isPersonalWorkspaceMutationBusy ||
+      noteDraft === (activeStoredNote?.body ?? '')
+    ) {
+      return;
+    }
+    setNoteStatusKey('workbench.notes.saving');
+    const timeout = window.setTimeout(() => {
+      void saveActiveNote();
+    }, 650);
+    return () => window.clearTimeout(timeout);
+  }, [
+    activeRecordLocation,
+    activeStoredNote?.body,
+    isPersonalWorkspaceMutationBusy,
+    noteDraft,
+    personalProjectTarget,
+    saveActiveNote
+  ]);
+  const activeNoteViewModel = activeScopedLocation && activeLocation.entity
+    ? {
+        entityLabel: activeLocation.entity.recordId,
+        isBusy: isPersonalWorkspaceMutationBusy,
+        statusKey: noteStatusKey,
+        text: noteDraft,
+        updatedAtLabel: activeStoredNote
+          ? new Intl.DateTimeFormat(formatLocale, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+            }).format(new Date(activeStoredNote.updatedAtUtc))
+          : null
+      }
+    : null;
+  const handleToggleActivePin = useCallback(async () => {
+    if (!personalProjectTarget || !activePinLocation) return;
+    const existing = (projectWorkspaceDocument?.bookmarks ?? []).find(
+      (bookmark) => bookmark.kind === 'pin' &&
+        scopedWorkspaceLocationsEqual(
+          withoutScopedLocationInspector(bookmark.location),
+          activePinLocation
+        )
+    );
+    setIsPersonalWorkspaceMutationBusy(true);
+    try {
+      const snapshot = existing
+        ? await personalWorkspaceRegistry.removeBookmark(
+            personalProjectTarget,
+            existing.bookmarkId
+          )
+        : await personalWorkspaceRegistry.saveBookmark(personalProjectTarget, {
+            bookmarkId: createWorkspaceEntryId(),
+            createdAtUtc: new Date().toISOString(),
+            kind: 'pin',
+            label: null,
+            location: activePinLocation,
+            updatedAtUtc: new Date().toISOString()
+          });
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+        setPersonalWorkspaceError(null);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    } finally {
+      setIsPersonalWorkspaceMutationBusy(false);
+    }
+  }, [
+    activePinLocation,
+    openProject?.projectId,
+    personalProjectTarget,
+    personalWorkspaceRegistry,
+    projectWorkspaceDocument?.bookmarks
+  ]);
+  const handleCreateBookmark = useCallback(async (label: string) => {
+    if (!personalProjectTarget || !activeScopedLocation || !activeRecordLocation) return;
+    setIsPersonalWorkspaceMutationBusy(true);
+    try {
+      const timestamp = new Date().toISOString();
+      const existing = (projectWorkspaceDocument?.bookmarks ?? []).find(
+        (bookmark) => bookmark.kind === 'bookmark' &&
+          bookmark.label === label &&
+          scopedWorkspaceLocationsEqual(
+            withoutScopedLocationInspector(bookmark.location),
+            activeRecordLocation
+          )
+      );
+      const snapshot = await personalWorkspaceRegistry.saveBookmark(
+        personalProjectTarget,
+        {
+          bookmarkId: existing?.bookmarkId ?? createWorkspaceEntryId(),
+          createdAtUtc: existing?.createdAtUtc ?? timestamp,
+          kind: 'bookmark',
+          label,
+          location: activeScopedLocation,
+          updatedAtUtc: timestamp
+        }
+      );
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+        setPersonalWorkspaceError(null);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    } finally {
+      setIsPersonalWorkspaceMutationBusy(false);
+    }
+  }, [
+    activeRecordLocation,
+    activeScopedLocation,
+    openProject?.projectId,
+    personalProjectTarget,
+    personalWorkspaceRegistry,
+    projectWorkspaceDocument?.bookmarks
+  ]);
+  const activeWorkspaceSearchText = useMemo(() => {
+    switch (activeSection) {
+      case 'items': return itemSearchText;
+      case 'pokemon': return pokemonSearchText;
+      case 'moves': return movesSearchText;
+      case 'text': return textSearchText;
+      case 'trainers': return trainerSearchText;
+      case 'shops': return shopSearchText;
+      case 'encounters': return encounterSearchText;
+      case 'teraRaids': return teraRaidSearchText;
+      case 'raidBattles': return raidBattleSearchText;
+      case 'raidRewards': return raidRewardSearchText;
+      case 'raidBonusRewards': return raidBonusRewardSearchText;
+      case 'placement': return placementSearchText;
+      case 'behavior': return behaviorSearchText;
+      case 'flagworkSave': return flagworkSaveSearchText;
+      case 'exefsPatches': return exeFsPatchSearchText;
+      case 'royalCandy': return royalCandySearchText;
+      default: return null;
+    }
+  }, [
+    activeSection,
+    behaviorSearchText,
+    encounterSearchText,
+    exeFsPatchSearchText,
+    flagworkSaveSearchText,
+    itemSearchText,
+    movesSearchText,
+    placementSearchText,
+    pokemonSearchText,
+    raidBattleSearchText,
+    raidBonusRewardSearchText,
+    raidRewardSearchText,
+    royalCandySearchText,
+    shopSearchText,
+    teraRaidSearchText,
+    textSearchText,
+    trainerSearchText
+  ]);
+  const applyWorkspaceSearchText = useCallback(
+    (section: WorkbenchSection, searchText: string) => {
+      switch (section) {
+        case 'items': setItemSearchText(searchText); break;
+        case 'pokemon': setPokemonSearchText(searchText); break;
+        case 'moves': setMovesSearchText(searchText); break;
+        case 'text': setTextSearchText(searchText); break;
+        case 'trainers': setTrainerSearchText(searchText); break;
+        case 'shops': setShopSearchText(searchText); break;
+        case 'encounters': setEncounterSearchText(searchText); break;
+        case 'teraRaids': setTeraRaidSearchText(searchText); break;
+        case 'raidBattles': setRaidBattleSearchText(searchText); break;
+        case 'raidRewards': setRaidRewardSearchText(searchText); break;
+        case 'raidBonusRewards': setRaidBonusRewardSearchText(searchText); break;
+        case 'placement': setPlacementSearchText(searchText); break;
+        case 'behavior': setBehaviorSearchText(searchText); break;
+        case 'flagworkSave': setFlagworkSaveSearchText(searchText); break;
+        case 'exefsPatches': setExeFsPatchSearchText(searchText); break;
+        case 'royalCandy': setRoyalCandySearchText(searchText); break;
+        default: break;
+      }
+    },
+    [
+      setBehaviorSearchText,
+      setEncounterSearchText,
+      setExeFsPatchSearchText,
+      setFlagworkSaveSearchText,
+      setItemSearchText,
+      setMovesSearchText,
+      setPlacementSearchText,
+      setPokemonSearchText,
+      setRaidBattleSearchText,
+      setRaidBonusRewardSearchText,
+      setRaidRewardSearchText,
+      setRoyalCandySearchText,
+      setShopSearchText,
+      setTeraRaidSearchText,
+      setTextSearchText,
+      setTrainerSearchText
+    ]
+  );
+  const capturedCurrentWorkspaceView = activeWorkspaceSearchText !== null
+    ? captureWorkspaceView(activeSection, { searchText: activeWorkspaceSearchText })
+    : null;
+  const canSaveCurrentWorkspaceView = Boolean(
+    personalProjectTarget && selectedGame && capturedCurrentWorkspaceView
+  );
+  const handleSaveCurrentWorkspaceView = useCallback(async () => {
+    if (
+      !personalProjectTarget ||
+      !capturedCurrentWorkspaceView ||
+      !selectedGame
+    ) return;
+    const scopedLocation = toScopedWorkspaceLocation(
+      createSectionLocation(activeSection, {
+        game: selectedGame,
+        projectId: personalProjectTarget.projectId
+      })
+    );
+    const canonicalPayload = canonicalJsonStringify(capturedCurrentWorkspaceView.payload);
+    const existingView = projectWorkspaceDocument?.savedViews.find(
+      (candidate) =>
+        candidate.adapterId === capturedCurrentWorkspaceView.adapterId &&
+        candidate.adapterSchemaVersion ===
+          capturedCurrentWorkspaceView.adapterSchemaVersion &&
+        workspaceScopedLocationKey(candidate.location) ===
+          workspaceScopedLocationKey(scopedLocation) &&
+        canonicalJsonStringify(candidate.payload) === canonicalPayload
+    );
+    try {
+      const viewId = existingView?.viewId ?? await createDeterministicSavedViewId(
+        capturedCurrentWorkspaceView.adapterId,
+        capturedCurrentWorkspaceView.adapterSchemaVersion,
+        scopedLocation,
+        canonicalPayload
+      );
+      const snapshot = await personalWorkspaceRegistry.saveView(
+        personalProjectTarget,
+        {
+          adapterId: capturedCurrentWorkspaceView.adapterId,
+          adapterSchemaVersion: capturedCurrentWorkspaceView.adapterSchemaVersion,
+          location: scopedLocation,
+          name: t(getWorkbenchSectionLabelKey(activeSection)),
+          payload: capturedCurrentWorkspaceView.payload,
+          updatedAtUtc: new Date().toISOString(),
+          viewId
+        }
+      );
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    }
+  }, [
+    activeSection,
+    capturedCurrentWorkspaceView,
+    openProject?.projectId,
+    personalProjectTarget,
+    personalWorkspaceRegistry,
+    projectWorkspaceDocument?.savedViews,
+    selectedGame,
+    t
+  ]);
+  const handleOpenSavedView = useCallback((viewId: string) => {
+    const view = projectWorkspaceDocument?.savedViews.find(
+      (candidate) => candidate.viewId === viewId
+    );
+    if (!view) return;
+    const search = applyWorkspaceView(view.location.section, {
+      adapterId: view.adapterId,
+      adapterSchemaVersion: view.adapterSchemaVersion,
+      payload: view.payload
+    });
+    const target = fromScopedWorkspaceLocation(view.location, activeProjectId);
+    if (!search || !target) return;
+    handleNavigateLocation(target, () => {
+      applyWorkspaceSearchText(target.section, search.searchText);
+    });
+  }, [
+    activeProjectId,
+    applyWorkspaceSearchText,
+    handleNavigateLocation,
+    projectWorkspaceDocument?.savedViews
+  ]);
+  const handleDeleteSavedView = useCallback(async (viewId: string) => {
+    if (!personalProjectTarget) return;
+    try {
+      const snapshot = await personalWorkspaceRegistry.removeView(
+        personalProjectTarget,
+        viewId
+      );
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    }
+  }, [personalProjectTarget, personalWorkspaceRegistry]);
+  const handleCreateOutputProfile = useCallback(async (name: string) => {
+    if (!personalProjectTarget || !draftPaths.outputRootPath) return;
+    try {
+      const snapshot = await personalWorkspaceRegistry.saveOutputProfile(
+        personalProjectTarget,
+        {
+          name,
+          outputMode: null,
+          outputRootPath: draftPaths.outputRootPath,
+          profileId: createWorkspaceEntryId(),
+          updatedAtUtc: new Date().toISOString()
+        }
+      );
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    }
+  }, [
+    draftPaths.outputRootPath,
+    openProject?.projectId,
+    personalProjectTarget,
+    personalWorkspaceRegistry
+  ]);
+  const handleDeleteOutputProfile = useCallback(async (profileId: string) => {
+    if (!personalProjectTarget) return;
+    try {
+      const snapshot = await personalWorkspaceRegistry.removeOutputProfile(
+        personalProjectTarget,
+        profileId
+      );
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    }
+  }, [openProject?.projectId, personalProjectTarget, personalWorkspaceRegistry]);
+  const inspectorAvailable = activeScopedLocation !== null;
+  const isInspectorOpen = inspectorAvailable && activeLocation.inspectorTab === 'notes';
+  const handleToggleInspector = useCallback(() => {
+    if (!inspectorAvailable) return;
+    const destination = createWorkbenchLocation({
+      ...activeLocation,
+      inspectorTab: isInspectorOpen ? undefined : 'notes'
+    });
+    handleNavigateLocation(destination, undefined, 'inspector', {
+      rememberRecent: false
+    });
+  }, [activeLocation, handleNavigateLocation, inspectorAvailable, isInspectorOpen]);
+  const handleRemoveBookmark = useCallback(async (bookmarkId: string) => {
+    if (!personalProjectTarget) return;
+    try {
+      const snapshot = await personalWorkspaceRegistry.removeBookmark(
+        personalProjectTarget,
+        bookmarkId
+      );
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setProjectWorkspaceSnapshot(snapshot);
+      }
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    }
+  }, [openProject?.projectId, personalProjectTarget, personalWorkspaceRegistry]);
+  const persistedRecentTargetRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      isProjectWorkspaceLoading ||
+      !personalProjectTarget ||
+      !activeScopedLocation
+    ) {
+      return;
+    }
+    const recentLocation = withoutScopedLocationInspector(activeScopedLocation);
+    const key = `${personalProjectTarget.projectId}:${workspaceScopedLocationKey(recentLocation)}`;
+    if (persistedRecentTargetRef.current === key) return;
+    persistedRecentTargetRef.current = key;
+    const requestedProjectId = personalProjectTarget.projectId;
+    void personalWorkspaceRegistry.recordRecentTarget(personalProjectTarget, {
+      location: recentLocation,
+      visitedAtUtc: new Date().toISOString()
+    }).then(
+      (snapshot) => {
+        if (activeProjectIdRef.current === requestedProjectId) {
+          setProjectWorkspaceSnapshot(snapshot);
+        }
+      },
+      (error: unknown) => {
+        persistedRecentTargetRef.current = null;
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    );
+  }, [
+    activeScopedLocation,
+    isProjectWorkspaceLoading,
+    openProject?.projectId,
+    personalProjectTarget,
+    personalWorkspaceRegistry
+  ]);
+  const workspaceRecordTabs = useMemo(
+    () =>
+      workspaceShellState.tabs.map((tab) => ({
+        hasProtectedDraft: editorDraftDirtySections.has(tab.location.section),
+        key: tab.key,
+        label:
+          tab.location.entity?.recordId ??
+          t(getWorkbenchSectionLabelKey(tab.location.section)),
+        labelIsRawData: Boolean(tab.location.entity),
+        location: tab.location
+      })),
+    [editorDraftDirtySections, t, workspaceShellState.tabs]
+  );
+  const workspaceCommands = useMemo(
+    () =>
+      selectedGame
+        ? createWorkspaceCommandRegistry({
+            canGoBack: workspaceShellState.historyIndex > 0,
+            canGoForward:
+              workspaceShellState.historyIndex < workspaceShellState.history.length - 1,
+            capabilities: capabilityDiscovery,
+            createSectionLocation: (section) =>
+              createSectionLocation(section, {
+                game: selectedGame,
+                projectId: activeProjectId
+              }),
+            inspectorAvailable: activeScopedLocation !== null,
+            pins: workspacePins,
+            recents: workspaceRecentTargets,
+            shortcuts: workspaceShortcuts,
+            views: workspaceSavedViews
+          })
+        : [],
+    [
+      activeProjectId,
+      activeScopedLocation,
+      capabilityDiscovery,
+      selectedGame,
+      workspacePins,
+      workspaceRecentTargets,
+      workspaceSavedViews,
+      workspaceShortcuts,
+      workspaceShellState.history.length,
+      workspaceShellState.historyIndex
+    ]
+  );
+  const handleExecuteWorkspaceCommand = useCallback(
+    (command: WorkspaceCommand) => {
+      const action = command.action;
+      if (action.kind === 'back') {
+        handleNavigateBack();
+        return;
+      }
+      if (action.kind === 'forward') {
+        handleNavigateForward();
+        return;
+      }
+      if (action.kind === 'openShortcuts') {
+        setIsShortcutOverlayOpen(true);
+        return;
+      }
+      if (action.kind === 'openInspector') {
+        handleToggleInspector();
+        return;
+      }
+      if (action.kind === 'openView') {
+        handleOpenSavedView(action.viewId);
+        return;
+      }
+      if (action.kind === 'navigate') {
+        handleNavigateWorkspaceTarget(action.location);
+      }
+    },
+    [
+      handleNavigateWorkspaceTarget,
+      handleNavigateBack,
+      handleNavigateForward,
+      handleOpenSavedView,
+      handleToggleInspector,
+    ]
+  );
+  const handleActivateWorkspaceTab = useCallback(
+    async (location: WorkbenchLocation) => {
+      const expectedRevision = workspaceShellStateRef.current.revision;
+      const onCommit = await prepareStableLocationCommit(location);
+      if (
+        onCommit &&
+        workspaceShellStateRef.current.revision === expectedRevision &&
+        workspaceShellStateRef.current.tabs.some(
+          (tab) => tab.key === workspaceTabKey(location)
+        )
+      ) {
+        handleNavigateLocation(location, onCommit, 'push', { rememberRecent: false });
+      }
+    },
+    [handleNavigateLocation, prepareStableLocationCommit]
+  );
+  const handleCloseWorkspaceTab = useCallback(async (tabKey: string) => {
+    const currentState = workspaceShellStateRef.current;
+    const protectedTabKeys = new Set(
+      currentState.tabs
+        .filter((tab) => editorDraftDirtySectionsRef.current.has(tab.location.section))
+        .map((tab) => tab.key)
+    );
+    if (protectedTabKeys.has(tabKey)) return;
+    const closingIndex = currentState.tabs.findIndex((tab) => tab.key === tabKey);
+    if (closingIndex < 0) return;
+    if (workspaceTabKey(activeLocation) !== tabKey) {
+      const nextState = closeWorkspaceTab(currentState, tabKey, protectedTabKeys);
+      workspaceShellStateRef.current = nextState;
+      setWorkspaceShellState(nextState);
+      return;
+    }
+
+    const destinationTab =
+      currentState.tabs[closingIndex + 1] ?? currentState.tabs[closingIndex - 1];
+    const destination = destinationTab?.location ?? createSectionLocation('workbench', {
+      game: selectedGame,
+      projectId: activeProjectId
+    });
+    const expectedRevision = currentState.revision;
+    const applyDestination = destinationTab
+      ? await prepareStableLocationCommit(destination)
+      : () => undefined;
+    if (
+      !applyDestination ||
+      workspaceShellStateRef.current.revision !== expectedRevision ||
+      workspaceTabKey(activeLocation) !== tabKey
+    ) {
+      return;
+    }
+    await handleNavigateLocation(
+      destination,
+      () => {
+        applyDestination();
+        const latestState = workspaceShellStateRef.current;
+        const latestProtectedTabKeys = new Set(
+          latestState.tabs
+            .filter((tab) => editorDraftDirtySectionsRef.current.has(tab.location.section))
+            .map((tab) => tab.key)
+        );
+        const nextState = closeWorkspaceTab(
+          latestState,
+          tabKey,
+          latestProtectedTabKeys
+        );
+        workspaceShellStateRef.current = nextState;
+        setWorkspaceShellState(nextState);
+      },
+      'push',
+      { rememberRecent: false }
+    );
+  }, [
+    activeLocation,
+    activeProjectId,
+    handleNavigateLocation,
+    prepareStableLocationCommit,
+    selectedGame
+  ]);
+
   const handleCloseActiveEditor = useCallback(() => {
     if (hasCriticalWriteOperation || isEditSessionOperationBusy) {
       return;
     }
 
-    requestEditorExit('workflows', 'editor');
+    requestEditorExit('workbench', 'editor');
   }, [hasCriticalWriteOperation, isEditSessionOperationBusy, requestEditorExit]);
 
   const handleConfirmExitDiscard = useCallback(async () => {
@@ -3298,6 +5205,7 @@ export function App({
     }
 
     if (prompt.kind === 'cancel') {
+      pendingWorkspaceNavigationRef.current = null;
       pendingNavigationCommitActionRef.current = null;
       cancelDiscardActionRef.current?.();
       cancelDiscardActionRef.current = null;
@@ -3384,12 +5292,14 @@ export function App({
       }
 
       if (prompt.kind === 'cancel') {
+        pendingWorkspaceNavigationRef.current = null;
         pendingNavigationCommitActionRef.current = null;
         cancelDiscardActionRef.current = null;
         return null;
       }
 
       if (prompt.allowGoToChanges === false) {
+        pendingWorkspaceNavigationRef.current = null;
         pendingNavigationCommitActionRef.current = null;
         cancelDiscardActionRef.current = null;
         return null;
@@ -3400,12 +5310,14 @@ export function App({
   }, []);
 
   const handleStayAfterExitDecline = useCallback(() => {
+    pendingWorkspaceNavigationRef.current = null;
     pendingNavigationCommitActionRef.current = null;
     cancelDiscardActionRef.current = null;
     setExitPrompt(null);
   }, []);
 
   const handleGoToChangesAfterExitDecline = useCallback(() => {
+    pendingWorkspaceNavigationRef.current = null;
     pendingNavigationCommitActionRef.current = null;
     cancelDiscardActionRef.current = null;
     commitWorkbenchLocation(
@@ -3440,7 +5352,10 @@ export function App({
 
     void desktopServices
       .setCloseGuardEnabled(
-        editSession !== null || editorDraftDirtySections.size > 0 || hasCriticalWriteOperation
+        activeNoteIsDirty ||
+          editSession !== null ||
+          editorDraftDirtySections.size > 0 ||
+          hasCriticalWriteOperation
       )
       .catch((error) => {
       setBridgeDiagnostics(
@@ -3452,6 +5367,7 @@ export function App({
       );
       });
   }, [
+    activeNoteIsDirty,
     desktopServices.isAvailable,
     desktopServices.setCloseGuardEnabled,
     editSession,
@@ -3596,7 +5512,7 @@ export function App({
       return;
     }
 
-    handleNavigateSection('workflows');
+    handleNavigateSection('workbench');
   }, [
     activeSection,
     activeSectionCanStayMounted,
@@ -3887,6 +5803,29 @@ export function App({
     }
   }, [bridge, desktopServices, evictUnprotectedWorkflowPayloads, selectedGame]);
 
+  const rememberPrivateProject = useCallback(
+    async (
+      paths: ReturnType<typeof toProjectPaths>,
+      projectId: string
+    ) => {
+      if (!paths.selectedGame) return;
+      try {
+        const snapshot = await personalWorkspaceRegistry.recordRecentProject({
+          game: paths.selectedGame,
+          lastOpenedAtUtc: new Date().toISOString(),
+          name: null,
+          paths,
+          projectId
+        });
+        setApplicationWorkspaceSnapshot(snapshot);
+        setPersonalWorkspaceError(null);
+      } catch (error) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    },
+    [personalWorkspaceRegistry]
+  );
+
   const activateValidatedProject = async (
     paths: ReturnType<typeof toProjectPaths>,
     validatedProject: Awaited<ReturnType<ProjectBridge['validateProject']>>,
@@ -3904,6 +5843,7 @@ export function App({
     }
 
     setOpenProject(validatedProject);
+    void rememberPrivateProject(paths, validatedProject.projectId);
     await refreshWorkflows(
       paths,
       validatedProject.health.canOpenReadOnlyWorkflows,
@@ -3954,9 +5894,7 @@ export function App({
       health: response.health,
       projectId: response.projectId
     });
-    if (response.health.canOpenEditableWorkflows) {
-      rememberValidatedProjectPaths(nextDraftPaths);
-    }
+    void rememberPrivateProject(activatedPaths, response.projectId);
     setBridgeDiagnostics(response.diagnostics);
 
     const activationGeneration = projectScopeGenerationRef.current;
@@ -3994,9 +5932,6 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      if (response.health.canOpenEditableWorkflows) {
-        rememberValidatedProjectPaths(draftPaths);
-      }
       const activatedProject = await activateValidatedProject(
         paths,
         response,
@@ -4021,6 +5956,72 @@ export function App({
     }
   };
 
+  const handleOpenRecentProject = async (projectId: string) => {
+    if (
+      hasCriticalWriteOperation ||
+      isEditSessionOperationBusy ||
+      pendingEditCount > 0 ||
+      editorDraftDirtySections.size > 0
+    ) {
+      return;
+    }
+    const profile = applicationWorkspaceSnapshot.document?.recentProjects.find(
+      (candidate) => candidate.projectId === projectId
+    );
+    if (!profile) return;
+
+    const runId = ++projectValidationRunRef.current;
+    projectScopeGenerationRef.current += 1;
+    setProjectStatus('validating');
+    setBridgeDiagnostics([]);
+    try {
+      const profilePaths = toProjectPaths(toProjectPathDraft(profile.paths), language);
+      const response = await unscopedBridge.validateProject({ paths: profilePaths });
+      if (projectValidationRunRef.current !== runId) return;
+      const nextDraft = toProjectPathDraft(profilePaths);
+      draftPathsRef.current = nextDraft;
+      setProjectPathDraft(nextDraft);
+      setExpandedWorkflowGroups(readExpandedWorkflowGroups(profile.game));
+      const activated = await activateValidatedProject(
+        profilePaths,
+        response,
+        () => projectValidationRunRef.current === runId
+      );
+      if (activated && projectValidationRunRef.current === runId) {
+        setUnavailableRecentProjectIds((current) => {
+          if (!current.has(projectId)) return current;
+          const next = new Set(current);
+          next.delete(projectId);
+          return next;
+        });
+        void startSvCacheWarmup(profilePaths, activated.health);
+      } else if (projectValidationRunRef.current === runId) {
+        setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
+      }
+    } catch (error) {
+      if (projectValidationRunRef.current !== runId) return;
+      setProjectStatus('idle');
+      setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    }
+  };
+
+  const handleRemoveRecentProject = async (projectId: string) => {
+    try {
+      const snapshot = await personalWorkspaceRegistry.removeRecentProject(projectId);
+      setApplicationWorkspaceSnapshot(snapshot);
+      setUnavailableRecentProjectIds((current) => {
+        if (!current.has(projectId)) return current;
+        const next = new Set(current);
+        next.delete(projectId);
+        return next;
+      });
+      setPersonalWorkspaceError(null);
+    } catch (error) {
+      setPersonalWorkspaceError(getErrorMessage(error));
+    }
+  };
+
   useEffect(() => {
     if (!desktopServices.isAvailable) {
       return undefined;
@@ -4030,16 +6031,20 @@ export function App({
     let unlisten: (() => void) | null = null;
 
     void listen(windowCloseRequestedEvent, () => {
-      if (criticalWriteOperationRef.current) {
-        return;
-      }
+      void (async () => {
+        if (criticalWriteOperationRef.current) {
+          return;
+        }
+        if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
+          return;
+        }
 
-      const hasLocalDrafts = editorDraftDirtySectionsRef.current.size > 0;
-      if (editSessionRef.current === null && !hasLocalDrafts) {
-        void desktopServices
-          .setCloseGuardEnabled(false)
-          .then(() => desktopServices.exitApp())
-          .catch((error) => {
+        const hasLocalDrafts = editorDraftDirtySectionsRef.current.size > 0;
+        if (editSessionRef.current === null && !hasLocalDrafts) {
+          try {
+            await desktopServices.setCloseGuardEnabled(false);
+            await desktopServices.exitApp();
+          } catch (error) {
             setBridgeDiagnostics(
               toDesktopDiagnostics(
                 error,
@@ -4047,19 +6052,20 @@ export function App({
                 desktopErrorCodes.appExitFailed
               )
             );
-          });
-        return;
-      }
+          }
+          return;
+        }
 
-      if (exitPromptRef.current?.kind !== 'window') {
-        setExitPrompt({
-          allowGoToChanges: !hasLocalDrafts,
-          destination: null,
-          kind: 'window',
-          mode: 'confirm',
-          stageOnlyDexLayout: editorDraftDirtySectionsRef.current.has('dexLayout')
-        });
-      }
+        if (exitPromptRef.current?.kind !== 'window') {
+          setExitPrompt({
+            allowGoToChanges: !hasLocalDrafts,
+            destination: null,
+            kind: 'window',
+            mode: 'confirm',
+            stageOnlyDexLayout: editorDraftDirtySectionsRef.current.has('dexLayout')
+          });
+        }
+      })();
     })
       .then((nextUnlisten) => {
         if (isDisposed) {
@@ -4231,12 +6237,6 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      if (nextResponse.health.canOpenEditableWorkflows) {
-        rememberValidatedProjectPaths({
-          ...draftPaths,
-          outputRootPath
-        });
-      }
       const activatedProject = await activateValidatedProject(
         nextPaths,
         nextResponse,
@@ -4303,7 +6303,7 @@ export function App({
     setIsSupportSearchPermissionOpen(false);
     setIsSupportSearchRunning(true);
     setBridgeDiagnostics([]);
-    setWorkProgress(createSupportSearchWorkProgress(null));
+    setWorkProgress(createSupportSearchWorkProgress(null, formatLocale));
 
     let unlisten: (() => void) | null = null;
     let diagnosticFallback: UiDiagnosticFallback = {
@@ -4317,7 +6317,7 @@ export function App({
         supportSearchProgressEvent,
         (event) => {
           if (supportSearchRunRef.current === runId) {
-            setWorkProgress(createSupportSearchWorkProgress(event.payload));
+            setWorkProgress(createSupportSearchWorkProgress(event.payload, formatLocale));
           }
         }
       );
@@ -4363,9 +6363,6 @@ export function App({
         projectValidationRunRef.current !== projectRunId
       ) {
         return;
-      }
-      if (response.health.canOpenEditableWorkflows) {
-        rememberValidatedProjectPaths(nextDraftPaths);
       }
       const activatedProject = await activateValidatedProject(
         paths,
@@ -4653,7 +6650,8 @@ export function App({
                 kind: 'downloading',
                 message: contentLength
                   ? `Downloading KM Editor v${availableUpdate.version} (${formatByteCount(
-                      contentLength
+                      contentLength,
+                      formatLocale
                     )}).`
                   : `Downloading KM Editor v${availableUpdate.version}.`
               });
@@ -4668,10 +6666,14 @@ export function App({
                 downloadedBytes,
                 kind: 'downloading',
                 message: contentLength
-                  ? `Downloading update (${formatByteCount(downloadedBytes)} of ${formatByteCount(
-                      contentLength
+                  ? `Downloading update (${formatByteCount(
+                      downloadedBytes,
+                      formatLocale
+                    )} of ${formatByteCount(
+                      contentLength,
+                      formatLocale
                     )}).`
-                  : `Downloading update (${formatByteCount(downloadedBytes)}).`
+                  : `Downloading update (${formatByteCount(downloadedBytes, formatLocale)}).`
               });
               break;
             case 'Finished':
@@ -6386,6 +8388,128 @@ export function App({
       }),
       (response) => setStartingItemsWorkflow(response.workflow)
     );
+  };
+
+  coldStableLocationCommitResolverRef.current = async (location) => {
+    const selection = parseStableEntitySelection(location);
+    if (!selection) {
+      return null;
+    }
+    const { value } = selection;
+    const currentState = useWorkbenchStore.getState();
+
+    if (
+      selection.section === 'placement' &&
+      typeof value === 'string' &&
+      isSwordShieldGame(location.game)
+    ) {
+      setBridgeDiagnostics([]);
+      const paths = createProjectPaths(draftPathsRef.current);
+      const session = getEditSessionForSection('placement');
+      const catalogResponse = await bridge.openSwShPlacementCatalog({ paths });
+      const pageResponse = await bridge.querySwShPlacementCatalog({
+        categoryId: null,
+        limit: 250,
+        offset: 0,
+        paths,
+        revision: catalogResponse.catalog.revision,
+        searchText: value,
+        session
+      });
+      const detailResponse = await bridge.loadSwShPlacementObject({
+        objectId: value,
+        paths,
+        revision: catalogResponse.catalog.revision,
+        session
+      });
+      if (
+        pageResponse.revision !== catalogResponse.catalog.revision ||
+        detailResponse.revision !== catalogResponse.catalog.revision ||
+        detailResponse.object.objectId !== value
+      ) {
+        return null;
+      }
+      const pageObjects = [
+        detailResponse.object,
+        ...pageResponse.objects.filter((placedObject) => placedObject.objectId !== value)
+      ].slice(0, pageResponse.limit);
+      const preparedPage = { ...pageResponse, objects: pageObjects };
+      const preparedWorkflow = {
+        ...createSwShPlacementPageWorkflow(catalogResponse.catalog, pageObjects),
+        diagnostics: deduplicateDiagnostics([
+          ...catalogResponse.catalog.diagnostics,
+          ...detailResponse.diagnostics
+        ])
+      };
+      return () => {
+        commitSwShPlacementCatalog(catalogResponse.catalog, true);
+        setPlacementSearchText(value);
+        setSwShPlacementCategoryId(null);
+        setSwShPlacementOffset(preparedPage.offset);
+        setSwShPlacementPage(preparedPage);
+        setIsSwShPlacementPageLoading(false);
+        setIsSwShPlacementPageStale(false);
+        setSwShPlacementRequestDiagnostics([]);
+        setPlacementWorkflowPage(preparedWorkflow);
+        setSelectedPlacementObjectId(value);
+      };
+    }
+
+    switch (selection.section) {
+      case 'items':
+        if (!currentState.itemsWorkflow) await handleOpenItemsWorkflow();
+        break;
+      case 'pokemon':
+        if (!currentState.pokemonWorkflow) await handleOpenPokemonWorkflow();
+        break;
+      case 'moves':
+        if (!currentState.movesWorkflow) await handleOpenMovesWorkflow();
+        break;
+      case 'trainers':
+        if (!currentState.trainersWorkflow) await handleOpenTrainersWorkflow();
+        break;
+      case 'shops':
+        if (!currentState.shopsWorkflow) await handleOpenShopsWorkflow();
+        break;
+      case 'encounters':
+        if (!currentState.encountersWorkflow) await handleOpenEncountersWorkflow();
+        break;
+      case 'teraRaids':
+        if (!currentState.teraRaidsWorkflow) await handleOpenTeraRaidsWorkflow();
+        break;
+      case 'raidBattles':
+        if (!currentState.raidBattlesWorkflow) await handleOpenRaidBattlesWorkflow();
+        break;
+      case 'raidRewards':
+        if (!currentState.raidRewardsWorkflow) await handleOpenRaidRewardsWorkflow();
+        break;
+      case 'raidBonusRewards':
+        if (!currentState.raidBonusRewardsWorkflow) {
+          await handleOpenRaidBonusRewardsWorkflow();
+        }
+        break;
+      case 'placement':
+        if (!currentState.placementWorkflow) await handleOpenPlacementWorkflow();
+        break;
+      case 'behavior':
+        if (!currentState.behaviorWorkflow) await handleOpenBehaviorWorkflow();
+        break;
+      case 'flagworkSave':
+        if (!currentState.flagworkSaveWorkflow) await handleOpenFlagworkSaveWorkflow();
+        break;
+      case 'exefsPatches':
+        if (!currentState.exeFsPatchWorkflow) await handleOpenExeFsPatchWorkflow();
+        break;
+      case 'royalCandy':
+        if (!currentState.royalCandyWorkflow) await handleOpenRoyalCandyWorkflow();
+        break;
+      case 'startingItems':
+        if (!currentState.startingItemsWorkflow) await handleOpenStartingItemsWorkflow();
+        break;
+      default:
+        return null;
+    }
+    return resolveStableLocationCommit(location);
   };
 
   const handleStageStartingItems = async (grants: StartingItemGrantSelection[]) => {
@@ -10691,7 +12815,7 @@ export function App({
       setWorkProgress(
         createIndeterminateWorkProgress(
           outputMode ? 'Writing Trinity Output' : 'Applying Changes',
-          `Applying ${planToApply.writes.length.toLocaleString()} reviewed output ${
+          `Applying ${planToApply.writes.length.toLocaleString(formatLocale)} reviewed output ${
             planToApply.writes.length === 1 ? 'file' : 'files'
           }`,
           applyChangesProgressSteps,
@@ -11543,13 +13667,24 @@ export function App({
       resetLoadedProjectState();
       setBridgeDiagnostics([]);
       setExpandedWorkflowGroups(readExpandedWorkflowGroups(nextGame));
-      setSelectedGame(nextGame);
+      const rememberedProfile = applicationWorkspaceSnapshot.document?.recentProjects.find(
+        (profile) => profile.game === nextGame
+      );
+      if (rememberedProfile) {
+        const rememberedDraft = toProjectPathDraft(rememberedProfile.paths);
+        draftPathsRef.current = rememberedDraft;
+        setProjectPathDraft(rememberedDraft);
+      } else {
+        setSelectedGame(nextGame);
+      }
       setIsGamePickerOpen(false);
     },
     [
       cancelSupportFileSearch,
+      applicationWorkspaceSnapshot.document?.recentProjects,
       resetLoadedProjectState,
       selectedGame,
+      setProjectPathDraft,
       setSelectedGame
     ]
   );
@@ -11565,7 +13700,11 @@ export function App({
   if (!selectedGame || isGamePickerOpen) {
     return (
       <GameSelectionPage
+        configuredGames={applicationWorkspaceSnapshot.document?.recentProjects.map(
+          (profile) => profile.game
+        ) ?? []}
         currentGame={selectedGame}
+        isLoading={isApplicationWorkspaceLoading || isLegacyWorkspaceMigrationRunning}
         onCancel={selectedGame ? () => setIsGamePickerOpen(false) : undefined}
         onSelectGame={handleSelectGame}
       />
@@ -11576,6 +13715,10 @@ export function App({
   const canShowEditableWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
 
   return (
+    <DiagnosticNavigationProvider
+      activeLocation={activeLocation}
+      onNavigate={(location) => void handleNavigateWorkspaceTarget(location)}
+    >
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
     <EditorSessionActionsProvider>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
@@ -11622,10 +13765,35 @@ export function App({
           activeSectionIsEditor={activeSectionIsEditor}
           activeSectionLabel={activeSectionLabel}
           activeWikiUrl={activeWikiUrl}
+          canGoBack={workspaceShellState.historyIndex > 0}
+          canGoForward={
+            workspaceShellState.historyIndex < workspaceShellState.history.length - 1
+          }
+          canSaveView={canSaveCurrentWorkspaceView}
           hasCriticalWriteOperation={hasCriticalWriteOperation}
+          inspectorAvailable={inspectorAvailable}
           isEditSessionOperationBusy={isEditSessionOperationBusy}
+          activeTargetIsPinned={activeTargetIsPinned}
+          onBack={handleNavigateBack}
           onCloseEditor={handleCloseActiveEditor}
+          onForward={handleNavigateForward}
+          onOpenCommandPalette={openCommandPalette}
+          onOpenMore={
+            activeSection === 'workbench' || activeSection === 'settings'
+              ? () => setIsCapabilityDiscoveryOpen(true)
+              : undefined
+          }
           onOpenWiki={handleOpenActiveWiki}
+          onSaveView={() => void handleSaveCurrentWorkspaceView()}
+          onToggleInspector={handleToggleInspector}
+          onTogglePin={() => void handleToggleActivePin()}
+        />
+
+        <RecordTabRail
+          activeTabKey={workspaceTabKey(activeLocation)}
+          onActivate={handleActivateWorkspaceTab}
+          onClose={handleCloseWorkspaceTab}
+          tabs={workspaceRecordTabs}
         />
 
         <div className="workspace-content">
@@ -11667,8 +13835,36 @@ export function App({
               svCacheStatus={svCacheStatus}
             />
           ) : null}
-          {activeSection === 'workflows' ? (
-            <WorkflowsSection
+          {activeSection === 'workbench' ? (
+            <WorkbenchHomeSection
+              bookmarks={workspaceBookmarks}
+              capabilities={capabilityDiscovery}
+              note={activeNoteViewModel}
+              onCreateBookmark={activeScopedLocation
+                ? (label) => void handleCreateBookmark(label)
+                : undefined}
+              onCreateOutputProfile={draftPaths.outputRootPath
+                ? (name) => void handleCreateOutputProfile(name)
+                : undefined}
+              onDeleteBookmark={(bookmarkId) => void handleRemoveBookmark(bookmarkId)}
+              onDeleteOutputProfile={(profileId) => void handleDeleteOutputProfile(profileId)}
+              onDeleteSavedView={(viewId) => void handleDeleteSavedView(viewId)}
+              onNavigateTarget={handleNavigateWorkspaceTarget}
+              onNoteChange={setNoteDraft}
+              onOpenCapability={handleNavigateSection}
+              onOpenRecentProject={(projectId) => void handleOpenRecentProject(projectId)}
+              onOpenSavedView={handleOpenSavedView}
+              onRemovePin={(bookmarkId) => void handleRemoveBookmark(bookmarkId)}
+              onRemoveRecentProject={(projectId) => void handleRemoveRecentProject(projectId)}
+              onSaveNote={() => void saveActiveNote()}
+              onSelectOutputProfile={setPendingOutputProfileId}
+              outputProfiles={workspaceOutputProfiles}
+              pins={workspacePins}
+              recentProjects={workspaceRecentProjects}
+              recents={workspaceRecentTargets}
+              savedViews={workspaceSavedViews}
+              workflowHome={
+                <WorkflowsSection
               health={health}
               isItemsLoading={isItemsLoading}
               isMovesLoading={isMovesLoading}
@@ -11758,7 +13954,9 @@ export function App({
               onOpenTrainersWorkflow={() => void handleNavigateSection('trainers')}
               onOpenChanges={() => void handleNavigateSection('changes')}
               pendingEditCount={pendingEditCount}
-              workflows={gameScopedWorkflows}
+                  workflows={gameScopedWorkflows}
+                />
+              }
             />
           ) : null}
           {activeSection === 'items' ? (
@@ -11767,7 +13965,7 @@ export function App({
             ) : isPokemonLegendsZAProject ? (
               <ZaItemsSection
                 onSearchChange={setItemSearchText}
-                onSelectItem={setSelectedItemId}
+                onSelectItem={handleSelectItemLocation}
                 onStartEditSession={handleStartEditSession}
                 onStageItemVanilla={handleStageItemVanilla}
                 onUpdateItemFields={handleUpdateItemFields}
@@ -11781,7 +13979,7 @@ export function App({
             ) : isScarletVioletProject ? (
               <SvItemsSection
                 onSearchChange={setItemSearchText}
-                onSelectItem={setSelectedItemId}
+                onSelectItem={handleSelectItemLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
@@ -11794,7 +13992,7 @@ export function App({
             ) : (
               <SwShItemsSection
                 onSearchChange={setItemSearchText}
-                onSelectItem={setSelectedItemId}
+                onSelectItem={handleSelectItemLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
@@ -11815,7 +14013,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
-                onSelectPokemon={setSelectedPokemonPersonalId}
+                onSelectPokemon={handleSelectPokemonLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
                 onUpdatePokemonFields={handleUpdatePokemonFields}
@@ -11832,7 +14030,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
-                onSelectPokemon={setSelectedPokemonPersonalId}
+                onSelectPokemon={handleSelectPokemonLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
                 onUpdatePokemonFields={handleUpdatePokemonFields}
@@ -11848,7 +14046,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
-                onSelectPokemon={setSelectedPokemonPersonalId}
+                onSelectPokemon={handleSelectPokemonLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
                 onUpdatePokemonFields={handleUpdatePokemonFields}
@@ -11902,7 +14100,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isMoveUpdating={isMoveUpdating}
                 onSearchChange={setMovesSearchText}
-                onSelectMove={setSelectedMoveId}
+                onSelectMove={handleSelectMoveLocation}
                 onStartEditSession={handleStartEditSession}
                 onStageMoveVanilla={
                   isPokemonLegendsZAProject ? handleStageMoveVanilla : undefined
@@ -11929,7 +14127,7 @@ export function App({
                 onLanguageChange={handleTextLanguageChange}
                 onPageChange={handleTextPageChange}
                 onSearchChange={handleTextSearchChange}
-                onSelectTextEntry={setSelectedTextKey}
+                onSelectTextEntry={handleSelectTextLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTextEntry={handleUpdateTextEntry}
                 searchText={textSearchText}
@@ -11949,7 +14147,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
-                onSelectTrainer={setSelectedTrainerId}
+                onSelectTrainer={handleSelectTrainerLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
@@ -11964,7 +14162,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
-                onSelectTrainer={setSelectedTrainerId}
+                onSelectTrainer={handleSelectTrainerLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
@@ -11979,7 +14177,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
-                onSelectTrainer={setSelectedTrainerId}
+                onSelectTrainer={handleSelectTrainerLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
@@ -12115,7 +14313,7 @@ export function App({
                 isShopUpdating={isShopUpdating}
                 onSearchChange={setShopSearchText}
                 onOpenItem={handleOpenShopItem}
-                onSelectShop={setSelectedShopId}
+                onSelectShop={handleSelectShopLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateShopChanges={handleUpdateShopChanges}
                 searchText={shopSearchText}
@@ -12133,7 +14331,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
-                onSelectTable={setSelectedEncounterTableId}
+                onSelectTable={handleSelectEncounterLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
@@ -12147,7 +14345,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
-                onSelectTable={setSelectedEncounterTableId}
+                onSelectTable={handleSelectEncounterLocation}
                 onStageEncounterVanilla={handleStageEncounterSlotVanilla}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
@@ -12162,7 +14360,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
-                onSelectTable={setSelectedEncounterTableId}
+                onSelectTable={handleSelectEncounterLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
@@ -12181,7 +14379,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isTeraRaidUpdating={isTeraRaidUpdating}
                 onSearchChange={setTeraRaidSearchText}
-                onSelectRaid={setSelectedTeraRaidRecordId}
+                onSelectRaid={handleSelectTeraRaidLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTeraRaidField={handleUpdateTeraRaidField}
                 onUpdateTeraRaidFields={handleUpdateTeraRaidFields}
@@ -12202,7 +14400,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isRaidRewardUpdating={isRaidRewardUpdating}
                 onSearchChange={setRaidRewardSearchText}
-                onSelectTable={setSelectedRaidRewardTableId}
+                onSelectTable={handleSelectRaidRewardLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidRewardFields={handleUpdateRaidRewardFields}
                 pendingDomain="workflow.raidRewards"
@@ -12226,7 +14424,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isRaidRewardUpdating={isRaidBonusRewardUpdating}
                 onSearchChange={setRaidBonusRewardSearchText}
-                onSelectTable={setSelectedRaidBonusRewardTableId}
+                onSelectTable={handleSelectRaidBonusRewardLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidRewardFields={handleUpdateRaidBonusRewardFields}
                 pendingDomain="workflow.raidBonusRewards"
@@ -12248,7 +14446,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isRaidBattleUpdating={isRaidBattleUpdating}
                 onSearchChange={setRaidBattleSearchText}
-                onSelectTable={setSelectedRaidBattleTableId}
+                onSelectTable={handleSelectRaidBattleLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidBattleSlotFields={handleUpdateRaidBattleSlotFields}
                 searchText={raidBattleSearchText}
@@ -12266,7 +14464,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
                 onSearchChange={setPlacementSearchText}
-                onSelectObject={setSelectedPlacementObjectId}
+                onSelectObject={handleSelectPlacementLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 searchText={placementSearchText}
@@ -12286,7 +14484,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
                 onSearchChange={setPlacementSearchText}
-                onSelectObject={setSelectedPlacementObjectId}
+                onSelectObject={handleSelectPlacementLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 searchText={placementSearchText}
@@ -12309,7 +14507,7 @@ export function App({
                   setPlacementSearchText(value);
                   setSwShPlacementOffset(0);
                 }}
-                onSelectObject={setSelectedPlacementObjectId}
+                onSelectObject={handleSelectPlacementLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 remotePaging={
@@ -12357,7 +14555,7 @@ export function App({
                 isBehaviorUpdating={isBehaviorUpdating}
                 isEditStarting={isEditStarting}
                 onSearchChange={setBehaviorSearchText}
-                onSelectEntry={setSelectedBehaviorEntryId}
+                onSelectEntry={handleSelectBehaviorLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateBehaviorEntryFields={handleUpdateBehaviorEntryFields}
                 searchText={behaviorSearchText}
@@ -12372,8 +14570,8 @@ export function App({
             ) : (
               <FlagworkSaveSection
                 onSearchChange={setFlagworkSaveSearchText}
-                onSelectFlag={setSelectedFlagId}
-                onSelectSaveBlock={setSelectedSaveBlockId}
+                onSelectFlag={handleSelectFlagLocation}
+                onSelectSaveBlock={handleSelectSaveBlockLocation}
                 searchText={flagworkSaveSearchText}
                 selectedFlagId={selectedFlagId}
                 selectedSaveBlockId={selectedSaveBlockId}
@@ -12599,8 +14797,8 @@ export function App({
               <ExeFsPatchSection
                 isStaging={isExeFsPatchStaging}
                 onSearchChange={setExeFsPatchSearchText}
-                onSelectCheck={setSelectedExeFsCheckId}
-                onSelectPatch={setSelectedExeFsPatchId}
+                onSelectCheck={handleSelectExeFsCheckLocation}
+                onSelectPatch={handleSelectExeFsPatchLocation}
                 onStagePatch={handleStageExeFsPatch}
                 searchText={exeFsPatchSearchText}
                 selectedCheckId={selectedExeFsCheckId}
@@ -12622,8 +14820,8 @@ export function App({
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('royalCandy')}
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('royalCandy', isDirty)}
                 onSearchChange={setRoyalCandySearchText}
-                onSelectCheck={setSelectedRoyalCandyCheckId}
-                onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
+                onSelectCheck={handleSelectRoyalCandyCheckLocation}
+                onSelectWorkflow={handleSelectRoyalCandyWorkflowLocation}
                 onStageWorkflow={handleStageRoyalCandyWorkflow}
                 panelOutput={getOutputSafeScopedEditorPanelOutput('royalCandy')}
                 searchText={royalCandySearchText}
@@ -12647,7 +14845,7 @@ export function App({
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('startingItems', isDirty)
                 }
-                onSelectSlot={setSelectedStartingItemSlot}
+                onSelectSlot={handleSelectStartingItemLocation}
                 onStageGrants={handleStageStartingItems}
                 panelOutput={getOutputSafeScopedEditorPanelOutput('startingItems')}
                 selectedSlot={selectedStartingItemSlot}
@@ -12731,8 +14929,14 @@ export function App({
               bridge={bridge}
               desktopServices={desktopServices}
               health={health}
+              onRememberDestination={handleRememberGameDumpDestination}
               onWriteStateChange={setIsGameDumpWriting}
               paths={gameDumpPaths}
+              rememberedDestination={
+                applicationWorkspaceSnapshot.document?.gameDumpDestinations.find(
+                  (destination) => destination.game === selectedGame
+                )?.destinationPath ?? ''
+              }
             />
           ) : null}
           {activeSection === 'modMerger' ? (
@@ -12879,6 +15083,16 @@ export function App({
             <SettingsSection
               appVersion={appVersion}
               availableUpdateKind={availableUpdate?.kind ?? null}
+              personalizationSettings={
+                <PersonalizationSettingsPanel
+                  communityLocalePacks={communityLocalePacks}
+                  hasIgnoredPersistedLocalePacks={hasIgnoredPersistedLocalePacks}
+                  isLocalePackBusy={isLocalePackBusy}
+                  onInstallLocalePack={handleInstallLocalePack}
+                  onRemoveLocalePack={handleRemoveLocalePack}
+                  onReplayWhatChanged={() => setIsWhatChangedTourOpen(true)}
+                />
+              }
               editorLayout={editorLayout}
               isSvCacheClearing={isSvCacheClearing}
               isSvCacheRefreshing={isSvCacheRefreshing}
@@ -12900,7 +15114,72 @@ export function App({
           {activeSection !== 'health' && bridgeDiagnostics.length > 0 ? (
             <DiagnosticsSection diagnostics={bridgeDiagnostics} />
           ) : null}
+          {personalWorkspaceError && activeSection === 'workbench' ? (
+            <div className="diagnostic-error" role="alert">
+              <p>{t('workbench.personalState.loadError')}</p>
+              {!isApplicationWorkspaceReady ? (
+                <button
+                  className="secondary-button compact-button"
+                  disabled={isApplicationWorkspaceLoading}
+                  onClick={() => setApplicationWorkspaceLoadGeneration((value) => value + 1)}
+                  type="button"
+                >
+                  {t('workbench.personalState.retry')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
+        <AdaptiveInspector
+          activeTab={isInspectorOpen ? 'notes' : null}
+          isOpen={isInspectorOpen}
+          onClose={handleToggleInspector}
+          onSelectTab={() => undefined}
+          tabs={activeNoteViewModel ? [{
+            content: (
+              <div className="km-workbench-note">
+                <textarea
+                  disabled={activeNoteViewModel.isBusy}
+                  maxLength={workspaceMaximumNoteBytes / 4}
+                  onBlur={() => void saveActiveNote()}
+                  onChange={(event) => setNoteDraft(event.currentTarget.value)}
+                  placeholder={t('workbench.notes.placeholder')}
+                  value={noteDraft}
+                />
+                <div className="km-workbench-note-actions">
+                  <small>
+                    {noteStatusKey
+                      ? t(noteStatusKey)
+                      : activeNoteViewModel.updatedAtLabel ?? t('workbench.notes.notSaved')}
+                  </small>
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={activeNoteViewModel.isBusy}
+                    onClick={() => void saveActiveNote()}
+                    type="button"
+                  >
+                    {t('workbench.notes.save')}
+                  </button>
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={activeNoteViewModel.isBusy}
+                    onClick={() => void handleCreateBookmark(
+                      activeLocation.entity?.recordId ?? activeNoteViewModel.entityLabel
+                    )}
+                    type="button"
+                  >
+                    {t('workbench.bookmarks.create')}
+                  </button>
+                </div>
+              </div>
+            ),
+            count: null,
+            id: 'notes',
+            labelKey: 'workbench.notes.title'
+          }] : []}
+          targetLabel={activeLocation.entity?.recordId ?? ''}
+          targetLabelIsRawData={true}
+        />
       </section>
       {workProgress ? <WorkProgressModal progress={workProgress} /> : null}
       {isSupportSearchPermissionOpen ? (
@@ -12915,6 +15194,7 @@ export function App({
           cacheSizeLabel={
             formatCacheSizeLabel(
               svCacheStatus?.cacheSizeBytes,
+              formatLocale,
               t('settings.cache.size.none'),
               translateLiteral('Unavailable')
             )
@@ -12952,6 +15232,60 @@ export function App({
           outputRootPath={draftPaths.outputRootPath}
         />
       ) : null}
+      <CommandPalette
+        commands={workspaceCommands}
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onExecute={handleExecuteWorkspaceCommand}
+      />
+      <ShortcutOverlay
+        isOpen={isShortcutOverlayOpen}
+        onClose={() => setIsShortcutOverlayOpen(false)}
+        onResetShortcut={handleResetWorkspaceShortcut}
+        onSetShortcut={handleSetWorkspaceShortcut}
+        shortcuts={visibleWorkspaceShortcuts}
+      />
+      <CapabilityDiscoveryDialog
+        capabilities={capabilityDiscovery}
+        isOpen={isCapabilityDiscoveryOpen}
+        onClose={handleDismissCapabilityDiscovery}
+        onOpenCapability={handleNavigateSection}
+      />
+      {pendingOutputProfile && outputSafetyScope && personalProjectTarget ? (
+        <OutputProfileSwitchDialog
+          bridge={bridge}
+          canApply={
+            outputSafety.canApply &&
+            pendingEditCount === 0 &&
+            editorDraftDirtySections.size === 0 &&
+            !hasCriticalWriteOperation &&
+            !isBusy
+          }
+          candidatePaths={{
+            ...outputSafetyScope.paths,
+            outputRootPath: pendingOutputProfile.outputRootPath
+          }}
+          onApplied={async (response, candidatePaths) => {
+            await handleProjectRelocated(response, candidatePaths);
+            const destinationTarget = {
+              game: candidatePaths.selectedGame ?? personalProjectTarget.game,
+              projectId: response.projectId
+            };
+            const snapshot = await personalWorkspaceRegistry.setActiveOutputProfile(
+              destinationTarget,
+              pendingOutputProfile.profileId,
+              candidatePaths.outputRootPath
+            );
+            if (activeProjectIdRef.current === response.projectId) {
+              setProjectWorkspaceSnapshot(snapshot);
+            }
+            setPendingOutputProfileId(null);
+          }}
+          onClose={() => setPendingOutputProfileId(null)}
+          profileName={pendingOutputProfile.name}
+          source={outputSafetyScope}
+        />
+      ) : null}
       {exitPrompt ? (
         <ExitPromptModal
           kind={exitPrompt.kind}
@@ -12965,6 +15299,12 @@ export function App({
           onDeclineDiscard={handleDeclineExitDiscard}
           onGoToChanges={handleGoToChangesAfterExitDecline}
           onStay={handleStayAfterExitDecline}
+        />
+      ) : null}
+      {isWhatChangedTourOpen ? (
+        <WhatChangedTour
+          onDismiss={() => setIsWhatChangedTourOpen(false)}
+          onOpenSection={(section) => void handleNavigateSection(section)}
         />
       ) : null}
       {availableUpdate && isUpdatePromptOpen ? (
@@ -12987,20 +15327,25 @@ export function App({
     </EditorDraftDirtyContext.Provider>
     </EditorSessionActionsProvider>
     </CancelEditSessionContext.Provider>
+    </DiagnosticNavigationProvider>
   );
 }
 
 function GameSelectionPage({
+  configuredGames,
   currentGame,
+  isLoading,
   onCancel,
   onSelectGame
 }: {
+  configuredGames: readonly ProjectGame[];
   currentGame: ProjectGame | null;
+  isLoading: boolean;
   onCancel?: () => void;
   onSelectGame: (selectedGame: ProjectGame) => void;
 }) {
   const { translateLiteral } = useLocalization();
-  const rememberedGames = new Set(getRememberedProjectGames());
+  const rememberedGames = new Set(configuredGames);
 
   return (
     <main className="game-selection-shell">
@@ -13030,6 +15375,7 @@ function GameSelectionPage({
                   game === 'za' ? ' game-choice-button-full-row' : ''
                 }`}
                 key={game}
+                disabled={isLoading}
                 onClick={() => onSelectGame(game)}
                 type="button"
               >
@@ -13536,7 +15882,7 @@ function SvCacheProgressPanel({
   selectedGame: ProjectGame;
   status: TrinityCacheStatus;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const isMinimal = status.settings.mode === 'minimal';
   const isSwordShieldCache = isSwordShieldGame(selectedGame);
   const percent = Math.max(0, Math.min(100, status.progressPercent));
@@ -13604,6 +15950,7 @@ function SvCacheProgressPanel({
           <dd>
             {formatCacheSizeLabel(
               status.cacheSizeBytes,
+              formatLocale,
               t('settings.cache.size.none'),
               translateLiteral('Unavailable')
             )}
@@ -17442,8 +19789,8 @@ function formatLocalizedMoveFieldGroup(
   return key ? t(key) : translateLiteral(group);
 }
 
-function formatMovePlayerDamageHitInterval(value: number, language: string) {
-  return value.toLocaleString(language, {
+function formatMovePlayerDamageHitInterval(value: number, formatLocale: string) {
+  return value.toLocaleString(formatLocale, {
     maximumFractionDigits: 4,
     minimumFractionDigits: 0
   });
@@ -17617,7 +19964,7 @@ function formatMovePlayerDamageRole(
 
 function formatMovePlayerDamageInvocationSources(
   sources: MoveRecord['playerDamageRows'][number]['invocations'][number]['sources'],
-  language: string,
+  formatLocale: string,
   t: ReturnType<typeof useLocalization>['t']
 ) {
   const descriptions = sources.map((source) => {
@@ -17641,7 +19988,7 @@ function formatMovePlayerDamageInvocationSources(
         });
     }
   });
-  return new Intl.ListFormat(language, { style: 'long', type: 'conjunction' }).format(
+  return new Intl.ListFormat(formatLocale, { style: 'long', type: 'conjunction' }).format(
     descriptions
   );
 }
@@ -17678,7 +20025,7 @@ function MovePlayerDamageDescriptor({
   row: MoveRecord['playerDamageRows'][number];
   totalRows: number;
 }) {
-  const { language, t } = useLocalization();
+  const { formatLocale, t } = useLocalization();
   const mappingStatus = row.bulletMappingMatchesVerifiedVanilla
     ? t('moves.playerDamage.status.matchesVanilla')
     : row.invocations.length > 0
@@ -17830,7 +20177,7 @@ function MovePlayerDamageDescriptor({
                         bulletId: invocation.bulletId,
                         sources: formatMovePlayerDamageInvocationSources(
                           invocation.sources,
-                          language,
+                          formatLocale,
                           t
                         )
                       })}
@@ -17845,7 +20192,7 @@ function MovePlayerDamageDescriptor({
                         bulletId: invocation.bulletId,
                         sources: formatMovePlayerDamageInvocationSources(
                           invocation.sources,
-                          language,
+                          formatLocale,
                           t
                         )
                       })
@@ -17876,7 +20223,7 @@ function MovePlayerDamageDescriptor({
                     {t('moves.playerDamage.technical.seconds', {
                       value: formatMovePlayerDamageHitInterval(
                         invocation.lifetimeSeconds,
-                        language
+                        formatLocale
                       )
                     })}
                   </dd>
@@ -17917,7 +20264,7 @@ function MovePlayerDamageDescriptor({
           <dt>{t('moves.playerDamage.technical.minimumRepeatHitInterval')}</dt>
           <dd>
             {t('moves.playerDamage.technical.repeatHitIntervalValue', {
-              value: formatMovePlayerDamageHitInterval(row.hitIntervalSeconds, language)
+              value: formatMovePlayerDamageHitInterval(row.hitIntervalSeconds, formatLocale)
             })}
           </dd>
         </div>
@@ -20278,7 +22625,7 @@ function SelectedTrainerPanel({
   selectedSlot: number | null;
   trainer: TrainerRecord | null;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const [trainerDraftsByTrainerId, setTrainerDraftsByTrainerId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -20476,12 +22823,12 @@ function SelectedTrainerPanel({
                     : field.label,
               options:
                 editorFamily === 'za'
-                  ? createZaTrainerPrizeMoneyOptions(projectedTrainerHighestLevel)
+                  ? createZaTrainerPrizeMoneyOptions(projectedTrainerHighestLevel, formatLocale)
                   : field.options
             }
           : field
       ),
-    [editorFamily, projectedTrainerHighestLevel, trainerFields]
+    [editorFamily, formatLocale, projectedTrainerHighestLevel, trainerFields]
   );
   const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const canToggleAiFlags =
@@ -22303,14 +24650,17 @@ function isTrainerPokemonSlotEmpty(
   return (draftedSpeciesId ?? pokemon.speciesId) === 0;
 }
 
-function createZaTrainerPrizeMoneyOptions(highestLevel: number): EditableFieldOption[] {
+function createZaTrainerPrizeMoneyOptions(
+  highestLevel: number,
+  formatLocale: string
+): EditableFieldOption[] {
   const normalizedHighestLevel = Math.max(1, highestLevel);
 
   return Array.from({ length: 256 }, (_, rate) => {
     const payout = getZaTrainerBasePrizeMoney(normalizedHighestLevel, rate);
 
     return {
-      label: `$${payout.toLocaleString()} (rate ${rate})`,
+      label: `$${payout.toLocaleString(formatLocale)} (rate ${rate})`,
       value: rate
     };
   });
@@ -31377,7 +33727,7 @@ function SelectedEncounterPanel({
   >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
-  const { language, t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
   const scriptedMoveOwnership = isZaEncounterTable
@@ -32447,7 +34797,7 @@ function SelectedEncounterPanel({
                                     formatEncounterSharePercent(
                                       slot.weight,
                                       encounterWeightTotal,
-                                      language
+                                      formatLocale
                                     ) ?? '',
                                   weight: slot.weight
                                 })
@@ -32459,7 +34809,8 @@ function SelectedEncounterPanel({
                             : formatEncounterSlotWeightSummary(
                                 slot,
                                 encounterWeightTotal,
-                                isSvEncounterTable
+                                isSvEncounterTable,
+                                formatLocale
                               )}
                         </small>
                       </button>
@@ -32548,11 +34899,12 @@ function SelectedEncounterPanel({
                           ? formatEncounterSharePercent(
                               encounterSlot.weight,
                               encounterWeightTotal,
-                              language
+                              formatLocale
                             ) ?? t('za.spawnSettings.unavailable')
                           : formatEncounterLotShare(
                               encounterSlot.weight,
-                              encounterWeightTotal
+                              encounterWeightTotal,
+                              formatLocale
                             )}
                       </dd>
                     </div>
@@ -38148,7 +40500,7 @@ function SelectedFlagworkSavePanel({
   saveBlock: SaveBlockRecord | null;
   saveFile: SaveFileRecord | null;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const provenance = saveBlock?.provenance ?? flag?.provenance ?? null;
 
   return (
@@ -38217,7 +40569,7 @@ function SelectedFlagworkSavePanel({
             </div>
             <div>
               <dt>Save size</dt>
-              <dd>{saveFile ? formatByteCount(saveFile.sizeBytes) : 'n/a'}</dd>
+              <dd>{saveFile ? formatByteCount(saveFile.sizeBytes, formatLocale) : 'n/a'}</dd>
             </div>
             <div>
               <dt>Save status</dt>
@@ -41383,7 +43735,7 @@ function FpsPatchSection({
   outputRootPath: string;
   status: FpsPatchStatus | null;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const isBusy = isLoading || isApplying;
   const statusKey = status?.status ?? 'unchecked';
   const statusLabel = t(`fpsPatch.state.${statusKey}`);
@@ -41518,19 +43870,19 @@ function FpsPatchSection({
             <dl className="technical-tool-counts">
               <div>
                 <dt>{t('fpsPatch.romfs.current')}</dt>
-                <dd data-localization-ignore="true">{status ? status.patchedRomFsFileCount.toLocaleString() : '--'}</dd>
+                <dd data-localization-ignore="true">{status ? status.patchedRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
               </div>
               <div>
                 <dt>{t('fpsPatch.romfs.refreshable')}</dt>
-                <dd data-localization-ignore="true">{status ? status.staleOwnedRomFsFileCount.toLocaleString() : '--'}</dd>
+                <dd data-localization-ignore="true">{status ? status.staleOwnedRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
               </div>
               <div>
                 <dt>{t('fpsPatch.romfs.notInstalled')}</dt>
-                <dd data-localization-ignore="true">{status ? notInstalledRomFsFileCount.toLocaleString() : '--'}</dd>
+                <dd data-localization-ignore="true">{status ? notInstalledRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
               </div>
               <div>
                 <dt>{t('fpsPatch.romfs.conflicts')}</dt>
-                <dd data-localization-ignore="true">{status ? status.conflictingRomFsFileCount.toLocaleString() : '--'}</dd>
+                <dd data-localization-ignore="true">{status ? status.conflictingRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
               </div>
             </dl>
           </article>
@@ -41560,10 +43912,10 @@ function FpsPatchSection({
                     <strong>{t(`fpsPatch.category.${category.category}.label`)}</strong>
                     <small>{t(`fpsPatch.category.${category.category}.detail`)}</small>
                   </span>
-                  <span data-localization-ignore="true" role="cell">{category.managedFileCount.toLocaleString()}</span>
-                  <span data-localization-ignore="true" role="cell">{category.patchedFileCount.toLocaleString()}</span>
-                  <span data-localization-ignore="true" role="cell">{category.staleOwnedFileCount.toLocaleString()}</span>
-                  <span data-localization-ignore="true" role="cell">{category.conflictingFileCount.toLocaleString()}</span>
+                  <span data-localization-ignore="true" role="cell">{category.managedFileCount.toLocaleString(formatLocale)}</span>
+                  <span data-localization-ignore="true" role="cell">{category.patchedFileCount.toLocaleString(formatLocale)}</span>
+                  <span data-localization-ignore="true" role="cell">{category.staleOwnedFileCount.toLocaleString(formatLocale)}</span>
+                  <span data-localization-ignore="true" role="cell">{category.conflictingFileCount.toLocaleString(formatLocale)}</span>
                 </div>
               ))}
             </div>
@@ -42786,6 +45138,8 @@ function ModMergerFileList({
   selectedFiles: Set<string>;
   title: string;
 }) {
+  const { formatLocale } = useLocalization();
+
   return (
     <div className="mod-merger-file-list-block">
       <div className="mod-merger-file-list-heading">
@@ -42812,7 +45166,7 @@ function ModMergerFileList({
                 />
                 <span className="mod-merger-file-path">{file.relativePath}</span>
                 <small>
-                  {file.supportKind} · {formatByteCount(file.size)}
+                  {file.supportKind} · {formatByteCount(file.size, formatLocale)}
                 </small>
                 <span className={`status-pill ${getModMergerStatusClassName(file.status)}`}>
                   {formatModMergerStatus(file.status)}
@@ -43184,6 +45538,7 @@ type PendingEditContext = {
 function SettingsSection({
   appVersion,
   availableUpdateKind,
+  personalizationSettings,
   editorLayout,
   isSvCacheClearing,
   isSvCacheRefreshing,
@@ -43203,6 +45558,7 @@ function SettingsSection({
 }: {
   appVersion: string;
   availableUpdateKind: AvailableUpdate['kind'] | null;
+  personalizationSettings: ReactNode;
   editorLayout: EditorLayoutPreference;
   isSvCacheClearing: boolean;
   isSvCacheRefreshing: boolean;
@@ -43220,7 +45576,7 @@ function SettingsSection({
   svCacheRefreshTick: number;
   svCacheStatus: TrinityCacheStatus | null;
 }) {
-  const { language, setLanguage, t, translateLiteral } = useLocalization();
+  const { formatLocale, interfaceLocale, setLanguage, t, translateLiteral } = useLocalization();
   const isBusy =
     status.kind === 'checking' ||
     status.kind === 'downloading' ||
@@ -43232,6 +45588,7 @@ function SettingsSection({
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
   const cacheSizeLabel = formatCacheSizeLabel(
     svCacheStatus?.cacheSizeBytes,
+    formatLocale,
     t('settings.cache.size.none'),
     translateLiteral('Unavailable')
   );
@@ -43281,6 +45638,7 @@ function SettingsSection({
       label: t(`settings.language.${languageKey}`)
     };
   });
+  const communityInterfaceLocaleIsActive = interfaceLocale.startsWith('community:');
 
   return (
     <section aria-labelledby="settings-heading" className="panel wide-panel">
@@ -43522,19 +45880,19 @@ function SettingsSection({
         <div
           aria-label={t('settings.language.groupLabel')}
           className="language-options"
-          role="radiogroup"
+          role={communityInterfaceLocaleIsActive ? 'group' : 'radiogroup'}
         >
           {languageOptions.map((option) => {
-            const isSelected = language === option.code;
+            const isSelected = interfaceLocale === option.code;
 
             return (
               <button
-                aria-checked={isSelected}
+                aria-checked={communityInterfaceLocaleIsActive ? undefined : isSelected}
                 className={`language-option${isSelected ? ' language-option-selected' : ''}`}
                 disabled={isSelected}
                 key={option.code}
                 onClick={() => setLanguage(option.code as LanguageCode)}
-                role="radio"
+                role={communityInterfaceLocaleIsActive ? undefined : 'radio'}
                 type="button"
               >
                 <span className="language-option-flag" aria-hidden="true">
@@ -43554,6 +45912,7 @@ function SettingsSection({
           })}
         </div>
       </section>
+      {personalizationSettings}
     </section>
   );
 }
@@ -53896,14 +56255,14 @@ function resolveOutputRootCreationPath(
   return joinDirectoryPath(romFsParentPath, gameDefinitions[selectedGame].titleId);
 }
 
-function formatByteCount(value: number) {
-  return `${value.toLocaleString()} bytes`;
+function formatByteCount(value: number, formatLocale: string) {
+  return `${value.toLocaleString(formatLocale)} bytes`;
 }
 
-function formatByteSize(value: number) {
+function formatByteSize(value: number, formatLocale: string) {
   const absoluteValue = Math.max(0, value);
   if (absoluteValue < 1024) {
-    return `${absoluteValue.toLocaleString()} B`;
+    return `${absoluteValue.toLocaleString(formatLocale)} B`;
   }
 
   const units = ['KB', 'MB', 'GB', 'TB'] as const;
@@ -53915,11 +56274,12 @@ function formatByteSize(value: number) {
   }
 
   const maximumFractionDigits = size >= 10 || unitIndex === 0 ? 0 : 1;
-  return `${size.toLocaleString(undefined, { maximumFractionDigits })} ${units[unitIndex]}`;
+  return `${size.toLocaleString(formatLocale, { maximumFractionDigits })} ${units[unitIndex]}`;
 }
 
 function formatCacheSizeLabel(
   value: number | null | undefined,
+  formatLocale: string,
   emptyLabel: string,
   unavailableLabel: string
 ) {
@@ -53927,7 +56287,7 @@ function formatCacheSizeLabel(
     return unavailableLabel;
   }
 
-  return value === 0 ? emptyLabel : formatByteSize(value);
+  return value === 0 ? emptyLabel : formatByteSize(value, formatLocale);
 }
 
 function formatSvCacheModeLabel(mode: TrinityCacheMode) {
@@ -54182,6 +56542,253 @@ function isSupportFileSearchCancellation(error: unknown) {
   const message =
     error instanceof Error ? error.message : typeof error === 'string' ? error : null;
   return message === 'Support file search was canceled.';
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return sanitizeReportableErrorText(error.message).slice(0, 1024);
+  }
+  return 'The private workspace operation failed.';
+}
+
+function toProjectPathDraft(paths: {
+  baseExeFsPath?: string | null;
+  baseRomFsPath?: string | null;
+  outputRootPath?: string | null;
+  pokemonLegendsZASupportFolderPath?: string | null;
+  saveFilePath?: string | null;
+  scarletVioletSupportFolderPath?: string | null;
+  selectedGame?: ProjectGame | null;
+}): ProjectPathDraft {
+  return {
+    baseExeFsPath: paths.baseExeFsPath ?? '',
+    baseRomFsPath: paths.baseRomFsPath ?? '',
+    outputRootPath: paths.outputRootPath ?? '',
+    pokemonLegendsZASupportFolderPath:
+      paths.pokemonLegendsZASupportFolderPath ?? '',
+    saveFilePath: paths.saveFilePath ?? '',
+    scarletVioletSupportFolderPath:
+      paths.scarletVioletSupportFolderPath ?? '',
+    selectedGame: paths.selectedGame ?? null
+  };
+}
+
+function hasConfiguredProjectPath(paths: ProjectPathDraft) {
+  return [
+    paths.baseExeFsPath,
+    paths.baseRomFsPath,
+    paths.outputRootPath,
+    paths.pokemonLegendsZASupportFolderPath,
+    paths.saveFilePath,
+    paths.scarletVioletSupportFolderPath
+  ].some((path) => path.length > 0);
+}
+
+function projectPathValuesEqual(left: ProjectPathDraft, right: ProjectPathDraft) {
+  return (
+    left.baseExeFsPath === right.baseExeFsPath &&
+    left.baseRomFsPath === right.baseRomFsPath &&
+    left.outputRootPath === right.outputRootPath &&
+    left.pokemonLegendsZASupportFolderPath ===
+      right.pokemonLegendsZASupportFolderPath &&
+    left.saveFilePath === right.saveFilePath &&
+    left.scarletVioletSupportFolderPath === right.scarletVioletSupportFolderPath
+  );
+}
+
+function toScopedWorkspaceLocation(location: WorkbenchLocation): WorkspaceScopedLocation {
+  if (!location.game) {
+    throw new Error('A saved Workbench location requires a game.');
+  }
+  return {
+    ...(location.changeSetId ? { changeSetId: location.changeSetId } : {}),
+    ...(location.entity ? { entity: location.entity } : {}),
+    game: location.game,
+    ...(location.inspectorTab ? { inspectorTab: location.inspectorTab } : {}),
+    section: location.section,
+    ...(location.subcontext ? { subcontext: { ...location.subcontext } } : {}),
+    version: 1
+  };
+}
+
+function fromScopedWorkspaceLocation(
+  location: WorkspaceScopedLocation,
+  projectId: string | null
+) {
+  if (!projectId) return null;
+  try {
+    return createWorkbenchLocation({
+      ...(location.changeSetId ? { changeSetId: location.changeSetId } : {}),
+      ...(location.entity ? { entity: location.entity } : {}),
+      game: location.game,
+      ...(location.inspectorTab ? { inspectorTab: location.inspectorTab } : {}),
+      projectId,
+      section: location.section,
+      ...(location.subcontext ? { subcontext: location.subcontext } : {})
+    });
+  } catch {
+    return null;
+  }
+}
+
+function withoutScopedLocationInspector(
+  location: WorkspaceScopedLocation
+): WorkspaceScopedLocation {
+  const canonicalLocation = { ...location };
+  delete canonicalLocation.inspectorTab;
+  return canonicalLocation;
+}
+
+function scopedWorkspaceLocationsEqual(
+  left: WorkspaceScopedLocation,
+  right: WorkspaceScopedLocation
+) {
+  return workspaceScopedLocationKey(left) === workspaceScopedLocationKey(right);
+}
+
+function createWorkspaceTargetViewModel(
+  location: WorkbenchLocation,
+  translate: (key: string) => string
+): WorkspaceTargetViewModel {
+  return {
+    description: location.entity
+      ? translate(getWorkbenchSectionLabelKey(location.section))
+      : null,
+    id: serializeWorkbenchLocation(location),
+    label: location.entity
+      ? location.entity.recordId
+      : translate(getWorkbenchSectionLabelKey(location.section)),
+    labelIsRawData: Boolean(location.entity),
+    location
+  };
+}
+
+function canonicalJsonStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    const serializedValue = JSON.stringify(value);
+    if (serializedValue === undefined) {
+      throw new Error('A saved view payload must contain JSON values only.');
+    }
+    return serializedValue;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJsonStringify(entry)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJsonStringify(record[key])}`)
+    .join(',')}}`;
+}
+
+async function createDeterministicSavedViewId(
+  adapterId: string,
+  adapterSchemaVersion: number,
+  location: WorkspaceScopedLocation,
+  canonicalPayload: string
+) {
+  const identity = [
+    adapterId,
+    String(adapterSchemaVersion),
+    workspaceScopedLocationKey(location),
+    canonicalPayload
+  ].join('\u001f');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
+  const fingerprint = Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, '0')
+  ).join('');
+  return `search-view:${adapterId}:${adapterSchemaVersion}:${fingerprint}`;
+}
+
+function createWorkspaceEntryId() {
+  return typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `entry-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createSafeWorkspaceShortcutRegistry(
+  overrides: readonly { commandId: string; shortcut: string }[]
+) {
+  try {
+    return createWorkspaceShortcutRegistry(
+      Object.fromEntries(overrides.map((entry) => [entry.commandId, entry.shortcut]))
+    );
+  } catch {
+    return createWorkspaceShortcutRegistry();
+  }
+}
+
+const capabilityDiscoveryStorageKey = 'km-editor.capability-discovery.v1';
+const maximumCapabilityDiscoveryEntries = 32;
+const maximumCapabilityDiscoverySignatureCharacters = 16 * 1024;
+const maximumCapabilityDiscoveryStorageCharacters = 64 * 1024;
+
+function readCapabilityDiscoveryEntries(): Array<{ projectId: string; signature: string }> {
+  try {
+    const value = window.localStorage.getItem(capabilityDiscoveryStorageKey);
+    if (!value || value.length > maximumCapabilityDiscoveryStorageCharacters) return [];
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const seenProjectIds = new Set<string>();
+    return parsed.flatMap((entry) => {
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        typeof (entry as { projectId?: unknown }).projectId !== 'string' ||
+        typeof (entry as { signature?: unknown }).signature !== 'string'
+      ) {
+        return [];
+      }
+      const { projectId, signature } = entry as { projectId: string; signature: string };
+      if (
+        projectId.length === 0 ||
+        projectId.length > 128 ||
+        signature.length === 0 ||
+        signature.length > maximumCapabilityDiscoverySignatureCharacters ||
+        seenProjectIds.has(projectId)
+      ) {
+        return [];
+      }
+      seenProjectIds.add(projectId);
+      return [{ projectId, signature }];
+    }).slice(0, maximumCapabilityDiscoveryEntries);
+  } catch {
+    return [];
+  }
+}
+
+function readCapabilityDiscoverySignature(projectId: string) {
+  return readCapabilityDiscoveryEntries().find((entry) => entry.projectId === projectId)
+    ?.signature ?? null;
+}
+
+function writeCapabilityDiscoverySignature(projectId: string, signature: string) {
+  try {
+    if (
+      projectId.length === 0 ||
+      projectId.length > 128 ||
+      signature.length === 0 ||
+      signature.length > maximumCapabilityDiscoverySignatureCharacters
+    ) {
+      return;
+    }
+    const candidates = [
+      { projectId, signature },
+      ...readCapabilityDiscoveryEntries().filter((entry) => entry.projectId !== projectId)
+    ];
+    const entries: Array<{ projectId: string; signature: string }> = [];
+    for (const candidate of candidates) {
+      if (entries.length >= maximumCapabilityDiscoveryEntries) break;
+      const nextEntries = [...entries, candidate];
+      if (JSON.stringify(nextEntries).length <= maximumCapabilityDiscoveryStorageCharacters) {
+        entries.push(candidate);
+      }
+    }
+    window.localStorage.setItem(capabilityDiscoveryStorageKey, JSON.stringify(entries));
+  } catch {
+    // Workbench still exposes discovery if browser preferences cannot persist.
+  }
 }
 
 function toErrorMessage(error: unknown, fallback: UiDiagnosticFallback) {

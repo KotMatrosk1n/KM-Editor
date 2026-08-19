@@ -47,9 +47,12 @@ export function useModalDialog<TElement extends HTMLElement = HTMLElement>({
     initialFocus.focus({ preventScroll: true });
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (dialog.closest('[inert]')) {
+        return;
+      }
       if (event.key === 'Escape' && canCloseRef.current) {
         event.preventDefault();
-        event.stopPropagation();
+        event.stopImmediatePropagation();
         onCloseRef.current();
         return;
       }

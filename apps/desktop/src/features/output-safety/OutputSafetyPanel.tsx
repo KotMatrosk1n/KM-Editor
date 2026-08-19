@@ -19,7 +19,7 @@ import { useLocalization } from '../../localization';
 import { type OutputSafetyController } from './useOutputSafetyController';
 
 export function OutputSafetyPanel({ controller }: { controller: OutputSafetyController }) {
-  const { language, t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState('');
   const [checkpointPendingDelete, setCheckpointPendingDelete] = useState<string | null>(null);
@@ -184,7 +184,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                   {controller.integrity
                     ? t('outputSafety.integrity.scanned', {
                         count: controller.integrity.entries.length,
-                        time: formatDate(controller.integrity.scannedAtUtc, language)
+                        time: formatDate(controller.integrity.scannedAtUtc, formatLocale)
                       })
                     : t('outputSafety.integrity.notScanned')}
                 </p>
@@ -262,7 +262,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
             {controller.cleanupPreview ? (
               <>
                 <p>{t('outputSafety.cleanup.previewSummary', {
-                  bytes: formatByteCount(controller.cleanupPreview.totalBytes, language),
+                  bytes: formatByteCount(controller.cleanupPreview.totalBytes, formatLocale),
                   count: controller.cleanupPreview.candidates.length
                 })}</p>
                 <ReviewedTargetList
@@ -322,7 +322,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                         <span>{t('outputSafety.history.summary', {
                           count: receipt.targetCount,
                           mode: receipt.outputMode,
-                          time: formatDate(receipt.completedAtUtc, language)
+                          time: formatDate(receipt.completedAtUtc, formatLocale)
                         })}</span>
                       </li>
                     ))}
@@ -378,7 +378,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                         checkpoint={checkpoint}
                         controller={controller}
                         key={checkpoint.checkpointId}
-                        language={language}
+                        formatLocale={formatLocale}
                         onDeletePendingChange={setCheckpointPendingDelete}
                         pendingDelete={checkpointPendingDelete === checkpoint.checkpointId}
                       />
@@ -388,7 +388,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                 {controller.checkpointRestorePreview ? (
                   <div className="output-checkpoint-restore-review" role="alert">
                     <p>{t('outputSafety.checkpoints.restoreSummary', {
-                      bytes: formatByteCount(controller.checkpointRestorePreview.totalBytes, language),
+                      bytes: formatByteCount(controller.checkpointRestorePreview.totalBytes, formatLocale),
                       count: controller.checkpointRestorePreview.targetCount
                     })}</p>
                     <ReviewedTargetList
@@ -482,13 +482,13 @@ function ReviewedTargetList({ paths, total }: { paths: string[]; total: number }
 function CheckpointRow({
   checkpoint,
   controller,
-  language,
+  formatLocale,
   onDeletePendingChange,
   pendingDelete
 }: {
   checkpoint: OutputCheckpoint;
   controller: OutputSafetyController;
-  language: string;
+  formatLocale: string;
   onDeletePendingChange: (checkpointId: string | null) => void;
   pendingDelete: boolean;
 }) {
@@ -498,10 +498,10 @@ function CheckpointRow({
       <div>
         <strong>{checkpoint.label ?? t('outputSafety.checkpoints.unnamed')}</strong>
         <span>{t('outputSafety.checkpoints.summary', {
-          bytes: formatByteCount(checkpoint.totalBytes, language),
+          bytes: formatByteCount(checkpoint.totalBytes, formatLocale),
           count: checkpoint.fileCount,
           coverage: t(`outputSafety.checkpoints.coverage.${checkpoint.coverage}`),
-          time: formatDate(checkpoint.createdAtUtc, language)
+          time: formatDate(checkpoint.createdAtUtc, formatLocale)
         })}</span>
       </div>
       <div className="output-safety-actions">

@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 namespace KM.Core.Workspace;
 
 /// <summary>
-/// Stores small, private, project-scoped workspace documents beneath an explicitly supplied app-data root.
+/// Stores small, private application- and project-scoped workspace documents beneath an explicitly supplied app-data root.
 /// </summary>
 /// <remarks>
 /// This store is intentionally independent of disposable derived-data caches. A cache-clearing operation
@@ -18,6 +18,7 @@ namespace KM.Core.Workspace;
 public sealed class VersionedWorkspaceDocumentStore
 {
     private const string WorkspaceDirectoryName = "workspace-state-v1";
+    private const string ApplicationDirectoryName = "application";
     private const string ProjectDirectoryName = "projects";
     private const int MaximumRegisteredMigrations = 256;
     private const UnixFileMode PrivateDirectoryUnixMode =
@@ -26,6 +27,7 @@ public sealed class VersionedWorkspaceDocumentStore
         UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private readonly string appDataRoot;
     private readonly string workspaceRoot;
+    private readonly string applicationRoot;
     private readonly string projectsRoot;
     private readonly long maximumDocumentBytes;
     private readonly TimeSpan writerLockRetryDelay;
@@ -56,6 +58,7 @@ public sealed class VersionedWorkspaceDocumentStore
 
         this.appDataRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(appDataRoot));
         workspaceRoot = GetContainedPath(this.appDataRoot, WorkspaceDirectoryName);
+        applicationRoot = GetContainedPath(workspaceRoot, ApplicationDirectoryName);
         projectsRoot = GetContainedPath(workspaceRoot, ProjectDirectoryName);
         maximumDocumentBytes = options.MaximumDocumentBytes;
         writerLockRetryDelay = options.WriterLockRetryDelay;
@@ -78,7 +81,19 @@ public sealed class VersionedWorkspaceDocumentStore
         WorkspaceDocumentId documentId,
         CancellationToken cancellationToken = default)
     {
-        ValidateIdentity(projectIdentity);
+        return await ExistsAsync(
+                WorkspaceDocumentScope.ForProject(projectIdentity),
+                documentId,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<bool> ExistsAsync(
+        WorkspaceDocumentScope scope,
+        WorkspaceDocumentId documentId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateScope(scope);
         ValidateDocumentId(documentId);
 
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -90,7 +105,7 @@ public sealed class VersionedWorkspaceDocumentStore
                 return false;
             }
 
-            var documentPath = GetDocumentPath(projectIdentity, documentId);
+            var documentPath = GetDocumentPath(scope, documentId);
             ValidateExistingReadPath(documentPath);
             return File.Exists(documentPath);
         }
@@ -121,7 +136,19 @@ public sealed class VersionedWorkspaceDocumentStore
         WorkspaceDocumentDefinition<TDocument> definition,
         CancellationToken cancellationToken = default)
     {
-        ValidateIdentity(projectIdentity);
+        return await ReadAsync(
+                WorkspaceDocumentScope.ForProject(projectIdentity),
+                definition,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<WorkspaceDocumentReadResult<TDocument>?> ReadAsync<TDocument>(
+        WorkspaceDocumentScope scope,
+        WorkspaceDocumentDefinition<TDocument> definition,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateScope(scope);
         ArgumentNullException.ThrowIfNull(definition);
 
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -133,7 +160,7 @@ public sealed class VersionedWorkspaceDocumentStore
                 return null;
             }
 
-            var documentPath = GetDocumentPath(projectIdentity, definition.DocumentId);
+            var documentPath = GetDocumentPath(scope, definition.DocumentId);
             ValidateExistingReadPath(documentPath);
             if (!File.Exists(documentPath))
             {
@@ -247,8 +274,22 @@ public sealed class VersionedWorkspaceDocumentStore
         TDocument document,
         CancellationToken cancellationToken = default)
     {
+        await WriteAsync(
+                WorkspaceDocumentScope.ForProject(projectIdentity),
+                definition,
+                document,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task WriteAsync<TDocument>(
+        WorkspaceDocumentScope scope,
+        WorkspaceDocumentDefinition<TDocument> definition,
+        TDocument document,
+        CancellationToken cancellationToken = default)
+    {
         _ = await WriteCoreAsync(
-                projectIdentity,
+                scope,
                 definition,
                 document,
                 isConditional: false,
@@ -268,8 +309,23 @@ public sealed class VersionedWorkspaceDocumentStore
         string? expectedETag,
         CancellationToken cancellationToken = default)
     {
+        return WriteConditionalAsync(
+            WorkspaceDocumentScope.ForProject(projectIdentity),
+            definition,
+            document,
+            expectedETag,
+            cancellationToken);
+    }
+
+    public Task<WorkspaceDocumentWriteResult> WriteConditionalAsync<TDocument>(
+        WorkspaceDocumentScope scope,
+        WorkspaceDocumentDefinition<TDocument> definition,
+        TDocument document,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+    {
         return WriteCoreAsync(
-            projectIdentity,
+            scope,
             definition,
             document,
             isConditional: true,
@@ -278,14 +334,14 @@ public sealed class VersionedWorkspaceDocumentStore
     }
 
     private async Task<WorkspaceDocumentWriteResult> WriteCoreAsync<TDocument>(
-        WorkspaceProjectIdentity projectIdentity,
+        WorkspaceDocumentScope scope,
         WorkspaceDocumentDefinition<TDocument> definition,
         TDocument document,
         bool isConditional,
         string? expectedETag,
         CancellationToken cancellationToken)
     {
-        ValidateIdentity(projectIdentity);
+        ValidateScope(scope);
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(document);
 
@@ -293,10 +349,10 @@ public sealed class VersionedWorkspaceDocumentStore
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var projectDirectory = EnsureProjectDirectory(projectIdentity);
-            var documentPath = GetDocumentPath(projectIdentity, definition.DocumentId);
+            var scopeDirectory = EnsureScopeDirectory(scope);
+            var documentPath = GetDocumentPath(scope, definition.DocumentId);
             EnsureContained(documentPath);
-            ValidateSafeDirectoryChain(projectDirectory);
+            ValidateSafeDirectoryChain(scopeDirectory);
             ValidateDestinationPath(documentPath);
 
             var writtenAtUtc = DateTimeOffset.UtcNow;
@@ -316,20 +372,20 @@ public sealed class VersionedWorkspaceDocumentStore
             var etag = ComputeETag(serialized.GetBuffer().AsSpan(0, checked((int)serialized.Length)));
 
             await using var documentLock = await AcquireDocumentLockAsync(
-                    projectDirectory,
+                    scopeDirectory,
                     definition.DocumentId,
                     cancellationToken)
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateSafeDirectoryChain(projectDirectory);
+            ValidateSafeDirectoryChain(scopeDirectory);
             ValidateDestinationPath(documentPath);
             TightenExistingPrivateFilePermissions(documentPath);
-            var temporaryPath = GetTemporaryDocumentPath(projectDirectory, definition.DocumentId);
+            var temporaryPath = GetTemporaryDocumentPath(scopeDirectory, definition.DocumentId);
             ValidateDestinationPath(temporaryPath);
             TryDeleteTemporaryFile(temporaryPath);
             TryDeleteOrphanedTemporaryFiles(
-                projectDirectory,
+                scopeDirectory,
                 definition.DocumentId,
                 cancellationToken);
 
@@ -357,7 +413,7 @@ public sealed class VersionedWorkspaceDocumentStore
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                ValidateSafeDirectoryChain(projectDirectory);
+                ValidateSafeDirectoryChain(scopeDirectory);
                 ValidateDestinationPath(documentPath);
                 ValidateDestinationPath(temporaryPath);
                 TightenPrivateFilePermissions(temporaryPath);
@@ -403,8 +459,20 @@ public sealed class VersionedWorkspaceDocumentStore
         WorkspaceDocumentId documentId,
         CancellationToken cancellationToken = default)
     {
+        return await DeleteAsync(
+                WorkspaceDocumentScope.ForProject(projectIdentity),
+                documentId,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<bool> DeleteAsync(
+        WorkspaceDocumentScope scope,
+        WorkspaceDocumentId documentId,
+        CancellationToken cancellationToken = default)
+    {
         var result = await DeleteCoreAsync(
-                projectIdentity,
+                scope,
                 documentId,
                 isConditional: false,
                 expectedETag: null,
@@ -423,8 +491,21 @@ public sealed class VersionedWorkspaceDocumentStore
         string? expectedETag,
         CancellationToken cancellationToken = default)
     {
+        return DeleteConditionalAsync(
+            WorkspaceDocumentScope.ForProject(projectIdentity),
+            documentId,
+            expectedETag,
+            cancellationToken);
+    }
+
+    public Task<WorkspaceDocumentDeleteResult> DeleteConditionalAsync(
+        WorkspaceDocumentScope scope,
+        WorkspaceDocumentId documentId,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+    {
         return DeleteCoreAsync(
-            projectIdentity,
+            scope,
             documentId,
             isConditional: true,
             NormalizeExpectedETag(expectedETag),
@@ -432,33 +513,33 @@ public sealed class VersionedWorkspaceDocumentStore
     }
 
     private async Task<WorkspaceDocumentDeleteResult> DeleteCoreAsync(
-        WorkspaceProjectIdentity projectIdentity,
+        WorkspaceDocumentScope scope,
         WorkspaceDocumentId documentId,
         bool isConditional,
         string? expectedETag,
         CancellationToken cancellationToken)
     {
-        ValidateIdentity(projectIdentity);
+        ValidateScope(scope);
         ValidateDocumentId(documentId);
 
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var projectDirectory = EnsureProjectDirectory(projectIdentity);
-            var documentPath = GetDocumentPath(projectIdentity, documentId);
+            var scopeDirectory = EnsureScopeDirectory(scope);
+            var documentPath = GetDocumentPath(scope, documentId);
             await using var documentLock = await AcquireDocumentLockAsync(
-                    projectDirectory,
+                    scopeDirectory,
                     documentId,
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            ValidateSafeDirectoryChain(projectDirectory);
+            ValidateSafeDirectoryChain(scopeDirectory);
             ValidateDestinationPath(documentPath);
-            var temporaryPath = GetTemporaryDocumentPath(projectDirectory, documentId);
+            var temporaryPath = GetTemporaryDocumentPath(scopeDirectory, documentId);
             ValidateDestinationPath(temporaryPath);
             TryDeleteTemporaryFile(temporaryPath);
-            TryDeleteOrphanedTemporaryFiles(projectDirectory, documentId, cancellationToken);
+            TryDeleteOrphanedTemporaryFiles(scopeDirectory, documentId, cancellationToken);
             var actualETag = await ReadCurrentETagAsync(documentPath, cancellationToken)
                 .ConfigureAwait(false);
             if (isConditional)
@@ -639,12 +720,18 @@ public sealed class VersionedWorkspaceDocumentStore
             .ConfigureAwait(false);
     }
 
-    private string EnsureProjectDirectory(WorkspaceProjectIdentity projectIdentity)
+    private string EnsureScopeDirectory(WorkspaceDocumentScope scope)
     {
         EnsureSafeDirectory(appDataRoot, parentRoot: null);
         EnsureSafeDirectory(workspaceRoot, appDataRoot);
+        if (scope.Kind == WorkspaceDocumentScopeKind.Application)
+        {
+            EnsureSafeDirectory(applicationRoot, workspaceRoot);
+            return applicationRoot;
+        }
+
         EnsureSafeDirectory(projectsRoot, workspaceRoot);
-        var projectDirectory = GetContainedPath(projectsRoot, projectIdentity.Value);
+        var projectDirectory = GetContainedPath(projectsRoot, scope.ProjectIdentity.Value);
         EnsureSafeDirectory(projectDirectory, projectsRoot);
         return projectDirectory;
     }
@@ -883,11 +970,13 @@ public sealed class VersionedWorkspaceDocumentStore
     }
 
     private string GetDocumentPath(
-        WorkspaceProjectIdentity projectIdentity,
+        WorkspaceDocumentScope scope,
         WorkspaceDocumentId documentId)
     {
-        var projectDirectory = GetContainedPath(projectsRoot, projectIdentity.Value);
-        return GetContainedPath(projectDirectory, documentId.Value + ".json");
+        var scopeDirectory = scope.Kind == WorkspaceDocumentScopeKind.Application
+            ? applicationRoot
+            : GetContainedPath(projectsRoot, scope.ProjectIdentity.Value);
+        return GetContainedPath(scopeDirectory, documentId.Value + ".json");
     }
 
     private string GetTemporaryDocumentPath(
@@ -949,6 +1038,19 @@ public sealed class VersionedWorkspaceDocumentStore
             || relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
         {
             throw new WorkspaceDocumentSecurityException();
+        }
+    }
+
+    private static void ValidateScope(WorkspaceDocumentScope scope)
+    {
+        if (!scope.IsInitialized || !Enum.IsDefined(scope.Kind))
+        {
+            throw new ArgumentException("A workspace document scope is invalid.", nameof(scope));
+        }
+
+        if (scope.Kind == WorkspaceDocumentScopeKind.Project)
+        {
+            ValidateIdentity(scope.ProjectIdentity);
         }
     }
 

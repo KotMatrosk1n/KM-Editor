@@ -16,18 +16,43 @@ import frResource from './resources/fr.json';
 import ruResource from './resources/ru.json';
 import ukResource from './resources/uk.json';
 import zhResource from './resources/zh.json';
+import {
+  isBuiltInLanguageCode,
+  isCommunityLocaleId,
+  toCommunityLocaleId,
+  type BuiltInLanguageCode,
+  type CommunityLocalePack,
+  type InterfaceLocale,
+  type LocalizationResource
+} from './localePackContracts';
+import {
+  createCommunityLocaleRegistry,
+  findCommunityLocalePack,
+  toAvailableCommunityLanguage,
+  type AvailableInterfaceLanguage
+} from './localePackRegistry';
 
-export type LanguageCode = 'en' | 'es' | 'fr' | 'de' | 'ru' | 'uk' | 'zh';
+export type LanguageCode = BuiltInLanguageCode;
+export type { CommunityLocalePack, InterfaceLocale } from './localePackContracts';
+export type { AvailableInterfaceLanguage } from './localePackRegistry';
 
 type LocalizationParams = Record<string, string | number>;
-type LocalizationResource = {
-  keys: Record<string, string>;
-  literals: Record<string, string>;
+
+export type CommunityLocalePackUpdateOptions = {
+  definitivelyRemovedPackIds?: readonly string[];
 };
 
-type LocalizationContextValue = {
+export type LocalizationContextValue = {
+  availableLanguages: readonly AvailableInterfaceLanguage[];
+  clearIgnoredCommunityLocalePreference: (packIds: readonly string[]) => void;
+  formatLocale: string;
+  interfaceLocale: InterfaceLocale;
   language: LanguageCode;
-  setLanguage: (language: LanguageCode) => void;
+  setCommunityLocalePacks: (
+    packs: readonly CommunityLocalePack[],
+    options?: CommunityLocalePackUpdateOptions
+  ) => void;
+  setLanguage: (language: InterfaceLocale) => void;
   t: (key: string, params?: LocalizationParams) => string;
   translateLiteral: (literal: string) => string;
 };
@@ -38,32 +63,25 @@ const localizationDebugStorageKey = 'km-editor.localization.debug';
 
 export const supportedLanguages = [
   {
-    code: 'en',
-    flag: '🇺🇸'
+    code: 'en', flag: '🇺🇸', displayName: 'English', formatLocale: 'en-US'
   },
   {
-    code: 'es',
-    flag: '🇪🇸'
+    code: 'es', flag: '🇪🇸', displayName: 'Español', formatLocale: 'es'
   },
   {
-    code: 'fr',
-    flag: '🇫🇷'
+    code: 'fr', flag: '🇫🇷', displayName: 'Français', formatLocale: 'fr'
   },
   {
-    code: 'de',
-    flag: '🇩🇪'
+    code: 'de', flag: '🇩🇪', displayName: 'Deutsch', formatLocale: 'de'
   },
   {
-    code: 'ru',
-    flag: '🇷🇺'
+    code: 'ru', flag: '🇷🇺', displayName: 'Русский', formatLocale: 'ru'
   },
   {
-    code: 'uk',
-    flag: '🇺🇦'
+    code: 'uk', flag: '🇺🇦', displayName: 'Українська', formatLocale: 'uk'
   },
   {
-    code: 'zh',
-    flag: '🇨🇳'
+    code: 'zh', flag: '🇨🇳', displayName: '简体中文', formatLocale: 'zh-CN'
   }
 ] as const;
 
@@ -76,6 +94,18 @@ const resourcesByLanguage: Record<LanguageCode, LocalizationResource> = {
   uk: ukResource,
   zh: zhResource
 };
+const communityResourcesByLocale = new Map<InterfaceLocale, CommunityLocalePack>();
+const retiredCommunityResourcesByLocale = new Map<InterfaceLocale, CommunityLocalePack>();
+const availableBuiltInLanguages: readonly AvailableInterfaceLanguage[] = supportedLanguages.map(
+  (entry) => ({
+    code: entry.code,
+    displayName: entry.displayName,
+    flag: entry.flag,
+    formatLocale: entry.formatLocale,
+    gameTextLanguage: entry.code,
+    source: 'builtIn'
+  })
+);
 
 const translatableAttributes = ['aria-label', 'title', 'placeholder', 'alt'] as const;
 const skippedTextTags = new Set(['SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA']);
@@ -183,7 +213,12 @@ const ivScreenReservedRegionPatterns = [
 ] as const;
 
 const defaultLocalizationContext: LocalizationContextValue = {
+  availableLanguages: availableBuiltInLanguages,
+  clearIgnoredCommunityLocalePreference: () => undefined,
+  formatLocale: 'en-US',
+  interfaceLocale: 'en',
   language: 'en',
+  setCommunityLocalePacks: () => undefined,
   setLanguage: () => undefined,
   t: (key, params) => translateKeyForLanguage('en', key, params),
   translateLiteral: (literal) => translateLiteralForLanguage('en', literal)
@@ -192,41 +227,141 @@ const defaultLocalizationContext: LocalizationContextValue = {
 const LocalizationContext = createContext<LocalizationContextValue>(defaultLocalizationContext);
 
 export function LocalizationProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<LanguageCode>(() => readStoredLanguage());
+  const [interfaceLocale, setInterfaceLocale] = useState<InterfaceLocale>(() =>
+    readStoredInterfaceLocale()
+  );
+  const [communityLocalePacks, setCommunityLocalePacksState] = useState<
+    readonly CommunityLocalePack[]
+  >([]);
+  const communityLocalePack = findCommunityLocalePack(communityLocalePacks, interfaceLocale);
+  const language = isBuiltInLanguageCode(interfaceLocale)
+    ? interfaceLocale
+    : communityLocalePack?.gameTextLanguage ?? 'en';
+  const formatLocale = isBuiltInLanguageCode(interfaceLocale)
+    ? supportedLanguages.find((entry) => entry.code === interfaceLocale)?.formatLocale ?? 'en-US'
+    : communityLocalePack?.localeTag ?? 'en-US';
 
-  const setLanguage = useCallback((nextLanguage: LanguageCode) => {
-    setLanguageState(nextLanguage);
-    writeStoredLanguage(nextLanguage);
-  }, []);
+  const setLanguage = useCallback(
+    (nextLanguage: InterfaceLocale) => {
+      if (
+        !isBuiltInLanguageCode(nextLanguage) &&
+        !findCommunityLocalePack(communityLocalePacks, nextLanguage)
+      ) {
+        return;
+      }
+      setInterfaceLocale(nextLanguage);
+      writeStoredInterfaceLocale(nextLanguage);
+    },
+    [communityLocalePacks]
+  );
+
+  const clearIgnoredCommunityLocalePreference = useCallback(
+    (packIds: readonly string[]) => {
+      const ignoredPackIds = new Set(packIds);
+      const storedLocale = readStoredInterfaceLocale();
+      if (
+        isCommunityLocaleId(storedLocale) &&
+        ignoredPackIds.has(storedLocale.slice('community:'.length))
+      ) {
+        writeStoredInterfaceLocale('en');
+      }
+      setInterfaceLocale((current) =>
+        isCommunityLocaleId(current) &&
+        ignoredPackIds.has(current.slice('community:'.length))
+          ? 'en'
+          : current
+      );
+    },
+    []
+  );
+
+  const setCommunityLocalePacks = useCallback(
+    (
+      values: readonly CommunityLocalePack[],
+      options: CommunityLocalePackUpdateOptions = {}
+    ) => {
+      const packs = createCommunityLocaleRegistry(values);
+      const definitivelyRemovedPackIds = new Set(
+        options.definitivelyRemovedPackIds ?? []
+      );
+      const storedLocale = readStoredInterfaceLocale();
+      if (
+        isCommunityLocaleId(storedLocale) &&
+        definitivelyRemovedPackIds.has(storedLocale.slice('community:'.length))
+      ) {
+        writeStoredInterfaceLocale('en');
+      }
+      const previousResourcesByLocale = new Map(communityResourcesByLocale);
+      retiredCommunityResourcesByLocale.clear();
+      [...previousResourcesByLocale.values()].forEach((pack, index) => {
+        retiredCommunityResourcesByLocale.set(
+          `community:__retired:${index}` as InterfaceLocale,
+          pack
+        );
+      });
+      communityResourcesByLocale.clear();
+      for (const pack of packs) {
+        communityResourcesByLocale.set(toCommunityLocaleId(pack.id), pack);
+      }
+      setCommunityLocalePacksState(packs);
+      setInterfaceLocale((current) => {
+        if (isCommunityLocaleId(current) && !findCommunityLocalePack(packs, current)) {
+          const previousPack = previousResourcesByLocale.get(current);
+          const replacement = previousPack
+            ? packs.find((pack) => pack.localeTag === previousPack.localeTag)
+            : undefined;
+          if (replacement) {
+            const replacementLocale = toCommunityLocaleId(replacement.id);
+            writeStoredInterfaceLocale(replacementLocale);
+            return replacementLocale;
+          }
+          return 'en';
+        }
+        const preferredLocale = readStoredInterfaceLocale();
+        if (
+          current === 'en' &&
+          isCommunityLocaleId(preferredLocale) &&
+          findCommunityLocalePack(packs, preferredLocale)
+        ) {
+          return preferredLocale;
+        }
+        return current;
+      });
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     if (typeof document === 'undefined') {
       return undefined;
     }
 
-    document.documentElement.lang = language;
+    document.documentElement.lang = formatLocale;
+    document.documentElement.dir = 'ltr';
     document.body?.setAttribute('data-km-language', language);
+    document.body?.setAttribute('data-km-interface-locale', interfaceLocale);
 
     if (!document.body) {
       return undefined;
     }
 
-    localizeNodeAndDescendants(document.body, language);
+    localizeNodeAndDescendants(document.body, interfaceLocale);
+    retiredCommunityResourcesByLocale.clear();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.type === 'characterData' && mutation.target instanceof Text) {
-          localizeTextNode(mutation.target, language);
+          localizeTextNode(mutation.target, interfaceLocale);
           continue;
         }
 
         if (mutation.type === 'attributes' && mutation.target instanceof Element) {
-          localizeElementAttributes(mutation.target, language);
+          localizeElementAttributes(mutation.target, interfaceLocale);
           continue;
         }
 
         for (const node of mutation.addedNodes) {
-          localizeNodeAndDescendants(node, language);
+          localizeNodeAndDescendants(node, interfaceLocale);
         }
       }
     });
@@ -240,16 +375,32 @@ export function LocalizationProvider({ children }: { children: ReactNode }) {
     });
 
     return () => observer.disconnect();
-  }, [language]);
+  }, [communityLocalePacks, formatLocale, interfaceLocale, language]);
 
   const value = useMemo<LocalizationContextValue>(
     () => ({
+      availableLanguages: [
+        ...availableBuiltInLanguages,
+        ...communityLocalePacks.map(toAvailableCommunityLanguage)
+      ],
+      clearIgnoredCommunityLocalePreference,
+      formatLocale,
+      interfaceLocale,
       language,
+      setCommunityLocalePacks,
       setLanguage,
-      t: (key, params) => translateKeyForLanguage(language, key, params),
-      translateLiteral: (literal) => translateLiteralForLanguage(language, literal)
+      t: (key, params) => translateKeyForInterfaceLocale(interfaceLocale, key, params),
+      translateLiteral: (literal) => translateLiteralForInterfaceLocale(interfaceLocale, literal)
     }),
-    [language, setLanguage]
+    [
+      clearIgnoredCommunityLocalePreference,
+      communityLocalePacks,
+      formatLocale,
+      interfaceLocale,
+      language,
+      setCommunityLocalePacks,
+      setLanguage
+    ]
   );
 
   return <LocalizationContext.Provider value={value}>{children}</LocalizationContext.Provider>;
@@ -264,21 +415,37 @@ export function translateKeyForLanguage(
   key: string,
   params?: LocalizationParams
 ) {
+  return translateKeyForInterfaceLocale(language, key, params);
+}
+
+export function translateKeyForInterfaceLocale(
+  language: InterfaceLocale,
+  key: string,
+  params?: LocalizationParams
+) {
+  const resource = getLocalizationResource(language);
   const translated =
-    resourcesByLanguage[language].keys[key] ?? resourcesByLanguage.en.keys[key] ?? key;
+    resource.keys[key] ?? resourcesByLanguage.en.keys[key] ?? key;
   warnMissingKey(language, key, translated);
 
   return interpolateLocalizationParams(translated, params);
 }
 
 export function translateLiteralForLanguage(language: LanguageCode, literal: string) {
+  return translateLiteralForInterfaceLocale(language, literal);
+}
+
+export function translateLiteralForInterfaceLocale(
+  language: InterfaceLocale,
+  literal: string
+) {
   const translated = translateLiteralBodyForLanguage(language, literal);
   warnMissingLiteral(language, literal, translated);
 
   return translated;
 }
 
-function translateLiteralBodyForLanguage(language: LanguageCode, literal: string): string {
+function translateLiteralBodyForLanguage(language: InterfaceLocale, literal: string): string {
   if (language === 'en') {
     return literal;
   }
@@ -336,7 +503,7 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     )}]`;
   }
 
-  const resource = resourcesByLanguage[language];
+  const resource = getLocalizationResource(language);
   const direct = resource.literals[literal] ?? resourcesByLanguage.en.literals[literal];
   if (direct) {
     return direct;
@@ -2475,13 +2642,13 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
   return literal;
 }
 
-function translateEditableFieldHelpPrefix(language: LanguageCode, prefix: string) {
+function translateEditableFieldHelpPrefix(language: InterfaceLocale, prefix: string) {
   let separatorIndex = prefix.indexOf('. ');
   while (separatorIndex >= 0) {
     const label = prefix.slice(0, separatorIndex);
     const help = `${prefix.slice(separatorIndex + 2)}.`;
     const translatedHelp =
-      resourcesByLanguage[language].literals[help] ??
+      getLocalizationResource(language).literals[help] ??
       resourcesByLanguage.en.literals[help];
 
     if (translatedHelp) {
@@ -2494,12 +2661,12 @@ function translateEditableFieldHelpPrefix(language: LanguageCode, prefix: string
   return translateLiteralBodyForLanguage(language, prefix);
 }
 
-function translateSlashSeparatedTypeList(language: LanguageCode, literal: string): string | null {
+function translateSlashSeparatedTypeList(language: InterfaceLocale, literal: string): string | null {
   if (!literal.includes('/')) {
     return null;
   }
 
-  const resource = resourcesByLanguage[language];
+  const resource = getLocalizationResource(language);
   const parts = literal.split('/').map((part) => part.trim());
   if (parts.length < 2 || parts.some((part) => part.length === 0)) {
     return null;
@@ -2515,7 +2682,7 @@ function translateSlashSeparatedTypeList(language: LanguageCode, literal: string
     : null;
 }
 
-function localizeNodeAndDescendants(node: Node, language: LanguageCode) {
+function localizeNodeAndDescendants(node: Node, language: InterfaceLocale) {
   if (node instanceof Text) {
     localizeTextNode(node, language);
     return;
@@ -2532,7 +2699,7 @@ function localizeNodeAndDescendants(node: Node, language: LanguageCode) {
   }
 }
 
-function localizeTextNode(node: Text, language: LanguageCode) {
+function localizeTextNode(node: Text, language: InterfaceLocale) {
   const parent = node.parentElement;
   if (!parent || shouldSkipElement(parent, 'text')) {
     return;
@@ -2557,7 +2724,7 @@ function localizeTextNode(node: Text, language: LanguageCode) {
   }
 }
 
-function localizeElementAttributes(element: Element, language: LanguageCode) {
+function localizeElementAttributes(element: Element, language: InterfaceLocale) {
   if (shouldSkipElement(element, 'attribute')) {
     return;
   }
@@ -2589,14 +2756,14 @@ function localizeElementAttributes(element: Element, language: LanguageCode) {
   }
 }
 
-function translateTextPreservingWhitespace(value: string, language: LanguageCode) {
+function translateTextPreservingWhitespace(value: string, language: InterfaceLocale) {
   const match = /^(\s*)([\s\S]*?)(\s*)$/.exec(value);
   if (!match) {
-    return translateLiteralForLanguage(language, value);
+    return translateLiteralForInterfaceLocale(language, value);
   }
 
   const [, leading, body, trailing] = match;
-  return `${leading}${translateLiteralForLanguage(language, body)}${trailing}`;
+  return `${leading}${translateLiteralForInterfaceLocale(language, body)}${trailing}`;
 }
 
 function isKnownLocalizedValue(value: string, original: string) {
@@ -2606,6 +2773,10 @@ function isKnownLocalizedValue(value: string, original: string) {
 
   return supportedLanguages.some(
     (language) => value === translateTextPreservingWhitespace(original, language.code)
+  ) || [...communityResourcesByLocale.keys()].some(
+    (language) => value === translateTextPreservingWhitespace(original, language)
+  ) || [...retiredCommunityResourcesByLocale.keys()].some(
+    (language) => value === translateTextPreservingWhitespace(original, language)
   );
 }
 
@@ -2630,32 +2801,34 @@ function interpolateLocalizationParams(value: string, params?: LocalizationParam
 }
 
 function formatLiteralTemplate(
-  language: LanguageCode,
+  language: InterfaceLocale,
   template: string,
   params?: LocalizationParams
 ) {
   const translated =
-    resourcesByLanguage[language].literals[template] ??
+    getLocalizationResource(language).literals[template] ??
     resourcesByLanguage.en.literals[template] ??
     template;
 
   return interpolateLocalizationParams(translated, params);
 }
 
-function readStoredLanguage(): LanguageCode {
+function readStoredInterfaceLocale(): InterfaceLocale {
   if (typeof window === 'undefined') {
     return 'en';
   }
 
   try {
     const value = window.localStorage.getItem(languageStorageKey);
-    return isLanguageCode(value) ? value : 'en';
+    return isBuiltInLanguageCode(value) || (value !== null && isCommunityLocaleId(value))
+      ? value
+      : 'en';
   } catch {
     return 'en';
   }
 }
 
-function writeStoredLanguage(language: LanguageCode) {
+function writeStoredInterfaceLocale(language: InterfaceLocale) {
   if (typeof window === 'undefined') {
     return;
   }
@@ -2667,19 +2840,15 @@ function writeStoredLanguage(language: LanguageCode) {
   }
 }
 
-function isLanguageCode(value: string | null): value is LanguageCode {
-  return (
-    value === 'en' ||
-    value === 'es' ||
-    value === 'fr' ||
-    value === 'de' ||
-    value === 'ru' ||
-    value === 'uk' ||
-    value === 'zh'
-  );
+function getLocalizationResource(language: InterfaceLocale): LocalizationResource {
+  return isBuiltInLanguageCode(language)
+    ? resourcesByLanguage[language]
+    : communityResourcesByLocale.get(language) ??
+        retiredCommunityResourcesByLocale.get(language) ??
+        resourcesByLanguage.en;
 }
 
-function warnMissingKey(language: LanguageCode, key: string, translated: string) {
+function warnMissingKey(language: InterfaceLocale, key: string, translated: string) {
   if (language === 'en' || translated !== key || !isLocalizationDebugEnabled()) {
     return;
   }
@@ -2691,7 +2860,7 @@ function warnMissingKey(language: LanguageCode, key: string, translated: string)
   }
 }
 
-function warnMissingLiteral(language: LanguageCode, literal: string, translated: string) {
+function warnMissingLiteral(language: InterfaceLocale, literal: string, translated: string) {
   if (language === 'en' || translated !== literal || !isLocalizationDebugEnabled()) {
     return;
   }

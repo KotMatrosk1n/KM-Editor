@@ -4,6 +4,7 @@ import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } fro
 import { type ReactNode } from 'react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticMessage } from '../diagnostics';
+import { useDiagnosticNavigation } from '../diagnosticActions';
 import { useLocalization } from '../localization';
 import { ContextHelp } from './ContextHelp';
 
@@ -43,7 +44,7 @@ export function Metric({
 }
 
 export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
-  const { language, t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   const outputTransaction = applyResult.outputTransaction;
   const hasErrors =
     applyResult.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
@@ -99,7 +100,7 @@ export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }
             {t('workflowPanels.outputTransaction.summary', {
               count: outputTransaction.targetCount,
               outcome: t(`workflowPanels.outputTransaction.outcome.${outputTransaction.outcome}`),
-              time: new Intl.DateTimeFormat(language, {
+              time: new Intl.DateTimeFormat(formatLocale, {
                 dateStyle: 'medium',
                 timeStyle: 'short'
               }).format(new Date(outputTransaction.completedAtUtc))
@@ -240,6 +241,7 @@ export function DiagnosticsSection({
 }) {
   const isScrollable = scrollAfterEntries !== undefined && diagnostics.length > scrollAfterEntries;
   const { t, translateLiteral } = useLocalization();
+  const diagnosticNavigation = useDiagnosticNavigation();
   const groups = [
     {
       diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
@@ -261,6 +263,10 @@ export function DiagnosticsSection({
   if (groups.length === 0) {
     return null;
   }
+  const primaryAction = groups
+    .flatMap((group) => group.diagnostics)
+    .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
+    .find((action) => action !== null);
 
   return (
     <section aria-labelledby="diagnostics-heading" className="panel">
@@ -270,6 +276,17 @@ export function DiagnosticsSection({
         <ContextHelp label={translateLiteral('Diagnostics')}>
           {t('workflowPanels.diagnosticsHelp')}
         </ContextHelp>
+        {primaryAction ? (
+          <button
+            className="diagnostic-open-action secondary-button"
+            onClick={() => diagnosticNavigation.navigate(primaryAction.location)}
+            type="button"
+          >
+            {t('diagnostics.openAction', {
+              target: translateLiteral(primaryAction.targetLabel)
+            })}
+          </button>
+        ) : null}
       </div>
 
       <div className={`diagnostic-groups ${isScrollable ? 'diagnostic-list-scrollable' : ''}`}>

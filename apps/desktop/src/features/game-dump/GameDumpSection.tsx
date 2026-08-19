@@ -48,7 +48,8 @@ type GameDumpProgress = {
 
 type GameDumpCategoryFilter = 'all' | 'available' | 'selected';
 
-const destinationStorageKey = 'km-editor.game-dump-destinations.v1';
+export const legacyGameDumpDestinationStorageKey =
+  'km-editor.game-dump-destinations.v1';
 const allGameDumpLanguagesValue = '__all__';
 
 export function GameDumpSection({
@@ -56,15 +57,22 @@ export function GameDumpSection({
   bridge,
   desktopServices,
   health,
+  onRememberDestination,
   onWriteStateChange,
-  paths
+  paths,
+  rememberedDestination = ''
 }: {
   appVersion: string;
   bridge: ProjectBridge;
   desktopServices: DesktopServices;
   health: ProjectHealth | null;
+  onRememberDestination?: (
+    game: NonNullable<ProjectPaths['selectedGame']>,
+    destination: string
+  ) => void | Promise<void>;
   onWriteStateChange?: (isWriting: boolean) => void;
   paths: ProjectPaths;
+  rememberedDestination?: string;
 }) {
   const [workflowCategories, setWorkflowCategories] = useState<GameDumpCategory[]>([]);
   const [workflowDiagnostics, setWorkflowDiagnostics] = useState<ApiDiagnostic[]>([]);
@@ -122,18 +130,18 @@ export function GameDumpSection({
       setDestinationFolder('');
       return;
     }
-    setDestinationFolder(loadRememberedDestination(paths.selectedGame));
-  }, [paths.selectedGame]);
+    setDestinationFolder(rememberedDestination);
+  }, [paths.selectedGame, rememberedDestination]);
 
   const updateDestinationFolder = useCallback(
-    (destination: string) => {
+    (destination: string, remember: boolean) => {
       setDestinationFolder(destination);
-      if (paths.selectedGame) {
-        rememberDestination(paths.selectedGame, destination);
+      if (remember && paths.selectedGame) {
+        void onRememberDestination?.(paths.selectedGame, destination);
       }
       invalidateGeneratedState();
     },
-    [invalidateGeneratedState, paths.selectedGame]
+    [invalidateGeneratedState, onRememberDestination, paths.selectedGame]
   );
 
   const loadWorkflow = useCallback(async () => {
@@ -223,7 +231,7 @@ export function GameDumpSection({
         title: translateLiteral('Select Game Dump destination')
       });
       if (selectedFolder) {
-        updateDestinationFolder(selectedFolder);
+        updateDestinationFolder(selectedFolder, true);
       }
     } catch (error) {
       setActionDiagnostics(
@@ -265,6 +273,9 @@ export function GameDumpSection({
     }
 
     setIsConfirmOpen(false);
+    if (paths.selectedGame) {
+      void onRememberDestination?.(paths.selectedGame, destinationFolder);
+    }
     onWriteStateChange?.(true);
     setIsGenerating(true);
     setResult(null);
@@ -374,7 +385,15 @@ export function GameDumpSection({
                   data-localization-ignore="true"
                   disabled={isGenerating}
                   id="game-dump-destination-folder"
-                  onChange={(event) => updateDestinationFolder(event.target.value)}
+                  onBlur={() => {
+                    if (paths.selectedGame) {
+                      void onRememberDestination?.(
+                        paths.selectedGame,
+                        destinationFolder
+                      );
+                    }
+                  }}
+                  onChange={(event) => updateDestinationFolder(event.target.value, false)}
                   placeholder={translateLiteral('Select a destination folder')}
                   type="text"
                   value={destinationFolder}
@@ -934,34 +953,40 @@ function formatBytes(value: number) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function loadRememberedDestination(game: NonNullable<ProjectPaths['selectedGame']>) {
+export function readLegacyGameDumpDestinations() {
+  const destinations: Partial<
+    Record<NonNullable<ProjectPaths['selectedGame']>, string>
+  > = {};
   try {
-    const parsed = JSON.parse(localStorage.getItem(destinationStorageKey) ?? '{}') as Record<
+    const stored = localStorage.getItem(legacyGameDumpDestinationStorageKey) ?? '{}';
+    if (stored.length > 256 * 1024) {
+      return destinations;
+    }
+    const parsed = JSON.parse(stored) as Record<
       string,
       unknown
     >;
-    return typeof parsed[game] === 'string' ? parsed[game] : '';
+    for (const game of ['sword', 'shield', 'scarlet', 'violet', 'za'] as const) {
+      const destination = parsed[game];
+      if (
+        typeof destination === 'string' &&
+        destination.length <= 32767 &&
+        destination.trim() === destination &&
+        !/[\u0000-\u001f\u007f-\u009f]/u.test(destination)
+      ) {
+        destinations[game] = destination;
+      }
+    }
   } catch {
-    return '';
+    return destinations;
   }
+  return destinations;
 }
 
-function rememberDestination(
-  game: NonNullable<ProjectPaths['selectedGame']>,
-  destination: string
-) {
+export function clearLegacyGameDumpDestinations() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(destinationStorageKey) ?? '{}') as Record<
-      string,
-      unknown
-    >;
-    if (destination.trim()) {
-      parsed[game] = destination;
-    } else {
-      delete parsed[game];
-    }
-    localStorage.setItem(destinationStorageKey, JSON.stringify(parsed));
+    localStorage.removeItem(legacyGameDumpDestinationStorageKey);
   } catch {
-    // Destination memory is an optional convenience; generation still works without it.
+    // A failed cleanup is safe because migration is repeatable.
   }
 }

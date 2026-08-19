@@ -2,6 +2,7 @@
 
 export const workbenchSections = [
   'health',
+  'workbench',
   'workflows',
   'items',
   'pokemon',

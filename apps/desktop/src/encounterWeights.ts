@@ -5,31 +5,32 @@ import type { EncounterSlotRecord } from './bridge/contracts';
 export function formatEncounterSlotWeightSummary(
   slot: EncounterSlotRecord,
   totalWeight: number,
-  isSvEncounterTable: boolean
+  isSvEncounterTable: boolean,
+  locale?: string
 ) {
   if (!isSvEncounterTable) {
     return `${slot.levelMin}-${slot.levelMax} / ${slot.weight}%`;
   }
 
   return `${slot.levelMin}-${slot.levelMax} / lot ${slot.weight}${
-    totalWeight > 0 ? ` (${formatEncounterShare(slot.weight, totalWeight)} share)` : ''
+    totalWeight > 0 ? ` (${formatEncounterShare(slot.weight, totalWeight, locale)} share)` : ''
   }`;
 }
 
-export function formatEncounterLotWeight(weight: number, totalWeight: number) {
+export function formatEncounterLotWeight(weight: number, totalWeight: number, locale?: string) {
   if (totalWeight <= 0) {
     return weight.toString();
   }
 
-  return `${weight} (${formatEncounterShare(weight, totalWeight)} share)`;
+  return `${weight} (${formatEncounterShare(weight, totalWeight, locale)} share)`;
 }
 
-export function formatEncounterLotShare(weight: number, totalWeight: number) {
+export function formatEncounterLotShare(weight: number, totalWeight: number, locale?: string) {
   if (totalWeight <= 0) {
     return 'Unavailable';
   }
 
-  return `${formatEncounterShare(weight, totalWeight)} share`;
+  return `${formatEncounterShare(weight, totalWeight, locale)} share`;
 }
 
 export function formatEncounterSharePercent(

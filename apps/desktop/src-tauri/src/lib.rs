@@ -602,6 +602,8 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "project.fileGraph.refresh"
             | "workflow.list"
             | "workspace.drafts.read"
+            | "workspace.applicationState.read"
+            | "workspace.projectState.read"
     ) {
         return Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT);
     }

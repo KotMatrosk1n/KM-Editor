@@ -18,6 +18,7 @@ import {
   HandCoins,
   ListChecks,
   ListOrdered,
+  LayoutDashboard,
   MapPin,
   MapPinned,
   MessageSquareOff,
@@ -56,7 +57,8 @@ export type CapabilityNavigationKindViewModel =
   | 'primary'
   | 'workflow'
   | 'utility'
-  | 'hidden';
+  | 'hidden'
+  | 'internal';
 
 export type WorkbenchCapabilityRegistration = {
   capabilityKinds: readonly CapabilityKind[];
@@ -121,6 +123,19 @@ export const workbenchCapabilityRegistry = [
   },
   {
     capabilityKinds: ['navigation', 'command'],
+    description: 'Open workspace tools, recent targets, and project capabilities.',
+    domain: 'workspace.home',
+    games: allGames,
+    icon: LayoutDashboard,
+    id: 'workbench',
+    label: 'Workbench',
+    maturity: 'utility',
+    navigationKind: 'primary',
+    showInWorkflowDashboard: false,
+    standalone: false
+  },
+  {
+    capabilityKinds: ['navigation', 'command'],
     description: 'Browse the workflows available for the active project.',
     domain: 'workspace.workflows',
     games: allGames,
@@ -128,7 +143,7 @@ export const workbenchCapabilityRegistry = [
     id: 'workflows',
     label: 'Workflows',
     maturity: 'utility',
-    navigationKind: 'primary',
+    navigationKind: 'internal',
     showInWorkflowDashboard: false,
     standalone: false
   },
@@ -522,6 +537,14 @@ export function getWorkbenchCapabilitiesByNavigationKind(
   return workbenchCapabilityRegistry.filter(
     (registration) => registration.navigationKind === navigationKind
   );
+}
+
+export function getWorkbenchSectionLabelKey(section: WorkbenchSection) {
+  return `workbench.section.${toContractSegment(section)}.label`;
+}
+
+export function getWorkbenchSectionDescriptionKey(section: WorkbenchSection) {
+  return `workbench.section.${toContractSegment(section)}.description`;
 }
 
 export function isCapabilityRegisteredForGame(

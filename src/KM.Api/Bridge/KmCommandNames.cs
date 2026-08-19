@@ -164,6 +164,11 @@ public static class KmCommandNames
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";
+    public const string ReadWorkspaceApplicationState = "workspace.applicationState.read";
+    public const string WriteWorkspaceApplicationState = "workspace.applicationState.write";
+    public const string ReadWorkspaceProjectState = "workspace.projectState.read";
+    public const string WriteWorkspaceProjectState = "workspace.projectState.write";
+    public const string DeleteWorkspaceProjectState = "workspace.projectState.delete";
     public const string GetOutputRecoveryStatus = "output.recovery.status";
     public const string ReconcileOutputRecovery = "output.recovery.reconcile";
     public const string ScanOutputIntegrity = "output.integrity.scan";
