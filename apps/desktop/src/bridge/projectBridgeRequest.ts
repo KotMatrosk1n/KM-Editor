@@ -8,12 +8,30 @@ import {
   type KmCommandName
 } from './contracts';
 import { ProjectBridgeError } from './projectBridgeError';
+import { recordBridgePerformanceDiagnostic } from '../performanceDiagnostics';
 
 export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
 
 const maximumProjectBridgeRequestBytes = 16 * 1024 * 1024;
 
 export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny>(
+  transport: ProjectBridgeTransport,
+  command: KmCommandName,
+  payload: unknown,
+  payloadSchema: TPayloadSchema
+): Promise<z.infer<TPayloadSchema>> {
+  const startedAt = performance.now();
+  try {
+    const response = await sendProjectBridgeRequestInner(transport, command, payload, payloadSchema);
+    recordBridgePerformanceDiagnostic(command, performance.now() - startedAt, 'success');
+    return response;
+  } catch (error) {
+    recordBridgePerformanceDiagnostic(command, performance.now() - startedAt, 'failure');
+    throw error;
+  }
+}
+
+async function sendProjectBridgeRequestInner<TPayloadSchema extends ZodTypeAny>(
   transport: ProjectBridgeTransport,
   command: KmCommandName,
   payload: unknown,

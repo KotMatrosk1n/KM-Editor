@@ -166,6 +166,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SvWorkflowService svWorkflowService;
     private readonly ZaWorkflowService zaWorkflowService;
     private readonly WorkspaceDraftApplicationService workspaceDraftApplicationService;
+    private readonly WorkspacePersonalStateApplicationService workspacePersonalStateApplicationService;
     private readonly OutputSafetyApplicationService outputSafetyApplicationService;
     private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
 
@@ -215,6 +216,7 @@ public sealed class ProjectBridgeDispatcher
         ZaWorkflowService? zaWorkflowService = null,
         SwShCacheManager? swShCacheManager = null,
         WorkspaceDraftApplicationService? workspaceDraftApplicationService = null,
+        WorkspacePersonalStateApplicationService? workspacePersonalStateApplicationService = null,
         OutputSafetyApplicationService? outputSafetyApplicationService = null,
         ProjectRelocationApplicationService? projectRelocationApplicationService = null)
     {
@@ -275,11 +277,14 @@ public sealed class ProjectBridgeDispatcher
         this.zaGameDumpService = zaGameDumpService ?? new ZaGameDumpService(this.zaWorkflowService);
         this.workspaceDraftApplicationService = workspaceDraftApplicationService
             ?? new WorkspaceDraftApplicationService();
+        this.workspacePersonalStateApplicationService = workspacePersonalStateApplicationService
+            ?? new WorkspacePersonalStateApplicationService();
         this.outputSafetyApplicationService = outputSafetyApplicationService
             ?? new OutputSafetyApplicationService();
         this.projectRelocationApplicationService = projectRelocationApplicationService
             ?? new ProjectRelocationApplicationService(
                 workspaceDraftService: this.workspaceDraftApplicationService,
+                workspacePersonalStateService: this.workspacePersonalStateApplicationService,
                 outputSafetyService: this.outputSafetyApplicationService);
     }
 
@@ -509,6 +514,11 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
+                KmCommandNames.ReadWorkspaceApplicationState => DispatchReadWorkspaceApplicationState(requestJson),
+                KmCommandNames.WriteWorkspaceApplicationState => DispatchWriteWorkspaceApplicationState(requestJson),
+                KmCommandNames.ReadWorkspaceProjectState => DispatchReadWorkspaceProjectState(requestJson),
+                KmCommandNames.WriteWorkspaceProjectState => DispatchWriteWorkspaceProjectState(requestJson),
+                KmCommandNames.DeleteWorkspaceProjectState => DispatchDeleteWorkspaceProjectState(requestJson),
                 KmCommandNames.GetOutputRecoveryStatus => DispatchGetOutputRecoveryStatus(requestJson),
                 KmCommandNames.ReconcileOutputRecovery => DispatchReconcileOutputRecovery(requestJson),
                 KmCommandNames.ScanOutputIntegrity => DispatchScanOutputIntegrity(requestJson),
@@ -549,6 +559,15 @@ public sealed class ProjectBridgeDispatcher
         }
 
         catch (WorkspaceDraftValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.DataInvalid,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (WorkspacePersonalStateValidationException exception)
         {
             return (
                 SerializeFailure(
@@ -832,6 +851,59 @@ public sealed class ProjectBridgeDispatcher
             .GetAwaiter()
             .GetResult();
 
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchReadWorkspaceApplicationState(string requestJson)
+    {
+        var request = DeserializeRequest<ReadWorkspaceApplicationStateRequest>(requestJson);
+        var response = workspacePersonalStateApplicationService
+            .ReadApplicationAsync()
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchWriteWorkspaceApplicationState(string requestJson)
+    {
+        var request = DeserializeRequest<WriteWorkspaceApplicationStateRequest>(requestJson);
+        var response = workspacePersonalStateApplicationService
+            .WriteApplicationAsync(request.Payload.Document, request.Payload.ExpectedETag)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchReadWorkspaceProjectState(string requestJson)
+    {
+        var request = DeserializeRequest<ReadWorkspaceProjectStateRequest>(requestJson);
+        var response = workspacePersonalStateApplicationService
+            .ReadProjectAsync(request.Payload.ProjectId)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchWriteWorkspaceProjectState(string requestJson)
+    {
+        var request = DeserializeRequest<WriteWorkspaceProjectStateRequest>(requestJson);
+        var response = workspacePersonalStateApplicationService
+            .WriteProjectAsync(
+                request.Payload.ProjectId,
+                request.Payload.Document,
+                request.Payload.ExpectedETag)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchDeleteWorkspaceProjectState(string requestJson)
+    {
+        var request = DeserializeRequest<DeleteWorkspaceProjectStateRequest>(requestJson);
+        var response = workspacePersonalStateApplicationService
+            .DeleteProjectAsync(request.Payload.ProjectId, request.Payload.ExpectedETag)
+            .GetAwaiter()
+            .GetResult();
         return SerializeSuccess(response, request.RequestId);
     }
 

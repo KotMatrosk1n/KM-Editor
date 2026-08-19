@@ -13,7 +13,8 @@ import {
 } from '../workflowGameSupport';
 import {
   getWorkbenchCapabilitiesByNavigationKind,
-  getWorkbenchCapabilityRegistration
+  getWorkbenchCapabilityRegistration,
+  getWorkbenchSectionLabelKey
 } from '../workbench/capabilityRegistry';
 import type { WorkbenchSection } from '../workbenchStore';
 
@@ -61,7 +62,7 @@ export function AppSidebar({
   suppressedActiveWorkflowGroup,
   toggleRef
 }: AppSidebarProps) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const toggleLabel = translateLiteral(
     isSidebarCompact ? 'Expand sidebar' : 'Collapse sidebar'
   );
@@ -106,20 +107,23 @@ export function AppSidebar({
           {primaryNavigationSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
+            const sectionLabel = section.id === 'workbench'
+              ? t(getWorkbenchSectionLabelKey(section.id))
+              : translateLiteral(section.label);
 
             return (
               <button
                 aria-current={isActive ? 'page' : undefined}
-                aria-label={section.label}
+                aria-label={sectionLabel}
                 className="nav-button"
                 disabled={navigationDisabled}
                 key={section.id}
                 onClick={() => onNavigate(section.id)}
-                title={isSidebarCompact ? translateLiteral(section.label) : undefined}
+                title={isSidebarCompact ? sectionLabel : undefined}
                 type="button"
               >
                 <Icon aria-hidden="true" size={18} />
-                <span>{section.label}</span>
+                <span>{sectionLabel}</span>
               </button>
             );
           })}

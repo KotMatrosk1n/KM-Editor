@@ -63,6 +63,7 @@ type ProjectPathDraftValues = Pick<ProjectPathDraft, ProjectPathFieldName>;
 type ValidatedProjectPathCache = Partial<Record<ProjectGame, ProjectPathDraftValues>>;
 const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
 const validatedProjectPathCacheStorageKey = 'km-editor.validated-project-path-cache.v1';
+const maximumLegacyProjectPathStorageCharacters = 256 * 1024;
 export type OpenProjectState = {
   fileGraph?: ProjectFileGraph;
   health: ProjectHealth;
@@ -163,6 +164,7 @@ type WorkbenchState = {
   workflows: WorkflowSummary[];
   evictLoadedWorkflowSections: (sections: Iterable<WorkbenchSection>) => void;
   setDraftPath: (field: ProjectPathFieldName, value: string) => void;
+  setProjectPathDraft: (draftPaths: ProjectPathDraft) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
   setApplyResult: (applyResult: ApplyResult | null) => void;
   setChangePlan: (changePlan: ChangePlan | null) => void;
@@ -270,14 +272,15 @@ type WorkbenchState = {
   setTrainersWorkflow: (trainersWorkflow: TrainersWorkflow) => void;
   setWorkflows: (workflows: WorkflowSummary[]) => void;
   clearSelectedGame: () => void;
-  rememberValidatedProjectPaths: (draftPaths: ProjectPathDraft) => void;
   setSelectedGame: (selectedGame: ProjectGame) => void;
 };
 function resolveWorkflowLoadSection(
   activeSection: WorkbenchSection,
   workflowSection: WorkbenchSection
 ) {
-  return activeSection === 'workflows' ? workflowSection : activeSection;
+  return activeSection === 'workbench' || activeSection === 'workflows'
+    ? workflowSection
+    : activeSection;
 }
 function resolveSelectedPokemonPersonalId(
   pokemonWorkflow: PokemonWorkflow,
@@ -450,7 +453,6 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     trainersWorkflow: null
   };
 }
-
 function createProjectSessionResetState(): Partial<WorkbenchState> {
   return {
     ...createLoadedWorkflowResetState(),
@@ -570,12 +572,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         ...state.draftPaths,
         [field]: value
       };
-      saveProjectPathDraft(draftPaths);
-
       return {
         ...createProjectSessionResetState(),
         draftPaths
       };
+    }),
+  setProjectPathDraft: (draftPaths) =>
+    set({
+      ...createProjectSessionResetState(),
+      draftPaths: normalizeProjectPathDraft(draftPaths)
     }),
   clearSelectedGame: () =>
     set((state) => {
@@ -583,8 +588,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         ...state.draftPaths,
         selectedGame: null
       };
-      saveProjectPathDraft(draftPaths);
-
       return {
         ...createProjectSessionResetState(),
         draftPaths
@@ -1113,23 +1116,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       };
     }),
   setSelectedGame: (selectedGame) =>
-    set(() => {
-      const cachedPaths = loadValidatedProjectPathDraft(selectedGame);
-      const draftPaths = {
-        ...(cachedPaths ?? createEmptyProjectPathDraftValues()),
+    set({
+      ...createProjectSessionResetState(),
+      draftPaths: {
+        ...createEmptyProjectPathDraftValues(),
         selectedGame
-      };
-      saveProjectPathDraft(draftPaths);
-
-      return {
-        ...createProjectSessionResetState(),
-        draftPaths
-      };
+      }
     }),
-  rememberValidatedProjectPaths: (draftPaths) => {
-    saveValidatedProjectPathDraft(draftPaths);
-    saveProjectPathDraft(draftPaths);
-  },
   setWorkflows: (workflows) => set({ workflows })
 }));
 
@@ -1143,7 +1136,7 @@ function loadProjectPathDraft(): ProjectPathDraft {
   try {
     const storedValue = window.localStorage.getItem(projectPathDraftStorageKey);
 
-    if (!storedValue) {
+    if (!storedValue || storedValue.length > maximumLegacyProjectPathStorageCharacters) {
       return emptyDraft;
     }
 
@@ -1165,18 +1158,6 @@ function loadProjectPathDraft(): ProjectPathDraft {
   }
 }
 
-function loadValidatedProjectPathDraft(selectedGame: ProjectGame): ProjectPathDraftValues | null {
-  const cache = loadValidatedProjectPathCache();
-  return cache[selectedGame] ?? null;
-}
-
-export function getRememberedProjectGames(): ProjectGame[] {
-  const cache = loadValidatedProjectPathCache();
-  return (['sword', 'shield', 'scarlet', 'violet', 'za'] as const).filter(
-    (game) => cache[game] !== undefined
-  );
-}
-
 function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
   if (typeof window === 'undefined') {
     return {};
@@ -1185,7 +1166,7 @@ function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
   try {
     const storedValue = window.localStorage.getItem(validatedProjectPathCacheStorageKey);
 
-    if (!storedValue) {
+    if (!storedValue || storedValue.length > maximumLegacyProjectPathStorageCharacters) {
       return {};
     }
 
@@ -1226,36 +1207,29 @@ function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
   }
 }
 
-function saveProjectPathDraft(draftPaths: ProjectPathDraft) {
+export function readLegacyProjectPathState() {
+  return {
+    draft: loadProjectPathDraft(),
+    validatedByGame: loadValidatedProjectPathCache()
+  };
+}
+export function clearLegacyProjectPathState() {
+  clearLegacyProjectPathDraft();
+  clearLegacyValidatedProjectPathCache();
+}
+
+export function clearLegacyProjectPathDraft() {
   if (typeof window === 'undefined') {
     return;
   }
-
-  try {
-    const persistentDraftPaths = {
-      baseExeFsPath: draftPaths.baseExeFsPath, baseRomFsPath: draftPaths.baseRomFsPath, outputRootPath: draftPaths.outputRootPath, pokemonLegendsZASupportFolderPath: draftPaths.pokemonLegendsZASupportFolderPath, saveFilePath: draftPaths.saveFilePath, scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
-    };
-    window.localStorage.setItem(projectPathDraftStorageKey, JSON.stringify(persistentDraftPaths));
-  } catch {
-    // Storage can be unavailable in hardened browser contexts; typed paths should still work.
-  }
+  window.localStorage.removeItem(projectPathDraftStorageKey);
 }
 
-function saveValidatedProjectPathDraft(draftPaths: ProjectPathDraft) {
-  if (typeof window === 'undefined' || draftPaths.selectedGame === null) {
+export function clearLegacyValidatedProjectPathCache() {
+  if (typeof window === 'undefined') {
     return;
   }
-
-  try {
-    const cache = loadValidatedProjectPathCache();
-    cache[draftPaths.selectedGame] = toProjectPathDraftValues(draftPaths);
-    window.localStorage.setItem(
-      validatedProjectPathCacheStorageKey,
-      JSON.stringify(cache)
-    );
-  } catch {
-    // Storage can be unavailable in hardened browser contexts; validation should still work.
-  }
+  window.localStorage.removeItem(validatedProjectPathCacheStorageKey);
 }
 
 function createEmptyProjectPathDraft(): ProjectPathDraft {
@@ -1276,6 +1250,18 @@ function createEmptyProjectPathDraftValues(): ProjectPathDraftValues {
   };
 }
 
+function normalizeProjectPathDraft(draftPaths: ProjectPathDraft): ProjectPathDraft {
+  return {
+    baseExeFsPath: draftPaths.baseExeFsPath,
+    baseRomFsPath: draftPaths.baseRomFsPath,
+    outputRootPath: draftPaths.outputRootPath,
+    pokemonLegendsZASupportFolderPath: draftPaths.pokemonLegendsZASupportFolderPath,
+    saveFilePath: draftPaths.saveFilePath,
+    scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath,
+    selectedGame: draftPaths.selectedGame
+  };
+}
+
 function coerceProjectPathDraftValues(
   draftPaths: Partial<ProjectPathDraftValues> | null | undefined
 ): ProjectPathDraftValues | undefined {
@@ -1284,23 +1270,25 @@ function coerceProjectPathDraftValues(
   }
 
   return {
-    baseExeFsPath: typeof draftPaths.baseExeFsPath === 'string' ? draftPaths.baseExeFsPath : '',
-    baseRomFsPath: typeof draftPaths.baseRomFsPath === 'string' ? draftPaths.baseRomFsPath : '',
-    outputRootPath:
-      typeof draftPaths.outputRootPath === 'string' ? draftPaths.outputRootPath : '',
-    pokemonLegendsZASupportFolderPath: typeof draftPaths.pokemonLegendsZASupportFolderPath === 'string' ? draftPaths.pokemonLegendsZASupportFolderPath : '',
-    saveFilePath: typeof draftPaths.saveFilePath === 'string' ? draftPaths.saveFilePath : '',
-    scarletVioletSupportFolderPath: typeof draftPaths.scarletVioletSupportFolderPath === 'string' ? draftPaths.scarletVioletSupportFolderPath : ''
-  };
-}
-
-function toProjectPathDraftValues(draftPaths: ProjectPathDraft): ProjectPathDraftValues {
-  return {
-    baseExeFsPath: draftPaths.baseExeFsPath,
-    baseRomFsPath: draftPaths.baseRomFsPath,
-    outputRootPath: draftPaths.outputRootPath,
-    pokemonLegendsZASupportFolderPath: draftPaths.pokemonLegendsZASupportFolderPath,
-    saveFilePath: draftPaths.saveFilePath,
-    scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
+    baseExeFsPath : typeof draftPaths.baseExeFsPath === 'string'
+                        ? draftPaths.baseExeFsPath
+                        : '',
+    baseRomFsPath : typeof draftPaths.baseRomFsPath === 'string'
+                        ? draftPaths.baseRomFsPath
+                        : '',
+    outputRootPath : typeof draftPaths.outputRootPath === 'string'
+                         ? draftPaths.outputRootPath
+                         : '',
+    pokemonLegendsZASupportFolderPath :
+        typeof draftPaths.pokemonLegendsZASupportFolderPath === 'string'
+            ? draftPaths.pokemonLegendsZASupportFolderPath
+            : '',
+    saveFilePath : typeof draftPaths.saveFilePath === 'string'
+                       ? draftPaths.saveFilePath
+                       : '',
+    scarletVioletSupportFolderPath :
+        typeof draftPaths.scarletVioletSupportFolderPath === 'string'
+            ? draftPaths.scarletVioletSupportFolderPath
+            : ''
   };
 }

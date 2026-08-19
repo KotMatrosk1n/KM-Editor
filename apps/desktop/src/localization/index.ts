@@ -4,8 +4,29 @@ export {
   LocalizationProvider,
   languageStorageKey,
   supportedLanguages,
+  translateKeyForInterfaceLocale,
   translateKeyForLanguage,
+  translateLiteralForInterfaceLocale,
   translateLiteralForLanguage,
   useLocalization,
-  type LanguageCode
+  type AvailableInterfaceLanguage,
+  type CommunityLocalePackUpdateOptions,
+  type CommunityLocalePack,
+  type InterfaceLocale,
+  type LanguageCode,
+  type LocalizationContextValue
 } from './LocalizationProvider';
+
+export {
+  LocalePackValidationError,
+  communityLocalePackSchemaVersion,
+  isBuiltInLanguageCode,
+  isCommunityLocaleId,
+  maximumCommunityLocalePackBytes,
+  maximumCommunityLocalePacks,
+  parseCommunityLocalePackBytes,
+  parseCommunityLocalePackText,
+  toCommunityLocaleId,
+  validateCommunityLocalePack,
+  type LocalePackValidationFailureCode
+} from './localePackContracts';

@@ -9,6 +9,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Output;
 using KM.Api.Projects;
+using KM.Api.Workspace;
 using KM.Core.Projects;
 using KM.Tools.Bridge;
 
@@ -21,6 +22,7 @@ namespace KM.Tools.Application;
 public sealed class ProjectRelocationApplicationService
 {
     private const string DraftDocumentId = "drafts";
+    private const string PersonalStateDocumentId = "personal-state";
     private static readonly EnumerationOptions MetadataEntryEnumeration = new()
     {
         AttributesToSkip = 0,
@@ -36,15 +38,19 @@ public sealed class ProjectRelocationApplicationService
 
     private readonly ProjectRelocationService relocationService;
     private readonly WorkspaceDraftApplicationService workspaceDraftService;
+    private readonly WorkspacePersonalStateApplicationService workspacePersonalStateService;
     private readonly OutputSafetyApplicationService outputSafetyService;
 
     public ProjectRelocationApplicationService(
         ProjectRelocationService? relocationService = null,
         WorkspaceDraftApplicationService? workspaceDraftService = null,
+        WorkspacePersonalStateApplicationService? workspacePersonalStateService = null,
         OutputSafetyApplicationService? outputSafetyService = null)
     {
         this.relocationService = relocationService ?? new ProjectRelocationService();
         this.workspaceDraftService = workspaceDraftService ?? new WorkspaceDraftApplicationService();
+        this.workspacePersonalStateService = workspacePersonalStateService
+            ?? new WorkspacePersonalStateApplicationService();
         this.outputSafetyService = outputSafetyService ?? new OutputSafetyApplicationService();
     }
 
@@ -109,19 +115,39 @@ public sealed class ProjectRelocationApplicationService
                 .ReadAsync(candidateProjectId.Value, cancellationToken)
                 .ConfigureAwait(false);
         var documentStatus = GetDraftDocumentStatus(sourceDrafts, destinationDrafts);
+        var sourcePersonalState = await workspacePersonalStateService
+            .ReadProjectAsync(request.Source.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationPersonalState = candidateProjectId.Value == request.Source.ProjectId
+            ? sourcePersonalState
+            : await workspacePersonalStateService
+                .ReadProjectAsync(candidateProjectId.Value, cancellationToken)
+                .ConfigureAwait(false);
+        var relocatedPersonalState = sourcePersonalState.Document is null
+            ? null
+            : workspacePersonalStateService.PrepareForRelocation(
+                sourcePersonalState.Document,
+                candidatePaths.OutputRootPath);
+        var personalStateStatus = GetPersonalStateDocumentStatus(
+            sourcePersonalState,
+            destinationPersonalState,
+            relocatedPersonalState,
+            sameProject: candidateProjectId.Value == request.Source.ProjectId);
         var outputStoreState = InspectCandidateOutputStore(candidatePaths.OutputRootPath);
         var hasOutputContinuityConflict = result.StableSourceIdentityChanged is true
             && outputStoreState == RelocationOutputStoreState.OccupiedOrUnverifiable;
         var canApply = documentStatus != ProjectRelocationDocumentStatusDto.Conflict
+            && personalStateStatus != ProjectRelocationDocumentStatusDto.Conflict
             && !hasOutputContinuityConflict;
         var diagnostics = result.CandidateHealth.Diagnostics
             .Select(ProjectBridgeMapper.ToDto)
             .ToList();
-        if (documentStatus == ProjectRelocationDocumentStatusDto.Conflict)
+        if (documentStatus == ProjectRelocationDocumentStatusDto.Conflict
+            || personalStateStatus == ProjectRelocationDocumentStatusDto.Conflict)
         {
             diagnostics.Add(CreateDiagnostic(
                 ApiDiagnosticSeverity.Error,
-                "The relocated project already has different private draft state. No workspace data was copied.",
+                "The relocated project already has different private workspace state. No workspace data was copied.",
                 "KM-PROJECT-RELOCATION-CONFLICT"));
         }
         else if (hasOutputContinuityConflict)
@@ -146,6 +172,10 @@ public sealed class ProjectRelocationApplicationService
             sourceDrafts.ETag,
             destinationDrafts.ETag,
             documentStatus,
+            sourcePersonalState.ETag,
+            destinationPersonalState.ETag,
+            personalStateStatus,
+            FingerprintDocument(relocatedPersonalState),
             outputStoreState);
         return new PreviewProjectRelocationResponse(
             reviewToken,
@@ -155,7 +185,10 @@ public sealed class ProjectRelocationApplicationService
             result.CandidateHealth.Paths
                 .Select(path => new ProjectRelocationRoleDto(ToDto(path.Role), ToDto(path.Status)))
                 .ToArray(),
-            [new ProjectRelocationDocumentDto(DraftDocumentId, documentStatus)],
+            [
+                new ProjectRelocationDocumentDto(DraftDocumentId, documentStatus),
+                new ProjectRelocationDocumentDto(PersonalStateDocumentId, personalStateStatus),
+            ],
             diagnostics);
     }
 
@@ -223,6 +256,9 @@ public sealed class ProjectRelocationApplicationService
 
         var migratedDocuments = new List<string>();
         var draftStatus = preview.WorkspaceDocuments.Single(document => document.DocumentId == DraftDocumentId).Status;
+        var personalStateStatus = preview.WorkspaceDocuments
+            .Single(document => document.DocumentId == PersonalStateDocumentId)
+            .Status;
         var sourceDrafts = await workspaceDraftService
             .ReadAsync(request.Source.ProjectId, cancellationToken)
             .ConfigureAwait(false);
@@ -232,6 +268,24 @@ public sealed class ProjectRelocationApplicationService
                 .ReadAsync(destinationProjectId, cancellationToken)
                 .ConfigureAwait(false);
         var currentDraftStatus = GetDraftDocumentStatus(sourceDrafts, destinationDrafts);
+        var sourcePersonalState = await workspacePersonalStateService
+            .ReadProjectAsync(request.Source.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationPersonalState = destinationProjectId == request.Source.ProjectId
+            ? sourcePersonalState
+            : await workspacePersonalStateService
+                .ReadProjectAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
+        var relocatedPersonalState = sourcePersonalState.Document is null
+            ? null
+            : workspacePersonalStateService.PrepareForRelocation(
+                sourcePersonalState.Document,
+                candidatePaths.OutputRootPath);
+        var currentPersonalStateStatus = GetPersonalStateDocumentStatus(
+            sourcePersonalState,
+            destinationPersonalState,
+            relocatedPersonalState,
+            sameProject: destinationProjectId == request.Source.ProjectId);
         var currentOutputStoreState = InspectCandidateOutputStore(candidatePaths.OutputRootPath);
         var currentReviewToken = CreateReviewToken(
             request.Source.ProjectId,
@@ -240,8 +294,13 @@ public sealed class ProjectRelocationApplicationService
             sourceDrafts.ETag,
             destinationDrafts.ETag,
             currentDraftStatus,
+            sourcePersonalState.ETag,
+            destinationPersonalState.ETag,
+            currentPersonalStateStatus,
+            FingerprintDocument(relocatedPersonalState),
             currentOutputStoreState);
         if (currentDraftStatus != draftStatus
+            || currentPersonalStateStatus != personalStateStatus
             || (destinationProjectId != request.Source.ProjectId
                 && currentOutputStoreState == RelocationOutputStoreState.OccupiedOrUnverifiable)
             || !CryptographicOperations.FixedTimeEquals(
@@ -252,15 +311,16 @@ public sealed class ProjectRelocationApplicationService
         }
 
         string? copiedDraftETag = null;
-        if (draftStatus == ProjectRelocationDocumentStatusDto.Copy)
+        string? copiedPersonalStateETag = null;
+        try
         {
-            if (!sourceDrafts.Exists || sourceDrafts.Document is null)
+            if (draftStatus == ProjectRelocationDocumentStatusDto.Copy)
             {
-                throw new ProjectRelocationReviewMismatchException();
-            }
+                if (!sourceDrafts.Exists || sourceDrafts.Document is null)
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
 
-            try
-            {
                 var writeResult = await workspaceDraftService
                     .WriteAsync(
                         destinationProjectId,
@@ -269,78 +329,213 @@ public sealed class ProjectRelocationApplicationService
                         cancellationToken)
                     .ConfigureAwait(false);
                 copiedDraftETag = writeResult.ETag;
-                var copyVerified = false;
-                try
+                var sourceAfterCopy = await workspaceDraftService
+                    .ReadAsync(request.Source.ProjectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.Equals(
+                        sourceAfterCopy.ETag,
+                        sourceDrafts.ETag,
+                        StringComparison.Ordinal))
                 {
-                    var sourceAfterCopy = await workspaceDraftService
-                        .ReadAsync(request.Source.ProjectId, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (!string.Equals(
-                            sourceAfterCopy.ETag,
-                            sourceDrafts.ETag,
-                            StringComparison.Ordinal))
-                    {
-                        throw new ProjectRelocationReviewMismatchException();
-                    }
+                    throw new ProjectRelocationReviewMismatchException();
+                }
 
-                    copyVerified = true;
-                }
-                finally
-                {
-                    if (!copyVerified)
-                    {
-                        var rollback = await workspaceDraftService
-                            .DeleteAsync(
-                                destinationProjectId,
-                                writeResult.ETag,
-                                CancellationToken.None)
-                            .ConfigureAwait(false);
-                        if (!rollback.Deleted)
-                        {
-                            throw new ProjectRelocationConflictException();
-                        }
-                    }
-                }
+                migratedDocuments.Add(DraftDocumentId);
             }
-            catch (KM.Core.Workspace.WorkspaceDocumentConflictException exception)
+
+            if (personalStateStatus == ProjectRelocationDocumentStatusDto.Copy)
             {
-                throw new ProjectRelocationConflictException(exception);
+                if (!sourcePersonalState.Exists || relocatedPersonalState is null)
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
+
+                var writeResult = await workspacePersonalStateService
+                    .WriteProjectAsync(
+                        destinationProjectId,
+                        relocatedPersonalState,
+                        expectedETag: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                copiedPersonalStateETag = writeResult.ETag;
+                var sourceAfterCopy = await workspacePersonalStateService
+                    .ReadProjectAsync(request.Source.ProjectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.Equals(
+                        sourceAfterCopy.ETag,
+                        sourcePersonalState.ETag,
+                        StringComparison.Ordinal))
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
+
+                migratedDocuments.Add(PersonalStateDocumentId);
             }
 
-            migratedDocuments.Add(DraftDocumentId);
+            await EnsureWorkspaceBindingsUnchangedAsync(
+                    request.Source.ProjectId,
+                    destinationProjectId,
+                    sourceDrafts.ETag,
+                    copiedDraftETag ?? destinationDrafts.ETag,
+                    sourcePersonalState.ETag,
+                    copiedPersonalStateETag ?? destinationPersonalState.ETag,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (InspectCandidateOutputStore(candidatePaths.OutputRootPath) != currentOutputStoreState)
+            {
+                throw new ProjectRelocationReviewMismatchException();
+            }
+
+            return new ApplyProjectRelocationResponse(
+                destinationProjectId,
+                ProjectBridgeMapper.ToDto(candidateHealth),
+                migratedDocuments,
+                preview.Diagnostics);
         }
-
-        if (InspectCandidateOutputStore(candidatePaths.OutputRootPath) != currentOutputStoreState)
+        catch (KM.Core.Workspace.WorkspaceDocumentConflictException exception)
         {
-            if (copiedDraftETag is not null)
-            {
-                try
-                {
-                    var rollback = await workspaceDraftService
-                        .DeleteAsync(
-                            destinationProjectId,
-                            copiedDraftETag,
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                    if (!rollback.Deleted)
-                    {
-                        throw new ProjectRelocationConflictException();
-                    }
-                }
-                catch (KM.Core.Workspace.WorkspaceDocumentConflictException exception)
-                {
-                    throw new ProjectRelocationConflictException(exception);
-                }
-            }
+            await RollBackCopiedWorkspaceDocumentsAsync(
+                    destinationProjectId,
+                    copiedDraftETag,
+                    copiedPersonalStateETag)
+                .ConfigureAwait(false);
+            throw new ProjectRelocationConflictException(exception);
+        }
+        catch (Exception exception) when (!IsFatal(exception))
+        {
+            await RollBackCopiedWorkspaceDocumentsAsync(
+                    destinationProjectId,
+                    copiedDraftETag,
+                    copiedPersonalStateETag)
+                .ConfigureAwait(false);
+            throw;
+        }
+    }
 
+    private async Task EnsureWorkspaceBindingsUnchangedAsync(
+        string sourceProjectId,
+        string destinationProjectId,
+        string? expectedSourceDraftETag,
+        string? expectedDestinationDraftETag,
+        string? expectedSourcePersonalStateETag,
+        string? expectedDestinationPersonalStateETag,
+        CancellationToken cancellationToken)
+    {
+        var sourceDrafts = await workspaceDraftService
+            .ReadAsync(sourceProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationDrafts = destinationProjectId == sourceProjectId
+            ? sourceDrafts
+            : await workspaceDraftService
+                .ReadAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
+        var sourcePersonalState = await workspacePersonalStateService
+            .ReadProjectAsync(sourceProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationPersonalState = destinationProjectId == sourceProjectId
+            ? sourcePersonalState
+            : await workspacePersonalStateService
+                .ReadProjectAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!string.Equals(sourceDrafts.ETag, expectedSourceDraftETag, StringComparison.Ordinal)
+            || !string.Equals(
+                destinationDrafts.ETag,
+                expectedDestinationDraftETag,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                sourcePersonalState.ETag,
+                expectedSourcePersonalStateETag,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                destinationPersonalState.ETag,
+                expectedDestinationPersonalStateETag,
+                StringComparison.Ordinal))
+        {
             throw new ProjectRelocationReviewMismatchException();
         }
+    }
 
-        return new ApplyProjectRelocationResponse(
-            destinationProjectId,
-            ProjectBridgeMapper.ToDto(candidateHealth),
-            migratedDocuments,
-            preview.Diagnostics);
+    private async Task RollBackCopiedWorkspaceDocumentsAsync(
+        string destinationProjectId,
+        string? copiedDraftETag,
+        string? copiedPersonalStateETag)
+    {
+        List<Exception>? rollbackFailures = null;
+        if (copiedPersonalStateETag is not null)
+        {
+            try
+            {
+                var result = await workspacePersonalStateService
+                    .DeleteProjectAsync(
+                        destinationProjectId,
+                        copiedPersonalStateETag,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!result.Deleted)
+                {
+                    (rollbackFailures ??= []).Add(
+                        new InvalidOperationException(
+                            "The copied project personal state could not be removed."));
+                }
+            }
+            catch (Exception exception) when (!IsFatal(exception))
+            {
+                (rollbackFailures ??= []).Add(exception);
+            }
+        }
+
+        if (copiedDraftETag is not null)
+        {
+            try
+            {
+                var result = await workspaceDraftService
+                    .DeleteAsync(
+                        destinationProjectId,
+                        copiedDraftETag,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!result.Deleted)
+                {
+                    (rollbackFailures ??= []).Add(
+                        new InvalidOperationException(
+                            "The copied project drafts could not be removed."));
+                }
+            }
+            catch (Exception exception) when (!IsFatal(exception))
+            {
+                (rollbackFailures ??= []).Add(exception);
+            }
+        }
+
+        if (rollbackFailures is { Count: > 0 })
+        {
+            var rollbackFailure = rollbackFailures.Count == 1
+                ? rollbackFailures[0]
+                : new AggregateException(rollbackFailures);
+            throw new ProjectRelocationConflictException(rollbackFailure);
+        }
+    }
+
+    private static bool IsFatal(Exception exception)
+    {
+        if (exception is
+            OutOfMemoryException or
+            StackOverflowException or
+            AccessViolationException or
+            AppDomainUnloadedException)
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregateException
+            && aggregateException.InnerExceptions.Any(IsFatal))
+        {
+            return true;
+        }
+
+        return exception.InnerException is not null && IsFatal(exception.InnerException);
     }
 
     private static ProjectRelocationDocumentStatusDto GetDraftDocumentStatus(
@@ -364,6 +559,46 @@ public sealed class ProjectRelocationApplicationService
             : ProjectRelocationDocumentStatusDto.Conflict;
     }
 
+    private static ProjectRelocationDocumentStatusDto GetPersonalStateDocumentStatus(
+        ReadWorkspaceProjectStateResponse source,
+        ReadWorkspaceProjectStateResponse destination,
+        WorkspaceProjectPersonalStateDocumentDto? relocatedSource,
+        bool sameProject)
+    {
+        if (!source.Exists || source.Document is null || relocatedSource is null)
+        {
+            return ProjectRelocationDocumentStatusDto.Skip;
+        }
+
+        if (sameProject)
+        {
+            return ProjectRelocationDocumentStatusDto.Skip;
+        }
+
+        if (!destination.Exists || destination.Document is null)
+        {
+            return ProjectRelocationDocumentStatusDto.Copy;
+        }
+
+        var sourceBytes = JsonSerializer.SerializeToUtf8Bytes(
+            relocatedSource,
+            FingerprintSerializerOptions);
+        var destinationBytes = JsonSerializer.SerializeToUtf8Bytes(
+            destination.Document,
+            FingerprintSerializerOptions);
+        return sourceBytes.AsSpan().SequenceEqual(destinationBytes)
+            ? ProjectRelocationDocumentStatusDto.Skip
+            : ProjectRelocationDocumentStatusDto.Conflict;
+    }
+
+    private static string FingerprintDocument<TDocument>(TDocument? document)
+    {
+        return document is null
+            ? "missing"
+            : Convert.ToHexStringLower(SHA256.HashData(
+                JsonSerializer.SerializeToUtf8Bytes(document, FingerprintSerializerOptions)));
+    }
+
     private static string CreateReviewToken(
         string sourceProjectId,
         string destinationProjectId,
@@ -371,11 +606,15 @@ public sealed class ProjectRelocationApplicationService
         string? sourceETag,
         string? destinationETag,
         ProjectRelocationDocumentStatusDto documentStatus,
+        string? sourcePersonalStateETag,
+        string? destinationPersonalStateETag,
+        ProjectRelocationDocumentStatusDto personalStateStatus,
+        string personalStateFingerprint,
         RelocationOutputStoreState outputStoreState)
     {
         var framed = string.Create(
             provider: null,
-            $"project-relocation-v3\n{sourceProjectId.Length}:{sourceProjectId}\n{destinationProjectId.Length}:{destinationProjectId}\n{candidatePathsFingerprint}\n{sourceETag ?? "missing"}\n{destinationETag ?? "missing"}\n{documentStatus}\n{outputStoreState}");
+            $"project-relocation-v4\n{sourceProjectId.Length}:{sourceProjectId}\n{destinationProjectId.Length}:{destinationProjectId}\n{candidatePathsFingerprint}\n{sourceETag ?? "missing"}\n{destinationETag ?? "missing"}\n{documentStatus}\n{sourcePersonalStateETag ?? "missing"}\n{destinationPersonalStateETag ?? "missing"}\n{personalStateStatus}\n{personalStateFingerprint}\n{outputStoreState}");
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(framed)));
     }
 
@@ -501,6 +740,10 @@ public sealed class ProjectRelocationApplicationService
                 sourceETag: null,
                 destinationETag: null,
                 ProjectRelocationDocumentStatusDto.Skip,
+                sourcePersonalStateETag: null,
+                destinationPersonalStateETag: null,
+                ProjectRelocationDocumentStatusDto.Skip,
+                personalStateFingerprint: "missing",
                 RelocationOutputStoreState.Unavailable),
             sourceProjectId,
             DestinationProjectId: null,
@@ -508,7 +751,10 @@ public sealed class ProjectRelocationApplicationService
             candidateHealth?.Paths
                 .Select(path => new ProjectRelocationRoleDto(ToDto(path.Role), ToDto(path.Status)))
                 .ToArray() ?? [],
-            [new ProjectRelocationDocumentDto(DraftDocumentId, ProjectRelocationDocumentStatusDto.Skip)],
+            [
+                new ProjectRelocationDocumentDto(DraftDocumentId, ProjectRelocationDocumentStatusDto.Skip),
+                new ProjectRelocationDocumentDto(PersonalStateDocumentId, ProjectRelocationDocumentStatusDto.Skip),
+            ],
             diagnostics);
     }
 

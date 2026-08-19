@@ -1,0 +1,968 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.workspace-header-leading,
+.workspace-history-actions,
+.km-workbench-home-heading,
+.km-workbench-card-heading,
+.km-capability-actions,
+.km-workbench-note-actions,
+.km-inspector-heading,
+.km-shortcut-overlay-heading {
+  display: flex;
+  align-items: center;
+}
+
+.workspace-header-leading {
+  gap: 12px;
+  min-width: 0;
+}
+
+.workspace-history-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.workspace-command-button kbd,
+.km-command-palette kbd,
+.km-shortcut-overlay kbd {
+  padding: 2px 6px;
+  color: var(--color-text-soft);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.km-workspace-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  min-height: 0;
+}
+
+.km-workspace-frame:not(.has-inspector) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* App keeps shell pieces as direct workspace children. These selectors add
+   rows and the optional inspector column without changing editor layouts. */
+.workspace:has(> .km-adaptive-inspector) {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+}
+
+.workspace:has(> .km-adaptive-inspector) > .toolbar {
+  grid-column: 1 / -1;
+}
+
+.workspace:has(> .km-adaptive-inspector) > .workspace-content {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.workspace:has(> .km-adaptive-inspector) > .km-adaptive-inspector {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.workspace:has(> .km-record-tab-rail) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.workspace:has(> .km-record-tab-rail) > .toolbar,
+.workspace:has(> .km-record-tab-rail) > .km-record-tab-rail {
+  grid-column: 1 / -1;
+}
+
+.workspace:has(> .km-record-tab-rail) > .toolbar {
+  grid-row: 1;
+}
+
+.workspace:has(> .km-record-tab-rail) > .km-record-tab-rail {
+  grid-row: 2;
+}
+
+.workspace:has(> .km-record-tab-rail) > .workspace-content,
+.workspace:has(> .km-record-tab-rail) > .km-adaptive-inspector {
+  grid-row: 3;
+}
+
+.km-workbench-overlay {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: min(12vh, 96px) 20px 20px;
+  background: rgb(2 5 12 / 72%);
+  backdrop-filter: blur(7px);
+}
+
+.km-command-palette,
+.km-shortcut-overlay {
+  display: grid;
+  gap: 12px;
+  width: min(720px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  padding: 16px;
+  overflow: hidden;
+  color: var(--color-text);
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface-muted));
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+}
+
+.km-command-palette-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.km-command-palette-heading h2,
+.km-shortcut-overlay-heading h2,
+.km-workbench-card h3,
+.km-capability-card h4 {
+  margin: 0;
+}
+
+.km-command-palette-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+}
+
+.km-command-palette-search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--color-text);
+  background: transparent;
+  border: 0;
+  outline: 2px solid transparent;
+}
+
+.km-command-list,
+.km-shortcut-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.km-command-entry {
+  display: grid;
+}
+
+.km-command-group-label {
+  margin: 12px 8px 4px;
+  color: var(--color-gold);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.km-command-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.km-command-option[aria-selected="true"] {
+  background: rgb(79 70 229 / 28%);
+  border-color: var(--color-accent-bright);
+}
+
+.km-command-option-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.km-command-option-copy small,
+.km-workbench-target small,
+.km-capability-card p,
+.km-workbench-card-description,
+.km-shortcut-list small,
+.km-shortcut-overlay-heading p {
+  color: var(--color-text-muted);
+}
+
+.km-command-option:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.km-record-tab-rail {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 12px;
+  overflow-x: auto;
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+  scrollbar-gutter: stable;
+}
+
+.km-record-tab-item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  max-width: 280px;
+}
+
+.km-record-tab,
+.km-record-tab-close {
+  color: var(--color-text-soft);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.km-record-tab {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 100px;
+  padding: 7px 10px;
+  border-radius: 7px 0 0 7px;
+}
+
+.km-record-tab span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.km-record-tab[aria-selected="true"] {
+  color: var(--color-text);
+  background: var(--color-accent-dark);
+  border-color: var(--color-accent-bright);
+}
+
+.km-record-tab-close {
+  padding: 0 7px;
+  border-left: 0;
+  border-radius: 0 7px 7px 0;
+}
+
+.km-record-tab-dirty {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: var(--color-warning);
+  border-radius: 50%;
+}
+
+.km-adaptive-inspector {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border-left: 1px solid var(--color-border-strong);
+  box-shadow: -18px 0 42px rgb(0 0 0 / 18%);
+}
+
+.km-inspector-heading {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.km-inspector-heading p,
+.km-inspector-heading small {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.km-inspector-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.km-inspector-tabs button {
+  display: inline-flex;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 9px;
+  color: var(--color-text-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.km-inspector-tabs button[aria-selected="true"] {
+  color: var(--color-text);
+  background: var(--color-accent-dark);
+  border-color: var(--color-accent-bright);
+}
+
+.km-inspector-content {
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+.km-adaptive-inspector-modal {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 40px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+}
+
+.km-inspector-overlay {
+  place-items: center;
+  padding-top: 20px;
+}
+
+.km-workbench-home {
+  display: grid;
+  gap: 16px;
+}
+
+.km-workbench-home-heading {
+  gap: 10px;
+  padding: 16px;
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface));
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+}
+
+.km-workbench-home-heading p,
+.km-workbench-card p {
+  margin: 3px 0 0;
+}
+
+.km-workbench-home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.km-workbench-card {
+  min-width: 0;
+  padding: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.km-workbench-span-two {
+  grid-column: span 2;
+}
+
+.km-workbench-card-heading {
+  gap: 8px;
+  color: var(--color-gold);
+}
+
+.km-workbench-list,
+.km-capability-grid {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.km-workbench-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.km-workbench-target {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.km-workbench-target:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.km-workbench-remove {
+  align-self: stretch;
+  padding: 5px 8px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.km-capability-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.km-capability-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 10px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+}
+
+.km-capability-actions {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 5px;
+  max-width: 180px;
+  text-align: right;
+}
+
+.km-capability-status {
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.km-capability-status.is-editable,
+.km-capability-status.is-available {
+  color: var(--color-success);
+}
+
+.km-capability-status.is-readOnly {
+  color: var(--color-warning);
+}
+
+.km-capability-status.is-blocked {
+  color: var(--color-danger);
+}
+
+.km-workbench-note,
+.km-workbench-note label {
+  display: grid;
+  gap: 8px;
+}
+
+.km-workbench-note textarea {
+  min-height: 120px;
+  resize: vertical;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 7px;
+}
+
+.km-browser-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.km-browser-toolbar-search {
+  flex: 1 1 240px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.km-browser-toolbar-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--color-text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.km-overflow-menu {
+  position: relative;
+}
+
+.km-overflow-menu-items {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel);
+}
+
+.km-overflow-menu-items button {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--color-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.km-overflow-menu-items button:hover:not(:disabled),
+.km-browser-toolbar-clear:hover {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+}
+
+.km-workbench-note-actions {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.km-workbench-create-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.km-workbench-create-control input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 7px;
+}
+
+.km-workbench-empty {
+  color: var(--color-text-muted);
+}
+
+.km-workbench-workflows {
+  min-width: 0;
+}
+
+.km-shortcut-overlay {
+  width: min(680px, 100%);
+}
+
+.km-capability-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(800px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  padding: 16px;
+  overflow: hidden;
+  color: var(--color-text);
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface-muted));
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+}
+
+.km-capability-dialog-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.km-capability-dialog-heading h2,
+.km-capability-dialog-heading p {
+  margin: 0;
+}
+
+.km-capability-dialog-heading p {
+  margin-top: 3px;
+  color: var(--color-text-muted);
+}
+
+.km-capability-dialog-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.km-capability-dialog-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+}
+
+.km-capability-dialog-list li > div:first-child,
+.km-capability-dialog-action {
+  display: grid;
+  gap: 4px;
+}
+
+.km-capability-dialog-action {
+  justify-items: end;
+  text-align: right;
+}
+
+.km-output-profile-switch-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(700px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  padding: 16px;
+  overflow: auto;
+  color: var(--color-text);
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface-muted));
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+}
+
+.km-output-profile-switch-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.km-output-profile-switch-heading h2,
+.km-output-profile-switch-heading p {
+  margin: 0;
+}
+
+.km-output-profile-switch-heading p {
+  margin-top: 3px;
+  color: var(--color-text-muted);
+}
+
+.km-output-profile-switch-actions,
+.km-output-profile-switch-blocked,
+.km-output-profile-switch-review,
+.km-output-profile-switch-diagnostics li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.km-output-profile-switch-blocked {
+  margin: 0;
+  color: var(--color-warning);
+}
+
+.km-output-profile-switch-review {
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+}
+
+.km-output-profile-switch-review.is-ready {
+  color: var(--color-success);
+}
+
+.km-output-profile-switch-review.is-blocked {
+  color: var(--color-danger);
+}
+
+.km-output-profile-switch-review ul,
+.km-output-profile-switch-diagnostics {
+  display: grid;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.km-output-profile-switch-review li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  color: var(--color-text);
+}
+
+.km-output-profile-switch-diagnostics {
+  margin-top: 0;
+}
+
+.km-shortcut-overlay-heading {
+  gap: 10px;
+}
+
+.km-shortcut-overlay-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.km-shortcut-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.km-shortcut-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 9px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+}
+
+.km-shortcut-list dt {
+  display: grid;
+}
+
+.km-shortcut-list dd {
+  margin: 0;
+}
+
+.km-shortcut-controls {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.km-shortcut-current {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.km-shortcut-editor {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto;
+  gap: 5px;
+  width: min(320px, 100%);
+}
+
+.km-shortcut-editor input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 7px;
+}
+
+.km-shortcut-feedback {
+  max-width: 320px;
+  color: var(--color-danger);
+  text-align: right;
+}
+
+.km-workbench-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:is(
+  .km-command-option,
+  .km-record-tab,
+  .km-record-tab-close,
+  .km-inspector-tabs button,
+  .km-workbench-target,
+  .km-workbench-remove,
+  .km-browser-toolbar-clear,
+  .km-overflow-menu-items button,
+  .km-workbench-create-control input,
+  .km-shortcut-editor input
+):focus-visible,
+.km-command-palette-search:focus-within,
+.km-workbench-note textarea:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .km-workspace-frame,
+  .km-workspace-frame.has-inspector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-workbench-home-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace:has(> .km-adaptive-inspector) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-command-button span,
+  .workspace-command-button kbd {
+    display: none;
+  }
+
+  .km-workbench-overlay {
+    padding: 12px;
+  }
+
+  .km-command-palette,
+  .km-shortcut-overlay,
+  .km-capability-dialog,
+  .km-output-profile-switch-dialog,
+  .km-adaptive-inspector-modal {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+  }
+
+  .km-workbench-home-grid,
+  .km-capability-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-workbench-span-two {
+    grid-column: auto;
+  }
+
+  .km-capability-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-capability-actions {
+    align-items: flex-start;
+    max-width: none;
+    text-align: left;
+  }
+
+  .km-browser-toolbar {
+    align-items: stretch;
+  }
+
+  .km-browser-toolbar-search {
+    flex-basis: 100%;
+  }
+
+  .km-capability-dialog-list li,
+  .km-workbench-create-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-capability-dialog-action {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .km-output-profile-switch-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .km-shortcut-list > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-shortcut-controls {
+    justify-items: start;
+  }
+
+  .km-shortcut-feedback {
+    text-align: left;
+  }
+}
+
+@media (forced-colors: active) {
+  .km-workbench-overlay {
+    background: Canvas;
+    backdrop-filter: none;
+  }
+
+  .km-command-palette,
+  .km-shortcut-overlay,
+  .km-capability-dialog,
+  .km-output-profile-switch-dialog,
+  .km-adaptive-inspector,
+  .km-workbench-card,
+  .km-capability-card,
+  .km-capability-dialog-list li,
+  .km-command-palette-search,
+  .km-shortcut-list > div,
+  .km-overflow-menu-items {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .km-command-option,
+  .km-record-tab,
+  .km-inspector-tabs button,
+  .km-workbench-target,
+  .km-workbench-remove,
+  .km-workbench-create-control input,
+  .km-shortcut-editor input,
+  .km-browser-toolbar-clear,
+  .km-overflow-menu-items button {
+    color: ButtonText;
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+
+  .km-command-option[aria-selected="true"],
+  .km-record-tab[aria-selected="true"],
+  .km-inspector-tabs button[aria-selected="true"] {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  .km-record-tab-dirty {
+    background: Mark;
+    border: 1px solid MarkText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-workbench-overlay,
+  .km-adaptive-inspector,
+  .km-command-option {
+    scroll-behavior: auto;
+    transition: none;
+    animation: none;
+  }
+}
