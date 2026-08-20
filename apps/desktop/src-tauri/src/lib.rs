@@ -636,6 +636,8 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "semantic.external.compare"
             | "semantic.changes"
             | "semantic.balance-lab"
+            | "guidedDesign.capabilities"
+            | "guidedDesign.preview"
             | "support.report.build"
     ) {
         return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);

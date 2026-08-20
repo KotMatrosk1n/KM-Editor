@@ -231,3 +231,12 @@ public sealed record ZaPokemonEditResult(
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
 public sealed record ZaPokemonFieldUpdate(int PersonalId, string Field, string Value);
+
+public sealed record ZaPokemonEvolutionUpdate(
+    int PersonalId,
+    int Slot,
+    int Method,
+    int Argument,
+    int Species,
+    int Form,
+    int Level);

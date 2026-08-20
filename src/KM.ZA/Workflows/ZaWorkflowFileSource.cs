@@ -1156,10 +1156,12 @@ internal sealed class ZaWorkflowFileSource
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(plannedVirtualPaths);
+        var membership = CaptureStandaloneRomFsMembership(paths);
         return CreatePatchedDescriptorBytes(
             paths,
             plannedVirtualPaths,
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            GetLayeredVirtualPaths(membership));
     }
 
     internal static byte[] CreateStandaloneDescriptorPreview(
@@ -1170,10 +1172,12 @@ internal sealed class ZaWorkflowFileSource
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(plannedWriteVirtualPaths);
         ArgumentNullException.ThrowIfNull(plannedDeleteVirtualPaths);
+        var membership = CaptureStandaloneRomFsMembership(paths);
         return CreatePatchedDescriptorBytes(
             paths,
             plannedWriteVirtualPaths,
-            plannedDeleteVirtualPaths);
+            plannedDeleteVirtualPaths,
+            GetLayeredVirtualPaths(membership));
     }
 
     internal static bool StandaloneDescriptorMatchesBase(
@@ -1264,11 +1268,9 @@ internal sealed class ZaWorkflowFileSource
                 "Pokemon Legends Z-A descriptor review requires an output root.");
         }
 
-        var coordinator = new OutputTransactionCoordinator(paths.OutputRootPath);
-        return coordinator
-            .CaptureDirectoryMembershipAsync(new RelativeOutputPath("romfs"))
-            .GetAwaiter()
-            .GetResult();
+        return ReadOnlyOutputDirectoryMembership.Capture(
+            paths.OutputRootPath,
+            new RelativeOutputPath("romfs"));
     }
 
     private static string[] GetLayeredVirtualPaths(OutputDirectoryMembershipSnapshot membership)

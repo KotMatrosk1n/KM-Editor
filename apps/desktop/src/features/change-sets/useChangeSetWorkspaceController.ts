@@ -7,6 +7,11 @@ import {
   type EditSession
 } from '../../bridge/contracts';
 import type { ChangeSetProjectBridgeApi } from '../../bridge/changeSetProjectBridge';
+import type { GuidedDesignProjectBridgeApi } from '../../bridge/guidedDesignProjectBridge';
+import type {
+  GuidedDesignImportRequest,
+  GuidedDesignImportResponse
+} from '../../bridge/guidedDesignContracts';
 import type {
   CaptureChangeSetSessionResponse,
   ChangeSetMaterialization,
@@ -34,6 +39,7 @@ export type UseChangeSetWorkspaceControllerOptions = {
   bridge: ChangeSetProjectBridgeApi;
   currentSession: EditSession | null;
   externalBusy?: boolean;
+  guidedDesignBridge?: GuidedDesignProjectBridgeApi;
   onActiveStagingTargetChange: (changeSetId: string | null) => void;
   onEffectiveState: (
     effective: ChangeSetMaterialization,
@@ -57,6 +63,9 @@ export type ChangeSetWorkspaceControllerResult = {
   controller: ChangeSetWorkspaceController;
   effective: ChangeSetMaterialization | null;
   materialize: (buildVariantId?: string | null) => Promise<ChangeSetMaterialization>;
+  importGuidedDesignProposal: (
+    request: GuidedDesignImportRequest
+  ) => Promise<GuidedDesignImportResponse>;
   mutateHistory: (
     direction: 'redo' | 'undo',
     expectedETag?: string
@@ -78,6 +87,7 @@ export function useChangeSetWorkspaceController({
   bridge,
   currentSession,
   externalBusy = false,
+  guidedDesignBridge,
   onActiveStagingTargetChange,
   onEffectiveState,
   onRequestOutputProfileSwitch,
@@ -99,6 +109,7 @@ export function useChangeSetWorkspaceController({
   const scopeKeyRef = useRef(scopeKey);
   const currentSessionRef = useRef(currentSession);
   const activeChangeSetIdRef = useRef(activeChangeSetId);
+  const externalBusyRef = useRef(externalBusy);
   const snapshotRef = useRef(snapshot);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const effectiveCallbackRef = useRef(onEffectiveState);
@@ -107,6 +118,7 @@ export function useChangeSetWorkspaceController({
   scopeKeyRef.current = scopeKey;
   currentSessionRef.current = currentSession;
   activeChangeSetIdRef.current = activeChangeSetId;
+  externalBusyRef.current = externalBusy;
   effectiveCallbackRef.current = onEffectiveState;
   activeCallbackRef.current = onActiveStagingTargetChange;
 
@@ -267,6 +279,77 @@ export function useChangeSetWorkspaceController({
   const removeOperation = useCallback((changeSetId: string, operationId: string) => (
     mutate('operations', { changeSetId, kind: 'removeOperation', operationId })
   ), [mutate]);
+  const importGuidedDesignProposal = useCallback((
+    request: GuidedDesignImportRequest
+  ) => enqueue('operations', async (requestedScopeKey) => {
+    const currentScope = scopeRef.current;
+    const currentSnapshot = snapshotRef.current;
+    if (externalBusyRef.current) {
+      throw new Error('Guided Design cannot import during another project write.');
+    }
+    if (!guidedDesignBridge || !currentScope || !currentSnapshot) {
+      throw new Error(
+        'A loaded change-set workspace is required before importing a Guided Design proposal.'
+      );
+    }
+    if (
+      request.scope.projectId !== currentScope.projectId ||
+      JSON.stringify(request.scope.paths) !== JSON.stringify(currentScope.paths) ||
+      JSON.stringify(request.scope.pendingSession) !== JSON.stringify(currentSessionRef.current)
+    ) {
+      throw new Error('The Guided Design proposal belongs to a different project scope.');
+    }
+    if (request.expectedChangeSetETag !== currentSnapshot.etag) {
+      throw new Error('The change-set workspace changed after the proposal preview.');
+    }
+    const response = await guidedDesignBridge.importGuidedDesignProposal(request);
+    const priorChangeSetIds = new Set(
+      currentSnapshot.document.changeSets.map((changeSet) => changeSet.changeSetId)
+    );
+    const responseExistingChangeSets = response.snapshot.document.changeSets.filter(
+      (changeSet) => changeSet.changeSetId !== response.importedChangeSetId
+    );
+    if (
+      response.proposalId !== request.proposalId ||
+      response.proposalFingerprint !== request.proposalFingerprint ||
+      response.revision.projectId !== request.expectedRevision.projectId ||
+      response.revision.gameFamily !== request.expectedRevision.gameFamily ||
+      response.revision.generation !== request.expectedRevision.generation ||
+      response.revision.fingerprint !== request.expectedRevision.fingerprint ||
+      response.snapshot.document.game !== currentScope.paths.selectedGame ||
+      response.snapshot.etag === null ||
+      response.snapshot.etag === currentSnapshot.etag ||
+      priorChangeSetIds.has(response.importedChangeSetId) ||
+      response.snapshot.document.changeSets.length !==
+        currentSnapshot.document.changeSets.length + 1 ||
+      JSON.stringify(responseExistingChangeSets) !==
+        JSON.stringify(currentSnapshot.document.changeSets) ||
+      JSON.stringify(response.snapshot.document.buildVariants) !==
+        JSON.stringify(currentSnapshot.document.buildVariants) ||
+      response.snapshot.document.activeChangeSetId !==
+        currentSnapshot.document.activeChangeSetId ||
+      response.snapshot.document.activeBuildVariantId !==
+        currentSnapshot.document.activeBuildVariantId
+    ) {
+      throw new Error('The imported Guided Design response no longer matches its reviewed context.');
+    }
+    const imported = response.snapshot.document.changeSets.find(
+      (changeSet) => changeSet.changeSetId === response.importedChangeSetId
+    );
+    if (
+      !imported ||
+      imported.enabled ||
+      imported.archived ||
+      response.snapshot.document.activeChangeSetId === response.importedChangeSetId
+    ) {
+      throw new Error('The imported Guided Design change set is not safely disabled.');
+    }
+    if (!acceptSnapshot(response.snapshot, requestedScopeKey)) {
+      throw new Error('The project scope changed before the Guided Design import completed.');
+    }
+    setSelectedChangeSetId(response.importedChangeSetId);
+    return response;
+  }), [acceptSnapshot, enqueue, guidedDesignBridge]);
 
   const mapped = useMemo(() => mapChangeSetWorkspaceState(
     snapshot,
@@ -526,6 +609,7 @@ export function useChangeSetWorkspaceController({
     captureStagedSession,
     controller,
     effective: snapshot?.effective ?? null,
+    importGuidedDesignProposal,
     materialize,
     mutateHistory,
     removeOperation,

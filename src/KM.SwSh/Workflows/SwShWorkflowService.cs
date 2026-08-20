@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Core.Semantics;
@@ -313,6 +314,79 @@ public sealed class SwShWorkflowService
         return SwShEncountersWorkflowService.CreateBounded(
             ReadSemanticSourceBytes,
             checked((int)MaximumSemanticSourceBytesPerFile)).Load(project);
+    }
+
+    public SwShItemsEditResult UpdateItemFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShItemFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = new SwShItemsWorkflowService(ReadSemanticSourceBytes);
+        return new SwShItemsEditSessionService(workspace, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public SwShPokemonEditResult UpdatePokemonFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShPokemonFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = new SwShPokemonWorkflowService(ReadSemanticSourceBytes);
+        return new SwShPokemonEditSessionService(workspace, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public SwShEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShEncounterSlotFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = SwShEncountersWorkflowService.CreateBounded(
+            ReadSemanticSourceBytes,
+            checked((int)MaximumSemanticSourceBytesPerFile));
+        return new SwShEncountersEditSessionService(workspace, workflow)
+            .UpdateSlotFields(paths, session, updates);
+    }
+
+    public ChangePlan CreateGuidedChangePlanFreshBounded(
+        ProjectPaths paths,
+        EditSession session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        var domain = session.PendingEdits
+            .Select(edit => edit.Domain)
+            .Distinct(StringComparer.Ordinal)
+            .SingleOrDefault();
+        var workspace = new ProjectWorkspaceService();
+        return domain switch
+        {
+            "workflow.items" => new SwShItemsEditSessionService(
+                    workspace,
+                    new SwShItemsWorkflowService(ReadSemanticSourceBytes))
+                .CreateChangePlan(paths, session),
+            "workflow.pokemon" => new SwShPokemonEditSessionService(
+                    workspace,
+                    new SwShPokemonWorkflowService(ReadSemanticSourceBytes))
+                .CreateChangePlan(paths, session),
+            "workflow.encounters" => new SwShEncountersEditSessionService(
+                    workspace,
+                    SwShEncountersWorkflowService.CreateBounded(
+                        ReadSemanticSourceBytes,
+                        checked((int)MaximumSemanticSourceBytesPerFile)))
+                .CreateChangePlan(paths, session),
+            _ => throw new InvalidOperationException(
+                "Guided Design supports exactly one verified Sword/Shield workflow domain per plan."),
+        };
     }
 
     private static bool IsSemanticExploreSource(string relativePath)

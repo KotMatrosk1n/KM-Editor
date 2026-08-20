@@ -12,6 +12,11 @@ public sealed record ChangePlan(
 {
     public bool CanApply => Diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
 
+    // Internal application-service binding evidence. Bridge mapping deliberately
+    // serializes only the native plan fields above so family apply services still
+    // review and rederive their exact native PlannedFileWrite fingerprints.
+    public string? GeneratedSourceBindingFingerprint { get; init; }
+
     public static ChangePlan Empty(EditSessionId sessionId)
     {
         return new ChangePlan(sessionId, Array.Empty<PlannedFileWrite>(), Array.Empty<ValidationDiagnostic>());

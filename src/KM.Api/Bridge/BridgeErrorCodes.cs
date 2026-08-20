@@ -36,4 +36,5 @@ public static class BridgeErrorCodes
     public const string SemanticExternalRejected = "KM-SEMANTIC-EXTERNAL-OVERLAY-REJECTED";
     public const string SemanticExternalSnapshotUnavailable = "KM-SEMANTIC-EXTERNAL-SNAPSHOT-UNAVAILABLE";
     public const string SemanticLimitExceeded = "KM-SEMANTIC-LIMIT-EXCEEDED";
+    public const string GuidedDesignStaleProposal = "KM-GUIDED-DESIGN-STALE-PROPOSAL";
 }

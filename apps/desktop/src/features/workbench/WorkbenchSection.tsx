@@ -13,6 +13,7 @@ import {
   Plus,
   Save,
   SlidersHorizontal,
+  Sparkles,
   Trash2
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -34,6 +35,7 @@ export type WorkbenchSectionProps = {
   balanceLab: ReactNode;
   bookmarks: readonly WorkspaceTargetViewModel[];
   capabilities: readonly CapabilityDiscoveryViewModel[];
+  guidedDesign?: ReactNode;
   note: WorkspaceNoteViewModel | null;
   onCreateBookmark?: (label: string) => void;
   onCreateOutputProfile?: (name: string) => void;
@@ -62,6 +64,7 @@ export function WorkbenchSection({
   balanceLab,
   bookmarks,
   capabilities,
+  guidedDesign,
   note,
   onCreateBookmark,
   onCreateOutputProfile,
@@ -86,54 +89,51 @@ export function WorkbenchSection({
   workflowHome
 }: WorkbenchSectionProps) {
   const { t } = useLocalization();
-  const [isBalanceLabOpen, setIsBalanceLabOpen] = useState(false);
-  const balanceLabBackRef = useRef<HTMLButtonElement | null>(null);
+  const [openLab, setOpenLab] = useState<'balanceLab' | 'guidedDesign' | null>(null);
+  const labBackRef = useRef<HTMLButtonElement | null>(null);
   const balanceLabLauncherRef = useRef<HTMLButtonElement | null>(null);
-  const labWasVisibleRef = useRef(false);
-  const restoreLauncherFocusRef = useRef(false);
+  const guidedDesignLauncherRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyOpenLabRef = useRef<'balanceLab' | 'guidedDesign' | null>(null);
   const workbenchHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const openLabContent = openLab === 'balanceLab'
+    ? balanceLab
+    : openLab === 'guidedDesign'
+      ? guidedDesign
+      : null;
   useEffect(() => {
-    if (!balanceLab && isBalanceLabOpen) {
-      restoreLauncherFocusRef.current = true;
-      setIsBalanceLabOpen(false);
+    if (openLab && !openLabContent) {
+      setOpenLab(null);
     }
-  }, [balanceLab, isBalanceLabOpen]);
+  }, [openLab, openLabContent]);
   useEffect(() => {
-    const isLabVisible = isBalanceLabOpen && Boolean(balanceLab);
-    if (isLabVisible && !labWasVisibleRef.current) {
-      balanceLabBackRef.current?.focus({ preventScroll: true });
-    } else if (!isLabVisible && labWasVisibleRef.current) {
-      if (balanceLabLauncherRef.current) {
-        balanceLabLauncherRef.current.focus({ preventScroll: true });
-        restoreLauncherFocusRef.current = false;
-      } else {
-        workbenchHeadingRef.current?.focus({ preventScroll: true });
-        restoreLauncherFocusRef.current = true;
-      }
-    } else if (!isLabVisible && balanceLab && restoreLauncherFocusRef.current) {
-      if (
-        document.activeElement === document.body ||
-        document.activeElement === workbenchHeadingRef.current
-      ) {
-        balanceLabLauncherRef.current?.focus({ preventScroll: true });
-      }
-      restoreLauncherFocusRef.current = false;
+    const previous = previouslyOpenLabRef.current;
+    if (openLab && !openLabContent) return;
+    if (openLab && openLabContent && previous !== openLab) {
+      labBackRef.current?.focus({ preventScroll: true });
+    } else if (!openLab && previous) {
+      const launcher = previous === 'balanceLab'
+        ? balanceLabLauncherRef.current
+        : guidedDesignLauncherRef.current;
+      if (launcher) launcher.focus({ preventScroll: true });
+      else workbenchHeadingRef.current?.focus({ preventScroll: true });
     }
-    labWasVisibleRef.current = isLabVisible;
-  }, [balanceLab, isBalanceLabOpen]);
-  if (isBalanceLabOpen && balanceLab) {
+    previouslyOpenLabRef.current = openLab && openLabContent ? openLab : null;
+  }, [openLab, openLabContent]);
+  if (openLab && openLabContent) {
+    const titleKey = openLab === 'balanceLab' ? 'balanceLab.title' : 'guidedDesign.title';
+    const backKey = openLab === 'balanceLab' ? 'balanceLab.back' : 'guidedDesign.back';
     return (
-      <section aria-label={t('balanceLab.title')} className="km-workbench-lab-view">
+      <section aria-label={t(titleKey)} className="km-workbench-lab-view">
         <button
-          ref={balanceLabBackRef}
+          ref={labBackRef}
           className="secondary-button compact-button km-workbench-lab-back"
-          onClick={() => setIsBalanceLabOpen(false)}
+          onClick={() => setOpenLab(null)}
           type="button"
         >
           <ArrowLeft aria-hidden="true" size={15} />
-          <span>{t('balanceLab.back')}</span>
+          <span>{t(backKey)}</span>
         </button>
-        {balanceLab}
+        {openLabContent}
       </section>
     );
   }
@@ -232,10 +232,30 @@ export function WorkbenchSection({
             <button
               ref={balanceLabLauncherRef}
               className="secondary-button compact-button"
-              onClick={() => setIsBalanceLabOpen(true)}
+              onClick={() => setOpenLab('balanceLab')}
               type="button"
             >
               {t('balanceLab.open')}
+            </button>
+          </section>
+        ) : null}
+
+        {guidedDesign ? (
+          <section className="km-workbench-card km-workbench-span-two">
+            <div className="km-workbench-card-heading">
+              <Sparkles aria-hidden="true" size={17} />
+              <h3>{t('guidedDesign.title')}</h3>
+            </div>
+            <p className="km-workbench-card-description">
+              {t('guidedDesign.launcher.description')}
+            </p>
+            <button
+              ref={guidedDesignLauncherRef}
+              className="secondary-button compact-button"
+              onClick={() => setOpenLab('guidedDesign')}
+              type="button"
+            >
+              {t('guidedDesign.open')}
             </button>
           </section>
         ) : null}

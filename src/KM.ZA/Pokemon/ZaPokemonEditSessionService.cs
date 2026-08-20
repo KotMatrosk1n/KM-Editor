@@ -1113,6 +1113,88 @@ internal sealed class ZaPokemonEditSessionService
             diagnostics);
     }
 
+    public ZaPokemonEditResult UpdateEvolutions(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaPokemonEvolutionUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+        if (!ZaEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                candidate.PersonalId == update.PersonalId);
+            if (pokemon is null)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "personalId",
+                    expected: "Existing Pokemon personal record"));
+                break;
+            }
+
+            var operation = CreateEvolutionOperation(
+                pokemon,
+                UpsertAction,
+                update.Slot,
+                update.Method,
+                update.Argument,
+                update.Species,
+                update.Form,
+                update.Level,
+                diagnostics);
+            if (operation is null)
+            {
+                break;
+            }
+
+            var pendingEdit = ZaEditSessionSupport.CreatePendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                CreateEvolutionSummary(pokemon, operation),
+                new ProjectFileReference(
+                    pokemon.Provenance.SourceLayer,
+                    pokemon.Provenance.SourceFile),
+                pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
+                CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
+                FormatEvolutionValue(operation));
+            updatedSession = ReplacePendingPokemonEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaPokemonEditResult(
+                workflow,
+                currentSession,
+                diagnostics);
+        }
+
+        return new ZaPokemonEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

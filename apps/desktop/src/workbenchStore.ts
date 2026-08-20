@@ -148,6 +148,7 @@ type WorkbenchState = {
   selectedSpreadsheetImportProfileId: string | null;
   selectedItemId: number | null;
   selectedMoveId: number | null;
+  selectedPokemonEvolutionSlot: number | null;
   selectedPokemonPersonalId: number | null;
   selectedEncounterTableId: string | null;
   selectedEncounterSlot: number | null;
@@ -259,6 +260,7 @@ type WorkbenchState = {
   ) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedMoveId: (selectedMoveId: number | null) => void;
+  setSelectedPokemonEvolutionSlot: (selectedPokemonEvolutionSlot: number | null) => void;
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedEncounterSlot: (selectedEncounterSlot: number | null) => void;
@@ -439,6 +441,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     selectedFlagId: null,
     selectedItemId: null,
     selectedMoveId: null,
+    selectedPokemonEvolutionSlot: null,
     selectedPokemonPersonalId: null,
     selectedBehaviorEntryId: null,
     selectedPlacementObjectId: null,
@@ -549,6 +552,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedSpreadsheetImportProfileId: null,
   selectedItemId: null,
   selectedMoveId: null,
+  selectedPokemonEvolutionSlot: null,
   selectedPokemonPersonalId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
@@ -662,10 +666,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         pokemonWorkflow,
         state.selectedPokemonPersonalId
       );
+      const selectedPokemon = pokemonWorkflow.pokemon.find(
+        (candidate) => candidate.personalId === selectedPokemonPersonalId
+      );
+      const selectedPokemonEvolutionSlot = selectedPokemon?.evolutions.some(
+        (evolution) => evolution.slot === state.selectedPokemonEvolutionSlot
+      )
+        ? state.selectedPokemonEvolutionSlot
+        : (selectedPokemon?.evolutions[0]?.slot ?? null);
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'pokemon'),
         pokemonWorkflow,
+        selectedPokemonEvolutionSlot,
         selectedPokemonPersonalId
       };
     }),
@@ -813,8 +826,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setSelectedEncounterSlot: (selectedEncounterSlot) => set({ selectedEncounterSlot }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedMoveId: (selectedMoveId) => set({ selectedMoveId }),
+  setSelectedPokemonEvolutionSlot: (selectedPokemonEvolutionSlot) =>
+    set({ selectedPokemonEvolutionSlot }),
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId) =>
-    set({ selectedPokemonPersonalId }),
+    set((state) => {
+      const selectedPokemon = state.pokemonWorkflow?.pokemon.find(
+        (candidate) => candidate.personalId === selectedPokemonPersonalId
+      );
+      return {
+        selectedPokemonEvolutionSlot: selectedPokemon?.evolutions[0]?.slot ?? null,
+        selectedPokemonPersonalId
+      };
+    }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
   setSelectedTextKey: (selectedTextKey) => set({ selectedTextKey }),
   setSelectedTrainerId: (selectedTrainerId) =>
