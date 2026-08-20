@@ -180,6 +180,14 @@ public static class KmCommandNames
     public const string ReadGuidedDesignCapabilities = "guidedDesign.capabilities";
     public const string PreviewGuidedDesign = "guidedDesign.preview";
     public const string ImportGuidedDesignProposal = "guidedDesign.import";
+    public const string ReadSemanticMergeCapabilities = "semanticMerge.capabilities";
+    public const string OpenSemanticMergeSource = "semanticMerge.source.open";
+    public const string PreviewSemanticMerge = "semanticMerge.preview";
+    public const string ImportSemanticMerge = "semanticMerge.import";
+    public const string ExportKmRecipe = "recipes.export";
+    public const string ValidateKmRecipe = "recipes.validate";
+    public const string PreviewKmRecipe = "recipes.preview";
+    public const string ImportKmRecipe = "recipes.import";
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";

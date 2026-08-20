@@ -8,6 +8,7 @@ using KM.Api.GuidedDesign;
 using KM.Api.Output;
 using KM.Api.Projects;
 using KM.Api.Semantics;
+using KM.Api.SemanticMerging;
 using KM.Api.SvCache;
 using KM.Api.SwShCache;
 using KM.Api.ZaCache;
@@ -77,6 +78,13 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignTrainerArchetypeDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignFindingSeverityDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignCanonicalExportKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticMergeFeatureDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticMergeConflictKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticMergeConflictChoiceDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticMergeRowStateDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticMergeFallbackKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticMergeFallbackTargetDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<KmRecipeCompatibilityStateDto>(JsonNamingPolicy.CamelCase, false));
 
         return options;
     }

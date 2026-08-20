@@ -37,4 +37,6 @@ public static class BridgeErrorCodes
     public const string SemanticExternalSnapshotUnavailable = "KM-SEMANTIC-EXTERNAL-SNAPSHOT-UNAVAILABLE";
     public const string SemanticLimitExceeded = "KM-SEMANTIC-LIMIT-EXCEEDED";
     public const string GuidedDesignStaleProposal = "KM-GUIDED-DESIGN-STALE-PROPOSAL";
+    public const string SemanticMergeStaleProposal = "KM-SEMANTIC-MERGE-STALE-PROPOSAL";
+    public const string RecipeStaleProposal = "KM-RECIPE-STALE-PROPOSAL";
 }

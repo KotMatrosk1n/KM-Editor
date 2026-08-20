@@ -471,6 +471,7 @@ import {
 import { BalanceLabRuntime } from './features/balance-lab/BalanceLabRuntime';
 import type { BalanceLabLayer } from './features/balance-lab/useBalanceLabController';
 import { GuidedDesignRuntime } from './features/guided-design/GuidedDesignRuntime';
+import { SemanticMergeRuntime } from './features/semantic-merge/SemanticMergeRuntime';
 import { ChangeSetWorkspacePanel } from './features/change-sets/ChangeSetWorkspacePanel';
 import { useChangeSetWorkspaceController } from './features/change-sets/useChangeSetWorkspaceController';
 import {
@@ -512,6 +513,7 @@ import {
   createGuidedDesignLocation,
   parseGuidedDesignEvolutionSubrecord
 } from './workbench/guidedDesignNavigation';
+import { createSemanticMergeLocation } from './workbench/semanticMergeNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
 import { PersonalizationSettingsPanel } from './features/settings/PersonalizationSettingsPanel';
 import { WhatChangedTour } from './features/updates/WhatChangedTour';
@@ -583,7 +585,8 @@ import {
 import type {
   CaptureChangeSetSessionResponse,
   ChangeSetMaterialization,
-  ChangeSetWorkspaceSnapshot
+  ChangeSetWorkspaceSnapshot,
+  NamedChangeSet
 } from './bridge/changeSetContracts';
 import {
   workspaceGameDumpDestinationSchema,
@@ -3029,6 +3032,7 @@ export function App({
       isChangePlanCreating ||
       isChangePlanApplying,
     guidedDesignBridge: bridge,
+    semanticMergeBridge: bridge,
     onActiveStagingTargetChange: setActiveChangeSetId,
     onEffectiveState: handleChangeSetEffectiveState,
     onRequestOutputProfileSwitch: setPendingOutputProfileId,
@@ -4183,7 +4187,10 @@ export function App({
         case 'moves':
           return typeof value === 'number' &&
             currentState.movesWorkflow?.moves.some((move) => move.moveId === value)
-            ? () => setSelectedMoveId(value)
+            ? () => {
+                setMovesSearchText('');
+                setSelectedMoveId(value);
+              }
             : null;
         case 'text':
           return typeof value === 'string' &&
@@ -4343,6 +4350,7 @@ export function App({
       setSelectedFlagId,
       setItemSearchText,
       setSelectedItemId,
+      setMovesSearchText,
       setSelectedMoveId,
       setSelectedPlacementObjectId,
       setPokemonSearchText,
@@ -4558,6 +4566,38 @@ export function App({
     },
     [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
   );
+  const canNavigateSemanticMergeRecord = useCallback(
+    (record: SemanticExploreRecordRef) => Boolean(
+      activeProjectId &&
+      selectedGame &&
+      createSemanticMergeLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      })
+    ),
+    [activeProjectId, selectedGame]
+  );
+  const handleNavigateSemanticMergeRecord = useCallback(
+    (record: SemanticExploreRecordRef) => {
+      if (!activeProjectId || !selectedGame) return;
+      const location = createSemanticMergeLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      });
+      if (!location) {
+        setBridgeDiagnostics([{
+          domain: 'workspace.navigation',
+          message: t('workbench.navigation.targetUnavailable'),
+          severity: 'warning'
+        }]);
+        return;
+      }
+      handleNavigateWorkspaceTarget(location);
+    },
+    [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
+  );
   const semanticEntitySearch = useCallback<WorkspaceEntityCommandSearch>(
     async (request) => {
       if (!activeProjectId || !selectedGame || !semanticExploreScope) {
@@ -4635,6 +4675,27 @@ export function App({
     setBridgeDiagnostics,
     t
   ]);
+  const handlePickSemanticMergeSource = useCallback(async (slot: 'a' | 'b') => {
+    if (!desktopServices.isAvailable || criticalWriteOperationRef.current) return null;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    try {
+      const selectedPath = await desktopServices.pickFolder({
+        title: t(slot === 'a' ? 'semanticMerge.source.a' : 'semanticMerge.source.b')
+      });
+      if (
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current
+      ) return null;
+      return selectedPath;
+    } catch {
+      setBridgeDiagnostics([{
+        domain: 'desktop',
+        message: t('semanticMerge.error.generic'),
+        severity: 'error'
+      }]);
+      return null;
+    }
+  }, [desktopServices, setBridgeDiagnostics, t]);
   useEffect(() => {
     const handleWorkspaceShortcut = (event: KeyboardEvent) => {
       if (
@@ -15449,6 +15510,51 @@ export function App({
                     onImportProposal={changeSetWorkspace.importGuidedDesignProposal}
                     onNavigateRecord={handleNavigateGuidedDesignRecord}
                     onOpenChanges={handleOpenGuidedDesignChanges}
+                    onStaleRevision={handleBalanceLabStaleRevision}
+                    revision={balanceLabRevision}
+                    scope={semanticExploreScope}
+                  />
+                ) : null
+              }
+              semanticMerge={
+                semanticExploreScope ? (
+                  <SemanticMergeRuntime
+                    authoringContextRevision={guidedDesignAuthoringContextRevision}
+                    bridge={bridge}
+                    capabilityStatus={semanticExploreController.capabilities.status}
+                    canImportChangeSet={
+                      changeSetWorkspace.controller.readiness === 'ready' &&
+                      changeSetWorkspace.snapshot !== null &&
+                      changeSetWorkspace.controller.busyAction === null &&
+                      !changeSetWorkspace.controller.externalBusy
+                    }
+                    canNavigateRecord={canNavigateSemanticMergeRecord}
+                    changeSets={(changeSetWorkspace.snapshot?.document.changeSets ?? []).map(
+                      (changeSet) => ({
+                        archived: changeSet.archived,
+                        changeSetId: changeSet.changeSetId,
+                        dependencyIds: changeSet.dependencyIds,
+                        enabled: changeSet.enabled,
+                        name: changeSet.name,
+                        operationCount: changeSet.operations.length,
+                        ...getRecipeExportEligibility(changeSet)
+                      })
+                    )}
+                    expectedChangeSetETag={changeSetWorkspace.snapshot?.etag ?? null}
+                    isChangeSetWorkspaceBusy={
+                      changeSetWorkspace.controller.busyAction !== null ||
+                      changeSetWorkspace.controller.externalBusy
+                    }
+                    isChangeSetWorkspaceReady={
+                      changeSetWorkspace.controller.readiness === 'ready' &&
+                      changeSetWorkspace.snapshot !== null
+                    }
+                    onEnsureCapabilities={semanticExploreController.ensureCapabilities}
+                    onImportRecipe={changeSetWorkspace.importKmRecipe}
+                    onImportSemanticMerge={changeSetWorkspace.importSemanticMerge}
+                    onNavigateRecord={handleNavigateSemanticMergeRecord}
+                    onOpenChanges={handleOpenGuidedDesignChanges}
+                    onPickSource={handlePickSemanticMergeSource}
                     onStaleRevision={handleBalanceLabStaleRevision}
                     revision={balanceLabRevision}
                     scope={semanticExploreScope}
@@ -58661,6 +58767,91 @@ function writeCapabilityDiscoverySignature(projectId: string, signature: string)
   } catch {
     // Workbench still exposes discovery if browser preferences cannot persist.
   }
+}
+
+const recipeExportDomains = new Set([
+  'workflow.items',
+  'workflow.pokemon',
+  'workflow.moves'
+]);
+
+function getRecipeExportEligibility(changeSet: NamedChangeSet): {
+  recipeExportDomain: string | null;
+  recipeExportEligibility: 'eligible' | 'empty' | 'binding' | 'payload' | 'mixedDomain';
+  recipeExportFieldKeys: readonly string[];
+  recipeExportTargetKeys: readonly string[];
+} {
+  if (changeSet.operations.length === 0) {
+    return {
+      recipeExportDomain: null,
+      recipeExportEligibility: 'empty',
+      recipeExportFieldKeys: [],
+      recipeExportTargetKeys: []
+    };
+  }
+  if (changeSet.operations.some((operation) => operation.sourceBindingKind !== 'reviewedPlan')) {
+    return {
+      recipeExportDomain: null,
+      recipeExportEligibility: 'binding',
+      recipeExportFieldKeys: [],
+      recipeExportTargetKeys: []
+    };
+  }
+  const domains = new Set(changeSet.operations.map((operation) => operation.pendingEdit.domain));
+  if (
+    domains.size !== 1 ||
+    [...domains].some((domain) => !recipeExportDomains.has(domain))
+  ) {
+    return {
+      recipeExportDomain: null,
+      recipeExportEligibility: 'mixedDomain',
+      recipeExportFieldKeys: [],
+      recipeExportTargetKeys: []
+    };
+  }
+  const targetKeys: string[] = [];
+  if (changeSet.operations.some((operation) => {
+    const { domain, field, newValue, recordId } = operation.pendingEdit;
+    const numericRecordId = recordId === undefined || recordId === null
+      ? Number.NaN
+      : Number(recordId);
+    const numericValue = newValue === undefined || newValue === null
+      ? Number.NaN
+      : Number(newValue);
+    const minimumRecordId = domain === 'workflow.moves' ? 0 : 1;
+    if (
+      field == null ||
+      !/^[a-z][A-Za-z0-9]*$/u.test(field) ||
+      field.length > 128 ||
+      recordId == null ||
+      !Number.isInteger(numericRecordId) ||
+      numericRecordId < minimumRecordId ||
+      numericRecordId > 2_147_483_647 ||
+      String(numericRecordId) !== recordId ||
+      newValue == null ||
+      !Number.isInteger(numericValue) ||
+      numericValue < -2_147_483_648 ||
+      numericValue > 2_147_483_647 ||
+      String(numericValue) !== newValue
+    ) return true;
+    targetKeys.push(JSON.stringify([domain, recordId, field]));
+    return false;
+  }) || new Set(targetKeys).size !== targetKeys.length) {
+    return {
+      recipeExportDomain: null,
+      recipeExportEligibility: 'payload',
+      recipeExportFieldKeys: [],
+      recipeExportTargetKeys: []
+    };
+  }
+  return {
+    recipeExportDomain: [...domains][0] ?? null,
+    recipeExportEligibility: 'eligible',
+    recipeExportFieldKeys: [...new Set(changeSet.operations.map(
+      (operation) => operation.pendingEdit.field!
+    ))].sort(),
+    recipeExportTargetKeys: targetKeys.sort()
+  };
 }
 
 function toErrorMessage(error: unknown, fallback: UiDiagnosticFallback) {

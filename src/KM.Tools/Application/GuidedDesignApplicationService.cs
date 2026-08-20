@@ -479,6 +479,9 @@ public sealed class GuidedDesignApplicationService
                 new GeneratedChangeSetImportRequest(
                     ToChangeSetScope(request.Scope),
                     request.ChangeSetName,
+                    GuidedDesignProviders.GeneratedEditOwner,
+                    "guided-design",
+                    "Import guided design proposal",
                     request.ExpectedChangeSetETag,
                     request.Scope.PendingSession),
                 (context, token) =>

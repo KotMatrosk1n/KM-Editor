@@ -36,6 +36,7 @@ using KM.Api.Randomizer;
 using KM.Api.Rentals;
 using KM.Api.RoyalCandy;
 using KM.Api.Semantics;
+using KM.Api.SemanticMerging;
 using KM.Api.Shops;
 using KM.Api.ShinyRate;
 using KM.Api.SpreadsheetImport;
@@ -115,7 +116,7 @@ using System.Text.Json;
 
 namespace KM.Tools.Bridge;
 
-public sealed class ProjectBridgeDispatcher
+public sealed class ProjectBridgeDispatcher : IDisposable
 {
     internal const int MaximumBridgeRequestCharacters = 16 * 1024 * 1024;
     private static readonly object SwShApplySyncRoot = new();
@@ -179,6 +180,8 @@ public sealed class ProjectBridgeDispatcher
     private readonly SemanticExploreApplicationService semanticExploreApplicationService;
     private readonly BalanceLabApplicationService balanceLabApplicationService;
     private readonly GuidedDesignApplicationService guidedDesignApplicationService;
+    private readonly SemanticMergeApplicationService semanticMergeApplicationService;
+    private readonly bool ownsSemanticMergeApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -232,7 +235,8 @@ public sealed class ProjectBridgeDispatcher
         ProjectRelocationApplicationService? projectRelocationApplicationService = null,
         SemanticExploreApplicationService? semanticExploreApplicationService = null,
         BalanceLabApplicationService? balanceLabApplicationService = null,
-        GuidedDesignApplicationService? guidedDesignApplicationService = null)
+        GuidedDesignApplicationService? guidedDesignApplicationService = null,
+        SemanticMergeApplicationService? semanticMergeApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -331,6 +335,31 @@ public sealed class ProjectBridgeDispatcher
                     ProjectBridgeMapper.ToCore(paths),
                     session,
                     outputMode));
+        ownsSemanticMergeApplicationService = semanticMergeApplicationService is null;
+        this.semanticMergeApplicationService = semanticMergeApplicationService
+            ?? new SemanticMergeApplicationService(
+                this.semanticExploreApplicationService,
+                this.changeSetApplicationService,
+                LoadSemanticExploreItemsFresh,
+                LoadSemanticExplorePokemonFresh,
+                LoadSemanticExploreMovesFresh,
+                StageGuidedDesignEdits,
+                (paths, session, outputMode) => CreateChangePlanForSession(
+                    ProjectBridgeMapper.ToCore(paths),
+                    session,
+                    outputMode),
+                (paths, session, outputMode) => CreateGuidedChangePlanForSession(
+                    ProjectBridgeMapper.ToCore(paths),
+                    session,
+                    outputMode));
+    }
+
+    public void Dispose()
+    {
+        if (ownsSemanticMergeApplicationService)
+        {
+            semanticMergeApplicationService.Dispose();
+        }
     }
 
     public string Dispatch(string requestJson)
@@ -575,6 +604,14 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ReadGuidedDesignCapabilities => DispatchReadGuidedDesignCapabilities(requestJson),
                 KmCommandNames.PreviewGuidedDesign => DispatchPreviewGuidedDesign(requestJson),
                 KmCommandNames.ImportGuidedDesignProposal => DispatchImportGuidedDesignProposal(requestJson),
+                KmCommandNames.ReadSemanticMergeCapabilities => DispatchReadSemanticMergeCapabilities(requestJson),
+                KmCommandNames.OpenSemanticMergeSource => DispatchOpenSemanticMergeSource(requestJson),
+                KmCommandNames.PreviewSemanticMerge => DispatchPreviewSemanticMerge(requestJson),
+                KmCommandNames.ImportSemanticMerge => DispatchImportSemanticMerge(requestJson),
+                KmCommandNames.ExportKmRecipe => DispatchExportKmRecipe(requestJson),
+                KmCommandNames.ValidateKmRecipe => DispatchValidateKmRecipe(requestJson),
+                KmCommandNames.PreviewKmRecipe => DispatchPreviewKmRecipe(requestJson),
+                KmCommandNames.ImportKmRecipe => DispatchImportKmRecipe(requestJson),
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
@@ -642,11 +679,29 @@ public sealed class ProjectBridgeDispatcher
                 RequiresDispatcherReset: false);
         }
 
-        catch (GeneratedChangeSetContextChangedException exception)
+        catch (SemanticMergeValidationException exception)
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.GuidedDesignStaleProposal,
+                    exception.FailureKind == SemanticMergeFailureKind.StaleRecipeProposal
+                        ? BridgeErrorCodes.RecipeStaleProposal
+                        : BridgeErrorCodes.SemanticMergeStaleProposal,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+
+        catch (GeneratedChangeSetContextChangedException exception)
+        {
+            var code = command switch
+            {
+                KmCommandNames.ImportSemanticMerge => BridgeErrorCodes.SemanticMergeStaleProposal,
+                KmCommandNames.ImportKmRecipe => BridgeErrorCodes.RecipeStaleProposal,
+                _ => BridgeErrorCodes.GuidedDesignStaleProposal,
+            };
+            return (
+                SerializeFailure(
+                    code,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1031,6 +1086,70 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<ImportGuidedDesignProposalRequest>(requestJson);
         return SerializeSuccess(
             guidedDesignApplicationService.Import(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadSemanticMergeCapabilities(string requestJson)
+    {
+        var request = DeserializeRequest<ReadSemanticMergeCapabilitiesRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.ReadCapabilities(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchOpenSemanticMergeSource(string requestJson)
+    {
+        var request = DeserializeRequest<OpenSemanticMergeSourceRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.OpenSource(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchPreviewSemanticMerge(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewSemanticMergeRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.Preview(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchImportSemanticMerge(string requestJson)
+    {
+        var request = DeserializeRequest<ImportSemanticMergeRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.Import(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchExportKmRecipe(string requestJson)
+    {
+        var request = DeserializeRequest<ExportKmRecipeRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.ExportRecipe(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchValidateKmRecipe(string requestJson)
+    {
+        var request = DeserializeRequest<ValidateKmRecipeRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.ValidateRecipe(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchPreviewKmRecipe(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewKmRecipeRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.PreviewRecipe(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchImportKmRecipe(string requestJson)
+    {
+        var request = DeserializeRequest<ImportKmRecipeRequest>(requestJson);
+        return SerializeSuccess(
+            semanticMergeApplicationService.ImportRecipe(request.Payload),
             request.RequestId);
     }
 
@@ -4282,10 +4401,8 @@ public sealed class ProjectBridgeDispatcher
         ChangePlanOutputModeDto? outputMode)
     {
         if (session.PendingEdits.Count > 0
-            && session.PendingEdits.All(edit => string.Equals(
-                edit.Owner,
-                GuidedDesignProviders.GeneratedEditOwner,
-                StringComparison.Ordinal))
+            && session.PendingEdits.All(edit => GeneratedChangeSetOwners.IsSupported(edit.Owner))
+            && session.PendingEdits.Select(edit => edit.Owner).Distinct(StringComparer.Ordinal).Count() == 1
             && session.PendingEdits
                 .Select(edit => edit.Domain)
                 .Distinct(StringComparer.Ordinal)
@@ -4338,7 +4455,7 @@ public sealed class ProjectBridgeDispatcher
         {
             return InvalidGuidedChangePlan(
                 session,
-                "A Guided Design plan must contain exactly one owning workflow domain.");
+                "A generated change-set plan must contain exactly one owning workflow domain.");
         }
 
         var initialSourceFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
@@ -4364,7 +4481,7 @@ public sealed class ProjectBridgeDispatcher
         {
             return InvalidGuidedChangePlan(
                 session,
-                "The selected game does not expose a Guided Design plan adapter.");
+                "The selected game does not expose a generated change-set plan adapter.");
         }
 
         var completedSourceFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
@@ -4381,7 +4498,7 @@ public sealed class ProjectBridgeDispatcher
         {
             return InvalidGuidedChangePlan(
                 session,
-                "The Guided Design source changed while its bounded plan was created.",
+                "The generated change-set source changed while its bounded plan was created.",
                 plan.Diagnostics);
         }
 
@@ -4416,7 +4533,7 @@ public sealed class ProjectBridgeDispatcher
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             throw new InvalidOperationException(
-                "Guided Design standalone planning requires an output root.");
+                "Generated change-set standalone planning requires an output root.");
         }
 
         var membership = ReadOnlyOutputDirectoryMembership.Capture(
@@ -5404,6 +5521,7 @@ public sealed class ProjectBridgeDispatcher
         {
             "workflow.items" => StageGuidedItemEdits(paths, family, edits),
             "workflow.pokemon" => StageGuidedPokemonEdits(paths, family, edits),
+            "workflow.moves" => StageGeneratedMoveEdits(paths, family, edits),
             "workflow.trainers" => StageGuidedTrainerEdits(paths, family, edits),
             "workflow.encounters" => StageGuidedEncounterEdits(paths, family, edits),
             _ => InvalidGuidedDesignStaging(),
@@ -5505,6 +5623,34 @@ public sealed class ProjectBridgeDispatcher
                 edit.Field,
                 edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
         return CompleteGuidedDesignStaging(swsh.Session, swsh.Diagnostics);
+    }
+
+    private GuidedDesignStagingResult StageGeneratedMoveEdits(
+        ProjectPaths paths,
+        SemanticGameFamilyDto family,
+        IReadOnlyList<GuidedDesignStagingEdit> edits)
+    {
+        if (family != SemanticGameFamilyDto.SwordShield
+            || !TryScalarEdits(
+                edits,
+                "workflow.moves",
+                "move",
+                family,
+                requireSubrecord: false,
+                out var scalar)
+            || scalar.Any(edit => !TryParseCanonicalNonNegative(edit.Record.RecordId, out _)))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var result = swShWorkflowService.UpdateMoveFieldsFreshBounded(
+            paths,
+            EditSession.Start(),
+            scalar.Select(edit => new SwShMoveFieldUpdate(
+                ParseCanonicalNonNegative(edit.Record.RecordId),
+                edit.Field,
+                edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+        return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
     }
 
     private GuidedDesignStagingResult StageGuidedEvolutionEdits(
@@ -6134,6 +6280,14 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.ReadGuidedDesignCapabilities or
             KmCommandNames.PreviewGuidedDesign or
             KmCommandNames.ImportGuidedDesignProposal or
+            KmCommandNames.ReadSemanticMergeCapabilities or
+            KmCommandNames.OpenSemanticMergeSource or
+            KmCommandNames.PreviewSemanticMerge or
+            KmCommandNames.ImportSemanticMerge or
+            KmCommandNames.ExportKmRecipe or
+            KmCommandNames.ValidateKmRecipe or
+            KmCommandNames.PreviewKmRecipe or
+            KmCommandNames.ImportKmRecipe or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge or

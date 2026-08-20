@@ -8,7 +8,9 @@ import {
   desktopErrorCodes,
   guidedDesignErrorCodes,
   isKmErrorCode,
+  kmRecipeErrorCodes,
   projectBridgeErrorCodes,
+  semanticMergeErrorCodes,
   semanticExploreErrorCodes,
   swshPlacementErrorCodes,
   swshDynamaxAdventuresErrorCodes,
@@ -22,6 +24,8 @@ import {
 
 const expectedBridgeErrorCodes = new Set<KmErrorCode>([
   ...Object.values(guidedDesignErrorCodes),
+  ...Object.values(kmRecipeErrorCodes),
+  ...Object.values(semanticMergeErrorCodes),
   ...Object.values(semanticExploreErrorCodes),
   swshDynamaxAdventuresErrorCodes.seedInvalid,
   swshDynamaxAdventuresErrorCodes.seedLimitInvalid,

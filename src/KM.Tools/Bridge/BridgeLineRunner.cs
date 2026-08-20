@@ -4,10 +4,11 @@ using System.Text;
 
 namespace KM.Tools.Bridge;
 
-public sealed class BridgeLineRunner
+public sealed class BridgeLineRunner : IDisposable
 {
     private readonly Func<ProjectBridgeDispatcher> dispatcherFactory;
     private ProjectBridgeDispatcher? dispatcher;
+    private int disposed;
 
     public BridgeLineRunner(
         ProjectBridgeDispatcher? dispatcher = null,
@@ -21,31 +22,59 @@ public sealed class BridgeLineRunner
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
 
-        var lineReader = new BoundedBridgeLineReader(input);
-        var request = await lineReader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-        var responseJson = DispatchRequest(request ?? new BoundedBridgeLine(string.Empty, IsTooLarge: false));
+        try
+        {
+            var lineReader = new BoundedBridgeLineReader(input);
+            var request = await lineReader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var responseJson = DispatchRequest(
+                request ?? new BoundedBridgeLine(string.Empty, IsTooLarge: false));
 
-        await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
-        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
 
-        return 0;
+            return 0;
+        }
+        finally
+        {
+            Dispose();
+        }
     }
 
     public async Task<int> RunAsync(TextReader input, TextWriter output, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
 
-        var lineReader = new BoundedBridgeLineReader(input);
-        while (await lineReader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } request)
+        try
         {
-            var responseJson = DispatchRequest(request);
-            await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
-            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            var lineReader = new BoundedBridgeLineReader(input);
+            while (await lineReader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } request)
+            {
+                var responseJson = DispatchRequest(request);
+                await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
+                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return 0;
+        }
+        finally
+        {
+            Dispose();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
         }
 
-        return 0;
+        var retired = Interlocked.Exchange(ref dispatcher, null);
+        retired?.Dispose();
     }
 
     private string DispatchRequest(BoundedBridgeLine request)
@@ -63,7 +92,9 @@ public sealed class BridgeLineRunner
         {
             // Unexpected command failures may occur after a mutable workflow or edit session has
             // changed. Retire the complete dispatcher before another request can observe that state.
+            var retired = dispatcher;
             dispatcher = null;
+            retired?.Dispose();
         }
 
         return result.ResponseJson;

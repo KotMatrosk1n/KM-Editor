@@ -7,6 +7,7 @@ import {
   Compass,
   FolderClock,
   FlaskConical,
+  GitMerge,
   LayoutDashboard,
   NotebookPen,
   Pin,
@@ -36,6 +37,7 @@ export type WorkbenchSectionProps = {
   bookmarks: readonly WorkspaceTargetViewModel[];
   capabilities: readonly CapabilityDiscoveryViewModel[];
   guidedDesign?: ReactNode;
+  semanticMerge?: ReactNode;
   note: WorkspaceNoteViewModel | null;
   onCreateBookmark?: (label: string) => void;
   onCreateOutputProfile?: (name: string) => void;
@@ -65,6 +67,7 @@ export function WorkbenchSection({
   bookmarks,
   capabilities,
   guidedDesign,
+  semanticMerge,
   note,
   onCreateBookmark,
   onCreateOutputProfile,
@@ -89,17 +92,24 @@ export function WorkbenchSection({
   workflowHome
 }: WorkbenchSectionProps) {
   const { t } = useLocalization();
-  const [openLab, setOpenLab] = useState<'balanceLab' | 'guidedDesign' | null>(null);
+  const [openLab, setOpenLab] = useState<
+    'balanceLab' | 'guidedDesign' | 'semanticMerge' | null
+  >(null);
   const labBackRef = useRef<HTMLButtonElement | null>(null);
   const balanceLabLauncherRef = useRef<HTMLButtonElement | null>(null);
   const guidedDesignLauncherRef = useRef<HTMLButtonElement | null>(null);
-  const previouslyOpenLabRef = useRef<'balanceLab' | 'guidedDesign' | null>(null);
+  const semanticMergeLauncherRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyOpenLabRef = useRef<
+    'balanceLab' | 'guidedDesign' | 'semanticMerge' | null
+  >(null);
   const workbenchHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const openLabContent = openLab === 'balanceLab'
     ? balanceLab
     : openLab === 'guidedDesign'
       ? guidedDesign
-      : null;
+      : openLab === 'semanticMerge'
+        ? semanticMerge
+        : null;
   useEffect(() => {
     if (openLab && !openLabContent) {
       setOpenLab(null);
@@ -113,15 +123,25 @@ export function WorkbenchSection({
     } else if (!openLab && previous) {
       const launcher = previous === 'balanceLab'
         ? balanceLabLauncherRef.current
-        : guidedDesignLauncherRef.current;
+        : previous === 'guidedDesign'
+          ? guidedDesignLauncherRef.current
+          : semanticMergeLauncherRef.current;
       if (launcher) launcher.focus({ preventScroll: true });
       else workbenchHeadingRef.current?.focus({ preventScroll: true });
     }
     previouslyOpenLabRef.current = openLab && openLabContent ? openLab : null;
   }, [openLab, openLabContent]);
   if (openLab && openLabContent) {
-    const titleKey = openLab === 'balanceLab' ? 'balanceLab.title' : 'guidedDesign.title';
-    const backKey = openLab === 'balanceLab' ? 'balanceLab.back' : 'guidedDesign.back';
+    const titleKey = openLab === 'balanceLab'
+      ? 'balanceLab.title'
+      : openLab === 'guidedDesign'
+        ? 'guidedDesign.title'
+        : 'semanticMerge.title';
+    const backKey = openLab === 'balanceLab'
+      ? 'balanceLab.back'
+      : openLab === 'guidedDesign'
+        ? 'guidedDesign.back'
+        : 'semanticMerge.back';
     return (
       <section aria-label={t(titleKey)} className="km-workbench-lab-view">
         <button
@@ -256,6 +276,26 @@ export function WorkbenchSection({
               type="button"
             >
               {t('guidedDesign.open')}
+            </button>
+          </section>
+        ) : null}
+
+        {semanticMerge ? (
+          <section className="km-workbench-card km-workbench-span-two">
+            <div className="km-workbench-card-heading">
+              <GitMerge aria-hidden="true" size={17} />
+              <h3>{t('semanticMerge.title')}</h3>
+            </div>
+            <p className="km-workbench-card-description">
+              {t('semanticMerge.launcher.description')}
+            </p>
+            <button
+              ref={semanticMergeLauncherRef}
+              className="secondary-button compact-button"
+              onClick={() => setOpenLab('semanticMerge')}
+              type="button"
+            >
+              {t('semanticMerge.open')}
             </button>
           </section>
         ) : null}

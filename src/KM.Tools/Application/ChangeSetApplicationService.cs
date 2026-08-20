@@ -726,10 +726,7 @@ public sealed class ChangeSetApplicationService
                     var refreshed = CreateOperationBinding(
                         edit,
                         planner,
-                        outputMode: string.Equals(
-                            edit.Owner,
-                            GuidedDesignProviders.GeneratedEditOwner,
-                            StringComparison.Ordinal)
+                        outputMode: GeneratedChangeSetOwners.IsSupported(edit.Owner)
                             ? FromBindingOutputMode(session.AuthoringBinding!.OutputMode)
                             : null,
                         satisfiedOwnedTargets: operation.OwnedTargets);
@@ -1294,6 +1291,26 @@ public sealed class ChangeSetApplicationService
             .ConfigureAwait(false);
     }
 
+    internal async Task<GeneratedChangeSetReviewWorkspace> ObserveGeneratedReviewWorkspaceAsync(
+        ChangeSetWorkspaceScopeDto requestScope,
+        string? expectedETag,
+        EditSessionDto? session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(requestScope);
+        var scope = ValidateScope(requestScope);
+        using var operationLease = await AcquireProjectLeasesAsync(
+                [scope.ProjectId],
+                cancellationToken)
+            .ConfigureAwait(false);
+        return await ObserveGeneratedReviewWorkspaceCoreAsync(
+                scope,
+                NormalizeETag(expectedETag, allowNull: true),
+                session is null ? null : EditSessionBridgeMapper.ToCore(session),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     internal GeneratedChangeSetProposalValidation ValidateGeneratedProposal(
         IReadOnlyList<PendingEdit> pendingEdits,
         Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
@@ -1349,6 +1366,64 @@ public sealed class ChangeSetApplicationService
         return new GeneratedChangeSetProposalValidation(true, null, bindings);
     }
 
+    internal bool ValidateStoredOperationBindingsBatch(
+        IReadOnlyList<ChangeSetOperationDto> operations,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        ChangePlanOutputModeDto? outputMode)
+    {
+        ArgumentNullException.ThrowIfNull(operations);
+        ArgumentNullException.ThrowIfNull(planner);
+        if (operations.Count is 0 or > ChangeSetContract.MaximumOperationsPerChangeSet
+            || operations.Any(operation => operation is null
+                || operation.Kind != ChangeSetOperationStorageKindDto.LegacyPendingEdit
+                || operation.SourceBindingKind != ChangeSetSourceBindingKindDto.ReviewedPlan
+                || !IsSha256(operation.SourceFingerprint)
+                || operation.OwnedTargets is null
+                || operation.OwnedTargets.Count == 0))
+        {
+            return false;
+        }
+
+        try
+        {
+            var edits = operations.Select(operation =>
+                EditSessionBridgeMapper.ToPendingEditCore(operation.PendingEdit) with
+                {
+                    Association = null,
+                }).ToArray();
+            ValidatePendingEdits(edits);
+            if (edits.Select(edit => edit.Domain).Distinct(StringComparer.Ordinal).Count() != 1
+                || edits.Select(edit => edit.Owner).Distinct(StringComparer.Ordinal).Count() != 1)
+            {
+                return false;
+            }
+
+            var generated = GeneratedChangeSetOwners.IsSupported(edits[0].Owner);
+            var session = new EditSession(EditSessionId.New(), DateTimeOffset.UtcNow, edits);
+            var plan = planner(session, generated ? outputMode : null);
+            return operations.Zip(edits).All(pair =>
+            {
+                var current = CreateOperationBindingFromPlan(pair.Second, plan);
+                return current.Kind == pair.First.SourceBindingKind
+                    && string.Equals(
+                        current.Fingerprint,
+                        pair.First.SourceFingerprint,
+                        StringComparison.Ordinal)
+                    && current.OwnedTargets.SequenceEqual(
+                        pair.First.OwnedTargets,
+                        StringComparer.Ordinal);
+            });
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     internal async Task<GeneratedChangeSetImportResult> ImportGeneratedProposalAsync(
         GeneratedChangeSetImportRequest request,
         Func<GeneratedChangeSetAuthoringContext, CancellationToken, Task<GeneratedChangeSetProposal>> regenerate,
@@ -1361,6 +1436,13 @@ public sealed class ChangeSetApplicationService
         ArgumentNullException.ThrowIfNull(planner);
         var scope = ValidateScope(request.Scope);
         ValidateDisplayText(request.Name, "generated change set name", MaximumNameLength);
+        if (!GeneratedChangeSetOwners.IsSupported(request.Owner)
+            || !GeneratedChangeSetOwners.IsTagForOwner(request.Owner, request.Tag))
+        {
+            throw Invalid("The generated proposal owner or change-set tag is invalid.");
+        }
+
+        ValidateDisplayText(request.HistoryLabel, "generated import history label", MaximumNameLength);
         var expectedETag = NormalizeETag(request.ExpectedETag, allowNull: true);
         var session = request.Session is null
             ? null
@@ -1386,6 +1468,14 @@ public sealed class ChangeSetApplicationService
         if (!IsSha256(generated.ProposalId) || !IsSha256(generated.ProposalFingerprint))
         {
             throw Invalid("A generated proposal identity is invalid.");
+        }
+
+        if (generated.PendingEdits.Any(edit => !string.Equals(
+                edit.Owner,
+                request.Owner,
+                StringComparison.Ordinal)))
+        {
+            throw Invalid("A generated proposal edit has an unexpected owner.");
         }
 
         var validation = ValidateGeneratedProposal(
@@ -1445,7 +1535,7 @@ public sealed class ChangeSetApplicationService
             Enabled: false,
             Archived: false,
             Notes: null,
-            Tags: ["guided-design"],
+            Tags: [request.Tag],
             DependencyIds: Array.Empty<string>(),
             operations,
             now,
@@ -1482,7 +1572,7 @@ public sealed class ChangeSetApplicationService
         var updated = TrimHistoryToBudget(PushUndo(
             document,
             state,
-            "Import guided design proposal",
+            request.HistoryLabel,
             now));
         ValidateStoredDocument(updated, scope.Game);
         // The imported set is disabled and therefore cannot change the selected
@@ -1528,6 +1618,183 @@ public sealed class ChangeSetApplicationService
             completedContext);
     }
 
+    internal async Task<GeneratedChangeSetReviewImportResult> ImportGeneratedReviewProposalAsync(
+        GeneratedChangeSetImportRequest request,
+        Func<GeneratedChangeSetAuthoringContext, CancellationToken, Task<GeneratedChangeSetProposal>> regenerate,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Scope);
+        ArgumentNullException.ThrowIfNull(regenerate);
+        ArgumentNullException.ThrowIfNull(planner);
+        var scope = ValidateScope(request.Scope);
+        ValidateDisplayText(request.Name, "generated change set name", MaximumNameLength);
+        if (request.Owner is not (GeneratedChangeSetOwners.SemanticMerge
+                or GeneratedChangeSetOwners.Recipe)
+            || !GeneratedChangeSetOwners.IsTagForOwner(request.Owner, request.Tag))
+        {
+            throw Invalid("The generated review owner or change-set tag is invalid.");
+        }
+
+        ValidateDisplayText(request.HistoryLabel, "generated import history label", MaximumNameLength);
+        var expectedETag = NormalizeETag(request.ExpectedETag, allowNull: true);
+        var session = request.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Session);
+        if (session is not null)
+        {
+            ValidatePendingEdits(session.PendingEdits);
+        }
+
+        using var operationLease = await AcquireProjectLeasesAsync(
+                [scope.ProjectId],
+                cancellationToken)
+            .ConfigureAwait(false);
+        var initialReview = await ObserveGeneratedReviewWorkspaceCoreAsync(
+                scope,
+                expectedETag,
+                session,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var initialContext = initialReview.AuthoringContext;
+        var generated = await regenerate(initialContext, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(generated);
+        if (!IsSha256(generated.ProposalId) || !IsSha256(generated.ProposalFingerprint))
+        {
+            throw Invalid("A generated proposal identity is invalid.");
+        }
+
+        if (generated.PendingEdits.Any(edit => !string.Equals(
+                edit.Owner,
+                request.Owner,
+                StringComparison.Ordinal)))
+        {
+            throw Invalid("A generated proposal edit has an unexpected owner.");
+        }
+
+        var validation = ValidateGeneratedProposal(
+            generated.PendingEdits,
+            planner,
+            initialContext.OutputMode);
+        if (!validation.CanImport)
+        {
+            throw Invalid(validation.Reason ?? "The generated proposal cannot be imported safely.");
+        }
+
+        var document = initialReview.Document;
+        if (document.ChangeSets.Count == ChangeSetContract.MaximumChangeSetCount
+            || document.ChangeSets.Sum(set => set.Operations.Count) + generated.PendingEdits.Count
+                > ChangeSetContract.MaximumOperationCount)
+        {
+            throw Invalid("The generated proposal exceeds the remaining change-set capacity.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var changeSetId = CreateId();
+        var operations = generated.PendingEdits.Zip(validation.Bindings).Select(pair =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var edit = pair.First;
+            var binding = pair.Second;
+            var operationId = CreateId();
+            var associated = edit with
+            {
+                Association = new PendingEditAssociation(
+                    PendingEditAssociation.CurrentVersion,
+                    changeSetId,
+                    operationId),
+            };
+
+            return new ChangeSetOperationDto(
+                operationId,
+                ChangeSetOperationStorageKindDto.LegacyPendingEdit,
+                EditSessionBridgeMapper.ToPendingEditDto(associated),
+                binding.Kind,
+                binding.Fingerprint,
+                binding.OwnedTargets,
+                now,
+                now);
+        }).ToArray();
+        var imported = new NamedChangeSetDto(
+            changeSetId,
+            request.Name,
+            Enabled: false,
+            Archived: false,
+            Notes: null,
+            Tags: [request.Tag],
+            DependencyIds: Array.Empty<string>(),
+            operations,
+            now,
+            now);
+
+        var reboundBindings = CreateGeneratedOperationBindings(
+            generated.PendingEdits,
+            planner,
+            initialContext.OutputMode);
+        if (reboundBindings.Count != operations.Length)
+        {
+            throw new GeneratedChangeSetContextChangedException();
+        }
+
+        foreach (var (operation, rebound) in operations.Zip(reboundBindings))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (rebound.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
+                || !string.Equals(
+                    rebound.Fingerprint,
+                    operation.SourceFingerprint,
+                    StringComparison.Ordinal)
+                || !rebound.OwnedTargets.SequenceEqual(
+                    operation.OwnedTargets,
+                    StringComparer.Ordinal))
+            {
+                throw new GeneratedChangeSetContextChangedException();
+            }
+        }
+
+        var state = GetState(document) with
+        {
+            ChangeSets = document.ChangeSets.Append(imported).ToArray(),
+        };
+        var updated = TrimHistoryToBudget(PushUndo(
+            document,
+            state,
+            request.HistoryLabel,
+            now));
+        ValidateStoredDocument(updated, scope.Game);
+        var completedReview = await ObserveGeneratedReviewWorkspaceCoreAsync(
+                scope,
+                expectedETag,
+                session,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(
+                initialContext.Fingerprint,
+                completedReview.AuthoringContext.Fingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new GeneratedChangeSetContextChangedException();
+        }
+
+        var write = await store.WriteConditionalAsync(
+                scope.Identity,
+                Definition,
+                updated,
+                expectedETag,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new GeneratedChangeSetReviewImportResult(
+            changeSetId,
+            ToDocument(updated),
+            write.ETag,
+            updated.UndoHistory.Count > 0,
+            updated.RedoHistory.Count > 0,
+            updated.UndoHistory.LastOrDefault()?.Label,
+            updated.RedoHistory.LastOrDefault()?.Label,
+            completedReview.AuthoringContext);
+    }
+
     private const string GeneratedImportPrewriteETag =
         "0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -1547,6 +1814,251 @@ public sealed class ChangeSetApplicationService
                 AuthoringBinding = binding with { WorkspaceETag = committedETag },
             },
         };
+    }
+
+    private async Task<GeneratedChangeSetReviewWorkspace> ObserveGeneratedReviewWorkspaceCoreAsync(
+        ValidatedScope scope,
+        string? expectedETag,
+        EditSession? session,
+        CancellationToken cancellationToken)
+    {
+        if (session is not null)
+        {
+            ValidatePendingEdits(session.PendingEdits);
+            _ = BuildUniqueEditMap(session.PendingEdits);
+        }
+
+        var stored = await ReadStoredAsync(scope.ProjectId, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(stored.ETag, expectedETag, StringComparison.Ordinal))
+        {
+            throw new WorkspaceDocumentConflictException(expectedETag, stored.ETag);
+        }
+
+        var document = stored.Document
+            ?? CreateEmptyStoredDocument(scope.Game, DateTimeOffset.UtcNow);
+        ValidateStoredDocument(document, scope.Game);
+        var variant = ResolveVariant(document, requestedId: null);
+        var outputMode = variant?.OutputMode;
+        var outputProfileId = variant?.OutputProfileId;
+        var configuredOutputRootFingerprint = string.IsNullOrWhiteSpace(scope.Paths.OutputRootPath)
+            ? CreateUnsetOutputRootFingerprint()
+            : TryNormalizePrivatePath(scope.Paths.OutputRootPath, out var normalizedOutputRoot)
+                ? CreatePrivatePathFingerprint(normalizedOutputRoot)
+                : throw Invalid("A valid output root is required to bind generated review state.");
+
+        var personal = await workspacePersonalStateService
+            .ReadProjectAsync(scope.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var activeProfileId = personal.Document?.ActiveOutputProfileId;
+        var resolvedProfileId = outputProfileId ?? activeProfileId;
+        var activeProfile = activeProfileId is null
+            ? null
+            : personal.Document?.OutputProfiles.FirstOrDefault(profile => string.Equals(
+                profile.ProfileId,
+                activeProfileId,
+                StringComparison.Ordinal));
+        string? personalStateETag = null;
+        var outputRootFingerprint = configuredOutputRootFingerprint;
+        if (resolvedProfileId is not null)
+        {
+            var profile = personal.Document?.OutputProfiles.FirstOrDefault(candidate => string.Equals(
+                candidate.ProfileId,
+                resolvedProfileId,
+                StringComparison.Ordinal));
+            if (profile is null
+                || personal.ETag is null
+                || !string.Equals(activeProfileId, resolvedProfileId, StringComparison.Ordinal)
+                || !PathsEqual(profile.OutputRootPath, scope.Paths.OutputRootPath))
+            {
+                throw Invalid(
+                    "Generated review requires its exact output profile and output root to be active.");
+            }
+
+            if (variant?.OutputMode is not null
+                && profile.OutputMode is not null
+                && variant.OutputMode != profile.OutputMode)
+            {
+                throw Invalid(
+                    "The build variant output mode does not match its selected output profile.");
+            }
+
+            outputProfileId = resolvedProfileId;
+            personalStateETag = personal.ETag;
+            outputRootFingerprint = CreatePrivatePathFingerprint(profile.OutputRootPath);
+            outputMode ??= profile.OutputMode;
+        }
+
+        if ((scope.Game == ProjectGameDto.Sword || scope.Game == ProjectGameDto.Shield)
+            && outputMode is ChangePlanOutputModeDto.TrinityModManager
+                or ChangePlanOutputModeDto.TrinityBypass)
+        {
+            throw Invalid("Sword and Shield change sets cannot use a Trinity output mode.");
+        }
+
+        var conflicts = new List<ChangeSetConflictDto>();
+        var selectedSets = SelectSets(document, variant, conflicts);
+        DetectDependencyProblems(selectedSets, document.ChangeSets, conflicts);
+        if (conflicts.Count > 0)
+        {
+            throw Invalid(
+                "The selected change-set dependency configuration is invalid for generated review.");
+        }
+
+        var selectedIds = selectedSets.Select(set => set.ChangeSetId).ToArray();
+        var selectedOperations = selectedSets.SelectMany(set => set.Operations).ToArray();
+        var selectedByOperationId = selectedOperations.ToDictionary(
+            operation => operation.OperationId,
+            StringComparer.Ordinal);
+        var sessionLocalEdits = session?.PendingEdits
+            .Where(edit => edit.Association is null)
+            .ToArray() ?? Array.Empty<PendingEdit>();
+        if (selectedOperations.Length + sessionLocalEdits.Length
+            > ChangeSetContract.MaximumOperationCount)
+        {
+            throw Invalid(
+                "Named and session-local edits together exceed the generated review limit.");
+        }
+
+        if (session is not null)
+        {
+            var associatedEdits = session.PendingEdits
+                .Where(edit => edit.Association is not null)
+                .ToArray();
+            foreach (var edit in associatedEdits)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var association = edit.Association!;
+                if (!selectedByOperationId.TryGetValue(association.OperationId, out var operation)
+                    || !string.Equals(
+                        operation.PendingEdit.Association?.ChangeSetId,
+                        association.ChangeSetId,
+                        StringComparison.Ordinal)
+                    || !PendingEditContentEquals(
+                        EditSessionBridgeMapper.ToPendingEditCore(operation.PendingEdit),
+                        edit))
+                {
+                    throw Invalid(
+                        "A pending-session named association does not match the reviewed workspace.");
+                }
+            }
+
+            if (session.AuthoringBinding is not null
+                && (associatedEdits.Length != selectedOperations.Length
+                    || !associatedEdits
+                        .Select(edit => edit.Association!.OperationId)
+                        .Order(StringComparer.Ordinal)
+                        .SequenceEqual(
+                            selectedOperations
+                                .Select(operation => operation.OperationId)
+                                .Order(StringComparer.Ordinal),
+                            StringComparer.Ordinal)))
+            {
+                throw Invalid(
+                    "The pending session does not contain the exact selected named operations.");
+            }
+
+            var selectedTargetKeys = selectedOperations
+                .Select(operation => CreateEditTargetKey(
+                    EditSessionBridgeMapper.ToPendingEditCore(operation.PendingEdit)))
+                .ToHashSet(StringComparer.Ordinal);
+            if (sessionLocalEdits.Any(edit => selectedTargetKeys.Contains(CreateEditTargetKey(edit))))
+            {
+                throw Invalid(
+                    "A session-local edit conflicts with a selected named change-set target.");
+            }
+        }
+
+        var workspaceFingerprint = CreateWorkspaceFingerprint(
+            document,
+            selectedIds,
+            variant,
+            outputProfileId,
+            outputMode,
+            outputRootFingerprint,
+            sessionLocalEdits);
+        if (session?.AuthoringBinding is { } binding
+            && (!string.Equals(binding.ProjectId, scope.ProjectId, StringComparison.Ordinal)
+                || !string.Equals(binding.WorkspaceETag, stored.ETag, StringComparison.Ordinal)
+                || !string.Equals(
+                    binding.WorkspaceFingerprint,
+                    workspaceFingerprint,
+                    StringComparison.Ordinal)
+                || !binding.SelectedChangeSetIds.SequenceEqual(selectedIds, StringComparer.Ordinal)
+                || !string.Equals(binding.OutputProfileId, outputProfileId, StringComparison.Ordinal)
+                || !string.Equals(
+                    binding.OutputRootFingerprint,
+                    outputRootFingerprint,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    binding.WorkspacePersonalStateETag,
+                    personalStateETag,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    binding.OutputMode,
+                    ToBindingOutputMode(outputMode),
+                    StringComparison.Ordinal)))
+        {
+            throw Invalid(
+                "The pending-session authoring binding does not match generated review state.");
+        }
+
+        if (session?.AuthoringBinding is null
+            && session?.PendingEdits.Any(edit => edit.Association is not null) == true)
+        {
+            throw Invalid(
+                "A pending session with named operations requires an exact authoring binding.");
+        }
+
+
+        if (selectedOperations.Length > 0 && session?.AuthoringBinding is null)
+        {
+            throw Invalid(
+                "Selected named operations require their exact materialized pending session for generated review.");
+        }
+
+        var sourceRevisionFingerprint = CreateSourceRevisionFingerprint(
+            selectedOperations
+                .Select(operation => operation.SourceFingerprint)
+                .Where(fingerprint => fingerprint is not null)
+                .Select(fingerprint => fingerprint!),
+            workspaceFingerprint);
+        var profileOutputRootFingerprint = activeProfile is null
+            ? null
+            : TryNormalizePrivatePath(activeProfile.OutputRootPath, out var normalizedProfileRoot)
+                ? CreatePrivatePathFingerprint(normalizedProfileRoot)
+                : HashPrivateBindingValue(activeProfile.OutputRootPath);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHash(hash, "generated-change-set-review-context-v1");
+        AppendHash(hash, stored.ETag);
+        AppendHash(hash, workspaceFingerprint);
+        AppendHash(hash, sourceRevisionFingerprint);
+        AppendHash(hash, document.ActiveChangeSetId);
+        AppendHash(hash, document.ActiveBuildVariantId);
+        AppendHash(hash, outputProfileId);
+        AppendHash(hash, outputMode?.ToString());
+        AppendHash(hash, personal.ETag);
+        AppendHash(hash, activeProfileId);
+        AppendHash(hash, activeProfile?.OutputMode?.ToString());
+        AppendHash(hash, configuredOutputRootFingerprint);
+        AppendHash(hash, profileOutputRootFingerprint);
+        foreach (var id in selectedIds)
+        {
+            AppendHash(hash, id);
+        }
+
+        var context = new GeneratedChangeSetAuthoringContext(
+            Convert.ToHexStringLower(hash.GetHashAndReset()),
+            stored.ETag,
+            workspaceFingerprint,
+            sourceRevisionFingerprint,
+            outputProfileId,
+            outputMode,
+            configuredOutputRootFingerprint,
+            profileOutputRootFingerprint,
+            personal.ETag,
+            selectedIds);
+        return new GeneratedChangeSetReviewWorkspace(context, document);
     }
 
     private async Task<GeneratedChangeSetAuthoringContext> ObserveGeneratedProposalContextCoreAsync(
@@ -1842,10 +2354,7 @@ public sealed class ChangeSetApplicationService
             {
                 var pendingEdit = EditSessionBridgeMapper.ToPendingEditCore(
                     operation.PendingEdit);
-                var bindingOutputMode = string.Equals(
-                    pendingEdit.Owner,
-                    GuidedDesignProviders.GeneratedEditOwner,
-                    StringComparison.Ordinal)
+                var bindingOutputMode = GeneratedChangeSetOwners.IsSupported(pendingEdit.Owner)
                     ? outputMode
                     : null;
                 var current = CreateOperationBinding(
@@ -2686,10 +3195,8 @@ public sealed class ChangeSetApplicationService
         ChangePlanOutputModeDto? outputMode)
     {
         if (edits.Count == 0
-            || edits.Any(edit => !string.Equals(
-                edit.Owner,
-                GuidedDesignProviders.GeneratedEditOwner,
-                StringComparison.Ordinal))
+            || edits.Any(edit => !GeneratedChangeSetOwners.IsSupported(edit.Owner))
+            || edits.Select(edit => edit.Owner).Distinct(StringComparer.Ordinal).Count() != 1
             || edits.Select(edit => edit.Domain).Distinct(StringComparer.Ordinal).Count() != 1
             || edits.Select(CreateSourceSetKey).Distinct(StringComparer.Ordinal).Count() != 1)
         {
@@ -2725,7 +3232,13 @@ public sealed class ChangeSetApplicationService
     private static string CreateSourceSetKey(PendingEdit edit)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendHash(hash, "guided-design-operation-sources-v1");
+        AppendHash(hash, edit.Owner switch
+        {
+            GuidedDesignProviders.GeneratedEditOwner => "guided-design-operation-sources-v1",
+            GeneratedChangeSetOwners.SemanticMerge => "semantic-merge-operation-sources-v1",
+            GeneratedChangeSetOwners.Recipe => "km-recipe-operation-sources-v1",
+            _ => "unsupported-generated-operation-sources",
+        });
         foreach (var source in edit.Sources
                      .OrderBy(source => source.Layer)
                      .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
@@ -2781,10 +3294,7 @@ public sealed class ChangeSetApplicationService
                     normalizedSatisfiedTargets);
             }
 
-            var isGenerated = string.Equals(
-                edit.Owner,
-                GuidedDesignProviders.GeneratedEditOwner,
-                StringComparison.Ordinal);
+            var isGenerated = GeneratedChangeSetOwners.IsSupported(edit.Owner);
             if (isGenerated
                     ? !IsSha256(plan.GeneratedSourceBindingFingerprint)
                     : plan.Writes.Any(write => !IsSha256(write.SourceFingerprint)))
@@ -2809,7 +3319,13 @@ public sealed class ChangeSetApplicationService
             AppendHash(
                 hash,
                 isGenerated
-                    ? "guided-design-source-binding-v1"
+                    ? edit.Owner switch
+                    {
+                        GuidedDesignProviders.GeneratedEditOwner => "guided-design-source-binding-v1",
+                        GeneratedChangeSetOwners.SemanticMerge => "semantic-merge-source-binding-v1",
+                        GeneratedChangeSetOwners.Recipe => "km-recipe-source-binding-v1",
+                        _ => "unsupported-generated-source-binding",
+                    }
                     : "change-set-source-binding-v2");
             foreach (var write in normalizedWrites
                          .OrderBy(write => write.Target.CanonicalKey, StringComparer.Ordinal)
@@ -3027,14 +3543,7 @@ public sealed class ChangeSetApplicationService
         ChangeSetMaterializationDto effective)
     {
         return new ChangeSetWorkspaceSnapshotDto(
-            new ChangeSetWorkspaceDocumentDto(
-                stored.SchemaVersion,
-                stored.Game,
-                stored.ChangeSets,
-                stored.ActiveChangeSetId,
-                stored.BuildVariants,
-                stored.ActiveBuildVariantId,
-                stored.UpdatedAtUtc),
+            ToDocument(stored),
             etag,
             stored.UndoHistory.Count > 0,
             stored.RedoHistory.Count > 0,
@@ -3042,6 +3551,17 @@ public sealed class ChangeSetApplicationService
             stored.RedoHistory.LastOrDefault()?.Label,
             effective);
     }
+
+    private static ChangeSetWorkspaceDocumentDto ToDocument(
+        StoredChangeSetWorkspaceDocument stored) =>
+        new(
+            stored.SchemaVersion,
+            stored.Game,
+            stored.ChangeSets,
+            stored.ActiveChangeSetId,
+            stored.BuildVariants,
+            stored.ActiveBuildVariantId,
+            stored.UpdatedAtUtc);
 
     private static ValidatedScope ValidateScope(ChangeSetWorkspaceScopeDto scope)
     {
@@ -3965,6 +4485,10 @@ internal sealed record GeneratedChangeSetAuthoringContext(
     string? WorkspacePersonalStateETag,
     IReadOnlyList<string> SelectedChangeSetIds);
 
+internal sealed record GeneratedChangeSetReviewWorkspace(
+    GeneratedChangeSetAuthoringContext AuthoringContext,
+    StoredChangeSetWorkspaceDocument Document);
+
 internal sealed record GeneratedChangeSetOperationBinding(
     ChangeSetSourceBindingKindDto Kind,
     string? Fingerprint,
@@ -3978,6 +4502,9 @@ internal sealed record GeneratedChangeSetProposalValidation(
 internal sealed record GeneratedChangeSetImportRequest(
     ChangeSetWorkspaceScopeDto Scope,
     string Name,
+    string Owner,
+    string Tag,
+    string HistoryLabel,
     string? ExpectedETag,
     EditSessionDto? Session);
 
@@ -3991,10 +4518,37 @@ internal sealed record GeneratedChangeSetImportResult(
     ChangeSetWorkspaceSnapshotDto Snapshot,
     GeneratedChangeSetAuthoringContext AuthoringContext);
 
+internal sealed record GeneratedChangeSetReviewImportResult(
+    string ImportedChangeSetId,
+    ChangeSetWorkspaceDocumentDto Document,
+    string ETag,
+    bool CanUndo,
+    bool CanRedo,
+    string? UndoLabel,
+    string? RedoLabel,
+    GeneratedChangeSetAuthoringContext AuthoringContext);
+
 internal sealed class GeneratedChangeSetContextChangedException : Exception
 {
     public GeneratedChangeSetContextChangedException()
         : base("The generated proposal authoring context changed. Refresh and preview it again.")
     {
     }
+}
+
+internal static class GeneratedChangeSetOwners
+{
+    internal const string SemanticMerge = "semantic-merge.v1";
+    internal const string Recipe = "km-recipe.v1";
+
+    internal static bool IsSupported(string? owner) => owner is
+        GuidedDesignProviders.GeneratedEditOwner or SemanticMerge or Recipe;
+
+    internal static bool IsTagForOwner(string owner, string tag) => (owner, tag) switch
+    {
+        (GuidedDesignProviders.GeneratedEditOwner, "guided-design") => true,
+        (SemanticMerge, "semantic-merge") => true,
+        (Recipe, "recipe") => true,
+        _ => false,
+    };
 }

@@ -638,6 +638,12 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "semantic.balance-lab"
             | "guidedDesign.capabilities"
             | "guidedDesign.preview"
+            | "semanticMerge.capabilities"
+            | "semanticMerge.source.open"
+            | "semanticMerge.preview"
+            | "recipes.export"
+            | "recipes.validate"
+            | "recipes.preview"
             | "support.report.build"
     ) {
         return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);
