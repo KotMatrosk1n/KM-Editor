@@ -23,6 +23,7 @@ public sealed class ProjectRelocationApplicationService
 {
     private const string DraftDocumentId = "drafts";
     private const string PersonalStateDocumentId = "personal-state";
+    private const string ChangeSetDocumentId = "change-sets";
     private static readonly EnumerationOptions MetadataEntryEnumeration = new()
     {
         AttributesToSkip = 0,
@@ -39,18 +40,21 @@ public sealed class ProjectRelocationApplicationService
     private readonly ProjectRelocationService relocationService;
     private readonly WorkspaceDraftApplicationService workspaceDraftService;
     private readonly WorkspacePersonalStateApplicationService workspacePersonalStateService;
+    private readonly ChangeSetApplicationService changeSetService;
     private readonly OutputSafetyApplicationService outputSafetyService;
 
     public ProjectRelocationApplicationService(
         ProjectRelocationService? relocationService = null,
         WorkspaceDraftApplicationService? workspaceDraftService = null,
         WorkspacePersonalStateApplicationService? workspacePersonalStateService = null,
+        ChangeSetApplicationService? changeSetService = null,
         OutputSafetyApplicationService? outputSafetyService = null)
     {
         this.relocationService = relocationService ?? new ProjectRelocationService();
         this.workspaceDraftService = workspaceDraftService ?? new WorkspaceDraftApplicationService();
         this.workspacePersonalStateService = workspacePersonalStateService
             ?? new WorkspacePersonalStateApplicationService();
+        this.changeSetService = changeSetService ?? new ChangeSetApplicationService();
         this.outputSafetyService = outputSafetyService ?? new OutputSafetyApplicationService();
     }
 
@@ -106,6 +110,10 @@ public sealed class ProjectRelocationApplicationService
                 result.CandidateHealth);
         }
 
+        using var changeSetLeases = await changeSetService.AcquireProjectLeasesAsync(
+                [request.Source.ProjectId, candidateProjectId.Value],
+                cancellationToken)
+            .ConfigureAwait(false);
         var sourceDrafts = await workspaceDraftService
             .ReadAsync(request.Source.ProjectId, cancellationToken)
             .ConfigureAwait(false);
@@ -133,17 +141,31 @@ public sealed class ProjectRelocationApplicationService
             destinationPersonalState,
             relocatedPersonalState,
             sameProject: candidateProjectId.Value == request.Source.ProjectId);
+        var sourceChangeSets = await changeSetService
+            .ReadStoredForRelocationAsync(request.Source.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationChangeSets = candidateProjectId.Value == request.Source.ProjectId
+            ? sourceChangeSets
+            : await changeSetService
+                .ReadStoredForRelocationAsync(candidateProjectId.Value, cancellationToken)
+                .ConfigureAwait(false);
+        var changeSetStatus = GetChangeSetDocumentStatus(
+            sourceChangeSets,
+            destinationChangeSets,
+            sameProject: candidateProjectId.Value == request.Source.ProjectId);
         var outputStoreState = InspectCandidateOutputStore(candidatePaths.OutputRootPath);
         var hasOutputContinuityConflict = result.StableSourceIdentityChanged is true
             && outputStoreState == RelocationOutputStoreState.OccupiedOrUnverifiable;
         var canApply = documentStatus != ProjectRelocationDocumentStatusDto.Conflict
             && personalStateStatus != ProjectRelocationDocumentStatusDto.Conflict
+            && changeSetStatus != ProjectRelocationDocumentStatusDto.Conflict
             && !hasOutputContinuityConflict;
         var diagnostics = result.CandidateHealth.Diagnostics
             .Select(ProjectBridgeMapper.ToDto)
             .ToList();
         if (documentStatus == ProjectRelocationDocumentStatusDto.Conflict
-            || personalStateStatus == ProjectRelocationDocumentStatusDto.Conflict)
+            || personalStateStatus == ProjectRelocationDocumentStatusDto.Conflict
+            || changeSetStatus == ProjectRelocationDocumentStatusDto.Conflict)
         {
             diagnostics.Add(CreateDiagnostic(
                 ApiDiagnosticSeverity.Error,
@@ -176,6 +198,9 @@ public sealed class ProjectRelocationApplicationService
             destinationPersonalState.ETag,
             personalStateStatus,
             FingerprintDocument(relocatedPersonalState),
+            sourceChangeSets.ETag,
+            destinationChangeSets.ETag,
+            changeSetStatus,
             outputStoreState);
         return new PreviewProjectRelocationResponse(
             reviewToken,
@@ -188,6 +213,7 @@ public sealed class ProjectRelocationApplicationService
             [
                 new ProjectRelocationDocumentDto(DraftDocumentId, documentStatus),
                 new ProjectRelocationDocumentDto(PersonalStateDocumentId, personalStateStatus),
+                new ProjectRelocationDocumentDto(ChangeSetDocumentId, changeSetStatus),
             ],
             diagnostics);
     }
@@ -221,6 +247,10 @@ public sealed class ProjectRelocationApplicationService
         var sourcePaths = ProjectBridgeMapper.ToCore(request.Source.Paths);
         var selectedGame = sourcePaths.SelectedGame
             ?? throw new ProjectRelocationReviewMismatchException();
+        using var changeSetLeases = await changeSetService.AcquireProjectLeasesAsync(
+                [request.Source.ProjectId, preview.DestinationProjectId],
+                cancellationToken)
+            .ConfigureAwait(false);
         return await outputSafetyService.ExecuteExclusiveOutputOperationAsync(
                 request.Source,
                 operationCancellationToken => ApplyUnderOutputLockAsync(
@@ -259,6 +289,9 @@ public sealed class ProjectRelocationApplicationService
         var personalStateStatus = preview.WorkspaceDocuments
             .Single(document => document.DocumentId == PersonalStateDocumentId)
             .Status;
+        var changeSetStatus = preview.WorkspaceDocuments
+            .Single(document => document.DocumentId == ChangeSetDocumentId)
+            .Status;
         var sourceDrafts = await workspaceDraftService
             .ReadAsync(request.Source.ProjectId, cancellationToken)
             .ConfigureAwait(false);
@@ -286,6 +319,18 @@ public sealed class ProjectRelocationApplicationService
             destinationPersonalState,
             relocatedPersonalState,
             sameProject: destinationProjectId == request.Source.ProjectId);
+        var sourceChangeSets = await changeSetService
+            .ReadStoredForRelocationAsync(request.Source.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationChangeSets = destinationProjectId == request.Source.ProjectId
+            ? sourceChangeSets
+            : await changeSetService
+                .ReadStoredForRelocationAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
+        var currentChangeSetStatus = GetChangeSetDocumentStatus(
+            sourceChangeSets,
+            destinationChangeSets,
+            sameProject: destinationProjectId == request.Source.ProjectId);
         var currentOutputStoreState = InspectCandidateOutputStore(candidatePaths.OutputRootPath);
         var currentReviewToken = CreateReviewToken(
             request.Source.ProjectId,
@@ -298,9 +343,13 @@ public sealed class ProjectRelocationApplicationService
             destinationPersonalState.ETag,
             currentPersonalStateStatus,
             FingerprintDocument(relocatedPersonalState),
+            sourceChangeSets.ETag,
+            destinationChangeSets.ETag,
+            currentChangeSetStatus,
             currentOutputStoreState);
         if (currentDraftStatus != draftStatus
             || currentPersonalStateStatus != personalStateStatus
+            || currentChangeSetStatus != changeSetStatus
             || (destinationProjectId != request.Source.ProjectId
                 && currentOutputStoreState == RelocationOutputStoreState.OccupiedOrUnverifiable)
             || !CryptographicOperations.FixedTimeEquals(
@@ -312,6 +361,7 @@ public sealed class ProjectRelocationApplicationService
 
         string? copiedDraftETag = null;
         string? copiedPersonalStateETag = null;
+        string? copiedChangeSetETag = null;
         try
         {
             if (draftStatus == ProjectRelocationDocumentStatusDto.Copy)
@@ -322,7 +372,7 @@ public sealed class ProjectRelocationApplicationService
                 }
 
                 var writeResult = await workspaceDraftService
-                    .WriteAsync(
+                    .WriteForRelocationAsync(
                         destinationProjectId,
                         sourceDrafts.Document,
                         expectedETag: null,
@@ -351,7 +401,7 @@ public sealed class ProjectRelocationApplicationService
                 }
 
                 var writeResult = await workspacePersonalStateService
-                    .WriteProjectAsync(
+                    .WriteProjectForRelocationAsync(
                         destinationProjectId,
                         relocatedPersonalState,
                         expectedETag: null,
@@ -372,6 +422,34 @@ public sealed class ProjectRelocationApplicationService
                 migratedDocuments.Add(PersonalStateDocumentId);
             }
 
+            if (changeSetStatus == ProjectRelocationDocumentStatusDto.Copy)
+            {
+                if (!sourceChangeSets.Exists || sourceChangeSets.Document is null)
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
+
+                copiedChangeSetETag = await changeSetService
+                    .WriteStoredForRelocationAsync(
+                        destinationProjectId,
+                        sourceChangeSets.Document,
+                        expectedETag: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                var sourceAfterCopy = await changeSetService
+                    .ReadStoredForRelocationAsync(request.Source.ProjectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.Equals(
+                        sourceAfterCopy.ETag,
+                        sourceChangeSets.ETag,
+                        StringComparison.Ordinal))
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
+
+                migratedDocuments.Add(ChangeSetDocumentId);
+            }
+
             await EnsureWorkspaceBindingsUnchangedAsync(
                     request.Source.ProjectId,
                     destinationProjectId,
@@ -379,6 +457,8 @@ public sealed class ProjectRelocationApplicationService
                     copiedDraftETag ?? destinationDrafts.ETag,
                     sourcePersonalState.ETag,
                     copiedPersonalStateETag ?? destinationPersonalState.ETag,
+                    sourceChangeSets.ETag,
+                    copiedChangeSetETag ?? destinationChangeSets.ETag,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -398,7 +478,8 @@ public sealed class ProjectRelocationApplicationService
             await RollBackCopiedWorkspaceDocumentsAsync(
                     destinationProjectId,
                     copiedDraftETag,
-                    copiedPersonalStateETag)
+                    copiedPersonalStateETag,
+                    copiedChangeSetETag)
                 .ConfigureAwait(false);
             throw new ProjectRelocationConflictException(exception);
         }
@@ -407,7 +488,8 @@ public sealed class ProjectRelocationApplicationService
             await RollBackCopiedWorkspaceDocumentsAsync(
                     destinationProjectId,
                     copiedDraftETag,
-                    copiedPersonalStateETag)
+                    copiedPersonalStateETag,
+                    copiedChangeSetETag)
                 .ConfigureAwait(false);
             throw;
         }
@@ -420,6 +502,8 @@ public sealed class ProjectRelocationApplicationService
         string? expectedDestinationDraftETag,
         string? expectedSourcePersonalStateETag,
         string? expectedDestinationPersonalStateETag,
+        string? expectedSourceChangeSetETag,
+        string? expectedDestinationChangeSetETag,
         CancellationToken cancellationToken)
     {
         var sourceDrafts = await workspaceDraftService
@@ -438,6 +522,14 @@ public sealed class ProjectRelocationApplicationService
             : await workspacePersonalStateService
                 .ReadProjectAsync(destinationProjectId, cancellationToken)
                 .ConfigureAwait(false);
+        var sourceChangeSets = await changeSetService
+            .ReadStoredForRelocationAsync(sourceProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationChangeSets = destinationProjectId == sourceProjectId
+            ? sourceChangeSets
+            : await changeSetService
+                .ReadStoredForRelocationAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
 
         if (!string.Equals(sourceDrafts.ETag, expectedSourceDraftETag, StringComparison.Ordinal)
             || !string.Equals(
@@ -451,6 +543,14 @@ public sealed class ProjectRelocationApplicationService
             || !string.Equals(
                 destinationPersonalState.ETag,
                 expectedDestinationPersonalStateETag,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                sourceChangeSets.ETag,
+                expectedSourceChangeSetETag,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                destinationChangeSets.ETag,
+                expectedDestinationChangeSetETag,
                 StringComparison.Ordinal))
         {
             throw new ProjectRelocationReviewMismatchException();
@@ -460,15 +560,39 @@ public sealed class ProjectRelocationApplicationService
     private async Task RollBackCopiedWorkspaceDocumentsAsync(
         string destinationProjectId,
         string? copiedDraftETag,
-        string? copiedPersonalStateETag)
+        string? copiedPersonalStateETag,
+        string? copiedChangeSetETag)
     {
         List<Exception>? rollbackFailures = null;
+        if (copiedChangeSetETag is not null)
+        {
+            try
+            {
+                var deleted = await changeSetService
+                    .DeleteStoredForRelocationAsync(
+                        destinationProjectId,
+                        copiedChangeSetETag,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!deleted)
+                {
+                    (rollbackFailures ??= []).Add(
+                        new InvalidOperationException(
+                            "The copied project change sets could not be removed."));
+                }
+            }
+            catch (Exception exception) when (!IsFatal(exception))
+            {
+                (rollbackFailures ??= []).Add(exception);
+            }
+        }
+
         if (copiedPersonalStateETag is not null)
         {
             try
             {
                 var result = await workspacePersonalStateService
-                    .DeleteProjectAsync(
+                    .DeleteProjectForRelocationAsync(
                         destinationProjectId,
                         copiedPersonalStateETag,
                         CancellationToken.None)
@@ -491,7 +615,7 @@ public sealed class ProjectRelocationApplicationService
             try
             {
                 var result = await workspaceDraftService
-                    .DeleteAsync(
+                    .DeleteForRelocationAsync(
                         destinationProjectId,
                         copiedDraftETag,
                         CancellationToken.None)
@@ -591,6 +715,32 @@ public sealed class ProjectRelocationApplicationService
             : ProjectRelocationDocumentStatusDto.Conflict;
     }
 
+    private static ProjectRelocationDocumentStatusDto GetChangeSetDocumentStatus(
+        StoredChangeSetReadResult source,
+        StoredChangeSetReadResult destination,
+        bool sameProject)
+    {
+        if (!source.Exists || source.Document is null || sameProject)
+        {
+            return ProjectRelocationDocumentStatusDto.Skip;
+        }
+
+        if (!destination.Exists || destination.Document is null)
+        {
+            return ProjectRelocationDocumentStatusDto.Copy;
+        }
+
+        var sourceBytes = JsonSerializer.SerializeToUtf8Bytes(
+            source.Document,
+            FingerprintSerializerOptions);
+        var destinationBytes = JsonSerializer.SerializeToUtf8Bytes(
+            destination.Document,
+            FingerprintSerializerOptions);
+        return sourceBytes.AsSpan().SequenceEqual(destinationBytes)
+            ? ProjectRelocationDocumentStatusDto.Skip
+            : ProjectRelocationDocumentStatusDto.Conflict;
+    }
+
     private static string FingerprintDocument<TDocument>(TDocument? document)
     {
         return document is null
@@ -610,11 +760,14 @@ public sealed class ProjectRelocationApplicationService
         string? destinationPersonalStateETag,
         ProjectRelocationDocumentStatusDto personalStateStatus,
         string personalStateFingerprint,
+        string? sourceChangeSetETag,
+        string? destinationChangeSetETag,
+        ProjectRelocationDocumentStatusDto changeSetStatus,
         RelocationOutputStoreState outputStoreState)
     {
         var framed = string.Create(
             provider: null,
-            $"project-relocation-v4\n{sourceProjectId.Length}:{sourceProjectId}\n{destinationProjectId.Length}:{destinationProjectId}\n{candidatePathsFingerprint}\n{sourceETag ?? "missing"}\n{destinationETag ?? "missing"}\n{documentStatus}\n{sourcePersonalStateETag ?? "missing"}\n{destinationPersonalStateETag ?? "missing"}\n{personalStateStatus}\n{personalStateFingerprint}\n{outputStoreState}");
+            $"project-relocation-v5\n{sourceProjectId.Length}:{sourceProjectId}\n{destinationProjectId.Length}:{destinationProjectId}\n{candidatePathsFingerprint}\n{sourceETag ?? "missing"}\n{destinationETag ?? "missing"}\n{documentStatus}\n{sourcePersonalStateETag ?? "missing"}\n{destinationPersonalStateETag ?? "missing"}\n{personalStateStatus}\n{personalStateFingerprint}\n{sourceChangeSetETag ?? "missing"}\n{destinationChangeSetETag ?? "missing"}\n{changeSetStatus}\n{outputStoreState}");
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(framed)));
     }
 
@@ -744,6 +897,9 @@ public sealed class ProjectRelocationApplicationService
                 destinationPersonalStateETag: null,
                 ProjectRelocationDocumentStatusDto.Skip,
                 personalStateFingerprint: "missing",
+                sourceChangeSetETag: null,
+                destinationChangeSetETag: null,
+                ProjectRelocationDocumentStatusDto.Skip,
                 RelocationOutputStoreState.Unavailable),
             sourceProjectId,
             DestinationProjectId: null,
@@ -754,6 +910,7 @@ public sealed class ProjectRelocationApplicationService
             [
                 new ProjectRelocationDocumentDto(DraftDocumentId, ProjectRelocationDocumentStatusDto.Skip),
                 new ProjectRelocationDocumentDto(PersonalStateDocumentId, ProjectRelocationDocumentStatusDto.Skip),
+                new ProjectRelocationDocumentDto(ChangeSetDocumentId, ProjectRelocationDocumentStatusDto.Skip),
             ],
             diagnostics);
     }

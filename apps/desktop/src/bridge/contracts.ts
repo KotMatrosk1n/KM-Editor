@@ -141,7 +141,13 @@ export const kmCommandNameValues = [
   'editSession.discard',
   'editSession.validate',
   'changePlan.create',
-  'changePlan.apply'
+  'changePlan.apply',
+  'changeSets.read',
+  'changeSets.mutate',
+  'changeSets.captureSession',
+  'changeSets.materialize',
+  'changeSets.export',
+  'changeSets.import'
 ] as const;
 
 export const kmCommandNameSchema = z.enum(kmCommandNameValues);
@@ -149,7 +155,13 @@ export type KmCommandName = z.infer<typeof kmCommandNameSchema>;
 
 export const kmCommandNames = {
   applyChangePlan: 'changePlan.apply',
+  captureChangeSetSession: 'changeSets.captureSession',
   createChangePlan: 'changePlan.create',
+  exportChangeSets: 'changeSets.export',
+  importChangeSets: 'changeSets.import',
+  materializeChangeSets: 'changeSets.materialize',
+  mutateChangeSets: 'changeSets.mutate',
+  readChangeSets: 'changeSets.read',
   discardEditSession: 'editSession.discard',
   getEditSession: 'editSession.get',
   listWorkflows: 'workflow.list',
@@ -563,7 +575,21 @@ export const projectFileReferenceSchema = z.strictObject({
   relativePath: z.string()
 });
 
+const pendingEditAssociationIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u);
+
 export const pendingEditSchema = z.strictObject({
+  association: z
+    .strictObject({
+      changeSetId: pendingEditAssociationIdSchema,
+      operationId: pendingEditAssociationIdSchema,
+      version: z.literal(1)
+    })
+    .nullable()
+    .optional(),
   domain: z.string(),
   field: z.string().nullable().optional(),
   newValue: z.string().nullable().optional(),
@@ -574,6 +600,32 @@ export const pendingEditSchema = z.strictObject({
 });
 
 export const editSessionSchema = z.strictObject({
+  authoringBinding: z
+    .strictObject({
+      outputProfileId: pendingEditAssociationIdSchema.nullable(),
+      outputMode: z.enum(['standalone', 'trinityModManager', 'trinityBypass']).nullable(),
+      outputRootFingerprint: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
+      projectId: z.string().min(1).max(128),
+      selectedChangeSetIds: z.array(pendingEditAssociationIdSchema).max(64).refine(
+        (values) => new Set(values).size === values.length,
+        { message: 'Selected change-set identifiers must be unique.' }
+      ),
+      version: z.literal(1),
+      workspaceETag: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
+      workspaceFingerprint: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
+      workspacePersonalStateETag: z.string().regex(/^[A-Fa-f0-9]{64}$/u).nullable()
+    })
+    .superRefine((binding, context) => {
+      if ((binding.outputProfileId === null) !== (binding.workspacePersonalStateETag === null)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'A selected output profile requires an exact personal-state ETag.',
+          path: ['workspacePersonalStateETag']
+        });
+      }
+    })
+    .nullable()
+    .optional(),
   hasPendingChanges: z.boolean(),
   pendingEdits: z.array(pendingEditSchema),
   sessionId: z.string()

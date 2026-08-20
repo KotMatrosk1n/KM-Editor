@@ -36,7 +36,19 @@ public sealed record ApplyChangePlanResponse(ApplyResultDto ApplyResult);
 public sealed record EditSessionDto(
     string SessionId,
     bool HasPendingChanges,
-    IReadOnlyList<PendingEditDto> PendingEdits);
+    IReadOnlyList<PendingEditDto> PendingEdits,
+    EditSessionAuthoringBindingDto? AuthoringBinding = null);
+
+public sealed record EditSessionAuthoringBindingDto(
+    int Version,
+    string ProjectId,
+    string WorkspaceETag,
+    string WorkspaceFingerprint,
+    IReadOnlyList<string> SelectedChangeSetIds,
+    string? OutputProfileId,
+    string OutputRootFingerprint,
+    string? WorkspacePersonalStateETag = null,
+    ChangePlanOutputModeDto? OutputMode = null);
 
 public sealed record PendingEditDto(
     string Domain,
@@ -45,7 +57,13 @@ public sealed record PendingEditDto(
     string? RecordId = null,
     string? Field = null,
     string? NewValue = null,
-    string? Owner = null);
+    string? Owner = null,
+    PendingEditAssociationDto? Association = null);
+
+public sealed record PendingEditAssociationDto(
+    int Version,
+    string ChangeSetId,
+    string OperationId);
 
 public enum FileLayerDto
 {

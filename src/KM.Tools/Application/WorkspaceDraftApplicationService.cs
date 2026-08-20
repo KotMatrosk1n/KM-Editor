@@ -26,6 +26,8 @@ public sealed class WorkspaceDraftApplicationService
             new WorkspaceDocumentId("drafts"),
             "workspace-drafts",
             WorkspaceDraftContract.SchemaVersion);
+    private static readonly WorkspaceDocumentId AuthoringOperationLeaseId =
+        new("change-sets-operation");
 
     private readonly VersionedWorkspaceDocumentStore store;
 
@@ -62,8 +64,37 @@ public sealed class WorkspaceDraftApplicationService
         string? expectedETag,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(document);
         var identity = GetProjectIdentity(projectId);
+        using var authoringLease = await store.AcquireProjectOperationLeaseAsync(
+                identity,
+                AuthoringOperationLeaseId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return await WriteCoreAsync(identity, document, expectedETag, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async Task<WriteWorkspaceDraftsResponse> WriteForRelocationAsync(
+        string projectId,
+        WorkspaceDraftDocumentDto document,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        return await WriteCoreAsync(
+                GetProjectIdentity(projectId),
+                document,
+                expectedETag,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<WriteWorkspaceDraftsResponse> WriteCoreAsync(
+        WorkspaceProjectIdentity identity,
+        WorkspaceDraftDocumentDto document,
+        string? expectedETag,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(document);
         ValidateDocument(document);
         ValidateExpectedETag(expectedETag);
 
@@ -83,6 +114,32 @@ public sealed class WorkspaceDraftApplicationService
         CancellationToken cancellationToken = default)
     {
         var identity = GetProjectIdentity(projectId);
+        using var authoringLease = await store.AcquireProjectOperationLeaseAsync(
+                identity,
+                AuthoringOperationLeaseId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return await DeleteCoreAsync(identity, expectedETag, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async Task<DeleteWorkspaceDraftsResponse> DeleteForRelocationAsync(
+        string projectId,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        return await DeleteCoreAsync(
+                GetProjectIdentity(projectId),
+                expectedETag,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<DeleteWorkspaceDraftsResponse> DeleteCoreAsync(
+        WorkspaceProjectIdentity identity,
+        string? expectedETag,
+        CancellationToken cancellationToken)
+    {
         ValidateExpectedETag(expectedETag);
         var result = await store.DeleteConditionalAsync(
                 identity,

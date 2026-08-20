@@ -18,32 +18,52 @@ public static class EditSessionBridgeMapper
         return new EditSessionDto(
             session.Id.Value,
             session.HasPendingChanges,
-            session.PendingEdits.Select(ToDto).ToArray());
+            session.PendingEdits.Select(ToPendingEditDto).ToArray(),
+            ToDto(session.AuthoringBinding));
     }
 
     public static EditSession ToCore(EditSessionDto session)
     {
         ArgumentNullException.ThrowIfNull(session);
+        try
+        {
+            if (session.PendingEdits is null || session.PendingEdits.Any(edit => edit is null))
+            {
+                throw new ArgumentException("The edit session pending edits are invalid.");
+            }
 
-        return new EditSession(
-            new EditSessionId(session.SessionId),
-            DateTimeOffset.UtcNow,
-            session.PendingEdits.Select(ToCore).ToArray());
+            return new EditSession(
+                new EditSessionId(session.SessionId),
+                DateTimeOffset.UtcNow,
+                session.PendingEdits.Select(ToPendingEditCoreUnchecked).ToArray(),
+                ToCore(session.AuthoringBinding));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new EditSessionContractException("The edit session contract is invalid.", exception);
+        }
     }
 
     public static EditSession ToCoreAllowingMalformedPendingEdits(EditSessionDto session)
     {
         ArgumentNullException.ThrowIfNull(session);
-
-        var pendingEdits = session.PendingEdits is null
-            ? null!
-            : session.PendingEdits
-                .Select(edit => edit is null ? null! : ToCoreAllowingMalformedSources(edit))
-                .ToArray();
-        return new EditSession(
-            new EditSessionId(session.SessionId),
-            DateTimeOffset.UtcNow,
-            pendingEdits);
+        try
+        {
+            var pendingEdits = session.PendingEdits is null
+                ? null!
+                : session.PendingEdits
+                    .Select(edit => edit is null ? null! : ToCoreAllowingMalformedSources(edit))
+                    .ToArray();
+            return new EditSession(
+                new EditSessionId(session.SessionId),
+                DateTimeOffset.UtcNow,
+                pendingEdits,
+                ToCore(session.AuthoringBinding));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new EditSessionContractException("The edit session contract is invalid.", exception);
+        }
     }
 
     private static PendingEdit ToCoreAllowingMalformedSources(PendingEditDto edit)
@@ -60,7 +80,8 @@ public static class EditSessionBridgeMapper
             edit.RecordId,
             edit.Field,
             edit.NewValue,
-            edit.Owner);
+            edit.Owner,
+            ToCore(edit.Association));
     }
 
     public static ChangePlanDto ToDto(ChangePlan changePlan)
@@ -141,7 +162,7 @@ public static class EditSessionBridgeMapper
             write.SourceFingerprint);
     }
 
-    private static PendingEditDto ToDto(PendingEdit edit)
+    public static PendingEditDto ToPendingEditDto(PendingEdit edit)
     {
         return new PendingEditDto(
             edit.Domain,
@@ -150,11 +171,32 @@ public static class EditSessionBridgeMapper
             edit.RecordId,
             edit.Field,
             edit.NewValue,
-            edit.Owner);
+            edit.Owner,
+            ToDto(edit.Association));
     }
 
-    private static PendingEdit ToCore(PendingEditDto edit)
+    public static PendingEdit ToPendingEditCore(PendingEditDto edit)
     {
+        ArgumentNullException.ThrowIfNull(edit);
+        try
+        {
+            return ToPendingEditCoreUnchecked(edit);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new EditSessionContractException(
+                "The pending edit contract is invalid.",
+                exception);
+        }
+    }
+
+    private static PendingEdit ToPendingEditCoreUnchecked(PendingEditDto edit)
+    {
+        if (edit.Sources is null || edit.Sources.Any(source => source is null))
+        {
+            throw new ArgumentException("The pending edit sources are invalid.");
+        }
+
         return new PendingEdit(
             edit.Domain,
             edit.Summary,
@@ -162,7 +204,86 @@ public static class EditSessionBridgeMapper
             edit.RecordId,
             edit.Field,
             edit.NewValue,
-            edit.Owner);
+            edit.Owner,
+            ToCore(edit.Association));
+    }
+
+    private static PendingEditAssociationDto? ToDto(PendingEditAssociation? association)
+    {
+        return association is null
+            ? null
+            : new PendingEditAssociationDto(
+                association.Version,
+                association.ChangeSetId,
+                association.OperationId);
+    }
+
+    private static PendingEditAssociation? ToCore(PendingEditAssociationDto? association)
+    {
+        if (association is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new PendingEditAssociation(
+                association.Version,
+                association.ChangeSetId,
+                association.OperationId);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new EditSessionContractException(
+                "The pending edit association is invalid.",
+                exception);
+        }
+    }
+
+    private static EditSessionAuthoringBindingDto? ToDto(EditSessionAuthoringBinding? binding)
+    {
+        return binding is null
+            ? null
+            : new EditSessionAuthoringBindingDto(
+                binding.Version,
+                binding.ProjectId,
+                binding.WorkspaceETag,
+                binding.WorkspaceFingerprint,
+                binding.SelectedChangeSetIds,
+                binding.OutputProfileId,
+                binding.OutputRootFingerprint,
+                binding.WorkspacePersonalStateETag,
+                binding.OutputMode switch
+                {
+                    "standalone" => ChangePlanOutputModeDto.Standalone,
+                    "trinityModManager" => ChangePlanOutputModeDto.TrinityModManager,
+                    "trinityBypass" => ChangePlanOutputModeDto.TrinityBypass,
+                    null => null,
+                    _ => throw new ArgumentOutOfRangeException(nameof(binding)),
+                });
+    }
+
+    private static EditSessionAuthoringBinding? ToCore(EditSessionAuthoringBindingDto? binding)
+    {
+        return binding is null
+            ? null
+            : new EditSessionAuthoringBinding(
+                binding.Version,
+                binding.ProjectId,
+                binding.WorkspaceETag,
+                binding.WorkspaceFingerprint,
+                binding.SelectedChangeSetIds,
+                binding.OutputProfileId,
+                binding.OutputRootFingerprint,
+                binding.WorkspacePersonalStateETag,
+                binding.OutputMode switch
+                {
+                    ChangePlanOutputModeDto.Standalone => "standalone",
+                    ChangePlanOutputModeDto.TrinityModManager => "trinityModManager",
+                    ChangePlanOutputModeDto.TrinityBypass => "trinityBypass",
+                    null => null,
+                    _ => throw new ArgumentOutOfRangeException(nameof(binding)),
+                });
     }
 
     private static FileProvenanceDto ToDto(ProjectFileReference source)
@@ -224,5 +345,13 @@ public static class EditSessionBridgeMapper
             FileLayerDto.Generated => ProjectFileLayer.Generated,
             _ => throw new ArgumentOutOfRangeException(nameof(layer), layer, null),
         };
+    }
+}
+
+public sealed class EditSessionContractException : Exception
+{
+    public EditSessionContractException(string message, Exception innerException)
+        : base(message, innerException)
+    {
     }
 }

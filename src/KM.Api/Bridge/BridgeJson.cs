@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Api.ChangeSets;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.GameDump;
@@ -28,6 +29,11 @@ public static class BridgeJson
         // Bridge enums cross as readable strings instead of numeric enum values.
         options.Converters.Add(new JsonStringEnumConverter<ApiDiagnosticSeverity>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ChangePlanOutputModeDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ChangeSetOperationStorageKindDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ChangeSetSourceBindingKindDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ChangeSetMutationKindDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ChangeSetConflictKindDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ChangeSetOperationMaterializationStateDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<OutputApplyOutcomeDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<OutputTransactionPhaseDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<OutputRecoveryDispositionDto>(JsonNamingPolicy.CamelCase));
