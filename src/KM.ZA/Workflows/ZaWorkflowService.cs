@@ -191,6 +191,7 @@ public sealed class ZaWorkflowService
         var virtualPaths = new List<string>
         {
             ZaDataPaths.ItemDataArray,
+            ZaDataPaths.ShopItemLineupArray,
             ZaDataPaths.EvolutionItemConversionArray,
             ZaDataPaths.PersonalArray,
             ZaDataPaths.PokedexContentsData,
@@ -207,6 +208,7 @@ public sealed class ZaWorkflowService
             ZaDataPaths.PokemonSpawnerDataArray,
             ZaDataPaths.BossBattleDataGlobal,
             ZaDataPaths.PokemonDataArray,
+            ZaWorkflowFileSource.DescriptorVirtualPath,
         };
         foreach (var textPath in new[]
                  {
@@ -344,6 +346,134 @@ public sealed class ZaWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new ZaEncountersWorkflowService(freshFileSource).Load(project);
+    }
+
+    public ZaItemsEditResult UpdateItemFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaItemFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaItemsWorkflowService(source);
+        return new ZaItemsEditSessionService(workspace, source, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public ZaPokemonEditResult UpdatePokemonFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaPokemonFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaPokemonWorkflowService(source);
+        return new ZaPokemonEditSessionService(workspace, source, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public ZaPokemonEditResult UpdatePokemonEvolutionsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaPokemonEvolutionUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaPokemonWorkflowService(source);
+        return new ZaPokemonEditSessionService(workspace, source, workflow)
+            .UpdateEvolutions(paths, session, updates);
+    }
+
+    public ZaTrainersEditResult UpdateTrainerFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaTrainerFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaTrainersWorkflowService(source);
+        return new ZaTrainersEditSessionService(workspace, source, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public ZaEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaEncounterSlotFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaEncountersWorkflowService(source);
+        return new ZaEncountersEditSessionService(workspace, source, workflow)
+            .UpdateSlotFields(paths, session, updates);
+    }
+
+    public ChangePlan CreateGuidedChangePlanFreshBounded(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode = ZaOutputMode.Standalone)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        var domain = session.PendingEdits
+            .Select(edit => edit.Domain)
+            .Distinct(StringComparer.Ordinal)
+            .SingleOrDefault();
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return domain switch
+        {
+            ZaEditSessionSupport.ItemsDomain => new ZaItemsEditSessionService(
+                    workspace,
+                    source,
+                    new ZaItemsWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionSupport.PokemonDomain => new ZaPokemonEditSessionService(
+                    workspace,
+                    source,
+                    new ZaPokemonWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionSupport.TrainersDomain => new ZaTrainersEditSessionService(
+                    workspace,
+                    source,
+                    new ZaTrainersWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionSupport.EncountersDomain => new ZaEncountersEditSessionService(
+                    workspace,
+                    source,
+                    new ZaEncountersWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            _ => throw new InvalidOperationException(
+                "Guided Design supports exactly one verified Pokemon Legends Z-A workflow domain per plan."),
+        };
     }
 
     private static void AppendSemanticSourcePayload(

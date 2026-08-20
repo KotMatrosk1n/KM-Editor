@@ -56,6 +56,10 @@ export const semanticExploreErrorCodes = {
   unsupported: 'KM-SEMANTIC-UNSUPPORTED'
 } as const satisfies Record<string, KmErrorCode>;
 
+export const guidedDesignErrorCodes = {
+  staleProposal: 'KM-GUIDED-DESIGN-STALE-PROPOSAL'
+} as const satisfies Record<string, KmErrorCode>;
+
 export const swshDynamaxAdventuresErrorCodes = {
   seedInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-SEED-INVALID',
   seedLimitInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-SEED-LIMIT-INVALID',

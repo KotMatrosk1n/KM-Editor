@@ -179,9 +179,11 @@ public sealed class SvWorkflowService
         {
             SvDataPaths.ItemDataArray,
             SvDataPaths.PersonalArray,
+            SvDataPaths.EvolutionItemConversionArray,
             SvDataPaths.MoveDataArray,
             SvDataPaths.TrainerDataArray,
             SvDataPaths.WildEncounterArray,
+            SvWorkflowFileSource.DescriptorVirtualPath,
             SvDataPaths.ItemNames(language),
             SvDataPaths.MoveNames(language),
             SvDataPaths.MoveDescriptions(language),
@@ -302,6 +304,117 @@ public sealed class SvWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new SvEncountersWorkflowService(freshFileSource).Load(project);
+    }
+
+    public SvItemsEditResult UpdateItemFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvItemFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new SvItemsWorkflowService(source);
+        return new SvItemsEditSessionService(workspace, source, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public SvPokemonEditResult UpdatePokemonFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvPokemonFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new SvPokemonWorkflowService(source);
+        return new SvPokemonEditSessionService(workspace, source, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public SvTrainersEditResult UpdateTrainerFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvTrainerFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new SvTrainersWorkflowService(source);
+        return new SvTrainersEditSessionService(workspace, source, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
+    public SvEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new SvEncountersWorkflowService(source);
+        return new SvEncountersEditSessionService(workspace, source, workflow)
+            .UpdateSlotFields(paths, session, updates);
+    }
+
+    public ChangePlan CreateGuidedChangePlanFreshBounded(
+        ProjectPaths paths,
+        EditSession session,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        var domain = session.PendingEdits
+            .Select(edit => edit.Domain)
+            .Distinct(StringComparer.Ordinal)
+            .SingleOrDefault();
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return domain switch
+        {
+            SvEditSessionSupport.ItemsDomain => new SvItemsEditSessionService(
+                    workspace,
+                    source,
+                    new SvItemsWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            SvEditSessionSupport.PokemonDomain => new SvPokemonEditSessionService(
+                    workspace,
+                    source,
+                    new SvPokemonWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            SvEditSessionSupport.TrainersDomain => new SvTrainersEditSessionService(
+                    workspace,
+                    source,
+                    new SvTrainersWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            SvEditSessionSupport.EncountersDomain => new SvEncountersEditSessionService(
+                    workspace,
+                    source,
+                    new SvEncountersWorkflowService(source))
+                .CreateChangePlan(paths, session, outputMode),
+            _ => throw new InvalidOperationException(
+                "Guided Design supports exactly one verified Scarlet/Violet workflow domain per plan."),
+        };
     }
 
     private static void AppendSemanticSourcePayload(

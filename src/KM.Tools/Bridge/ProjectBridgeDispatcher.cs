@@ -18,6 +18,7 @@ using KM.Api.FpsPatch;
 using KM.Api.GameDump;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
+using KM.Api.GuidedDesign;
 using KM.Api.HyperspaceBypass;
 using KM.Api.HyperTraining;
 using KM.Api.Items;
@@ -55,6 +56,7 @@ using KM.Core.Files;
 using KM.Core.GameDump;
 using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Core.Workspace;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
@@ -107,6 +109,8 @@ using KM.SV.Workflows;
 using KM.ZA.Workflows;
 using KM.Tools.Application;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace KM.Tools.Bridge;
@@ -174,6 +178,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
     private readonly SemanticExploreApplicationService semanticExploreApplicationService;
     private readonly BalanceLabApplicationService balanceLabApplicationService;
+    private readonly GuidedDesignApplicationService guidedDesignApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -226,7 +231,8 @@ public sealed class ProjectBridgeDispatcher
         OutputSafetyApplicationService? outputSafetyApplicationService = null,
         ProjectRelocationApplicationService? projectRelocationApplicationService = null,
         SemanticExploreApplicationService? semanticExploreApplicationService = null,
-        BalanceLabApplicationService? balanceLabApplicationService = null)
+        BalanceLabApplicationService? balanceLabApplicationService = null,
+        GuidedDesignApplicationService? guidedDesignApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -312,6 +318,19 @@ public sealed class ProjectBridgeDispatcher
                 LoadSemanticExploreMovesFresh,
                 LoadSemanticExploreItemsFresh,
                 LoadSemanticExplorePokemonFresh);
+        this.guidedDesignApplicationService = guidedDesignApplicationService
+            ?? new GuidedDesignApplicationService(
+                this.semanticExploreApplicationService,
+                this.changeSetApplicationService,
+                LoadBalanceLabTrainersFresh,
+                LoadBalanceLabEncountersFresh,
+                LoadSemanticExploreItemsFresh,
+                LoadSemanticExplorePokemonFresh,
+                StageGuidedDesignEdits,
+                (paths, session, outputMode) => CreateChangePlanForSession(
+                    ProjectBridgeMapper.ToCore(paths),
+                    session,
+                    outputMode));
     }
 
     public string Dispatch(string requestJson)
@@ -553,6 +572,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.CompareExternalSemantic => DispatchCompareExternalSemantic(requestJson),
                 KmCommandNames.QuerySemanticChanges => DispatchQuerySemanticChanges(requestJson),
                 KmCommandNames.QueryBalanceLab => DispatchQueryBalanceLab(requestJson),
+                KmCommandNames.ReadGuidedDesignCapabilities => DispatchReadGuidedDesignCapabilities(requestJson),
+                KmCommandNames.PreviewGuidedDesign => DispatchPreviewGuidedDesign(requestJson),
+                KmCommandNames.ImportGuidedDesignProposal => DispatchImportGuidedDesignProposal(requestJson),
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
@@ -605,6 +627,26 @@ public sealed class ProjectBridgeDispatcher
             return (
                 SerializeFailure(
                     GetSemanticExploreErrorCode(exception.FailureKind),
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+
+        catch (GuidedDesignValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.GuidedDesignStaleProposal,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+
+        catch (GeneratedChangeSetContextChangedException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.GuidedDesignStaleProposal,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -965,6 +1007,30 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<QueryBalanceLabRequest>(requestJson);
         return SerializeSuccess(
             balanceLabApplicationService.Query(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadGuidedDesignCapabilities(string requestJson)
+    {
+        var request = DeserializeRequest<ReadGuidedDesignCapabilitiesRequest>(requestJson);
+        return SerializeSuccess(
+            guidedDesignApplicationService.ReadCapabilities(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchPreviewGuidedDesign(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewGuidedDesignRequest>(requestJson);
+        return SerializeSuccess(
+            guidedDesignApplicationService.Preview(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchImportGuidedDesignProposal(string requestJson)
+    {
+        var request = DeserializeRequest<ImportGuidedDesignProposalRequest>(requestJson);
+        return SerializeSuccess(
+            guidedDesignApplicationService.Import(request.Payload),
             request.RequestId);
     }
 
@@ -4215,6 +4281,19 @@ public sealed class ProjectBridgeDispatcher
         EditSession session,
         ChangePlanOutputModeDto? outputMode)
     {
+        if (session.PendingEdits.Count > 0
+            && session.PendingEdits.All(edit => string.Equals(
+                edit.Owner,
+                GuidedDesignProviders.GeneratedEditOwner,
+                StringComparison.Ordinal))
+            && session.PendingEdits
+                .Select(edit => edit.Domain)
+                .Distinct(StringComparer.Ordinal)
+                .Count() == 1)
+        {
+            return CreateGuidedChangePlanForSession(paths, session, outputMode);
+        }
+
         var isPokemonLegendsZA = IsPokemonLegendsZA(paths);
         var isScarletViolet = IsScarletViolet(paths);
         ChangePlan changePlan;
@@ -4246,6 +4325,159 @@ public sealed class ProjectBridgeDispatcher
 
         return changePlan;
     }
+
+    private ChangePlan CreateGuidedChangePlanForSession(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlanOutputModeDto? outputMode)
+    {
+        if (session.PendingEdits
+                .Select(edit => edit.Domain)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != 1)
+        {
+            return InvalidGuidedChangePlan(
+                session,
+                "A Guided Design plan must contain exactly one owning workflow domain.");
+        }
+
+        var initialSourceFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
+        var initialOutputMembershipFingerprint =
+            CaptureGuidedOutputMembershipFingerprint(paths, outputMode);
+        ChangePlan plan;
+        var outputModeKey = outputMode?.ToString() ?? "<null>";
+        if (IsPokemonLegendsZA(paths))
+        {
+            var mode = ZaBridgeMapper.ToCore(outputMode);
+            plan = zaWorkflowService.CreateGuidedChangePlanFreshBounded(paths, session, mode);
+        }
+        else if (IsScarletViolet(paths))
+        {
+            var mode = SvBridgeMapper.ToCore(outputMode);
+            plan = svWorkflowService.CreateGuidedChangePlanFreshBounded(paths, session, mode);
+        }
+        else if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            plan = swShWorkflowService.CreateGuidedChangePlanFreshBounded(paths, session);
+        }
+        else
+        {
+            return InvalidGuidedChangePlan(
+                session,
+                "The selected game does not expose a Guided Design plan adapter.");
+        }
+
+        var completedSourceFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
+        var completedOutputMembershipFingerprint =
+            CaptureGuidedOutputMembershipFingerprint(paths, outputMode);
+        if (!string.Equals(
+                initialSourceFingerprint,
+                completedSourceFingerprint,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                initialOutputMembershipFingerprint,
+                completedOutputMembershipFingerprint,
+                StringComparison.Ordinal))
+        {
+            return InvalidGuidedChangePlan(
+                session,
+                "The Guided Design source changed while its bounded plan was created.",
+                plan.Diagnostics);
+        }
+
+        if (!plan.CanApply)
+        {
+            return plan;
+        }
+
+        var domain = session.PendingEdits[0].Domain;
+        var sourceBinding = CreateGuidedPlanSourceFingerprint(
+            paths.SelectedGame!.Value,
+            domain,
+            outputModeKey,
+            completedSourceFingerprint,
+            completedOutputMembershipFingerprint);
+        return plan with { GeneratedSourceBindingFingerprint = sourceBinding };
+    }
+
+    private static string CaptureGuidedOutputMembershipFingerprint(
+        ProjectPaths paths,
+        ChangePlanOutputModeDto? outputMode)
+    {
+        if (paths.SelectedGame is not (ProjectGame.Scarlet
+                or ProjectGame.Violet
+                or ProjectGame.ZA)
+            || outputMode is ChangePlanOutputModeDto.TrinityModManager
+                or ChangePlanOutputModeDto.TrinityBypass)
+        {
+            return "not-applicable";
+        }
+
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Guided Design standalone planning requires an output root.");
+        }
+
+        var membership = ReadOnlyOutputDirectoryMembership.Capture(
+            paths.OutputRootPath,
+            new RelativeOutputPath("romfs"));
+        return membership.Revision.Value;
+    }
+
+    private string CaptureSemanticExploreSourceFingerprint(ProjectPaths paths)
+    {
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.CaptureSemanticExploreSourceFingerprint(paths);
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.CaptureSemanticExploreSourceFingerprint(paths);
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return swShWorkflowService.CaptureSemanticExploreSourceFingerprint(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected semantic game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private static string CreateGuidedPlanSourceFingerprint(
+        ProjectGame game,
+        string domain,
+        string outputMode,
+        string sourceFingerprint,
+        string outputMembershipFingerprint)
+    {
+        var payload = string.Join(
+            '\n',
+            "guided-design-plan-source-v1",
+            game.ToString(),
+            domain,
+            outputMode,
+            sourceFingerprint,
+            outputMembershipFingerprint);
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+    }
+
+    private static ChangePlan InvalidGuidedChangePlan(
+        EditSession session,
+        string message,
+        IReadOnlyList<ValidationDiagnostic>? existingDiagnostics = null) =>
+        new(
+            session.Id,
+            Array.Empty<PlannedFileWrite>(),
+            (existingDiagnostics ?? Array.Empty<ValidationDiagnostic>())
+                .Append(new ValidationDiagnostic(
+                    DiagnosticSeverity.Error,
+                    message,
+                    Domain: "guidedDesign"))
+                .ToArray());
 
     private string DispatchApplyChangePlan(string requestJson)
     {
@@ -5143,6 +5375,354 @@ public sealed class ProjectBridgeDispatcher
         };
     }
 
+    private GuidedDesignStagingResult StageGuidedDesignEdits(
+        ProjectPathsDto pathsDto,
+        IReadOnlyList<GuidedDesignStagingEdit> edits)
+    {
+        if (pathsDto is null
+            || edits is null
+            || edits.Count is 0 or > ChangeSetContract.MaximumOperationsPerChangeSet
+            || edits.Any(edit => edit is null || edit.Record is null))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (paths.SelectedGame is null)
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var family = ToSemanticFamily(paths.SelectedGame.Value);
+        if (edits.Any(edit => edit.Record.GameFamily != family)
+            || edits.Select(edit => edit.Record.Domain).Distinct(StringComparer.Ordinal).Count() != 1)
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        return edits[0].Record.Domain switch
+        {
+            "workflow.items" => StageGuidedItemEdits(paths, family, edits),
+            "workflow.pokemon" => StageGuidedPokemonEdits(paths, family, edits),
+            "workflow.trainers" => StageGuidedTrainerEdits(paths, family, edits),
+            "workflow.encounters" => StageGuidedEncounterEdits(paths, family, edits),
+            _ => InvalidGuidedDesignStaging(),
+        };
+    }
+
+    private GuidedDesignStagingResult StageGuidedItemEdits(
+        ProjectPaths paths,
+        SemanticGameFamilyDto family,
+        IReadOnlyList<GuidedDesignStagingEdit> edits)
+    {
+        if (!TryScalarEdits(edits, "workflow.items", "item", family, requireSubrecord: false, out var scalar)
+            || scalar.Any(edit => !TryParseCanonicalPositive(edit.Record.RecordId, out _)))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var session = EditSession.Start();
+        if (family == SemanticGameFamilyDto.LegendsZA)
+        {
+            var result = zaWorkflowService.UpdateItemFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new ZaItemFieldUpdate(
+                    ParseCanonicalPositive(edit.Record.RecordId),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        if (family == SemanticGameFamilyDto.ScarletViolet)
+        {
+            var result = svWorkflowService.UpdateItemFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new SvItemFieldUpdate(
+                    ParseCanonicalPositive(edit.Record.RecordId),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        var swsh = swShWorkflowService.UpdateItemFieldsFreshBounded(
+            paths,
+            session,
+            scalar.Select(edit => new SwShItemFieldUpdate(
+                ParseCanonicalPositive(edit.Record.RecordId),
+                edit.Field,
+                edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+        return CompleteGuidedDesignStaging(swsh.Session, swsh.Diagnostics);
+    }
+
+    private GuidedDesignStagingResult StageGuidedPokemonEdits(
+        ProjectPaths paths,
+        SemanticGameFamilyDto family,
+        IReadOnlyList<GuidedDesignStagingEdit> edits)
+    {
+        if (edits.All(edit => edit is GuidedDesignEvolutionStagingEdit))
+        {
+            return StageGuidedEvolutionEdits(paths, family, edits.Cast<GuidedDesignEvolutionStagingEdit>().ToArray());
+        }
+
+        if (!TryScalarEdits(edits, "workflow.pokemon", "pokemon-personal", family, requireSubrecord: false, out var scalar)
+            || scalar.Any(edit => !TryParseCanonicalPositive(edit.Record.RecordId, out _)))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var session = EditSession.Start();
+        if (family == SemanticGameFamilyDto.LegendsZA)
+        {
+            var result = zaWorkflowService.UpdatePokemonFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new KM.ZA.Pokemon.ZaPokemonFieldUpdate(
+                    ParseCanonicalPositive(edit.Record.RecordId),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        if (family == SemanticGameFamilyDto.ScarletViolet)
+        {
+            var result = svWorkflowService.UpdatePokemonFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new SvPokemonFieldUpdate(
+                    ParseCanonicalPositive(edit.Record.RecordId),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        var swsh = swShWorkflowService.UpdatePokemonFieldsFreshBounded(
+            paths,
+            session,
+            scalar.Select(edit => new SwShPokemonFieldUpdate(
+                ParseCanonicalPositive(edit.Record.RecordId),
+                edit.Field,
+                edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+        return CompleteGuidedDesignStaging(swsh.Session, swsh.Diagnostics);
+    }
+
+    private GuidedDesignStagingResult StageGuidedEvolutionEdits(
+        ProjectPaths paths,
+        SemanticGameFamilyDto family,
+        IReadOnlyList<GuidedDesignEvolutionStagingEdit> edits)
+    {
+        if (family != SemanticGameFamilyDto.LegendsZA
+            || edits.Any(edit =>
+                !MatchesGuidedRecord(edit.Record, family, "workflow.pokemon", "pokemon-personal", requireSubrecord: false)
+                || !TryParseCanonicalPositive(edit.Record.RecordId, out _)
+                || edit.Slot < 0))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var result = zaWorkflowService.UpdatePokemonEvolutionsFreshBounded(
+            paths,
+            EditSession.Start(),
+            edits
+                .OrderBy(edit => ParseCanonicalPositive(edit.Record.RecordId))
+                .ThenBy(edit => edit.Slot)
+                .Select(edit => new KM.ZA.Pokemon.ZaPokemonEvolutionUpdate(
+                    ParseCanonicalPositive(edit.Record.RecordId),
+                    edit.Slot,
+                    edit.Method,
+                    edit.Argument,
+                    edit.Species,
+                    edit.Form,
+                    edit.Level))
+                .ToArray());
+        return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+    }
+
+    private GuidedDesignStagingResult StageGuidedTrainerEdits(
+        ProjectPaths paths,
+        SemanticGameFamilyDto family,
+        IReadOnlyList<GuidedDesignStagingEdit> edits)
+    {
+        if (family == SemanticGameFamilyDto.SwordShield
+            || !TryScalarEdits(edits, "workflow.trainers", "trainer", family, requireSubrecord: true, out var scalar)
+            || scalar.Any(edit =>
+                !TryParseCanonicalNonNegative(edit.Record.RecordId, out _)
+                || !TryParseSubrecord(edit.Record.SubrecordId, "party-slot:", out _)))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var session = EditSession.Start();
+        if (family == SemanticGameFamilyDto.LegendsZA)
+        {
+            var result = zaWorkflowService.UpdateTrainerFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new KM.ZA.Trainers.ZaTrainerFieldUpdate(
+                    ParseCanonicalNonNegative(edit.Record.RecordId),
+                    ParseSubrecord(edit.Record.SubrecordId, "party-slot:"),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        var sv = svWorkflowService.UpdateTrainerFieldsFreshBounded(
+            paths,
+            session,
+            scalar.Select(edit => new SvTrainerFieldUpdate(
+                ParseCanonicalNonNegative(edit.Record.RecordId),
+                ParseSubrecord(edit.Record.SubrecordId, "party-slot:"),
+                edit.Field,
+                edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+        return CompleteGuidedDesignStaging(sv.Session, sv.Diagnostics);
+    }
+
+    private GuidedDesignStagingResult StageGuidedEncounterEdits(
+        ProjectPaths paths,
+        SemanticGameFamilyDto family,
+        IReadOnlyList<GuidedDesignStagingEdit> edits)
+    {
+        if (!TryScalarEdits(edits, "workflow.encounters", "encounter-table", family, requireSubrecord: true, out var scalar)
+            || scalar.Any(edit =>
+                string.IsNullOrEmpty(edit.Record.RecordId)
+                || !TryParseSubrecord(edit.Record.SubrecordId, "slot:", out var slot)
+                || family == SemanticGameFamilyDto.SwordShield && slot == 0))
+        {
+            return InvalidGuidedDesignStaging();
+        }
+
+        var session = EditSession.Start();
+        if (family == SemanticGameFamilyDto.LegendsZA)
+        {
+            var result = zaWorkflowService.UpdateEncounterSlotFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new ZaEncounterSlotFieldUpdate(
+                    edit.Record.RecordId,
+                    ParseSubrecord(edit.Record.SubrecordId, "slot:"),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        if (family == SemanticGameFamilyDto.ScarletViolet)
+        {
+            var result = svWorkflowService.UpdateEncounterSlotFieldsFreshBounded(
+                paths,
+                session,
+                scalar.Select(edit => new SvEncounterSlotFieldUpdate(
+                    edit.Record.RecordId,
+                    ParseSubrecord(edit.Record.SubrecordId, "slot:"),
+                    edit.Field,
+                    edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+            return CompleteGuidedDesignStaging(result.Session, result.Diagnostics);
+        }
+
+        var swsh = swShWorkflowService.UpdateEncounterSlotFieldsFreshBounded(
+            paths,
+            session,
+            scalar.Select(edit => new SwShEncounterSlotFieldUpdate(
+                edit.Record.RecordId,
+                ParseSubrecord(edit.Record.SubrecordId, "slot:"),
+                edit.Field,
+                edit.Value.ToString(CultureInfo.InvariantCulture))).ToArray());
+        return CompleteGuidedDesignStaging(swsh.Session, swsh.Diagnostics);
+    }
+
+    private static bool TryScalarEdits(
+        IReadOnlyList<GuidedDesignStagingEdit> edits,
+        string domain,
+        string recordKind,
+        SemanticGameFamilyDto family,
+        bool requireSubrecord,
+        out GuidedDesignScalarStagingEdit[] scalar)
+    {
+        scalar = edits.OfType<GuidedDesignScalarStagingEdit>().ToArray();
+        return scalar.Length == edits.Count
+            && scalar.All(edit => MatchesGuidedRecord(
+                edit.Record,
+                family,
+                domain,
+                recordKind,
+                requireSubrecord));
+    }
+
+    private static bool MatchesGuidedRecord(
+        SemanticRecordRefDto record,
+        SemanticGameFamilyDto family,
+        string domain,
+        string recordKind,
+        bool requireSubrecord) =>
+        record is not null
+        && record.RecordKind is not null
+        && record.GameFamily == family
+        && string.Equals(record.Domain, domain, StringComparison.Ordinal)
+        && string.Equals(record.RecordKind.Key, recordKind, StringComparison.Ordinal)
+        && record.RecordKind.SchemaVersion == 1
+        && (requireSubrecord ? record.SubrecordId is not null : record.SubrecordId is null);
+
+    private static SemanticGameFamilyDto ToSemanticFamily(ProjectGame game) => game switch
+    {
+        ProjectGame.Sword or ProjectGame.Shield => SemanticGameFamilyDto.SwordShield,
+        ProjectGame.Scarlet or ProjectGame.Violet => SemanticGameFamilyDto.ScarletViolet,
+        ProjectGame.ZA => SemanticGameFamilyDto.LegendsZA,
+        _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+    };
+
+    private static bool TryParseCanonicalNonNegative(string value, out int parsed) =>
+        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsed)
+        && parsed >= 0
+        && string.Equals(parsed.ToString(CultureInfo.InvariantCulture), value, StringComparison.Ordinal);
+
+    private static bool TryParseCanonicalPositive(string value, out int parsed) =>
+        TryParseCanonicalNonNegative(value, out parsed) && parsed > 0;
+
+    private static int ParseCanonicalNonNegative(string value) =>
+        TryParseCanonicalNonNegative(value, out var parsed) ? parsed : -1;
+
+    private static int ParseCanonicalPositive(string value) =>
+        TryParseCanonicalPositive(value, out var parsed) ? parsed : -1;
+
+    private static bool TryParseSubrecord(string? value, string prefix, out int parsed)
+    {
+        parsed = -1;
+        return value is not null
+            && value.StartsWith(prefix, StringComparison.Ordinal)
+            && TryParseCanonicalNonNegative(value[prefix.Length..], out parsed)
+            && string.Equals(
+                value,
+                $"{prefix}{parsed.ToString(CultureInfo.InvariantCulture)}",
+                StringComparison.Ordinal);
+    }
+
+    private static int ParseSubrecord(string? value, string prefix) =>
+        TryParseSubrecord(value, prefix, out var parsed) ? parsed : -1;
+
+    private static GuidedDesignStagingResult CompleteGuidedDesignStaging(
+        EditSession session,
+        IReadOnlyList<ValidationDiagnostic> diagnostics) =>
+        HasErrors(diagnostics)
+            ? InvalidGuidedDesignStaging()
+            : new GuidedDesignStagingResult(
+                session with
+                {
+                    PendingEdits = session.PendingEdits
+                        .Select(edit => edit with
+                        {
+                            Owner = GuidedDesignProviders.GeneratedEditOwner,
+                        })
+                        .ToArray(),
+                },
+                IsValid: true);
+
+    private static bool HasErrors(IReadOnlyList<ValidationDiagnostic> diagnostics) =>
+        diagnostics is null
+        || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+    private static GuidedDesignStagingResult InvalidGuidedDesignStaging() =>
+        new(EditSession.Start(), IsValid: false);
+
     private ItemsWorkflowDto LoadSemanticExploreItemsFresh(ProjectPathsDto pathsDto)
     {
         var paths = ProjectBridgeMapper.ToCore(pathsDto);
@@ -5551,6 +6131,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.CompareExternalSemantic or
             KmCommandNames.QuerySemanticChanges or
             KmCommandNames.QueryBalanceLab or
+            KmCommandNames.ReadGuidedDesignCapabilities or
+            KmCommandNames.PreviewGuidedDesign or
+            KmCommandNames.ImportGuidedDesignProposal or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge or

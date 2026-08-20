@@ -470,6 +470,7 @@ import {
 } from './features/semantic-explore/useSemanticExploreController';
 import { BalanceLabRuntime } from './features/balance-lab/BalanceLabRuntime';
 import type { BalanceLabLayer } from './features/balance-lab/useBalanceLabController';
+import { GuidedDesignRuntime } from './features/guided-design/GuidedDesignRuntime';
 import { ChangeSetWorkspacePanel } from './features/change-sets/ChangeSetWorkspacePanel';
 import { useChangeSetWorkspaceController } from './features/change-sets/useChangeSetWorkspaceController';
 import {
@@ -507,6 +508,10 @@ import {
   createBalanceLabLocation,
   parseBalanceLabSlotSubrecord
 } from './workbench/balanceLabNavigation';
+import {
+  createGuidedDesignLocation,
+  parseGuidedDesignEvolutionSubrecord
+} from './workbench/guidedDesignNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
 import { PersonalizationSettingsPanel } from './features/settings/PersonalizationSettingsPanel';
 import { WhatChangedTour } from './features/updates/WhatChangedTour';
@@ -2269,6 +2274,9 @@ export function App({
   const selectedEncounterSlot = useWorkbenchStore((state) => state.selectedEncounterSlot);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedMoveId = useWorkbenchStore((state) => state.selectedMoveId);
+  const selectedPokemonEvolutionSlot = useWorkbenchStore(
+    (state) => state.selectedPokemonEvolutionSlot
+  );
   const selectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.selectedPokemonPersonalId
   );
@@ -2525,6 +2533,9 @@ export function App({
   const setSelectedBagHookSlot = useWorkbenchStore((state) => state.setSelectedBagHookSlot);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
   const setSelectedMoveId = useWorkbenchStore((state) => state.setSelectedMoveId);
+  const setSelectedPokemonEvolutionSlot = useWorkbenchStore(
+    (state) => state.setSelectedPokemonEvolutionSlot
+  );
   const setSelectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.setSelectedPokemonPersonalId
   );
@@ -3017,6 +3028,7 @@ export function App({
       isSessionValidating ||
       isChangePlanCreating ||
       isChangePlanApplying,
+    guidedDesignBridge: bridge,
     onActiveStagingTargetChange: setActiveChangeSetId,
     onEffectiveState: handleChangeSetEffectiveState,
     onRequestOutputProfileSwitch: setPendingOutputProfileId,
@@ -3041,6 +3053,12 @@ export function App({
   const outputProfileBindingRevision = JSON.stringify([
     projectWorkspaceDocument?.activeOutputProfileId ?? null,
     projectWorkspaceETag
+  ]);
+  const guidedDesignAuthoringContextRevision = JSON.stringify([
+    outputProfileBindingRevision,
+    changeSetWorkspace.effective?.outputProfileId ?? null,
+    changeSetWorkspace.effective?.outputMode ?? null,
+    changeSetWorkspace.effective?.workspaceFingerprint ?? null
   ]);
   const semanticOutputProfileRevision = projectWorkspaceDocument?.activeOutputProfileId ?? null;
   const observedSemanticOutputProfileRevisionRef = useRef(semanticOutputProfileRevision);
@@ -4133,13 +4151,35 @@ export function App({
         case 'items':
           return typeof value === 'number' &&
             currentState.itemsWorkflow?.items.some((item) => item.itemId === value)
-            ? () => setSelectedItemId(value)
+            ? () => {
+                setItemSearchText('');
+                setSelectedItemId(value);
+              }
             : null;
-        case 'pokemon':
-          return typeof value === 'number' &&
-            currentState.pokemonWorkflow?.pokemon.some((pokemon) => pokemon.personalId === value)
-            ? () => setSelectedPokemonPersonalId(value)
-            : null;
+        case 'pokemon': {
+          if (typeof value !== 'number') {
+            return null;
+          }
+          const pokemon = currentState.pokemonWorkflow?.pokemon.find(
+            (candidate) => candidate.personalId === value
+          );
+          const evolutionSlot = parseGuidedDesignEvolutionSubrecord(selection.subrecordId);
+          if (
+            !pokemon ||
+            evolutionSlot === undefined ||
+            (evolutionSlot !== null &&
+              !pokemon.evolutions.some((evolution) => evolution.slot === evolutionSlot))
+          ) {
+            return null;
+          }
+          return () => {
+            setPokemonSearchText('');
+            setSelectedPokemonPersonalId(value);
+            if (evolutionSlot !== null) {
+              setSelectedPokemonEvolutionSlot(evolutionSlot);
+            }
+          };
+        }
         case 'moves':
           return typeof value === 'number' &&
             currentState.movesWorkflow?.moves.some((move) => move.moveId === value)
@@ -4301,9 +4341,12 @@ export function App({
       setSelectedExeFsCheckId,
       setSelectedExeFsPatchId,
       setSelectedFlagId,
+      setItemSearchText,
       setSelectedItemId,
       setSelectedMoveId,
       setSelectedPlacementObjectId,
+      setPokemonSearchText,
+      setSelectedPokemonEvolutionSlot,
       setSelectedPokemonPersonalId,
       setSelectedRaidBattleTableId,
       setSelectedRaidBonusRewardTableId,
@@ -4479,6 +4522,42 @@ export function App({
     },
     [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
   );
+  const canNavigateGuidedDesignRecord = useCallback(
+    (record: SemanticExploreRecordRef) => Boolean(
+      activeProjectId &&
+      selectedGame &&
+      createGuidedDesignLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      })
+    ),
+    [activeProjectId, selectedGame]
+  );
+  const handleNavigateGuidedDesignRecord = useCallback(
+    (record: SemanticExploreRecordRef) => {
+      if (!activeProjectId || !selectedGame) {
+        return;
+      }
+      const location = createGuidedDesignLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      });
+      if (!location) {
+        setBridgeDiagnostics([
+          {
+            domain: 'workspace.navigation',
+            message: t('workbench.navigation.targetUnavailable'),
+            severity: 'warning'
+          }
+        ]);
+        return;
+      }
+      handleNavigateWorkspaceTarget(location);
+    },
+    [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
+  );
   const semanticEntitySearch = useCallback<WorkspaceEntityCommandSearch>(
     async (request) => {
       if (!activeProjectId || !selectedGame || !semanticExploreScope) {
@@ -4599,6 +4678,9 @@ export function App({
     },
     [activeLocation.section, activeProjectId, handleNavigateLocation, selectedGame]
   );
+  const handleOpenGuidedDesignChanges = useCallback(() => {
+    void handleNavigateSection('changes');
+  }, [handleNavigateSection]);
 
   const handleSelectStableLocation = useCallback(
     (
@@ -4649,6 +4731,34 @@ export function App({
         setSelectedPokemonPersonalId(personalId)
       ),
     [handleSelectStableLocation, setSelectedPokemonPersonalId]
+  );
+  const handleSelectPokemonEvolutionSlotLocation = useCallback(
+    (slot: number | null) => {
+      if (!activeProjectId || !selectedGame || selectedPokemonPersonalId === null) {
+        setSelectedPokemonEvolutionSlot(slot);
+        return;
+      }
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        section: 'pokemon',
+        subrecordId: slot === null ? null : `evolution-slot:${slot}`,
+        value: selectedPokemonPersonalId
+      });
+      return handleNavigateLocation(
+        destination,
+        () => setSelectedPokemonEvolutionSlot(slot),
+        'replace',
+        { rememberRecent: false }
+      );
+    },
+    [
+      activeProjectId,
+      handleNavigateLocation,
+      selectedGame,
+      selectedPokemonPersonalId,
+      setSelectedPokemonEvolutionSlot
+    ]
   );
   const handleSelectMoveLocation = useCallback(
     (moveId: number | null) =>
@@ -15313,6 +15423,38 @@ export function App({
                   />
                 ) : null
               }
+              guidedDesign={
+                semanticExploreScope ? (
+                  <GuidedDesignRuntime
+                    authoringContextRevision={guidedDesignAuthoringContextRevision}
+                    bridge={bridge}
+                    capabilityStatus={semanticExploreController.capabilities.status}
+                    canImportChangeSet={
+                      changeSetWorkspace.controller.readiness === 'ready' &&
+                      changeSetWorkspace.snapshot !== null &&
+                      changeSetWorkspace.controller.busyAction === null &&
+                      !changeSetWorkspace.controller.externalBusy
+                    }
+                    canNavigateRecord={canNavigateGuidedDesignRecord}
+                    expectedChangeSetETag={changeSetWorkspace.snapshot?.etag ?? null}
+                    isChangeSetWorkspaceBusy={
+                      changeSetWorkspace.controller.busyAction !== null ||
+                      changeSetWorkspace.controller.externalBusy
+                    }
+                    isChangeSetWorkspaceReady={
+                      changeSetWorkspace.controller.readiness === 'ready' &&
+                      changeSetWorkspace.snapshot !== null
+                    }
+                    onEnsureCapabilities={semanticExploreController.ensureCapabilities}
+                    onImportProposal={changeSetWorkspace.importGuidedDesignProposal}
+                    onNavigateRecord={handleNavigateGuidedDesignRecord}
+                    onOpenChanges={handleOpenGuidedDesignChanges}
+                    onStaleRevision={handleBalanceLabStaleRevision}
+                    revision={balanceLabRevision}
+                    scope={semanticExploreScope}
+                  />
+                ) : null
+              }
               bookmarks={workspaceBookmarks}
               capabilities={capabilityDiscovery}
               note={activeNoteViewModel}
@@ -15501,6 +15643,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
+                onSelectPokemonEvolution={handleSelectPokemonEvolutionSlotLocation}
                 onSelectPokemon={handleSelectPokemonLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
@@ -15509,6 +15652,7 @@ export function App({
                 onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
                 onSwapPokemonDexPlacement={handleSwapPokemonDexPlacement}
                 searchText={pokemonSearchText}
+                selectedPokemonEvolutionSlot={selectedPokemonEvolutionSlot}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
               />
@@ -15518,6 +15662,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
+                onSelectPokemonEvolution={handleSelectPokemonEvolutionSlotLocation}
                 onSelectPokemon={handleSelectPokemonLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
@@ -15525,6 +15670,7 @@ export function App({
                 onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
                 onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
                 searchText={pokemonSearchText}
+                selectedPokemonEvolutionSlot={selectedPokemonEvolutionSlot}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
               />
@@ -15534,6 +15680,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
+                onSelectPokemonEvolution={handleSelectPokemonEvolutionSlotLocation}
                 onSelectPokemon={handleSelectPokemonLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
@@ -15541,6 +15688,7 @@ export function App({
                 onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
                 onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
                 searchText={pokemonSearchText}
+                selectedPokemonEvolutionSlot={selectedPokemonEvolutionSlot}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
               />
@@ -18050,6 +18198,7 @@ type PokemonSectionProps = {
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
   onSearchChange: (searchText: string) => void;
+  onSelectPokemonEvolution: (slot: number | null) => void;
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
@@ -18081,6 +18230,7 @@ type PokemonSectionProps = {
     targetSpeciesId: number
   ) => Promise<boolean>;
   searchText: string;
+  selectedPokemonEvolutionSlot: number | null;
   selectedPokemonPersonalId: number | null;
   workflow: PokemonWorkflow | null;
 };
@@ -18105,6 +18255,7 @@ function PokemonSection({
   isEditStarting,
   isPokemonUpdating,
   onSearchChange,
+  onSelectPokemonEvolution,
   onSelectPokemon,
   onStartEditSession,
   onUpdatePokemonField,
@@ -18113,6 +18264,7 @@ function PokemonSection({
   onUpdatePokemonLearnset,
   onSwapPokemonDexPlacement,
   searchText,
+  selectedPokemonEvolutionSlot,
   selectedPokemonPersonalId,
   workflow
 }: PokemonSectionProps) {
@@ -18287,6 +18439,7 @@ function PokemonSection({
               isPokemonUpdating={isPokemonUpdating}
               learnsetMoveOptions={workflow.learnsetMoveOptions}
               onStartEditSession={onStartEditSession}
+              onSelectPokemonEvolution={onSelectPokemonEvolution}
               pokemonTable={
                 <div
                   aria-colcount={3}
@@ -18335,6 +18488,7 @@ function PokemonSection({
               onSwapPokemonDexPlacement={onSwapPokemonDexPlacement}
               pokemon={selectedPokemon}
               pokemonRecords={pokemon}
+              selectedPokemonEvolutionSlot={selectedPokemonEvolutionSlot}
             />
           </div>
         ) : (
@@ -18723,6 +18877,7 @@ function SelectedPokemonPanel({
   isEditStarting,
   isPokemonUpdating,
   learnsetMoveOptions,
+  onSelectPokemonEvolution,
   onStartEditSession,
   pokemonTable,
   onUpdatePokemonField,
@@ -18731,7 +18886,8 @@ function SelectedPokemonPanel({
   onUpdatePokemonLearnset,
   onSwapPokemonDexPlacement,
   pokemon,
-  pokemonRecords
+  pokemonRecords,
+  selectedPokemonEvolutionSlot
 }: {
   canEditPokemon: boolean;
   dexEditor: PokemonDexEditor | null;
@@ -18742,6 +18898,7 @@ function SelectedPokemonPanel({
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
   learnsetMoveOptions: PokemonEditableFieldOption[];
+  onSelectPokemonEvolution: (slot: number | null) => void;
   onStartEditSession: () => void;
   pokemonTable: ReactNode;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
@@ -18774,6 +18931,7 @@ function SelectedPokemonPanel({
   ) => Promise<boolean>;
   pokemon: PokemonRecord | null;
   pokemonRecords: PokemonRecord[];
+  selectedPokemonEvolutionSlot: number | null;
 }) {
   const { t, translateLiteral } = useLocalization();
   const personalDraftDefaults = useMemo(
@@ -18840,11 +18998,10 @@ function SelectedPokemonPanel({
     () => [...(pokemon?.evolutions ?? [])].sort((left, right) => left.slot - right.slot),
     [pokemon]
   );
-  const [selectedEvolutionSlot, setSelectedEvolutionSlot] = useState(
-    orderedEvolutions[0]?.slot ?? 0
-  );
   const selectedEvolution =
-    orderedEvolutions.find((evolution) => evolution.slot === selectedEvolutionSlot) ??
+    orderedEvolutions.find(
+      (evolution) => evolution.slot === selectedPokemonEvolutionSlot
+    ) ??
     orderedEvolutions[0] ??
     null;
   const selectedEvolutionIndex =
@@ -19097,14 +19254,20 @@ function SelectedPokemonPanel({
 
   useEffect(() => {
     if (orderedEvolutions.length === 0) {
-      setSelectedEvolutionSlot(0);
+      if (selectedPokemonEvolutionSlot !== null) {
+        onSelectPokemonEvolution(null);
+      }
       return;
     }
 
-    if (!orderedEvolutions.some((evolution) => evolution.slot === selectedEvolutionSlot)) {
-      setSelectedEvolutionSlot(orderedEvolutions[0]!.slot);
+    if (
+      !orderedEvolutions.some(
+        (evolution) => evolution.slot === selectedPokemonEvolutionSlot
+      )
+    ) {
+      onSelectPokemonEvolution(orderedEvolutions[0]!.slot);
     }
-  }, [orderedEvolutions, selectedEvolutionSlot]);
+  }, [onSelectPokemonEvolution, orderedEvolutions, selectedPokemonEvolutionSlot]);
 
   useEffect(() => {
     const localDraft =
@@ -20426,7 +20589,7 @@ function SelectedPokemonPanel({
                               ? 'learnset-row-selected'
                               : ''
                           }`}
-                          onClick={() => setSelectedEvolutionSlot(evolution.slot)}
+                          onClick={() => onSelectPokemonEvolution(evolution.slot)}
                           type="button"
                         >
                           <PokemonSprite
@@ -20680,7 +20843,7 @@ function SelectedPokemonPanel({
                           null
                         );
                         if (didMove) {
-                          setSelectedEvolutionSlot(previousEvolutionSlot);
+                          onSelectPokemonEvolution(previousEvolutionSlot);
                         }
                       }}
                       title="Move evolution row up"
@@ -20710,7 +20873,7 @@ function SelectedPokemonPanel({
                           null
                         );
                         if (didMove) {
-                          setSelectedEvolutionSlot(nextEvolutionSlot);
+                          onSelectPokemonEvolution(nextEvolutionSlot);
                         }
                       }}
                       title="Move evolution row down"

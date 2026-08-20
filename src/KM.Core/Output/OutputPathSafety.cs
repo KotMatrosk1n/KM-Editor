@@ -323,6 +323,19 @@ internal sealed class OutputPathSafety
             throw new OutputPathSecurityException();
         }
 
+        return EnumerateDirectoryMembershipReadOnly(directory, maximumCount);
+    }
+
+    internal IEnumerable<OutputDirectoryMembershipEntry> EnumerateDirectoryMembershipReadOnly(
+        RelativeOutputPath directory,
+        int maximumCount)
+    {
+        ArgumentNullException.ThrowIfNull(directory);
+        if (maximumCount <= 0 || maximumCount > OutputLimits.MaximumIntegrityEntries)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCount));
+        }
+
         if (!OwnedDirectoryExists(directory))
         {
             yield break;

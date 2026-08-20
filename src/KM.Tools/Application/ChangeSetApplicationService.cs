@@ -726,7 +726,12 @@ public sealed class ChangeSetApplicationService
                     var refreshed = CreateOperationBinding(
                         edit,
                         planner,
-                        outputMode: null,
+                        outputMode: string.Equals(
+                            edit.Owner,
+                            GuidedDesignProviders.GeneratedEditOwner,
+                            StringComparison.Ordinal)
+                            ? FromBindingOutputMode(session.AuthoringBinding!.OutputMode)
+                            : null,
                         satisfiedOwnedTargets: operation.OwnedTargets);
                     if (refreshed.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
                         || refreshed.Fingerprint is null)
@@ -1266,6 +1271,374 @@ public sealed class ChangeSetApplicationService
         return new ImportChangeSetsResponse(ToSnapshot(updated, write.ETag, effective));
     }
 
+    internal async Task<GeneratedChangeSetAuthoringContext> ObserveGeneratedProposalContextAsync(
+        ChangeSetWorkspaceScopeDto requestScope,
+        string? expectedETag,
+        EditSessionDto? session,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(requestScope);
+        ArgumentNullException.ThrowIfNull(planner);
+        var scope = ValidateScope(requestScope);
+        using var operationLease = await AcquireProjectLeasesAsync(
+                [scope.ProjectId],
+                cancellationToken)
+            .ConfigureAwait(false);
+        return await ObserveGeneratedProposalContextCoreAsync(
+                scope,
+                NormalizeETag(expectedETag, allowNull: true),
+                session is null ? null : EditSessionBridgeMapper.ToCore(session),
+                planner,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal GeneratedChangeSetProposalValidation ValidateGeneratedProposal(
+        IReadOnlyList<PendingEdit> pendingEdits,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        ChangePlanOutputModeDto? outputMode)
+    {
+        ArgumentNullException.ThrowIfNull(pendingEdits);
+        ArgumentNullException.ThrowIfNull(planner);
+        ValidatePendingEdits(pendingEdits);
+        if (pendingEdits.Count is 0 or > ChangeSetContract.MaximumOperationsPerChangeSet)
+        {
+            return new GeneratedChangeSetProposalValidation(
+                false,
+                "A generated proposal must contain one through 128 pending edits.",
+                Array.Empty<GeneratedChangeSetOperationBinding>());
+        }
+
+        if (pendingEdits.Any(edit => edit.Association is not null)
+            || pendingEdits.Select(CreateEditTargetKey).Distinct(StringComparer.Ordinal).Count()
+                != pendingEdits.Count)
+        {
+            return new GeneratedChangeSetProposalValidation(
+                false,
+                "A generated proposal contains an associated or duplicate semantic target.",
+                Array.Empty<GeneratedChangeSetOperationBinding>());
+        }
+
+        if (pendingEdits.Any(edit =>
+                !GuidedDesignProviders.IsSafeGeneratedDisplayText(edit.Domain)
+                || !GuidedDesignProviders.IsSafeGeneratedDisplayText(edit.Summary)
+                || !GuidedDesignProviders.IsSafeGeneratedDisplayText(edit.RecordId)
+                || !GuidedDesignProviders.IsSafeGeneratedDisplayText(edit.Field)
+                || !GuidedDesignProviders.IsSafeGeneratedDisplayText(edit.Owner)))
+        {
+            return new GeneratedChangeSetProposalValidation(
+                false,
+                "A generated proposal contains path-shaped or unsafe change-set display text.",
+                Array.Empty<GeneratedChangeSetOperationBinding>());
+        }
+
+        var bindings = CreateGeneratedOperationBindings(pendingEdits, planner, outputMode);
+        if (bindings.Count != pendingEdits.Count
+            || bindings.Any(binding =>
+                binding.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
+                || binding.Fingerprint is null
+                || binding.OwnedTargets.Count == 0))
+        {
+            return new GeneratedChangeSetProposalValidation(
+                false,
+                "A generated proposal edit cannot be independently rebuilt by its owning workflow.",
+                Array.Empty<GeneratedChangeSetOperationBinding>());
+        }
+
+        return new GeneratedChangeSetProposalValidation(true, null, bindings);
+    }
+
+    internal async Task<GeneratedChangeSetImportResult> ImportGeneratedProposalAsync(
+        GeneratedChangeSetImportRequest request,
+        Func<GeneratedChangeSetAuthoringContext, CancellationToken, Task<GeneratedChangeSetProposal>> regenerate,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Scope);
+        ArgumentNullException.ThrowIfNull(regenerate);
+        ArgumentNullException.ThrowIfNull(planner);
+        var scope = ValidateScope(request.Scope);
+        ValidateDisplayText(request.Name, "generated change set name", MaximumNameLength);
+        var expectedETag = NormalizeETag(request.ExpectedETag, allowNull: true);
+        var session = request.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Session);
+        if (session is not null)
+        {
+            ValidatePendingEdits(session.PendingEdits);
+        }
+
+        using var operationLease = await AcquireProjectLeasesAsync(
+                [scope.ProjectId],
+                cancellationToken)
+            .ConfigureAwait(false);
+        var initialContext = await ObserveGeneratedProposalContextCoreAsync(
+                scope,
+                expectedETag,
+                session,
+                planner,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var generated = await regenerate(initialContext, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(generated);
+        if (!IsSha256(generated.ProposalId) || !IsSha256(generated.ProposalFingerprint))
+        {
+            throw Invalid("A generated proposal identity is invalid.");
+        }
+
+        var validation = ValidateGeneratedProposal(
+            generated.PendingEdits,
+            planner,
+            initialContext.OutputMode);
+        if (!validation.CanImport)
+        {
+            throw Invalid(validation.Reason ?? "The generated proposal cannot be imported safely.");
+        }
+
+        var stored = await ReadStoredAsync(scope.ProjectId, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(stored.ETag, expectedETag, StringComparison.Ordinal))
+        {
+            throw new WorkspaceDocumentConflictException(expectedETag, stored.ETag);
+        }
+
+        var document = stored.Document
+            ?? CreateEmptyStoredDocument(scope.Game, DateTimeOffset.UtcNow);
+        ValidateStoredDocument(document, scope.Game);
+        if (document.ChangeSets.Count == ChangeSetContract.MaximumChangeSetCount
+            || document.ChangeSets.Sum(set => set.Operations.Count) + generated.PendingEdits.Count
+                > ChangeSetContract.MaximumOperationCount)
+        {
+            throw Invalid("The generated proposal exceeds the remaining change-set capacity.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var changeSetId = CreateId();
+        var operations = generated.PendingEdits.Zip(validation.Bindings).Select(pair =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var edit = pair.First;
+            var binding = pair.Second;
+            var operationId = CreateId();
+            var associated = edit with
+            {
+                Association = new PendingEditAssociation(
+                    PendingEditAssociation.CurrentVersion,
+                    changeSetId,
+                    operationId),
+            };
+
+            return new ChangeSetOperationDto(
+                operationId,
+                ChangeSetOperationStorageKindDto.LegacyPendingEdit,
+                EditSessionBridgeMapper.ToPendingEditDto(associated),
+                binding.Kind,
+                binding.Fingerprint,
+                binding.OwnedTargets,
+                now,
+                now);
+        }).ToArray();
+        var imported = new NamedChangeSetDto(
+            changeSetId,
+            request.Name,
+            Enabled: false,
+            Archived: false,
+            Notes: null,
+            Tags: ["guided-design"],
+            DependencyIds: Array.Empty<string>(),
+            operations,
+            now,
+            now);
+        var reboundBindings = CreateGeneratedOperationBindings(
+            generated.PendingEdits,
+            planner,
+            initialContext.OutputMode);
+        if (reboundBindings.Count != operations.Length)
+        {
+            throw new GeneratedChangeSetContextChangedException();
+        }
+
+        foreach (var (operation, rebound) in operations.Zip(reboundBindings))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (rebound.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
+                || !string.Equals(
+                    rebound.Fingerprint,
+                    operation.SourceFingerprint,
+                    StringComparison.Ordinal)
+                || !rebound.OwnedTargets.SequenceEqual(
+                    operation.OwnedTargets,
+                    StringComparer.Ordinal))
+            {
+                throw new GeneratedChangeSetContextChangedException();
+            }
+        }
+
+        var state = GetState(document) with
+        {
+            ChangeSets = document.ChangeSets.Append(imported).ToArray(),
+        };
+        var updated = TrimHistoryToBudget(PushUndo(
+            document,
+            state,
+            "Import guided design proposal",
+            now));
+        ValidateStoredDocument(updated, scope.Game);
+        // The imported set is disabled and therefore cannot change the selected
+        // materialization. Precomputing the response before the durable write
+        // prevents a late planner failure from turning a committed import into an
+        // apparent failure. The binding ETag is replaced with the committed ETag
+        // below; it is the only effective-session value derived from that write.
+        var prevalidatedEffective = await MaterializeCoreAsync(
+                scope,
+                updated,
+                expectedETag ?? GeneratedImportPrewriteETag,
+                session,
+                buildVariantId: null,
+                planner,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var completedContext = await ObserveGeneratedProposalContextCoreAsync(
+                scope,
+                expectedETag,
+                session,
+                planner,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(
+                initialContext.Fingerprint,
+                completedContext.Fingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new GeneratedChangeSetContextChangedException();
+        }
+
+        var write = await store.WriteConditionalAsync(
+                scope.Identity,
+                Definition,
+                updated,
+                stored.ETag,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var effective = ReplaceEffectiveWorkspaceETag(prevalidatedEffective, write.ETag);
+        return new GeneratedChangeSetImportResult(
+            changeSetId,
+            ToSnapshot(updated, write.ETag, effective),
+            completedContext);
+    }
+
+    private const string GeneratedImportPrewriteETag =
+        "0000000000000000000000000000000000000000000000000000000000000000";
+
+    private static ChangeSetMaterializationDto ReplaceEffectiveWorkspaceETag(
+        ChangeSetMaterializationDto effective,
+        string committedETag)
+    {
+        if (effective.Session?.AuthoringBinding is not { } binding)
+        {
+            return effective;
+        }
+
+        return effective with
+        {
+            Session = effective.Session with
+            {
+                AuthoringBinding = binding with { WorkspaceETag = committedETag },
+            },
+        };
+    }
+
+    private async Task<GeneratedChangeSetAuthoringContext> ObserveGeneratedProposalContextCoreAsync(
+        ValidatedScope scope,
+        string? expectedETag,
+        EditSession? session,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        CancellationToken cancellationToken)
+    {
+        if (session is not null)
+        {
+            ValidatePendingEdits(session.PendingEdits);
+        }
+
+        var stored = await ReadStoredAsync(scope.ProjectId, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(stored.ETag, expectedETag, StringComparison.Ordinal))
+        {
+            throw new WorkspaceDocumentConflictException(expectedETag, stored.ETag);
+        }
+
+        var document = stored.Document
+            ?? CreateEmptyStoredDocument(scope.Game, DateTimeOffset.UtcNow);
+        ValidateStoredDocument(document, scope.Game);
+        var effective = await MaterializeCoreAsync(
+                scope,
+                document,
+                stored.ETag,
+                session,
+                buildVariantId: null,
+                planner,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var personal = await workspacePersonalStateService
+            .ReadProjectAsync(scope.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var activeProfileId = personal.Document?.ActiveOutputProfileId;
+        var activeProfile = activeProfileId is null
+            ? null
+            : personal.Document?.OutputProfiles.FirstOrDefault(profile => string.Equals(
+                profile.ProfileId,
+                activeProfileId,
+                StringComparison.Ordinal));
+        var configuredOutputRootFingerprint = string.IsNullOrWhiteSpace(scope.Paths.OutputRootPath)
+            ? CreateUnsetOutputRootFingerprint()
+            : TryNormalizePrivatePath(scope.Paths.OutputRootPath, out var normalizedOutputRoot)
+                ? CreatePrivatePathFingerprint(normalizedOutputRoot)
+                : HashPrivateBindingValue(scope.Paths.OutputRootPath);
+        var profileOutputRootFingerprint = activeProfile is null
+            ? null
+            : TryNormalizePrivatePath(activeProfile.OutputRootPath, out var normalizedProfileRoot)
+                ? CreatePrivatePathFingerprint(normalizedProfileRoot)
+                : HashPrivateBindingValue(activeProfile.OutputRootPath);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHash(hash, "generated-change-set-authoring-context-v1");
+        AppendHash(hash, stored.ETag);
+        AppendHash(hash, effective.WorkspaceFingerprint);
+        AppendHash(hash, effective.SourceRevisionFingerprint);
+        AppendHash(hash, document.ActiveChangeSetId);
+        AppendHash(hash, document.ActiveBuildVariantId);
+        AppendHash(hash, effective.OutputProfileId);
+        AppendHash(hash, effective.OutputMode?.ToString());
+        AppendHash(hash, personal.ETag);
+        AppendHash(hash, activeProfileId);
+        AppendHash(hash, activeProfile?.OutputMode?.ToString());
+        AppendHash(hash, configuredOutputRootFingerprint);
+        AppendHash(hash, profileOutputRootFingerprint);
+        foreach (var id in effective.SelectedChangeSetIds)
+        {
+            AppendHash(hash, id);
+        }
+
+        var fingerprint = Convert.ToHexStringLower(hash.GetHashAndReset());
+        return new GeneratedChangeSetAuthoringContext(
+            fingerprint,
+            stored.ETag,
+            effective.WorkspaceFingerprint,
+            effective.SourceRevisionFingerprint,
+            effective.OutputProfileId,
+            effective.OutputMode,
+            configuredOutputRootFingerprint,
+            profileOutputRootFingerprint,
+            personal.ETag,
+            effective.SelectedChangeSetIds);
+    }
+
+    private static string HashPrivateBindingValue(string value)
+    {
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"private-binding-v1\0{value}")));
+    }
+
     internal async Task<StoredChangeSetReadResult> ReadStoredForRelocationAsync(
         string projectId,
         CancellationToken cancellationToken = default)
@@ -1467,10 +1840,18 @@ public sealed class ChangeSetApplicationService
             }
             else
             {
+                var pendingEdit = EditSessionBridgeMapper.ToPendingEditCore(
+                    operation.PendingEdit);
+                var bindingOutputMode = string.Equals(
+                    pendingEdit.Owner,
+                    GuidedDesignProviders.GeneratedEditOwner,
+                    StringComparison.Ordinal)
+                    ? outputMode
+                    : null;
                 var current = CreateOperationBinding(
-                    EditSessionBridgeMapper.ToPendingEditCore(operation.PendingEdit),
+                    pendingEdit,
                     planner,
-                    outputMode: null,
+                    bindingOutputMode,
                     satisfiedOwnedTargets: operation.OwnedTargets);
                 if (current.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
                     || !string.Equals(
@@ -1487,9 +1868,10 @@ public sealed class ChangeSetApplicationService
                 {
                     currentBindingFingerprints.Add(current.Fingerprint!);
                     var selectedModeBinding = outputMode is null
+                        || bindingOutputMode == outputMode
                         ? current
                         : CreateOperationBinding(
-                            EditSessionBridgeMapper.ToPendingEditCore(operation.PendingEdit),
+                            pendingEdit,
                             planner,
                             outputMode,
                             operation.OwnedTargets);
@@ -2283,6 +2665,85 @@ public sealed class ChangeSetApplicationService
                 DateTimeOffset.UtcNow,
                 [edit with { Association = null }]);
             var plan = planner(session, outputMode);
+            return CreateOperationBindingFromPlan(
+                edit,
+                plan,
+                satisfiedOwnedTargets);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            return OperationBinding.Unsupported;
+        }
+    }
+
+    private static IReadOnlyList<GeneratedChangeSetOperationBinding> CreateGeneratedOperationBindings(
+        IReadOnlyList<PendingEdit> edits,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
+        ChangePlanOutputModeDto? outputMode)
+    {
+        if (edits.Count == 0
+            || edits.Any(edit => !string.Equals(
+                edit.Owner,
+                GuidedDesignProviders.GeneratedEditOwner,
+                StringComparison.Ordinal))
+            || edits.Select(edit => edit.Domain).Distinct(StringComparer.Ordinal).Count() != 1
+            || edits.Select(CreateSourceSetKey).Distinct(StringComparer.Ordinal).Count() != 1)
+        {
+            return Array.Empty<GeneratedChangeSetOperationBinding>();
+        }
+
+        try
+        {
+            var session = new EditSession(
+                EditSessionId.New(),
+                DateTimeOffset.UtcNow,
+                edits.Select(edit => edit with { Association = null }).ToArray());
+            var plan = planner(session, outputMode);
+            return edits.Select(edit =>
+            {
+                var binding = CreateOperationBindingFromPlan(edit, plan);
+                return new GeneratedChangeSetOperationBinding(
+                    binding.Kind,
+                    binding.Fingerprint,
+                    binding.OwnedTargets);
+            }).ToArray();
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            return Array.Empty<GeneratedChangeSetOperationBinding>();
+        }
+    }
+
+    private static string CreateSourceSetKey(PendingEdit edit)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHash(hash, "guided-design-operation-sources-v1");
+        foreach (var source in edit.Sources
+                     .OrderBy(source => source.Layer)
+                     .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+        {
+            AppendHash(hash, source.Layer.ToString());
+            AppendHash(hash, new RelativeOutputPath(source.RelativePath).CanonicalKey);
+        }
+
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    private static OperationBinding CreateOperationBindingFromPlan(
+        PendingEdit edit,
+        ChangePlan plan,
+        IReadOnlyList<string>? satisfiedOwnedTargets = null)
+    {
+        try
+        {
             if (!plan.CanApply)
             {
                 return OperationBinding.Unsupported;
@@ -2320,7 +2781,13 @@ public sealed class ChangeSetApplicationService
                     normalizedSatisfiedTargets);
             }
 
-            if (plan.Writes.Any(write => !IsSha256(write.SourceFingerprint)))
+            var isGenerated = string.Equals(
+                edit.Owner,
+                GuidedDesignProviders.GeneratedEditOwner,
+                StringComparison.Ordinal);
+            if (isGenerated
+                    ? !IsSha256(plan.GeneratedSourceBindingFingerprint)
+                    : plan.Writes.Any(write => !IsSha256(write.SourceFingerprint)))
             {
                 return OperationBinding.Unsupported;
             }
@@ -2339,13 +2806,21 @@ public sealed class ChangeSetApplicationService
                 .Select(target => target.Value)
                 .ToArray();
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            AppendHash(hash, "change-set-source-binding-v2");
+            AppendHash(
+                hash,
+                isGenerated
+                    ? "guided-design-source-binding-v1"
+                    : "change-set-source-binding-v2");
             foreach (var write in normalizedWrites
                          .OrderBy(write => write.Target.CanonicalKey, StringComparer.Ordinal)
                          .ThenBy(write => write.Write.Reason, StringComparer.Ordinal))
             {
                 AppendHash(hash, write.Target.CanonicalKey);
-                AppendHash(hash, write.Write.SourceFingerprint);
+                AppendHash(
+                    hash,
+                    isGenerated
+                        ? plan.GeneratedSourceBindingFingerprint
+                        : write.Write.SourceFingerprint);
                 AppendHash(hash, write.Write.ReplacesExistingOutput ? "replace" : "create");
                 foreach (var source in write.Sources
                              .OrderBy(source => source.Layer)
@@ -3474,6 +3949,52 @@ public sealed class ChangeSetValidationException : Exception
 
     public ChangeSetValidationException(string message, Exception innerException)
         : base(message, innerException)
+    {
+    }
+}
+
+internal sealed record GeneratedChangeSetAuthoringContext(
+    string Fingerprint,
+    string? ChangeSetETag,
+    string WorkspaceFingerprint,
+    string SourceRevisionFingerprint,
+    string? OutputProfileId,
+    ChangePlanOutputModeDto? OutputMode,
+    string ConfiguredOutputRootFingerprint,
+    string? ProfileOutputRootFingerprint,
+    string? WorkspacePersonalStateETag,
+    IReadOnlyList<string> SelectedChangeSetIds);
+
+internal sealed record GeneratedChangeSetOperationBinding(
+    ChangeSetSourceBindingKindDto Kind,
+    string? Fingerprint,
+    IReadOnlyList<string> OwnedTargets);
+
+internal sealed record GeneratedChangeSetProposalValidation(
+    bool CanImport,
+    string? Reason,
+    IReadOnlyList<GeneratedChangeSetOperationBinding> Bindings);
+
+internal sealed record GeneratedChangeSetImportRequest(
+    ChangeSetWorkspaceScopeDto Scope,
+    string Name,
+    string? ExpectedETag,
+    EditSessionDto? Session);
+
+internal sealed record GeneratedChangeSetProposal(
+    string ProposalId,
+    string ProposalFingerprint,
+    IReadOnlyList<PendingEdit> PendingEdits);
+
+internal sealed record GeneratedChangeSetImportResult(
+    string ImportedChangeSetId,
+    ChangeSetWorkspaceSnapshotDto Snapshot,
+    GeneratedChangeSetAuthoringContext AuthoringContext);
+
+internal sealed class GeneratedChangeSetContextChangedException : Exception
+{
+    public GeneratedChangeSetContextChangedException()
+        : base("The generated proposal authoring context changed. Refresh and preview it again.")
     {
     }
 }

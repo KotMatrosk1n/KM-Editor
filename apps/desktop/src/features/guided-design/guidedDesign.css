@@ -1,0 +1,598 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.km-guided-design {
+  --km-guided-border: var(--color-border);
+  --km-guided-border-strong: var(--color-border-strong);
+  --km-guided-focus: var(--color-focus);
+  --km-guided-muted: var(--color-text-muted);
+  --km-guided-surface: var(--color-surface);
+  --km-guided-surface-muted: var(--color-surface-muted);
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.km-guided-heading,
+.km-guided-section-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.625rem;
+}
+
+.km-guided-heading {
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.km-guided-heading p,
+.km-guided-heading h2,
+.km-guided-heading span,
+.km-guided-section-heading h3,
+.km-guided-section-heading p {
+  margin: 0;
+}
+
+.km-guided-heading p {
+  color: var(--km-guided-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.km-guided-heading > div > span,
+.km-guided-section-heading p {
+  color: var(--km-guided-muted);
+  display: block;
+  margin-top: 0.25rem;
+  max-width: 74ch;
+}
+
+.km-guided-safety-note,
+.km-guided-status,
+.km-guided-inline-error,
+.km-guided-advisory,
+.km-guided-import-success {
+  align-items: center;
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.625rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.75rem;
+}
+
+.km-guided-safety-note {
+  background: color-mix(in srgb, var(--color-accent-bright) 8%, var(--km-guided-surface));
+  justify-content: flex-start;
+}
+
+.km-guided-safety-note p,
+.km-guided-status p,
+.km-guided-advisory,
+.km-guided-import-success p {
+  margin: 0;
+}
+
+.km-guided-inline-error,
+.km-guided-form-error {
+  border-color: var(--color-danger);
+}
+
+.km-guided-coverage,
+.km-guided-inputs,
+.km-guided-results,
+.km-guided-findings,
+.km-guided-diff,
+.km-guided-exports,
+.km-guided-import,
+.km-guided-details,
+.km-guided-targets,
+.km-guided-diagnostics {
+  background: var(--km-guided-surface-muted);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.75rem;
+  min-width: 0;
+  padding: 0.875rem;
+}
+
+.km-guided-coverage > ul {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.km-guided-coverage > ul > li {
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.55rem;
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.km-guided-coverage li > div {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.km-guided-coverage li > span,
+.km-guided-coverage li > small {
+  color: var(--km-guided-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-coverage-state {
+  border: 1px solid var(--km-guided-border-strong);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.12rem 0.42rem;
+  white-space: nowrap;
+}
+
+.km-guided-coverage-state[data-state='complete'] {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.km-guided-coverage-state[data-state='partial'] {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.km-guided-coverage-reason {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.km-guided-coverage-reason code,
+.km-guided-exports code,
+.km-guided-seed-inspector code,
+.km-guided-record-list code {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-inputs,
+.km-guided-results,
+.km-guided-import {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.km-guided-inputs > fieldset,
+.km-guided-targets {
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.625rem;
+  margin: 0;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.km-guided-inputs legend,
+.km-guided-targets legend {
+  font-weight: 700;
+  padding-inline: 0.35rem;
+}
+
+.km-guided-control-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.km-guided-control-grid label,
+.km-guided-import label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.km-guided-control-grid label > small {
+  color: var(--km-guided-muted);
+}
+
+.km-guided-control-wide {
+  grid-column: 1 / -1;
+}
+
+.km-guided-constraint-summary,
+.km-guided-result-summary,
+.km-guided-details dl {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  margin: 0.75rem 0 0;
+}
+
+.km-guided-constraint-summary > div,
+.km-guided-result-summary > div,
+.km-guided-details dl > div {
+  background: var(--km-guided-surface);
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.55rem;
+}
+
+.km-guided-constraint-summary dt,
+.km-guided-result-summary dt,
+.km-guided-details dt {
+  color: var(--km-guided-muted);
+  font-size: 0.76rem;
+}
+
+.km-guided-constraint-summary dd,
+.km-guided-result-summary dd,
+.km-guided-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-details {
+  background: var(--km-guided-surface);
+}
+
+.km-guided-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.km-guided-details > p {
+  color: var(--km-guided-muted);
+  margin: 0.55rem 0 0;
+}
+
+.km-guided-constraint-manifest {
+  border-block-start: 1px solid var(--km-guided-border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.km-guided-constraint-manifest h5 {
+  margin: 0;
+}
+
+.km-guided-constraint-manifest ul {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.km-guided-constraint-manifest code {
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-existing-pin {
+  align-items: center;
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: minmax(12rem, 1fr) minmax(7rem, 9rem) auto auto;
+}
+
+.km-guided-existing-pin input {
+  width: 100%;
+}
+
+.km-guided-existing-pin input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.km-guided-record-list,
+.km-guided-findings > ul,
+.km-guided-diagnostics ul {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.km-guided-record-list li {
+  align-items: center;
+  border-block-start: 1px solid var(--km-guided-border);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding-block-start: 0.5rem;
+}
+
+.km-guided-targets > p,
+.km-guided-targets > small {
+  color: var(--km-guided-muted);
+  display: block;
+  margin: 0 0 0.625rem;
+}
+
+.km-guided-target-list {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  margin-bottom: 0.625rem;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.km-guided-target-selection > fieldset {
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.625rem;
+  margin: 0;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.km-guided-target-selection > fieldset > legend {
+  font-weight: 700;
+  padding-inline: 0.35rem;
+}
+
+.km-guided-target-option-list {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.km-guided-target-option {
+  align-items: center;
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.45rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.5rem;
+}
+
+.km-guided-target-option > label {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.km-guided-target-option > label > span {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.km-guided-target-option code {
+  color: var(--km-guided-muted);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.km-guided-target-list label {
+  align-items: flex-start;
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.45rem;
+  display: flex;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.5rem;
+}
+
+.km-guided-target-list code {
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-findings h4,
+.km-guided-diff h4,
+.km-guided-exports h4,
+.km-guided-import h4 {
+  margin: 0;
+}
+
+.km-guided-findings > ul > li {
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-inline-start: 3px solid var(--color-accent-bright);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.65rem;
+}
+
+.km-guided-findings > ul > li[data-severity='warning'] {
+  border-inline-start-color: var(--color-warning);
+}
+
+.km-guided-findings > ul > li[data-severity='error'] {
+  border-inline-start-color: var(--color-danger);
+}
+
+.km-guided-findings li > div {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.km-guided-findings li > div > span {
+  color: var(--km-guided-muted);
+  font-size: 0.74rem;
+}
+
+.km-guided-findings p,
+.km-guided-exports p,
+.km-guided-import p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-table-scroll {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+}
+
+.km-guided-diff table {
+  border-collapse: collapse;
+  min-width: 58rem;
+  width: 100%;
+}
+
+.km-guided-diff th,
+.km-guided-diff td {
+  border-block-end: 1px solid var(--km-guided-border);
+  padding: 0.55rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.km-guided-diff th {
+  color: var(--km-guided-muted);
+  font-size: 0.75rem;
+}
+
+.km-guided-diff td small {
+  color: var(--km-guided-muted);
+  display: block;
+  font-size: 0.7rem;
+  margin-top: 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.km-guided-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.km-guided-pin-control {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.km-guided-pin-control input {
+  min-width: 7rem;
+  width: 9rem;
+}
+
+.km-guided-pin-control input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.km-guided-shared-effect {
+  color: var(--km-guided-muted);
+  font-size: 0.75rem;
+  max-width: 18rem;
+}
+
+.km-guided-load-more {
+  justify-self: center;
+}
+
+.km-guided-diagnostics li {
+  border-inline-start: 3px solid var(--km-guided-border-strong);
+  overflow-wrap: anywhere;
+  padding-inline-start: 0.55rem;
+}
+
+.km-guided-diagnostics li[data-severity='warning'] {
+  border-inline-start-color: var(--color-warning);
+}
+
+.km-guided-diagnostics li[data-severity='error'] {
+  border-inline-start-color: var(--color-danger);
+}
+
+.km-guided-exports > div {
+  display: grid;
+  gap: 0.625rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  margin-top: 0.75rem;
+}
+
+.km-guided-exports article {
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.65rem;
+}
+
+.km-guided-exports article > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.km-guided-import-success {
+  border-color: var(--color-success);
+}
+
+.km-guided-inputs button,
+.km-guided-results button,
+.km-guided-details summary,
+.km-guided-targets input {
+  scroll-margin: 1rem;
+}
+
+.km-guided-inputs button:focus-visible,
+.km-guided-results button:focus-visible,
+.km-guided-details summary:focus-visible,
+.km-guided-targets input:focus-visible {
+  outline: 2px solid var(--km-guided-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .km-guided-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .km-guided-control-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-guided-control-wide {
+    grid-column: auto;
+  }
+
+  .km-guided-record-list li,
+  .km-guided-import-success {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .km-guided-existing-pin {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-guided-design * {
+    scroll-behavior: auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .km-guided-coverage-state[data-state],
+  .km-guided-safety-note,
+  .km-guided-import-success {
+    border-color: CanvasText;
+  }
+}

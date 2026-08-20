@@ -6,6 +6,7 @@ import { ProjectBridgeError } from './bridge/projectBridgeError';
 import { DesktopServiceError } from './desktopServices';
 import {
   desktopErrorCodes,
+  guidedDesignErrorCodes,
   isKmErrorCode,
   projectBridgeErrorCodes,
   semanticExploreErrorCodes,
@@ -20,6 +21,7 @@ import {
 } from './errorReporting';
 
 const expectedBridgeErrorCodes = new Set<KmErrorCode>([
+  ...Object.values(guidedDesignErrorCodes),
   ...Object.values(semanticExploreErrorCodes),
   swshDynamaxAdventuresErrorCodes.seedInvalid,
   swshDynamaxAdventuresErrorCodes.seedLimitInvalid,
