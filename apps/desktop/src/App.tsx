@@ -459,6 +459,8 @@ import { RecordTabRail } from './features/workbench/RecordTabRail';
 import { AdaptiveInspector } from './features/workbench/AdaptiveInspector';
 import { CapabilityDiscoveryDialog } from './features/workbench/CapabilityDiscoveryDialog';
 import { OutputProfileSwitchDialog } from './features/workbench/OutputProfileSwitchDialog';
+import { ChangeSetWorkspacePanel } from './features/change-sets/ChangeSetWorkspacePanel';
+import { useChangeSetWorkspaceController } from './features/change-sets/useChangeSetWorkspaceController';
 import {
   ShortcutOverlay
 } from './features/workbench/ShortcutOverlay';
@@ -525,6 +527,38 @@ import {
   createBridgeBackedPersonalWorkspaceRegistry,
   type PersonalWorkspaceSnapshot
 } from './workbench/personalWorkspaceRegistry';
+import { createBridgeBackedProjectDraftRegistry } from './workbench/draftRegistry';
+import { AdvancedAuthoringController } from './authoring/advancedAuthoringController';
+import {
+  createItemsAuthoringWorkspace,
+  createMovesAuthoringWorkspace,
+  createPokemonAuthoringWorkspace,
+  createTrainerPartyAuthoringWorkspace
+} from './authoring/authoringDomainAdapters';
+import { advancedAuthoringAdapterRegistry } from './authoring/authoringAdapterRegistry';
+import {
+  advancedAuthoringProjectDraftAdapter,
+  createAdvancedAuthoringProjectDraftKey
+} from './authoring/advancedAuthoringDraftAdapter';
+import {
+  createAuthoringEditSessionBatch,
+  createAuthoringStagedCommitMetadata,
+  createAuthoringStagedHistoryState,
+  type AuthoringEditSessionBatch
+} from './authoring/authoringStageAdapters';
+import {
+  AdvancedAuthoringError,
+  type AdvancedAuthoringDraftSnapshot,
+  type AuthoringStageRequest,
+  type AuthoringStagedCommitMetadata,
+  type AuthoringStagedHistoryExecutor,
+  type AuthoringStagedSourceTransition
+} from './authoring/advancedAuthoringTypes';
+import type {
+  CaptureChangeSetSessionResponse,
+  ChangeSetMaterialization,
+  ChangeSetWorkspaceSnapshot
+} from './bridge/changeSetContracts';
 import {
   workspaceGameDumpDestinationSchema,
   workspaceMaximumNoteBytes,
@@ -1864,6 +1898,10 @@ export function App({
     }),
     [clearIgnoredCommunityLocalePreference, unscopedBridge]
   );
+  const projectDraftRegistry = useMemo(
+    () => createBridgeBackedProjectDraftRegistry(unscopedBridge),
+    [unscopedBridge]
+  );
   const [applicationWorkspaceSnapshot, setApplicationWorkspaceSnapshot] = useState<
     PersonalWorkspaceSnapshot<WorkspaceApplicationStateDocument>
   >({ document: null, etag: null });
@@ -1934,6 +1972,7 @@ export function App({
   const [noteStatusKey, setNoteStatusKey] = useState<string | null>(null);
   const [isPersonalWorkspaceMutationBusy, setIsPersonalWorkspaceMutationBusy] = useState(false);
   const [pendingOutputProfileId, setPendingOutputProfileId] = useState<string | null>(null);
+  const [activeChangeSetId, setActiveChangeSetId] = useState<string | null>(null);
   const [textCategoryId, setTextCategoryId] = useState<string | null>(null);
   const [textResultOffset, setTextResultOffset] = useState(0);
   const [textLanguage, setTextLanguage] = useState<string | null>(null);
@@ -2487,6 +2526,9 @@ export function App({
   const projectWorkspaceDocument = projectWorkspaceOwnerId === activeProjectId
     ? projectWorkspaceSnapshot.document
     : null;
+  const projectWorkspaceETag = projectWorkspaceOwnerId === activeProjectId
+    ? projectWorkspaceSnapshot.etag
+    : null;
   const projectWorkspaceLoadRef = useRef(0);
   useEffect(() => {
     const loadId = ++projectWorkspaceLoadRef.current;
@@ -2617,6 +2659,11 @@ export function App({
   const workflowLoadGenerationRef = useRef(new WorkflowLoadGeneration());
   const workflowLoadTailRef = useRef<Promise<void>>(Promise.resolve());
   const workflowRecencyRef = useRef<RetainedWorkflowSection[]>([]);
+  const [advancedAuthoringDraftProtection, setAdvancedAuthoringDraftProtection] =
+    useState<AdvancedAuthoringDraftProtection>({
+      scopeKey: null,
+      sections: new Set()
+    });
   const previousActiveWorkflowSectionRef = useRef<WorkbenchSection>(activeSection);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
@@ -2833,6 +2880,91 @@ export function App({
     externalMutationBusy: hasCriticalWriteOperation,
     scope: outputSafetyScope
   });
+  const changeSetEffectiveStateHandlerRef = useRef<(
+    effective: ChangeSetMaterialization,
+    snapshot: ChangeSetWorkspaceSnapshot
+  ) => void>(() => undefined);
+  const latestAcceptedChangeSetSnapshotRef = useRef<ChangeSetWorkspaceSnapshot | null>(null);
+  const suppressNextChangeSetWorkflowInvalidationRef = useRef(false);
+  const handleChangeSetEffectiveState = useCallback((
+    effective: ChangeSetMaterialization,
+    snapshot: ChangeSetWorkspaceSnapshot
+  ) => {
+    changeSetEffectiveStateHandlerRef.current(effective, snapshot);
+  }, []);
+  const availableChangeSetOutputModes = useMemo(
+    () => supportsTrinityOutput
+      ? [
+          { id: 'standalone' as const, label: t('changeSets.outputMode.standalone') },
+          {
+            id: 'trinityModManager' as const,
+            label: t('changeSets.outputMode.trinityModManager')
+          },
+          { id: 'trinityBypass' as const, label: t('changeSets.outputMode.trinityBypass') }
+        ]
+      : [{ id: 'standalone' as const, label: t('changeSets.outputMode.standalone') }],
+    [supportsTrinityOutput, t]
+  );
+  const availableChangeSetOutputProfiles = useMemo(
+    () => (projectWorkspaceDocument?.outputProfiles ?? []).map((profile) => ({
+      id: profile.profileId,
+      isActive: projectWorkspaceDocument?.activeOutputProfileId === profile.profileId,
+      name: profile.name
+    })),
+    [projectWorkspaceDocument]
+  );
+  const changeSetWorkspace = useChangeSetWorkspaceController({
+    activeChangeSetId,
+    availableOutputModes: availableChangeSetOutputModes,
+    availableOutputProfiles: availableChangeSetOutputProfiles,
+    bridge: unscopedBridge,
+    currentSession: editSession,
+    externalBusy:
+      hasCriticalWriteOperation ||
+      isEditSessionMutating ||
+      isSessionValidating ||
+      isChangePlanCreating ||
+      isChangePlanApplying,
+    onActiveStagingTargetChange: setActiveChangeSetId,
+    onEffectiveState: handleChangeSetEffectiveState,
+    onRequestOutputProfileSwitch: setPendingOutputProfileId,
+    scope: outputSafetyScope
+  });
+  const changeSetStageGateRef = useRef({
+    activeChangeSetId: null as string | null,
+    captureStagedSession: changeSetWorkspace.captureStagedSession,
+    changeSetCount: 0,
+    etag: null as string | null,
+    refresh: changeSetWorkspace.refresh,
+    readiness: changeSetWorkspace.controller.readiness
+  });
+  changeSetStageGateRef.current = {
+    activeChangeSetId,
+    captureStagedSession: changeSetWorkspace.captureStagedSession,
+    changeSetCount: changeSetWorkspace.snapshot?.document.changeSets.length ?? 0,
+    etag: changeSetWorkspace.snapshot?.etag ?? null,
+    refresh: changeSetWorkspace.refresh,
+    readiness: changeSetWorkspace.controller.readiness
+  };
+  const outputProfileBindingRevision = JSON.stringify([
+    projectWorkspaceDocument?.activeOutputProfileId ?? null,
+    projectWorkspaceETag
+  ]);
+  const observedOutputProfileBindingRevisionRef = useRef(outputProfileBindingRevision);
+  useEffect(() => {
+    if (observedOutputProfileBindingRevisionRef.current === outputProfileBindingRevision) {
+      return;
+    }
+    if (changeSetWorkspace.controller.readiness !== 'ready') {
+      return;
+    }
+    observedOutputProfileBindingRevisionRef.current = outputProfileBindingRevision;
+    void changeSetWorkspace.refresh().catch(() => undefined);
+  }, [
+    changeSetWorkspace.controller.readiness,
+    changeSetWorkspace.refresh,
+    outputProfileBindingRevision
+  ]);
   const [isSidebarCompactPreference, setIsSidebarCompactPreference] = useState(
     readSidebarCompactPreference
   );
@@ -3076,6 +3208,9 @@ export function App({
     ]
   );
   const pendingEditCount = editSession?.pendingEdits.length ?? 0;
+  const unassignedPendingEditCount = editSession?.pendingEdits.filter(
+    (edit) => edit.association === null
+  ).length ?? 0;
   const currentEditSessionSignature = useMemo(
     () => getEditSessionSignature(editSession),
     [editSession]
@@ -3276,6 +3411,19 @@ export function App({
       if (hasModMergerLocalState) {
         protectedSections.add('modMerger');
       }
+      const authoringProtectionScopeKey = createAdvancedAuthoringProtectionScopeKey(
+        activeProjectId,
+        selectedGame,
+        activeChangeSetId
+      );
+      if (
+        authoringProtectionScopeKey !== null &&
+        advancedAuthoringDraftProtection.scopeKey === authoringProtectionScopeKey
+      ) {
+        for (const section of advancedAuthoringDraftProtection.sections) {
+          protectedSections.add(section);
+        }
+      }
 
       const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
       if (includeActiveSection && activeRetainedSection) {
@@ -3285,11 +3433,15 @@ export function App({
       return protectedSections;
     },
     [
+      activeChangeSetId,
+      activeProjectId,
       activeSection,
+      advancedAuthoringDraftProtection,
       editSession,
       editSessionSection,
       editorDraftDirtySections,
-      hasModMergerLocalState
+      hasModMergerLocalState,
+      selectedGame
     ]
   );
 
@@ -3539,6 +3691,49 @@ export function App({
     evictWorkflowPayloads(storedRetainedWorkflowSections);
   }, [evictWorkflowPayloads]);
 
+  changeSetEffectiveStateHandlerRef.current = (effective, snapshot) => {
+    latestAcceptedChangeSetSnapshotRef.current = snapshot;
+    const currentSession = editSessionRef.current;
+    if (snapshot.etag === null && snapshot.document.changeSets.length === 0) {
+      return;
+    }
+
+    const unassignedSession = currentSession
+      ? createSessionWithPendingEdits(
+          currentSession,
+          currentSession.pendingEdits.filter((edit) => edit.association === null)
+        )
+      : null;
+    const nextSession = effective.canMaterialize
+      ? createSessionWithPendingEdits(
+          effective.session,
+          effective.session?.pendingEdits ?? []
+        )
+      : unassignedSession;
+    const currentContentSignature = getPendingEditContentSignature(currentSession);
+    const nextContentSignature = getPendingEditContentSignature(nextSession);
+    const currentSessionSignature = getEditSessionSignature(currentSession);
+    const nextSessionSignature = getEditSessionSignature(nextSession);
+
+    if (
+      currentContentSignature !== nextContentSignature &&
+      !suppressNextChangeSetWorkflowInvalidationRef.current
+    ) {
+      clearLoadedWorkflowData();
+    }
+    if (currentSessionSignature !== nextSessionSignature) {
+      editSessionOperationRunRef.current += 1;
+      editSessionRef.current = nextSession;
+      setEditSession(nextSession);
+      setEditSessionSection(null);
+      setEditValidationDiagnostics([]);
+      setChangePlan(null);
+      setApplyResult(null);
+      setValidatedEditSessionSignature(null);
+      setChangePlanSessionSignature(null);
+    }
+  };
+
   const clearPendingEditState = useCallback(() => {
     spreadsheetImportPreviewRunRef.current += 1;
     setIsSpreadsheetImportPreviewing(false);
@@ -3561,6 +3756,64 @@ export function App({
     clearDynamaxAdventurePanelState();
     setEditorDraftDirtySections(new Set());
   }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
+
+  const rematerializeSessionLocalChange = useCallback(async (
+    candidateSession: EditSession | null
+  ) => {
+    const currentSnapshot = latestAcceptedChangeSetSnapshotRef.current;
+    if (candidateSession?.authoringBinding == null && currentSnapshot?.etag == null) {
+      return candidateSession;
+    }
+    const snapshot = await changeSetWorkspace.refresh(candidateSession);
+    if (!snapshot?.effective.canMaterialize) {
+      throw new AdvancedAuthoringError('source-assumption-changed');
+    }
+    return createSessionWithPendingEdits(
+      snapshot.effective.session,
+      snapshot.effective.session?.pendingEdits ?? []
+    );
+  }, [changeSetWorkspace]);
+
+  const discardUnassignedPendingEdits = useCallback(async () => {
+    const currentSession = editSessionRef.current;
+    const associatedEdits = currentSession?.pendingEdits.filter(
+      (edit) => edit.association !== null
+    ) ?? [];
+    const candidateSession = createSessionWithPendingEdits(currentSession, associatedEdits);
+    let nextSession: EditSession | null;
+    try {
+      nextSession = await rematerializeSessionLocalChange(candidateSession);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    }
+    editSessionOperationRunRef.current += 1;
+    editSessionMutationGenerationRef.current += 1;
+    editSessionMutationQueueRef.current = Promise.resolve();
+    pendingEditSessionMutationTokensRef.current.clear();
+    setIsEditSessionMutating(false);
+    editSessionRef.current = nextSession;
+    setEditSession(nextSession);
+    setEditSessionSection(null);
+    setChangePlan(null);
+    setApplyResult(null);
+    setEditValidationDiagnostics([]);
+    setValidatedEditSessionSignature(null);
+    setChangePlanSessionSignature(null);
+    clearScopedEditorPanelState();
+    clearDynamaxAdventurePanelState();
+    setEditorDraftDirtySections(new Set());
+    return true;
+  }, [
+    clearDynamaxAdventurePanelState,
+    clearScopedEditorPanelState,
+    rematerializeSessionLocalChange,
+    setApplyResult,
+    setBridgeDiagnostics,
+    setChangePlan,
+    setEditSession,
+    setEditValidationDiagnostics
+  ]);
 
   const resetLoadedProjectState = useCallback(() => {
     projectScopeGenerationRef.current += 1;
@@ -3618,20 +3871,18 @@ export function App({
 
       cancelDiscardActionRef.current = onDiscard ?? null;
 
-      if (editSession) {
+      if (unassignedPendingEditCount > 0) {
         setExitPrompt({ destination: null, kind: 'cancel', mode: 'confirm' });
         return;
       }
 
       onDiscard?.();
-      clearPendingEditState();
     },
     [
-      clearPendingEditState,
-      editSession,
       isChangePlanApplying,
       isChangePlanCreating,
-      isSessionValidating
+      isSessionValidating,
+      unassignedPendingEditCount
     ]
   );
 
@@ -3676,15 +3927,18 @@ export function App({
     activeEditorHasLocalDrafts,
     activeLocation,
     activeSectionIsEditor,
-    activeSectionOwnsAdvancedEditSession,
-    activeSectionOwnsDexLayoutEditSession,
-    activeSectionOwnsEditSession,
+    activeSectionOwnsAdvancedEditSession:
+      unassignedPendingEditCount > 0 && activeSectionOwnsAdvancedEditSession,
+    activeSectionOwnsDexLayoutEditSession:
+      unassignedPendingEditCount > 0 && activeSectionOwnsDexLayoutEditSession,
+    activeSectionOwnsEditSession:
+      unassignedPendingEditCount > 0 && activeSectionOwnsEditSession,
     canShareEditSessionWith: (section) =>
       editSessionCanBeSharedAcrossNormalEditors &&
       isSharedStagedEditorSection(section, selectedGame),
     editSessionSection,
     hasCriticalWriteOperation,
-    hasEditSession: editSession !== null,
+    hasEditSession: unassignedPendingEditCount > 0,
     isDestinationAvailable: (location) =>
       location.game === selectedGame &&
       location.projectId === activeProjectId &&
@@ -3695,7 +3949,7 @@ export function App({
           availableWorkflowSectionIds
         )),
     isEditSessionOperationBusy,
-    pendingEditCount
+    pendingEditCount: unassignedPendingEditCount
   };
   const navigationControllerRef = useRef(
     createWorkbenchNavigationController(() => {
@@ -5209,7 +5463,9 @@ export function App({
       pendingNavigationCommitActionRef.current = null;
       cancelDiscardActionRef.current?.();
       cancelDiscardActionRef.current = null;
-      clearPendingEditState();
+      if (!(await discardUnassignedPendingEdits())) {
+        return;
+      }
       clearLoadedWorkflowData();
       setBridgeDiagnostics([]);
       setExitPrompt(null);
@@ -5219,7 +5475,9 @@ export function App({
     if (prompt.kind === 'editorSwitch') {
       cancelDiscardActionRef.current = null;
       if (prompt.discardPendingSession) {
-        clearPendingEditState();
+        if (!(await discardUnassignedPendingEdits())) {
+          return;
+        }
         clearLoadedWorkflowData();
       } else {
         setEditorDraftDirtySections((currentSections) => {
@@ -5245,7 +5503,9 @@ export function App({
     }
 
     cancelDiscardActionRef.current = null;
-    clearPendingEditState();
+    if (!(await discardUnassignedPendingEdits())) {
+      return;
+    }
     clearLoadedWorkflowData();
     setExitPrompt(null);
 
@@ -5272,11 +5532,11 @@ export function App({
     }
   }, [
     activeSection,
-    clearPendingEditState,
     clearLoadedWorkflowData,
     desktopServices.isAvailable,
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
+    discardUnassignedPendingEdits,
     exitPrompt,
     isChangePlanApplying,
     isChangePlanCreating,
@@ -5960,7 +6220,7 @@ export function App({
     if (
       hasCriticalWriteOperation ||
       isEditSessionOperationBusy ||
-      pendingEditCount > 0 ||
+      unassignedPendingEditCount > 0 ||
       editorDraftDirtySections.size > 0
     ) {
       return;
@@ -7391,14 +7651,17 @@ export function App({
     prepareScopedEditorPanelAction('bagHook');
 
     try {
-      const response = await bridge.stageBagHookInstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setBagHookWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
+      await runEditSessionMutation(
+        (session) => bridge.stageBagHookInstall({
+          paths: createProjectPaths(draftPaths),
+          session
+        }),
+        (response) => {
+          setBagHookWorkflow(response.workflow);
+          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -7411,14 +7674,17 @@ export function App({
     prepareScopedEditorPanelAction('bagHook');
 
     try {
-      const response = await bridge.stageBagHookUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setBagHookWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
+      await runEditSessionMutation(
+        (session) => bridge.stageBagHookUninstall({
+          paths: createProjectPaths(draftPaths),
+          session
+        }),
+        (response) => {
+          setBagHookWorkflow(response.workflow);
+          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -8128,15 +8394,18 @@ export function App({
     prepareScopedEditorPanelAction('hyperspaceBypass');
 
     try {
-      const response = await bridge.stageHyperspaceBypassInstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setHyperspaceBypassWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
-      registerEditorDraftDirty('hyperspaceBypass', false);
+      await runEditSessionMutation(
+        (session) => bridge.stageHyperspaceBypassInstall({
+          paths: createProjectPaths(draftPaths),
+          session
+        }),
+        (response) => {
+          setHyperspaceBypassWorkflow(response.workflow);
+          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
+          registerEditorDraftDirty('hyperspaceBypass', false);
+        }
+      );
     } catch (error) {
       setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error));
     } finally {
@@ -8149,15 +8418,18 @@ export function App({
     prepareScopedEditorPanelAction('hyperspaceBypass');
 
     try {
-      const response = await bridge.stageHyperspaceBypassUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setHyperspaceBypassWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
-      registerEditorDraftDirty('hyperspaceBypass', false);
+      await runEditSessionMutation(
+        (session) => bridge.stageHyperspaceBypassUninstall({
+          paths: createProjectPaths(draftPaths),
+          session
+        }),
+        (response) => {
+          setHyperspaceBypassWorkflow(response.workflow);
+          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
+          registerEditorDraftDirty('hyperspaceBypass', false);
+        }
+      );
     } catch (error) {
       setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error));
     } finally {
@@ -10062,31 +10334,73 @@ export function App({
         return;
       }
 
-      const nextPendingEdits = editSession.pendingEdits.filter((_, index) => index !== editIndex);
-      if (nextPendingEdits.length === 0) {
-        clearPendingEditState();
-        clearLoadedWorkflowData();
+      const pendingEdit = editSession.pendingEdits[editIndex];
+      if (pendingEdit?.association) {
+        void changeSetWorkspace.removeOperation(
+          pendingEdit.association.changeSetId,
+          pendingEdit.association.operationId
+        ).catch((error: unknown) => {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        });
         return;
       }
 
-      const nextSession: EditSession = {
-        ...editSession,
-        hasPendingChanges: true,
-        pendingEdits: nextPendingEdits
-      };
-
-      editSessionRef.current = nextSession;
-      setEditSession(nextSession);
-      setEditValidationDiagnostics([]);
-      setChangePlan(null);
-      setApplyResult(null);
-      setValidatedEditSessionSignature(null);
-      setChangePlanSessionSignature(null);
+      const nextPendingEdits = editSession.pendingEdits.filter((_, index) => index !== editIndex);
+      const mutationToken = editSessionMutationTokenRef.current + 1;
+      editSessionMutationTokenRef.current = mutationToken;
+      pendingEditSessionMutationTokensRef.current.add(mutationToken);
+      setIsEditSessionMutating(true);
+      const generation = editSessionMutationGenerationRef.current;
+      const sessionSignature = getEditSessionSignature(editSession);
+      const queuedRemoval = editSessionMutationQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (
+            editSessionMutationGenerationRef.current !== generation ||
+            getEditSessionSignature(editSessionRef.current) !== sessionSignature
+          ) {
+            return;
+          }
+          const candidateSession = createSessionWithPendingEdits(
+            editSession,
+            nextPendingEdits
+          );
+          const nextSession = await rematerializeSessionLocalChange(candidateSession);
+          if (editSessionMutationGenerationRef.current !== generation) {
+            return;
+          }
+          editSessionOperationRunRef.current += 1;
+          editSessionRef.current = nextSession;
+          setEditSession(nextSession);
+          setEditSessionSection(null);
+          setEditValidationDiagnostics([]);
+          setChangePlan(null);
+          setApplyResult(null);
+          setValidatedEditSessionSignature(null);
+          setChangePlanSessionSignature(null);
+          if (nextSession === null) {
+            clearLoadedWorkflowData();
+          }
+        });
+      editSessionMutationQueueRef.current = queuedRemoval.then(
+        () => undefined,
+        () => undefined
+      );
+      void queuedRemoval.catch((error: unknown) => {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }).finally(() => {
+        pendingEditSessionMutationTokensRef.current.delete(mutationToken);
+        setIsEditSessionMutating(
+          pendingEditSessionMutationTokensRef.current.size > 0
+        );
+      });
     },
     [
       clearLoadedWorkflowData,
-      clearPendingEditState,
+      changeSetWorkspace,
       editSession,
+      rematerializeSessionLocalChange,
+      setBridgeDiagnostics,
       setApplyResult,
       setChangePlan,
       setEditSession,
@@ -10097,7 +10411,9 @@ export function App({
   const runEditSessionMutation = async <T extends { session: EditSession | null },>(
     mutation: (session: EditSession | null) => Promise<T>,
     commit: (response: T) => void,
-    requiredSession?: EditSession | null
+    requiredSession?: EditSession | null,
+    onChangeSetCapture?: (response: CaptureChangeSetSessionResponse) => void,
+    requiredAuthoringRequest?: AuthoringStageRequest
   ) => {
     if (isEditSessionOperationBusy || requiredSession === null) {
       return null;
@@ -10123,16 +10439,166 @@ export function App({
           return null;
         }
 
+        const stageGate = changeSetStageGateRef.current;
+        if (
+          outputSafetyScope !== null &&
+          (stageGate.readiness !== 'ready' ||
+            (stageGate.changeSetCount > 0 && stageGate.activeChangeSetId === null) ||
+            (stageGate.activeChangeSetId !== null && stageGate.etag === null))
+        ) {
+          throw new Error(
+            stageGate.readiness === 'error'
+              ? 'Change-set state could not be verified before staging.'
+              : 'Choose an active change set after its private state finishes loading.'
+          );
+        }
+        if (
+          requiredAuthoringRequest &&
+          (stageGate.activeChangeSetId !== requiredAuthoringRequest.activeChangeSetId ||
+            !authoringBindingsEqual(
+              currentSession?.authoringBinding ?? null,
+              requiredAuthoringRequest.sourceBinding
+            ))
+        ) {
+          throw new AdvancedAuthoringError('source-assumption-changed');
+        }
+
         const response = await mutation(currentSession);
         if (editSessionMutationGenerationRef.current !== generation) {
           return null;
         }
 
-        if (response.session !== editSessionRef.current) {
-          editSessionRef.current = response.session;
-          setEditSession(response.session);
+        const rawSession = response.session;
+        const stagedSessionForCapture = rawSession ?? (currentSession
+          ? {
+              ...currentSession,
+              hasPendingChanges: false,
+              pendingEdits: []
+            }
+          : null);
+        const sessionContentChanged =
+          stagedSessionForCapture !== null &&
+          getPendingEditContentSignature(stagedSessionForCapture) !==
+            getPendingEditContentSignature(currentSession);
+        let capturedResponse: CaptureChangeSetSessionResponse | null = null;
+        let rematerializedSnapshot: ChangeSetWorkspaceSnapshot | null = null;
+        if (
+          stagedSessionForCapture !== null &&
+          stageGate.activeChangeSetId !== null &&
+          sessionContentChanged
+        ) {
+          if (
+            currentSession?.authoringBinding &&
+            !authoringBindingsEqual(
+              stagedSessionForCapture.authoringBinding ?? null,
+              currentSession.authoringBinding
+            )
+          ) {
+            throw new AdvancedAuthoringError('source-assumption-changed');
+          }
+          if (
+            requiredAuthoringRequest &&
+            !authoringBindingsEqual(
+              stagedSessionForCapture.authoringBinding ?? null,
+              requiredAuthoringRequest.sourceBinding
+            )
+          ) {
+            throw new AdvancedAuthoringError('source-assumption-changed');
+          }
+          if (stageGate.etag === null) {
+            throw new Error('Change-set state changed before staging could be captured.');
+          }
+          const suppressWorkflowInvalidation = requiredAuthoringRequest !== undefined;
+          const previousSuppression =
+            suppressNextChangeSetWorkflowInvalidationRef.current;
+          if (suppressWorkflowInvalidation) {
+            suppressNextChangeSetWorkflowInvalidationRef.current = true;
+          }
+          try {
+            capturedResponse = await stageGate.captureStagedSession(
+              currentSession,
+              stagedSessionForCapture,
+              {
+                activeChangeSetId: stageGate.activeChangeSetId,
+                workspaceETag: stageGate.etag
+              }
+            );
+          } finally {
+            suppressNextChangeSetWorkflowInvalidationRef.current =
+              previousSuppression;
+          }
+          if (editSessionMutationGenerationRef.current !== generation) {
+            return null;
+          }
+          if (
+            suppressWorkflowInvalidation &&
+            !capturedResponse.snapshot.effective.canMaterialize
+          ) {
+            clearLoadedWorkflowData();
+          }
+          onChangeSetCapture?.(capturedResponse);
+        } else if (
+          stagedSessionForCapture !== null &&
+          stageGate.etag !== null &&
+          sessionContentChanged
+        ) {
+          rematerializedSnapshot = await stageGate.refresh(stagedSessionForCapture);
+          if (
+            editSessionMutationGenerationRef.current !== generation ||
+            !rematerializedSnapshot?.effective.canMaterialize
+          ) {
+            if (editSessionMutationGenerationRef.current !== generation) {
+              return null;
+            }
+            throw new AdvancedAuthoringError('source-assumption-changed');
+          }
         }
-        commit(response);
+
+        const authoritativeSnapshot =
+          capturedResponse?.snapshot ?? rematerializedSnapshot;
+        const committedSession = authoritativeSnapshot
+          ? authoritativeSnapshot.effective.canMaterialize
+            ? createSessionWithPendingEdits(
+                authoritativeSnapshot.effective.session,
+                authoritativeSnapshot.effective.session?.pendingEdits ?? []
+              )
+            : createSessionWithPendingEdits(
+                currentSession,
+                currentSession?.pendingEdits.filter(
+                  (edit) => edit.association === null
+                ) ?? []
+              )
+          : rawSession;
+        if (committedSession !== editSessionRef.current) {
+          editSessionRef.current = committedSession;
+          setEditSession(committedSession);
+        }
+        const isAdvancedAuthoringCapture =
+          capturedResponse !== null && requiredAuthoringRequest !== undefined;
+        const canPreserveAdvancedAuthoringWorkflows =
+          isAdvancedAuthoringCapture &&
+          capturedResponse?.snapshot.effective.canMaterialize === true;
+        const activeAuthoringSetIsEffective =
+          canPreserveAdvancedAuthoringWorkflows &&
+          capturedResponse !== null &&
+          requiredAuthoringRequest !== undefined &&
+          capturedResponse.snapshot.effective.selectedChangeSetIds.includes(
+            requiredAuthoringRequest.activeChangeSetId
+          );
+        if (
+          !isAdvancedAuthoringCapture ||
+          activeAuthoringSetIsEffective
+        ) {
+          commit(response);
+        }
+        if (
+          capturedResponse &&
+          getPendingEditContentSignature(rawSession) !==
+            getPendingEditContentSignature(committedSession) &&
+          !canPreserveAdvancedAuthoringWorkflows
+        ) {
+          clearLoadedWorkflowData();
+        }
         return response;
       });
 
@@ -10147,6 +10613,524 @@ export function App({
       pendingEditSessionMutationTokensRef.current.delete(mutationToken);
       setIsEditSessionMutating(pendingEditSessionMutationTokensRef.current.size > 0);
     }
+  };
+
+  const advancedAuthoringBinding = changeSetWorkspace.effective?.session?.authoringBinding ?? null;
+  const advancedAuthoringScope = useMemo(
+    () => activeProjectId && selectedGame && activeChangeSetId && advancedAuthoringBinding
+      ? {
+          activeChangeSetId,
+          game: selectedGame,
+          projectId: activeProjectId,
+          sourceBinding: advancedAuthoringBinding
+        }
+      : null,
+    [activeChangeSetId, activeProjectId, advancedAuthoringBinding, selectedGame]
+  );
+  const advancedAuthoringWorkspaces = useMemo(() => {
+    if (!activeProjectId || !selectedGame || !advancedAuthoringBinding) {
+      return [];
+    }
+    return [
+      itemsWorkflow
+        ? createItemsAuthoringWorkspace({
+            game: selectedGame,
+            projectId: activeProjectId,
+            sourceBinding: advancedAuthoringBinding,
+            workflow: itemsWorkflow
+          })
+        : null,
+      pokemonWorkflow
+        ? createPokemonAuthoringWorkspace({
+            game: selectedGame,
+            projectId: activeProjectId,
+            sourceBinding: advancedAuthoringBinding,
+            workflow: pokemonWorkflow
+          })
+        : null,
+      movesWorkflow
+        ? createMovesAuthoringWorkspace({
+            game: selectedGame,
+            projectId: activeProjectId,
+            sourceBinding: advancedAuthoringBinding,
+            workflow: movesWorkflow
+          })
+        : null,
+      trainersWorkflow
+        ? createTrainerPartyAuthoringWorkspace({
+            game: selectedGame,
+            projectId: activeProjectId,
+            sourceBinding: advancedAuthoringBinding,
+            workflow: trainersWorkflow
+          })
+        : null
+    ].filter((workspace): workspace is NonNullable<typeof workspace> => workspace !== null);
+  }, [
+    activeProjectId,
+    advancedAuthoringBinding,
+    itemsWorkflow,
+    movesWorkflow,
+    pokemonWorkflow,
+    selectedGame,
+    trainersWorkflow
+  ]);
+  const advancedAuthoringControllerRef = useRef<AdvancedAuthoringController | null>(null);
+  const [advancedAuthoringController, setAdvancedAuthoringController] =
+    useState<AdvancedAuthoringController | null>(null);
+  const [advancedAuthoringRevision, setAdvancedAuthoringRevision] = useState(0);
+  const [isAdvancedAuthoringDraftPending, setIsAdvancedAuthoringDraftPending] =
+    useState(false);
+  const advancedAuthoringLoadRevisionRef = useRef(0);
+  useEffect(() => {
+    const loadRevision = ++advancedAuthoringLoadRevisionRef.current;
+    const protectionScopeKey = advancedAuthoringScope
+      ? createAdvancedAuthoringProtectionScopeKey(
+          advancedAuthoringScope.projectId,
+          advancedAuthoringScope.game,
+          advancedAuthoringScope.activeChangeSetId
+        )
+      : null;
+    setAdvancedAuthoringDraftProtection((current) =>
+      updateAdvancedAuthoringDraftProtection(
+        current,
+        protectionScopeKey,
+        null,
+        true
+      )
+    );
+    if (!advancedAuthoringScope) {
+      advancedAuthoringControllerRef.current = null;
+      setAdvancedAuthoringController(null);
+      setIsAdvancedAuthoringDraftPending(false);
+      return;
+    }
+    if (advancedAuthoringWorkspaces.length === 0) {
+      advancedAuthoringControllerRef.current = null;
+      setAdvancedAuthoringController(null);
+      return;
+    }
+
+    let controller = advancedAuthoringControllerRef.current;
+    let shouldLoadDraft = false;
+    if (!controller) {
+      controller = new AdvancedAuthoringController({
+        scope: advancedAuthoringScope,
+        workspaces: advancedAuthoringWorkspaces
+      });
+      advancedAuthoringControllerRef.current = controller;
+      setAdvancedAuthoringController(controller);
+      shouldLoadDraft = true;
+    } else {
+      const update = controller.updateScope(
+        advancedAuthoringScope,
+        advancedAuthoringWorkspaces
+      );
+      shouldLoadDraft = update.kind === 'reset';
+    }
+
+    try {
+      const snapshot = changeSetWorkspace.snapshot;
+      controller.syncStagedHistory(
+        snapshot
+          ? createAuthoringStagedHistoryState(
+              advancedAuthoringScope.activeChangeSetId,
+              snapshot
+            )
+          : null
+      );
+    } catch {
+      controller.syncStagedHistory(null);
+    }
+    setAdvancedAuthoringRevision((revision) => revision + 1);
+
+    const controllerDrafts = controller.getSnapshot().drafts;
+    if (!shouldLoadDraft && controllerDrafts.entries.length > 0) {
+      setAdvancedAuthoringDraftProtection((current) =>
+        updateAdvancedAuthoringDraftProtection(
+          current,
+          protectionScopeKey,
+          controllerDrafts
+        )
+      );
+      setIsAdvancedAuthoringDraftPending(false);
+      return;
+    }
+    setIsAdvancedAuthoringDraftPending(true);
+    const draftKey = createAdvancedAuthoringProjectDraftKey({
+      activeChangeSetId: advancedAuthoringScope.activeChangeSetId,
+      game: advancedAuthoringScope.game,
+      projectId: advancedAuthoringScope.projectId
+    });
+    void projectDraftRegistry.load(
+      draftKey,
+      advancedAuthoringProjectDraftAdapter
+    ).then(
+      (draft) => {
+        if (
+          advancedAuthoringLoadRevisionRef.current !== loadRevision ||
+          advancedAuthoringControllerRef.current !== controller
+        ) {
+          return;
+        }
+        if (!draft) {
+          setAdvancedAuthoringDraftProtection((current) =>
+            updateAdvancedAuthoringDraftProtection(
+              current,
+              protectionScopeKey,
+              null
+            )
+          );
+          setIsAdvancedAuthoringDraftPending(false);
+          return;
+        }
+        try {
+          let payload = draft.payload;
+          if (payload.scope.projectId !== advancedAuthoringScope.projectId) {
+            const currentEffective = changeSetWorkspace.snapshot?.effective ?? null;
+            const currentBinding = advancedAuthoringScope.sourceBinding;
+            if (
+              payload.scope.game !== advancedAuthoringScope.game ||
+              payload.scope.activeChangeSetId !==
+                advancedAuthoringScope.activeChangeSetId ||
+              payload.scope.sourceBinding === null ||
+              payload.scope.sourceBinding.workspaceFingerprint !==
+                currentBinding.workspaceFingerprint ||
+              draft.projectSourceRevisionFingerprint === null ||
+              currentEffective?.sourceRevisionFingerprint !==
+                draft.projectSourceRevisionFingerprint
+            ) {
+              throw new AdvancedAuthoringError('source-assumption-changed');
+            }
+            payload = {
+              ...payload,
+              scope: {
+                ...payload.scope,
+                projectId: advancedAuthoringScope.projectId,
+                sourceBinding: currentBinding
+              }
+            };
+          }
+          setAdvancedAuthoringDraftProtection((current) =>
+            updateAdvancedAuthoringDraftProtection(
+              current,
+              protectionScopeKey,
+              payload
+            )
+          );
+          controller.hydrateDrafts(payload);
+          setAdvancedAuthoringDraftProtection((current) =>
+            updateAdvancedAuthoringDraftProtection(
+              current,
+              protectionScopeKey,
+              controller.getSnapshot().drafts
+            )
+          );
+          setIsAdvancedAuthoringDraftPending(false);
+          setAdvancedAuthoringRevision((revision) => revision + 1);
+        } catch (error) {
+          const loadedAdapterIds = new Set(
+            controller.getWorkspaces().map((workspace) => workspace.adapterId)
+          );
+          const isWaitingForWorkspace =
+            error instanceof AdvancedAuthoringError &&
+            error.code === 'record-unavailable' &&
+            draft.payload.entries.some((entry) => {
+              const registration = advancedAuthoringAdapterRegistry.find((candidate) => (
+                candidate.domain === entry.field.record.domain &&
+                candidate.recordKind === entry.field.record.recordKind.key &&
+                candidate.recordKindSchemaVersion ===
+                  entry.field.record.recordKind.schemaVersion &&
+                candidate.games.includes(advancedAuthoringScope.game)
+              ));
+              return registration !== undefined && !loadedAdapterIds.has(registration.id);
+            });
+          if (!isWaitingForWorkspace) {
+            setAdvancedAuthoringDraftProtection((current) =>
+              updateAdvancedAuthoringDraftProtection(
+                current,
+                protectionScopeKey,
+                null
+              )
+            );
+            setIsAdvancedAuthoringDraftPending(false);
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          }
+        }
+      },
+      (error: unknown) => {
+        if (advancedAuthoringLoadRevisionRef.current === loadRevision) {
+          setAdvancedAuthoringDraftProtection((current) =>
+            updateAdvancedAuthoringDraftProtection(
+              current,
+              protectionScopeKey,
+              null
+            )
+          );
+          setIsAdvancedAuthoringDraftPending(false);
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      }
+    );
+  }, [
+    advancedAuthoringScope,
+    advancedAuthoringWorkspaces,
+    changeSetWorkspace.snapshot,
+    projectDraftRegistry,
+    setBridgeDiagnostics
+  ]);
+
+  const saveAdvancedAuthoringDrafts = useCallback(async (
+    drafts: AdvancedAuthoringDraftSnapshot,
+    sourceTransition?: AuthoringStagedSourceTransition
+  ) => {
+    const scope = advancedAuthoringScope;
+    const currentEffective = latestAcceptedChangeSetSnapshotRef.current?.effective ?? null;
+    const currentBinding = currentEffective?.session?.authoringBinding ?? null;
+    if (
+      !scope ||
+      drafts.scope.activeChangeSetId !== scope.activeChangeSetId ||
+      drafts.scope.game !== scope.game ||
+      drafts.scope.projectId !== scope.projectId ||
+      !drafts.scope.sourceBinding ||
+      !currentEffective ||
+      !currentBinding ||
+      currentBinding.projectId !== scope.projectId ||
+      latestAcceptedChangeSetSnapshotRef.current?.document.activeChangeSetId !==
+        scope.activeChangeSetId
+    ) {
+      throw new AdvancedAuthoringError('source-assumption-changed');
+    }
+    const hasCurrentComposition =
+      drafts.scope.sourceBinding.workspaceFingerprint ===
+      currentBinding.workspaceFingerprint;
+    if (sourceTransition) {
+      if (
+        !authoringCaptureTransitionIsValid(sourceTransition) ||
+        !authoringBindingsEqual(
+          drafts.scope.sourceBinding,
+          sourceTransition.nextSourceBinding
+        ) ||
+        !authoringBindingsEqual(
+          currentBinding,
+          sourceTransition.nextSourceBinding
+        ) ||
+        sourceTransition.nextSourceBinding.workspaceETag !==
+          latestAcceptedChangeSetSnapshotRef.current?.etag ||
+        sourceTransition.sourceRevisionFingerprint !==
+          currentEffective.sourceRevisionFingerprint
+      ) {
+        throw new AdvancedAuthoringError('source-assumption-changed');
+      }
+    } else if (!hasCurrentComposition) {
+      throw new AdvancedAuthoringError('source-assumption-changed');
+    }
+    const key = createAdvancedAuthoringProjectDraftKey({
+      activeChangeSetId: scope.activeChangeSetId,
+      game: scope.game,
+      projectId: scope.projectId
+    });
+    const protectionScopeKey = createAdvancedAuthoringProtectionScopeKey(
+      scope.projectId,
+      scope.game,
+      scope.activeChangeSetId
+    );
+    if (drafts.entries.length === 0) {
+      await projectDraftRegistry.delete(key);
+      setAdvancedAuthoringDraftProtection((current) =>
+        updateAdvancedAuthoringDraftProtection(
+          current,
+          protectionScopeKey,
+          null
+        )
+      );
+      return;
+    }
+    const currentDrafts: AdvancedAuthoringDraftSnapshot = {
+      ...drafts,
+      scope: {
+        ...drafts.scope,
+        sourceBinding: currentBinding
+      }
+    };
+    await projectDraftRegistry.save(
+      key,
+      advancedAuthoringProjectDraftAdapter,
+      currentDrafts,
+      currentEffective?.sourceRevisionFingerprint ?? null
+    );
+    setAdvancedAuthoringDraftProtection((current) =>
+      updateAdvancedAuthoringDraftProtection(
+        current,
+        protectionScopeKey,
+        currentDrafts
+      )
+    );
+  }, [advancedAuthoringScope, projectDraftRegistry]);
+
+  const executeAdvancedAuthoringHistory = useCallback<AuthoringStagedHistoryExecutor>(
+    async (request) => {
+      const snapshot = changeSetWorkspace.snapshot;
+      if (
+        !snapshot ||
+        snapshot.etag !== request.expectedETag ||
+        snapshot.document.activeChangeSetId !== request.activeChangeSetId
+      ) {
+        throw new AdvancedAuthoringError('history-conflict');
+      }
+      const nextSnapshot = await changeSetWorkspace.mutateHistory(
+        request.direction,
+        request.expectedETag
+      );
+      return {
+        committed: true,
+        history: createAuthoringStagedHistoryState(
+          request.activeChangeSetId,
+          nextSnapshot
+        )
+      };
+    },
+    [changeSetWorkspace]
+  );
+
+  const runAdvancedAuthoringBatch = async (
+    batch: AuthoringEditSessionBatch,
+    onCapture: (response: CaptureChangeSetSessionResponse) => void,
+    request: AuthoringStageRequest
+  ) => {
+    const paths = createProjectPaths(draftPaths);
+    switch (batch.kind) {
+      case 'items':
+        return runEditSessionMutation(
+          async (session) => {
+            const response = await bridge.updateItemFields({
+              paths,
+              session,
+              updates: [...batch.updates]
+            });
+            const didSucceed = !response.diagnostics.some(
+              (diagnostic) => diagnostic.severity === 'error'
+            );
+            return {
+              ...response,
+              didSucceed,
+              session: didSucceed ? response.session : (session ?? response.session),
+              workflow: didSucceed ? response.workflow : itemsWorkflow
+            };
+          },
+          (response) => {
+            if (response.didSucceed && response.workflow) setItemsWorkflow(response.workflow);
+            setEditValidationDiagnostics(response.diagnostics);
+          },
+          undefined,
+          onCapture,
+          request
+        );
+      case 'pokemon':
+        return runEditSessionMutation(
+          async (session) => {
+            const response = await bridge.updatePokemonFields({
+              paths,
+              session,
+              updates: [...batch.updates]
+            });
+            const didSucceed = !response.diagnostics.some(
+              (diagnostic) => diagnostic.severity === 'error'
+            );
+            return {
+              ...response,
+              didSucceed,
+              session: didSucceed ? response.session : (session ?? response.session),
+              workflow: didSucceed ? response.workflow : pokemonWorkflow
+            };
+          },
+          (response) => {
+            if (response.didSucceed && response.workflow) setPokemonWorkflow(response.workflow);
+            setEditValidationDiagnostics(response.diagnostics);
+          },
+          undefined,
+          onCapture,
+          request
+        );
+      case 'moves':
+        return runEditSessionMutation(
+          async (session) => {
+            const response = await bridge.updateMoveFields({
+              paths,
+              session,
+              updates: [...batch.updates]
+            });
+            const didSucceed = !response.diagnostics.some(
+              (diagnostic) => diagnostic.severity === 'error'
+            );
+            return {
+              ...response,
+              didSucceed,
+              session: didSucceed ? response.session : (session ?? response.session),
+              workflow: didSucceed ? response.workflow : movesWorkflow
+            };
+          },
+          (response) => {
+            if (response.didSucceed && response.workflow) setMovesWorkflow(response.workflow);
+            setEditValidationDiagnostics(response.diagnostics);
+          },
+          undefined,
+          onCapture,
+          request
+        );
+      case 'trainerParty':
+        return runEditSessionMutation(
+          async (session) => {
+            const response = await bridge.updateTrainerFields({
+              paths,
+              session,
+              updates: [...batch.updates]
+            });
+            const didSucceed = !response.diagnostics.some(
+              (diagnostic) => diagnostic.severity === 'error'
+            );
+            return {
+              ...response,
+              didSucceed,
+              session: didSucceed ? response.session : (session ?? response.session),
+              workflow: didSucceed ? response.workflow : trainersWorkflow
+            };
+          },
+          (response) => {
+            if (response.didSucceed && response.workflow) setTrainersWorkflow(response.workflow);
+            setEditValidationDiagnostics(response.diagnostics);
+          },
+          undefined,
+          onCapture,
+          request
+        );
+    }
+  };
+
+  const handleAdvancedAuthoringStage = async (
+    request: AuthoringStageRequest
+  ): Promise<AuthoringStagedCommitMetadata> => {
+    const batch = createAuthoringEditSessionBatch(request);
+    const captureHolder: { response: CaptureChangeSetSessionResponse | null } = {
+      response: null
+    };
+    const response = await runAdvancedAuthoringBatch(
+      batch,
+      (captured) => {
+        captureHolder.response = captured;
+      },
+      request
+    );
+    const captureResponse = captureHolder.response;
+    if (!response?.didSucceed || !captureResponse) {
+      throw new AdvancedAuthoringError('source-assumption-changed');
+    }
+    return createAuthoringStagedCommitMetadata({
+      activeChangeSetId: request.activeChangeSetId,
+      capturedOperationIds: captureResponse.capturedOperationIds,
+      previousSourceBinding: request.sourceBinding,
+      removedOperationIds: captureResponse.removedOperationIds,
+      snapshot: captureResponse.snapshot
+    });
   };
 
   const handleUpdateItemFields = async (
@@ -11814,6 +12798,7 @@ export function App({
       }
 
       const planResponse = await bridge.createChangePlan({
+        outputMode: response.session.authoringBinding?.outputMode ?? undefined,
         paths: createProjectPaths(draftPaths),
         session: response.session
       });
@@ -11891,6 +12876,7 @@ export function App({
     try {
       const response = await bridge.applyChangePlan({
         changePlan: reviewedPlan,
+        outputMode: reviewedSession.authoringBinding?.outputMode ?? undefined,
         paths,
         session: reviewedSession
       });
@@ -11906,6 +12892,7 @@ export function App({
       );
 
       if (!hasApplyErrors) {
+        const wasBoundChangeSetSession = reviewedSession.authoringBinding !== null;
         editSessionMutationGenerationRef.current += 1;
         editSessionMutationQueueRef.current = Promise.resolve();
         editSessionRef.current = null;
@@ -11918,6 +12905,16 @@ export function App({
         setApplyResult(null);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
+        if (wasBoundChangeSetSession) {
+          suppressNextChangeSetWorkflowInvalidationRef.current = true;
+          try {
+            await changeSetWorkspace.refresh(null);
+          } catch (error) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          } finally {
+            suppressNextChangeSetWorkflowInvalidationRef.current = false;
+          }
+        }
       }
 
       setDynamaxAdventureApplyResult(completedApplyResult);
@@ -12683,6 +13680,7 @@ export function App({
       }
 
       const planResponse = await bridge.createChangePlan({
+        outputMode: response.session.authoringBinding?.outputMode ?? undefined,
         paths: createProjectPaths(draftPaths),
         session: response.session
       });
@@ -12743,7 +13741,10 @@ export function App({
 
     try {
       const response = await bridge.createChangePlan({
-        outputMode: getScopedEditorOutputMode(section),
+        outputMode:
+          editSession.authoringBinding == null
+            ? getScopedEditorOutputMode(section)
+            : (editSession.authoringBinding.outputMode ?? undefined),
         paths: createProjectPaths(draftPaths),
         session: editSession
       });
@@ -12787,9 +13788,12 @@ export function App({
 
     try {
       const paths = createProjectPaths(draftPaths);
+      const wasBoundChangeSetSession = editSession.authoringBinding !== null;
       let planToApply = visibleChangePlan;
+      const effectiveOutputMode =
+        outputMode ?? editSession.authoringBinding?.outputMode ?? undefined;
 
-      if (outputMode) {
+      if (effectiveOutputMode) {
         setWorkProgress(
           createIndeterminateWorkProgress(
             'Preparing Trinity Output',
@@ -12799,7 +13803,7 @@ export function App({
           )
         );
         const planResponse = await bridge.createChangePlan({
-          outputMode,
+          outputMode: effectiveOutputMode,
           paths,
           session: editSession
         });
@@ -12814,7 +13818,7 @@ export function App({
 
       setWorkProgress(
         createIndeterminateWorkProgress(
-          outputMode ? 'Writing Trinity Output' : 'Applying Changes',
+          effectiveOutputMode ? 'Writing Trinity Output' : 'Applying Changes',
           `Applying ${planToApply.writes.length.toLocaleString(formatLocale)} reviewed output ${
             planToApply.writes.length === 1 ? 'file' : 'files'
           }`,
@@ -12825,7 +13829,7 @@ export function App({
 
       const response = await bridge.applyChangePlan({
         changePlan: planToApply,
-        outputMode,
+        outputMode: effectiveOutputMode,
         paths,
         session: editSession
       });
@@ -12856,6 +13860,17 @@ export function App({
       }
 
       setApplyResult(completedApplyResult);
+
+      if (!hasApplyErrors && wasBoundChangeSetSession) {
+        suppressNextChangeSetWorkflowInvalidationRef.current = true;
+        try {
+          await changeSetWorkspace.refresh(null);
+        } catch (error) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        } finally {
+          suppressNextChangeSetWorkflowInvalidationRef.current = false;
+        }
+      }
 
       if (didWriteFiles) {
         setWorkProgress(
@@ -13559,9 +14574,13 @@ export function App({
 
     try {
       const paths = createProjectPaths(draftPaths);
+      const wasBoundChangeSetSession = editSession.authoringBinding !== null;
       const response = await bridge.applyChangePlan({
         changePlan: panelOutput.changePlan,
-        outputMode: getScopedEditorOutputMode(section),
+        outputMode:
+          editSession.authoringBinding == null
+            ? getScopedEditorOutputMode(section)
+            : (editSession.authoringBinding.outputMode ?? undefined),
         paths,
         session: editSession
       });
@@ -13574,6 +14593,9 @@ export function App({
           response.applyResult,
           panelOutput.changePlan
         );
+        editSessionMutationGenerationRef.current += 1;
+        editSessionMutationQueueRef.current = Promise.resolve();
+        editSessionRef.current = null;
         setEditSession(null);
         setEditSessionSection(null);
         setChangePlan(null);
@@ -13588,6 +14610,16 @@ export function App({
             changePlanSessionSignature: null
           }
         }));
+        if (wasBoundChangeSetSession) {
+          suppressNextChangeSetWorkflowInvalidationRef.current = true;
+          try {
+            await changeSetWorkspace.refresh(null);
+          } catch (error) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          } finally {
+            suppressNextChangeSetWorkflowInvalidationRef.current = false;
+          }
+        }
       } else {
         setScopedEditorPanelStates((currentStates) => ({
           ...currentStates,
@@ -13815,7 +14847,7 @@ export function App({
                 <ProjectRelocationPanel
                   bridge={bridge}
                   canRelocate={
-                    pendingEditCount === 0 &&
+                    unassignedPendingEditCount === 0 &&
                     editorDraftDirtySections.size === 0 &&
                     !hasCriticalWriteOperation &&
                     !isBusy &&
@@ -13829,7 +14861,7 @@ export function App({
               onRequestSupportSearch={handleRequestSupportSearch}
               onSetDraftPath={handleSetDraftPath}
               onValidateProject={handleValidateProject}
-              pendingEditCount={pendingEditCount}
+              pendingEditCount={unassignedPendingEditCount}
               projectStatus={projectStatus}
               selectedGame={selectedGame}
               svCacheStatus={svCacheStatus}
@@ -15027,6 +16059,24 @@ export function App({
               applyResult={applyResult}
               canSaveValidatedChanges={canSaveValidatedChanges}
               changePlan={visibleChangePlan}
+              changeSetWorkspace={(
+                <ChangeSetWorkspacePanel
+                  advancedAuthoring={
+                    advancedAuthoringController && !isAdvancedAuthoringDraftPending ? {
+                    controller: advancedAuthoringController,
+                    executeStagedHistory: executeAdvancedAuthoringHistory,
+                    externalBusy:
+                      hasCriticalWriteOperation ||
+                      isEditSessionOperationBusy ||
+                      isEditSessionMutating,
+                    onDraftsChange: saveAdvancedAuthoringDrafts,
+                    onStageRequest: handleAdvancedAuthoringStage,
+                    revisionKey: advancedAuthoringRevision.toString()
+                    } : null
+                  }
+                  controller={changeSetWorkspace.controller}
+                />
+              )}
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
               pendingEditContext={{
@@ -15069,7 +16119,7 @@ export function App({
               isChangePlanCreating={isChangePlanCreating}
               isEditSessionMutating={isEditSessionMutating}
               isSessionValidating={isSessionValidating}
-              supportsTrinityOutput={supportsTrinityOutput}
+              supportsTrinityOutput={supportsTrinityOutput && !editSession?.authoringBinding}
               onCancelEditSession={handleCancelEditSession}
               onOpenEditor={handleNavigateSection}
               onRemovePendingEdit={handleRemovePendingEdit}
@@ -15256,7 +16306,7 @@ export function App({
           bridge={bridge}
           canApply={
             outputSafety.canApply &&
-            pendingEditCount === 0 &&
+            unassignedPendingEditCount === 0 &&
             editorDraftDirtySections.size === 0 &&
             !hasCriticalWriteOperation &&
             !isBusy
@@ -15279,6 +16329,7 @@ export function App({
             if (activeProjectIdRef.current === response.projectId) {
               setProjectWorkspaceSnapshot(snapshot);
             }
+            await changeSetWorkspace.refresh(null);
             setPendingOutputProfileId(null);
           }}
           onClose={() => setPendingOutputProfileId(null)}
@@ -45956,6 +47007,7 @@ function ChangesSection({
   applyResult,
   canSaveValidatedChanges,
   changePlan,
+  changeSetWorkspace,
   diagnostics,
   editSession,
   pendingEditContext,
@@ -45976,6 +47028,7 @@ function ChangesSection({
   applyResult: ApplyResult | null;
   canSaveValidatedChanges: boolean;
   changePlan: ChangePlan | null;
+  changeSetWorkspace: ReactNode;
   diagnostics: ApiDiagnostic[];
   editSession: EditSession | null;
   pendingEditContext: PendingEditContext;
@@ -45995,6 +47048,9 @@ function ChangesSection({
 }) {
   const { t, translateLiteral } = useLocalization();
   const pendingEdits = editSession?.pendingEdits ?? [];
+  const hasUnassignedPendingEdits = pendingEdits.some(
+    (edit) => edit.association === null
+  );
   const isPendingValidationBusy = isSessionValidating || isChangePlanCreating;
   const pendingEditGroups: Array<{
     editorLabel: string;
@@ -46053,6 +47109,7 @@ function ChangesSection({
 
   return (
     <>
+      {changeSetWorkspace}
       <OutputSafetyPanel controller={outputSafety} />
       <section aria-labelledby="changes-heading" className="panel wide-panel">
         <div className="panel-heading">
@@ -46183,7 +47240,7 @@ function ChangesSection({
           <button
             className="danger-button"
             disabled={
-              !editSession ||
+              !hasUnassignedPendingEdits ||
               isEditSessionMutating ||
               isSessionValidating ||
               isChangePlanCreating ||
@@ -46193,7 +47250,7 @@ function ChangesSection({
             type="button"
           >
             <X aria-hidden="true" size={18} />
-            <span>Cancel</span>
+            <span>{t('changeSets.discardUnassigned')}</span>
           </button>
         </div>
 
@@ -56353,16 +57410,187 @@ function normalizePathForComparison(path: string) {
   return trimTrailingPathSeparators(path).replaceAll('\\', '/').toLowerCase();
 }
 
+function createSessionWithPendingEdits(
+  session: EditSession | null,
+  pendingEdits: EditSession['pendingEdits']
+): EditSession | null {
+  if (!session || (pendingEdits.length === 0 && !session.authoringBinding)) {
+    return null;
+  }
+  return {
+    ...session,
+    hasPendingChanges: pendingEdits.length > 0,
+    pendingEdits
+  };
+}
+
+type AdvancedAuthoringDraftProtection = {
+  scopeKey: string | null;
+  sections: ReadonlySet<RetainedWorkflowSection>;
+};
+
+const advancedAuthoringRetainedSections = new Set<RetainedWorkflowSection>([
+  'items',
+  'moves',
+  'pokemon',
+  'trainers'
+]);
+
+function createAdvancedAuthoringProtectionScopeKey(
+  projectId: string | null,
+  game: ProjectGame | null,
+  activeChangeSetId: string | null
+) {
+  return projectId && game && activeChangeSetId
+    ? JSON.stringify([projectId, game, activeChangeSetId])
+    : null;
+}
+
+function updateAdvancedAuthoringDraftProtection(
+  current: AdvancedAuthoringDraftProtection,
+  scopeKey: string | null,
+  drafts: AdvancedAuthoringDraftSnapshot | null,
+  preserveCurrentScope = false
+): AdvancedAuthoringDraftProtection {
+  if (preserveCurrentScope && current.scopeKey === scopeKey) {
+    return current;
+  }
+  const sections = drafts
+    ? getAdvancedAuthoringDraftSections(drafts)
+    : new Set<RetainedWorkflowSection>();
+  if (
+    current.scopeKey === scopeKey &&
+    current.sections.size === sections.size &&
+    [...current.sections].every((section) => sections.has(section))
+  ) {
+    return current;
+  }
+  return { scopeKey, sections };
+}
+
+function getAdvancedAuthoringDraftSections(
+  drafts: AdvancedAuthoringDraftSnapshot
+) {
+  const sections = new Set<RetainedWorkflowSection>();
+  const gameFamily = projectGameToFamily(drafts.scope.game);
+  for (const entry of drafts.entries) {
+    const registration = advancedAuthoringAdapterRegistry.find(
+      (candidate) =>
+        candidate.domain === entry.field.record.domain &&
+        candidate.recordKind === entry.field.record.recordKind.key &&
+        candidate.recordKindSchemaVersion ===
+          entry.field.record.recordKind.schemaVersion &&
+        candidate.games.includes(drafts.scope.game) &&
+        entry.field.record.gameFamily === gameFamily
+    );
+    if (
+      registration &&
+      advancedAuthoringRetainedSections.has(
+        registration.section as RetainedWorkflowSection
+      )
+    ) {
+      sections.add(registration.section as RetainedWorkflowSection);
+    }
+  }
+  return sections;
+}
+
+function getPendingEditContentSignature(editSession: EditSession | null) {
+  return JSON.stringify((editSession?.pendingEdits ?? []).map((edit) => ({
+    domain: edit.domain,
+    field: edit.field,
+    newValue: edit.newValue,
+    owner: edit.owner,
+    recordId: edit.recordId,
+    summary: edit.summary,
+    sources: edit.sources.map((source) => ({
+      layer: source.layer,
+      relativePath: source.relativePath
+    }))
+  })));
+}
+
+function authoringCaptureTransitionIsValid(
+  transition: AuthoringStagedSourceTransition
+) {
+  const previous = transition.previousSourceBinding;
+  const next = transition.nextSourceBinding;
+  return (
+    previous.version === 1 &&
+    next.version === previous.version &&
+    previous.projectId === next.projectId &&
+    previous.workspaceETag !== next.workspaceETag &&
+    /^[A-Fa-f0-9]{64}$/u.test(previous.workspaceETag) &&
+    /^[A-Fa-f0-9]{64}$/u.test(next.workspaceETag) &&
+    /^[A-Fa-f0-9]{64}$/u.test(previous.workspaceFingerprint) &&
+    /^[A-Fa-f0-9]{64}$/u.test(next.workspaceFingerprint) &&
+    /^[A-Fa-f0-9]{64}$/u.test(transition.sourceRevisionFingerprint) &&
+    previous.outputProfileId === next.outputProfileId &&
+    previous.outputMode === next.outputMode &&
+    previous.outputRootFingerprint === next.outputRootFingerprint &&
+    previous.workspacePersonalStateETag === next.workspacePersonalStateETag &&
+    previous.selectedChangeSetIds.length === next.selectedChangeSetIds.length &&
+    previous.selectedChangeSetIds.every(
+      (changeSetId, index) => changeSetId === next.selectedChangeSetIds[index]
+    )
+  );
+}
+
+function authoringBindingsEqual(
+  left: EditSession['authoringBinding'],
+  right: EditSession['authoringBinding']
+) {
+  return (
+    left === right ||
+    (left != null &&
+      right != null &&
+      left.version === right.version &&
+      left.projectId === right.projectId &&
+      left.workspaceETag === right.workspaceETag &&
+      left.workspaceFingerprint === right.workspaceFingerprint &&
+      left.outputProfileId === right.outputProfileId &&
+      left.outputRootFingerprint === right.outputRootFingerprint &&
+      left.workspacePersonalStateETag === right.workspacePersonalStateETag &&
+      left.outputMode === right.outputMode &&
+      left.selectedChangeSetIds.length === right.selectedChangeSetIds.length &&
+      left.selectedChangeSetIds.every(
+        (changeSetId, index) => changeSetId === right.selectedChangeSetIds[index]
+      ))
+  );
+}
+
 function getEditSessionSignature(editSession: EditSession | null) {
   if (!editSession) {
     return null;
   }
 
   return JSON.stringify({
+    authoringBinding: editSession.authoringBinding
+      ? {
+          outputProfileId: editSession.authoringBinding.outputProfileId,
+          outputMode: editSession.authoringBinding.outputMode,
+          outputRootFingerprint: editSession.authoringBinding.outputRootFingerprint,
+          projectId: editSession.authoringBinding.projectId,
+          selectedChangeSetIds: editSession.authoringBinding.selectedChangeSetIds,
+          version: editSession.authoringBinding.version,
+          workspaceETag: editSession.authoringBinding.workspaceETag,
+          workspaceFingerprint: editSession.authoringBinding.workspaceFingerprint,
+          workspacePersonalStateETag:
+            editSession.authoringBinding.workspacePersonalStateETag
+        }
+      : null,
     edits: editSession.pendingEdits.map((edit) => ({
+      association: edit.association
+        ? {
+            changeSetId: edit.association.changeSetId,
+            operationId: edit.association.operationId,
+            version: edit.association.version
+          }
+        : null,
       domain: edit.domain,
       field: edit.field,
       newValue: edit.newValue,
+      owner: edit.owner,
       recordId: edit.recordId,
       summary: edit.summary,
       sources: edit.sources.map((source) => ({

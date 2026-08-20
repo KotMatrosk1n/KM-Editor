@@ -84,8 +84,59 @@ public sealed class VersionedWorkspaceDocumentStore
         return await ExistsAsync(
                 WorkspaceDocumentScope.ForProject(projectIdentity),
                 documentId,
-                cancellationToken)
+            cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Acquires a private cross-process lease for a bounded project operation.
+    /// The caller must dispose the returned handle after every read, review, and
+    /// write covered by that operation has completed.
+    /// </summary>
+    public async Task<IDisposable> AcquireProjectOperationLeaseAsync(
+        WorkspaceProjectIdentity projectIdentity,
+        WorkspaceDocumentId leaseId,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = WorkspaceDocumentScope.ForProject(projectIdentity);
+        ValidateScope(scope);
+        ValidateDocumentId(leaseId);
+
+        try
+        {
+            string projectDirectory;
+            await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                projectDirectory = EnsureScopeDirectory(scope);
+            }
+            finally
+            {
+                operationGate.Release();
+            }
+
+            return await AcquireDocumentLockAsync(projectDirectory, leaseId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (WorkspaceDocumentStoreException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            throw new WorkspaceDocumentStoreException(
+                "The private workspace project operation lease could not be acquired.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new WorkspaceDocumentStoreException(
+                "The private workspace project operation lease could not be acquired.");
+        }
     }
 
     public async Task<bool> ExistsAsync(

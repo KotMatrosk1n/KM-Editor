@@ -623,6 +623,9 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "output.checkpoint.list"
             | "output.checkpoint.restore.preview"
             | "project.relocation.preview"
+            | "changeSets.read"
+            | "changeSets.materialize"
+            | "changeSets.export"
             | "support.report.build"
     ) {
         return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);

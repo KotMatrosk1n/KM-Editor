@@ -6,6 +6,7 @@ using KM.Api.AngeFight;
 using KM.Api.BagHook;
 using KM.Api.Behavior;
 using KM.Api.CatchCap;
+using KM.Api.ChangeSets;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
@@ -167,6 +168,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly ZaWorkflowService zaWorkflowService;
     private readonly WorkspaceDraftApplicationService workspaceDraftApplicationService;
     private readonly WorkspacePersonalStateApplicationService workspacePersonalStateApplicationService;
+    private readonly ChangeSetApplicationService changeSetApplicationService;
     private readonly OutputSafetyApplicationService outputSafetyApplicationService;
     private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
 
@@ -217,6 +219,7 @@ public sealed class ProjectBridgeDispatcher
         SwShCacheManager? swShCacheManager = null,
         WorkspaceDraftApplicationService? workspaceDraftApplicationService = null,
         WorkspacePersonalStateApplicationService? workspacePersonalStateApplicationService = null,
+        ChangeSetApplicationService? changeSetApplicationService = null,
         OutputSafetyApplicationService? outputSafetyApplicationService = null,
         ProjectRelocationApplicationService? projectRelocationApplicationService = null)
     {
@@ -279,12 +282,16 @@ public sealed class ProjectBridgeDispatcher
             ?? new WorkspaceDraftApplicationService();
         this.workspacePersonalStateApplicationService = workspacePersonalStateApplicationService
             ?? new WorkspacePersonalStateApplicationService();
+        this.changeSetApplicationService = changeSetApplicationService
+            ?? new ChangeSetApplicationService(
+                workspacePersonalStateService: this.workspacePersonalStateApplicationService);
         this.outputSafetyApplicationService = outputSafetyApplicationService
             ?? new OutputSafetyApplicationService();
         this.projectRelocationApplicationService = projectRelocationApplicationService
             ?? new ProjectRelocationApplicationService(
                 workspaceDraftService: this.workspaceDraftApplicationService,
                 workspacePersonalStateService: this.workspacePersonalStateApplicationService,
+                changeSetService: this.changeSetApplicationService,
                 outputSafetyService: this.outputSafetyApplicationService);
     }
 
@@ -511,6 +518,12 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
                 KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson),
+                KmCommandNames.ReadChangeSets => DispatchReadChangeSets(requestJson),
+                KmCommandNames.MutateChangeSets => DispatchMutateChangeSets(requestJson),
+                KmCommandNames.CaptureChangeSetSession => DispatchCaptureChangeSetSession(requestJson),
+                KmCommandNames.MaterializeChangeSets => DispatchMaterializeChangeSets(requestJson),
+                KmCommandNames.ExportChangeSets => DispatchExportChangeSets(requestJson),
+                KmCommandNames.ImportChangeSets => DispatchImportChangeSets(requestJson),
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
@@ -568,6 +581,24 @@ public sealed class ProjectBridgeDispatcher
                 RequiresDispatcherReset: false);
         }
         catch (WorkspacePersonalStateValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.DataInvalid,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (ChangeSetValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.DataInvalid,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (EditSessionContractException exception)
         {
             return (
                 SerializeFailure(
@@ -815,6 +846,96 @@ public sealed class ProjectBridgeDispatcher
             health,
             ProjectBridgeMapper.ToDto(openedProject.FileGraph));
 
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchReadChangeSets(string requestJson)
+    {
+        var request = DeserializeRequest<ReadChangeSetWorkspaceRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Scope.Paths);
+        var response = changeSetApplicationService
+            .ReadAsync(
+                request.Payload,
+                (session, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    session,
+                    outputMode))
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchMutateChangeSets(string requestJson)
+    {
+        var request = DeserializeRequest<MutateChangeSetWorkspaceRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Scope.Paths);
+        var response = changeSetApplicationService
+            .MutateAsync(
+                request.Payload,
+                (session, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    session,
+                    outputMode))
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchCaptureChangeSetSession(string requestJson)
+    {
+        var request = DeserializeRequest<CaptureChangeSetSessionRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Scope.Paths);
+        var response = changeSetApplicationService
+            .CaptureSessionAsync(
+                request.Payload,
+                (session, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    session,
+                    outputMode))
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchMaterializeChangeSets(string requestJson)
+    {
+        var request = DeserializeRequest<MaterializeChangeSetWorkspaceRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Scope.Paths);
+        var response = changeSetApplicationService
+            .MaterializeAsync(
+                request.Payload,
+                (session, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    session,
+                    outputMode))
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchExportChangeSets(string requestJson)
+    {
+        var request = DeserializeRequest<ExportChangeSetsRequest>(requestJson);
+        var response = changeSetApplicationService
+            .ExportAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchImportChangeSets(string requestJson)
+    {
+        var request = DeserializeRequest<ImportChangeSetsRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Scope.Paths);
+        var response = changeSetApplicationService
+            .ImportAsync(
+                request.Payload,
+                (session, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    session,
+                    outputMode))
+            .GetAwaiter()
+            .GetResult();
         return SerializeSuccess(response, request.RequestId);
     }
 
@@ -3918,26 +4039,34 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<ValidateEditSessionRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        if (IsPokemonLegendsZA(paths))
-        {
-            var zaValidation = zaWorkflowService.ValidateEditSession(paths, session);
-            var zaResponse = ZaBridgeMapper.ToDto(zaValidation);
+        return changeSetApplicationService
+            .ExecuteWithAuthoringBindingAsync(
+                session,
+                paths,
+                GetBoundOutputMode(session),
+                (candidate, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    candidate,
+                    outputMode),
+                () =>
+                {
+                    if (IsPokemonLegendsZA(paths))
+                    {
+                        var zaValidation = zaWorkflowService.ValidateEditSession(paths, session);
+                        return SerializeSuccess(ZaBridgeMapper.ToDto(zaValidation), request.RequestId);
+                    }
 
-            return SerializeSuccess(zaResponse, request.RequestId);
-        }
+                    if (IsScarletViolet(paths))
+                    {
+                        var svValidation = svWorkflowService.ValidateEditSession(paths, session);
+                        return SerializeSuccess(SvBridgeMapper.ToDto(svValidation), request.RequestId);
+                    }
 
-        if (IsScarletViolet(paths))
-        {
-            var svValidation = svWorkflowService.ValidateEditSession(paths, session);
-            var svResponse = SvBridgeMapper.ToDto(svValidation);
-
-            return SerializeSuccess(svResponse, request.RequestId);
-        }
-
-        var validation = ValidateSwShEditSession(paths, session);
-        var response = SwShBridgeMapper.ToDto(validation);
-
-        return SerializeSuccess(response, request.RequestId);
+                    var validation = ValidateSwShEditSession(paths, session);
+                    return SerializeSuccess(SwShBridgeMapper.ToDto(validation), request.RequestId);
+                })
+            .GetAwaiter()
+            .GetResult();
     }
 
     private string DispatchCreateChangePlan(string requestJson)
@@ -3945,6 +4074,28 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var changePlan = changeSetApplicationService
+            .ExecuteWithAuthoringBindingAsync(
+                session,
+                paths,
+                request.Payload.OutputMode,
+                (candidate, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    candidate,
+                    outputMode),
+                () => CreateChangePlanForSession(paths, session, request.Payload.OutputMode))
+            .GetAwaiter()
+            .GetResult();
+        var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private ChangePlan CreateChangePlanForSession(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlanOutputModeDto? outputMode)
+    {
         var isPokemonLegendsZA = IsPokemonLegendsZA(paths);
         var isScarletViolet = IsScarletViolet(paths);
         ChangePlan changePlan;
@@ -3953,14 +4104,14 @@ public sealed class ProjectBridgeDispatcher
             changePlan = zaWorkflowService.CreateChangePlan(
                 paths,
                 session,
-                ZaBridgeMapper.ToCore(request.Payload.OutputMode));
+                ZaBridgeMapper.ToCore(outputMode));
         }
         else if (isScarletViolet)
         {
             changePlan = svWorkflowService.CreateChangePlan(
                 paths,
                 session,
-                SvBridgeMapper.ToCore(request.Payload.OutputMode));
+                SvBridgeMapper.ToCore(outputMode));
         }
         else
         {
@@ -3974,9 +4125,7 @@ public sealed class ProjectBridgeDispatcher
             }
         }
 
-        var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
-
-        return SerializeSuccess(response, request.RequestId);
+        return changePlan;
     }
 
     private string DispatchApplyChangePlan(string requestJson)
@@ -3987,20 +4136,49 @@ public sealed class ProjectBridgeDispatcher
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
         var isPokemonLegendsZA = IsPokemonLegendsZA(paths);
         var isScarletViolet = IsScarletViolet(paths);
-        var applyResult = isPokemonLegendsZA
-            ? zaWorkflowService.ApplyChangePlan(paths, session, changePlan, ZaBridgeMapper.ToCore(request.Payload.OutputMode))
-            : ExecuteExclusiveOutputOperation(
-                request.Payload.Paths,
-                () => isScarletViolet
-                    ? svWorkflowService.ApplyChangePlan(
+        var applyResult = changeSetApplicationService
+            .ExecuteBoundApplyAsync(
+                session,
+                paths,
+                request.Payload.OutputMode,
+                changePlan,
+                (candidate, outputMode) => CreateChangePlanForSession(
+                    paths,
+                    candidate,
+                    outputMode),
+                () => isPokemonLegendsZA
+                    ? zaWorkflowService.ApplyChangePlan(
                         paths,
                         session,
                         changePlan,
-                        SvBridgeMapper.ToCore(request.Payload.OutputMode))
-                    : ApplyVerifiedSwShChangePlan(paths, session, changePlan));
+                        ZaBridgeMapper.ToCore(request.Payload.OutputMode))
+                    : ExecuteExclusiveOutputOperation(
+                        request.Payload.Paths,
+                        () => isScarletViolet
+                            ? svWorkflowService.ApplyChangePlan(
+                                paths,
+                                session,
+                                changePlan,
+                                SvBridgeMapper.ToCore(request.Payload.OutputMode))
+                            : ApplyVerifiedSwShChangePlan(paths, session, changePlan)))
+            .GetAwaiter()
+            .GetResult();
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private static ChangePlanOutputModeDto? GetBoundOutputMode(EditSession session)
+    {
+        return session.AuthoringBinding?.OutputMode switch
+        {
+            "standalone" => ChangePlanOutputModeDto.Standalone,
+            "trinityModManager" => ChangePlanOutputModeDto.TrinityModManager,
+            "trinityBypass" => ChangePlanOutputModeDto.TrinityBypass,
+            null => null,
+            _ => throw new ChangeSetValidationException(
+                "The edit-session authoring output mode is invalid."),
+        };
     }
 
     private TResult ExecuteExclusiveOutputOperation<TResult>(

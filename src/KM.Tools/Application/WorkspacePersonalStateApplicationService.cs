@@ -45,6 +45,8 @@ public sealed class WorkspacePersonalStateApplicationService
             new WorkspaceDocumentId("personal-state"),
             "workspace-project-personal-state",
             WorkspacePersonalStateContract.SchemaVersion);
+    private static readonly WorkspaceDocumentId AuthoringOperationLeaseId =
+        new("change-sets-operation");
     private static readonly HashSet<string> InspectorTabs =
         ["compare", "references", "impact", "history", "notes", "provenance"];
     private static readonly HashSet<string> BuiltInLanguages =
@@ -140,6 +142,32 @@ public sealed class WorkspacePersonalStateApplicationService
         string? expectedETag,
         CancellationToken cancellationToken = default)
     {
+        var identity = GetProjectIdentity(projectId);
+        using var authoringLease = await store.AcquireProjectOperationLeaseAsync(
+                identity,
+                AuthoringOperationLeaseId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return await WriteProjectCoreAsync(projectId, document, expectedETag, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async Task<WriteWorkspaceProjectStateResponse> WriteProjectForRelocationAsync(
+        string projectId,
+        WorkspaceProjectPersonalStateDocumentDto document,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        return await WriteProjectCoreAsync(projectId, document, expectedETag, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<WriteWorkspaceProjectStateResponse> WriteProjectCoreAsync(
+        string projectId,
+        WorkspaceProjectPersonalStateDocumentDto document,
+        string? expectedETag,
+        CancellationToken cancellationToken)
+    {
         if (document is null)
         {
             throw Invalid("Project personal state is required.");
@@ -162,6 +190,30 @@ public sealed class WorkspacePersonalStateApplicationService
         string projectId,
         string? expectedETag,
         CancellationToken cancellationToken = default)
+    {
+        var identity = GetProjectIdentity(projectId);
+        using var authoringLease = await store.AcquireProjectOperationLeaseAsync(
+                identity,
+                AuthoringOperationLeaseId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return await DeleteProjectCoreAsync(projectId, expectedETag, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async Task<DeleteWorkspaceProjectStateResponse> DeleteProjectForRelocationAsync(
+        string projectId,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        return await DeleteProjectCoreAsync(projectId, expectedETag, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<DeleteWorkspaceProjectStateResponse> DeleteProjectCoreAsync(
+        string projectId,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         var scope = GetProjectScope(projectId);
         ValidateExpectedETag(expectedETag);
@@ -889,9 +941,13 @@ public sealed class WorkspacePersonalStateApplicationService
 
     private static WorkspaceDocumentScope GetProjectScope(string projectId)
     {
+        return WorkspaceDocumentScope.ForProject(GetProjectIdentity(projectId));
+    }
+
+    private static WorkspaceProjectIdentity GetProjectIdentity(string projectId)
+    {
         ValidateProjectId(projectId);
-        return WorkspaceDocumentScope.ForProject(
-            WorkspaceProjectIdentity.FromProjectId(new ProjectId(projectId)));
+        return WorkspaceProjectIdentity.FromProjectId(new ProjectId(projectId));
     }
 
     private static void ValidateProjectId(string projectId)

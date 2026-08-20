@@ -161,6 +161,12 @@ public static class KmCommandNames
     public const string ValidateEditSession = "editSession.validate";
     public const string CreateChangePlan = "changePlan.create";
     public const string ApplyChangePlan = "changePlan.apply";
+    public const string ReadChangeSets = "changeSets.read";
+    public const string MutateChangeSets = "changeSets.mutate";
+    public const string CaptureChangeSetSession = "changeSets.captureSession";
+    public const string MaterializeChangeSets = "changeSets.materialize";
+    public const string ExportChangeSets = "changeSets.export";
+    public const string ImportChangeSets = "changeSets.import";
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";
