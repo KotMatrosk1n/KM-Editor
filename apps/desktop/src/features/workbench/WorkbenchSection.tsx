@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
+  ArrowLeft,
   Bookmark,
   Clock3,
   Compass,
   FolderClock,
+  FlaskConical,
   LayoutDashboard,
   NotebookPen,
   Pin,
@@ -13,7 +15,7 @@ import {
   SlidersHorizontal,
   Trash2
 } from 'lucide-react';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocalization } from '../../localization';
 import { workspaceMaximumNoteBytes } from '../../bridge/workspacePersonalStateContracts';
 import type { CapabilityDiscoveryViewModel } from '../../workbench/capabilityDiscovery';
@@ -29,6 +31,7 @@ import type {
 import './workbench.css';
 
 export type WorkbenchSectionProps = {
+  balanceLab: ReactNode;
   bookmarks: readonly WorkspaceTargetViewModel[];
   capabilities: readonly CapabilityDiscoveryViewModel[];
   note: WorkspaceNoteViewModel | null;
@@ -56,6 +59,7 @@ export type WorkbenchSectionProps = {
 };
 
 export function WorkbenchSection({
+  balanceLab,
   bookmarks,
   capabilities,
   note,
@@ -82,12 +86,65 @@ export function WorkbenchSection({
   workflowHome
 }: WorkbenchSectionProps) {
   const { t } = useLocalization();
+  const [isBalanceLabOpen, setIsBalanceLabOpen] = useState(false);
+  const balanceLabBackRef = useRef<HTMLButtonElement | null>(null);
+  const balanceLabLauncherRef = useRef<HTMLButtonElement | null>(null);
+  const labWasVisibleRef = useRef(false);
+  const restoreLauncherFocusRef = useRef(false);
+  const workbenchHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (!balanceLab && isBalanceLabOpen) {
+      restoreLauncherFocusRef.current = true;
+      setIsBalanceLabOpen(false);
+    }
+  }, [balanceLab, isBalanceLabOpen]);
+  useEffect(() => {
+    const isLabVisible = isBalanceLabOpen && Boolean(balanceLab);
+    if (isLabVisible && !labWasVisibleRef.current) {
+      balanceLabBackRef.current?.focus({ preventScroll: true });
+    } else if (!isLabVisible && labWasVisibleRef.current) {
+      if (balanceLabLauncherRef.current) {
+        balanceLabLauncherRef.current.focus({ preventScroll: true });
+        restoreLauncherFocusRef.current = false;
+      } else {
+        workbenchHeadingRef.current?.focus({ preventScroll: true });
+        restoreLauncherFocusRef.current = true;
+      }
+    } else if (!isLabVisible && balanceLab && restoreLauncherFocusRef.current) {
+      if (
+        document.activeElement === document.body ||
+        document.activeElement === workbenchHeadingRef.current
+      ) {
+        balanceLabLauncherRef.current?.focus({ preventScroll: true });
+      }
+      restoreLauncherFocusRef.current = false;
+    }
+    labWasVisibleRef.current = isLabVisible;
+  }, [balanceLab, isBalanceLabOpen]);
+  if (isBalanceLabOpen && balanceLab) {
+    return (
+      <section aria-label={t('balanceLab.title')} className="km-workbench-lab-view">
+        <button
+          ref={balanceLabBackRef}
+          className="secondary-button compact-button km-workbench-lab-back"
+          onClick={() => setIsBalanceLabOpen(false)}
+          type="button"
+        >
+          <ArrowLeft aria-hidden="true" size={15} />
+          <span>{t('balanceLab.back')}</span>
+        </button>
+        {balanceLab}
+      </section>
+    );
+  }
   return (
     <section aria-labelledby="km-workbench-heading" className="km-workbench-home wide-panel">
       <header className="km-workbench-home-heading">
         <LayoutDashboard aria-hidden="true" size={20} />
         <div>
-          <h2 id="km-workbench-heading">{t('workbench.home.title')}</h2>
+          <h2 id="km-workbench-heading" ref={workbenchHeadingRef} tabIndex={-1}>
+            {t('workbench.home.title')}
+          </h2>
           <p>{t('workbench.home.description')}</p>
         </div>
       </header>
@@ -162,6 +219,26 @@ export function WorkbenchSection({
             ))}
           </div>
         </section>
+
+        {balanceLab ? (
+          <section className="km-workbench-card km-workbench-span-two">
+            <div className="km-workbench-card-heading">
+              <FlaskConical aria-hidden="true" size={17} />
+              <h3>{t('balanceLab.title')}</h3>
+            </div>
+            <p className="km-workbench-card-description">
+              {t('balanceLab.launcher.description')}
+            </p>
+            <button
+              ref={balanceLabLauncherRef}
+              className="secondary-button compact-button"
+              onClick={() => setIsBalanceLabOpen(true)}
+              type="button"
+            >
+              {t('balanceLab.open')}
+            </button>
+          </section>
+        ) : null}
 
         <section className="km-workbench-card">
           <div className="km-workbench-card-heading">

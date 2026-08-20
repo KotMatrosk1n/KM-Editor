@@ -247,7 +247,7 @@ public sealed class SwShWorkflowService
             MaximumGraphEntries = 250_000,
         }).Build(paths);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "swsh-semantic-source-v2");
+        AppendSemanticSourceHash(hash, "swsh-semantic-source-v3");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
         AppendSemanticSourceHash(hash, SwShGameTextLanguage.Resolve(paths));
         var sourceCount = 0;
@@ -299,6 +299,22 @@ public sealed class SwShWorkflowService
         return new SwShMovesWorkflowService(ReadSemanticSourceBytes).Load(project);
     }
 
+    public SwShTrainersWorkflow LoadBalanceLabTrainers(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return SwShTrainersWorkflowService.CreateBounded(ReadSemanticSourceBytes).Load(project);
+    }
+
+    public SwShEncountersWorkflow LoadBalanceLabEncounters(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return SwShEncountersWorkflowService.CreateBounded(
+            ReadSemanticSourceBytes,
+            checked((int)MaximumSemanticSourceBytesPerFile)).Load(project);
+    }
+
     private static bool IsSemanticExploreSource(string relativePath)
     {
         return string.Equals(relativePath, SwShItemsWorkflowService.ItemDataPath, StringComparison.OrdinalIgnoreCase)
@@ -310,12 +326,27 @@ public sealed class SwShWorkflowService
             || relativePath.StartsWith(
                 SwShMovesWorkflowService.MoveDataDirectory.TrimEnd('/') + '/',
                 StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(
+                SwShTrainersWorkflowService.TrainerDataRootPath.TrimEnd('/') + '/',
+                StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(
+                SwShTrainersWorkflowService.TrainerPokeRootPath.TrimEnd('/') + '/',
+                StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(
+                SwShTrainersWorkflowService.TrainerClassRootPath.TrimEnd('/') + '/',
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                relativePath,
+                SwShEncountersWorkflowService.WildDataPath,
+                StringComparison.OrdinalIgnoreCase)
             || relativePath.EndsWith("/common/itemname.dat", StringComparison.OrdinalIgnoreCase)
             || relativePath.EndsWith("/common/wazaname.dat", StringComparison.OrdinalIgnoreCase)
             || relativePath.EndsWith("/common/wazainfo.dat", StringComparison.OrdinalIgnoreCase)
             || relativePath.EndsWith("/common/monsname.dat", StringComparison.OrdinalIgnoreCase)
             || relativePath.EndsWith("/common/tokusei.dat", StringComparison.OrdinalIgnoreCase)
-            || relativePath.EndsWith("/common/typename.dat", StringComparison.OrdinalIgnoreCase);
+            || relativePath.EndsWith("/common/typename.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/trname.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/trtype.dat", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void AppendSemanticGraphSource(

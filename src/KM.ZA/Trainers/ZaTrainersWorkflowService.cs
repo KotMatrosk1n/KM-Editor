@@ -191,11 +191,17 @@ internal sealed class ZaTrainersWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver)
+            trainers = LoadRecords(
+                    source,
+                    labels,
+                    spriteLabels,
+                    abilityResolver,
+                    fileSource.BoundedTableRecordLimit)
                 .Select(trainer => WithPokemonFormOptions(trainer, pokemonAvailability))
                 .ToArray();
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
                 $"Trainers could not be loaded: {exception.Message}",
@@ -227,9 +233,16 @@ internal sealed class ZaTrainersWorkflowService
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
         ZaTextLabelLookup spriteLabels,
-        ZaTrainerAbilityResolver abilityResolver)
+        ZaTrainerAbilityResolver abilityResolver,
+        int? maximumTableRecords = null)
     {
         var table = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(source.Bytes));
+        if (maximumTableRecords is not null
+            && (table.ValueLength < 0 || table.ValueLength > maximumTableRecords.Value))
+        {
+            throw new InvalidDataException("The Z-A trainer table exceeds the bounded semantic record limit.");
+        }
+
         for (var index = 0; index < table.ValueLength; index++)
         {
             var trainer = table.Value(index);

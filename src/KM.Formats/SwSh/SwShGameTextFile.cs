@@ -61,7 +61,7 @@ public sealed class SwShGameTextFile
 
         if (maximumLineCount is not null && lineCount > maximumLineCount.Value)
         {
-            throw new InvalidDataException("The game text line count exceeds the supported bound.");
+            throw new InvalidDataException("The game text line count exceeds the bounded semantic record limit.");
         }
 
         if (sectionCount != 1

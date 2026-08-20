@@ -176,6 +176,7 @@ public static class KmCommandNames
     public const string QuerySemanticOwnership = "semantic.ownership";
     public const string CompareExternalSemantic = "semantic.external.compare";
     public const string QuerySemanticChanges = "semantic.changes";
+    public const string QueryBalanceLab = "semantic.balance-lab";
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";

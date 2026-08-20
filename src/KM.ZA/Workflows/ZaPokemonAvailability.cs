@@ -72,13 +72,15 @@ internal sealed class ZaPokemonAvailability
         try
         {
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            return FromPersonalArray(source.Bytes);
+            return FromPersonalArray(source.Bytes, fileSource);
         }
         catch (FileNotFoundException)
         {
             return Unfiltered;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"{workflowLabel} Pokemon availability could not be resolved from Pokemon Data: {exception.Message}",
@@ -110,9 +112,12 @@ internal sealed class ZaPokemonAvailability
         return options;
     }
 
-    private static ZaPokemonAvailability FromPersonalArray(byte[] bytes)
+    private static ZaPokemonAvailability FromPersonalArray(
+        byte[] bytes,
+        ZaWorkflowFileSource fileSource)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
+        fileSource.EnsureBoundedTableCount(table.EntryLength, "The Z-A availability personal table");
         var speciesIds = new HashSet<int>();
         var formIdsBySpecies = new Dictionary<int, HashSet<int>>();
         for (var index = 0; index < table.EntryLength; index++)

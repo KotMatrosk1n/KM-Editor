@@ -32,7 +32,10 @@ internal sealed class ZaPokemonSpawnerDataDocument
 
     public bool HasChanges => pendingInt32Writes.Count > 0;
 
-    public static ZaPokemonSpawnerDataDocument Parse(byte[] bytes)
+    public static ZaPokemonSpawnerDataDocument Parse(
+        byte[] bytes,
+        int? maximumTableRecords = null,
+        int? maximumNestedRecords = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
@@ -47,8 +50,11 @@ internal sealed class ZaPokemonSpawnerDataDocument
                 Array.Empty<ZaPokemonSpawnerDataGroup?>());
         }
 
+        EnsureBounded(groupVector.Value.Length, maximumTableRecords, "The Z-A scalar spawner group table");
+
         var groups = new List<ZaPokemonSpawnerDataGroup?>(groupVector.Value.Length);
         var sourceIndex = 0;
+        var nestedCount = 0;
         for (var groupIndex = 0; groupIndex < groupVector.Value.Length; groupIndex++)
         {
             var groupPosition = reader.GetTableVectorElement(groupVector.Value, groupIndex);
@@ -67,6 +73,10 @@ internal sealed class ZaPokemonSpawnerDataDocument
                 continue;
             }
 
+            EnsureBounded(spawnerVector.Value.Length, maximumTableRecords, "A Z-A scalar spawner group");
+            nestedCount = checked(nestedCount + spawnerVector.Value.Length);
+            EnsureBounded(nestedCount, maximumNestedRecords, "The Z-A scalar spawner rows");
+
             var spawners = new List<ZaPokemonSpawnerDataEntry?>(spawnerVector.Value.Length);
             for (var spawnerIndex = 0; spawnerIndex < spawnerVector.Value.Length; spawnerIndex++)
             {
@@ -83,7 +93,10 @@ internal sealed class ZaPokemonSpawnerDataDocument
                     spawnerPosition.Value,
                     sourceIndex,
                     groupIndex,
-                    spawnerIndex));
+                    spawnerIndex,
+                    maximumTableRecords,
+                    maximumNestedRecords,
+                    ref nestedCount));
                 sourceIndex++;
             }
 
@@ -93,6 +106,14 @@ internal sealed class ZaPokemonSpawnerDataDocument
         var document = new ZaPokemonSpawnerDataDocument(originalBytes, groups);
         document.DisableAliasedEditableFields(reader);
         return document;
+    }
+
+    private static void EnsureBounded(int count, int? maximum, string label)
+    {
+        if (maximum is not null && (count < 0 || count > maximum.Value))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
     }
 
     public byte[] Write()
@@ -337,10 +358,23 @@ internal sealed class ZaPokemonSpawnerDataDocument
         int spawnerPosition,
         int sourceIndex,
         int groupIndex,
-        int spawnerIndex)
+        int spawnerIndex,
+        int? maximumTableRecords,
+        int? maximumNestedRecords,
+        ref int nestedCount)
     {
-        var appearances = ReadAppearances(reader, spawnerPosition);
-        var slots = ReadSlots(reader, spawnerPosition);
+        var appearances = ReadAppearances(
+            reader,
+            spawnerPosition,
+            maximumTableRecords,
+            maximumNestedRecords,
+            ref nestedCount);
+        var slots = ReadSlots(
+            reader,
+            spawnerPosition,
+            maximumTableRecords,
+            maximumNestedRecords,
+            ref nestedCount);
         return new ZaPokemonSpawnerDataEntry(
             sourceIndex,
             groupIndex,
@@ -352,13 +386,20 @@ internal sealed class ZaPokemonSpawnerDataDocument
 
     private static IReadOnlyList<ZaPokemonSpawnerAppearanceSpawnerObjectInfo?> ReadAppearances(
         ZaPokemonSpawnerFlatBufferReader reader,
-        int spawnerPosition)
+        int spawnerPosition,
+        int? maximumTableRecords,
+        int? maximumNestedRecords,
+        ref int nestedCount)
     {
         var vector = reader.GetTableVector(spawnerPosition, fieldIndex: 1);
         if (vector is null)
         {
             return Array.Empty<ZaPokemonSpawnerAppearanceSpawnerObjectInfo?>();
         }
+
+        EnsureBounded(vector.Value.Length, maximumTableRecords, "A Z-A scalar spawner appearance vector");
+        nestedCount = checked(nestedCount + vector.Value.Length);
+        EnsureBounded(nestedCount, maximumNestedRecords, "The Z-A scalar spawner nested vectors");
 
         var appearances = new List<ZaPokemonSpawnerAppearanceSpawnerObjectInfo?>(vector.Value.Length);
         for (var appearanceIndex = 0; appearanceIndex < vector.Value.Length; appearanceIndex++)
@@ -401,13 +442,20 @@ internal sealed class ZaPokemonSpawnerDataDocument
 
     private static IReadOnlyList<ZaPokemonSpawnerEncountDataInfo?> ReadSlots(
         ZaPokemonSpawnerFlatBufferReader reader,
-        int spawnerPosition)
+        int spawnerPosition,
+        int? maximumTableRecords,
+        int? maximumNestedRecords,
+        ref int nestedCount)
     {
         var vector = reader.GetTableVector(spawnerPosition, fieldIndex: 5);
         if (vector is null)
         {
             return Array.Empty<ZaPokemonSpawnerEncountDataInfo?>();
         }
+
+        EnsureBounded(vector.Value.Length, maximumTableRecords, "A Z-A scalar spawner slot vector");
+        nestedCount = checked(nestedCount + vector.Value.Length);
+        EnsureBounded(nestedCount, maximumNestedRecords, "The Z-A scalar spawner nested vectors");
 
         var slots = new List<ZaPokemonSpawnerEncountDataInfo?>(vector.Value.Length);
         for (var slotIndex = 0; slotIndex < vector.Value.Length; slotIndex++)
@@ -422,6 +470,12 @@ internal sealed class ZaPokemonSpawnerDataDocument
             var weight = reader.GetInt32(slotPosition.Value, fieldIndex: 1);
             var maxCount = reader.GetInt32(slotPosition.Value, fieldIndex: 2);
             var tagVector = reader.GetStringVector(slotPosition.Value, fieldIndex: 4);
+            if (tagVector is not null)
+            {
+                EnsureBounded(tagVector.Value.Length, maximumTableRecords, "A Z-A scalar spawner tag vector");
+                nestedCount = checked(nestedCount + tagVector.Value.Length);
+                EnsureBounded(nestedCount, maximumNestedRecords, "The Z-A scalar spawner nested vectors");
+            }
             var tags = tagVector is null
                 ? Array.Empty<string?>()
                 : Enumerable

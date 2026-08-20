@@ -18,13 +18,18 @@ internal sealed class ZaEncounterDataDocument
         .SelectMany(group => group.Rows)
         .OfType<ZaEncounterDataEntry>();
 
-    public static ZaEncounterDataDocument Parse(byte[] bytes)
+    public static ZaEncounterDataDocument Parse(
+        byte[] bytes,
+        int? maximumTableRecords = null,
+        int? maximumNestedRecords = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
         var table = ZaEncounterDataDbArray.GetRootAsZaEncounterDataDbArray(new ByteBuffer(bytes));
+        EnsureBounded(table.ValuesLength, maximumTableRecords, "The Z-A encounter group table");
         var groups = new List<ZaEncounterDataGroup>();
         var sourceIndex = 0;
+        var nestedBudget = new ZaPokemonDataRecordBudget(maximumNestedRecords);
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
         {
             var db = table.Values(groupIndex);
@@ -35,9 +40,30 @@ internal sealed class ZaEncounterDataDocument
             }
 
             var rows = new List<ZaEncounterDataEntry?>();
+            EnsureBounded(db.Value.RootLength, maximumTableRecords, "A Z-A encounter group");
+            nestedBudget.Add(db.Value.RootLength, "The Z-A encounter rows");
             for (var rowIndex = 0; rowIndex < db.Value.RootLength; rowIndex++)
             {
                 var row = db.Value.Root(rowIndex);
+                if (row is not null)
+                {
+                    nestedBudget.Add(
+                        row.Value.ActivationConditionLength,
+                        "The Z-A encounter activation-condition vectors");
+                    nestedBudget.Add(
+                        row.Value.ItemDropInfoListLength,
+                        "The Z-A encounter item-drop vectors");
+                    nestedBudget.CountActivationConditionDescendants(
+                        row.Value,
+                        "The Z-A encounter activation-condition descendants");
+                    for (var dropIndex = 0; dropIndex < row.Value.ItemDropInfoListLength; dropIndex++)
+                    {
+                        nestedBudget.Add(
+                            row.Value.ItemDropInfoList(dropIndex)?.DropConditionListLength ?? 0,
+                            "The Z-A encounter drop-condition vectors");
+                    }
+                }
+
                 rows.Add(row is null ? null : ZaEncounterDataEntry.From(sourceIndex, row.Value));
                 sourceIndex++;
             }
@@ -46,6 +72,14 @@ internal sealed class ZaEncounterDataDocument
         }
 
         return new ZaEncounterDataDocument(groups);
+    }
+
+    private static void EnsureBounded(int count, int? maximum, string label)
+    {
+        if (maximum is not null && (count < 0 || count > maximum.Value))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
     }
 
     public byte[] Write()

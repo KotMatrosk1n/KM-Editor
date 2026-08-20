@@ -49,6 +49,16 @@ public sealed record SwShWildEncounterArchive(
 
     public static SwShWildEncounterArchive Parse(ReadOnlySpan<byte> data)
     {
+        return Parse(data, maximumVectorRecords: null);
+    }
+
+    public static SwShWildEncounterArchive Parse(ReadOnlySpan<byte> data, int? maximumVectorRecords)
+    {
+        if (maximumVectorRecords is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumVectorRecords));
+        }
+
         if (data.Length < sizeof(uint))
         {
             throw new InvalidDataException("Encounter archive is too small to contain a FlatBuffer root.");
@@ -57,10 +67,17 @@ public sealed record SwShWildEncounterArchive(
         var rootTableOffset = ReadUOffset(data, offset: 0);
         var field00 = ReadTableUInt32(data, rootTableOffset, fieldIndex: 0, required: false);
         var tablesVectorOffset = ReadTableUOffset(data, rootTableOffset, fieldIndex: 1, required: true);
+        var decodeBudget = maximumVectorRecords is null
+            ? null
+            : new EncounterDecodeBudget(maximumVectorRecords.Value);
 
         return new SwShWildEncounterArchive(
             field00,
-            ReadTableVector(data, tablesVectorOffset, ReadEncounterTable));
+            ReadTableVector(
+                data,
+                tablesVectorOffset,
+                (source, offset) => ReadEncounterTable(source, offset, decodeBudget),
+                decodeBudget));
     }
 
     public byte[] Write()
@@ -186,19 +203,33 @@ public sealed record SwShWildEncounterArchive(
         return value;
     }
 
-    private static SwShWildEncounterTable ReadEncounterTable(ReadOnlySpan<byte> data, int tableOffset)
+    private static SwShWildEncounterTable ReadEncounterTable(
+        ReadOnlySpan<byte> data,
+        int tableOffset,
+        EncounterDecodeBudget? decodeBudget)
     {
         return new SwShWildEncounterTable(
             ReadTableUInt64(data, tableOffset, fieldIndex: 0, required: false),
-            ReadTableVector(data, ReadTableUOffset(data, tableOffset, fieldIndex: 1, required: true), ReadSubTable));
+            ReadTableVector(
+                data,
+                ReadTableUOffset(data, tableOffset, fieldIndex: 1, required: true),
+                (source, offset) => ReadSubTable(source, offset, decodeBudget),
+                decodeBudget));
     }
 
-    private static SwShWildEncounterSubTable ReadSubTable(ReadOnlySpan<byte> data, int tableOffset)
+    private static SwShWildEncounterSubTable ReadSubTable(
+        ReadOnlySpan<byte> data,
+        int tableOffset,
+        EncounterDecodeBudget? decodeBudget)
     {
         return new SwShWildEncounterSubTable(
             ReadTableByte(data, tableOffset, fieldIndex: 0, required: false),
             ReadTableByte(data, tableOffset, fieldIndex: 1, required: false),
-            ReadTableVector(data, ReadTableUOffset(data, tableOffset, fieldIndex: 2, required: true), ReadSlot));
+            ReadTableVector(
+                data,
+                ReadTableUOffset(data, tableOffset, fieldIndex: 2, required: true),
+                ReadSlot,
+                decodeBudget));
     }
 
     private static SwShWildEncounterSlot ReadSlot(ReadOnlySpan<byte> data, int tableOffset)
@@ -328,9 +359,11 @@ public sealed record SwShWildEncounterArchive(
     private static T[] ReadTableVector<T>(
         ReadOnlySpan<byte> data,
         int vectorOffset,
-        Func<ReadOnlySpan<byte>, int, T> readTable)
+        Func<ReadOnlySpan<byte>, int, T> readTable,
+        EncounterDecodeBudget? decodeBudget)
     {
         var count = ReadVectorLength(data, vectorOffset);
+        decodeBudget?.Consume(count);
         var values = new T[count];
 
         for (var index = 0; index < count; index++)
@@ -359,6 +392,26 @@ public sealed record SwShWildEncounterArchive(
         if (offset < 0 || length < 0 || offset > data.Length || length > data.Length - offset)
         {
             throw new InvalidDataException("FlatBuffer offset points outside the encounter archive.");
+        }
+    }
+
+    private sealed class EncounterDecodeBudget
+    {
+        private int remainingRecords;
+
+        public EncounterDecodeBudget(int maximumRecords)
+        {
+            remainingRecords = maximumRecords;
+        }
+
+        public void Consume(int recordCount)
+        {
+            if (recordCount > remainingRecords)
+            {
+                throw new InvalidDataException("Encounter FlatBuffer vectors exceed the bounded cumulative semantic record limit.");
+            }
+
+            remainingRecords -= recordCount;
         }
     }
 

@@ -548,18 +548,28 @@ public sealed class SwShItemsWorkflowService
     internal static IReadOnlyList<string> CreateItemDisplayNames(
         OpenedProject project,
         IReadOnlyList<string> itemNames,
-        IReadOnlyList<string>? moveNames = null)
+        IReadOnlyList<string>? moveNames = null,
+        Func<string, byte[]>? readAllBytes = null,
+        int? maximumRecordCount = null)
     {
-        return CreateItemDisplayCatalog(project, itemNames, moveNames).DisplayNames;
+        return CreateItemDisplayCatalog(
+            project,
+            itemNames,
+            moveNames,
+            readAllBytes,
+            maximumRecordCount).DisplayNames;
     }
 
     internal static ItemDisplayCatalog CreateItemDisplayCatalog(
         OpenedProject project,
         IReadOnlyList<string> itemNames,
-        IReadOnlyList<string>? moveNames = null)
+        IReadOnlyList<string>? moveNames = null,
+        Func<string, byte[]>? readAllBytes = null,
+        int? maximumRecordCount = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(itemNames);
+        var sourceReader = readAllBytes ?? File.ReadAllBytes;
 
         var itemDataSource = ResolveItemDataSource(project);
         if (itemDataSource is null)
@@ -571,20 +581,22 @@ public sealed class SwShItemsWorkflowService
 
         try
         {
-            var itemTable = SwShItemTable.Parse(File.ReadAllBytes(itemDataSource.AbsolutePath));
+            var itemTable = SwShItemTable.Parse(
+                sourceReader(itemDataSource.AbsolutePath),
+                maximumRecordCount);
             return new ItemDisplayCatalog(
                 CreateItemDisplayNames(itemNames, effectiveMoveNames, itemTable.Records),
                 itemTable.Records.Select(record => record.ItemId).ToArray());
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException) when (maximumRecordCount is null)
         {
             return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }
-        catch (IOException)
+        catch (IOException) when (maximumRecordCount is null)
         {
             return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException) when (maximumRecordCount is null)
         {
             return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }

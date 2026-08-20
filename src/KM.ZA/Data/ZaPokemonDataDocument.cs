@@ -18,13 +18,18 @@ internal sealed class ZaPokemonDataDocument
         .SelectMany(group => group.Rows)
         .OfType<ZaPokemonDataEntry>();
 
-    public static ZaPokemonDataDocument Parse(byte[] bytes)
+    public static ZaPokemonDataDocument Parse(
+        byte[] bytes,
+        int? maximumTableRecords = null,
+        int? maximumNestedRecords = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
         var table = ZaPokemonDataDbArray.GetRootAsZaPokemonDataDbArray(new ByteBuffer(bytes));
+        EnsureBounded(table.ValuesLength, maximumTableRecords, "The Z-A PokemonData group table");
         var groups = new List<ZaPokemonDataGroup>();
         var sourceIndex = 0;
+        var nestedBudget = new ZaPokemonDataRecordBudget(maximumNestedRecords);
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
         {
             var db = table.Values(groupIndex);
@@ -35,9 +40,21 @@ internal sealed class ZaPokemonDataDocument
             }
 
             var rows = new List<ZaPokemonDataEntry?>();
+            EnsureBounded(db.Value.RootLength, maximumTableRecords, "A Z-A PokemonData group");
+            nestedBudget.Add(db.Value.RootLength, "The Z-A PokemonData rows");
             for (var rowIndex = 0; rowIndex < db.Value.RootLength; rowIndex++)
             {
                 var row = db.Value.Root(rowIndex);
+                if (row is not null)
+                {
+                    nestedBudget.Add(
+                        row.Value.ActivationConditionLength,
+                        "The Z-A PokemonData activation-condition vectors");
+                    nestedBudget.CountActivationConditionDescendants(
+                        row.Value,
+                        "The Z-A PokemonData activation-condition descendants");
+                }
+
                 rows.Add(row is null ? null : ZaPokemonDataEntry.From(sourceIndex, row.Value));
                 sourceIndex++;
             }
@@ -46,6 +63,14 @@ internal sealed class ZaPokemonDataDocument
         }
 
         return new ZaPokemonDataDocument(groups);
+    }
+
+    private static void EnsureBounded(int count, int? maximum, string label)
+    {
+        if (maximum is not null && (count < 0 || count > maximum.Value))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
     }
 
     public byte[] Write()
@@ -312,5 +337,91 @@ internal sealed record ZaPokemonDataActivationConditionParamRecord(
             ? default
             : ZaPokemonDataActivationConditionParam.CreateParamVector(builder, paramOffsets);
         return ZaPokemonDataActivationConditionParam.Create(builder, conditionOffset, Op, paramVector);
+    }
+}
+
+internal sealed class ZaPokemonDataRecordBudget
+{
+    private readonly int? maximumRecords;
+    private int observedRecords;
+
+    public ZaPokemonDataRecordBudget(int? maximumRecords)
+    {
+        this.maximumRecords = maximumRecords;
+    }
+
+    public void Add(int count, string label)
+    {
+        if (maximumRecords is null)
+        {
+            return;
+        }
+
+        if (count < 0 || count > maximumRecords.Value - observedRecords)
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
+
+        observedRecords += count;
+    }
+
+    public void CountActivationConditionDescendants(
+        ZaPokemonDataRow row,
+        string label)
+    {
+        if (maximumRecords is null)
+        {
+            return;
+        }
+
+        for (var conditionIndex = 0; conditionIndex < row.ActivationConditionLength; conditionIndex++)
+        {
+            CountCondition(row.ActivationCondition(conditionIndex), label);
+        }
+    }
+
+    public void CountActivationConditionDescendants(
+        ZaEncounterDataRow row,
+        string label)
+    {
+        if (maximumRecords is null)
+        {
+            return;
+        }
+
+        for (var conditionIndex = 0; conditionIndex < row.ActivationConditionLength; conditionIndex++)
+        {
+            CountCondition(row.ActivationCondition(conditionIndex), label);
+        }
+    }
+
+    private void CountCondition(
+        ZaPokemonDataActivationCondition? condition,
+        string label)
+    {
+        if (condition is null)
+        {
+            return;
+        }
+
+        Add(condition.Value.ElementLength, label);
+        for (var elementIndex = 0; elementIndex < condition.Value.ElementLength; elementIndex++)
+        {
+            var element = condition.Value.Element(elementIndex);
+            if (element is null)
+            {
+                continue;
+            }
+
+            Add(element.Value.ParamLength, label);
+            for (var parameterIndex = 0; parameterIndex < element.Value.ParamLength; parameterIndex++)
+            {
+                var parameter = element.Value.Param(parameterIndex);
+                if (parameter is not null)
+                {
+                    Add(parameter.Value.ParamLength, label);
+                }
+            }
+        }
     }
 }

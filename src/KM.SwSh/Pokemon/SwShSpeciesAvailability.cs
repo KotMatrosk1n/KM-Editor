@@ -11,7 +11,19 @@ internal static class SwShSpeciesAvailability
 {
     public static IReadOnlySet<int> LoadPresentSpeciesIds(OpenedProject project)
     {
+        return LoadPresentSpeciesIds(
+            project,
+            File.ReadAllBytes,
+            maximumRecordCount: null);
+    }
+
+    internal static IReadOnlySet<int> LoadPresentSpeciesIds(
+        OpenedProject project,
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount)
+    {
         ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(readAllBytes);
 
         var source = ResolveWorkflowFile(project, SwShPersonalTable.PersonalDataRelativePath);
         if (source is null)
@@ -21,17 +33,19 @@ internal static class SwShSpeciesAvailability
 
         try
         {
-            return CreatePresentSpeciesIds(SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records);
+            return CreatePresentSpeciesIds(SwShPersonalTable.Parse(
+                readAllBytes(source.AbsolutePath),
+                maximumRecordCount).Records);
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException) when (maximumRecordCount is null)
         {
             return new HashSet<int>();
         }
-        catch (IOException)
+        catch (IOException) when (maximumRecordCount is null)
         {
             return new HashSet<int>();
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException) when (maximumRecordCount is null)
         {
             return new HashSet<int>();
         }

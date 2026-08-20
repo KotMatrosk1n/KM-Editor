@@ -40,6 +40,10 @@ internal static class SwShMoveAvailability
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(readAllBytes);
+        if (maximumSourceCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumSourceCount));
+        }
 
         var moveSources = ResolveWorkflowFiles(project, SwShMoveDataFile.MoveDataRelativeDirectory)
             .Where(source => IsMoveDataFile(source.GraphEntry.RelativePath))
@@ -68,13 +72,13 @@ internal static class SwShMoveAvailability
                         source.GraphEntry.RelativePath));
                 }
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException) when (maximumSourceCount is null)
             {
             }
-            catch (IOException)
+            catch (IOException) when (maximumSourceCount is null)
             {
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException) when (maximumSourceCount is null)
             {
             }
         }

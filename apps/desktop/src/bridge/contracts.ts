@@ -156,7 +156,8 @@ export const kmCommandNameValues = [
   'semantic.impact',
   'semantic.ownership',
   'semantic.external.compare',
-  'semantic.changes'
+  'semantic.changes',
+  'semantic.balance-lab'
 ] as const;
 
 export const kmCommandNameSchema = z.enum(kmCommandNameValues);
@@ -175,6 +176,7 @@ export const kmCommandNames = {
   compareSemantic: 'semantic.compare',
   getSemanticCapabilities: 'semantic.capabilities',
   getSemanticEntity: 'semantic.entity',
+  queryBalanceLab: 'semantic.balance-lab',
   querySemanticChanges: 'semantic.changes',
   querySemanticImpact: 'semantic.impact',
   querySemanticOwnership: 'semantic.ownership',

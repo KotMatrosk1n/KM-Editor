@@ -229,7 +229,7 @@ public sealed class SwShItemTable
         if (maximumRecordCount is not null
             && (itemCount > maximumRecordCount.Value || maxRowIndex > maximumRecordCount.Value))
         {
-            throw new InvalidDataException("Item table record count exceeds the supported bound.");
+            throw new InvalidDataException("Item table record count exceeds the bounded semantic record limit.");
         }
 
         if (rowsStart < HeaderSize)

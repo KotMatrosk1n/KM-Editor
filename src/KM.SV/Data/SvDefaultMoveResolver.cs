@@ -31,7 +31,9 @@ internal sealed class SvDefaultMoveResolver
         {
             var source = fileSource.Read(project, SvDataPaths.PersonalArray);
             var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
+            fileSource.EnsureBoundedTableCount(table.EntryLength, "The S/V default-move personal table");
             var lookup = new Dictionary<string, IReadOnlyList<LevelupMove>>(StringComparer.Ordinal);
+            var nestedCount = 0;
 
             for (var index = 0; index < table.EntryLength; index++)
             {
@@ -41,12 +43,16 @@ internal sealed class SvDefaultMoveResolver
                     continue;
                 }
 
-                lookup.TryAdd(CreateKey(species.Species, species.Form), ReadLevelupMoves(row.Value));
+                lookup.TryAdd(
+                    CreateKey(species.Species, species.Form),
+                    ReadLevelupMoves(row.Value, fileSource, ref nestedCount));
             }
 
             return new SvDefaultMoveResolver(lookup);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
                 $"Automatic Pokemon moves could not be resolved from Pokemon Data: {exception.Message}",
@@ -84,8 +90,14 @@ internal sealed class SvDefaultMoveResolver
         return moves;
     }
 
-    private static IReadOnlyList<LevelupMove> ReadLevelupMoves(global::personal row)
+    private static IReadOnlyList<LevelupMove> ReadLevelupMoves(
+        global::personal row,
+        SvWorkflowFileSource fileSource,
+        ref int nestedCount)
     {
+        fileSource.EnsureBoundedTableCount(row.LevelupMovesLength, "An S/V default-move learnset vector");
+        nestedCount = checked(nestedCount + row.LevelupMovesLength);
+        fileSource.EnsureBoundedNestedCount(nestedCount, "The S/V default-move learnset vectors");
         var moves = new List<LevelupMove>();
         for (var index = 0; index < row.LevelupMovesLength; index++)
         {
