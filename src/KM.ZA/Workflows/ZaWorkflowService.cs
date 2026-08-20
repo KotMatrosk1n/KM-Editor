@@ -6,6 +6,9 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Core.Semantics;
+using KM.Formats.ZA;
+using KM.ZA.Data;
 using KM.ZA.AngeFight;
 using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
@@ -26,6 +29,10 @@ namespace KM.ZA.Workflows;
 
 public sealed class ZaWorkflowService
 {
+    private const int MaximumSemanticSourceFiles = 128;
+    private const int MaximumSemanticSourceBytesPerFile = 64 * 1024 * 1024;
+    private const long MaximumSemanticSourceBytes = 512L * 1024L * 1024L;
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaCacheManager cacheManager;
     private readonly ZaWorkflowFileSource fileSource;
@@ -171,6 +178,182 @@ public sealed class ZaWorkflowService
         {
             cacheManager.ClearMemoryCache();
         }
+    }
+
+    public string CaptureSemanticExploreSourceFingerprint(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var semanticFileSource = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var language = ZaGameTextLanguage.Resolve(paths);
+        var virtualPaths = new List<string>
+        {
+            ZaDataPaths.ItemDataArray,
+            ZaDataPaths.EvolutionItemConversionArray,
+            ZaDataPaths.PersonalArray,
+            ZaDataPaths.PokedexContentsData,
+            ZaDataPaths.PokedexMegaContentsData,
+            ZaDataPaths.AlphaMoveTable,
+            ZaDataPaths.MoveDataArray,
+            ZaDataPaths.BattleMoveParameterArray,
+            ZaDataPaths.MoveTimingParameterArray,
+            ZaDataPaths.BossMoveSelectorArray,
+            ZaDataPaths.AiAttackParamArray,
+            ZaDataPaths.AiBulletParamArray,
+        };
+        foreach (var textPath in new[]
+                 {
+                     ZaDataPaths.ItemNames(language),
+                     ZaDataPaths.MoveNames(language),
+                     ZaDataPaths.MoveDescriptions(language),
+                     ZaDataPaths.PokemonNames(language),
+                     ZaDataPaths.AbilityNames(language),
+                     ZaDataPaths.ItemNames(ZaGameTextLanguage.English),
+                     ZaDataPaths.MoveNames(ZaGameTextLanguage.English),
+                     ZaDataPaths.MoveDescriptions(ZaGameTextLanguage.English),
+                     ZaDataPaths.PokemonNames(ZaGameTextLanguage.English),
+                     ZaDataPaths.AbilityNames(ZaGameTextLanguage.English),
+                 })
+        {
+            virtualPaths.Add(textPath);
+            var legacyPath = ZaDataPaths.TryCreateLegacyMessagePath(textPath);
+            if (legacyPath is not null)
+            {
+                virtualPaths.Add(legacyPath);
+            }
+        }
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendSemanticSourceHash(hash, "za-semantic-source-v2");
+        AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
+        if (ZaCompressionRuntime.TryResolveRequiredFilePath(
+                paths.PokemonLegendsZASupportFolderPath,
+                out var supportRuntimePath))
+        {
+            AppendSemanticSourceHash(hash, "support-runtime-present");
+            AppendSemanticSourceHash(
+                hash,
+                SemanticProjectBuildIdentity.CaptureBoundedFile(
+                    supportRuntimePath,
+                    "za-compression-runtime",
+                    MaximumSemanticSourceBytesPerFile));
+        }
+        else
+        {
+            AppendSemanticSourceHash(hash, "support-runtime-missing");
+        }
+        var sourceCount = 0;
+        long sourceBytes = 0;
+        foreach (var virtualPath in virtualPaths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        {
+            AppendSemanticSourceHash(hash, virtualPath);
+            AppendSemanticSourcePayload(
+                hash,
+                () => (semanticFileSource.ReadBaseBytesFresh(paths, virtualPath), "base"),
+                ref sourceCount,
+                ref sourceBytes);
+            AppendSemanticSourcePayload(
+                hash,
+                () =>
+                {
+                    var source = semanticFileSource.ReadCurrentSourceFresh(paths, virtualPath);
+                    return (source.Bytes, source.Layer.ToString());
+                },
+                ref sourceCount,
+                ref sourceBytes);
+        }
+
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    public ZaItemsWorkflow LoadSemanticExploreItems(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new ZaItemsWorkflowService(freshFileSource).Load(project);
+    }
+
+    public ZaPokemonWorkflow LoadSemanticExplorePokemon(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new ZaPokemonWorkflowService(freshFileSource).Load(project);
+    }
+
+    public ZaMovesWorkflow LoadSemanticExploreMoves(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new ZaMovesWorkflowService(freshFileSource).Load(project);
+    }
+
+    private static void AppendSemanticSourcePayload(
+        IncrementalHash hash,
+        Func<(byte[] Bytes, string Origin)> read,
+        ref int sourceCount,
+        ref long sourceBytes)
+    {
+        if (++sourceCount > MaximumSemanticSourceFiles)
+        {
+            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
+        }
+
+        try
+        {
+            var payload = read();
+            if (payload.Bytes.LongLength > MaximumSemanticSourceBytes - sourceBytes)
+            {
+                throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
+            }
+
+            sourceBytes = checked(sourceBytes + payload.Bytes.LongLength);
+            AppendSemanticSourceHash(hash, payload.Origin);
+            AppendSemanticSourceHash(
+                hash,
+                payload.Bytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            AppendSemanticSourceHash(hash, Convert.ToHexStringLower(SHA256.HashData(payload.Bytes)));
+        }
+        catch (ProjectFileOperationException exception) when (IsMissingSource(exception))
+        {
+            AppendSemanticSourceHash(hash, "missing");
+        }
+    }
+
+    private static bool IsMissingSource(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void AppendSemanticSourceHash(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        hash.AppendData(Encoding.UTF8.GetBytes(
+            bytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        hash.AppendData("\n"u8);
+        hash.AppendData(bytes);
+        hash.AppendData("\n"u8);
     }
 
     public ZaWorkflowList List(ProjectPaths paths)

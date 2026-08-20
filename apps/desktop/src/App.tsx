@@ -456,9 +456,18 @@ import {
   CommandPalette
 } from './features/workbench/CommandPalette';
 import { RecordTabRail } from './features/workbench/RecordTabRail';
-import { AdaptiveInspector } from './features/workbench/AdaptiveInspector';
+import {
+  AdaptiveInspector,
+  type AdaptiveInspectorTabViewModel
+} from './features/workbench/AdaptiveInspector';
 import { CapabilityDiscoveryDialog } from './features/workbench/CapabilityDiscoveryDialog';
 import { OutputProfileSwitchDialog } from './features/workbench/OutputProfileSwitchDialog';
+import { SemanticExploreSection } from './features/semantic-explore/SemanticExploreSection';
+import { useSemanticInspectorTabs } from './features/semantic-explore/SemanticInspectorTabs';
+import {
+  useSemanticExploreController,
+  type QueryableLayer
+} from './features/semantic-explore/useSemanticExploreController';
 import { ChangeSetWorkspacePanel } from './features/change-sets/ChangeSetWorkspacePanel';
 import { useChangeSetWorkspaceController } from './features/change-sets/useChangeSetWorkspaceController';
 import {
@@ -487,7 +496,11 @@ import {
   workbenchLocationsEqual,
   type WorkbenchLocation
 } from './workbench/workbenchLocation';
-import { projectGameToFamily } from './workbench/semanticContracts';
+import {
+  projectGameToFamily,
+  semanticRecordRefKey
+} from './workbench/semanticContracts';
+import { createSemanticExploreLocation } from './workbench/semanticExploreNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
 import { PersonalizationSettingsPanel } from './features/settings/PersonalizationSettingsPanel';
 import { WhatChangedTour } from './features/updates/WhatChangedTour';
@@ -516,8 +529,10 @@ import {
 } from './workbench/capabilityDiscovery';
 import {
   createWorkspaceCommandRegistry,
-  type WorkspaceCommand
+  type WorkspaceCommand,
+  type WorkspaceEntityCommandSearch
 } from './workbench/commandRegistry';
+import type { SemanticExploreRecordRef } from './bridge/semanticExploreContracts';
 import type { WorkspaceTargetViewModel } from './workbench/workspaceShellViewModels';
 import {
   createWorkspaceShortcutRegistry,
@@ -2572,6 +2587,21 @@ export function App({
       : null,
     [activeProjectId, createProjectPaths, draftPaths, language]
   );
+  const semanticExploreScope = useMemo(
+    () => outputSafetyScope && selectedGame
+      ? {
+          ...outputSafetyScope,
+          pendingSession: editSession
+        }
+      : null,
+    [editSession, outputSafetyScope, selectedGame]
+  );
+  const semanticExploreController = useSemanticExploreController({
+    bridge,
+    scope: semanticExploreScope
+  });
+  const semanticExploreIsQueryingRef = useRef(semanticExploreController.isQuerying);
+  semanticExploreIsQueryingRef.current = semanticExploreController.isQuerying;
   const [activeLocation, setActiveLocation] = useState<WorkbenchLocation>(() =>
     createSectionLocation(activeSection, {
       game: selectedGame,
@@ -2880,6 +2910,31 @@ export function App({
     externalMutationBusy: hasCriticalWriteOperation,
     scope: outputSafetyScope
   });
+  const outputRecoveryRevision = outputSafety.recoveryStatus?.revision ?? null;
+  const observedSemanticOutputRevisionRef = useRef(outputRecoveryRevision);
+  useEffect(() => {
+    if (observedSemanticOutputRevisionRef.current === outputRecoveryRevision) {
+      return;
+    }
+    observedSemanticOutputRevisionRef.current = outputRecoveryRevision;
+    if (outputRecoveryRevision !== null) {
+      semanticExploreController.invalidate();
+    }
+  }, [outputRecoveryRevision, semanticExploreController.invalidate]);
+  const notifySemanticOutputMutation = useCallback(async () => {
+    try {
+      await outputSafety.notifyOutputMutation();
+    } finally {
+      semanticExploreController.invalidate();
+    }
+  }, [outputSafety.notifyOutputMutation, semanticExploreController.invalidate]);
+  const notifySemanticOutputFailure = useCallback(async (error: unknown) => {
+    try {
+      await outputSafety.notifyOutputFailure(error);
+    } finally {
+      semanticExploreController.invalidate();
+    }
+  }, [outputSafety.notifyOutputFailure, semanticExploreController.invalidate]);
   const changeSetEffectiveStateHandlerRef = useRef<(
     effective: ChangeSetMaterialization,
     snapshot: ChangeSetWorkspaceSnapshot
@@ -2950,6 +3005,17 @@ export function App({
     projectWorkspaceDocument?.activeOutputProfileId ?? null,
     projectWorkspaceETag
   ]);
+  const semanticOutputProfileRevision = projectWorkspaceDocument?.activeOutputProfileId ?? null;
+  const observedSemanticOutputProfileRevisionRef = useRef(semanticOutputProfileRevision);
+  useEffect(() => {
+    if (
+      observedSemanticOutputProfileRevisionRef.current === semanticOutputProfileRevision
+    ) {
+      return;
+    }
+    observedSemanticOutputProfileRevisionRef.current = semanticOutputProfileRevision;
+    semanticExploreController.invalidate();
+  }, [semanticExploreController.invalidate, semanticOutputProfileRevision]);
   const observedOutputProfileBindingRevisionRef = useRef(outputProfileBindingRevision);
   useEffect(() => {
     if (observedOutputProfileBindingRevisionRef.current === outputProfileBindingRevision) {
@@ -3817,6 +3883,7 @@ export function App({
 
   const resetLoadedProjectState = useCallback(() => {
     projectScopeGenerationRef.current += 1;
+    semanticExploreController.invalidate();
     svCacheWarmupRunRef.current += 1;
     setIsSvCacheWarming(false);
     setSvCacheStatus(null);
@@ -3829,7 +3896,12 @@ export function App({
     clearPendingEditState();
     resetProjectSession();
     clearLoadedWorkflowData();
-  }, [clearLoadedWorkflowData, clearPendingEditState, resetProjectSession]);
+  }, [
+    clearLoadedWorkflowData,
+    clearPendingEditState,
+    resetProjectSession,
+    semanticExploreController.invalidate
+  ]);
 
   const handleSetDraftPath = useCallback(
     (field: ProjectPathFieldName, value: string) => {
@@ -4286,6 +4358,107 @@ export function App({
     },
     [handleNavigateLocation, prepareStableLocationCommit]
   );
+  const handleNavigateSemanticEntity = useCallback(
+    (record: SemanticExploreRecordRef) => {
+      if (!activeProjectId || !selectedGame) {
+        return;
+      }
+      const location = createSemanticExploreLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      });
+      if (!location) {
+        setBridgeDiagnostics([
+          {
+            domain: 'workspace.navigation',
+            message: t('workbench.navigation.targetUnavailable'),
+            severity: 'warning'
+          }
+        ]);
+        return;
+      }
+      handleNavigateWorkspaceTarget(location);
+    },
+    [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
+  );
+  const semanticEntitySearch = useCallback<WorkspaceEntityCommandSearch>(
+    async (request) => {
+      if (!activeProjectId || !selectedGame || !semanticExploreScope) {
+        return { searchText: request.searchText, targets: [] };
+      }
+      const result = await semanticExploreController.searchEntityCommands(
+        request.searchText,
+        request.limit
+      );
+      const seenRecords = new Set<string>();
+      const targets = result.items.flatMap((item) => {
+        const location = createSemanticExploreLocation({
+          game: selectedGame,
+          projectId: activeProjectId,
+          record: item.record
+        });
+        const recordKey = semanticRecordRefKey(item.record);
+        if (!location || seenRecords.has(recordKey)) {
+          return [];
+        }
+        seenRecords.add(recordKey);
+        return [{
+          description: item.description ?? item.domainLabel,
+          keywords: [
+            item.domainLabel,
+            item.record.domain,
+            item.record.recordKind.key
+          ],
+          label: item.displayName,
+          location
+        }];
+      });
+      return { searchText: request.searchText, targets };
+    },
+    [
+      activeProjectId,
+      selectedGame,
+      semanticExploreController.searchEntityCommands,
+      semanticExploreScope
+    ]
+  );
+  const handlePickSemanticExternalMod = useCallback(async () => {
+    if (
+      !desktopServices.isAvailable ||
+      criticalWriteOperationRef.current ||
+      semanticExploreIsQueryingRef.current
+    ) {
+      return null;
+    }
+    const scopeGeneration = projectScopeGenerationRef.current;
+    try {
+      const selectedPath = await desktopServices.pickFolder({
+        title: t('semanticExplore.external.action')
+      });
+      if (
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current ||
+        semanticExploreIsQueryingRef.current
+      ) {
+        return null;
+      }
+      return selectedPath;
+    } catch {
+      setBridgeDiagnostics([
+        {
+          domain: 'desktop',
+          message: t('semanticExplore.query.error.generic'),
+          severity: 'error'
+        }
+      ]);
+      return null;
+    }
+  }, [
+    desktopServices,
+    setBridgeDiagnostics,
+    t
+  ]);
   useEffect(() => {
     const handleWorkspaceShortcut = (event: KeyboardEvent) => {
       if (
@@ -5220,7 +5393,97 @@ export function App({
     }
   }, [openProject?.projectId, personalProjectTarget, personalWorkspaceRegistry]);
   const inspectorAvailable = activeScopedLocation !== null;
-  const isInspectorOpen = inspectorAvailable && activeLocation.inspectorTab === 'notes';
+  const requestedInspectorTab = activeLocation.inspectorTab ?? null;
+  const isSemanticInspectorRequested = Boolean(
+    activeLocation.entity &&
+    (
+      requestedInspectorTab === 'compare' ||
+      requestedInspectorTab === 'references' ||
+      requestedInspectorTab === 'impact' ||
+      requestedInspectorTab === 'provenance'
+    )
+  );
+  useEffect(() => {
+    if (
+      isSemanticInspectorRequested &&
+      semanticExploreController.capabilities.status === 'idle'
+    ) {
+      void semanticExploreController.ensureCapabilities();
+    }
+  }, [
+    isSemanticInspectorRequested,
+    semanticExploreController.capabilities.status,
+    semanticExploreController.ensureCapabilities
+  ]);
+  const semanticInspectorLayer = resolveSemanticInspectorLayer(
+    semanticExploreController.capabilities.data?.snapshots ?? []
+  );
+  const canPopulateSemanticInspector = Boolean(
+    activeLocation.entity &&
+    (isSemanticInspectorRequested || semanticExploreController.capabilities.data)
+  );
+  const semanticInspectorTabs = useSemanticInspectorTabs({
+    controller: semanticExploreController,
+    layer: semanticInspectorLayer,
+    onNavigateEntity: handleNavigateSemanticEntity,
+    record:
+      canPopulateSemanticInspector && semanticExploreController.capabilities.data
+        ? activeLocation.entity ?? null
+        : null
+  });
+  const noteInspectorTab: AdaptiveInspectorTabViewModel | null = activeNoteViewModel
+    ? {
+        content: (
+          <div className="km-workbench-note">
+            <textarea
+              disabled={activeNoteViewModel.isBusy}
+              maxLength={workspaceMaximumNoteBytes / 4}
+              onBlur={() => void saveActiveNote()}
+              onChange={(event) => setNoteDraft(event.currentTarget.value)}
+              placeholder={t('workbench.notes.placeholder')}
+              value={noteDraft}
+            />
+            <div className="km-workbench-note-actions">
+              <small>
+                {noteStatusKey
+                  ? t(noteStatusKey)
+                  : activeNoteViewModel.updatedAtLabel ?? t('workbench.notes.notSaved')}
+              </small>
+              <button
+                className="secondary-button compact-button"
+                disabled={activeNoteViewModel.isBusy}
+                onClick={() => void saveActiveNote()}
+                type="button"
+              >
+                {t('workbench.notes.save')}
+              </button>
+              <button
+                className="secondary-button compact-button"
+                disabled={activeNoteViewModel.isBusy}
+                onClick={() => void handleCreateBookmark(
+                  activeLocation.entity?.recordId ?? activeNoteViewModel.entityLabel
+                )}
+                type="button"
+              >
+                {t('workbench.bookmarks.create')}
+              </button>
+            </div>
+          </div>
+        ),
+        count: null,
+        id: 'notes',
+        labelKey: 'workbench.notes.title'
+      }
+    : null;
+  const inspectorTabs: readonly AdaptiveInspectorTabViewModel[] = noteInspectorTab
+    ? [noteInspectorTab, ...semanticInspectorTabs]
+    : semanticInspectorTabs;
+  const activeInspectorTab = requestedInspectorTab && inspectorTabs.some(
+    (tab) => tab.id === requestedInspectorTab
+  )
+    ? requestedInspectorTab
+    : null;
+  const isInspectorOpen = inspectorAvailable && activeInspectorTab !== null;
   const handleToggleInspector = useCallback(() => {
     if (!inspectorAvailable) return;
     const destination = createWorkbenchLocation({
@@ -5231,6 +5494,20 @@ export function App({
       rememberRecent: false
     });
   }, [activeLocation, handleNavigateLocation, inspectorAvailable, isInspectorOpen]);
+  const handleSelectInspectorTab = useCallback(
+    (inspectorTab: WorkbenchLocation['inspectorTab']) => {
+      if (!inspectorAvailable || !inspectorTab) {
+        return;
+      }
+      handleNavigateLocation(
+        createWorkbenchLocation({ ...activeLocation, inspectorTab }),
+        undefined,
+        'inspector',
+        { rememberRecent: false }
+      );
+    },
+    [activeLocation, handleNavigateLocation, inspectorAvailable]
+  );
   const handleRemoveBookmark = useCallback(async (bookmarkId: string) => {
     if (!personalProjectTarget) return;
     try {
@@ -9843,7 +10120,7 @@ export function App({
         setSvModMergerWorkflow(response.workflow);
         setSvModMergerPreview(response.preview);
         setSvModMergerApplyResult(response);
-        await outputSafety.notifyOutputMutation();
+        await notifySemanticOutputMutation();
 
         const hasApplyErrors = response.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
@@ -9858,7 +10135,7 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
-        await outputSafety.notifyOutputFailure(error);
+        await notifySemanticOutputFailure(error);
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       } finally {
         setIsModMergerApplying(false);
@@ -9888,7 +10165,7 @@ export function App({
         setZaModMergerWorkflow(response.workflow);
         setZaModMergerPreview(response.preview);
         setZaModMergerApplyResult(response);
-        await outputSafety.notifyOutputMutation();
+        await notifySemanticOutputMutation();
 
         const hasApplyErrors = response.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
@@ -9903,7 +10180,7 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
-        await outputSafety.notifyOutputFailure(error);
+        await notifySemanticOutputFailure(error);
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       } finally {
         setIsModMergerApplying(false);
@@ -9942,7 +10219,7 @@ export function App({
       setModMergerWorkflow(response.workflow);
       setModMergerPreview(response.preview);
       setModMergerApplyResult(response);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -9957,7 +10234,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsModMergerApplying(false);
@@ -10001,7 +10278,7 @@ export function App({
       const response = await bridge.applyFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -10016,7 +10293,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
@@ -10044,7 +10321,7 @@ export function App({
       const response = await bridge.restoreFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -10059,7 +10336,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
@@ -10103,7 +10380,7 @@ export function App({
       const response = await bridge.applyProfanityFilter({ paths });
       setProfanityFilterStatus(response.status);
       setApplyResult(response.applyResult);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -10118,7 +10395,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsProfanityFilterApplying(false);
@@ -10146,7 +10423,7 @@ export function App({
       const response = await bridge.restoreProfanityFilter({ paths });
       setProfanityFilterStatus(response.status);
       setApplyResult(response.applyResult);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -10161,7 +10438,7 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsProfanityFilterApplying(false);
@@ -10206,7 +10483,7 @@ export function App({
         paths
       });
       setApplyResult(response.applyResult);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -10232,7 +10509,7 @@ export function App({
       ));
       return response;
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       throw error;
     } finally {
       setIsRandomizerApplying(false);
@@ -10255,7 +10532,7 @@ export function App({
       ));
       const response = await bridge.restoreRandomizer({ paths });
       setApplyResult(response.applyResult);
-      await outputSafety.notifyOutputMutation();
+      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -10291,7 +10568,7 @@ export function App({
       ));
       return response;
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       throw error;
     } finally {
       setIsRandomizerApplying(false);
@@ -12939,14 +13216,14 @@ export function App({
         completedApplyResult.outputTransaction !== null ||
         completedApplyResult.writtenFiles.length > 0
       ) {
-        await outputSafety.notifyOutputMutation();
+        await notifySemanticOutputMutation();
       }
     } catch (error) {
       if (!isCurrentReviewedOperation()) {
         return;
       }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
     } finally {
       if (editSessionOperationRunRef.current === runId) {
         setIsChangePlanApplying(false);
@@ -13885,14 +14162,14 @@ export function App({
       }
 
       if (didWriteFiles || completedApplyResult.outputTransaction !== null) {
-        await outputSafety.notifyOutputMutation();
+        await notifySemanticOutputMutation();
       }
 
       if (!shouldRetainApplyResult) {
         setApplyResult(null);
       }
     } catch (error) {
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
@@ -14645,11 +14922,11 @@ export function App({
         response.applyResult.outputTransaction !== null ||
         response.applyResult.writtenFiles.length > 0
       ) {
-        await outputSafety.notifyOutputMutation();
+        await notifySemanticOutputMutation();
       }
     } catch (error) {
       const refreshDiagnostics = toBridgeDiagnostics(error);
-      await outputSafety.notifyOutputFailure(error);
+      await notifySemanticOutputFailure(error);
       if (completedApplyResult) {
         setScopedEditorPanelStates((currentStates) => ({
           ...currentStates,
@@ -14895,6 +15172,18 @@ export function App({
               recentProjects={workspaceRecentProjects}
               recents={workspaceRecentTargets}
               savedViews={workspaceSavedViews}
+              semanticExplore={
+                semanticExploreScope ? (
+                  <SemanticExploreSection
+                    controller={semanticExploreController}
+                    externalComparisonDisabled={
+                      hasCriticalWriteOperation || semanticExploreController.isQuerying
+                    }
+                    onNavigateEntity={handleNavigateSemanticEntity}
+                    onPickExternalMod={handlePickSemanticExternalMod}
+                  />
+                ) : null
+              }
               workflowHome={
                 <WorkflowsSection
               health={health}
@@ -16181,52 +16470,11 @@ export function App({
           ) : null}
         </div>
         <AdaptiveInspector
-          activeTab={isInspectorOpen ? 'notes' : null}
+          activeTab={activeInspectorTab}
           isOpen={isInspectorOpen}
           onClose={handleToggleInspector}
-          onSelectTab={() => undefined}
-          tabs={activeNoteViewModel ? [{
-            content: (
-              <div className="km-workbench-note">
-                <textarea
-                  disabled={activeNoteViewModel.isBusy}
-                  maxLength={workspaceMaximumNoteBytes / 4}
-                  onBlur={() => void saveActiveNote()}
-                  onChange={(event) => setNoteDraft(event.currentTarget.value)}
-                  placeholder={t('workbench.notes.placeholder')}
-                  value={noteDraft}
-                />
-                <div className="km-workbench-note-actions">
-                  <small>
-                    {noteStatusKey
-                      ? t(noteStatusKey)
-                      : activeNoteViewModel.updatedAtLabel ?? t('workbench.notes.notSaved')}
-                  </small>
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={activeNoteViewModel.isBusy}
-                    onClick={() => void saveActiveNote()}
-                    type="button"
-                  >
-                    {t('workbench.notes.save')}
-                  </button>
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={activeNoteViewModel.isBusy}
-                    onClick={() => void handleCreateBookmark(
-                      activeLocation.entity?.recordId ?? activeNoteViewModel.entityLabel
-                    )}
-                    type="button"
-                  >
-                    {t('workbench.bookmarks.create')}
-                  </button>
-                </div>
-              </div>
-            ),
-            count: null,
-            id: 'notes',
-            labelKey: 'workbench.notes.title'
-          }] : []}
+          onSelectTab={handleSelectInspectorTab}
+          tabs={inspectorTabs}
           targetLabel={activeLocation.entity?.recordId ?? ''}
           targetLabelIsRawData={true}
         />
@@ -16282,12 +16530,14 @@ export function App({
           outputRootPath={draftPaths.outputRootPath}
         />
       ) : null}
-      <CommandPalette
-        commands={workspaceCommands}
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onExecute={handleExecuteWorkspaceCommand}
-      />
+        <CommandPalette
+          commands={workspaceCommands}
+          entitySearch={semanticExploreScope ? semanticEntitySearch : undefined}
+          isOpen={isCommandPaletteOpen}
+          onCancelEntitySearch={semanticExploreController.cancelEntityCommandSearch}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          onExecute={handleExecuteWorkspaceCommand}
+        />
       <ShortcutOverlay
         isOpen={isShortcutOverlayOpen}
         onClose={() => setIsShortcutOverlayOpen(false)}
@@ -16317,6 +16567,7 @@ export function App({
           }}
           onApplied={async (response, candidatePaths) => {
             await handleProjectRelocated(response, candidatePaths);
+            semanticExploreController.invalidate();
             const destinationTarget = {
               game: candidatePaths.selectedGame ?? personalProjectTarget.game,
               projectId: response.projectId
@@ -57777,6 +58028,21 @@ function getErrorMessage(error: unknown) {
     return sanitizeReportableErrorText(error.message).slice(0, 1024);
   }
   return 'The private workspace operation failed.';
+}
+
+function resolveSemanticInspectorLayer(
+  snapshots: readonly {
+    layer: { kind: QueryableLayer | 'comparedMod' };
+  }[]
+): QueryableLayer {
+  const layers = new Set(snapshots.map((snapshot) => snapshot.layer.kind));
+  if (layers.has('pending')) {
+    return 'pending';
+  }
+  if (layers.has('layered')) {
+    return 'layered';
+  }
+  return 'base';
 }
 
 function toProjectPathDraft(paths: {

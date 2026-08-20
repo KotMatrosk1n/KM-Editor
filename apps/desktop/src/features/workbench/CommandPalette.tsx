@@ -2,44 +2,73 @@
 
 import { Command, Search } from 'lucide-react';
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState
 } from 'react';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
-import type { WorkspaceCommand } from '../../workbench/commandRegistry';
+import {
+  createWorkspaceEntityCommands,
+  maximumWorkspaceEntityCommands,
+  maximumWorkspaceEntitySearchTextLength,
+  mergeWorkspaceCommandResults,
+  type WorkspaceCommand,
+  type WorkspaceEntityCommandSearch
+} from '../../workbench/commandRegistry';
 
 export type CommandPaletteProps = {
   commands: readonly WorkspaceCommand[];
+  entitySearch?: WorkspaceEntityCommandSearch;
   isOpen: boolean;
+  onCancelEntitySearch?: () => void;
   onClose: () => void;
   onExecute: (command: WorkspaceCommand) => void;
 };
 
 export function CommandPalette({
   commands,
+  entitySearch,
   isOpen,
+  onCancelEntitySearch,
   onClose,
   onExecute
 }: CommandPaletteProps) {
   return isOpen ? (
-    <OpenCommandPalette commands={commands} onClose={onClose} onExecute={onExecute} />
+    <OpenCommandPalette
+      commands={commands}
+      entitySearch={entitySearch}
+      onCancelEntitySearch={onCancelEntitySearch}
+      onClose={onClose}
+      onExecute={onExecute}
+    />
   ) : null;
 }
 
 function OpenCommandPalette({
   commands,
+  entitySearch,
+  onCancelEntitySearch,
   onClose,
   onExecute
 }: Omit<CommandPaletteProps, 'isOpen'>) {
   const { t } = useLocalization();
   const [query, setQuery] = useState('');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
-  const dialogRef = useModalDialog<HTMLDivElement>({ onClose });
+  const [entityCommands, setEntityCommands] = useState<readonly WorkspaceCommand[]>([]);
+  const [entitySearchState, setEntitySearchState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const entityRequestGenerationRef = useRef(0);
+  const closePalette = useCallback(() => {
+    entityRequestGenerationRef.current += 1;
+    onCancelEntitySearch?.();
+    onClose();
+  }, [onCancelEntitySearch, onClose]);
+  const dialogRef = useModalDialog<HTMLDivElement>({ onClose: closePalette });
   const listboxId = useId();
-  const visibleCommands = useMemo(() => {
+  const baseCommands = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) {
       return commands;
@@ -53,6 +82,58 @@ function OpenCommandPalette({
         .includes(normalizedQuery);
     });
   }, [commands, query, t]);
+  const visibleCommands = useMemo(
+    () => mergeWorkspaceCommandResults(baseCommands, entityCommands),
+    [baseCommands, entityCommands]
+  );
+
+  useEffect(() => {
+    const searchText = query.trim();
+    const generation = ++entityRequestGenerationRef.current;
+    setEntityCommands([]);
+    setEntitySearchState('idle');
+    if (!entitySearch || searchText.length < 2) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setEntitySearchState('loading');
+      void entitySearch({
+        limit: maximumWorkspaceEntityCommands,
+        searchText
+      }).then(
+        (result) => {
+          if (entityRequestGenerationRef.current !== generation) {
+            return;
+          }
+          try {
+            if (result.searchText !== searchText) {
+              throw new Error('The semantic command result does not match the requested search.');
+            }
+            setEntityCommands(createWorkspaceEntityCommands(result.targets));
+            setEntitySearchState('idle');
+          } catch {
+            setEntityCommands([]);
+            setEntitySearchState('error');
+          }
+        },
+        () => {
+          if (entityRequestGenerationRef.current !== generation) {
+            return;
+          }
+          setEntityCommands([]);
+          setEntitySearchState('error');
+        }
+      );
+    }, 150);
+    return () => {
+      window.clearTimeout(timeout);
+      onCancelEntitySearch?.();
+      if (entityRequestGenerationRef.current === generation) {
+        entityRequestGenerationRef.current += 1;
+      }
+    };
+  }, [entitySearch, onCancelEntitySearch, query]);
   const enabledCommands = visibleCommands.filter((command) => command.isEnabled);
   const activeCommand = enabledCommands.find((command) => command.id === activeCommandId)
     ?? enabledCommands[0]
@@ -76,7 +157,7 @@ function OpenCommandPalette({
       return;
     }
     onExecute(command);
-    onClose();
+    closePalette();
   };
 
   return (
@@ -84,7 +165,7 @@ function OpenCommandPalette({
       className="km-workbench-overlay"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
-          onClose();
+          closePalette();
         }
       }}
     >
@@ -114,9 +195,17 @@ function OpenCommandPalette({
             }
             aria-autocomplete="list"
             aria-controls={listboxId}
+            aria-describedby={
+              entitySearchState === 'idle' ? undefined : `${listboxId}-semantic-status`
+            }
             aria-expanded="true"
             autoComplete="off"
+            maxLength={maximumWorkspaceEntitySearchTextLength}
             onChange={(event) => {
+              entityRequestGenerationRef.current += 1;
+              onCancelEntitySearch?.();
+              setEntityCommands([]);
+              setEntitySearchState('idle');
               setQuery(event.target.value);
               setActiveCommandId(null);
             }}
@@ -148,14 +237,36 @@ function OpenCommandPalette({
           />
         </label>
 
+        {entitySearchState === 'loading' ? (
+          <p
+            aria-live="polite"
+            className="km-command-search-state"
+            id={`${listboxId}-semantic-status`}
+          >
+              {t('semanticExplore.command.loading')}
+          </p>
+        ) : null}
+        {entitySearchState === 'error' ? (
+          <p
+            className="km-command-search-state"
+            id={`${listboxId}-semantic-status`}
+            role="alert"
+          >
+              {t('semanticExplore.command.error')}
+          </p>
+        ) : null}
+
         <div aria-label={t('workbench.commandPalette.resultsLabel')} className="km-command-list" id={listboxId} role="listbox">
           {visibleCommands.length > 0 ? visibleCommands.map((command, index) => {
             const previousGroup = visibleCommands[index - 1]?.group;
             const label = command.labelKey ? t(command.labelKey) : command.label ?? command.id;
+            const description = command.descriptionKey
+              ? t(command.descriptionKey)
+              : command.description ?? null;
             return (
-              <div className="km-command-entry" key={command.id}>
+              <div className="km-command-entry" key={command.id} role="presentation">
                 {previousGroup !== command.group ? (
-                  <p className="km-command-group-label">
+                  <p aria-hidden="true" className="km-command-group-label">
                     {t(`workbench.command.group.${command.group}`)}
                   </p>
                 ) : null}
@@ -174,16 +285,27 @@ function OpenCommandPalette({
                     data-localization-ignore={command.labelIsRawData ? 'true' : undefined}
                   >
                     <strong>{label}</strong>
-                    {command.descriptionKey ? <small>{t(command.descriptionKey)}</small> : null}
+                    {description ? (
+                      <small
+                        data-localization-ignore={
+                          command.descriptionIsRawData ? 'true' : undefined
+                        }
+                      >
+                        {description}
+                      </small>
+                    ) : null}
                   </span>
                   {command.shortcut ? <kbd>{command.shortcut}</kbd> : null}
                 </button>
               </div>
             );
-          }) : (
-            <p className="km-workbench-empty">{t('workbench.commandPalette.empty')}</p>
-          )}
+          }) : null}
         </div>
+        {visibleCommands.length === 0 ? (
+          <p className="km-workbench-empty" role="status">
+            {t('workbench.commandPalette.empty')}
+          </p>
+        ) : null}
       </div>
     </div>
   );

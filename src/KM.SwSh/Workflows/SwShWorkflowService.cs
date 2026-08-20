@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
@@ -39,6 +41,9 @@ namespace KM.SwSh.Workflows;
 
 public sealed class SwShWorkflowService
 {
+    private const int MaximumSemanticSourceFiles = 20_000;
+    private const long MaximumSemanticSourceBytesPerFile = 64L * 1024L * 1024L;
+    private const long MaximumSemanticSourceBytes = 512L * 1024L * 1024L;
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShPokemonWorkflowService pokemonWorkflowService;
     private readonly SwShMovesWorkflowService movesWorkflowService;
@@ -230,6 +235,201 @@ public sealed class SwShWorkflowService
     public SwShTextWorkflowService SharedTextWorkflowService => textWorkflowService;
 
     public SwShCacheManager SharedCacheManager => cacheManager;
+
+    public string CaptureSemanticExploreSourceFingerprint(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var graph = new ProjectFileGraphBuilder(new ProjectFileGraphBuilderOptions
+        {
+            MaximumFileSystemEntries = 500_000,
+            MaximumDirectories = 100_000,
+            MaximumTraversalDepth = 128,
+            MaximumGraphEntries = 250_000,
+        }).Build(paths);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendSemanticSourceHash(hash, "swsh-semantic-source-v2");
+        AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
+        AppendSemanticSourceHash(hash, SwShGameTextLanguage.Resolve(paths));
+        var sourceCount = 0;
+        long sourceBytes = 0;
+        foreach (var entry in graph.Entries
+                     .Where(entry => IsSemanticExploreSource(entry.RelativePath))
+                     .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal))
+        {
+            AppendSemanticSourceHash(hash, entry.RelativePath);
+            AppendSemanticGraphSource(
+                hash,
+                paths,
+                entry.RelativePath,
+                entry.BaseFile is not null,
+                layered: false,
+                ref sourceCount,
+                ref sourceBytes);
+            AppendSemanticGraphSource(
+                hash,
+                paths,
+                entry.RelativePath,
+                entry.LayeredFile is not null,
+                layered: true,
+                ref sourceCount,
+                ref sourceBytes);
+        }
+
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    public SwShItemsWorkflow LoadSemanticExploreItems(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new SwShItemsWorkflowService(ReadSemanticSourceBytes).Load(project);
+    }
+
+    public SwShPokemonWorkflow LoadSemanticExplorePokemon(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new SwShPokemonWorkflowService(ReadSemanticSourceBytes).Load(project);
+    }
+
+    public SwShMovesWorkflow LoadSemanticExploreMoves(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new SwShMovesWorkflowService(ReadSemanticSourceBytes).Load(project);
+    }
+
+    private static bool IsSemanticExploreSource(string relativePath)
+    {
+        return string.Equals(relativePath, SwShItemsWorkflowService.ItemDataPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShPokemonWorkflowService.PersonalDataPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShPokemonWorkflowService.LearnsetDataPath, StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(
+                SwShPokemonWorkflowService.EvolutionDataDirectory.TrimEnd('/') + '/',
+                StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(
+                SwShMovesWorkflowService.MoveDataDirectory.TrimEnd('/') + '/',
+                StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/itemname.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/wazaname.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/wazainfo.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/monsname.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/tokusei.dat", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith("/common/typename.dat", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AppendSemanticGraphSource(
+        IncrementalHash hash,
+        ProjectPaths paths,
+        string relativePath,
+        bool exists,
+        bool layered,
+        ref int sourceCount,
+        ref long sourceBytes)
+    {
+        AppendSemanticSourceHash(hash, layered ? "layered" : "base");
+        if (!exists)
+        {
+            AppendSemanticSourceHash(hash, "missing");
+            return;
+        }
+
+        if (++sourceCount > MaximumSemanticSourceFiles)
+        {
+            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
+        }
+
+        var root = layered ? paths.OutputRootPath : paths.BaseRomFsPath;
+        var child = layered
+            ? relativePath
+            : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+                ? relativePath["romfs/".Length..]
+                : throw new InvalidDataException("A semantic base source path is outside RomFS.");
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            throw new InvalidDataException("A semantic source root is unavailable.");
+        }
+
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var fullPath = Path.GetFullPath(Path.Combine(
+            normalizedRoot,
+            child.Replace('/', Path.DirectorySeparatorChar)));
+        var relative = Path.GetRelativePath(normalizedRoot, fullPath);
+        if (Path.IsPathRooted(relative)
+            || relative == ".."
+            || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("A semantic source path escapes its configured root.");
+        }
+
+        var file = new FileInfo(fullPath);
+        file.Refresh();
+        if (!file.Exists
+            || (file.Attributes & FileAttributes.ReparsePoint) != 0
+            || !string.IsNullOrEmpty(file.LinkTarget))
+        {
+            throw new InvalidDataException("A semantic source file is missing or linked.");
+        }
+
+        using var stream = new FileStream(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1_024,
+            FileOptions.SequentialScan);
+        var observedLength = stream.Length;
+        if (observedLength < 0
+            || observedLength > MaximumSemanticSourceBytesPerFile
+            || observedLength > MaximumSemanticSourceBytes - sourceBytes)
+        {
+            throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
+        }
+
+        AppendSemanticSourceHash(hash, observedLength.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendSemanticSourceHash(hash, Convert.ToHexStringLower(SHA256.HashData(stream)));
+        if (stream.Length != observedLength)
+        {
+            throw new InvalidDataException("The semantic source changed while it was observed.");
+        }
+
+        sourceBytes = checked(sourceBytes + observedLength);
+    }
+
+    private static byte[] ReadSemanticSourceBytes(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1_024,
+            FileOptions.SequentialScan);
+        var observedLength = stream.Length;
+        if (observedLength < 0 || observedLength > MaximumSemanticSourceBytesPerFile)
+        {
+            throw new InvalidDataException("The semantic source file exceeds its bounded limit.");
+        }
+
+        var bytes = new byte[checked((int)observedLength)];
+        stream.ReadExactly(bytes);
+        if (stream.ReadByte() != -1 || stream.Length != observedLength)
+        {
+            throw new InvalidDataException("The semantic source file changed while it was read.");
+        }
+
+        return bytes;
+    }
+
+    private static void AppendSemanticSourceHash(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        hash.AppendData(Encoding.UTF8.GetBytes(
+            bytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        hash.AppendData("\n"u8);
+        hash.AppendData(bytes);
+        hash.AppendData("\n"u8);
+    }
 
     public SwShCacheStatus GetCacheStatus(ProjectPaths? paths = null)
     {

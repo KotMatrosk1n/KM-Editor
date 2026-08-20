@@ -452,6 +452,7 @@ internal sealed class SvPokemonWorkflowService
             var argumentLabels = new Dictionary<int, string>();
             var source = fileSource.Read(project, SvDataPaths.ItemDataArray);
             var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
+            fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V evolution-item table");
             for (var index = 0; index < table.ValuesLength; index++)
             {
                 if (table.Values(index) is not { } item)
@@ -487,7 +488,7 @@ internal sealed class SvPokemonWorkflowService
             labels.Item);
     }
 
-    private static IEnumerable<SvPokemonRecord> LoadRecords(
+    private IEnumerable<SvPokemonRecord> LoadRecords(
         SvWorkflowFile source,
         SvWorkflowFile? baseSource,
         SvEvolutionItemConversionState? conversionState,
@@ -500,6 +501,13 @@ internal sealed class SvPokemonWorkflowService
         global::personal_table? baseTable = baseSource is null
             ? null
             : global::personal_table.GetRootAspersonal_table(new ByteBuffer(baseSource.Bytes));
+        fileSource.EnsureBoundedTableCount(table.EntryLength, "The S/V personal table");
+        if (baseTable is { } boundedBaseTable)
+        {
+            fileSource.EnsureBoundedTableCount(boundedBaseTable.EntryLength, "The base S/V personal table");
+        }
+
+        var nestedCount = 0;
         for (var index = 0; index < table.EntryLength; index++)
         {
             var entry = table.Entry(index);
@@ -511,6 +519,15 @@ internal sealed class SvPokemonWorkflowService
             var baseEntry = baseTable is { } vanillaTable && index < vanillaTable.EntryLength
                 ? vanillaTable.Entry(index)
                 : null;
+            nestedCount = checked(nestedCount + EnsureBoundedPersonalVectors(entry.Value, "The S/V personal row"));
+            if (baseEntry is { } boundedBaseEntry)
+            {
+                nestedCount = checked(
+                    nestedCount + EnsureBoundedPersonalVectors(boundedBaseEntry, "The base S/V personal row"));
+            }
+
+            fileSource.EnsureBoundedNestedCount(nestedCount, "The S/V personal nested vectors");
+
             yield return ToRecord(
                 index,
                 entry.Value,
@@ -522,6 +539,22 @@ internal sealed class SvPokemonWorkflowService
                 tmCatalog,
                 evolutionItemArgumentLabels);
         }
+    }
+
+    private int EnsureBoundedPersonalVectors(global::personal entry, string label)
+    {
+        fileSource.EnsureBoundedTableCount(entry.EvolutionsLength, $"{label} evolution vector");
+        fileSource.EnsureBoundedTableCount(entry.LevelupMovesLength, $"{label} learnset vector");
+        fileSource.EnsureBoundedTableCount(entry.TmMovesLength, $"{label} TM vector");
+        fileSource.EnsureBoundedTableCount(entry.EggMovesLength, $"{label} egg-move vector");
+        fileSource.EnsureBoundedTableCount(entry.ReminderMovesLength, $"{label} reminder-move vector");
+        var count = checked(entry.EvolutionsLength
+            + entry.LevelupMovesLength
+            + entry.TmMovesLength
+            + entry.EggMovesLength
+            + entry.ReminderMovesLength);
+        fileSource.EnsureBoundedNestedCount(count, $"{label} nested vectors");
+        return count;
     }
 
     private static SvPokemonRecord ToRecord(

@@ -13,11 +13,17 @@ internal static class ZaMoveProjectileCatalog
 
     public const string CoreLandingInvocationKind = "coreLanding";
 
-    public static IReadOnlyList<ZaMoveEditableFieldOption> ReadOptions(byte[] activeBytes)
+    public static IReadOnlyList<ZaMoveEditableFieldOption> ReadOptions(
+        byte[] activeBytes,
+        int? maximumVectorEntries = null,
+        int? maximumAggregateVectorEntries = null)
     {
         ArgumentNullException.ThrowIfNull(activeBytes);
 
-        var resourcesById = ReadEntries(activeBytes)
+        var resourcesById = ReadEntries(
+                activeBytes,
+                maximumVectorEntries,
+                maximumAggregateVectorEntries)
             .GroupBy(entry => entry.Id)
             .ToDictionary(
                 group => group.Key,
@@ -48,11 +54,17 @@ internal static class ZaMoveProjectileCatalog
     public static IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
         ReadPlayerDamageInvocations(
             byte[] activeBytes,
-            bool includeVerifiedVanillaTimelineLaunches)
+            bool includeVerifiedVanillaTimelineLaunches,
+            int? maximumVectorEntries = null,
+            int? maximumAggregateVectorEntries = null)
     {
         ArgumentNullException.ThrowIfNull(activeBytes);
 
-        var entries = ReadEntries(activeBytes).ToArray();
+        var entries = ReadEntries(
+                activeBytes,
+                maximumVectorEntries,
+                maximumAggregateVectorEntries)
+            .ToArray();
         var sourcesByBulletId = entries
             .SelectMany(parent => CreateInvocationSources(parent))
             .GroupBy(source => source.BulletId)
@@ -111,9 +123,15 @@ internal static class ZaMoveProjectileCatalog
             .SequenceEqual(verifiedBase.Select(CreateInvocationShapeKey), StringComparer.Ordinal);
     }
 
-    private static IEnumerable<ProjectileEntry> ReadEntries(byte[] bytes)
+    private static IEnumerable<ProjectileEntry> ReadEntries(
+        byte[] bytes,
+        int? maximumVectorEntries,
+        int? maximumAggregateVectorEntries)
     {
-        var reader = new ZaAngeFlatBufferReader(bytes);
+        var reader = new ZaAngeFlatBufferReader(
+            bytes,
+            maximumVectorEntries,
+            maximumAggregateVectorEntries);
         var root = reader.ReadRootTable("bullet parameter array root", maximumFieldCount: 1);
         var groups = reader.ReadTableVector(root, fieldIndex: 0, "bullet parameter groups");
         foreach (var group in groups)

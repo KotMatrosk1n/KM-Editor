@@ -9,6 +9,11 @@ namespace KM.Core.Projects;
 
 public sealed class ProjectValidator
 {
+    public const string OutputRootNotConfiguredDiagnosticCode = "KM-PROJECT-OUTPUT-NOT-CONFIGURED";
+    public const string OutputRootMissingDiagnosticCode = "KM-PROJECT-OUTPUT-MISSING";
+    public const string SaveFileWrongKindDiagnosticCode = "KM-PROJECT-SAVE-WRONG-KIND";
+    public const string SaveFileMissingDiagnosticCode = "KM-PROJECT-SAVE-MISSING";
+
     private const int NpdmTitleIdOffset = 0x290;
     private const int NpdmMinimumTitleIdLength = sizeof(ulong);
 
@@ -225,7 +230,9 @@ public sealed class ProjectValidator
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Save file path must be a file.",
-                expected: "Readable save file");
+                expected: "Readable save file",
+                field: "saveFilePath",
+                code: SaveFileWrongKindDiagnosticCode);
             return draft;
         }
 
@@ -235,7 +242,9 @@ public sealed class ProjectValidator
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Save file does not exist; save-file inspection is disabled until it is created or changed.",
-                expected: "Readable save file");
+                expected: "Readable save file",
+                field: "saveFilePath",
+                code: SaveFileMissingDiagnosticCode);
             return draft;
         }
 
@@ -253,7 +262,9 @@ public sealed class ProjectValidator
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Output root is not configured; write actions are disabled.",
-                expected: "Existing directory before applying output");
+                expected: "Existing directory before applying output",
+                field: "outputRootPath",
+                code: OutputRootNotConfiguredDiagnosticCode);
             return draft;
         }
 
@@ -273,7 +284,9 @@ public sealed class ProjectValidator
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Output root does not exist; write actions are disabled until it is created or changed.",
-                expected: "Existing directory before applying output");
+                expected: "Existing directory before applying output",
+                field: "outputRootPath",
+                code: OutputRootMissingDiagnosticCode);
             return draft;
         }
 
@@ -714,14 +727,24 @@ public sealed class ProjectValidator
 
         public bool HasBlockingError => diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        public void AddDiagnostic(DiagnosticSeverity severity, string message, string? expected = null)
+        public void AddDiagnostic(
+            DiagnosticSeverity severity,
+            string message,
+            string? expected = null,
+            string? field = null,
+            string? code = null)
         {
             diagnostics.Add(new ValidationDiagnostic(
                 severity,
                 message,
                 File: Path,
                 Domain: "project",
+                Field: field,
                 Expected: expected));
+            if (code is not null)
+            {
+                diagnostics[^1] = diagnostics[^1] with { Code = code };
+            }
         }
 
         public ProjectPathValidation ToResult()

@@ -10,7 +10,10 @@ public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetR
     public const int MaxMovesPerRecord = RecordSize / 4;
     public const string LearnsetDataRelativePath = "romfs/bin/pml/waza_oboe/wazaoboe_total.bin";
 
-    public static SwShPokemonLearnsetTable Parse(ReadOnlySpan<byte> data)
+    public static SwShPokemonLearnsetTable Parse(
+        ReadOnlySpan<byte> data,
+        int? maximumRecordCount = null,
+        int? maximumMoveCount = null)
     {
         if (data.Length == 0 || data.Length % RecordSize != 0)
         {
@@ -18,10 +21,22 @@ public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetR
                 $"Pokemon learnset table length must be a non-empty multiple of {RecordSize} bytes.");
         }
 
-        var records = new SwShPokemonLearnsetRecord[data.Length / RecordSize];
+        var recordCount = data.Length / RecordSize;
+        if (maximumRecordCount is not null && recordCount > maximumRecordCount.Value)
+        {
+            throw new InvalidDataException("Pokemon learnset record count exceeds the supported bound.");
+        }
+
+        var records = new SwShPokemonLearnsetRecord[recordCount];
+        var moveCount = 0;
         for (var index = 0; index < records.Length; index++)
         {
             records[index] = ParseRecord(index, data.Slice(index * RecordSize, RecordSize));
+            moveCount = checked(moveCount + records[index].Moves.Count);
+            if (maximumMoveCount is not null && moveCount > maximumMoveCount.Value)
+            {
+                throw new InvalidDataException("Pokemon learnset moves exceed the supported bound.");
+            }
         }
 
         return new SwShPokemonLearnsetTable(records);

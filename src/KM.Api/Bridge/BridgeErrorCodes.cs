@@ -29,4 +29,11 @@ public static class BridgeErrorCodes
     public const string DataSupportUnavailable = "KM-BRIDGE-SUPPORT-RUNTIME-UNAVAILABLE";
     public const string IoFailed = "KM-BRIDGE-IO-FAILED";
     public const string InternalFailure = "KM-BRIDGE-INTERNAL-FAILURE";
+    public const string SemanticStaleRevision = "KM-SEMANTIC-STALE-REVISION";
+    public const string SemanticInvalidQuery = "KM-SEMANTIC-INVALID-QUERY";
+    public const string SemanticUnsupported = "KM-SEMANTIC-UNSUPPORTED";
+    public const string SemanticInvalidCursor = "KM-SEMANTIC-INVALID-CURSOR";
+    public const string SemanticExternalRejected = "KM-SEMANTIC-EXTERNAL-OVERLAY-REJECTED";
+    public const string SemanticExternalSnapshotUnavailable = "KM-SEMANTIC-EXTERNAL-SNAPSHOT-UNAVAILABLE";
+    public const string SemanticLimitExceeded = "KM-SEMANTIC-LIMIT-EXCEEDED";
 }

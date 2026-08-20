@@ -899,10 +899,24 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
 
     private readonly byte[] bytes;
     private readonly Dictionary<int, int> lengthPrefixReferenceCounts = [];
+    private readonly int? maximumVectorEntries;
+    private readonly int? maximumAggregateVectorEntries;
+    private int aggregateVectorEntries;
 
-    public ZaPokemonSpawnerFlatBufferReader(byte[] bytes)
+    public ZaPokemonSpawnerFlatBufferReader(
+        byte[] bytes,
+        int? maximumVectorEntries = null,
+        int? maximumAggregateVectorEntries = null)
     {
+        ArgumentNullException.ThrowIfNull(bytes);
+        if (maximumVectorEntries is <= 0 || maximumAggregateVectorEntries is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumVectorEntries));
+        }
+
         this.bytes = bytes;
+        this.maximumVectorEntries = maximumVectorEntries;
+        this.maximumAggregateVectorEntries = maximumAggregateVectorEntries;
     }
 
     public int GetRootTablePosition()
@@ -937,6 +951,7 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
         }
 
         var length = (int)lengthValue;
+        RegisterVectorLength(length);
         var dataPosition = checked(vectorPosition + sizeof(uint));
         EnsureElementRange(dataPosition, length, UOffsetSize, "table vector data");
         return new ZaPokemonSpawnerTableVector(dataPosition, length);
@@ -984,6 +999,7 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
         }
 
         var length = (int)lengthValue;
+        RegisterVectorLength(length);
         var dataPosition = checked(vectorPosition + sizeof(uint));
         EnsureElementRange(dataPosition, length, UOffsetSize, "string vector data");
         return new ZaPokemonSpawnerStringVector(vectorPosition, dataPosition, length);
@@ -1056,6 +1072,21 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
     {
         lengthPrefixReferenceCounts[position] =
             lengthPrefixReferenceCounts.GetValueOrDefault(position) + 1;
+    }
+
+    private void RegisterVectorLength(int length)
+    {
+        if (maximumVectorEntries is not null && length > maximumVectorEntries.Value)
+        {
+            throw new InvalidDataException("A Pokémon spawner vector exceeds the bounded semantic record limit.");
+        }
+
+        aggregateVectorEntries = checked(aggregateVectorEntries + length);
+        if (maximumAggregateVectorEntries is not null
+            && aggregateVectorEntries > maximumAggregateVectorEntries.Value)
+        {
+            throw new InvalidDataException("Pokémon spawner vectors exceed the bounded semantic record budget.");
+        }
     }
 
     public ZaPokemonSpawnerInt32Field GetInt32(int tablePosition, int fieldIndex)

@@ -131,7 +131,7 @@ internal sealed class SvItemsWorkflowService
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, SvDataPaths.ItemDataArray);
-            tmCatalog = SvTechnicalMachineCatalog.Read(source.Bytes, labels).ToArray();
+            tmCatalog = SvTechnicalMachineCatalog.Read(source.Bytes, labels, fileSource).ToArray();
             items = LoadRecords(source, labels, tmCatalog).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -156,12 +156,13 @@ internal sealed class SvItemsWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SvItemRecord> LoadRecords(
+    private IEnumerable<SvItemRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
     {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V item table");
         var tmCatalogByItemId = tmCatalog.ToDictionary(tm => tm.ItemId);
         for (var index = 0; index < table.ValuesLength; index++)
         {

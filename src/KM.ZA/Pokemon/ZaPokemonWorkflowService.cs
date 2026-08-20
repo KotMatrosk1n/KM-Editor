@@ -543,7 +543,7 @@ internal sealed class ZaPokemonWorkflowService
             dexEditor);
     }
 
-    private static ZaPokemonRecord[] ProjectAlphaMoves(
+    private ZaPokemonRecord[] ProjectAlphaMoves(
         IReadOnlyList<ZaPokemonRecord> pokemon,
         ZaTextLabelLookup labels,
         IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
@@ -555,8 +555,14 @@ internal sealed class ZaPokemonWorkflowService
         ZaWorkflowFile itemSource,
         ZaWorkflowFile baseItemSource)
     {
-        var activeTable = ZaAlphaMoveTableDocument.Parse(alphaMoveSource.Bytes);
-        var vanillaTable = ZaAlphaMoveTableDocument.Parse(baseAlphaMoveSource.Bytes);
+        var activeTable = ZaAlphaMoveTableDocument.Parse(
+            alphaMoveSource.Bytes,
+            fileSource.BoundedTableRecordLimit,
+            fileSource.BoundedNestedRecordLimit);
+        var vanillaTable = ZaAlphaMoveTableDocument.Parse(
+            baseAlphaMoveSource.Bytes,
+            fileSource.BoundedTableRecordLimit,
+            fileSource.BoundedNestedRecordLimit);
         var activePlusMoves = CreateValidPlusMoveIds(battleSource.Bytes);
         var vanillaPlusMoves = CreateValidPlusMoveIds(baseBattleSource.Bytes);
         var physicalTechnicalMachines = tmCatalog
@@ -606,10 +612,13 @@ internal sealed class ZaPokemonWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlySet<int> CreateValidPlusMoveIds(byte[] battleBytes)
+    private IReadOnlySet<int> CreateValidPlusMoveIds(byte[] battleBytes)
     {
         return ZaRuntimeMoveData
-            .BattleRows(ZaRuntimeMoveData.ReadBattle(battleBytes))
+            .BattleRows(ZaRuntimeMoveData.ReadBattle(
+                battleBytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit))
             .Where(row => row.MoveId > 0 && row.MoveId <= int.MaxValue)
             .GroupBy(row => row.MoveId)
             .Where(group => group.Count(row => row.VariantType == 1) == 1)
@@ -767,15 +776,19 @@ internal sealed class ZaPokemonWorkflowService
             Provenance: null);
     }
 
-    private static ZaPokemonDexEditor CreateDexEditor(
+    private ZaPokemonDexEditor CreateDexEditor(
         OpenedProject project,
         IReadOnlyList<ZaPokemonRecord> pokemon,
         ZaWorkflowFile personalSource,
         ZaWorkflowFile contentsSource,
         ZaWorkflowFile megaContentsSource)
     {
-        var contents = ZaPokedexContentsTable.Read(contentsSource.Bytes);
-        var megaContents = ZaPokedexMegaContentsTable.Read(megaContentsSource.Bytes);
+        var contents = ZaPokedexContentsTable.Read(
+            contentsSource.Bytes,
+            fileSource.BoundedTableRecordLimit);
+        var megaContents = ZaPokedexMegaContentsTable.Read(
+            megaContentsSource.Bytes,
+            fileSource.BoundedTableRecordLimit);
         var activeSpecies = pokemon
             .Where(record => record.DexPresence.IsPresentInGame)
             .GroupBy(record => record.SpeciesId)
@@ -1183,6 +1196,7 @@ internal sealed class ZaPokemonWorkflowService
             var argumentLabels = new Dictionary<int, string>();
             var source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
+            fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A evolution-item table");
             for (var index = 0; index < table.ValuesLength; index++)
             {
                 if (table.Values(index) is not { } item)
@@ -1218,7 +1232,7 @@ internal sealed class ZaPokemonWorkflowService
             labels.Item);
     }
 
-    private static IEnumerable<ZaPokemonRecord> LoadRecords(
+    private IEnumerable<ZaPokemonRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaWorkflowFile? baseSource,
         ZaEvolutionItemConversionState? conversionState,
@@ -1232,9 +1246,16 @@ internal sealed class ZaPokemonWorkflowService
         ZaPersonalTable? baseTable = baseSource is null
             ? null
             : ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
+        fileSource.EnsureBoundedTableCount(table.EntryLength, "The Z-A personal table");
+        if (baseTable is { } boundedBaseTable)
+        {
+            fileSource.EnsureBoundedTableCount(boundedBaseTable.EntryLength, "The base Z-A personal table");
+        }
+
         var baseRowsBySpecies = baseTable is { } vanilla
             ? ZaPersonalLegacyRecovery.CreateUniqueBaseRowsBySpecies(vanilla)
             : null;
+        var nestedCount = 0;
         for (var index = 0; index < table.EntryLength; index++)
         {
             var entry = table.Entry(index);
@@ -1250,6 +1271,14 @@ internal sealed class ZaPokemonWorkflowService
                 entry,
                 indexedBaseEntry,
                 baseRowsBySpecies);
+            nestedCount = checked(nestedCount + EnsureBoundedPersonalVectors(entry.Value, "The Z-A personal row"));
+            if (baseEntry is { } boundedBaseEntry)
+            {
+                nestedCount = checked(
+                    nestedCount + EnsureBoundedPersonalVectors(boundedBaseEntry, "The base Z-A personal row"));
+            }
+
+            fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A personal nested vectors");
             if (hasLegacyByteDexOrderLayout && entry.Value.Species is not null && baseEntry is null)
             {
                 throw new InvalidDataException(
@@ -1268,6 +1297,22 @@ internal sealed class ZaPokemonWorkflowService
                 evolutionItemArgumentLabels,
                 hasLegacyByteDexOrderLayout);
         }
+    }
+
+    private int EnsureBoundedPersonalVectors(ZaPersonal entry, string label)
+    {
+        fileSource.EnsureBoundedTableCount(entry.EvolutionsLength, $"{label} evolution vector");
+        fileSource.EnsureBoundedTableCount(entry.LevelupMovesLength, $"{label} learnset vector");
+        fileSource.EnsureBoundedTableCount(entry.TmMovesLength, $"{label} TM vector");
+        fileSource.EnsureBoundedTableCount(entry.EggMovesLength, $"{label} egg-move vector");
+        fileSource.EnsureBoundedTableCount(entry.ReminderMovesLength, $"{label} reminder-move vector");
+        var count = checked(entry.EvolutionsLength
+            + entry.LevelupMovesLength
+            + entry.TmMovesLength
+            + entry.EggMovesLength
+            + entry.ReminderMovesLength);
+        fileSource.EnsureBoundedNestedCount(count, $"{label} nested vectors");
+        return count;
     }
 
     private static ZaPokemonRecord ToRecord(
@@ -1410,6 +1455,7 @@ internal sealed class ZaPokemonWorkflowService
         {
             var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
             var baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
+            fileSource.EnsureBoundedTableCount(baseTable.EntryLength, "The base Z-A yield table");
             return pokemon.Select(record =>
             {
                 if (record.PersonalId < 0

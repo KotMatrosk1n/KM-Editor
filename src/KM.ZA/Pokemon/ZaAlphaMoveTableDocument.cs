@@ -26,15 +26,20 @@ internal sealed class ZaAlphaMoveTableDocument
 
     public IReadOnlyList<ZaAlphaMoveEntry> Entries { get; }
 
-    public static ZaAlphaMoveTableDocument Parse(byte[] bytes)
+    public static ZaAlphaMoveTableDocument Parse(
+        byte[] bytes,
+        int? maximumTableRecords = null,
+        int? maximumNestedRecords = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
         var activeBytes = bytes.ToArray();
         var table = ZaAlphaMoveTable.GetRootAsZaAlphaMoveTable(new ByteBuffer(activeBytes));
+        EnsureBoundedCount(table.RootLength, maximumTableRecords, "The Z-A alpha-move species table");
         var rows = new List<ZaAlphaMoveSpeciesEntry?>(table.RootLength);
         var entries = new List<ZaAlphaMoveEntry>();
         var movePositions = new Dictionary<PhysicalKey, int?>();
+        var nestedRecords = 0;
         for (var speciesRowIndex = 0; speciesRowIndex < table.RootLength; speciesRowIndex++)
         {
             var species = table.Root(speciesRowIndex);
@@ -44,6 +49,12 @@ internal sealed class ZaAlphaMoveTableDocument
                 continue;
             }
 
+            EnsureBoundedCount(
+                species.Value.FormTableListLength,
+                maximumTableRecords,
+                "A Z-A alpha-move form table");
+            nestedRecords = checked(nestedRecords + species.Value.FormTableListLength);
+            EnsureBoundedCount(nestedRecords, maximumNestedRecords, "The Z-A alpha-move form rows");
             var forms = new List<ZaAlphaMoveEntry?>(species.Value.FormTableListLength);
             for (var formRowIndex = 0; formRowIndex < species.Value.FormTableListLength; formRowIndex++)
             {
@@ -75,6 +86,14 @@ internal sealed class ZaAlphaMoveTableDocument
         }
 
         return new ZaAlphaMoveTableDocument(activeBytes, rows, entries, movePositions);
+    }
+
+    private static void EnsureBoundedCount(int count, int? maximum, string label)
+    {
+        if (maximum is not null && (count < 0 || count > maximum.Value))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
     }
 
     public ZaAlphaMoveEntry? FindFirstExact(ushort speciesId, ushort formId)

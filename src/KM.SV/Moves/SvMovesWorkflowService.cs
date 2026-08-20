@@ -354,11 +354,12 @@ internal sealed class SvMovesWorkflowService
             && !string.Equals(candidate.Field, CanUseMoveField, StringComparison.Ordinal));
     }
 
-    private static IEnumerable<SvMoveRecord> LoadRecords(
+    private IEnumerable<SvMoveRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels)
     {
         var table = global::SvMoveDataArray.GetRootAsSvMoveDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V move table");
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var move = table.Values(index);

@@ -12,6 +12,9 @@ public sealed class SvTrinityArchive : IDisposable
     public const int IndexSchemaVersion = 1;
 
     private const long PackCacheBudgetBytes = 64L * 1024 * 1024;
+    private const int MaximumBoundedFileEntries = 500_000;
+    private const int MaximumBoundedPackEntries = 100_000;
+    private const int MaximumBoundedFilesPerPack = 250_000;
     private const string DescriptorRelativePath = "arc/data.trpfd";
     private const string FileSystemRelativePath = "arc/data.trpfs";
     private const int OneFileHeaderSize = 16;
@@ -22,6 +25,7 @@ public sealed class SvTrinityArchive : IDisposable
     private readonly CompiledIndexLookup compiledIndex;
     private readonly ByteBudgetLruCache<ulong, PackedArchiveCacheEntry> packCache = new(PackCacheBudgetBytes);
     private readonly string? compressionSupportFolderPath;
+    private readonly long? maximumPackBytes;
     private SvCompressionRuntimeLibrary? compressionLibrary;
     private bool ownsCompressionLibrary;
     private bool disposed;
@@ -30,12 +34,14 @@ public sealed class SvTrinityArchive : IDisposable
         string trpfsPath,
         CompiledIndexLookup compiledIndex,
         string? compressionSupportFolderPath,
-        SvCompressionRuntimeLibrary? compressionLibrary)
+        SvCompressionRuntimeLibrary? compressionLibrary,
+        long? maximumPackBytes)
     {
         this.trpfsPath = trpfsPath;
         this.compiledIndex = compiledIndex;
         this.compressionSupportFolderPath = compressionSupportFolderPath;
         this.compressionLibrary = compressionLibrary;
+        this.maximumPackBytes = maximumPackBytes;
         ownsCompressionLibrary = compressionLibrary is null;
     }
 
@@ -43,9 +49,15 @@ public sealed class SvTrinityArchive : IDisposable
         string romFsRoot,
         string? compressionSupportFolderPath = null,
         SvCompressionRuntimeLibrary? compressionLibrary = null,
-        SvTrinityArchiveIndex? index = null)
+        SvTrinityArchiveIndex? index = null,
+        int? maximumIndexBytes = null,
+        long? maximumPackBytes = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(romFsRoot);
+        if (maximumIndexBytes is <= 0 || maximumPackBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumIndexBytes));
+        }
 
         var normalizedRoot = ResolveRomFsRoot(romFsRoot);
         var descriptorPath = Path.Combine(normalizedRoot, DescriptorRelativePath);
@@ -61,13 +73,20 @@ public sealed class SvTrinityArchive : IDisposable
             throw new FileNotFoundException("Scarlet/Violet Trinity file system was not found.", trpfsPath);
         }
 
-        var archiveIndex = index ?? BuildIndexFromFiles(descriptorPath, trpfsPath);
+        var archiveIndex = index ?? BuildIndexFromFiles(descriptorPath, trpfsPath, maximumIndexBytes);
+        if (maximumIndexBytes is not null
+            && (archiveIndex.Files.Count > MaximumBoundedFileEntries
+                || archiveIndex.Packs.Count > MaximumBoundedPackEntries))
+        {
+            throw new InvalidDataException("The bounded Trinity archive index exceeds its entry limit.");
+        }
 
         return new SvTrinityArchive(
             trpfsPath,
             CompiledIndexes.GetValue(archiveIndex, CreateCompiledIndex),
             compressionSupportFolderPath,
-            compressionLibrary);
+            compressionLibrary,
+            maximumPackBytes);
     }
 
     public static SvTrinityArchiveIndex BuildIndex(string romFsRoot)
@@ -88,7 +107,7 @@ public sealed class SvTrinityArchive : IDisposable
             throw new FileNotFoundException("Scarlet/Violet Trinity file system was not found.", trpfsPath);
         }
 
-        return BuildIndexFromFiles(descriptorPath, trpfsPath);
+        return BuildIndexFromFiles(descriptorPath, trpfsPath, maximumIndexBytes: null);
     }
 
     public bool ContainsFile(string virtualPath)
@@ -102,6 +121,17 @@ public sealed class SvTrinityArchive : IDisposable
 
     public bool TryReadFile(string virtualPath, out byte[] bytes)
     {
+        return TryReadFileCore(virtualPath, maximumBytes: null, out bytes);
+    }
+
+    public bool TryReadFile(string virtualPath, int maximumBytes, out byte[] bytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+        return TryReadFileCore(virtualPath, maximumBytes, out bytes);
+    }
+
+    private bool TryReadFileCore(string virtualPath, int? maximumBytes, out byte[] bytes)
+    {
         ObjectDisposedException.ThrowIf(disposed, this);
 
         var fileHash = SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath));
@@ -112,6 +142,10 @@ public sealed class SvTrinityArchive : IDisposable
         }
 
         var location = compiledIndex.Files[locationIndex];
+        if (maximumPackBytes is { } packLimit && location.PackSize > packLimit)
+        {
+            throw new InvalidDataException("The bounded Trinity source pack exceeds its safe read limit.");
+        }
 
         var pack = GetPack(location);
         if (!pack.FileIndicesByHash.TryGetValue(fileHash, out var fileIndex))
@@ -122,6 +156,12 @@ public sealed class SvTrinityArchive : IDisposable
 
         var packedFile = pack.Archive.Files(fileIndex)
             ?? throw new InvalidDataException($"Packed archive '{location.PackName}' has no file entry at index {fileIndex}.");
+        if (maximumBytes is { } limit
+            && (packedFile.FileBufferLength > limit || packedFile.FileSize > (ulong)limit))
+        {
+            throw new InvalidDataException("The bounded Trinity source file exceeds its safe read limit.");
+        }
+
         bytes = ReadPackedFile(location.PackName, packedFile);
         return true;
     }
@@ -129,6 +169,13 @@ public sealed class SvTrinityArchive : IDisposable
     public byte[] ReadFile(string virtualPath)
     {
         return TryReadFile(virtualPath, out var bytes)
+            ? bytes
+            : throw new FileNotFoundException($"Scarlet/Violet Trinity file '{virtualPath}' was not found.");
+    }
+
+    public byte[] ReadFile(string virtualPath, int maximumBytes)
+    {
+        return TryReadFile(virtualPath, maximumBytes, out var bytes)
             ? bytes
             : throw new FileNotFoundException($"Scarlet/Violet Trinity file '{virtualPath}' was not found.");
     }
@@ -172,7 +219,7 @@ public sealed class SvTrinityArchive : IDisposable
         return path;
     }
 
-    private static FileSystem ReadFileSystem(string trpfsPath)
+    private static FileSystem ReadFileSystem(string trpfsPath, int? maximumIndexBytes)
     {
         using var stream = new FileStream(trpfsPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         Span<byte> header = stackalloc byte[OneFileHeaderSize];
@@ -189,7 +236,8 @@ public sealed class SvTrinityArchive : IDisposable
         }
 
         var fileSystemSize = stream.Length - fileSystemOffset;
-        if (fileSystemSize > int.MaxValue)
+        if (fileSystemSize > int.MaxValue
+            || (maximumIndexBytes is { } limit && fileSystemSize > limit))
         {
             throw new InvalidDataException(
                 $"Scarlet/Violet Trinity file system index is too large to load: {fileSystemSize} bytes.");
@@ -201,14 +249,69 @@ public sealed class SvTrinityArchive : IDisposable
         return FileSystem.GetRootAsFileSystem(new ByteBuffer(buffer));
     }
 
-    private static SvTrinityArchiveIndex BuildIndexFromFiles(string descriptorPath, string trpfsPath)
+    private static SvTrinityArchiveIndex BuildIndexFromFiles(
+        string descriptorPath,
+        string trpfsPath,
+        int? maximumIndexBytes)
     {
-        var descriptor = FileDescriptor.GetRootAsFileDescriptor(new ByteBuffer(File.ReadAllBytes(descriptorPath)));
-        var fileSystem = ReadFileSystem(trpfsPath);
+        var descriptor = FileDescriptor.GetRootAsFileDescriptor(new ByteBuffer(
+            ReadIndexBytes(descriptorPath, maximumIndexBytes)));
+        var fileSystem = ReadFileSystem(trpfsPath, maximumIndexBytes);
+        ValidateBoundedIndexShape(descriptor, fileSystem, maximumIndexBytes is not null);
         return new SvTrinityArchiveIndex(
             IndexSchemaVersion,
             BuildFileIndexEntries(descriptor),
             BuildPackIndexEntries(fileSystem));
+    }
+
+    private static void ValidateBoundedIndexShape(
+        FileDescriptor descriptor,
+        FileSystem fileSystem,
+        bool bounded)
+    {
+        if (descriptor.FileHashesLength != descriptor.FilesLength
+            || descriptor.PackNamesLength != descriptor.PacksLength
+            || fileSystem.FileHashesLength != fileSystem.FileOffsetsLength)
+        {
+            throw new InvalidDataException("The Trinity archive index vectors have inconsistent lengths.");
+        }
+
+        if (bounded
+            && (descriptor.FileHashesLength > MaximumBoundedFileEntries
+                || descriptor.PackNamesLength > MaximumBoundedPackEntries
+                || fileSystem.FileHashesLength > MaximumBoundedPackEntries))
+        {
+            throw new InvalidDataException("The bounded Trinity archive index exceeds its entry limit.");
+        }
+    }
+
+    private static byte[] ReadIndexBytes(string path, int? maximumIndexBytes)
+    {
+        if (maximumIndexBytes is null)
+        {
+            return File.ReadAllBytes(path);
+        }
+
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1_024,
+            FileOptions.SequentialScan);
+        if (stream.Length < 0 || stream.Length > maximumIndexBytes.Value)
+        {
+            throw new InvalidDataException("The bounded Trinity archive index exceeds its safe read limit.");
+        }
+
+        var bytes = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(bytes);
+        if (stream.ReadByte() != -1)
+        {
+            throw new InvalidDataException("The bounded Trinity archive index changed while it was read.");
+        }
+
+        return bytes;
     }
 
     private static Dictionary<ulong, int> BuildFileIndex(SvTrinityArchiveIndex index)
@@ -355,6 +458,13 @@ public sealed class SvTrinityArchive : IDisposable
         }
 
         var archive = PackedArchive.GetRootAsPackedArchive(new ByteBuffer(packBytes));
+        if (archive.FileHashesLength != archive.FilesLength
+            || (maximumPackBytes is not null
+                && archive.FileHashesLength > MaximumBoundedFilesPerPack))
+        {
+            throw new InvalidDataException("The bounded Trinity pack index is inconsistent or too large.");
+        }
+
         var fileIndices = new Dictionary<ulong, int>(archive.FileHashesLength);
         for (var index = 0; index < archive.FileHashesLength; index++)
         {

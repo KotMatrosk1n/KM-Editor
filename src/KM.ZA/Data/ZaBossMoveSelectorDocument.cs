@@ -36,12 +36,18 @@ internal sealed class ZaBossMoveSelectorDocument
 
     public bool HasChanges => pendingWrites.Count > 0;
 
-    public static ZaBossMoveSelectorDocument Parse(byte[] bytes)
+    public static ZaBossMoveSelectorDocument Parse(
+        byte[] bytes,
+        int? maximumVectorEntries = null,
+        int? maximumAggregateVectorEntries = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
         var originalBytes = bytes.ToArray();
-        var reader = new ZaPokemonSpawnerFlatBufferReader(originalBytes);
+        var reader = new ZaPokemonSpawnerFlatBufferReader(
+            originalBytes,
+            maximumVectorEntries,
+            maximumAggregateVectorEntries);
         var rootPosition = reader.GetRootTablePosition();
         var groups = reader.GetTableVector(rootPosition, RootGroupsField)
             ?? throw new InvalidDataException("Boss move selector data has no group vector.");

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.ZA.Generated.BattleMoves;
+using Google.FlatBuffers;
 using System.Globalization;
 using System.Security.Cryptography;
 
@@ -32,11 +33,59 @@ internal static class ZaRuntimeMoveData
 
     public static IReadOnlyList<string> SpawnLocators => KnownSpawnLocators;
 
-    public static ZaBattleMoveParameterArrayT ReadBattle(byte[] bytes) =>
-        ZaBattleMoveParameterArrayT.DeserializeFromBinary(bytes);
+    public static ZaBattleMoveParameterArrayT ReadBattle(
+        byte[] bytes,
+        int? maximumTableRecords = null,
+        int? maximumNestedRecords = null)
+    {
+        var table = ZaBattleMoveParameterArray.GetRootAsZaBattleMoveParameterArray(new ByteBuffer(bytes));
+        EnsureBoundedCount(table.ValuesLength, maximumTableRecords, "The Z-A battle-move group table");
+        var nestedRecords = 0;
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            if (table.Values(index) is not { } group)
+            {
+                continue;
+            }
 
-    public static ZaMoveTimingParameterArrayT ReadTiming(byte[] bytes) =>
-        ZaMoveTimingParameterArrayT.DeserializeFromBinary(bytes);
+            EnsureBoundedCount(group.RootLength, maximumTableRecords, "A Z-A battle-move group");
+            nestedRecords = checked(nestedRecords + group.RootLength);
+            EnsureBoundedCount(nestedRecords, maximumNestedRecords, "The Z-A battle-move rows");
+        }
+
+        return table.UnPack();
+    }
+
+    public static ZaMoveTimingParameterArrayT ReadTiming(
+        byte[] bytes,
+        int? maximumTableRecords = null,
+        int? maximumNestedRecords = null)
+    {
+        var table = ZaMoveTimingParameterArray.GetRootAsZaMoveTimingParameterArray(new ByteBuffer(bytes));
+        EnsureBoundedCount(table.ValuesLength, maximumTableRecords, "The Z-A move-timing group table");
+        var nestedRecords = 0;
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            if (table.Values(index) is not { } group)
+            {
+                continue;
+            }
+
+            EnsureBoundedCount(group.RootLength, maximumTableRecords, "A Z-A move-timing group");
+            nestedRecords = checked(nestedRecords + group.RootLength);
+            EnsureBoundedCount(nestedRecords, maximumNestedRecords, "The Z-A move-timing rows");
+        }
+
+        return table.UnPack();
+    }
+
+    private static void EnsureBoundedCount(int count, int? maximum, string label)
+    {
+        if (maximum is not null && (count < 0 || count > maximum.Value))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
+    }
 
     public static IEnumerable<ZaBattleMoveParameterT> BattleRows(ZaBattleMoveParameterArrayT table) =>
         table.Values?.Where(group => group?.Root is not null).SelectMany(group => group.Root) ?? [];

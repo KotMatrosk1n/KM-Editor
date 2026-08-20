@@ -173,7 +173,9 @@ internal sealed class SvTextLabelLookup
     {
         try
         {
-            return SwShGameTextFile.Parse(fileSource.Read(project, path).Bytes)
+            return SwShGameTextFile.Parse(
+                    fileSource.Read(project, path).Bytes,
+                    fileSource.BoundedTableRecordLimit)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
@@ -200,7 +202,9 @@ internal sealed class SvTextLabelLookup
     {
         try
         {
-            return SwShAhtbFile.Parse(fileSource.Read(project, path).Bytes)
+            return SwShAhtbFile.Parse(
+                    fileSource.Read(project, path).Bytes,
+                    fileSource.BoundedTableRecordLimit)
                 .Entries
                 .Select((entry, index) => (entry.Name, index))
                 .GroupBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)

@@ -10,6 +10,33 @@ namespace KM.SwSh.Moves;
 
 public sealed class SwShMovesWorkflowService
 {
+    private const int MaximumSemanticRecords = 10_000;
+    private const int MaximumSemanticTextLines = 50_000;
+
+    private readonly Func<string, byte[]> readAllBytes;
+    private readonly int? maximumRecordCount;
+    private readonly int? maximumTextLineCount;
+
+    public SwShMovesWorkflowService()
+        : this(File.ReadAllBytes, maximumRecordCount: null, maximumTextLineCount: null)
+    {
+    }
+
+    internal SwShMovesWorkflowService(Func<string, byte[]> readAllBytes)
+        : this(readAllBytes, MaximumSemanticRecords, MaximumSemanticTextLines)
+    {
+    }
+
+    private SwShMovesWorkflowService(
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount,
+        int? maximumTextLineCount)
+    {
+        this.readAllBytes = readAllBytes ?? throw new ArgumentNullException(nameof(readAllBytes));
+        this.maximumRecordCount = maximumRecordCount;
+        this.maximumTextLineCount = maximumTextLineCount;
+    }
+
     public const string TypeField = "type";
     public const string CanUseMoveField = "canUseMove";
     public const string QualityField = "quality";
@@ -302,7 +329,12 @@ public sealed class SwShMovesWorkflowService
         var moveSources = ResolveWorkflowFiles(project, MoveDataDirectory)
             .Where(source => IsMoveDataFile(source.GraphEntry.RelativePath))
             .OrderBy(source => source.GraphEntry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Take(maximumRecordCount is null ? int.MaxValue : maximumRecordCount.Value + 1)
             .ToArray();
+        if (maximumRecordCount is not null && moveSources.Length > maximumRecordCount.Value)
+        {
+            throw new InvalidDataException("Move sources exceed the bounded semantic record limit.");
+        }
         if (moveSources.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -312,9 +344,27 @@ public sealed class SwShMovesWorkflowService
             return CreateWorkflow(summary, [], sourceFileCount: 0, diagnostics);
         }
 
-        var moveNames = LoadOptionalTextTable(project, "wazaname.dat", "Move names", diagnostics);
-        var moveDescriptions = LoadOptionalTextTable(project, "wazainfo.dat", "Move descriptions", diagnostics);
-        var loadedTypeNames = LoadOptionalTextTable(project, "typename.dat", "Type names", diagnostics);
+        var moveNames = LoadOptionalTextTable(
+            project,
+            "wazaname.dat",
+            "Move names",
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
+        var moveDescriptions = LoadOptionalTextTable(
+            project,
+            "wazainfo.dat",
+            "Move descriptions",
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
+        var loadedTypeNames = LoadOptionalTextTable(
+            project,
+            "typename.dat",
+            "Type names",
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
         var typeNames = NormalizeTypeNames(loadedTypeNames);
         var moves = new List<SwShMoveRecord>();
         var parsedSourceFileCount = 0;
@@ -323,7 +373,7 @@ public sealed class SwShMovesWorkflowService
         {
             try
             {
-                var moveFile = SwShMoveDataFile.Parse(File.ReadAllBytes(source.AbsolutePath));
+                var moveFile = SwShMoveDataFile.Parse(readAllBytes(source.AbsolutePath));
                 parsedSourceFileCount++;
                 if (moveFile.Record.MoveId > int.MaxValue)
                 {
@@ -533,7 +583,9 @@ public sealed class SwShMovesWorkflowService
         OpenedProject project,
         string fileName,
         string label,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumTextLineCount)
     {
         var relativePath = ResolveCommonTextPath(project, fileName);
         var source = ResolveWorkflowFile(project, relativePath);
@@ -548,7 +600,9 @@ public sealed class SwShMovesWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+            return SwShGameTextFile.Parse(
+                    readAllBytes(source.AbsolutePath),
+                    maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();

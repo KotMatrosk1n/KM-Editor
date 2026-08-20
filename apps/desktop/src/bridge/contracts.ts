@@ -147,7 +147,16 @@ export const kmCommandNameValues = [
   'changeSets.captureSession',
   'changeSets.materialize',
   'changeSets.export',
-  'changeSets.import'
+  'changeSets.import',
+  'semantic.capabilities',
+  'semantic.search',
+  'semantic.entity',
+  'semantic.compare',
+  'semantic.references',
+  'semantic.impact',
+  'semantic.ownership',
+  'semantic.external.compare',
+  'semantic.changes'
 ] as const;
 
 export const kmCommandNameSchema = z.enum(kmCommandNameValues);
@@ -162,6 +171,15 @@ export const kmCommandNames = {
   materializeChangeSets: 'changeSets.materialize',
   mutateChangeSets: 'changeSets.mutate',
   readChangeSets: 'changeSets.read',
+  compareExternalSemantic: 'semantic.external.compare',
+  compareSemantic: 'semantic.compare',
+  getSemanticCapabilities: 'semantic.capabilities',
+  getSemanticEntity: 'semantic.entity',
+  querySemanticChanges: 'semantic.changes',
+  querySemanticImpact: 'semantic.impact',
+  querySemanticOwnership: 'semantic.ownership',
+  querySemanticReferences: 'semantic.references',
+  searchSemantic: 'semantic.search',
   discardEditSession: 'editSession.discard',
   getEditSession: 'editSession.get',
   listWorkflows: 'workflow.list',

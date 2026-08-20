@@ -46,9 +46,9 @@ internal static class ZaDexLayoutStateReader
         var megaContentsSource = fileSource.ReadBase(
             project,
             ZaDataPaths.PokedexMegaContentsData);
-        var assignments = ReadAssignments(personalSource.Bytes);
-        var regularCount = ReadAndValidateGroups(contentsSource.Bytes, assignments);
-        ValidateMegaContents(megaContentsSource.Bytes, assignments);
+        var assignments = ReadAssignments(personalSource.Bytes, fileSource);
+        var regularCount = ReadAndValidateGroups(contentsSource.Bytes, assignments, fileSource);
+        ValidateMegaContents(megaContentsSource.Bytes, assignments, fileSource);
 
         return new ZaDexLayoutState(
             regularCount,
@@ -79,11 +79,14 @@ internal static class ZaDexLayoutStateReader
             Encoding.UTF8.GetBytes(canonical.ToString())));
     }
 
-    private static IReadOnlyDictionary<int, int> ReadAssignments(byte[] bytes)
+    private static IReadOnlyDictionary<int, int> ReadAssignments(
+        byte[] bytes,
+        ZaWorkflowFileSource fileSource)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
+        fileSource.EnsureBoundedTableCount(table.EntryLength, "The base Z-A Pokédex personal table");
         if (table.HasLegacyByteZADexOrderLayout)
         {
             throw new InvalidDataException(
@@ -142,12 +145,13 @@ internal static class ZaDexLayoutStateReader
 
     private static int ReadAndValidateGroups(
         byte[] bytes,
-        IReadOnlyDictionary<int, int> assignments)
+        IReadOnlyDictionary<int, int> assignments,
+        ZaWorkflowFileSource fileSource)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         ArgumentNullException.ThrowIfNull(assignments);
 
-        var contents = ZaPokedexContentsTable.Read(bytes);
+        var contents = ZaPokedexContentsTable.Read(bytes, fileSource.BoundedTableRecordLimit);
         var rows = contents.Rows.ToArray();
         if (rows.Any(row => !row.HasKnownGroup)
             || rows.Select(row => row.Species).Distinct().Count() != rows.Length)
@@ -188,12 +192,13 @@ internal static class ZaDexLayoutStateReader
 
     private static void ValidateMegaContents(
         byte[] bytes,
-        IReadOnlyDictionary<int, int> assignments)
+        IReadOnlyDictionary<int, int> assignments,
+        ZaWorkflowFileSource fileSource)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         ArgumentNullException.ThrowIfNull(assignments);
 
-        var rows = ZaPokedexMegaContentsTable.Read(bytes).Rows;
+        var rows = ZaPokedexMegaContentsTable.Read(bytes, fileSource.BoundedTableRecordLimit).Rows;
         if (rows.Any(row => !row.HasKnownGroup)
             || rows.Select(row => row.Species).Distinct().Except(assignments.Keys).Any())
         {

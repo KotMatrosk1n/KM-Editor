@@ -12,6 +12,33 @@ namespace KM.SwSh.Items;
 
 public sealed class SwShItemsWorkflowService
 {
+    private const int MaximumSemanticRecords = 10_000;
+    private const int MaximumSemanticTextLines = 50_000;
+
+    private readonly Func<string, byte[]> readAllBytes;
+    private readonly int? maximumRecordCount;
+    private readonly int? maximumTextLineCount;
+
+    public SwShItemsWorkflowService()
+        : this(File.ReadAllBytes, maximumRecordCount: null, maximumTextLineCount: null)
+    {
+    }
+
+    internal SwShItemsWorkflowService(Func<string, byte[]> readAllBytes)
+        : this(readAllBytes, MaximumSemanticRecords, MaximumSemanticTextLines)
+    {
+    }
+
+    private SwShItemsWorkflowService(
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount,
+        int? maximumTextLineCount)
+    {
+        this.readAllBytes = readAllBytes ?? throw new ArgumentNullException(nameof(readAllBytes));
+        this.maximumRecordCount = maximumRecordCount;
+        this.maximumTextLineCount = maximumTextLineCount;
+    }
+
     public const string BuyPriceField = "buyPrice";
     public const string SellPriceField = "sellPrice";
     public const string WattsPriceField = "wattsPrice";
@@ -454,17 +481,22 @@ public sealed class SwShItemsWorkflowService
         var itemNamesSource = ResolveItemNamesSource(project, diagnostics);
         var itemNames = itemNamesSource is null
             ? Array.Empty<string>()
-            : LoadItemNames(itemNamesSource, diagnostics);
+            : LoadItemNames(itemNamesSource, diagnostics, readAllBytes, maximumTextLineCount);
         var moveNamesSource = ResolveMoveNamesSource(project);
         var moveNames = moveNamesSource is null
             ? Array.Empty<string>()
-            : LoadMoveNames(moveNamesSource, diagnostics);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+            : LoadMoveNames(moveNamesSource, diagnostics, readAllBytes, maximumTextLineCount);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(
+            project,
+            readAllBytes,
+            maximumRecordCount);
         var editableFields = CreateEditableFields(moveNames, usableMoveIds);
 
         try
         {
-            var itemTable = SwShItemTable.Parse(File.ReadAllBytes(itemDataSource.AbsolutePath));
+            var itemTable = SwShItemTable.Parse(
+                readAllBytes(itemDataSource.AbsolutePath),
+                maximumRecordCount);
             var provenance = CreateProvenance(itemDataSource.GraphEntry);
             var items = itemTable.Records
                 .OrderBy(item => item.ItemId)
@@ -645,11 +677,15 @@ public sealed class SwShItemsWorkflowService
 
     private static string[] LoadItemNames(
         WorkflowFileSource itemNamesSource,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumTextLineCount)
     {
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(itemNamesSource.AbsolutePath))
+            return SwShGameTextFile.Parse(
+                    readAllBytes(itemNamesSource.AbsolutePath),
+                    maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
@@ -741,11 +777,15 @@ public sealed class SwShItemsWorkflowService
 
     private static string[] LoadMoveNames(
         WorkflowFileSource moveNamesSource,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumTextLineCount)
     {
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(moveNamesSource.AbsolutePath))
+            return SwShGameTextFile.Parse(
+                    readAllBytes(moveNamesSource.AbsolutePath),
+                    maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();

@@ -57,7 +57,7 @@ internal static class ZaTechnicalMachineCatalog
                 return [];
             }
 
-            return Read(source.Bytes, labels, recovery);
+            return Read(source.Bytes, labels, recovery, fileSource);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -72,15 +72,17 @@ internal static class ZaTechnicalMachineCatalog
         byte[] itemData,
         ZaTextLabelLookup labels)
     {
-        return Read(itemData, labels, ZaTechnicalMachineLegacyRecovery.None);
+        return Read(itemData, labels, ZaTechnicalMachineLegacyRecovery.None, boundedFileSource: null);
     }
 
     private static IReadOnlyList<ZaTechnicalMachineMove> Read(
         byte[] itemData,
         ZaTextLabelLookup labels,
-        ZaTechnicalMachineLegacyRecovery recovery)
+        ZaTechnicalMachineLegacyRecovery recovery,
+        ZaWorkflowFileSource? boundedFileSource)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(itemData));
+        boundedFileSource?.EnsureBoundedTableCount(table.ValuesLength, "The Z-A TM item table");
         var records = new List<ZaTechnicalMachineMove>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
