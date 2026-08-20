@@ -203,7 +203,8 @@ internal sealed class SvTrainersWorkflowService
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
             trainers = LoadRecords(source, labels, spriteLabels, abilityResolver, moveResolver).ToArray();
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(SvWorkflowSupport.Error(
                 $"Trainers could not be loaded: {exception.Message}",
@@ -228,7 +229,7 @@ internal sealed class SvTrainersWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SvTrainerRecord> LoadRecords(
+    private IEnumerable<SvTrainerRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         SvTextLabelLookup spriteLabels,
@@ -236,6 +237,7 @@ internal sealed class SvTrainersWorkflowService
         SvDefaultMoveResolver moveResolver)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V trainer table");
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var trainer = table.Values(index);
@@ -667,6 +669,7 @@ internal sealed class SvTrainersWorkflowService
             {
                 var source = fileSource.Read(project, SvDataPaths.PersonalArray);
                 var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
+                fileSource.EnsureBoundedTableCount(table.EntryLength, "The S/V trainer ability personal table");
                 var lookup = new Dictionary<string, SvTrainerAbilitySet>(StringComparer.Ordinal);
                 for (var index = 0; index < table.EntryLength; index++)
                 {
@@ -697,7 +700,9 @@ internal sealed class SvTrainersWorkflowService
 
                 return new SvTrainerAbilityResolver(lookup);
             }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            catch (Exception exception) when (
+                exception is IOException or InvalidDataException or ArgumentException
+                && !fileSource.IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(SvWorkflowSupport.Warning(
                     $"Trainer ability names could not be resolved from Pokemon Data: {exception.Message}",

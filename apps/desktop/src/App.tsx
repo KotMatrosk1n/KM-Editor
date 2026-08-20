@@ -468,6 +468,8 @@ import {
   useSemanticExploreController,
   type QueryableLayer
 } from './features/semantic-explore/useSemanticExploreController';
+import { BalanceLabRuntime } from './features/balance-lab/BalanceLabRuntime';
+import type { BalanceLabLayer } from './features/balance-lab/useBalanceLabController';
 import { ChangeSetWorkspacePanel } from './features/change-sets/ChangeSetWorkspacePanel';
 import { useChangeSetWorkspaceController } from './features/change-sets/useChangeSetWorkspaceController';
 import {
@@ -501,6 +503,10 @@ import {
   semanticRecordRefKey
 } from './workbench/semanticContracts';
 import { createSemanticExploreLocation } from './workbench/semanticExploreNavigation';
+import {
+  createBalanceLabLocation,
+  parseBalanceLabSlotSubrecord
+} from './workbench/balanceLabNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
 import { PersonalizationSettingsPanel } from './features/settings/PersonalizationSettingsPanel';
 import { WhatChangedTour } from './features/updates/WhatChangedTour';
@@ -2260,6 +2266,7 @@ export function App({
     (state) => state.spreadsheetImportWorkflow
   );
   const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
+  const selectedEncounterSlot = useWorkbenchStore((state) => state.selectedEncounterSlot);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedMoveId = useWorkbenchStore((state) => state.selectedMoveId);
   const selectedPokemonPersonalId = useWorkbenchStore(
@@ -2318,6 +2325,9 @@ export function App({
   const selectedSaveBlockId = useWorkbenchStore((state) => state.selectedSaveBlockId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
   const selectedTrainerId = useWorkbenchStore((state) => state.selectedTrainerId);
+  const selectedTrainerPartySlot = useWorkbenchStore(
+    (state) => state.selectedTrainerPartySlot
+  );
   const shopSearchText = useWorkbenchStore((state) => state.shopSearchText);
   const shopsWorkflow = useWorkbenchStore((state) => state.shopsWorkflow);
   const textSearchText = useWorkbenchStore((state) => state.textSearchText);
@@ -2478,6 +2488,9 @@ export function App({
   const setSelectedEncounterTableId = useWorkbenchStore(
     (state) => state.setSelectedEncounterTableId
   );
+  const setSelectedEncounterSlot = useWorkbenchStore(
+    (state) => state.setSelectedEncounterSlot
+  );
   const setSelectedTeraRaidRecordId = useWorkbenchStore(
     (state) => state.setSelectedTeraRaidRecordId
   );
@@ -2525,6 +2538,9 @@ export function App({
   const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
+  const setSelectedTrainerPartySlot = useWorkbenchStore(
+    (state) => state.setSelectedTrainerPartySlot
+  );
   const setSelectedGame = useWorkbenchStore((state) => state.setSelectedGame);
   const setShopSearchText = useWorkbenchStore((state) => state.setShopSearchText);
   const setShopsWorkflow = useWorkbenchStore((state) => state.setShopsWorkflow);
@@ -2600,6 +2616,27 @@ export function App({
     bridge,
     scope: semanticExploreScope
   });
+  const handleBalanceLabStaleRevision = useCallback(() => {
+    semanticExploreController.invalidate();
+    void semanticExploreController.refreshCapabilities();
+  }, [
+    semanticExploreController.invalidate,
+    semanticExploreController.refreshCapabilities
+  ]);
+  const balanceLabRevision =
+    semanticExploreController.capabilities.status === 'ready'
+      ? semanticExploreController.capabilities.data?.revision ?? null
+      : null;
+  const balanceLabAvailableLayers = useMemo<readonly BalanceLabLayer[]>(() => {
+    const available = new Set(
+      semanticExploreController.capabilities.data?.snapshots.map(
+        (snapshot) => snapshot.layer.kind
+      ) ?? []
+    );
+    return (['base', 'layered', 'pending'] as const).filter(
+      (layer): layer is BalanceLabLayer => available.has(layer)
+    );
+  }, [semanticExploreController.capabilities.data?.snapshots]);
   const semanticExploreIsQueryingRef = useRef(semanticExploreController.isQuerying);
   semanticExploreIsQueryingRef.current = semanticExploreController.isQuerying;
   const [activeLocation, setActiveLocation] = useState<WorkbenchLocation>(() =>
@@ -4113,21 +4150,53 @@ export function App({
             currentState.textWorkflow?.entries.some((entry) => entry.textKey === value)
             ? () => setSelectedTextKey(value)
             : null;
-        case 'trainers':
-          return typeof value === 'number' &&
-            currentState.trainersWorkflow?.trainers.some((trainer) => trainer.trainerId === value)
-            ? () => setSelectedTrainerId(value)
-            : null;
+        case 'trainers': {
+          if (typeof value !== 'number') {
+            return null;
+          }
+          const trainer = currentState.trainersWorkflow?.trainers.find(
+            (candidate) => candidate.trainerId === value
+          );
+          const slot = parseBalanceLabSlotSubrecord('trainers', selection.subrecordId);
+          if (!trainer || slot === undefined || (slot !== null && !trainer.team.some(
+            (pokemon) => pokemon.slot === slot
+          ))) {
+            return null;
+          }
+          return () => {
+            setTrainerSearchText('');
+            setSelectedTrainerId(value);
+            if (slot !== null) {
+              setSelectedTrainerPartySlot(slot);
+            }
+          };
+        }
         case 'shops':
           return typeof value === 'string' &&
             currentState.shopsWorkflow?.shops.some((shop) => shop.shopId === value)
             ? () => setSelectedShopId(value)
             : null;
-        case 'encounters':
-          return typeof value === 'string' &&
-            currentState.encountersWorkflow?.tables.some((table) => table.tableId === value)
-            ? () => setSelectedEncounterTableId(value)
-            : null;
+        case 'encounters': {
+          if (typeof value !== 'string') {
+            return null;
+          }
+          const table = currentState.encountersWorkflow?.tables.find(
+            (candidate) => candidate.tableId === value
+          );
+          const slot = parseBalanceLabSlotSubrecord('encounters', selection.subrecordId);
+          if (!table || slot === undefined || (slot !== null && !table.slots.some(
+            (candidate) => candidate.slot === slot
+          ))) {
+            return null;
+          }
+          return () => {
+            setEncounterSearchText('');
+            setSelectedEncounterTableId(value);
+            if (slot !== null) {
+              setSelectedEncounterSlot(slot);
+            }
+          };
+        }
         case 'teraRaids':
           return typeof value === 'string' &&
             currentState.teraRaidsWorkflow?.raids.some((raid) => raid.recordId === value)
@@ -4226,6 +4295,8 @@ export function App({
     },
     [
       setSelectedBehaviorEntryId,
+      setEncounterSearchText,
+      setSelectedEncounterSlot,
       setSelectedEncounterTableId,
       setSelectedExeFsCheckId,
       setSelectedExeFsPatchId,
@@ -4244,7 +4315,9 @@ export function App({
       setSelectedStartingItemSlot,
       setSelectedTeraRaidRecordId,
       setSelectedTextKey,
-      setSelectedTrainerId
+      setSelectedTrainerId,
+      setSelectedTrainerPartySlot,
+      setTrainerSearchText
     ]
   );
 
@@ -4364,6 +4437,30 @@ export function App({
         return;
       }
       const location = createSemanticExploreLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      });
+      if (!location) {
+        setBridgeDiagnostics([
+          {
+            domain: 'workspace.navigation',
+            message: t('workbench.navigation.targetUnavailable'),
+            severity: 'warning'
+          }
+        ]);
+        return;
+      }
+      handleNavigateWorkspaceTarget(location);
+    },
+    [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
+  );
+  const handleNavigateBalanceLabFinding = useCallback(
+    (record: SemanticExploreRecordRef) => {
+      if (!activeProjectId || !selectedGame) {
+        return;
+      }
+      const location = createBalanceLabLocation({
         game: selectedGame,
         projectId: activeProjectId,
         record
@@ -4569,6 +4666,34 @@ export function App({
       ),
     [handleSelectStableLocation, setSelectedTrainerId]
   );
+  const handleSelectTrainerPartySlotLocation = useCallback(
+    (slot: number | null) => {
+      if (!activeProjectId || !selectedGame || selectedTrainerId === null) {
+        setSelectedTrainerPartySlot(slot);
+        return;
+      }
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        section: 'trainers',
+        subrecordId: slot === null ? null : `party-slot:${slot}`,
+        value: selectedTrainerId
+      });
+      return handleNavigateLocation(
+        destination,
+        () => setSelectedTrainerPartySlot(slot),
+        'replace',
+        { rememberRecent: false }
+      );
+    },
+    [
+      activeProjectId,
+      handleNavigateLocation,
+      selectedGame,
+      selectedTrainerId,
+      setSelectedTrainerPartySlot
+    ]
+  );
   const handleSelectShopLocation = useCallback(
     (shopId: string | null) =>
       handleSelectStableLocation('shops', shopId, () => setSelectedShopId(shopId)),
@@ -4580,6 +4705,34 @@ export function App({
         setSelectedEncounterTableId(tableId)
       ),
     [handleSelectStableLocation, setSelectedEncounterTableId]
+  );
+  const handleSelectEncounterSlotLocation = useCallback(
+    (slot: number | null) => {
+      if (!activeProjectId || !selectedGame || selectedEncounterTableId === null) {
+        setSelectedEncounterSlot(slot);
+        return;
+      }
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        section: 'encounters',
+        subrecordId: slot === null ? null : `slot:${slot}`,
+        value: selectedEncounterTableId
+      });
+      return handleNavigateLocation(
+        destination,
+        () => setSelectedEncounterSlot(slot),
+        'replace',
+        { rememberRecent: false }
+      );
+    },
+    [
+      activeProjectId,
+      handleNavigateLocation,
+      selectedEncounterTableId,
+      selectedGame,
+      setSelectedEncounterSlot
+    ]
   );
   const handleSelectTeraRaidLocation = useCallback(
     (recordId: string | null) =>
@@ -15146,6 +15299,20 @@ export function App({
           ) : null}
           {activeSection === 'workbench' ? (
             <WorkbenchHomeSection
+              balanceLab={
+                semanticExploreScope ? (
+                  <BalanceLabRuntime
+                    availableLayers={balanceLabAvailableLayers}
+                    bridge={bridge}
+                    capabilityStatus={semanticExploreController.capabilities.status}
+                    onEnsureCapabilities={semanticExploreController.ensureCapabilities}
+                    onNavigateFinding={handleNavigateBalanceLabFinding}
+                    onStaleRevision={handleBalanceLabStaleRevision}
+                    revision={balanceLabRevision}
+                    scope={semanticExploreScope}
+                  />
+                ) : null
+              }
               bookmarks={workspaceBookmarks}
               capabilities={capabilityDiscovery}
               note={activeNoteViewModel}
@@ -15469,11 +15636,13 @@ export function App({
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
                 onSelectTrainer={handleSelectTrainerLocation}
+                onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
+                selectedTrainerPartySlot={selectedTrainerPartySlot}
                 pokemonWorkflow={pokemonWorkflow}
                 workflow={trainersWorkflow}
               />
@@ -15484,11 +15653,13 @@ export function App({
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
                 onSelectTrainer={handleSelectTrainerLocation}
+                onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
+                selectedTrainerPartySlot={selectedTrainerPartySlot}
                 pokemonWorkflow={pokemonWorkflow}
                 workflow={trainersWorkflow}
               />
@@ -15499,11 +15670,13 @@ export function App({
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
                 onSelectTrainer={handleSelectTrainerLocation}
+                onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
+                selectedTrainerPartySlot={selectedTrainerPartySlot}
                 pokemonWorkflow={pokemonWorkflow}
                 workflow={trainersWorkflow}
               />
@@ -15652,11 +15825,13 @@ export function App({
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
+                onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
+                selectedSlot={selectedEncounterSlot}
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
               />
@@ -15666,12 +15841,14 @@ export function App({
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
+                onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
                 onStageEncounterVanilla={handleStageEncounterSlotVanilla}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
+                selectedSlot={selectedEncounterSlot}
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
               />
@@ -15681,11 +15858,13 @@ export function App({
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
+                onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
+                selectedSlot={selectedEncounterSlot}
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
               />
@@ -23433,6 +23612,7 @@ type TrainersSectionProps = {
   isScarletVioletProject: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectTrainer: (trainerId: number | null) => void;
+  onSelectTrainerPartySlot: (slot: number | null) => void;
   onStartEditSession: () => void;
   onUpdateTrainerField: (
     trainerId: number,
@@ -23444,6 +23624,7 @@ type TrainersSectionProps = {
   pokemonWorkflow: PokemonWorkflow | null;
   searchText: string;
   selectedTrainerId: number | null;
+  selectedTrainerPartySlot: number | null;
   workflow: TrainersWorkflow | null;
 };
 
@@ -23472,16 +23653,17 @@ function TrainersSection({
   isScarletVioletProject,
   onSearchChange,
   onSelectTrainer,
+  onSelectTrainerPartySlot,
   onStartEditSession,
   onUpdateTrainerField,
   onUpdateTrainerFields,
   pokemonWorkflow,
   searchText,
   selectedTrainerId,
+  selectedTrainerPartySlot,
   workflow
 }: TrainersSectionProps) {
   const { t } = useLocalization();
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [selectedTrainerCategoryId, setSelectedTrainerCategoryId] = useState('all');
   const trainers = workflow?.trainers ?? [];
   const searchFilteredTrainers = useMemo(
@@ -23507,15 +23689,28 @@ function TrainersSection({
         : searchFilteredTrainers,
     [activeTrainerCategoryId, searchFilteredTrainers, supportsTrainerCategories]
   );
+  const selectedTrainerNeedsCategoryReveal =
+    searchText.trim().length === 0 &&
+    selectedTrainerId !== null &&
+    searchFilteredTrainers.some((trainer) => trainer.trainerId === selectedTrainerId) &&
+    !filteredTrainers.some((trainer) => trainer.trainerId === selectedTrainerId);
   const selectedTrainer = useMemo(
     () =>
+      (selectedTrainerNeedsCategoryReveal
+        ? searchFilteredTrainers.find((trainer) => trainer.trainerId === selectedTrainerId)
+        : null) ??
       filteredTrainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
       filteredTrainers[0] ??
       null,
-    [filteredTrainers, selectedTrainerId]
+    [
+      filteredTrainers,
+      searchFilteredTrainers,
+      selectedTrainerId,
+      selectedTrainerNeedsCategoryReveal
+    ]
   );
   const selectedPokemon =
-    selectedTrainer?.team.find((pokemon) => pokemon.slot === selectedSlot) ??
+    selectedTrainer?.team.find((pokemon) => pokemon.slot === selectedTrainerPartySlot) ??
     selectedTrainer?.team[0] ??
     null;
   const canEditTrainers = workflow?.summary.availability === 'available';
@@ -23581,15 +23776,22 @@ function TrainersSection({
 
   useEffect(() => {
     if (!selectedTrainer) {
-      setSelectedSlot(null);
+      onSelectTrainerPartySlot(null);
       return;
     }
 
-    const hasSelectedSlot = selectedTrainer.team.some((pokemon) => pokemon.slot === selectedSlot);
+    const hasSelectedSlot = selectedTrainer.team.some(
+      (pokemon) => pokemon.slot === selectedTrainerPartySlot
+    );
     if (!hasSelectedSlot) {
-      setSelectedSlot(selectedTrainer.team[0]?.slot ?? null);
+      onSelectTrainerPartySlot(selectedTrainer.team[0]?.slot ?? null);
     }
-  }, [selectedSlot, selectedTrainer?.trainerId, selectedTrainer?.team]);
+  }, [
+    onSelectTrainerPartySlot,
+    selectedTrainer?.team,
+    selectedTrainer?.trainerId,
+    selectedTrainerPartySlot
+  ]);
 
   useEffect(() => {
     if (
@@ -23599,6 +23801,16 @@ function TrainersSection({
       setSelectedTrainerCategoryId('all');
     }
   }, [selectedTrainerCategoryId, trainerCategories]);
+
+  useEffect(() => {
+    if (
+      selectedTrainerId !== null &&
+      trainers.some((trainer) => trainer.trainerId === selectedTrainerId) &&
+      !filteredTrainers.some((trainer) => trainer.trainerId === selectedTrainerId)
+    ) {
+      setSelectedTrainerCategoryId('all');
+    }
+  }, [filteredTrainers, selectedTrainerId, trainers]);
 
   return (
     <>
@@ -23782,12 +23994,12 @@ function TrainersSection({
                 editableFields={workflow.editableFields}
                 isTrainerUpdating={isTrainerUpdating}
                 isScarletVioletProject={isScarletVioletProject}
-                onSelectSlot={setSelectedSlot}
+                onSelectSlot={onSelectTrainerPartySlot}
                 onUpdateTrainerField={onUpdateTrainerField}
                 onUpdateTrainerFields={onUpdateTrainerFields}
                 pokemonWorkflow={pokemonWorkflow}
                 selectedPokemon={selectedPokemon}
-                selectedSlot={selectedSlot}
+                selectedSlot={selectedTrainerPartySlot}
                 trainer={selectedTrainer}
               />
             </div>
@@ -34728,6 +34940,7 @@ type EncountersSectionProps = {
   isEditStarting: boolean;
   isEncounterUpdating: boolean;
   onSearchChange: (searchText: string) => void;
+  onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
   onStartEditSession: () => void;
@@ -34738,6 +34951,7 @@ type EncountersSectionProps = {
   ) => Promise<boolean>;
   onUpdateEncounterSlotUpdates: (updates: EncounterSlotFieldUpdate[]) => Promise<boolean>;
   searchText: string;
+  selectedSlot: number | null;
   selectedTableId: string | null;
   workflow: EncountersWorkflow | null;
 };
@@ -34762,17 +34976,18 @@ function EncountersSection({
   isEditStarting,
   isEncounterUpdating,
   onSearchChange,
+  onSelectSlot,
   onSelectTable,
   onStageEncounterVanilla,
   onStartEditSession,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
   searchText,
+  selectedSlot,
   selectedTableId,
   workflow
 }: EncountersSectionProps) {
   const { t } = useLocalization();
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const allTables = workflow?.tables ?? [];
   const scriptedBosses = workflow?.scriptedBosses ?? [];
   const filteredTables = useMemo(
@@ -34813,15 +35028,15 @@ function EncountersSection({
 
   useEffect(() => {
     if (!selectedTable) {
-      setSelectedSlot(null);
+      onSelectSlot(null);
       return;
     }
 
     const hasSelectedSlot = selectedTable.slots.some((slot) => slot.slot === selectedSlot);
     if (!hasSelectedSlot) {
-      setSelectedSlot(selectedTable.slots[0]?.slot ?? null);
+      onSelectSlot(selectedTable.slots[0]?.slot ?? null);
     }
-  }, [selectedSlot, selectedTable?.slots, selectedTable?.tableId]);
+  }, [onSelectSlot, selectedSlot, selectedTable?.slots, selectedTable?.tableId]);
 
   return (
     <>
@@ -34938,7 +35153,7 @@ function EncountersSection({
               conditionTabs={conditionTabs}
               isEditStarting={isEditStarting}
               isEncounterUpdating={isEncounterUpdating}
-              onSelectSlot={setSelectedSlot}
+              onSelectSlot={onSelectSlot}
               onSelectTable={onSelectTable}
               onStageEncounterVanilla={onStageEncounterVanilla}
               onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}

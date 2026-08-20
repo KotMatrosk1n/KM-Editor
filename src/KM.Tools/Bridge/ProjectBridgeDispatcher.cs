@@ -173,6 +173,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly OutputSafetyApplicationService outputSafetyApplicationService;
     private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
     private readonly SemanticExploreApplicationService semanticExploreApplicationService;
+    private readonly BalanceLabApplicationService balanceLabApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -224,7 +225,8 @@ public sealed class ProjectBridgeDispatcher
         ChangeSetApplicationService? changeSetApplicationService = null,
         OutputSafetyApplicationService? outputSafetyApplicationService = null,
         ProjectRelocationApplicationService? projectRelocationApplicationService = null,
-        SemanticExploreApplicationService? semanticExploreApplicationService = null)
+        SemanticExploreApplicationService? semanticExploreApplicationService = null,
+        BalanceLabApplicationService? balanceLabApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -302,6 +304,14 @@ public sealed class ProjectBridgeDispatcher
                 LoadSemanticExplorePokemonFresh,
                 LoadSemanticExploreMovesFresh,
                 CaptureSemanticExploreSourceFingerprint);
+        this.balanceLabApplicationService = balanceLabApplicationService
+            ?? new BalanceLabApplicationService(
+                this.semanticExploreApplicationService,
+                LoadBalanceLabTrainersFresh,
+                LoadBalanceLabEncountersFresh,
+                LoadSemanticExploreMovesFresh,
+                LoadSemanticExploreItemsFresh,
+                LoadSemanticExplorePokemonFresh);
     }
 
     public string Dispatch(string requestJson)
@@ -542,6 +552,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.QuerySemanticOwnership => DispatchQuerySemanticOwnership(requestJson),
                 KmCommandNames.CompareExternalSemantic => DispatchCompareExternalSemantic(requestJson),
                 KmCommandNames.QuerySemanticChanges => DispatchQuerySemanticChanges(requestJson),
+                KmCommandNames.QueryBalanceLab => DispatchQueryBalanceLab(requestJson),
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
@@ -946,6 +957,14 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<QuerySemanticChangesRequest>(requestJson);
         return SerializeSuccess(
             semanticExploreApplicationService.QueryChanges(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchQueryBalanceLab(string requestJson)
+    {
+        var request = DeserializeRequest<QueryBalanceLabRequest>(requestJson);
+        return SerializeSuccess(
+            balanceLabApplicationService.Query(request.Payload),
             request.RequestId);
     }
 
@@ -5216,6 +5235,52 @@ public sealed class ProjectBridgeDispatcher
             SemanticExploreFailureKind.Unsupported);
     }
 
+    private TrainersWorkflowDto LoadBalanceLabTrainersFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadBalanceLabTrainers(paths)).Workflow;
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return SvBridgeMapper.ToDto(svWorkflowService.LoadBalanceLabTrainers(paths)).Workflow;
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return SwShBridgeMapper.ToDto(swShWorkflowService.LoadBalanceLabTrainers(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Balance Lab trainer provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private EncountersWorkflowDto LoadBalanceLabEncountersFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadBalanceLabEncounters(paths)).Workflow;
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return SvBridgeMapper.ToDto(svWorkflowService.LoadBalanceLabEncounters(paths)).Workflow;
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return SwShBridgeMapper.ToDto(swShWorkflowService.LoadBalanceLabEncounters(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Balance Lab encounter provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
     private static string GetSemanticExploreErrorCode(SemanticExploreFailureKind failureKind)
     {
         return failureKind switch
@@ -5485,6 +5550,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.QuerySemanticOwnership or
             KmCommandNames.CompareExternalSemantic or
             KmCommandNames.QuerySemanticChanges or
+            KmCommandNames.QueryBalanceLab or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge or

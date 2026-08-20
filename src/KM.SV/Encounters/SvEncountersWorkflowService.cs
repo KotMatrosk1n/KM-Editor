@@ -62,7 +62,8 @@ internal sealed class SvEncountersWorkflowService
             source = fileSource.Read(project, SvDataPaths.WildEncounterArray);
             tables = LoadTables(source, labels, project.Paths.SelectedGame).ToArray();
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(SvWorkflowSupport.Error(
                 $"Wild Encounters could not be loaded: {exception.Message}",
@@ -87,12 +88,13 @@ internal sealed class SvEncountersWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SvEncounterTableRecord> LoadTables(
+    private IEnumerable<SvEncounterTableRecord> LoadTables(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         ProjectGame? selectedGame)
     {
         var table = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V encounter table");
         var rows = new List<(int Index, global::EncountPokeData Data)>();
         for (var index = 0; index < table.ValuesLength; index++)
         {

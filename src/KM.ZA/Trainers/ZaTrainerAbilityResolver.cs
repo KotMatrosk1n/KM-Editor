@@ -46,6 +46,7 @@ internal sealed class ZaTrainerAbilityResolver
         {
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
+            fileSource.EnsureBoundedTableCount(table.EntryLength, "The Z-A trainer ability personal table");
             var records = new Dictionary<(int Species, int Form), ZaTrainerAbilitySet>();
 
             for (var index = 0; index < table.EntryLength; index++)
@@ -82,7 +83,9 @@ internal sealed class ZaTrainerAbilityResolver
                 new Dictionary<(int Species, int Form), ZaTrainerAbilitySet>(),
                 labels);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Pokemon Legends Z-A trainer ability labels could not be loaded: {exception.Message}",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.Diagnostics;
 using KM.Api.Projects;
 
 namespace KM.Api.Semantics;
@@ -373,4 +374,71 @@ public sealed record QuerySemanticChangesResponse(
     string QueryFingerprint,
     IReadOnlyList<SemanticChangeDto> Items,
     IReadOnlyList<SemanticProviderCoverageDto> Coverage,
+    string? NextCursor);
+
+public enum BalanceLabStudyDto
+{
+    TrainerProgression,
+    EncounterDistribution,
+    MoveBalance,
+    Economy,
+    PokedexEvolution,
+}
+
+public enum BalanceLabFindingSeverityDto
+{
+    Info,
+    Warning,
+}
+
+public sealed record BalanceLabStudyCapabilityDto(
+    BalanceLabStudyDto Study,
+    string ProviderId,
+    SemanticCoverageStateDto State,
+    SemanticConfidenceDto Confidence,
+    string? ReasonCode);
+
+public sealed record BalanceLabFactDto(
+    string FactId,
+    string Label,
+    SemanticScalarValueDto Value,
+    string? Unit,
+    SemanticConfidenceDto Confidence,
+    string ProviderId,
+    IReadOnlyList<SemanticRecordRefDto> Evidence);
+
+public sealed record BalanceLabChartPointDto(
+    string PointId,
+    string SeriesKey,
+    string Label,
+    SemanticRecordRefDto Record,
+    IReadOnlyList<BalanceLabFactDto> Facts);
+
+public sealed record BalanceLabFindingDto(
+    string FindingId,
+    string RuleId,
+    BalanceLabFindingSeverityDto Severity,
+    SemanticConfidenceDto Confidence,
+    string Title,
+    string Summary,
+    SemanticRecordRefDto Record,
+    IReadOnlyList<SemanticRecordRefDto> RelatedRecords,
+    IReadOnlyList<BalanceLabFactDto> Facts);
+
+public sealed record QueryBalanceLabRequest(
+    SemanticExploreScopeDto Scope,
+    SemanticProjectRevisionDto ExpectedRevision,
+    BalanceLabStudyDto Study,
+    SemanticSourceLayerKindDto Layer,
+    int Limit,
+    string? Cursor = null);
+
+public sealed record QueryBalanceLabResponse(
+    SemanticProjectRevisionDto Revision,
+    string QueryFingerprint,
+    SemanticSourceSnapshotDto Snapshot,
+    IReadOnlyList<BalanceLabStudyCapabilityDto> Capabilities,
+    IReadOnlyList<BalanceLabChartPointDto> Points,
+    IReadOnlyList<BalanceLabFindingDto> Findings,
+    IReadOnlyList<ApiDiagnostic> Diagnostics,
     string? NextCursor);

@@ -15,6 +15,41 @@ namespace KM.SwSh.Trainers;
 
 public sealed class SwShTrainersWorkflowService
 {
+    private const int MaximumSemanticLookupRecords = 10_000;
+    private const int MaximumSemanticTextLines = 50_000;
+
+    private readonly Func<string, byte[]> readAllBytes;
+    private readonly int? maximumLookupRecordCount;
+    private readonly int? maximumTextLineCount;
+
+    public SwShTrainersWorkflowService(
+        Func<string, byte[]>? readAllBytes = null,
+        int? maximumLookupRecordCount = null,
+        int? maximumTextLineCount = null)
+    {
+        if (maximumLookupRecordCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumLookupRecordCount));
+        }
+
+        if (maximumTextLineCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumTextLineCount));
+        }
+
+        this.readAllBytes = readAllBytes ?? File.ReadAllBytes;
+        this.maximumLookupRecordCount = maximumLookupRecordCount;
+        this.maximumTextLineCount = maximumTextLineCount;
+    }
+
+    internal static SwShTrainersWorkflowService CreateBounded(Func<string, byte[]> readAllBytes)
+    {
+        return new SwShTrainersWorkflowService(
+            readAllBytes,
+            MaximumSemanticLookupRecords,
+            MaximumSemanticTextLines);
+    }
+
     public const int MaximumPokemonEvValue = 252;
 
     public const string TrainerClassIdField = "trainerClassId";
@@ -498,8 +533,8 @@ public sealed class SwShTrainersWorkflowService
 
             try
             {
-                var dataFile = SwShTrainerDataFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
-                var teamFile = SwShTrainerTeamFile.Parse(File.ReadAllBytes(pokeSource.AbsolutePath));
+                var dataFile = SwShTrainerDataFile.Parse(readAllBytes(dataSource.AbsolutePath));
+                var teamFile = SwShTrainerTeamFile.Parse(readAllBytes(pokeSource.AbsolutePath));
                 parsedSourceFiles.Add(dataSource.Entry.RelativePath);
                 parsedSourceFiles.Add(pokeSource.Entry.RelativePath);
 
@@ -530,7 +565,7 @@ public sealed class SwShTrainersWorkflowService
                     classOwnership,
                     names));
             }
-            catch (InvalidDataException exception)
+            catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
@@ -809,7 +844,7 @@ public sealed class SwShTrainersWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyDictionary<int, SwShTrainerClassRecord> LoadTrainerClassRecords(
+    private IReadOnlyDictionary<int, SwShTrainerClassRecord> LoadTrainerClassRecords(
         IReadOnlyList<WorkflowFileSource> classSources,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -819,9 +854,9 @@ public sealed class SwShTrainersWorkflowService
         {
             try
             {
-                records[source.TrainerId] = SwShTrainerClassFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+                records[source.TrainerId] = SwShTrainerClassFile.Parse(readAllBytes(source.AbsolutePath)).Record;
             }
-            catch (InvalidDataException exception)
+            catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
@@ -865,7 +900,7 @@ public sealed class SwShTrainersWorkflowService
         }
     }
 
-    private static IReadOnlyDictionary<int, TrainerClassOwnership> CreateTrainerClassOwnership(
+    private IReadOnlyDictionary<int, TrainerClassOwnership> CreateTrainerClassOwnership(
         IReadOnlyList<WorkflowFileSource> trainerDataSources,
         TrainerLookupTables names)
     {
@@ -877,9 +912,9 @@ public sealed class SwShTrainersWorkflowService
             SwShTrainerDataRecord trainer;
             try
             {
-                trainer = SwShTrainerDataFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+                trainer = SwShTrainerDataFile.Parse(readAllBytes(source.AbsolutePath)).Record;
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
             {
                 continue;
             }
@@ -952,12 +987,16 @@ public sealed class SwShTrainersWorkflowService
             && int.TryParse(match.Value, NumberStyles.None, CultureInfo.InvariantCulture, out trainerId);
     }
 
-    private static TrainerLookupTables LoadLookupTables(
+    private TrainerLookupTables LoadLookupTables(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
-        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(
+            project,
+            readAllBytes,
+            maximumLookupRecordCount,
+            maximumTextLineCount);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var spriteSpeciesNames = LoadMessageTable(
@@ -965,9 +1004,20 @@ public sealed class SwShTrainersWorkflowService
             $"{MessageRootPath}/{PreferredLanguage}/common",
             "monsname.dat",
             diagnostics);
-        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
-        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(
+            project,
+            itemNames,
+            moveNames,
+            readAllBytes,
+            maximumLookupRecordCount);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(
+            project,
+            readAllBytes,
+            maximumLookupRecordCount);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(
+            project,
+            readAllBytes,
+            maximumLookupRecordCount);
 
         return new TrainerLookupTables(
             LoadMessageTable(project, messageRoot, "trname.dat", diagnostics),
@@ -1021,7 +1071,7 @@ public sealed class SwShTrainersWorkflowService
         return $"{MessageRootPath}/{language}/common";
     }
 
-    private static string[] LoadMessageTable(
+    private string[] LoadMessageTable(
         OpenedProject project,
         string? messageRoot,
         string fileName,
@@ -1048,12 +1098,12 @@ public sealed class SwShTrainersWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(sourcePath))
+            return SwShGameTextFile.Parse(readAllBytes(sourcePath), maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
         }
-        catch (InvalidDataException exception)
+        catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
@@ -1095,6 +1145,11 @@ public sealed class SwShTrainersWorkflowService
         return nextSeparator < 0
             ? null
             : relativePath[languageStart..nextSeparator];
+    }
+
+    private static bool IsBoundedSemanticLimit(InvalidDataException exception)
+    {
+        return exception.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase);
     }
 
     private static SwShTrainerRecord ToTrainerRecord(

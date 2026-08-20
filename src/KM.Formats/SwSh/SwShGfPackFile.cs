@@ -70,7 +70,7 @@ public sealed class SwShGfPackFile
     {
         try
         {
-            return ParseCore(data);
+            return ParseCore(data, maximumEntries: null, maximumMaterializedBytes: null, preserveSourceData: true);
         }
         catch (OverflowException exception)
         {
@@ -78,7 +78,36 @@ public sealed class SwShGfPackFile
         }
     }
 
-    private static SwShGfPackFile ParseCore(ReadOnlySpan<byte> data)
+    public static SwShGfPackFile ParseBoundedReadOnly(
+        ReadOnlySpan<byte> data,
+        int maximumEntries,
+        long maximumMaterializedBytes)
+    {
+        if (maximumEntries <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumEntries));
+        }
+
+        if (maximumMaterializedBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumMaterializedBytes));
+        }
+
+        try
+        {
+            return ParseCore(data, maximumEntries, maximumMaterializedBytes, preserveSourceData: false);
+        }
+        catch (OverflowException exception)
+        {
+            throw new InvalidDataException("GFPAK contains an invalid count, size, or offset.", exception);
+        }
+    }
+
+    private static SwShGfPackFile ParseCore(
+        ReadOnlySpan<byte> data,
+        int? maximumEntries,
+        long? maximumMaterializedBytes,
+        bool preserveSourceData)
     {
         EnsureRange(data, 0, HeaderSize, "GFPAK header");
         var ranges = new StructuralRangeRegistry();
@@ -93,6 +122,12 @@ public sealed class SwShGfPackFile
         var isRelocated = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(0x0C, sizeof(uint)));
         var fileCount = ReadNonNegativeInt32(data, 0x10, "GFPAK file count");
         var folderCount = ReadNonNegativeInt32(data, 0x14, "GFPAK folder count");
+        if (maximumEntries is not null
+            && (fileCount > maximumEntries.Value || folderCount > maximumEntries.Value))
+        {
+            throw new InvalidDataException("GFPAK metadata exceeds the bounded semantic entry limit.");
+        }
+
         var pointerTableOffset = HeaderSize;
         var pointerTableLength = checked(sizeof(long) * (2 + folderCount));
         EnsureRange(data, pointerTableOffset, pointerTableLength, "GFPAK pointer table");
@@ -132,11 +167,18 @@ public sealed class SwShGfPackFile
             allowExactAlias: false);
 
         var absoluteHashes = ReadAbsoluteHashes(data, absoluteHashPointer, fileCount);
-        var folders = ReadFolders(data, folderPointers, fileCount, ranges);
-        var entries = ReadFileEntries(data, fileTablePointer, fileCount, ranges);
-        var sourceFileEntryOffsets = Enumerable.Range(0, fileCount)
-            .Select(index => checked((int)fileTablePointer + (index * FileDataSize)))
-            .ToArray();
+        var folders = ReadFolders(data, folderPointers, fileCount, ranges, maximumEntries);
+        var entries = ReadFileEntries(
+            data,
+            fileTablePointer,
+            fileCount,
+            ranges,
+            maximumMaterializedBytes);
+        var sourceFileEntryOffsets = preserveSourceData
+            ? Enumerable.Range(0, fileCount)
+                .Select(index => checked((int)fileTablePointer + (index * FileDataSize)))
+                .ToArray()
+            : null;
 
         return new SwShGfPackFile(
             version,
@@ -144,7 +186,7 @@ public sealed class SwShGfPackFile
             absoluteHashes,
             folders,
             entries,
-            data.ToArray(),
+            preserveSourceData ? data.ToArray() : null,
             sourceFileEntryOffsets);
     }
 
@@ -193,7 +235,16 @@ public sealed class SwShGfPackFile
 
     public bool TryGetFileByName(string fileName, out byte[] data)
     {
+        return TryGetFileByName(fileName, maximumDecompressedBytes: null, out data);
+    }
+
+    public bool TryGetFileByName(string fileName, int? maximumDecompressedBytes, out byte[] data)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        if (maximumDecompressedBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumDecompressedBytes));
+        }
 
         var index = FindFileNameIndex(fileName);
         if (index < 0)
@@ -202,7 +253,7 @@ public sealed class SwShGfPackFile
             return false;
         }
 
-        data = GetFile(index);
+        data = GetFile(index, maximumDecompressedBytes);
         return true;
     }
 
@@ -342,9 +393,15 @@ public sealed class SwShGfPackFile
         return hash;
     }
 
-    private byte[] GetFile(int index)
+    private byte[] GetFile(int index, int? maximumDecompressedBytes = null)
     {
         var entry = entries[index];
+        if (maximumDecompressedBytes is not null
+            && (entry.SizeDecompressed < 0 || entry.SizeDecompressed > maximumDecompressedBytes.Value))
+        {
+            throw new InvalidDataException("GFPAK member exceeds the bounded decompressed-size limit.");
+        }
+
         if (entry.DecompressedData is not null)
         {
             return entry.DecompressedData.ToArray();
@@ -461,14 +518,22 @@ public sealed class SwShGfPackFile
         ReadOnlySpan<byte> data,
         IReadOnlyList<long> offsets,
         int fileCount,
-        StructuralRangeRegistry ranges)
+        StructuralRangeRegistry ranges,
+        int? maximumEntries)
     {
         var folders = new List<FolderEntry>(offsets.Count);
+        var observedEntries = 0;
         foreach (var offset in offsets)
         {
             EnsureRange(data, offset, FileHashFolderInfoSize, "GFPAK folder hash table");
             var folderOffset = checked((int)offset);
             var fileCountInFolder = ReadNonNegativeInt32(data, folderOffset + 0x08, "GFPAK folder file count");
+            observedEntries = checked(observedEntries + fileCountInFolder);
+            if (maximumEntries is not null && observedEntries > maximumEntries.Value)
+            {
+                throw new InvalidDataException("GFPAK folder metadata exceeds the bounded semantic entry limit.");
+            }
+
             EnsureRange(
                 data,
                 folderOffset + FileHashFolderInfoSize,
@@ -512,16 +577,24 @@ public sealed class SwShGfPackFile
         ReadOnlySpan<byte> data,
         long offset,
         int fileCount,
-        StructuralRangeRegistry ranges)
+        StructuralRangeRegistry ranges,
+        long? maximumMaterializedBytes)
     {
         EnsureRange(data, offset, checked(fileCount * FileDataSize), "GFPAK file table");
         var entries = new List<FileEntry>(fileCount);
+        long materializedBytes = 0;
         for (var index = 0; index < fileCount; index++)
         {
             var entryOffset = checked((int)offset + (index * FileDataSize));
             var compressionType = (SwShGfPackCompressionType)data[entryOffset + 0x02];
             var sizeDecompressed = ReadNonNegativeInt32(data, entryOffset + 0x04, "GFPAK decompressed file size");
             var sizeCompressed = ReadNonNegativeInt32(data, entryOffset + 0x08, "GFPAK compressed file size");
+            materializedBytes = checked(materializedBytes + sizeCompressed);
+            if (maximumMaterializedBytes is not null && materializedBytes > maximumMaterializedBytes.Value)
+            {
+                throw new InvalidDataException("GFPAK members exceed the bounded semantic materialization limit.");
+            }
+
             var offsetPacked = ReadNonNegativeInt32(data, entryOffset + 0x10, "GFPAK packed file offset");
             EnsureRange(data, offsetPacked, sizeCompressed, "GFPAK packed file data");
             ranges.Register(
@@ -585,12 +658,27 @@ public sealed class SwShGfPackFile
 
     private static byte[] DecompressZlib(byte[] compressedData, int decompressedSize)
     {
+        if (decompressedSize < 0)
+        {
+            throw new InvalidDataException("Zlib-compressed GFPAK file size is invalid.");
+        }
+
         using var input = new MemoryStream(compressedData);
         using var zlib = new ZLibStream(input, CompressionMode.Decompress);
-        using var output = new MemoryStream();
-        zlib.CopyTo(output);
-        var result = output.ToArray();
-        if (result.Length != decompressedSize)
+        var result = new byte[decompressedSize];
+        var offset = 0;
+        while (offset < result.Length)
+        {
+            var read = zlib.Read(result, offset, result.Length - offset);
+            if (read == 0)
+            {
+                throw new InvalidDataException("Zlib-compressed GFPAK file size does not match the file table.");
+            }
+
+            offset = checked(offset + read);
+        }
+
+        if (zlib.ReadByte() != -1)
         {
             throw new InvalidDataException("Zlib-compressed GFPAK file size does not match the file table.");
         }

@@ -40,10 +40,32 @@ public sealed class SwShPokemonAbilityOptionResolver
 
     public static SwShPokemonAbilityOptionResolver Load(OpenedProject project)
     {
-        ArgumentNullException.ThrowIfNull(project);
+        return Load(
+            project,
+            File.ReadAllBytes,
+            maximumPersonalRecordCount: null,
+            maximumTextLineCount: null);
+    }
 
-        var records = LoadPersonalRecords(project, out var personalSourcePath);
-        var abilityNames = LoadAbilityNames(project, out var abilitySourcePath);
+    internal static SwShPokemonAbilityOptionResolver Load(
+        OpenedProject project,
+        Func<string, byte[]> readAllBytes,
+        int? maximumPersonalRecordCount,
+        int? maximumTextLineCount)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(readAllBytes);
+
+        var records = LoadPersonalRecords(
+            project,
+            readAllBytes,
+            maximumPersonalRecordCount,
+            out var personalSourcePath);
+        var abilityNames = LoadAbilityNames(
+            project,
+            readAllBytes,
+            maximumTextLineCount,
+            out var abilitySourcePath);
         var parsedSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (personalSourcePath is not null)
         {
@@ -157,6 +179,8 @@ public sealed class SwShPokemonAbilityOptionResolver
 
     private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(
         OpenedProject project,
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount,
         out string? parsedSourcePath)
     {
         parsedSourcePath = null;
@@ -168,19 +192,21 @@ public sealed class SwShPokemonAbilityOptionResolver
 
         try
         {
-            var records = SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+            var records = SwShPersonalTable.Parse(
+                readAllBytes(source.AbsolutePath),
+                maximumRecordCount).Records;
             parsedSourcePath = Path.GetFullPath(source.AbsolutePath);
             return records;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException) when (maximumRecordCount is null)
         {
             return [];
         }
-        catch (IOException)
+        catch (IOException) when (maximumRecordCount is null)
         {
             return [];
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException) when (maximumRecordCount is null)
         {
             return [];
         }
@@ -188,6 +214,8 @@ public sealed class SwShPokemonAbilityOptionResolver
 
     private static IReadOnlyList<string> LoadAbilityNames(
         OpenedProject project,
+        Func<string, byte[]> readAllBytes,
+        int? maximumLineCount,
         out string? parsedSourcePath)
     {
         parsedSourcePath = null;
@@ -199,22 +227,24 @@ public sealed class SwShPokemonAbilityOptionResolver
 
         try
         {
-            var names = SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+            var names = SwShGameTextFile.Parse(
+                    readAllBytes(source.AbsolutePath),
+                    maximumLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
             parsedSourcePath = Path.GetFullPath(source.AbsolutePath);
             return names;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException) when (maximumLineCount is null)
         {
             return [];
         }
-        catch (IOException)
+        catch (IOException) when (maximumLineCount is null)
         {
             return [];
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException) when (maximumLineCount is null)
         {
             return [];
         }

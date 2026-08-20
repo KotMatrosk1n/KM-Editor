@@ -24,7 +24,7 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
         var recordCount = data.Length / RecordSize;
         if (maximumRecordCount is not null && recordCount > maximumRecordCount.Value)
         {
-            throw new InvalidDataException("Personal table record count exceeds the supported bound.");
+            throw new InvalidDataException("Personal table record count exceeds the bounded semantic record limit.");
         }
 
         var records = new SwShPersonalRecord[recordCount];

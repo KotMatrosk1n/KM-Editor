@@ -169,13 +169,27 @@ function locationsShareDraftScope(left: WorkbenchLocation, right: WorkbenchLocat
     left.game === right.game &&
     left.changeSetId === right.changeSetId &&
     left.section === right.section &&
-    semanticEntityKeysEqual(left, right)
+    semanticEntityKeysEqual(left, right, left.section)
   );
 }
 
-function semanticEntityKeysEqual(left: WorkbenchLocation, right: WorkbenchLocation) {
+function semanticEntityKeysEqual(
+  left: WorkbenchLocation,
+  right: WorkbenchLocation,
+  section: WorkbenchSection
+) {
   if (!left.entity || !right.entity) {
     return left.entity === right.entity;
+  }
+
+  if (section === 'trainers' || section === 'encounters') {
+    return (
+      left.entity.domain === right.entity.domain &&
+      left.entity.gameFamily === right.entity.gameFamily &&
+      left.entity.recordId === right.entity.recordId &&
+      left.entity.recordKind.key === right.entity.recordKind.key &&
+      left.entity.recordKind.schemaVersion === right.entity.recordKind.schemaVersion
+    );
   }
 
   return semanticRecordRefKey(left.entity) === semanticRecordRefKey(right.entity);

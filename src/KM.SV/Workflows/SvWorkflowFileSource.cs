@@ -42,6 +42,13 @@ internal sealed class SvWorkflowFileSource
         ? null
         : MaximumBoundedTableRecords;
 
+    internal bool IsBoundedSemanticLimit(Exception exception)
+    {
+        return maximumReadBytes is not null
+            && exception is InvalidDataException
+            && exception.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase);
+    }
+
     internal void EnsureBoundedTableCount(int count, string label)
     {
         EnsureBoundedCount(count, MaximumBoundedTableRecords, label);

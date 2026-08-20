@@ -12,6 +12,52 @@ namespace KM.SwSh.Encounters;
 
 public sealed class SwShEncountersWorkflowService
 {
+    private const int MaximumSemanticLookupRecords = 10_000;
+    private const int MaximumSemanticTextLines = 50_000;
+
+    private readonly Func<string, byte[]> readAllBytes;
+    private readonly int? maximumArchiveMemberBytes;
+    private readonly int? maximumLookupRecordCount;
+    private readonly int? maximumTextLineCount;
+
+    public SwShEncountersWorkflowService(
+        Func<string, byte[]>? readAllBytes = null,
+        int? maximumArchiveMemberBytes = null,
+        int? maximumLookupRecordCount = null,
+        int? maximumTextLineCount = null)
+    {
+        if (maximumArchiveMemberBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumArchiveMemberBytes));
+        }
+
+        if (maximumLookupRecordCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumLookupRecordCount));
+        }
+
+        if (maximumTextLineCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumTextLineCount));
+        }
+
+        this.readAllBytes = readAllBytes ?? File.ReadAllBytes;
+        this.maximumArchiveMemberBytes = maximumArchiveMemberBytes;
+        this.maximumLookupRecordCount = maximumLookupRecordCount;
+        this.maximumTextLineCount = maximumTextLineCount;
+    }
+
+    internal static SwShEncountersWorkflowService CreateBounded(
+        Func<string, byte[]> readAllBytes,
+        int maximumArchiveMemberBytes)
+    {
+        return new SwShEncountersWorkflowService(
+            readAllBytes,
+            maximumArchiveMemberBytes,
+            MaximumSemanticLookupRecords,
+            MaximumSemanticTextLines);
+    }
+
     public const string SpeciesIdField = "speciesId";
     public const string FormField = "form";
     public const string ProbabilityField = "probability";
@@ -117,25 +163,28 @@ public sealed class SwShEncountersWorkflowService
         }
 
         var speciesNames = LoadSpeciesNames(project, diagnostics);
-        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(
+            project,
+            readAllBytes,
+            maximumLookupRecordCount);
 
         try
         {
-            var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
+            var pack = ParsePack(readAllBytes(dataSource.AbsolutePath));
             var vanillaPack = LoadVanillaWildDataPack(project, dataSource, pack, diagnostics);
             var tables = new List<SwShEncounterTableRecord>();
             var provenance = CreateProvenance(dataSource.GraphEntry);
 
             foreach (var member in GetArchiveMembers(project.Paths.SelectedGame))
             {
-                if (!pack.TryGetFileByName(member.FileName, out var memberData))
+                if (!pack.TryGetFileByName(member.FileName, maximumArchiveMemberBytes, out var memberData))
                 {
                     continue;
                 }
 
-                var archive = SwShWildEncounterArchive.Parse(memberData);
-                var vanillaArchive = vanillaPack.TryGetFileByName(member.FileName, out var vanillaMemberData)
-                    ? SwShWildEncounterArchive.Parse(vanillaMemberData)
+                var archive = ParseEncounterArchive(memberData);
+                var vanillaArchive = vanillaPack.TryGetFileByName(member.FileName, maximumArchiveMemberBytes, out var vanillaMemberData)
+                    ? ParseEncounterArchive(vanillaMemberData)
                     : null;
                 tables.AddRange(FlattenArchive(archive, vanillaArchive, member, provenance, speciesNames));
             }
@@ -157,7 +206,7 @@ public sealed class SwShEncountersWorkflowService
                 presentSpeciesIds,
                 diagnostics);
         }
-        catch (InvalidDataException exception)
+        catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -202,6 +251,26 @@ public sealed class SwShEncountersWorkflowService
                 presentSpeciesIds,
                 diagnostics);
         }
+    }
+
+    private SwShWildEncounterArchive ParseEncounterArchive(byte[] bytes)
+    {
+        return maximumArchiveMemberBytes is null
+            ? SwShWildEncounterArchive.Parse(bytes)
+            : SwShWildEncounterArchive.Parse(bytes, maximumVectorRecords: 50_000);
+    }
+
+    private SwShGfPackFile ParsePack(byte[] bytes)
+    {
+        return maximumArchiveMemberBytes is null
+            ? SwShGfPackFile.Parse(bytes)
+            : SwShGfPackFile.ParseBoundedReadOnly(bytes, maximumEntries: 50_000, maximumArchiveMemberBytes.Value);
+    }
+
+    private bool IsBoundedSemanticLimit(InvalidDataException exception)
+    {
+        return maximumArchiveMemberBytes is not null
+            && exception.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool IsEditableField(string? field)
@@ -533,7 +602,7 @@ public sealed class SwShEncountersWorkflowService
         return subTable.Slots.Any(slot => slot.Species != 0);
     }
 
-    private static SwShGfPackFile LoadVanillaWildDataPack(
+    private SwShGfPackFile LoadVanillaWildDataPack(
         OpenedProject project,
         WorkflowFileSource activeSource,
         SwShGfPackFile activePack,
@@ -554,7 +623,7 @@ public sealed class SwShEncountersWorkflowService
             return activePack;
         }
 
-        return SwShGfPackFile.Parse(File.ReadAllBytes(baseSource.AbsolutePath));
+        return ParsePack(readAllBytes(baseSource.AbsolutePath));
     }
 
     private static string FormatExpectedArchiveMembers(ProjectGame? selectedGame)
@@ -567,7 +636,7 @@ public sealed class SwShEncountersWorkflowService
         };
     }
 
-    private static string[] LoadSpeciesNames(
+    private string[] LoadSpeciesNames(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -597,12 +666,12 @@ public sealed class SwShEncountersWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(sourcePath))
+            return SwShGameTextFile.Parse(readAllBytes(sourcePath), maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
         }
-        catch (InvalidDataException exception)
+        catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,

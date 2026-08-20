@@ -180,20 +180,34 @@ public sealed class SvWorkflowService
             SvDataPaths.ItemDataArray,
             SvDataPaths.PersonalArray,
             SvDataPaths.MoveDataArray,
+            SvDataPaths.TrainerDataArray,
+            SvDataPaths.WildEncounterArray,
             SvDataPaths.ItemNames(language),
             SvDataPaths.MoveNames(language),
             SvDataPaths.MoveDescriptions(language),
             SvDataPaths.PokemonNames(language),
             SvDataPaths.AbilityNames(language),
+            SvDataPaths.PlaceNames(language),
+            SvDataPaths.PlaceNameKeys(language),
+            SvDataPaths.TrainerNames(language),
+            SvDataPaths.TrainerNameKeys(language),
+            SvDataPaths.TrainerTypes(language),
+            SvDataPaths.TrainerTypeKeys(language),
             SvDataPaths.ItemNames(SvGameTextLanguage.English),
             SvDataPaths.MoveNames(SvGameTextLanguage.English),
             SvDataPaths.MoveDescriptions(SvGameTextLanguage.English),
             SvDataPaths.PokemonNames(SvGameTextLanguage.English),
             SvDataPaths.AbilityNames(SvGameTextLanguage.English),
+            SvDataPaths.PlaceNames(SvGameTextLanguage.English),
+            SvDataPaths.PlaceNameKeys(SvGameTextLanguage.English),
+            SvDataPaths.TrainerNames(SvGameTextLanguage.English),
+            SvDataPaths.TrainerNameKeys(SvGameTextLanguage.English),
+            SvDataPaths.TrainerTypes(SvGameTextLanguage.English),
+            SvDataPaths.TrainerTypeKeys(SvGameTextLanguage.English),
         };
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "sv-semantic-source-v2");
+        AppendSemanticSourceHash(hash, "sv-semantic-source-v3");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
         if (SvCompressionRuntime.TryResolveRequiredFilePath(
                 paths.ScarletVioletSupportFolderPath,
@@ -266,6 +280,28 @@ public sealed class SvWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new SvMovesWorkflowService(freshFileSource).Load(project);
+    }
+
+    public SvTrainersWorkflow LoadBalanceLabTrainers(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new SvTrainersWorkflowService(freshFileSource).Load(project);
+    }
+
+    public SvEncountersWorkflow LoadBalanceLabEncounters(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new SvEncountersWorkflowService(freshFileSource).Load(project);
     }
 
     private static void AppendSemanticSourcePayload(

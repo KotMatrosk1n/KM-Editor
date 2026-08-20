@@ -182,7 +182,8 @@ internal sealed class ZaEncountersWorkflowService
                 pokemonAvailability,
                 diagnostics).ToArray();
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
                 $"Wild Encounters could not be loaded: {exception.Message}",
@@ -340,7 +341,7 @@ internal sealed class ZaEncountersWorkflowService
         {
             return LoadOutzoneAvailability(project);
         }
-        catch (Exception)
+        catch (Exception exception) when (!fileSource.IsBoundedSemanticLimit(exception))
         {
             // Advisory-only base observations must never make the editable workflow unavailable.
             return ZaOutzoneEncounterAvailability.Unknown;
@@ -351,7 +352,10 @@ internal sealed class ZaEncountersWorkflowService
     {
         var encounterSource = fileSource.ReadBase(project, ZaDataPaths.EncountDataArray);
         var spawnerSource = fileSource.ReadBase(project, ZaDataPaths.PokemonSpawnerDataArray);
-        var pokemonRowGroups = ZaEncounterDataDocument.Parse(encounterSource.Bytes)
+        var pokemonRowGroups = ZaEncounterDataDocument.Parse(
+                encounterSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit)
             .Entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
             .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
@@ -371,6 +375,7 @@ internal sealed class ZaEncountersWorkflowService
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var spawnerTable = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(
             new ByteBuffer(spawnerSource.Bytes));
+        EnsureBoundedSpawnerTable(spawnerTable);
         var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(spawnerTable);
         var observedPairs = new HashSet<(int SpeciesId, int Form)>();
 
@@ -453,7 +458,8 @@ internal sealed class ZaEncountersWorkflowService
         catch (Exception exception) when (exception is IOException
             or InvalidDataException
             or ArgumentException
-            or UnauthorizedAccessException)
+            or UnauthorizedAccessException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 "Boss battle gameplay relationships could not be loaded. "
@@ -476,7 +482,10 @@ internal sealed class ZaEncountersWorkflowService
         try
         {
             var candidateSource = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
-            var document = ZaPokemonDataDocument.Parse(candidateSource.Bytes);
+            var document = ZaPokemonDataDocument.Parse(
+                candidateSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             if (!ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
                     document,
                     out var row,
@@ -544,10 +553,12 @@ internal sealed class ZaEncountersWorkflowService
                     : table)
                 .ToArray();
         }
-        catch (Exception exception) when (exception is IOException
-            or InvalidDataException
-            or ArgumentException
-            or UnauthorizedAccessException)
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or ArgumentException
+                or UnauthorizedAccessException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 "AZ's temporary Lucario could not be loaded and will remain hidden. "
@@ -565,7 +576,10 @@ internal sealed class ZaEncountersWorkflowService
         try
         {
             var source = fileSource.ReadBase(project, ZaDataPaths.PokemonDataArray);
-            var document = ZaPokemonDataDocument.Parse(source.Bytes);
+            var document = ZaPokemonDataDocument.Parse(
+                source.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             if (!ZaEncounterPlayerPartnerCatalog.TryResolveExactRow(
                     document,
                     out var row,
@@ -584,10 +598,12 @@ internal sealed class ZaEncountersWorkflowService
             blockedReason = null;
             return true;
         }
-        catch (Exception exception) when (exception is IOException
-            or InvalidDataException
-            or ArgumentException
-            or UnauthorizedAccessException)
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or ArgumentException
+                or UnauthorizedAccessException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             blockedReason = $"Verified base PokemonData could not be read: {exception.Message}";
             return false;
@@ -722,7 +738,7 @@ internal sealed class ZaEncountersWorkflowService
         return ZaLabels.PokemonWithForm(speciesId, form, speciesName);
     }
 
-    private static IEnumerable<ZaEncounterTableRecord> LoadTables(
+    private IEnumerable<ZaEncounterTableRecord> LoadTables(
         ZaWorkflowFile spawnerSource,
         ZaWorkflowFile encounterSource,
         IReadOnlyList<ZaBossBattleConsumerRecord>? bossBattleConsumers,
@@ -730,15 +746,22 @@ internal sealed class ZaEncountersWorkflowService
         ZaPokemonAvailability pokemonAvailability,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var pokemonRows = ZaEncounterDataDocument.Parse(encounterSource.Bytes)
+        var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
+        EnsureBoundedSpawnerTable(table);
+        var pokemonRows = ZaEncounterDataDocument.Parse(
+                encounterSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit)
             .Entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
             .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
-        var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
         var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
-        var scalarSpawners = ZaPokemonSpawnerDataDocument.Parse(spawnerSource.Bytes)
+        var scalarSpawners = ZaPokemonSpawnerDataDocument.Parse(
+                spawnerSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit)
             .Entries
             .ToDictionary(
                 entry => (entry.GroupIndex, entry.SpawnerIndex),
@@ -875,6 +898,47 @@ internal sealed class ZaEncountersWorkflowService
                     BossBattleWaveRank = bossBattleContext?.WaveRank,
                     BossBattleContexts = bossBattleContext?.Contexts,
                 };
+            }
+        }
+    }
+
+    private void EnsureBoundedSpawnerTable(PokemonSpawnerDataDBArray table)
+    {
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A spawner group table");
+        var nestedCount = 0;
+        for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
+        {
+            var db = table.Values(groupIndex);
+            if (db is null)
+            {
+                continue;
+            }
+
+            fileSource.EnsureBoundedTableCount(db.Value.RootLength, "A Z-A spawner group");
+            nestedCount = checked(nestedCount + db.Value.RootLength);
+            for (var spawnerIndex = 0; spawnerIndex < db.Value.RootLength; spawnerIndex++)
+            {
+                var spawner = db.Value.Root(spawnerIndex);
+                if (spawner is null)
+                {
+                    continue;
+                }
+
+                fileSource.EnsureBoundedTableCount(
+                    spawner.Value.EncountDataInfoListLength,
+                    "A Z-A spawner slot vector");
+                fileSource.EnsureBoundedTableCount(
+                    spawner.Value.AppearanceSpawnerObjectInfoListLength,
+                    "A Z-A spawner appearance vector");
+                fileSource.EnsureBoundedTableCount(
+                    spawner.Value.ActivationConditionLength,
+                    "A Z-A spawner condition vector");
+                nestedCount = checked(
+                    nestedCount
+                    + spawner.Value.EncountDataInfoListLength
+                    + spawner.Value.AppearanceSpawnerObjectInfoListLength
+                    + spawner.Value.ActivationConditionLength);
+                fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A spawner nested vectors");
             }
         }
     }

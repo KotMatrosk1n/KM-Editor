@@ -202,6 +202,11 @@ public sealed class ZaWorkflowService
             ZaDataPaths.BossMoveSelectorArray,
             ZaDataPaths.AiAttackParamArray,
             ZaDataPaths.AiBulletParamArray,
+            ZaDataPaths.TrainerDataArray,
+            ZaDataPaths.EncountDataArray,
+            ZaDataPaths.PokemonSpawnerDataArray,
+            ZaDataPaths.BossBattleDataGlobal,
+            ZaDataPaths.PokemonDataArray,
         };
         foreach (var textPath in new[]
                  {
@@ -210,11 +215,29 @@ public sealed class ZaWorkflowService
                      ZaDataPaths.MoveDescriptions(language),
                      ZaDataPaths.PokemonNames(language),
                      ZaDataPaths.AbilityNames(language),
+                     ZaDataPaths.MainMissionTitles(language),
+                     ZaDataPaths.HyperspaceMissionTitles(language),
+                     ZaDataPaths.SideMissionTitles(language),
+                     ZaDataPaths.PlaceNames(language),
+                     ZaDataPaths.PlaceNameKeys(language),
+                     ZaDataPaths.TrainerNames(language),
+                     ZaDataPaths.TrainerNameKeys(language),
+                     ZaDataPaths.TrainerTypes(language),
+                     ZaDataPaths.TrainerTypeKeys(language),
                      ZaDataPaths.ItemNames(ZaGameTextLanguage.English),
                      ZaDataPaths.MoveNames(ZaGameTextLanguage.English),
                      ZaDataPaths.MoveDescriptions(ZaGameTextLanguage.English),
                      ZaDataPaths.PokemonNames(ZaGameTextLanguage.English),
                      ZaDataPaths.AbilityNames(ZaGameTextLanguage.English),
+                     ZaDataPaths.MainMissionTitles(ZaGameTextLanguage.English),
+                     ZaDataPaths.HyperspaceMissionTitles(ZaGameTextLanguage.English),
+                     ZaDataPaths.SideMissionTitles(ZaGameTextLanguage.English),
+                     ZaDataPaths.PlaceNames(ZaGameTextLanguage.English),
+                     ZaDataPaths.PlaceNameKeys(ZaGameTextLanguage.English),
+                     ZaDataPaths.TrainerNames(ZaGameTextLanguage.English),
+                     ZaDataPaths.TrainerNameKeys(ZaGameTextLanguage.English),
+                     ZaDataPaths.TrainerTypes(ZaGameTextLanguage.English),
+                     ZaDataPaths.TrainerTypeKeys(ZaGameTextLanguage.English),
                  })
         {
             virtualPaths.Add(textPath);
@@ -226,7 +249,7 @@ public sealed class ZaWorkflowService
         }
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "za-semantic-source-v2");
+        AppendSemanticSourceHash(hash, "za-semantic-source-v3");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
         if (ZaCompressionRuntime.TryResolveRequiredFilePath(
                 paths.PokemonLegendsZASupportFolderPath,
@@ -299,6 +322,28 @@ public sealed class ZaWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new ZaMovesWorkflowService(freshFileSource).Load(project);
+    }
+
+    public ZaTrainersWorkflow LoadBalanceLabTrainers(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new ZaTrainersWorkflowService(freshFileSource).Load(project);
+    }
+
+    public ZaEncountersWorkflow LoadBalanceLabEncounters(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        return new ZaEncountersWorkflowService(freshFileSource).Load(project);
     }
 
     private static void AppendSemanticSourcePayload(

@@ -68,6 +68,8 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<SemanticOwnershipNodeKindDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<SemanticOwnershipEdgeKindDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<SemanticChangeFormatDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<BalanceLabStudyDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<BalanceLabFindingSeverityDto>(JsonNamingPolicy.CamelCase, false));
 
         return options;
     }

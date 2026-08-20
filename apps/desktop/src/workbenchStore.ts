@@ -150,11 +150,13 @@ type WorkbenchState = {
   selectedMoveId: number | null;
   selectedPokemonPersonalId: number | null;
   selectedEncounterTableId: string | null;
+  selectedEncounterSlot: number | null;
   selectedTeraRaidRecordId: string | null;
   selectedRaidBattleTableId: string | null;
   selectedShopId: string | null;
   selectedTextKey: string | null;
   selectedTrainerId: number | null;
+  selectedTrainerPartySlot: number | null;
   shopSearchText: string;
   shopsWorkflow: ShopsWorkflow | null;
   textSearchText: string;
@@ -259,11 +261,13 @@ type WorkbenchState = {
   setSelectedMoveId: (selectedMoveId: number | null) => void;
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
+  setSelectedEncounterSlot: (selectedEncounterSlot: number | null) => void;
   setSelectedTeraRaidRecordId: (selectedTeraRaidRecordId: string | null) => void;
   setSelectedRaidBattleTableId: (selectedRaidBattleTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
   setSelectedTextKey: (selectedTextKey: string | null) => void;
   setSelectedTrainerId: (selectedTrainerId: number | null) => void;
+  setSelectedTrainerPartySlot: (selectedTrainerPartySlot: number | null) => void;
   setShopSearchText: (shopSearchText: string) => void;
   setShopsWorkflow: (shopsWorkflow: ShopsWorkflow) => void;
   setTextSearchText: (textSearchText: string) => void;
@@ -418,6 +422,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     spreadsheetImportSourcePath: '',
     spreadsheetImportWorkflow: null,
     selectedEncounterTableId: null,
+    selectedEncounterSlot: null,
     selectedBagHookSlot: null,
     selectedExeFsCheckId: null,
     selectedExeFsPatchId: null,
@@ -445,6 +450,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     selectedShopId: null,
     selectedTextKey: null,
     selectedTrainerId: null,
+    selectedTrainerPartySlot: null,
     shopSearchText: '',
     shopsWorkflow: null,
     textSearchText: '',
@@ -546,12 +552,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedPokemonPersonalId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
+  selectedEncounterSlot: null,
   selectedTeraRaidRecordId: null,
   selectedRaidBattleTableId: null,
   selectedRaidBonusRewardTableId: null,
   selectedShopId: null,
   selectedTextKey: null,
   selectedTrainerId: null,
+  selectedTrainerPartySlot: null,
   shopSearchText: '',
   shopsWorkflow: null,
   textSearchText: '',
@@ -790,14 +798,39 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedStartingItemSlot }),
   setSelectedSpreadsheetImportProfileId: (selectedSpreadsheetImportProfileId) =>
     set({ selectedSpreadsheetImportProfileId }),
-  setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
+  setSelectedEncounterTableId: (selectedEncounterTableId) =>
+    set((state) => {
+      const table = state.encountersWorkflow?.tables.find(
+        (candidate) => candidate.tableId === selectedEncounterTableId
+      );
+      const selectedEncounterSlot = table?.slots.some(
+        (slot) => slot.slot === state.selectedEncounterSlot
+      )
+        ? state.selectedEncounterSlot
+        : (table?.slots[0]?.slot ?? null);
+      return { selectedEncounterSlot, selectedEncounterTableId };
+    }),
+  setSelectedEncounterSlot: (selectedEncounterSlot) => set({ selectedEncounterSlot }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedMoveId: (selectedMoveId) => set({ selectedMoveId }),
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId) =>
     set({ selectedPokemonPersonalId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
   setSelectedTextKey: (selectedTextKey) => set({ selectedTextKey }),
-  setSelectedTrainerId: (selectedTrainerId) => set({ selectedTrainerId }),
+  setSelectedTrainerId: (selectedTrainerId) =>
+    set((state) => {
+      const trainer = state.trainersWorkflow?.trainers.find(
+        (candidate) => candidate.trainerId === selectedTrainerId
+      );
+      const selectedTrainerPartySlot = trainer?.team.some(
+        (pokemon) => pokemon.slot === state.selectedTrainerPartySlot
+      )
+        ? state.selectedTrainerPartySlot
+        : (trainer?.team[0]?.slot ?? null);
+      return { selectedTrainerId, selectedTrainerPartySlot };
+    }),
+  setSelectedTrainerPartySlot: (selectedTrainerPartySlot) =>
+    set({ selectedTrainerPartySlot }),
   setTextWorkflow: (textWorkflow) =>
     set((state) => {
       const selectedTextKey = textWorkflow.entries.some(
@@ -819,10 +852,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       )
         ? state.selectedTrainerId
         : (trainersWorkflow.trainers[0]?.trainerId ?? null);
+      const selectedTrainer = trainersWorkflow.trainers.find(
+        (trainer) => trainer.trainerId === selectedTrainerId
+      );
+      const selectedTrainerPartySlot = selectedTrainer?.team.some(
+        (pokemon) => pokemon.slot === state.selectedTrainerPartySlot
+      )
+        ? state.selectedTrainerPartySlot
+        : (selectedTrainer?.team[0]?.slot ?? null);
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'trainers'),
         selectedTrainerId,
+        selectedTrainerPartySlot,
         trainersWorkflow
       };
     }),
@@ -846,11 +888,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         encountersWorkflow,
         state.selectedEncounterTableId
       );
+      const selectedTable = encountersWorkflow.tables.find(
+        (table) => table.tableId === selectedEncounterTableId
+      );
+      const selectedEncounterSlot = selectedTable?.slots.some(
+        (slot) => slot.slot === state.selectedEncounterSlot
+      )
+        ? state.selectedEncounterSlot
+        : (selectedTable?.slots[0]?.slot ?? null);
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'encounters'),
         encounterSearchText: '',
         encountersWorkflow,
+        selectedEncounterSlot,
         selectedEncounterTableId
       };
     }),

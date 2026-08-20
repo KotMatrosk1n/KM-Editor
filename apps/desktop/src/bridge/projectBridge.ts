@@ -408,6 +408,10 @@ import {
   createSemanticExploreProjectBridgeApi,
   type SemanticExploreProjectBridgeApi
 } from './semanticExploreProjectBridge';
+import {
+  createBalanceLabProjectBridgeApi,
+  type BalanceLabProjectBridgeApi
+} from './balanceLabProjectBridge';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
@@ -710,7 +714,8 @@ export type ProjectBridge = {
 } & SvBatchFieldProjectBridgeApi & SvCacheProjectBridgeApi & ZaCacheProjectBridgeApi &
   GameDumpProjectBridgeApi & SwShPlacementProjectBridgeApi & SwShCacheProjectBridgeApi &
   WorkspaceDraftProjectBridgeApi & WorkspacePersonalStateProjectBridgeApi &
-  OutputSafetyProjectBridgeApi & ChangeSetProjectBridgeApi & SemanticExploreProjectBridgeApi;
+  OutputSafetyProjectBridgeApi & ChangeSetProjectBridgeApi & SemanticExploreProjectBridgeApi &
+  BalanceLabProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -1560,6 +1565,7 @@ export function createProjectBridge(
     ...createOutputSafetyProjectBridgeApi(transport),
     ...createChangeSetProjectBridgeApi(transport),
     ...createSemanticExploreProjectBridgeApi(transport),
+    ...createBalanceLabProjectBridgeApi(transport),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,
