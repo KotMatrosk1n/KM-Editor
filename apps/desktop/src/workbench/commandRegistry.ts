@@ -2,6 +2,7 @@
 
 import type { CapabilityDiscoveryViewModel } from './capabilityDiscovery';
 import type { WorkbenchLocation } from './workbenchLocation';
+import { semanticRecordRefKey } from './semanticContracts';
 import type { WorkbenchSection } from './workbenchSections';
 import type {
   ResolvedWorkspaceShortcut,
@@ -13,8 +14,16 @@ import type {
 } from './workspaceShellViewModels';
 
 export const maximumWorkspaceCommands = 512;
+export const maximumWorkspaceEntityCommands = 32;
+export const maximumWorkspaceEntitySearchTextLength = 256;
 
-export type WorkspaceCommandGroup = 'history' | 'navigation' | 'shell' | 'targets' | 'views';
+export type WorkspaceCommandGroup =
+  | 'entities'
+  | 'history'
+  | 'navigation'
+  | 'shell'
+  | 'targets'
+  | 'views';
 
 export type WorkspaceCommandAction =
   | { kind: 'back' }
@@ -26,6 +35,8 @@ export type WorkspaceCommandAction =
 
 export type WorkspaceCommand = {
   action: WorkspaceCommandAction;
+  description?: string | null;
+  descriptionIsRawData?: boolean;
   descriptionKey: string | null;
   group: WorkspaceCommandGroup;
   id: string;
@@ -36,6 +47,27 @@ export type WorkspaceCommand = {
   labelKey: string | null;
   shortcut: string | null;
 };
+
+export type WorkspaceEntityCommandTarget = {
+  description: string | null;
+  keywords: readonly string[];
+  label: string;
+  location: WorkbenchLocation;
+};
+
+export type WorkspaceEntityCommandSearchRequest = {
+  limit: number;
+  searchText: string;
+};
+
+export type WorkspaceEntityCommandSearchResult = {
+  searchText: string;
+  targets: readonly WorkspaceEntityCommandTarget[];
+};
+
+export type WorkspaceEntityCommandSearch = (
+  request: WorkspaceEntityCommandSearchRequest
+) => Promise<WorkspaceEntityCommandSearchResult>;
 
 export function createWorkspaceCommandRegistry(options: {
   canGoBack: boolean;
@@ -150,6 +182,61 @@ export function createWorkspaceCommandRegistry(options: {
     throw new Error('Workspace command ids must be unique.');
   }
   return commands;
+}
+
+export function createWorkspaceEntityCommands(
+  targets: readonly WorkspaceEntityCommandTarget[]
+): WorkspaceCommand[] {
+  if (targets.length > maximumWorkspaceEntityCommands) {
+    throw new Error('The semantic entity command result exceeds its bounded capacity.');
+  }
+
+  const commands = targets.map((target) => ({
+    action: { kind: 'navigate', location: target.location } as const,
+    description: target.description,
+    descriptionIsRawData: true,
+    descriptionKey: null,
+    group: 'entities' as const,
+    id: semanticEntityCommandId(target),
+    isEnabled: true,
+    keywords: target.keywords,
+    label: target.label,
+    labelIsRawData: true,
+    labelKey: null,
+    shortcut: null
+  }));
+  if (new Set(commands.map((command) => command.id)).size !== commands.length) {
+    throw new Error('Semantic entity command ids must be unique.');
+  }
+  return commands;
+}
+
+function semanticEntityCommandId(target: WorkspaceEntityCommandTarget) {
+  if (!target.location.entity) {
+    throw new Error('A semantic entity command requires an exact entity location.');
+  }
+  return `semantic-entity:${semanticRecordRefKey(target.location.entity)}`;
+}
+
+export function mergeWorkspaceCommandResults(
+  commands: readonly WorkspaceCommand[],
+  entityCommands: readonly WorkspaceCommand[]
+) {
+  if (entityCommands.length > maximumWorkspaceEntityCommands) {
+    throw new Error('The semantic entity command result exceeds its bounded capacity.');
+  }
+  if (entityCommands.some((command) => command.group !== 'entities')) {
+    throw new Error('Only semantic entity commands can extend a command search result.');
+  }
+
+  const merged = [...commands, ...entityCommands];
+  if (merged.length > maximumWorkspaceCommands) {
+    throw new Error('The merged workspace command result exceeds its bounded capacity.');
+  }
+  if (new Set(merged.map((command) => command.id)).size !== merged.length) {
+    throw new Error('Merged workspace command ids must be unique.');
+  }
+  return merged;
 }
 
 function findShortcut(

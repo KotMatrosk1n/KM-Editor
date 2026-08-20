@@ -42,11 +42,11 @@ public sealed class ZaPokedexMegaContentsTable
 
     public IReadOnlyList<ZaPokedexMegaContentsRow> Rows { get; }
 
-    public static ZaPokedexMegaContentsTable Read(ReadOnlySpan<byte> bytes)
+    public static ZaPokedexMegaContentsTable Read(ReadOnlySpan<byte> bytes, int? maximumRowCount = null)
     {
         try
         {
-            return ReadCore(bytes);
+            return ReadCore(bytes, maximumRowCount);
         }
         catch (OverflowException exception)
         {
@@ -56,10 +56,9 @@ public sealed class ZaPokedexMegaContentsTable
         }
     }
 
-    private static ZaPokedexMegaContentsTable ReadCore(ReadOnlySpan<byte> bytes)
+    private static ZaPokedexMegaContentsTable ReadCore(ReadOnlySpan<byte> bytes, int? maximumRowCount)
     {
-        var sourceBytes = bytes.ToArray();
-        var source = sourceBytes.AsSpan();
+        var source = bytes;
         if (source.Length < sizeof(uint))
         {
             throw Invalid("The root offset is missing.");
@@ -78,9 +77,9 @@ public sealed class ZaPokedexMegaContentsTable
         var vectorPosition = ResolveForwardOffset(source, valuesFieldPosition, "row vector");
         EnsureRange(source, vectorPosition, sizeof(int), "row vector length");
         var rowCount = BinaryPrimitives.ReadInt32LittleEndian(source[vectorPosition..]);
-        if (rowCount <= 0)
+        if (rowCount <= 0 || maximumRowCount is not null && rowCount > maximumRowCount.Value)
         {
-            throw Invalid("The row vector must contain at least one row.");
+            throw Invalid("The row vector is empty or exceeds the supported bound.");
         }
 
         var vectorEntriesPosition = checked(vectorPosition + sizeof(int));
@@ -165,7 +164,7 @@ public sealed class ZaPokedexMegaContentsTable
             layouts[index] = new EntryLayout(table, vectorEntryPosition, groupOffset);
         }
 
-        return new ZaPokedexMegaContentsTable(sourceBytes, rows, layouts);
+        return new ZaPokedexMegaContentsTable(bytes.ToArray(), rows, layouts);
     }
 
     public byte[] WriteSpeciesGroups(

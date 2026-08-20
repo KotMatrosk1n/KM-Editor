@@ -9,9 +9,13 @@ public sealed record EvolutionItemConversion(int ItemId, int ParameterId);
 
 public static class EvolutionItemConversionTable
 {
-    public static IReadOnlyList<EvolutionItemConversion> Read(byte[] bytes)
+    public static IReadOnlyList<EvolutionItemConversion> Read(byte[] bytes, int? maximumRowCount = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
+        if (maximumRowCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumRowCount));
+        }
 
         var rootOffset = ReadInt32(bytes, 0, "root table");
         var rootTable = ResolveForwardOffset(bytes, 0, rootOffset, "root table");
@@ -22,6 +26,11 @@ public static class EvolutionItemConversionTable
         if (count < 0 || count > (bytes.Length - vector - sizeof(int)) / sizeof(int))
         {
             throw new InvalidDataException($"Evolution item conversion row count {count} is invalid.");
+        }
+
+        if (maximumRowCount is { } maximum && count > maximum)
+        {
+            throw new InvalidDataException("Evolution item conversion row count exceeds the bounded semantic record limit.");
         }
 
         var rows = new EvolutionItemConversion[count];

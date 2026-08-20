@@ -13,7 +13,7 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
     public const int ArmorTutorCompatibilityCount = 18;
     public const string PersonalDataRelativePath = "romfs/bin/pml/personal/personal_total.bin";
 
-    public static SwShPersonalTable Parse(ReadOnlySpan<byte> data)
+    public static SwShPersonalTable Parse(ReadOnlySpan<byte> data, int? maximumRecordCount = null)
     {
         if (data.Length == 0 || data.Length % RecordSize != 0)
         {
@@ -21,7 +21,13 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
                 $"Personal table length must be a non-empty multiple of {RecordSize} bytes.");
         }
 
-        var records = new SwShPersonalRecord[data.Length / RecordSize];
+        var recordCount = data.Length / RecordSize;
+        if (maximumRecordCount is not null && recordCount > maximumRecordCount.Value)
+        {
+            throw new InvalidDataException("Personal table record count exceeds the supported bound.");
+        }
+
+        var records = new SwShPersonalRecord[recordCount];
         for (var index = 0; index < records.Length; index++)
         {
             var record = data.Slice(index * RecordSize, RecordSize);

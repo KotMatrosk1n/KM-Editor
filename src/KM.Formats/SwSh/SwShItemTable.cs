@@ -216,7 +216,7 @@ public sealed class SwShItemTable
 
     private IReadOnlyList<int> RawRowIndexes { get; }
 
-    public static SwShItemTable Parse(ReadOnlySpan<byte> data)
+    public static SwShItemTable Parse(ReadOnlySpan<byte> data, int? maximumRecordCount = null)
     {
         if (data.Length < HeaderSize)
         {
@@ -226,6 +226,11 @@ public sealed class SwShItemTable
         var itemCount = BinaryPrimitives.ReadUInt16LittleEndian(data);
         var maxRowIndex = BinaryPrimitives.ReadUInt16LittleEndian(data[MaxRowIndexOffset..]);
         var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(data[RowsStartOffset..]);
+        if (maximumRecordCount is not null
+            && (itemCount > maximumRecordCount.Value || maxRowIndex > maximumRecordCount.Value))
+        {
+            throw new InvalidDataException("Item table record count exceeds the supported bound.");
+        }
 
         if (rowsStart < HeaderSize)
         {

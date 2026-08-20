@@ -51,6 +51,7 @@ export type WorkbenchSectionProps = {
   recentProjects: readonly WorkspaceRecentProjectViewModel[];
   recents: readonly WorkspaceTargetViewModel[];
   savedViews: readonly WorkspaceSavedViewViewModel[];
+  semanticExplore: ReactNode;
   workflowHome: ReactNode;
 };
 
@@ -77,6 +78,7 @@ export function WorkbenchSection({
   recentProjects,
   recents,
   savedViews,
+  semanticExplore,
   workflowHome
 }: WorkbenchSectionProps) {
   const { t } = useLocalization();
@@ -341,6 +343,8 @@ export function WorkbenchSection({
           )}
         </section>
       </div>
+
+      {semanticExplore}
 
       <section aria-label={t('workbench.workflows.title')} className="km-workbench-workflows">
         {workflowHome}

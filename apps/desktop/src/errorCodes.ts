@@ -46,6 +46,16 @@ export const projectBridgeErrorCodes = {
   workspaceConcurrentModification: 'KM-WORKSPACE-CONCURRENT-MODIFICATION'
 } as const satisfies Record<string, KmErrorCode>;
 
+export const semanticExploreErrorCodes = {
+  externalOverlayRejected: 'KM-SEMANTIC-EXTERNAL-OVERLAY-REJECTED',
+  externalSnapshotUnavailable: 'KM-SEMANTIC-EXTERNAL-SNAPSHOT-UNAVAILABLE',
+  invalidCursor: 'KM-SEMANTIC-INVALID-CURSOR',
+  invalidQuery: 'KM-SEMANTIC-INVALID-QUERY',
+  limitExceeded: 'KM-SEMANTIC-LIMIT-EXCEEDED',
+  staleRevision: 'KM-SEMANTIC-STALE-REVISION',
+  unsupported: 'KM-SEMANTIC-UNSUPPORTED'
+} as const satisfies Record<string, KmErrorCode>;
+
 export const swshDynamaxAdventuresErrorCodes = {
   seedInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-SEED-INVALID',
   seedLimitInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-SEED-LIMIT-INVALID',

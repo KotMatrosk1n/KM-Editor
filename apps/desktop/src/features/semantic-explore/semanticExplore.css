@@ -1,0 +1,493 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+:where(.km-semantic-explore, .km-adaptive-inspector) {
+  --km-accent: var(--color-accent-bright);
+  --km-border: var(--color-border-strong);
+  --km-border-subtle: var(--color-border);
+  --km-code-surface: var(--color-surface-muted);
+  --km-danger: var(--color-danger);
+  --km-danger-surface: rgb(var(--color-danger-rgb) / 12%);
+  --km-danger-text: var(--color-text);
+  --km-focus: var(--color-focus);
+  --km-font-size-xs: 0.78rem;
+  --km-radius-lg: 0.75rem;
+  --km-radius-md: 0.5rem;
+  --km-radius-sm: 0.35rem;
+  --km-space-1: 0.375rem;
+  --km-space-2: 0.625rem;
+  --km-space-3: 0.875rem;
+  --km-space-4: 1rem;
+  --km-success: var(--color-success);
+  --km-surface: var(--color-surface);
+  --km-surface-subtle: var(--color-surface-muted);
+  --km-text: var(--color-text);
+  --km-text-muted: var(--color-text-muted);
+  --km-warning: var(--color-warning);
+}
+
+.km-semantic-explore {
+  display: grid;
+  gap: var(--km-space-4);
+  min-width: 0;
+}
+
+.km-semantic-heading {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+}
+
+.km-semantic-heading p,
+.km-semantic-heading h2,
+.km-semantic-heading span {
+  margin: 0;
+}
+
+.km-semantic-heading p {
+  color: var(--km-text-muted);
+  font-size: var(--km-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.km-semantic-heading span {
+  color: var(--km-text-muted);
+  display: block;
+  margin-top: var(--km-space-1);
+  max-width: 72ch;
+}
+
+.km-semantic-module-tabs {
+  border-bottom: 1px solid var(--km-border-subtle);
+  display: flex;
+  gap: var(--km-space-1);
+  overflow-x: auto;
+}
+
+.km-semantic-module-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--km-text-muted);
+  padding: var(--km-space-2) var(--km-space-3);
+  white-space: nowrap;
+}
+
+.km-semantic-module-tabs button.is-active {
+  border-bottom-color: var(--km-accent);
+  color: var(--km-text);
+}
+
+.km-semantic-module {
+  min-width: 0;
+}
+
+.km-semantic-explore-grid {
+  display: grid;
+  gap: var(--km-space-4);
+  grid-template-columns: minmax(18rem, 0.9fr) minmax(22rem, 1.1fr);
+}
+
+.km-semantic-search,
+.km-semantic-query-bar {
+  align-items: end;
+  background: var(--km-surface-subtle);
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-lg);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--km-space-2);
+  padding: var(--km-space-3);
+}
+
+.km-semantic-search label,
+.km-semantic-query-bar label {
+  display: grid;
+  flex: 1 1 10rem;
+  gap: var(--km-space-1);
+}
+
+.km-semantic-search label:first-child {
+  flex-basis: 18rem;
+}
+
+.km-semantic-search-input {
+  align-items: center;
+  background: var(--km-surface);
+  border: 1px solid var(--km-border);
+  border-radius: var(--km-radius-md);
+  display: flex;
+  gap: var(--km-space-2);
+  padding-inline: var(--km-space-2);
+}
+
+.km-semantic-search-input:focus-within {
+  border-color: var(--km-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--km-focus) 28%, transparent);
+}
+
+.km-semantic-search-input input {
+  background: transparent;
+  border: 0;
+  min-width: 0;
+  padding-inline: 0;
+  width: 100%;
+}
+
+.km-semantic-result-list,
+.km-semantic-difference-list,
+.km-semantic-change-list,
+.km-semantic-inspector-list,
+.km-semantic-conflicts ul {
+  display: grid;
+  gap: var(--km-space-2);
+  list-style: none;
+  margin: var(--km-space-3) 0;
+  padding: 0;
+}
+
+.km-semantic-result-list > li > button {
+  align-items: center;
+  background: var(--km-surface);
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-md);
+  color: inherit;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--km-space-3);
+  text-align: start;
+  width: 100%;
+}
+
+.km-semantic-result-list button > span:first-child,
+.km-semantic-entity header > div,
+.km-semantic-inspector-list li > span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-result-list small,
+.km-semantic-entity small,
+.km-semantic-inspector-list small {
+  color: var(--km-text-muted);
+}
+
+.km-semantic-entity {
+  align-self: start;
+  background: var(--km-surface);
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-lg);
+  min-height: 15rem;
+  padding: var(--km-space-4);
+}
+
+.km-semantic-entity header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--km-space-3);
+  justify-content: space-between;
+}
+
+.km-semantic-entity h3,
+.km-semantic-entity p {
+  margin: 0;
+}
+
+.km-semantic-field-list {
+  display: grid;
+  gap: 1px;
+  margin: var(--km-space-3) 0 0;
+}
+
+.km-semantic-field-list > div {
+  align-items: center;
+  background: var(--km-surface-subtle);
+  display: grid;
+  gap: var(--km-space-3);
+  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr);
+  padding: var(--km-space-2) var(--km-space-3);
+}
+
+.km-semantic-field-list dt {
+  display: grid;
+}
+
+.km-semantic-field-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+.km-semantic-coverage {
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-md);
+  margin-block: var(--km-space-3);
+  padding: var(--km-space-2) var(--km-space-3);
+}
+
+.km-semantic-coverage summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.km-semantic-coverage ul {
+  display: grid;
+  gap: var(--km-space-1);
+  list-style: none;
+  margin: var(--km-space-2) 0;
+  padding: 0;
+}
+
+.km-semantic-coverage li {
+  align-items: center;
+  display: grid;
+  gap: var(--km-space-2);
+  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) auto auto;
+}
+
+.km-semantic-coverage li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-coverage code {
+  grid-column: 1 / -1;
+}
+
+.km-semantic-difference-list > li,
+.km-semantic-change-list > li {
+  align-items: center;
+  background: var(--km-surface);
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-md);
+  display: grid;
+  gap: var(--km-space-3);
+  grid-template-columns: auto minmax(10rem, 1fr) auto minmax(14rem, 1fr);
+  padding: var(--km-space-3);
+}
+
+.km-semantic-difference-list li > div,
+.km-semantic-change-list li > span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-record-link {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--km-accent);
+  display: inline-flex;
+  justify-content: center;
+  padding: var(--km-space-1);
+}
+
+.km-semantic-value-pair {
+  align-items: center;
+  display: grid;
+  gap: var(--km-space-2);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.km-semantic-value-pair code {
+  background: var(--km-surface-subtle);
+  border-radius: var(--km-radius-sm);
+  overflow-wrap: anywhere;
+  padding: var(--km-space-1) var(--km-space-2);
+}
+
+.km-semantic-difference-badge {
+  border: 1px solid var(--km-border);
+  border-radius: 999px;
+  font-size: var(--km-font-size-xs);
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+}
+
+.km-semantic-difference-badge[data-kind='added'],
+.km-semantic-difference-badge[data-kind='inherited'] {
+  border-color: var(--km-success);
+  color: var(--km-success);
+}
+
+.km-semantic-difference-badge[data-kind='removed'],
+.km-semantic-difference-badge[data-kind='undecodable'] {
+  border-color: var(--km-danger);
+  color: var(--km-danger);
+}
+
+.km-semantic-difference-badge[data-kind='changed'],
+.km-semantic-difference-badge[data-kind='reordered'],
+.km-semantic-difference-badge[data-kind='unavailable'] {
+  border-color: var(--km-warning);
+  color: var(--km-warning);
+}
+
+.km-semantic-graph {
+  display: grid;
+  gap: var(--km-space-2);
+  margin-top: var(--km-space-3);
+}
+
+.km-semantic-graph article,
+.km-semantic-edge {
+  align-items: center;
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-md);
+  display: flex;
+  gap: var(--km-space-2);
+  margin: 0;
+  padding: var(--km-space-2) var(--km-space-3);
+}
+
+.km-semantic-graph article > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-edge {
+  color: var(--km-text-muted);
+  flex-wrap: wrap;
+  margin-inline-start: var(--km-space-4);
+}
+
+.km-semantic-edge span,
+.km-semantic-conflicts li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-adaptive-inspector .km-semantic-coverage li {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.km-semantic-conflicts li {
+  align-items: center;
+  border-inline-start: 3px solid var(--km-warning);
+  display: flex;
+  gap: var(--km-space-2);
+  justify-content: space-between;
+  padding: var(--km-space-2) var(--km-space-3);
+}
+
+.km-semantic-change-text {
+  background: var(--km-code-surface, var(--km-surface-subtle));
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-md);
+  max-height: 32rem;
+  overflow: auto;
+  padding: var(--km-space-3);
+  white-space: pre;
+}
+
+.km-semantic-query-error,
+.km-semantic-advisory,
+.km-semantic-status {
+  border-radius: var(--km-radius-md);
+  margin-block: var(--km-space-3);
+  padding: var(--km-space-2) var(--km-space-3);
+}
+
+.km-semantic-query-error {
+  background: var(--km-danger-surface);
+  color: var(--km-danger-text, var(--km-text));
+}
+
+.km-semantic-advisory,
+.km-semantic-status {
+  background: var(--km-surface-subtle);
+  color: var(--km-text-muted);
+}
+
+.km-semantic-load-more {
+  margin-top: var(--km-space-3);
+  width: 100%;
+}
+
+.km-semantic-inspector-toggle {
+  display: flex;
+  gap: var(--km-space-1);
+  margin-bottom: var(--km-space-2);
+}
+
+.km-semantic-inspector-list li {
+  align-items: start;
+  border-bottom: 1px solid var(--km-border-subtle);
+  display: flex;
+  gap: var(--km-space-2);
+  justify-content: space-between;
+  padding-block: var(--km-space-2);
+}
+
+.km-semantic-inspector-list em {
+  color: var(--km-text-muted);
+  font-size: var(--km-font-size-xs);
+  font-style: normal;
+}
+
+@media (max-width: 1100px) {
+  .km-semantic-explore-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-semantic-difference-list > li,
+  .km-semantic-change-list > li {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .km-semantic-value-pair {
+    grid-column: 2 / -1;
+  }
+}
+
+@media (max-width: 680px) {
+  .km-semantic-search,
+  .km-semantic-query-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .km-semantic-field-list > div,
+  .km-semantic-coverage li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-semantic-field-list dd {
+    text-align: start;
+  }
+
+  .km-semantic-difference-list > li,
+  .km-semantic-change-list > li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .km-semantic-difference-badge,
+  .km-semantic-value-pair {
+    grid-column: 2;
+  }
+}
+
+@media (forced-colors: active) {
+  .km-semantic-module-tabs button.is-active,
+  .km-semantic-difference-badge,
+  .km-semantic-conflicts li,
+  .km-semantic-search-input:focus-within {
+    border-color: Highlight;
+  }
+
+  .km-semantic-difference-badge {
+    color: CanvasText;
+  }
+
+  .km-semantic-module-tabs button.is-active {
+    color: Highlight;
+  }
+}

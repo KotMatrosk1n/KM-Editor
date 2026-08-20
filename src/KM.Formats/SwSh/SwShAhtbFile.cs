@@ -11,7 +11,7 @@ public sealed record SwShAhtbFile(IReadOnlyList<SwShAhtbEntry> Entries)
 {
     public const uint Magic = 0x42544841;
 
-    public static SwShAhtbFile Parse(ReadOnlySpan<byte> data)
+    public static SwShAhtbFile Parse(ReadOnlySpan<byte> data, int? maximumEntryCount = null)
     {
         EnsureRange(data, 0, sizeof(uint) + sizeof(int));
         var magic = BinaryPrimitives.ReadUInt32LittleEndian(data[..sizeof(uint)]);
@@ -21,9 +21,9 @@ public sealed record SwShAhtbFile(IReadOnlyList<SwShAhtbEntry> Entries)
         }
 
         var count = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(4, sizeof(int)));
-        if (count < 0)
+        if (count < 0 || maximumEntryCount is not null && count > maximumEntryCount.Value)
         {
-            throw new InvalidDataException("AHTB entry count must not be negative.");
+            throw new InvalidDataException("AHTB entry count exceeds the supported bound.");
         }
 
         var entries = new List<SwShAhtbEntry>(count);

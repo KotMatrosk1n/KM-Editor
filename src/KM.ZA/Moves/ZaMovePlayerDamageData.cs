@@ -51,11 +51,17 @@ internal sealed class ZaMovePlayerDamageDataDocument
 
     public IReadOnlyList<ZaMovePlayerDamageValues> Values { get; }
 
-    public static ZaMovePlayerDamageDataDocument Parse(byte[] bytes)
+    public static ZaMovePlayerDamageDataDocument Parse(
+        byte[] bytes,
+        int? maximumVectorEntries = null,
+        int? maximumAggregateVectorEntries = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
-        var reader = new ZaAngeFlatBufferReader(bytes);
+        var reader = new ZaAngeFlatBufferReader(
+            bytes,
+            maximumVectorEntries,
+            maximumAggregateVectorEntries);
         var root = reader.ReadRootTable("attack parameter array root", maximumFieldCount: 1);
         var groups = reader.ReadTableVector(
             root,

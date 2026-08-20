@@ -788,11 +788,24 @@ internal sealed class ZaAngeFlatBufferReader
         throwOnInvalidBytes: true);
 
     private readonly byte[] bytes;
+    private readonly int? maximumVectorEntries;
+    private readonly int? maximumAggregateVectorEntries;
+    private int aggregateVectorEntries;
 
-    public ZaAngeFlatBufferReader(byte[] bytes)
+    public ZaAngeFlatBufferReader(
+        byte[] bytes,
+        int? maximumVectorEntries = null,
+        int? maximumAggregateVectorEntries = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
+        if (maximumVectorEntries is <= 0 || maximumAggregateVectorEntries is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumVectorEntries));
+        }
+
         this.bytes = bytes;
+        this.maximumVectorEntries = maximumVectorEntries;
+        this.maximumAggregateVectorEntries = maximumAggregateVectorEntries;
         if (bytes.Length < sizeof(uint) * 2)
         {
             throw new InvalidDataException(
@@ -981,6 +994,18 @@ internal sealed class ZaAngeFlatBufferReader
         }
 
         var entryCount = checked((int)count);
+        if (maximumVectorEntries is not null && entryCount > maximumVectorEntries.Value)
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic vector limit.");
+        }
+
+        aggregateVectorEntries = checked(aggregateVectorEntries + entryCount);
+        if (maximumAggregateVectorEntries is not null
+            && aggregateVectorEntries > maximumAggregateVectorEntries.Value)
+        {
+            throw new InvalidDataException("The Ange FlatBuffer exceeds the bounded semantic vector budget.");
+        }
+
         var entriesOffset = checked(vectorOffset + sizeof(uint));
         var byteLength = checked(entryCount * sizeof(uint));
         EnsureRange(entriesOffset, byteLength, label);

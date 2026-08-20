@@ -626,6 +626,15 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "changeSets.read"
             | "changeSets.materialize"
             | "changeSets.export"
+            | "semantic.capabilities"
+            | "semantic.search"
+            | "semantic.entity"
+            | "semantic.compare"
+            | "semantic.references"
+            | "semantic.impact"
+            | "semantic.ownership"
+            | "semantic.external.compare"
+            | "semantic.changes"
             | "support.report.build"
     ) {
         return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);

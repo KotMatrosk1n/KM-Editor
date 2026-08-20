@@ -46,7 +46,7 @@ public sealed class SwShGameTextFile
 
     public IReadOnlyList<SwShGameTextLine> Lines { get; }
 
-    public static SwShGameTextFile Parse(ReadOnlySpan<byte> data)
+    public static SwShGameTextFile Parse(ReadOnlySpan<byte> data, int? maximumLineCount = null)
     {
         if (data.Length < HeaderSize + sizeof(uint))
         {
@@ -58,6 +58,11 @@ public sealed class SwShGameTextFile
         var totalLength = BinaryPrimitives.ReadUInt32LittleEndian(data[0x04..]);
         var initialKey = BinaryPrimitives.ReadUInt32LittleEndian(data[0x08..]);
         var sectionOffset = BinaryPrimitives.ReadUInt32LittleEndian(data[0x0C..]);
+
+        if (maximumLineCount is not null && lineCount > maximumLineCount.Value)
+        {
+            throw new InvalidDataException("The game text line count exceeds the supported bound.");
+        }
 
         if (sectionCount != 1
             || initialKey != 0

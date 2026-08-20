@@ -27,7 +27,7 @@ internal static class SvTechnicalMachineCatalog
         try
         {
             var source = fileSource.Read(project, SvDataPaths.ItemDataArray);
-            return Read(source.Bytes, labels);
+            return Read(source.Bytes, labels, fileSource);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -40,9 +40,11 @@ internal static class SvTechnicalMachineCatalog
 
     public static IReadOnlyList<SvTechnicalMachineMove> Read(
         byte[] itemData,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        SvWorkflowFileSource? boundedFileSource = null)
     {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(itemData));
+        boundedFileSource?.EnsureBoundedTableCount(table.ValuesLength, "The S/V TM item table");
         var machineItems = new List<(int Slot, int ItemId, int GroupId, int MoveId, int SortNum)>();
         for (var index = 0; index < table.ValuesLength; index++)
         {

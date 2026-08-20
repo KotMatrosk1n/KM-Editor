@@ -229,6 +229,7 @@ internal sealed class ZaItemsWorkflowService
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+            EnsureBoundedItemTable(source.Bytes, "The Z-A item table");
             var baseItems = ReadBaseItems(
                 fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
             var compatibilityCounts = ReadTechnicalMachineCompatibilityCounts(
@@ -322,6 +323,7 @@ internal sealed class ZaItemsWorkflowService
         var labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
         var source = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The verified base Z-A item table");
         var matches = Enumerable.Range(0, table.ValuesLength)
             .Select(index => table.Values(index))
             .Where(item => item is not null && item.Value.Id == itemId)
@@ -348,6 +350,12 @@ internal sealed class ZaItemsWorkflowService
     }
 
     internal static string FormatItemType(int value) => FormatIndexed(value, ItemTypeNames, "Item type");
+
+    private void EnsureBoundedItemTable(byte[] bytes, string label)
+    {
+        var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, label);
+    }
 
     internal static string FormatPocket(int value)
     {
@@ -523,10 +531,11 @@ internal sealed class ZaItemsWorkflowService
         }
     }
 
-    private static IReadOnlyDictionary<int, BaseItemRecord> ReadBaseItems(
+    private IReadOnlyDictionary<int, BaseItemRecord> ReadBaseItems(
         byte[] bytes)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The base Z-A item table");
         var items = new Dictionary<int, BaseItemRecord>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
@@ -542,10 +551,12 @@ internal sealed class ZaItemsWorkflowService
         return items;
     }
 
-    private static IReadOnlyDictionary<int, int> ReadTechnicalMachineCompatibilityCounts(byte[] bytes)
+    private IReadOnlyDictionary<int, int> ReadTechnicalMachineCompatibilityCounts(byte[] bytes)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
+        fileSource.EnsureBoundedTableCount(table.EntryLength, "The Z-A TM compatibility table");
         var counts = new Dictionary<int, int>();
+        var nestedCount = 0;
         for (var index = 0; index < table.EntryLength; index++)
         {
             if (table.Entry(index) is not { } row)
@@ -553,6 +564,9 @@ internal sealed class ZaItemsWorkflowService
                 continue;
             }
 
+            fileSource.EnsureBoundedTableCount(row.TmMovesLength, "A Z-A TM compatibility vector");
+            nestedCount = checked(nestedCount + row.TmMovesLength);
+            fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A TM compatibility vectors");
             foreach (var moveId in row.GetTmMovesArray().Distinct())
             {
                 counts[moveId] = counts.GetValueOrDefault(moveId) + 1;
@@ -562,7 +576,7 @@ internal sealed class ZaItemsWorkflowService
         return counts;
     }
 
-    private static IEnumerable<ZaItemRecord> LoadRecords(
+    private IEnumerable<ZaItemRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
         IReadOnlySet<int> recoveredMintNatureItemIds,
@@ -571,6 +585,7 @@ internal sealed class ZaItemsWorkflowService
         IReadOnlyDictionary<int, int> compatibilityCounts)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A item table");
         var iconRepairs = technicalMachineRecovery.IconRepairs.ToDictionary(
             repair => repair.ItemId,
             repair => repair.RepairedIconName);

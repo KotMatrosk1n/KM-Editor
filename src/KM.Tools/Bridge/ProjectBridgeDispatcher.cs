@@ -34,6 +34,7 @@ using KM.Api.Raids;
 using KM.Api.Randomizer;
 using KM.Api.Rentals;
 using KM.Api.RoyalCandy;
+using KM.Api.Semantics;
 using KM.Api.Shops;
 using KM.Api.ShinyRate;
 using KM.Api.SpreadsheetImport;
@@ -171,6 +172,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly ChangeSetApplicationService changeSetApplicationService;
     private readonly OutputSafetyApplicationService outputSafetyApplicationService;
     private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
+    private readonly SemanticExploreApplicationService semanticExploreApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -221,7 +223,8 @@ public sealed class ProjectBridgeDispatcher
         WorkspacePersonalStateApplicationService? workspacePersonalStateApplicationService = null,
         ChangeSetApplicationService? changeSetApplicationService = null,
         OutputSafetyApplicationService? outputSafetyApplicationService = null,
-        ProjectRelocationApplicationService? projectRelocationApplicationService = null)
+        ProjectRelocationApplicationService? projectRelocationApplicationService = null,
+        SemanticExploreApplicationService? semanticExploreApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -293,6 +296,12 @@ public sealed class ProjectBridgeDispatcher
                 workspacePersonalStateService: this.workspacePersonalStateApplicationService,
                 changeSetService: this.changeSetApplicationService,
                 outputSafetyService: this.outputSafetyApplicationService);
+        this.semanticExploreApplicationService = semanticExploreApplicationService
+            ?? new SemanticExploreApplicationService(
+                LoadSemanticExploreItemsFresh,
+                LoadSemanticExplorePokemonFresh,
+                LoadSemanticExploreMovesFresh,
+                CaptureSemanticExploreSourceFingerprint);
     }
 
     public string Dispatch(string requestJson)
@@ -524,6 +533,15 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.MaterializeChangeSets => DispatchMaterializeChangeSets(requestJson),
                 KmCommandNames.ExportChangeSets => DispatchExportChangeSets(requestJson),
                 KmCommandNames.ImportChangeSets => DispatchImportChangeSets(requestJson),
+                KmCommandNames.ReadSemanticCapabilities => DispatchReadSemanticCapabilities(requestJson),
+                KmCommandNames.SearchSemantic => DispatchSearchSemantic(requestJson),
+                KmCommandNames.ReadSemanticEntity => DispatchReadSemanticEntity(requestJson),
+                KmCommandNames.CompareSemantic => DispatchCompareSemantic(requestJson),
+                KmCommandNames.QuerySemanticReferences => DispatchQuerySemanticReferences(requestJson),
+                KmCommandNames.QuerySemanticImpact => DispatchQuerySemanticImpact(requestJson),
+                KmCommandNames.QuerySemanticOwnership => DispatchQuerySemanticOwnership(requestJson),
+                KmCommandNames.CompareExternalSemantic => DispatchCompareExternalSemantic(requestJson),
+                KmCommandNames.QuerySemanticChanges => DispatchQuerySemanticChanges(requestJson),
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
@@ -566,6 +584,16 @@ public sealed class ProjectBridgeDispatcher
             return (
                 SerializeFailure(
                     code,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+
+        catch (SemanticExploreValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    GetSemanticExploreErrorCode(exception.FailureKind),
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -847,6 +875,78 @@ public sealed class ProjectBridgeDispatcher
             ProjectBridgeMapper.ToDto(openedProject.FileGraph));
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchReadSemanticCapabilities(string requestJson)
+    {
+        var request = DeserializeRequest<ReadSemanticCapabilitiesRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.ReadCapabilities(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchSearchSemantic(string requestJson)
+    {
+        var request = DeserializeRequest<SearchSemanticRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.Search(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadSemanticEntity(string requestJson)
+    {
+        var request = DeserializeRequest<ReadSemanticEntityRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.ReadEntity(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchCompareSemantic(string requestJson)
+    {
+        var request = DeserializeRequest<CompareSemanticRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.Compare(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchQuerySemanticReferences(string requestJson)
+    {
+        var request = DeserializeRequest<QuerySemanticReferencesRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.QueryReferences(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchQuerySemanticImpact(string requestJson)
+    {
+        var request = DeserializeRequest<QuerySemanticImpactRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.QueryImpact(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchQuerySemanticOwnership(string requestJson)
+    {
+        var request = DeserializeRequest<QuerySemanticOwnershipRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.QueryOwnership(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchCompareExternalSemantic(string requestJson)
+    {
+        var request = DeserializeRequest<CompareExternalSemanticRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.CompareExternal(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchQuerySemanticChanges(string requestJson)
+    {
+        var request = DeserializeRequest<QuerySemanticChangesRequest>(requestJson);
+        return SerializeSuccess(
+            semanticExploreApplicationService.QueryChanges(request.Payload),
+            request.RequestId);
     }
 
     private string DispatchReadChangeSets(string requestJson)
@@ -4943,10 +5043,24 @@ public sealed class ProjectBridgeDispatcher
         selectedGame = default;
 
         var request = DeserializeRequest<JsonElement>(requestJson);
-        if (request?.Payload.ValueKind is not JsonValueKind.Object
-            || (!request.Payload.TryGetProperty("paths", out var paths)
-                && !request.Payload.TryGetProperty("activePaths", out paths))
-            || paths.ValueKind is not JsonValueKind.Object
+        if (request?.Payload.ValueKind is not JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        JsonElement paths;
+        if (!request.Payload.TryGetProperty("paths", out paths)
+            && !request.Payload.TryGetProperty("activePaths", out paths))
+        {
+            if (!request.Payload.TryGetProperty("scope", out var scope)
+                || scope.ValueKind is not JsonValueKind.Object
+                || !scope.TryGetProperty("paths", out paths))
+            {
+                return false;
+            }
+        }
+
+        if (paths.ValueKind is not JsonValueKind.Object
             || !paths.TryGetProperty("selectedGame", out var selectedGameJson)
             || selectedGameJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
@@ -5007,6 +5121,114 @@ public sealed class ProjectBridgeDispatcher
             ProjectGameDto.Violet => ProjectGame.Violet,
             ProjectGameDto.ZA => ProjectGame.ZA,
             _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
+    }
+
+    private ItemsWorkflowDto LoadSemanticExploreItemsFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadSemanticExploreItems(paths)).Workflow;
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return SvBridgeMapper.ToDto(svWorkflowService.LoadSemanticExploreItems(paths)).Workflow;
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return SwShBridgeMapper.ToDto(swShWorkflowService.LoadSemanticExploreItems(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected semantic game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private PokemonWorkflowDto LoadSemanticExplorePokemonFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadSemanticExplorePokemon(paths)).Workflow;
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return SvBridgeMapper.ToDto(svWorkflowService.LoadSemanticExplorePokemon(paths)).Workflow;
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return SwShBridgeMapper.ToDto(swShWorkflowService.LoadSemanticExplorePokemon(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected semantic game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private MovesWorkflowDto LoadSemanticExploreMovesFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadSemanticExploreMoves(paths)).Workflow;
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return SvBridgeMapper.ToDto(svWorkflowService.LoadSemanticExploreMoves(paths)).Workflow;
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return SwShBridgeMapper.ToDto(swShWorkflowService.LoadSemanticExploreMoves(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected semantic game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private string CaptureSemanticExploreSourceFingerprint(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.CaptureSemanticExploreSourceFingerprint(paths);
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.CaptureSemanticExploreSourceFingerprint(paths);
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return swShWorkflowService.CaptureSemanticExploreSourceFingerprint(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected semantic game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private static string GetSemanticExploreErrorCode(SemanticExploreFailureKind failureKind)
+    {
+        return failureKind switch
+        {
+            SemanticExploreFailureKind.InvalidData => BridgeErrorCodes.SemanticInvalidQuery,
+            SemanticExploreFailureKind.StaleRevision => BridgeErrorCodes.SemanticStaleRevision,
+            SemanticExploreFailureKind.Unsupported => BridgeErrorCodes.SemanticUnsupported,
+            SemanticExploreFailureKind.InvalidCursor => BridgeErrorCodes.SemanticInvalidCursor,
+            SemanticExploreFailureKind.ExternalRejected => BridgeErrorCodes.SemanticExternalRejected,
+            SemanticExploreFailureKind.ExternalSnapshotUnavailable =>
+                BridgeErrorCodes.SemanticExternalSnapshotUnavailable,
+            SemanticExploreFailureKind.LimitExceeded => BridgeErrorCodes.SemanticLimitExceeded,
+            _ => BridgeErrorCodes.SemanticInvalidQuery,
         };
     }
 
@@ -5254,6 +5476,15 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
             KmCommandNames.WarmupZaCacheStep or
+            KmCommandNames.ReadSemanticCapabilities or
+            KmCommandNames.SearchSemantic or
+            KmCommandNames.ReadSemanticEntity or
+            KmCommandNames.CompareSemantic or
+            KmCommandNames.QuerySemanticReferences or
+            KmCommandNames.QuerySemanticImpact or
+            KmCommandNames.QuerySemanticOwnership or
+            KmCommandNames.CompareExternalSemantic or
+            KmCommandNames.QuerySemanticChanges or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge or

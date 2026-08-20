@@ -94,7 +94,9 @@ internal sealed class ZaEvolutionItemConversionState
         ArgumentNullException.ThrowIfNull(fileSource);
 
         var source = fileSource.Read(project, ZaDataPaths.EvolutionItemConversionArray);
-        var rows = EvolutionItemConversionTable.Read(source.Bytes).ToList();
+        var rows = EvolutionItemConversionTable.Read(
+            source.Bytes,
+            fileSource.BoundedTableRecordLimit).ToList();
         var itemToParameter = new Dictionary<int, int>();
         var parameterToItem = new Dictionary<int, int>();
         var parameterIds = new HashSet<int>();
@@ -265,6 +267,7 @@ internal sealed class ZaEvolutionItemConversionState
         {
             var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             var itemTable = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(itemSource.Bytes));
+            fileSource.EnsureBoundedTableCount(itemTable.ValuesLength, "The Z-A evolution item table");
             for (var index = 0; index < itemTable.ValuesLength; index++)
             {
                 if (itemTable.Values(index) is { } item && item.Id > 0)
@@ -294,6 +297,8 @@ internal sealed class ZaEvolutionItemConversionState
         {
             var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(personalSource.Bytes));
+            fileSource.EnsureBoundedTableCount(table.EntryLength, "The Z-A evolution personal table");
+            var nestedCount = 0;
             for (var entryIndex = 0; entryIndex < table.EntryLength; entryIndex++)
             {
                 if (table.Entry(entryIndex) is not { } entry || !entry.IsPresent)
@@ -301,6 +306,9 @@ internal sealed class ZaEvolutionItemConversionState
                     continue;
                 }
 
+                fileSource.EnsureBoundedTableCount(entry.EvolutionsLength, "A Z-A evolution vector");
+                nestedCount = checked(nestedCount + entry.EvolutionsLength);
+                fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A evolution vectors");
                 for (var evolutionIndex = 0; evolutionIndex < entry.EvolutionsLength; evolutionIndex++)
                 {
                     if (entry.Evolutions(evolutionIndex) is { } evolution

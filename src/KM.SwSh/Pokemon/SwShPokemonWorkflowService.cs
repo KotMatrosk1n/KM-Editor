@@ -15,7 +15,45 @@ namespace KM.SwSh.Pokemon;
 
 public sealed class SwShPokemonWorkflowService
 {
+    private const int MaximumSemanticRecords = 10_000;
+    private const int MaximumSemanticNestedRecords = 100_000;
+    private const int MaximumSemanticTextLines = 50_000;
+
     private readonly ProjectWorkflowMemoryCache<SwShPokemonWorkflow> memoryCache = new();
+    private readonly Func<string, byte[]> readAllBytes;
+    private readonly int? maximumRecordCount;
+    private readonly int? maximumNestedRecordCount;
+    private readonly int? maximumTextLineCount;
+
+    public SwShPokemonWorkflowService()
+        : this(
+            File.ReadAllBytes,
+            maximumRecordCount: null,
+            maximumNestedRecordCount: null,
+            maximumTextLineCount: null)
+    {
+    }
+
+    internal SwShPokemonWorkflowService(Func<string, byte[]> readAllBytes)
+        : this(
+            readAllBytes,
+            MaximumSemanticRecords,
+            MaximumSemanticNestedRecords,
+            MaximumSemanticTextLines)
+    {
+    }
+
+    private SwShPokemonWorkflowService(
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount,
+        int? maximumNestedRecordCount,
+        int? maximumTextLineCount)
+    {
+        this.readAllBytes = readAllBytes ?? throw new ArgumentNullException(nameof(readAllBytes));
+        this.maximumRecordCount = maximumRecordCount;
+        this.maximumNestedRecordCount = maximumNestedRecordCount;
+        this.maximumTextLineCount = maximumTextLineCount;
+    }
 
     public const string PersonalDataPath = SwShPersonalTable.PersonalDataRelativePath;
     public const string LearnsetDataPath = SwShPokemonLearnsetTable.LearnsetDataRelativePath;
@@ -384,31 +422,59 @@ public sealed class SwShPokemonWorkflowService
             project,
             "monsname.dat",
             "Pokemon species names",
-            diagnostics);
-        var spriteSpeciesNames = LoadOptionalEnglishTextTable(project, "monsname.dat");
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
+        var spriteSpeciesNames = LoadOptionalEnglishTextTable(
+            project,
+            "monsname.dat",
+            readAllBytes,
+            maximumTextLineCount);
         var itemNames = LoadOptionalTextTable(
             project,
             "itemname.dat",
             "Item names",
-            diagnostics);
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
         var abilityNames = LoadOptionalTextTable(
             project,
             "tokusei.dat",
             "Ability names",
-            diagnostics);
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
         var moveNames = LoadOptionalTextTable(
             project,
             "wazaname.dat",
             "Move names",
-            diagnostics);
-        var itemRecords = LoadOptionalItemRecords(project, diagnostics);
+            diagnostics,
+            readAllBytes,
+            maximumTextLineCount);
+        var itemRecords = LoadOptionalItemRecords(
+            project,
+            diagnostics,
+            readAllBytes,
+            maximumRecordCount);
         var itemDisplayNames = CreateItemDisplayNames(itemNames, moveNames, itemRecords);
         var machineMoves = CreateMachineCompatibilityMoveCatalog(itemRecords, diagnostics);
         var itemOptions = CreateIndexedOptions(itemDisplayNames, "Item");
         var evolutionItemOptions = CreateEvolutionItemOptions(itemRecords, itemDisplayNames);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
-        var learnsets = LoadLearnsets(project, diagnostics);
-        var evolutions = LoadEvolutions(project, diagnostics);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(
+            project,
+            readAllBytes,
+            maximumRecordCount);
+        var learnsets = LoadLearnsets(
+            project,
+            diagnostics,
+            readAllBytes,
+            maximumRecordCount,
+            maximumNestedRecordCount);
+        var evolutions = LoadEvolutions(
+            project,
+            diagnostics,
+            readAllBytes,
+            maximumRecordCount);
         var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
         var learnsetMoveOptions = SwShMoveAvailability.CreateMoveOptions(
             moveNames,
@@ -417,7 +483,9 @@ public sealed class SwShPokemonWorkflowService
 
         try
         {
-            var personalTable = SwShPersonalTable.Parse(File.ReadAllBytes(personalSource.AbsolutePath));
+            var personalTable = SwShPersonalTable.Parse(
+                readAllBytes(personalSource.AbsolutePath),
+                maximumRecordCount);
             if (learnsets.Count > 0 && learnsets.Count != personalTable.Records.Count)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -497,7 +565,10 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyDictionary<int, SwShPokemonLearnsetRecord> LoadLearnsets(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount,
+        int? maximumNestedRecordCount)
     {
         var source = ResolveWorkflowFile(project, LearnsetDataPath);
         if (source is null)
@@ -511,7 +582,10 @@ public sealed class SwShPokemonWorkflowService
 
         try
         {
-            return SwShPokemonLearnsetTable.Parse(File.ReadAllBytes(source.AbsolutePath))
+            return SwShPokemonLearnsetTable.Parse(
+                    readAllBytes(source.AbsolutePath),
+                    maximumRecordCount,
+                    maximumNestedRecordCount)
                 .Records
                 .ToDictionary(record => record.PersonalId);
         }
@@ -539,7 +613,9 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyList<SwShItemTableRecord> LoadOptionalItemRecords(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount)
     {
         var source = SwShItemsWorkflowService.ResolveItemDataSource(project);
         if (source is null)
@@ -549,7 +625,9 @@ public sealed class SwShPokemonWorkflowService
 
         try
         {
-            return SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
+            return SwShItemTable.Parse(
+                    readAllBytes(source.AbsolutePath),
+                    maximumRecordCount)
                 .Records
                 .OrderBy(item => item.ItemId)
                 .ToArray();
@@ -578,12 +656,19 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyDictionary<int, IReadOnlyList<SwShEvolutionRecord>> LoadEvolutions(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumRecordCount)
     {
         var sources = ResolveWorkflowFiles(project, EvolutionDataDirectory)
             .Where(source => source.GraphEntry.RelativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
             .OrderBy(source => source.GraphEntry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Take(maximumRecordCount is null ? int.MaxValue : maximumRecordCount.Value + 1)
             .ToArray();
+        if (maximumRecordCount is not null && sources.Length > maximumRecordCount.Value)
+        {
+            throw new InvalidDataException("Pokemon evolution sources exceed the bounded semantic record limit.");
+        }
         if (sources.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -604,7 +689,7 @@ public sealed class SwShPokemonWorkflowService
 
             try
             {
-                evolutions[speciesId.Value] = SwShEvolutionSet.Parse(File.ReadAllBytes(source.AbsolutePath)).Evolutions;
+                evolutions[speciesId.Value] = SwShEvolutionSet.Parse(readAllBytes(source.AbsolutePath)).Evolutions;
             }
             catch (Exception exception) when (IsDecodeFailure(exception))
             {
@@ -642,7 +727,9 @@ public sealed class SwShPokemonWorkflowService
         OpenedProject project,
         string fileName,
         string label,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<string, byte[]> readAllBytes,
+        int? maximumTextLineCount)
     {
         var relativePath = ResolveCommonTextPath(project, fileName);
         var source = relativePath is null ? null : ResolveWorkflowFile(project, relativePath);
@@ -657,7 +744,9 @@ public sealed class SwShPokemonWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+            return SwShGameTextFile.Parse(
+                    readAllBytes(source.AbsolutePath),
+                    maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
@@ -686,7 +775,9 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyList<string> LoadOptionalEnglishTextTable(
         OpenedProject project,
-        string fileName)
+        string fileName,
+        Func<string, byte[]> readAllBytes,
+        int? maximumTextLineCount)
     {
         var relativePath = SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName);
         var source = ResolveWorkflowFile(project, relativePath);
@@ -697,7 +788,9 @@ public sealed class SwShPokemonWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+            return SwShGameTextFile.Parse(
+                    readAllBytes(source.AbsolutePath),
+                    maximumTextLineCount)
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();

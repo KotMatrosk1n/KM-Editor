@@ -6,6 +6,7 @@ using KM.Api.Editing;
 using KM.Api.GameDump;
 using KM.Api.Output;
 using KM.Api.Projects;
+using KM.Api.Semantics;
 using KM.Api.SvCache;
 using KM.Api.SwShCache;
 using KM.Api.ZaCache;
@@ -54,6 +55,19 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<SwShCacheModeDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ZaCacheModeDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<WorkflowAvailabilityDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticGameFamilyDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticSourceLayerKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticCoverageStateDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticConfidenceDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticFeatureDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticValueKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticDifferenceKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticReferenceDirectionDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticImpactSeverityDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticImpactActionabilityDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticOwnershipNodeKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticOwnershipEdgeKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SemanticChangeFormatDto>(JsonNamingPolicy.CamelCase, false));
 
         return options;
     }

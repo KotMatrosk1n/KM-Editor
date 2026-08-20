@@ -167,6 +167,15 @@ public static class KmCommandNames
     public const string MaterializeChangeSets = "changeSets.materialize";
     public const string ExportChangeSets = "changeSets.export";
     public const string ImportChangeSets = "changeSets.import";
+    public const string ReadSemanticCapabilities = "semantic.capabilities";
+    public const string SearchSemantic = "semantic.search";
+    public const string ReadSemanticEntity = "semantic.entity";
+    public const string CompareSemantic = "semantic.compare";
+    public const string QuerySemanticReferences = "semantic.references";
+    public const string QuerySemanticImpact = "semantic.impact";
+    public const string QuerySemanticOwnership = "semantic.ownership";
+    public const string CompareExternalSemantic = "semantic.external.compare";
+    public const string QuerySemanticChanges = "semantic.changes";
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";

@@ -12,14 +12,52 @@ namespace KM.SV.Workflows;
 internal sealed class SvWorkflowFileSource
 {
     public const string DescriptorVirtualPath = SvTrinityDescriptorPatcher.DescriptorVirtualPath;
+    private const int MaximumBoundedArchiveIndexBytes = 64 * 1024 * 1024;
+    private const long MaximumBoundedArchivePackBytes = 128L * 1024L * 1024L;
+    private const int MaximumBoundedTableRecords = 50_000;
+    private const int MaximumBoundedNestedRecords = 100_000;
 
     internal static object OutputWriteSyncRoot { get; } = new();
 
     private readonly SvCacheManager cacheManager;
+    private readonly bool bypassReusableBaseCache;
+    private readonly int? maximumReadBytes;
 
-    public SvWorkflowFileSource(SvCacheManager? cacheManager = null)
+    public SvWorkflowFileSource(
+        SvCacheManager? cacheManager = null,
+        bool bypassReusableBaseCache = false,
+        int? maximumReadBytes = null)
     {
+        if (maximumReadBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumReadBytes));
+        }
+
         this.cacheManager = cacheManager ?? new SvCacheManager();
+        this.bypassReusableBaseCache = bypassReusableBaseCache;
+        this.maximumReadBytes = maximumReadBytes;
+    }
+
+    internal int? BoundedTableRecordLimit => maximumReadBytes is null
+        ? null
+        : MaximumBoundedTableRecords;
+
+    internal void EnsureBoundedTableCount(int count, string label)
+    {
+        EnsureBoundedCount(count, MaximumBoundedTableRecords, label);
+    }
+
+    internal void EnsureBoundedNestedCount(int count, string label)
+    {
+        EnsureBoundedCount(count, MaximumBoundedNestedRecords, label);
+    }
+
+    private void EnsureBoundedCount(int count, int maximum, string label)
+    {
+        if (maximumReadBytes is not null && (count < 0 || count > maximum))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
     }
 
     public SvWorkflowFile Read(OpenedProject project, string virtualRomFsPath)
@@ -105,7 +143,9 @@ internal sealed class SvWorkflowFileSource
 
             try
             {
-                var archiveBytes = cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
+                var archiveBytes = bypassReusableBaseCache
+                    ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
+                    : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
@@ -166,7 +206,9 @@ internal sealed class SvWorkflowFileSource
 
             try
             {
-                var archiveBytes = cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
+                var archiveBytes = bypassReusableBaseCache
+                    ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
+                    : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
@@ -193,6 +235,95 @@ internal sealed class SvWorkflowFileSource
             layer: null,
             state: entry?.State,
             exception: new FileNotFoundException());
+    }
+
+    internal byte[] ReadCurrentBytesFresh(ProjectPaths paths, string virtualRomFsPath)
+    {
+        return ReadCurrentSourceFresh(paths, virtualRomFsPath).Bytes;
+    }
+
+    internal (byte[] Bytes, ProjectFileLayer Layer) ReadCurrentSourceFresh(
+        ProjectPaths paths,
+        string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        var relativePath = ToRelativePath(normalizedVirtualPath);
+        if (!string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            var trinityModManagerPath = CombineGraphPath(paths.OutputRootPath, normalizedVirtualPath);
+            var standalonePath = CombineGraphPath(paths.OutputRootPath, relativePath);
+            var looseOutput = SelectLatestLooseOutput(trinityModManagerPath, standalonePath);
+            if (looseOutput is not null)
+            {
+                return (
+                    ReadAllBytes(
+                        looseOutput.Value.Path,
+                        relativePath,
+                        ProjectFileLayer.Layered,
+                        ProjectFileGraphEntryState.LayeredOverride),
+                    ProjectFileLayer.Layered);
+            }
+
+            if (TryReadOutputArchive(paths, normalizedVirtualPath, relativePath, out var outputBytes))
+            {
+                return (outputBytes, ProjectFileLayer.Layered);
+            }
+        }
+
+        return (ReadBaseBytesFresh(paths, normalizedVirtualPath), ProjectFileLayer.Base);
+    }
+
+    internal byte[] ReadBaseBytesFresh(ProjectPaths paths, string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        var relativePath = ToRelativePath(normalizedVirtualPath);
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Base,
+                state: null,
+                exception: new DirectoryNotFoundException());
+        }
+
+        var looseBasePath = CombineGraphPath(paths.BaseRomFsPath, normalizedVirtualPath);
+        if (FileExistsWithContext(
+            looseBasePath,
+            relativePath,
+            ProjectFileLayer.Base,
+            state: null))
+        {
+            return ReadAllBytes(
+                looseBasePath,
+                relativePath,
+                ProjectFileLayer.Base,
+                ProjectFileGraphEntryState.BaseOnly);
+        }
+
+        try
+        {
+            using var archive = OpenArchive(
+                paths.BaseRomFsPath,
+                paths.ScarletVioletSupportFolderPath);
+            return maximumReadBytes is { } limit
+                ? archive.ReadFile(normalizedVirtualPath, limit)
+                : archive.ReadFile(normalizedVirtualPath);
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Base,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
+        }
     }
 
     public bool Exists(OpenedProject project, string virtualRomFsPath)
@@ -481,7 +612,7 @@ internal sealed class SvWorkflowFileSource
             : (trinityModManagerPath, false);
     }
 
-    private static bool TryReadOutputArchive(
+    private bool TryReadOutputArchive(
         ProjectPaths paths,
         string virtualPath,
         string relativePath,
@@ -501,10 +632,12 @@ internal sealed class SvWorkflowFileSource
                 return false;
             }
 
-            using var archive = SvTrinityArchive.Open(
+            using var archive = OpenArchive(
                 outputRootPath,
                 paths.ScarletVioletSupportFolderPath);
-            return archive.TryReadFile(virtualPath, out bytes);
+            return maximumReadBytes is { } limit
+                ? archive.TryReadFile(virtualPath, limit, out bytes)
+                : archive.TryReadFile(virtualPath, out bytes);
         }
         catch (Exception exception) when (IsContextualFileFailure(exception))
         {
@@ -520,7 +653,7 @@ internal sealed class SvWorkflowFileSource
         }
     }
 
-    private static bool TryOutputArchiveContains(
+    private bool TryOutputArchiveContains(
         ProjectPaths paths,
         string virtualPath,
         string relativePath)
@@ -533,7 +666,7 @@ internal sealed class SvWorkflowFileSource
                 return false;
             }
 
-            using var archive = SvTrinityArchive.Open(
+            using var archive = OpenArchive(
                 outputRootPath,
                 paths.ScarletVioletSupportFolderPath);
             return archive.ContainsFile(virtualPath);
@@ -550,7 +683,7 @@ internal sealed class SvWorkflowFileSource
         }
     }
 
-    private static byte[] ReadAllBytes(
+    private byte[] ReadAllBytes(
         string path,
         string relativePath,
         ProjectFileLayer layer,
@@ -558,12 +691,47 @@ internal sealed class SvWorkflowFileSource
     {
         try
         {
-            return File.ReadAllBytes(path);
+            if (maximumReadBytes is not { } limit)
+            {
+                return File.ReadAllBytes(path);
+            }
+
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 128 * 1_024,
+                FileOptions.SequentialScan);
+            if (stream.Length < 0 || stream.Length > limit)
+            {
+                throw new InvalidDataException("The semantic source file exceeds its bounded limit.");
+            }
+
+            var bytes = new byte[checked((int)stream.Length)];
+            stream.ReadExactly(bytes);
+            if (stream.ReadByte() != -1)
+            {
+                throw new InvalidDataException("The semantic source file changed while it was read.");
+            }
+
+            return bytes;
         }
         catch (Exception exception) when (IsContextualFileFailure(exception))
         {
             throw CreateReadFailure(relativePath, layer, state, exception);
         }
+    }
+
+    private SvTrinityArchive OpenArchive(string rootPath, string? supportFolderPath)
+    {
+        return maximumReadBytes is null
+            ? SvTrinityArchive.Open(rootPath, supportFolderPath)
+            : SvTrinityArchive.Open(
+                rootPath,
+                supportFolderPath,
+                maximumIndexBytes: MaximumBoundedArchiveIndexBytes,
+                maximumPackBytes: MaximumBoundedArchivePackBytes);
     }
 
     private static bool FileExistsWithContext(

@@ -8,6 +8,7 @@ import {
   desktopErrorCodes,
   isKmErrorCode,
   projectBridgeErrorCodes,
+  semanticExploreErrorCodes,
   swshPlacementErrorCodes,
   swshDynamaxAdventuresErrorCodes,
   type KmErrorCode
@@ -19,6 +20,7 @@ import {
 } from './errorReporting';
 
 const expectedBridgeErrorCodes = new Set<KmErrorCode>([
+  ...Object.values(semanticExploreErrorCodes),
   swshDynamaxAdventuresErrorCodes.seedInvalid,
   swshDynamaxAdventuresErrorCodes.seedLimitInvalid,
   swshDynamaxAdventuresErrorCodes.startSeedInvalid,

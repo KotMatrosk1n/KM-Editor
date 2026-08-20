@@ -505,9 +505,13 @@ internal static class ZaScriptedBossActionCatalog
         try
         {
             activeSelectors = ZaBossMoveSelectorDocument.Parse(
-                fileSource.Read(project, ZaDataPaths.BossMoveSelectorArray).Bytes);
+                fileSource.Read(project, ZaDataPaths.BossMoveSelectorArray).Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             baseSelectors = ZaBossMoveSelectorDocument.Parse(
-                fileSource.ReadBase(project, ZaDataPaths.BossMoveSelectorArray).Bytes);
+                fileSource.ReadBase(project, ZaDataPaths.BossMoveSelectorArray).Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             sourceFileCount++;
             hasSelectorSource = true;
         }
@@ -527,9 +531,13 @@ internal static class ZaScriptedBossActionCatalog
         try
         {
             var battleTable = ZaRuntimeMoveData.ReadBattle(
-                fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray).Bytes);
+                fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray).Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             var timingTable = ZaRuntimeMoveData.ReadTiming(
-                fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray).Bytes);
+                fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray).Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             battleMoveVariants = ZaRuntimeMoveData.BattleRows(battleTable)
                 .GroupBy(row => (
                     MoveId: checked((int)row.MoveId),

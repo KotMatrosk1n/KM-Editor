@@ -17,17 +17,39 @@ internal static class SwShMoveAvailability
 {
     public static IReadOnlySet<int> LoadUsableMoveIds(OpenedProject project)
     {
-        return Load(project).UsableMoveIds;
+        return Load(project, File.ReadAllBytes, maximumSourceCount: null).UsableMoveIds;
+    }
+
+    public static IReadOnlySet<int> LoadUsableMoveIds(
+        OpenedProject project,
+        Func<string, byte[]> readAllBytes,
+        int? maximumSourceCount = null)
+    {
+        return Load(project, readAllBytes, maximumSourceCount).UsableMoveIds;
     }
 
     public static SwShMoveAvailabilityResult Load(OpenedProject project)
     {
+        return Load(project, File.ReadAllBytes, maximumSourceCount: null);
+    }
+
+    private static SwShMoveAvailabilityResult Load(
+        OpenedProject project,
+        Func<string, byte[]> readAllBytes,
+        int? maximumSourceCount)
+    {
         ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(readAllBytes);
 
         var moveSources = ResolveWorkflowFiles(project, SwShMoveDataFile.MoveDataRelativeDirectory)
             .Where(source => IsMoveDataFile(source.GraphEntry.RelativePath))
             .OrderBy(source => source.GraphEntry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Take(maximumSourceCount is null ? int.MaxValue : maximumSourceCount.Value + 1)
             .ToArray();
+        if (maximumSourceCount is not null && moveSources.Length > maximumSourceCount.Value)
+        {
+            throw new InvalidDataException("Move availability sources exceed the bounded semantic record limit.");
+        }
 
         var records = new List<MoveAvailabilityRecord>();
         var parsedSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -35,7 +57,7 @@ internal static class SwShMoveAvailability
         {
             try
             {
-                var move = SwShMoveDataFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+                var move = SwShMoveDataFile.Parse(readAllBytes(source.AbsolutePath)).Record;
                 parsedSourcePaths.Add(Path.GetFullPath(source.AbsolutePath));
                 if (move.MoveId <= int.MaxValue)
                 {

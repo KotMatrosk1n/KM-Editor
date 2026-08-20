@@ -441,19 +441,35 @@ internal sealed class ZaMovesWorkflowService
             battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
             timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
 
-            var battleTable = ZaRuntimeMoveData.ReadBattle(battleSource.Bytes);
-            var timingTable = ZaRuntimeMoveData.ReadTiming(timingSource.Bytes);
+            var battleTable = ZaRuntimeMoveData.ReadBattle(
+                battleSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
+            var timingTable = ZaRuntimeMoveData.ReadTiming(
+                timingSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             var baseBattleTable = ZaRuntimeMoveData.ReadBattle(
-                fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray).Bytes);
+                fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray).Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
             var baseTimingTable = ZaRuntimeMoveData.ReadTiming(
-                fileSource.ReadBase(project, ZaDataPaths.MoveTimingParameterArray).Bytes);
+                fileSource.ReadBase(project, ZaDataPaths.MoveTimingParameterArray).Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
 
             try
             {
                 var candidateSource = fileSource.Read(project, ZaDataPaths.AiAttackParamArray);
                 var candidateBaseSource = fileSource.ReadBase(project, ZaDataPaths.AiAttackParamArray);
-                var candidateData = ZaMovePlayerDamageDataDocument.Parse(candidateSource.Bytes);
-                var candidateBaseData = ZaMovePlayerDamageDataDocument.Parse(candidateBaseSource.Bytes);
+                var candidateData = ZaMovePlayerDamageDataDocument.Parse(
+                    candidateSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit);
+                var candidateBaseData = ZaMovePlayerDamageDataDocument.Parse(
+                    candidateBaseSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit);
                 var mismatchedRuntimeMoveIds = candidateData.Values
                     .Select(value => value.RuntimeMoveId)
                     .Concat(candidateBaseData.Values.Select(value => value.RuntimeMoveId))
@@ -491,15 +507,22 @@ internal sealed class ZaMovesWorkflowService
                     ZaMovePlayerDamageTimelineCatalog.MatchesVerifiedBaseBulletCatalog(
                         baseProjectileSource.Bytes);
                 verifiedVanillaTimelineCatalogAvailable = hasVerifiedVanillaTimelineCatalog;
-                projectileOptions = ZaMoveProjectileCatalog.ReadOptions(projectileSource.Bytes);
+                projectileOptions = ZaMoveProjectileCatalog.ReadOptions(
+                    projectileSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit);
                 playerDamageInvocations =
                     ZaMoveProjectileCatalog.ReadPlayerDamageInvocations(
                         projectileSource.Bytes,
-                        hasVerifiedVanillaTimelineCatalog);
+                        hasVerifiedVanillaTimelineCatalog,
+                        fileSource.BoundedTableRecordLimit,
+                        fileSource.BoundedNestedRecordLimit);
                 basePlayerDamageInvocations =
                     ZaMoveProjectileCatalog.ReadPlayerDamageInvocations(
                         baseProjectileSource.Bytes,
-                        hasVerifiedVanillaTimelineCatalog);
+                        hasVerifiedVanillaTimelineCatalog,
+                        fileSource.BoundedTableRecordLimit,
+                        fileSource.BoundedNestedRecordLimit);
                 playerDamageInvocationCatalogsVerified = true;
                 projectileCatalogSources =
                 [
@@ -709,11 +732,12 @@ internal sealed class ZaMovesWorkflowService
             && !string.Equals(candidate.Field, CanUseMoveField, StringComparison.Ordinal));
     }
 
-    private static IEnumerable<ZaMoveRecord> LoadRecords(
+    private IEnumerable<ZaMoveRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels)
     {
         var table = ZaMoveDataArray.GetRootAsZaMoveDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A move table");
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var move = table.Values(index);

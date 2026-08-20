@@ -18,6 +18,10 @@ internal sealed class ZaWorkflowFileSource
 {
     public const string DescriptorVirtualPath = ZaTrinityDescriptorPatcher.DescriptorVirtualPath;
     public const string TrinityModManagerRomFsDirectory = "trinity-mod-manager-romfs";
+    private const int MaximumBoundedArchiveIndexBytes = 64 * 1024 * 1024;
+    private const long MaximumBoundedArchivePackBytes = 128L * 1024L * 1024L;
+    private const int MaximumBoundedTableRecords = 50_000;
+    private const int MaximumBoundedNestedRecords = 100_000;
 
     private static readonly ConcurrentDictionary<string, object> OutputRootLocks = new(
         OperatingSystem.IsWindows()
@@ -36,10 +40,48 @@ internal sealed class ZaWorkflowFileSource
     ];
 
     private readonly ZaCacheManager cacheManager;
+    private readonly bool bypassReusableBaseCache;
+    private readonly int? maximumReadBytes;
 
-    public ZaWorkflowFileSource(ZaCacheManager? cacheManager = null)
+    public ZaWorkflowFileSource(
+        ZaCacheManager? cacheManager = null,
+        bool bypassReusableBaseCache = false,
+        int? maximumReadBytes = null)
     {
+        if (maximumReadBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumReadBytes));
+        }
+
         this.cacheManager = cacheManager ?? new ZaCacheManager();
+        this.bypassReusableBaseCache = bypassReusableBaseCache;
+        this.maximumReadBytes = maximumReadBytes;
+    }
+
+    internal int? BoundedTableRecordLimit => maximumReadBytes is null
+        ? null
+        : MaximumBoundedTableRecords;
+
+    internal int? BoundedNestedRecordLimit => maximumReadBytes is null
+        ? null
+        : MaximumBoundedNestedRecords;
+
+    internal void EnsureBoundedTableCount(int count, string label)
+    {
+        EnsureBoundedCount(count, MaximumBoundedTableRecords, label);
+    }
+
+    internal void EnsureBoundedNestedCount(int count, string label)
+    {
+        EnsureBoundedCount(count, MaximumBoundedNestedRecords, label);
+    }
+
+    private void EnsureBoundedCount(int count, int maximum, string label)
+    {
+        if (maximumReadBytes is not null && (count < 0 || count > maximum))
+        {
+            throw new InvalidDataException($"{label} exceeds the bounded semantic record limit.");
+        }
     }
 
     public ZaWorkflowFile Read(OpenedProject project, string virtualRomFsPath)
@@ -136,7 +178,9 @@ internal sealed class ZaWorkflowFileSource
 
             try
             {
-                var archiveBytes = cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
+                var archiveBytes = bypassReusableBaseCache
+                    ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
+                    : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new ZaWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
@@ -199,7 +243,9 @@ internal sealed class ZaWorkflowFileSource
 
             try
             {
-                var archiveBytes = cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
+                var archiveBytes = bypassReusableBaseCache
+                    ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
+                    : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new ZaWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
@@ -227,6 +273,101 @@ internal sealed class ZaWorkflowFileSource
             layer: null,
             state: entry?.State,
             exception: new FileNotFoundException());
+    }
+
+    internal byte[] ReadCurrentBytesFresh(ProjectPaths paths, string virtualRomFsPath)
+    {
+        return ReadCurrentSourceFresh(paths, virtualRomFsPath).Bytes;
+    }
+
+    internal (byte[] Bytes, ProjectFileLayer Layer) ReadCurrentSourceFresh(
+        ProjectPaths paths,
+        string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        var relativePath = ToRelativePath(normalizedVirtualPath);
+        if (!string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            var trinityModManagerPath = CombineGraphPath(paths.OutputRootPath, normalizedVirtualPath);
+            var isolatedPath = CombineGraphPath(
+                paths.OutputRootPath,
+                $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}");
+            var standalonePath = CombineGraphPath(paths.OutputRootPath, relativePath);
+            var looseOutput = SelectLatestLooseOutput(
+                trinityModManagerPath,
+                isolatedPath,
+                standalonePath);
+            if (looseOutput is not null)
+            {
+                return (
+                    ReadAllBytesWithContext(
+                        looseOutput.Value.Path,
+                        relativePath,
+                        ProjectFileLayer.Layered,
+                        ProjectFileGraphEntryState.LayeredOverride),
+                    ProjectFileLayer.Layered);
+            }
+
+            if (TryReadOutputArchive(paths, normalizedVirtualPath, relativePath, out var outputBytes))
+            {
+                return (outputBytes, ProjectFileLayer.Layered);
+            }
+        }
+
+        return (ReadBaseBytesFresh(paths, normalizedVirtualPath), ProjectFileLayer.Base);
+    }
+
+    internal byte[] ReadBaseBytesFresh(ProjectPaths paths, string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        var relativePath = ToRelativePath(normalizedVirtualPath);
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Base,
+                state: null,
+                exception: new DirectoryNotFoundException());
+        }
+
+        var looseBasePath = CombineGraphPath(paths.BaseRomFsPath, normalizedVirtualPath);
+        if (FileExistsWithContext(
+            looseBasePath,
+            relativePath,
+            ProjectFileLayer.Base,
+            state: null))
+        {
+            return ReadAllBytesWithContext(
+                looseBasePath,
+                relativePath,
+                ProjectFileLayer.Base,
+                ProjectFileGraphEntryState.BaseOnly);
+        }
+
+        try
+        {
+            using var archive = OpenArchive(
+                paths.BaseRomFsPath,
+                paths.PokemonLegendsZASupportFolderPath);
+            return maximumReadBytes is { } limit
+                ? archive.ReadFile(normalizedVirtualPath, limit)
+                : archive.ReadFile(normalizedVirtualPath);
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            throw CreateReadFailure(
+                relativePath,
+                ProjectFileLayer.Base,
+                state: null,
+                exception: exception,
+                operation: ProjectFileOperation.Inspect);
+        }
     }
 
     public bool Exists(OpenedProject project, string virtualRomFsPath)
@@ -1640,7 +1781,7 @@ internal sealed class ZaWorkflowFileSource
         return (selected.Path, selected.IsStandalone);
     }
 
-    private static bool TryReadOutputArchive(
+    private bool TryReadOutputArchive(
         ProjectPaths paths,
         string virtualPath,
         string relativePath,
@@ -1660,10 +1801,12 @@ internal sealed class ZaWorkflowFileSource
                 return false;
             }
 
-            using var archive = ZaTrinityArchive.Open(
+            using var archive = OpenArchive(
                 outputRootPath,
                 paths.PokemonLegendsZASupportFolderPath);
-            return archive.TryReadFile(virtualPath, out bytes);
+            return maximumReadBytes is { } limit
+                ? archive.TryReadFile(virtualPath, limit, out bytes)
+                : archive.TryReadFile(virtualPath, out bytes);
         }
         catch (Exception exception) when (IsContextualFileFailure(exception))
         {
@@ -1679,7 +1822,7 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
-    private static bool TryOutputArchiveContains(
+    private bool TryOutputArchiveContains(
         ProjectPaths paths,
         string virtualPath,
         string relativePath)
@@ -1692,7 +1835,7 @@ internal sealed class ZaWorkflowFileSource
                 return false;
             }
 
-            using var archive = ZaTrinityArchive.Open(
+            using var archive = OpenArchive(
                 outputRootPath,
                 paths.PokemonLegendsZASupportFolderPath);
             return archive.ContainsFile(virtualPath);
@@ -1709,7 +1852,7 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
-    private static byte[] ReadAllBytesWithContext(
+    private byte[] ReadAllBytesWithContext(
         string path,
         string relativePath,
         ProjectFileLayer layer,
@@ -1717,12 +1860,47 @@ internal sealed class ZaWorkflowFileSource
     {
         try
         {
-            return File.ReadAllBytes(path);
+            if (maximumReadBytes is not { } limit)
+            {
+                return File.ReadAllBytes(path);
+            }
+
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 128 * 1_024,
+                FileOptions.SequentialScan);
+            if (stream.Length < 0 || stream.Length > limit)
+            {
+                throw new InvalidDataException("The semantic source file exceeds its bounded limit.");
+            }
+
+            var bytes = new byte[checked((int)stream.Length)];
+            stream.ReadExactly(bytes);
+            if (stream.ReadByte() != -1)
+            {
+                throw new InvalidDataException("The semantic source file changed while it was read.");
+            }
+
+            return bytes;
         }
         catch (Exception exception) when (IsContextualFileFailure(exception))
         {
             throw CreateReadFailure(relativePath, layer, state, exception);
         }
+    }
+
+    private ZaTrinityArchive OpenArchive(string rootPath, string? supportFolderPath)
+    {
+        return maximumReadBytes is null
+            ? ZaTrinityArchive.Open(rootPath, supportFolderPath)
+            : ZaTrinityArchive.Open(
+                rootPath,
+                supportFolderPath,
+                maximumIndexBytes: MaximumBoundedArchiveIndexBytes,
+                maximumPackBytes: MaximumBoundedArchivePackBytes);
     }
 
     private static bool FileExistsWithContext(
