@@ -60,6 +60,14 @@ export const guidedDesignErrorCodes = {
   staleProposal: 'KM-GUIDED-DESIGN-STALE-PROPOSAL'
 } as const satisfies Record<string, KmErrorCode>;
 
+export const semanticMergeErrorCodes = {
+  staleProposal: 'KM-SEMANTIC-MERGE-STALE-PROPOSAL'
+} as const satisfies Record<string, KmErrorCode>;
+
+export const kmRecipeErrorCodes = {
+  staleProposal: 'KM-RECIPE-STALE-PROPOSAL'
+} as const satisfies Record<string, KmErrorCode>;
+
 export const swshDynamaxAdventuresErrorCodes = {
   seedInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-SEED-INVALID',
   seedLimitInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-SEED-LIMIT-INVALID',

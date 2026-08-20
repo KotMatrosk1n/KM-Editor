@@ -232,6 +232,11 @@ internal abstract class SemanticExploreFamilyProviderBase : ISemanticExploreFami
             return "Unnamed";
         }
 
+        if (!GuidedDesignProviders.IsSafeGeneratedDisplayText(safe))
+        {
+            return "Unnamed";
+        }
+
         if (safe.Length <= maximumLength)
         {
             return safe;

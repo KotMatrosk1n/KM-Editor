@@ -472,7 +472,7 @@ public sealed class ZaWorkflowService
                     new ZaEncountersWorkflowService(source))
                 .CreateChangePlan(paths, session, outputMode),
             _ => throw new InvalidOperationException(
-                "Guided Design supports exactly one verified Pokemon Legends Z-A workflow domain per plan."),
+                "Generated review supports exactly one verified Pokemon Legends Z-A workflow domain per plan."),
         };
     }
 

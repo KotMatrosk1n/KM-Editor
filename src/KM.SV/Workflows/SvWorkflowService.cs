@@ -413,7 +413,7 @@ public sealed class SvWorkflowService
                     new SvEncountersWorkflowService(source))
                 .CreateChangePlan(paths, session, outputMode),
             _ => throw new InvalidOperationException(
-                "Guided Design supports exactly one verified Scarlet/Violet workflow domain per plan."),
+                "Generated review supports exactly one verified Scarlet/Violet workflow domain per plan."),
         };
     }
 

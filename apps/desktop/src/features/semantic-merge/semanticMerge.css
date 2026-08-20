@@ -1,0 +1,404 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.km-semantic-merge {
+  --km-merge-border: var(--color-border);
+  --km-merge-muted: var(--color-text-muted);
+  --km-merge-surface: var(--color-surface);
+  --km-merge-surface-muted: var(--color-surface-muted);
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.km-semantic-merge-heading,
+.km-semantic-merge-section-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.km-semantic-merge-heading > div {
+  min-width: 0;
+}
+
+.km-semantic-merge-heading h2,
+.km-semantic-merge-heading p,
+.km-semantic-merge-heading span,
+.km-semantic-merge-section-heading h3,
+.km-semantic-merge-section-heading p {
+  margin: 0;
+}
+
+.km-semantic-merge-heading p {
+  color: var(--km-merge-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.km-semantic-merge-heading span,
+.km-semantic-merge-section-heading p {
+  color: var(--km-merge-muted);
+  display: block;
+  margin-top: 0.25rem;
+  max-width: 76ch;
+}
+
+.km-semantic-merge-capabilities {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  margin-top: 0.75rem;
+}
+
+.km-semantic-merge-capability,
+.km-semantic-merge-fieldset,
+.km-semantic-merge-results,
+.km-semantic-merge-discovery,
+.km-semantic-merge-row,
+.km-semantic-merge-source,
+.km-semantic-merge-artifact,
+.km-semantic-merge-diagnostics,
+.km-semantic-merge-receipt,
+.km-semantic-merge-error,
+.km-semantic-merge-unavailable {
+  background: var(--km-merge-surface-muted);
+  border: 1px solid var(--km-merge-border);
+  border-radius: 0.75rem;
+  min-width: 0;
+  padding: 0.85rem;
+}
+
+.km-semantic-merge-capability > div,
+.km-semantic-merge-receipt,
+.km-semantic-merge-boundary,
+.km-semantic-merge-unavailable {
+  align-items: center;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.km-semantic-merge-capability > div {
+  justify-content: space-between;
+}
+
+.km-semantic-merge-capability > div span {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.km-semantic-merge-capability p,
+.km-semantic-merge-capability ul,
+.km-semantic-merge-boundary,
+.km-semantic-merge-fieldset > p,
+.km-semantic-merge-source > span,
+.km-semantic-merge-row p,
+.km-semantic-merge-artifact p {
+  color: var(--km-merge-muted);
+  margin: 0.45rem 0 0;
+}
+
+.km-semantic-merge-capability ul {
+  overflow-wrap: anywhere;
+  padding-left: 1.1rem;
+}
+
+.km-semantic-merge-capability.is-unavailable {
+  opacity: 0.82;
+}
+
+.km-semantic-merge-boundary {
+  background: color-mix(in srgb, var(--color-warning) 8%, var(--km-merge-surface));
+  border: 1px solid var(--km-merge-border);
+  border-radius: 0.625rem;
+  padding: 0.7rem;
+}
+
+.km-semantic-merge-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.km-semantic-merge-tabs button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.km-semantic-merge-receipt {
+  background: color-mix(in srgb, var(--color-success) 10%, var(--km-merge-surface));
+  justify-content: flex-start;
+}
+
+.km-semantic-merge-receipt > div {
+  flex: 1;
+}
+
+.km-semantic-merge-receipt p {
+  color: var(--km-merge-muted);
+  margin: 0.2rem 0 0;
+}
+
+.km-semantic-merge-surface,
+.km-semantic-merge-results {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.km-semantic-merge-fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.km-semantic-merge-fieldset legend {
+  font-weight: 700;
+  padding: 0 0.3rem;
+}
+
+.km-semantic-merge-fieldset label,
+.km-semantic-merge-conflict label {
+  font-weight: 600;
+}
+
+.km-semantic-merge-source-grid,
+.km-semantic-merge-recipe-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.km-semantic-merge-source {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.km-semantic-merge-source > div,
+.km-semantic-merge-artifact > div,
+.km-semantic-merge-review-needed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.km-semantic-merge-search > div {
+  align-items: center;
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-top: 0.35rem;
+}
+
+.km-semantic-merge-selected > div {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.km-semantic-merge-selected ul,
+.km-semantic-merge-target-list,
+.km-semantic-merge-diagnostics ul {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+}
+
+.km-semantic-merge-selected li,
+.km-semantic-merge-target-list li {
+  align-items: center;
+  border-top: 1px solid var(--km-merge-border);
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding-top: 0.45rem;
+}
+
+.km-semantic-merge-selected li span,
+.km-semantic-merge-target-list label span {
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-merge-target-list label {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.km-semantic-merge-target-list label span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.km-semantic-merge-section-heading dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.km-semantic-merge-section-heading dl div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.km-semantic-merge-section-heading dt {
+  color: var(--km-merge-muted);
+  font-size: 0.75rem;
+}
+
+.km-semantic-merge-section-heading dd {
+  font-weight: 700;
+  margin: 0;
+}
+
+.km-semantic-merge-rows {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.km-semantic-merge-row > header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.7rem;
+  justify-content: space-between;
+}
+
+.km-semantic-merge-row > header > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.km-semantic-merge-row > header span {
+  color: var(--km-merge-muted);
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-merge-values {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  margin: 0.7rem 0 0;
+}
+
+.km-semantic-merge-values div {
+  background: var(--km-merge-surface);
+  border: 1px solid var(--km-merge-border);
+  border-radius: 0.45rem;
+  min-width: 0;
+  padding: 0.5rem;
+}
+
+.km-semantic-merge-values dt {
+  color: var(--km-merge-muted);
+  font-size: 0.75rem;
+}
+
+.km-semantic-merge-values dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-merge-conflict {
+  border: 1px solid var(--color-warning);
+  border-radius: 0.55rem;
+  margin: 0.7rem 0 0;
+  padding: 0.7rem;
+}
+
+.km-semantic-merge-conflict > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.km-semantic-merge-conflict label {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.km-semantic-merge-review-needed,
+.km-semantic-merge-error {
+  align-items: center;
+  border-color: var(--color-warning);
+  justify-content: space-between;
+}
+
+.km-semantic-merge-review-needed p,
+.km-semantic-merge-error p,
+.km-semantic-merge-unavailable p {
+  margin: 0;
+}
+
+.km-semantic-merge-change-sets {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.km-semantic-merge-change-sets label {
+  align-items: center;
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.km-semantic-merge-file-input {
+  display: none;
+}
+
+.km-semantic-merge-recipe-summary {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.km-semantic-merge-recipe-summary p {
+  margin: 0;
+}
+
+.km-semantic-merge-diagnostics li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.km-semantic-merge-diagnostics code {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .km-semantic-merge-source-grid,
+  .km-semantic-merge-recipe-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .km-semantic-merge-row > header,
+  .km-semantic-merge-section-heading,
+  .km-semantic-merge-receipt {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (forced-colors: active) {
+  .km-semantic-merge-capability,
+  .km-semantic-merge-fieldset,
+  .km-semantic-merge-row,
+  .km-semantic-merge-results {
+    forced-color-adjust: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-semantic-merge * {
+    scroll-behavior: auto;
+  }
+}

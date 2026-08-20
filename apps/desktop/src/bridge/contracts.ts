@@ -160,7 +160,15 @@ export const kmCommandNameValues = [
   'semantic.balance-lab',
   'guidedDesign.capabilities',
   'guidedDesign.preview',
-  'guidedDesign.import'
+  'guidedDesign.import',
+  'semanticMerge.capabilities',
+  'semanticMerge.source.open',
+  'semanticMerge.preview',
+  'semanticMerge.import',
+  'recipes.export',
+  'recipes.validate',
+  'recipes.preview',
+  'recipes.import'
 ] as const;
 
 export const kmCommandNameSchema = z.enum(kmCommandNameValues);
@@ -182,6 +190,14 @@ export const kmCommandNames = {
   getGuidedDesignCapabilities: 'guidedDesign.capabilities',
   importGuidedDesignProposal: 'guidedDesign.import',
   previewGuidedDesign: 'guidedDesign.preview',
+  exportKmRecipe: 'recipes.export',
+  getSemanticMergeCapabilities: 'semanticMerge.capabilities',
+  importKmRecipe: 'recipes.import',
+  importSemanticMerge: 'semanticMerge.import',
+  openSemanticMergeSource: 'semanticMerge.source.open',
+  previewKmRecipe: 'recipes.preview',
+  previewSemanticMerge: 'semanticMerge.preview',
+  validateKmRecipe: 'recipes.validate',
   queryBalanceLab: 'semantic.balance-lab',
   querySemanticChanges: 'semantic.changes',
   querySemanticImpact: 'semantic.impact',

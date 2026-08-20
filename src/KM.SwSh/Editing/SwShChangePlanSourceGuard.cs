@@ -23,6 +23,40 @@ public static class SwShChangePlanSourceGuard
         ChangePlan plan,
         bool preserveExplicitSourceLayers)
     {
+        return CaptureCore(
+            paths,
+            plan,
+            preserveExplicitSourceLayers,
+            sourceReadBudget: null);
+    }
+
+    public static ChangePlan CaptureBounded(
+        ProjectPaths paths,
+        ChangePlan plan,
+        long maximumSourceBytesPerFile,
+        long maximumTotalSourceBytes,
+        bool preserveExplicitSourceLayers = false)
+    {
+        if (maximumSourceBytesPerFile <= 0
+            || maximumTotalSourceBytes <= 0
+            || maximumSourceBytesPerFile > maximumTotalSourceBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumSourceBytesPerFile));
+        }
+
+        return CaptureCore(
+            paths,
+            plan,
+            preserveExplicitSourceLayers,
+            new SourceReadBudget(maximumSourceBytesPerFile, maximumTotalSourceBytes));
+    }
+
+    private static ChangePlan CaptureCore(
+        ProjectPaths paths,
+        ChangePlan plan,
+        bool preserveExplicitSourceLayers,
+        SourceReadBudget? sourceReadBudget)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(plan);
 
@@ -32,7 +66,8 @@ public static class SwShChangePlanSourceGuard
                 paths,
                 write,
                 diagnostics,
-                preserveExplicitSourceLayers))
+                preserveExplicitSourceLayers,
+                sourceReadBudget))
             .ToArray();
 
         return plan with
@@ -252,13 +287,15 @@ public static class SwShChangePlanSourceGuard
         ProjectPaths paths,
         PlannedFileWrite write,
         ICollection<ValidationDiagnostic> diagnostics,
-        bool preserveExplicitSourceLayers)
+        bool preserveExplicitSourceLayers,
+        SourceReadBudget? sourceReadBudget = null)
     {
         return CaptureWriteFingerprint(
             paths,
             NormalizeWrite(paths, write, preserveExplicitSourceLayers),
             null,
-            diagnostics);
+            diagnostics,
+            sourceReadBudget: sourceReadBudget);
     }
 
     private static PlannedFileWrite NormalizeWrite(
@@ -283,7 +320,8 @@ public static class SwShChangePlanSourceGuard
         PlannedFileWrite write,
         IReadOnlyDictionary<SourceIdentity, FileStream>? sourceStreams,
         ICollection<ValidationDiagnostic> diagnostics,
-        ProjectPaths? sourceResolutionPaths = null)
+        ProjectPaths? sourceResolutionPaths = null,
+        SourceReadBudget? sourceReadBudget = null)
     {
         return TryComputeFingerprint(
                 paths,
@@ -292,7 +330,8 @@ public static class SwShChangePlanSourceGuard
                 diagnostics,
                 write.TargetRelativePath,
                 sourceStreams,
-                sourceResolutionPaths)
+                sourceResolutionPaths,
+                sourceReadBudget)
             ? write with { SourceFingerprint = fingerprint }
             : write;
     }
@@ -388,7 +427,8 @@ public static class SwShChangePlanSourceGuard
         ICollection<ValidationDiagnostic> diagnostics,
         string targetRelativePath,
         IReadOnlyDictionary<SourceIdentity, FileStream>? sourceStreams = null,
-        ProjectPaths? sourceResolutionPaths = null)
+        ProjectPaths? sourceResolutionPaths = null,
+        SourceReadBudget? sourceReadBudget = null)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[64 * 1024];
@@ -408,7 +448,7 @@ public static class SwShChangePlanSourceGuard
                 if (sourceStreams is not null
                     && sourceStreams.TryGetValue(SourceIdentity.Create(source), out var heldStream))
                 {
-                    AppendStream(hash, heldStream, buffer);
+                    AppendStream(hash, heldStream, buffer, sourceReadBudget);
                     continue;
                 }
 
@@ -459,7 +499,7 @@ public static class SwShChangePlanSourceGuard
                     FileShare.Read,
                     buffer.Length,
                     FileOptions.SequentialScan);
-                AppendStream(hash, stream, buffer);
+                AppendStream(hash, stream, buffer, sourceReadBudget);
             }
 
             fingerprint = Convert.ToHexString(hash.GetHashAndReset());
@@ -470,6 +510,10 @@ public static class SwShChangePlanSourceGuard
             diagnostics.Add(CreateReadDiagnostic(targetRelativePath, exception.Message));
         }
         catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateReadDiagnostic(targetRelativePath, exception.Message));
+        }
+        catch (InvalidDataException exception)
         {
             diagnostics.Add(CreateReadDiagnostic(targetRelativePath, exception.Message));
         }
@@ -592,18 +636,59 @@ public static class SwShChangePlanSourceGuard
         return root.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? fullRoot;
     }
 
-    private static void AppendStream(IncrementalHash hash, FileStream stream, byte[] buffer)
+    private static void AppendStream(
+        IncrementalHash hash,
+        FileStream stream,
+        byte[] buffer,
+        SourceReadBudget? sourceReadBudget = null)
     {
         stream.Position = 0;
-        AppendText(hash, $"length:{stream.Length}\n");
+        var expectedLength = stream.Length;
+        sourceReadBudget?.Reserve(expectedLength);
+        AppendText(hash, $"length:{expectedLength}\n");
+        long totalBytesRead = 0;
         int bytesRead;
         while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
+            totalBytesRead = checked(totalBytesRead + bytesRead);
+            if (totalBytesRead > expectedLength)
+            {
+                throw new InvalidDataException(
+                    "A change-plan source changed or exceeded its bounded length while it was fingerprinted.");
+            }
+
             hash.AppendData(buffer, 0, bytesRead);
+        }
+
+        if (totalBytesRead != expectedLength)
+        {
+            throw new InvalidDataException(
+                "A change-plan source changed while it was fingerprinted.");
         }
 
         stream.Position = 0;
         AppendText(hash, "\n");
+    }
+
+    private sealed class SourceReadBudget(long maximumBytesPerFile, long maximumTotalBytes)
+    {
+        private long observedBytes;
+
+        public void Reserve(long length)
+        {
+            if (length < 0 || length > maximumBytesPerFile)
+            {
+                throw new InvalidDataException(
+                    "A change-plan source exceeds its bounded per-file read limit.");
+            }
+
+            observedBytes = checked(observedBytes + length);
+            if (observedBytes > maximumTotalBytes)
+            {
+                throw new InvalidDataException(
+                    "Change-plan sources exceed their bounded aggregate read limit.");
+            }
+        }
     }
 
     private static void CopyOutputSourcesToSnapshot(

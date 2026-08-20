@@ -8,6 +8,7 @@ import {
 } from '../../bridge/contracts';
 import type { ChangeSetProjectBridgeApi } from '../../bridge/changeSetProjectBridge';
 import type { GuidedDesignProjectBridgeApi } from '../../bridge/guidedDesignProjectBridge';
+import type { SemanticMergeProjectBridgeApi } from '../../bridge/semanticMergeProjectBridge';
 import type {
   GuidedDesignImportRequest,
   GuidedDesignImportResponse
@@ -19,6 +20,16 @@ import type {
   ChangeSetWorkspaceScope,
   ChangeSetWorkspaceSnapshot
 } from '../../bridge/changeSetContracts';
+import type {
+  KmRecipeImportRequest,
+  KmRecipeImportResponse,
+  SemanticMergeImportRequest,
+  SemanticMergeImportResponse
+} from '../../bridge/semanticMergeContracts';
+import type {
+  SemanticExploreRevision,
+  SemanticExploreScope
+} from '../../bridge/semanticExploreContracts';
 import { useLocalization } from '../../localization';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import { mapChangeSetWorkspaceState } from './changeSetWorkspaceMapping';
@@ -40,6 +51,7 @@ export type UseChangeSetWorkspaceControllerOptions = {
   currentSession: EditSession | null;
   externalBusy?: boolean;
   guidedDesignBridge?: GuidedDesignProjectBridgeApi;
+  semanticMergeBridge?: SemanticMergeProjectBridgeApi;
   onActiveStagingTargetChange: (changeSetId: string | null) => void;
   onEffectiveState: (
     effective: ChangeSetMaterialization,
@@ -54,6 +66,13 @@ export type ChangeSetStagingCaptureBinding = {
   workspaceETag: string;
 };
 
+export type ExpectedImportedScalarEdit = {
+  domain: string;
+  field: string;
+  newValue: string;
+  recordId: string;
+};
+
 export type ChangeSetWorkspaceControllerResult = {
   captureStagedSession: (
     previousSession: EditSession | null,
@@ -66,6 +85,14 @@ export type ChangeSetWorkspaceControllerResult = {
   importGuidedDesignProposal: (
     request: GuidedDesignImportRequest
   ) => Promise<GuidedDesignImportResponse>;
+  importKmRecipe: (
+    request: KmRecipeImportRequest,
+    expectedEdits: readonly ExpectedImportedScalarEdit[]
+  ) => Promise<KmRecipeImportResponse>;
+  importSemanticMerge: (
+    request: SemanticMergeImportRequest,
+    expectedEdits: readonly ExpectedImportedScalarEdit[]
+  ) => Promise<SemanticMergeImportResponse>;
   mutateHistory: (
     direction: 'redo' | 'undo',
     expectedETag?: string
@@ -88,6 +115,7 @@ export function useChangeSetWorkspaceController({
   currentSession,
   externalBusy = false,
   guidedDesignBridge,
+  semanticMergeBridge,
   onActiveStagingTargetChange,
   onEffectiveState,
   onRequestOutputProfileSwitch,
@@ -351,6 +379,98 @@ export function useChangeSetWorkspaceController({
     return response;
   }), [acceptSnapshot, enqueue, guidedDesignBridge]);
 
+  const importSemanticMerge = useCallback((
+    request: SemanticMergeImportRequest,
+    expectedEdits: readonly ExpectedImportedScalarEdit[]
+  ) => enqueue('operations', async (requestedScopeKey) => {
+    const currentScope = scopeRef.current;
+    const currentSnapshot = snapshotRef.current;
+    assertSemanticImportContext(
+      'Semantic merge',
+      request.scope,
+      request.expectedChangeSetETag,
+      currentScope,
+      currentSessionRef.current,
+      currentSnapshot,
+      externalBusyRef.current,
+      Boolean(semanticMergeBridge)
+    );
+    const response = await semanticMergeBridge!.importSemanticMerge(request);
+    if (
+      response.proposalId !== request.proposalId ||
+      response.proposalFingerprint !== request.proposalFingerprint ||
+      !sameSemanticRevision(response.revision, request.expectedRevision)
+    ) {
+      throw new Error('The imported semantic merge no longer matches its reviewed proposal.');
+    }
+    const responseSnapshot = reconstructDisabledImportSnapshot(
+      currentSnapshot!,
+      response.receipt
+    );
+    acceptDisabledImportedSet({
+      acceptSnapshot,
+      currentScope: currentScope!,
+      currentSnapshot: currentSnapshot!,
+      expectedChangeSetName: request.changeSetName,
+      expectedEdits,
+      expectedOwner: 'semantic-merge.v1',
+      expectedTag: 'semantic-merge',
+      importedChangeSetId: response.importedChangeSetId,
+      requestedScopeKey,
+      responseSnapshot,
+      setSelectedChangeSetId,
+      workflowName: 'semantic merge'
+    });
+    return response;
+  }), [acceptSnapshot, enqueue, semanticMergeBridge]);
+
+  const importKmRecipe = useCallback((
+    request: KmRecipeImportRequest,
+    expectedEdits: readonly ExpectedImportedScalarEdit[]
+  ) => enqueue('operations', async (requestedScopeKey) => {
+    const currentScope = scopeRef.current;
+    const currentSnapshot = snapshotRef.current;
+    assertSemanticImportContext(
+      'Recipe',
+      request.scope,
+      request.expectedChangeSetETag,
+      currentScope,
+      currentSessionRef.current,
+      currentSnapshot,
+      externalBusyRef.current,
+      Boolean(semanticMergeBridge)
+    );
+    const response = await semanticMergeBridge!.importKmRecipe(request);
+    if (
+      response.recipeInstanceId !== request.recipeInstanceId ||
+      response.recipeFingerprint !== request.recipeFingerprint ||
+      response.proposalId !== request.proposalId ||
+      response.proposalFingerprint !== request.proposalFingerprint ||
+      !sameSemanticRevision(response.revision, request.expectedRevision)
+    ) {
+      throw new Error('The imported recipe no longer matches its reviewed proposal.');
+    }
+    const responseSnapshot = reconstructDisabledImportSnapshot(
+      currentSnapshot!,
+      response.receipt
+    );
+    acceptDisabledImportedSet({
+      acceptSnapshot,
+      currentScope: currentScope!,
+      currentSnapshot: currentSnapshot!,
+      expectedChangeSetName: request.changeSetName,
+      expectedEdits,
+      expectedOwner: 'km-recipe.v1',
+      expectedTag: 'recipe',
+      importedChangeSetId: response.importedChangeSetId,
+      requestedScopeKey,
+      responseSnapshot,
+      setSelectedChangeSetId,
+      workflowName: 'recipe'
+    });
+    return response;
+  }), [acceptSnapshot, enqueue, semanticMergeBridge]);
+
   const mapped = useMemo(() => mapChangeSetWorkspaceState(
     snapshot,
     activeChangeSetId,
@@ -610,12 +730,209 @@ export function useChangeSetWorkspaceController({
     controller,
     effective: snapshot?.effective ?? null,
     importGuidedDesignProposal,
+    importKmRecipe,
+    importSemanticMerge,
     materialize,
     mutateHistory,
     removeOperation,
     refresh: readWorkspace,
     snapshot
   };
+}
+
+function assertSemanticImportContext(
+  workflowName: string,
+  requestScope: SemanticExploreScope,
+  expectedETag: string | null,
+  currentScope: ChangeSetWorkspaceScope | null,
+  currentSession: EditSession | null,
+  currentSnapshot: ChangeSetWorkspaceSnapshot | null,
+  externalBusy: boolean,
+  hasBridge: boolean
+) {
+  if (externalBusy) {
+    throw new Error(`${workflowName} cannot import during another project write.`);
+  }
+  if (!hasBridge || !currentScope || !currentSnapshot) {
+    throw new Error(
+      `A loaded change-set workspace is required before importing a ${workflowName.toLowerCase()}.`
+    );
+  }
+  if (
+    requestScope.projectId !== currentScope.projectId ||
+    JSON.stringify(requestScope.paths) !== JSON.stringify(currentScope.paths) ||
+    JSON.stringify(requestScope.pendingSession ?? null) !== JSON.stringify(currentSession)
+  ) {
+    throw new Error(`The ${workflowName.toLowerCase()} belongs to a different project scope.`);
+  }
+  if (expectedETag !== currentSnapshot.etag) {
+    throw new Error('The change-set workspace changed after the reviewed preview.');
+  }
+}
+
+function acceptDisabledImportedSet(options: {
+  acceptSnapshot: (snapshot: ChangeSetWorkspaceSnapshot, scopeKey: string) => boolean;
+  currentScope: ChangeSetWorkspaceScope;
+  currentSnapshot: ChangeSetWorkspaceSnapshot;
+  expectedChangeSetName: string;
+  expectedEdits: readonly ExpectedImportedScalarEdit[];
+  expectedOwner: 'semantic-merge.v1' | 'km-recipe.v1';
+  expectedTag: 'semantic-merge' | 'recipe';
+  importedChangeSetId: string;
+  requestedScopeKey: string;
+  responseSnapshot: ChangeSetWorkspaceSnapshot;
+  setSelectedChangeSetId: (changeSetId: string) => void;
+  workflowName: string;
+}) {
+  const {
+    acceptSnapshot,
+    currentScope,
+    currentSnapshot,
+    expectedChangeSetName,
+    expectedEdits,
+    expectedOwner,
+    expectedTag,
+    importedChangeSetId,
+    requestedScopeKey,
+    responseSnapshot,
+    setSelectedChangeSetId,
+    workflowName
+  } = options;
+  const priorChangeSetIds = new Set(
+    currentSnapshot.document.changeSets.map((changeSet) => changeSet.changeSetId)
+  );
+  const responseExistingChangeSets = responseSnapshot.document.changeSets.filter(
+    (changeSet) => changeSet.changeSetId !== importedChangeSetId
+  );
+  if (
+    responseSnapshot.document.game !== currentScope.paths.selectedGame ||
+    responseSnapshot.etag === null ||
+    responseSnapshot.etag === currentSnapshot.etag ||
+    priorChangeSetIds.has(importedChangeSetId) ||
+    responseSnapshot.document.changeSets.length !==
+      currentSnapshot.document.changeSets.length + 1 ||
+    JSON.stringify(responseExistingChangeSets) !==
+      JSON.stringify(currentSnapshot.document.changeSets) ||
+    JSON.stringify(responseSnapshot.document.buildVariants) !==
+      JSON.stringify(currentSnapshot.document.buildVariants) ||
+    responseSnapshot.document.activeChangeSetId !==
+      currentSnapshot.document.activeChangeSetId ||
+    responseSnapshot.document.activeBuildVariantId !==
+      currentSnapshot.document.activeBuildVariantId
+  ) {
+    throw new Error(
+      `The imported ${workflowName} response changed unrelated workspace state.`
+    );
+  }
+  const imported = responseSnapshot.document.changeSets.find(
+    (changeSet) => changeSet.changeSetId === importedChangeSetId
+  );
+  const importedEditKeys = imported?.operations.map((operation) => JSON.stringify([
+    operation.pendingEdit.domain,
+    operation.pendingEdit.recordId,
+    operation.pendingEdit.field,
+    operation.pendingEdit.newValue
+  ])).sort() ?? [];
+  const expectedEditKeys = expectedEdits.map((edit) => JSON.stringify([
+    edit.domain,
+    edit.recordId,
+    edit.field,
+    edit.newValue
+  ])).sort();
+  if (
+    !imported ||
+    imported.enabled ||
+    imported.archived ||
+    responseSnapshot.document.activeChangeSetId === importedChangeSetId ||
+    imported.name !== expectedChangeSetName ||
+    containsPrivatePathSignature(imported.name) ||
+    imported.notes !== null ||
+    imported.dependencyIds.length !== 0 ||
+    JSON.stringify(imported.tags) !== JSON.stringify([expectedTag]) ||
+    expectedEdits.length < 1 ||
+    new Set(expectedEditKeys).size !== expectedEditKeys.length ||
+    JSON.stringify(importedEditKeys) !== JSON.stringify(expectedEditKeys) ||
+    imported.operations.some((operation) => (
+      operation.sourceBindingKind !== 'reviewedPlan' ||
+      operation.ownedTargets.length === 0 ||
+      operation.pendingEdit.owner !== expectedOwner ||
+      containsPrivatePathSignature(operation.pendingEdit.summary)
+    ))
+  ) {
+    throw new Error(`The imported ${workflowName} change set is not safely disabled.`);
+  }
+  if (!acceptSnapshot(responseSnapshot, requestedScopeKey)) {
+    throw new Error(`The project scope changed before the ${workflowName} import completed.`);
+  }
+  setSelectedChangeSetId(importedChangeSetId);
+}
+
+function reconstructDisabledImportSnapshot(
+  currentSnapshot: ChangeSetWorkspaceSnapshot,
+  receipt: {
+    canRedo: boolean;
+    canUndo: boolean;
+    document: ChangeSetWorkspaceSnapshot['document'];
+    etag: string;
+    redoLabel: string | null;
+    undoLabel: string | null;
+  }
+): ChangeSetWorkspaceSnapshot {
+  const currentSession = currentSnapshot.effective.session;
+  const currentBinding = currentSession?.authoringBinding;
+  const session = currentSession && currentBinding
+    ? {
+        ...currentSession,
+        authoringBinding: {
+          ...currentBinding,
+          workspaceETag: receipt.etag
+        }
+      }
+    : currentSession;
+  return {
+    canRedo: receipt.canRedo,
+    canUndo: receipt.canUndo,
+    document: receipt.document,
+    effective: {
+      ...currentSnapshot.effective,
+      session
+    },
+    etag: receipt.etag,
+    redoLabel: receipt.redoLabel,
+    undoLabel: receipt.undoLabel
+  };
+}
+
+function containsPrivatePathSignature(value: string) {
+  let candidate = value;
+  for (let depth = 0; depth <= 3; depth += 1) {
+    if (
+      candidate.includes('/') ||
+      candidate.includes('\\') ||
+      /(?:^|[^A-Za-z0-9])[A-Za-z]:/u.test(candidate) ||
+      /(?:^|[^A-Za-z0-9])file:/iu.test(candidate) ||
+      /(?:^|[^A-Za-z0-9])~/u.test(candidate)
+    ) return true;
+    if (depth === 3 || !candidate.includes('%')) break;
+    try {
+      const decoded = decodeURIComponent(candidate);
+      if (decoded === candidate) break;
+      candidate = decoded;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sameSemanticRevision(
+  left: SemanticExploreRevision,
+  right: SemanticExploreRevision
+) {
+  return left.projectId === right.projectId &&
+    left.gameFamily === right.gameFamily &&
+    left.generation === right.generation &&
+    left.fingerprint === right.fingerprint;
 }
 
 function toMetadata(set: ChangeSetWorkspaceSnapshot['document']['changeSets'][number]) {

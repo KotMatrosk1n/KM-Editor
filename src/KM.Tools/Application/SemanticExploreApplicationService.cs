@@ -14,6 +14,7 @@ using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Semantics;
+using KM.Api.SemanticMerging;
 using KM.Api.Workflows;
 using KM.Core.Files;
 using KM.Core.Indexing;
@@ -46,6 +47,28 @@ public sealed class SemanticExploreValidationException : Exception
 
     public SemanticExploreFailureKind FailureKind { get; }
 }
+
+internal sealed record SemanticMergeIndexedLayers(
+    SemanticProjectRevisionDto Revision,
+    SemanticLayerData Base,
+    SemanticSourceSnapshotDto BaseSnapshot,
+    SemanticLayerData Layered,
+    SemanticSourceSnapshotDto LayeredSnapshot,
+    SemanticLayerData Pending,
+    SemanticSourceSnapshotDto PendingSnapshot,
+    SemanticLayerData SourceA,
+    SemanticSourceSnapshotDto SourceASnapshot,
+    SemanticLayerData SourceB,
+    SemanticSourceSnapshotDto SourceBSnapshot);
+
+internal sealed record SemanticRecipeIndexedLayers(
+    SemanticProjectRevisionDto Revision,
+    SemanticLayerData Base,
+    SemanticSourceSnapshotDto BaseSnapshot,
+    SemanticLayerData Layered,
+    SemanticSourceSnapshotDto LayeredSnapshot,
+    SemanticLayerData Pending,
+    SemanticSourceSnapshotDto PendingSnapshot);
 
 public sealed class SemanticExploreApplicationService
 {
@@ -98,6 +121,12 @@ public sealed class SemanticExploreApplicationService
             MaximumSizeBytes = 64L * 1024L * 1024L,
         });
     private readonly BoundedDerivedIndexCache<SemanticIndexedLayer> externalCache = new(
+        new BoundedDerivedIndexCacheOptions
+        {
+            MaximumEntryCount = 4,
+            MaximumSizeBytes = 64L * 1024L * 1024L,
+        });
+    private readonly BoundedDerivedIndexCache<SemanticExternalRegistration> semanticMergeExternalCache = new(
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 4,
@@ -426,6 +455,168 @@ public sealed class SemanticExploreApplicationService
             request.Limit,
             request.Cursor,
             "external-compare");
+    }
+
+    internal SemanticMergeSourceDto OpenSemanticMergeSource(
+        SemanticExploreScopeDto scope,
+        SemanticProjectRevisionDto expectedRevision,
+        string externalRootPath)
+    {
+        if (scope?.Paths is null || expectedRevision is null || externalRootPath is null)
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge source request is malformed.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        var index = BuildAndValidate(scope, expectedRevision);
+        var registration = BuildSemanticMergeExternalRegistration(
+            index,
+            scope.Paths,
+            externalRootPath);
+        var layer = registration.Layer;
+        var cacheKey = new DerivedIndexCacheKey(
+            ToCoreRevision(index.Revision),
+            $"semantic-merge-external-v1.{layer.Snapshot.Layer.InstanceId}");
+        if (!semanticMergeExternalCache.Set(
+                cacheKey,
+                registration,
+                checked(EstimateLayerSize(layer) + EstimateExternalRootSize(registration.Root))))
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge source snapshot exceeds its bounded cache budget.",
+                SemanticExploreFailureKind.LimitExceeded);
+        }
+        return new SemanticMergeSourceDto(
+            layer.Snapshot.Layer.InstanceId
+                ?? throw new SemanticExploreValidationException(
+                    "The semantic merge source identity is unavailable.",
+                    SemanticExploreFailureKind.ExternalSnapshotUnavailable),
+            layer.Snapshot,
+            Coverage(layer, SemanticFeatureDto.ExternalCompare));
+    }
+
+    internal SemanticMergeIndexedLayers ReadSemanticMergeLayers(
+        SemanticExploreScopeDto scope,
+        SemanticProjectRevisionDto expectedRevision,
+        string sourceAInstanceId,
+        string sourceBInstanceId)
+    {
+        if (scope?.Paths is null
+            || expectedRevision is null
+            || sourceAInstanceId is null
+            || sourceBInstanceId is null)
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge snapshot request is malformed.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        var index = BuildAndValidate(scope, expectedRevision);
+        var sourceARegistration = GetSemanticMergeExternalRegistration(
+            index,
+            sourceAInstanceId);
+        var sourceBRegistration = GetSemanticMergeExternalRegistration(
+            index,
+            sourceBInstanceId);
+        if (string.Equals(
+                sourceARegistration.Root.Identity,
+                sourceBRegistration.Root.Identity,
+                PhysicalPathComparison))
+        {
+            throw new SemanticExploreValidationException(
+                "Semantic merge requires two physically distinct source roots.",
+                SemanticExploreFailureKind.ExternalRejected);
+        }
+
+        var sourceA = ReobserveExternalLayer(index, scope.Paths, sourceAInstanceId);
+        var sourceB = ReobserveExternalLayer(index, scope.Paths, sourceBInstanceId);
+        EnsureExternalRootIdentity(sourceARegistration.Root);
+        EnsureExternalRootIdentity(sourceBRegistration.Root);
+        var completedSourceAFingerprint = CaptureExternalSourceFingerprint(
+            scope.Paths with { OutputRootPath = sourceARegistration.Root.Path });
+        var completedSourceBFingerprint = CaptureExternalSourceFingerprint(
+            scope.Paths with { OutputRootPath = sourceBRegistration.Root.Path });
+        EnsureExternalRootIdentity(sourceARegistration.Root);
+        var finalSourceAFingerprint = CaptureExternalSourceFingerprint(
+            scope.Paths with { OutputRootPath = sourceARegistration.Root.Path });
+        if (!string.Equals(
+                completedSourceAFingerprint,
+                sourceARegistration.SourceFingerprint,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                finalSourceAFingerprint,
+                sourceARegistration.SourceFingerprint,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                completedSourceBFingerprint,
+                sourceBRegistration.SourceFingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new SemanticExploreValidationException(
+                "A selected semantic merge source changed while the pair was observed. Select it again.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        var completedIndex = BuildAndValidate(scope, expectedRevision);
+        if (!EqualsRevision(index.Revision, completedIndex.Revision)
+            || !EqualsSnapshot(index.Base.Snapshot, completedIndex.Base.Snapshot)
+            || !EqualsSnapshot(index.Layered.Snapshot, completedIndex.Layered.Snapshot)
+            || !EqualsSnapshot(index.Pending.Snapshot, completedIndex.Pending.Snapshot))
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic project sources changed while the merge pair was observed. Retry the query.",
+                SemanticExploreFailureKind.StaleRevision);
+        }
+
+        return new SemanticMergeIndexedLayers(
+            completedIndex.Revision,
+            completedIndex.Base.Data,
+            completedIndex.Base.Snapshot,
+            completedIndex.Layered.Data,
+            completedIndex.Layered.Snapshot,
+            completedIndex.Pending.Data,
+            completedIndex.Pending.Snapshot,
+            sourceA.Data,
+            sourceA.Snapshot,
+            sourceB.Data,
+            sourceB.Snapshot);
+    }
+
+    internal void ReleaseSemanticMergeSource(
+        SemanticProjectRevisionDto revision,
+        string instanceId)
+    {
+        if (revision is null || !IsComparedModInstanceId(instanceId))
+        {
+            return;
+        }
+
+        semanticMergeExternalCache.Remove(new DerivedIndexCacheKey(
+            ToCoreRevision(revision),
+            $"semantic-merge-external-v1.{instanceId}"));
+    }
+
+    internal SemanticRecipeIndexedLayers ReadSemanticRecipeLayers(
+        SemanticExploreScopeDto scope,
+        SemanticProjectRevisionDto expectedRevision)
+    {
+        if (scope?.Paths is null || expectedRevision is null)
+        {
+            throw new SemanticExploreValidationException(
+                "The recipe semantic snapshot request is malformed.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        var index = BuildAndValidate(scope, expectedRevision);
+        return new SemanticRecipeIndexedLayers(
+            index.Revision,
+            index.Base.Data,
+            index.Base.Snapshot,
+            index.Layered.Data,
+            index.Layered.Snapshot,
+            index.Pending.Data,
+            index.Pending.Snapshot);
     }
 
     public QuerySemanticChangesResponse QueryChanges(QuerySemanticChangesRequest request)
@@ -1667,6 +1858,144 @@ public sealed class SemanticExploreApplicationService
         return external;
     }
 
+    private SemanticExternalRegistration BuildSemanticMergeExternalRegistration(
+        SemanticProjectIndex index,
+        ProjectPathsDto projectPaths,
+        string externalRootPath)
+    {
+        var externalRoot = ValidateExternalRoot(projectPaths, externalRootPath);
+        var externalPaths = projectPaths with { OutputRootPath = externalRoot.Path };
+        EnsureExternalRootIdentity(externalRoot);
+        var initialSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
+        var data = GetProvider(index.Revision.GameFamily).Build(LoadCorpus(externalPaths));
+        EnsureExternalRootIdentity(externalRoot);
+        var completedSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
+        if (!string.Equals(
+                initialSourceFingerprint,
+                completedSourceFingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new SemanticExploreValidationException(
+                "The selected semantic merge source changed while it was indexed. Select it again.",
+                SemanticExploreFailureKind.ExternalRejected);
+        }
+
+        ValidateLayerBounds(data);
+        if (data.DomainStatuses.Any(status => !status.Available))
+        {
+            throw new SemanticExploreValidationException(
+                "The selected semantic merge source could not be indexed by every required provider.",
+                SemanticExploreFailureKind.ExternalRejected);
+        }
+
+        var layerFingerprint = Hash(
+            "semantic-external-layer-v2",
+            completedSourceFingerprint,
+            FingerprintLayer(data, pendingSession: null));
+        var instanceId = "mod-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
+        return new SemanticExternalRegistration(
+            new SemanticIndexedLayer(
+                data,
+                new SemanticSourceSnapshotDto(
+                    new SemanticSourceLayerDto(
+                        SemanticSourceLayerKindDto.ComparedMod,
+                        instanceId),
+                    index.Revision,
+                    layerFingerprint)),
+            externalRoot,
+            completedSourceFingerprint);
+    }
+
+    private SemanticIndexedLayer ReobserveExternalLayer(
+        SemanticProjectIndex index,
+        ProjectPathsDto projectPaths,
+        string instanceId)
+    {
+        if (!IsComparedModInstanceId(instanceId))
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge source identity is invalid.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        var registration = GetSemanticMergeExternalRegistration(index, instanceId);
+
+        EnsureExternalRootIdentity(registration.Root);
+        var externalPaths = projectPaths with { OutputRootPath = registration.Root.Path };
+        var initialFingerprint = CaptureExternalSourceFingerprint(externalPaths);
+        if (!string.Equals(
+                initialFingerprint,
+                registration.SourceFingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new SemanticExploreValidationException(
+                "The selected semantic merge source changed. Select it again.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        var data = GetProvider(index.Revision.GameFamily).Build(LoadCorpus(externalPaths));
+        EnsureExternalRootIdentity(registration.Root);
+        var completedFingerprint = CaptureExternalSourceFingerprint(externalPaths);
+        if (!string.Equals(
+                completedFingerprint,
+                registration.SourceFingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new SemanticExploreValidationException(
+                "The selected semantic merge source changed. Select it again.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        ValidateLayerBounds(data);
+        if (data.DomainStatuses.Any(status => !status.Available))
+        {
+            throw new SemanticExploreValidationException(
+                "The selected semantic merge source is no longer supported by every required provider.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        var layerFingerprint = Hash(
+            "semantic-external-layer-v2",
+            completedFingerprint,
+            FingerprintLayer(data, pendingSession: null));
+        if (!string.Equals(
+                layerFingerprint,
+                registration.Layer.Snapshot.Fingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new SemanticExploreValidationException(
+                "The selected semantic merge source changed. Select it again.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        return new SemanticIndexedLayer(data, registration.Layer.Snapshot);
+    }
+
+    private SemanticExternalRegistration GetSemanticMergeExternalRegistration(
+        SemanticProjectIndex index,
+        string instanceId)
+    {
+        if (!IsComparedModInstanceId(instanceId))
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge source identity is invalid.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        var key = new DerivedIndexCacheKey(
+            ToCoreRevision(index.Revision),
+            $"semantic-merge-external-v1.{instanceId}");
+        if (!semanticMergeExternalCache.TryGet(key, out var registration))
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge source snapshot is no longer available. Select it again.",
+                SemanticExploreFailureKind.ExternalSnapshotUnavailable);
+        }
+
+        return registration;
+    }
+
+
     private string CaptureExternalSourceFingerprint(ProjectPathsDto externalPaths)
     {
         try
@@ -2454,6 +2783,21 @@ public sealed class SemanticExploreApplicationService
         return size;
     }
 
+    private static long EstimateExternalRootSize(ValidatedExternalRoot root)
+    {
+        long size = checked(512L + EstimateString(root.Path) + EstimateString(root.Identity));
+        foreach (var privatePath in root.PrivatePaths)
+        {
+            size = checked(
+                size
+                + 128L
+                + EstimateString(privatePath.Path)
+                + EstimateString(privatePath.Identity));
+        }
+
+        return size;
+    }
+
     private static long EstimateRecordSize(SemanticRecordRefDto record)
     {
         return checked(
@@ -2574,6 +2918,16 @@ public sealed class SemanticExploreApplicationService
             && current.GameFamily == expected.GameFamily
             && current.Generation == expected.Generation
             && current.Fingerprint == expected.Fingerprint;
+    }
+
+    private static bool EqualsSnapshot(
+        SemanticSourceSnapshotDto current,
+        SemanticSourceSnapshotDto expected)
+    {
+        return current.Layer.Kind == expected.Layer.Kind
+            && string.Equals(current.Layer.InstanceId, expected.Layer.InstanceId, StringComparison.Ordinal)
+            && EqualsRevision(current.Revision, expected.Revision)
+            && string.Equals(current.Fingerprint, expected.Fingerprint, StringComparison.Ordinal);
     }
 
     private static string RecordKey(SemanticRecordRefDto record)
@@ -2731,6 +3085,11 @@ public sealed class SemanticExploreApplicationService
     private sealed record SemanticIndexedLayer(
         SemanticLayerData Data,
         SemanticSourceSnapshotDto Snapshot);
+
+    private sealed record SemanticExternalRegistration(
+        SemanticIndexedLayer Layer,
+        ValidatedExternalRoot Root,
+        string SourceFingerprint);
 
     private sealed record SemanticPage<T>(IReadOnlyList<T> Items, string? NextCursor);
 

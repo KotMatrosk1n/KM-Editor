@@ -8,6 +8,7 @@ using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
+using KM.SwSh.Editing;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.FairyGymBoosts;
@@ -342,6 +343,19 @@ public sealed class SwShWorkflowService
             .UpdateFields(paths, session, updates);
     }
 
+    public SwShMovesEditResult UpdateMoveFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShMoveFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = new SwShMovesWorkflowService(ReadSemanticSourceBytes);
+        return new SwShMovesEditSessionService(workspace, workflow)
+            .UpdateFields(paths, session, updates);
+    }
+
     public SwShEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
         ProjectPaths paths,
         EditSession? session,
@@ -368,7 +382,7 @@ public sealed class SwShWorkflowService
             .Distinct(StringComparer.Ordinal)
             .SingleOrDefault();
         var workspace = new ProjectWorkspaceService();
-        return domain switch
+        var plan = domain switch
         {
             "workflow.items" => new SwShItemsEditSessionService(
                     workspace,
@@ -378,6 +392,10 @@ public sealed class SwShWorkflowService
                     workspace,
                     new SwShPokemonWorkflowService(ReadSemanticSourceBytes))
                 .CreateChangePlan(paths, session),
+            "workflow.moves" => new SwShMovesEditSessionService(
+                    workspace,
+                    new SwShMovesWorkflowService(ReadSemanticSourceBytes))
+                .CreateChangePlan(paths, session),
             "workflow.encounters" => new SwShEncountersEditSessionService(
                     workspace,
                     SwShEncountersWorkflowService.CreateBounded(
@@ -385,8 +403,13 @@ public sealed class SwShWorkflowService
                         checked((int)MaximumSemanticSourceBytesPerFile)))
                 .CreateChangePlan(paths, session),
             _ => throw new InvalidOperationException(
-                "Guided Design supports exactly one verified Sword/Shield workflow domain per plan."),
+                "Generated review supports exactly one verified Sword/Shield workflow domain per plan."),
         };
+        return SwShChangePlanSourceGuard.CaptureBounded(
+            paths,
+            plan,
+            MaximumSemanticSourceBytesPerFile,
+            MaximumSemanticSourceBytes);
     }
 
     private static bool IsSemanticExploreSource(string relativePath)
