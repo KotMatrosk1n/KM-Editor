@@ -139,6 +139,56 @@
   width: 100%;
 }
 
+.km-semantic-query-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--color-text-secondary);
+}
+
+.km-semantic-result-controls {
+  align-items: end;
+  background: var(--km-surface-subtle);
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-lg);
+  display: grid;
+  gap: var(--km-space-2);
+  grid-template-columns: minmax(14rem, 2fr) repeat(3, minmax(9rem, 1fr));
+  margin-top: var(--km-space-3);
+  padding: var(--km-space-3);
+}
+
+.km-semantic-result-controls label {
+  display: grid;
+  gap: var(--km-space-1);
+  min-width: 0;
+}
+
+.km-semantic-result-controls input,
+.km-semantic-result-controls select {
+  min-width: 0;
+  width: 100%;
+}
+
+.km-semantic-selection-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--km-space-2);
+  margin-top: var(--km-space-2);
+}
+
+.km-semantic-selection-bar > label,
+.km-semantic-result-choice {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--km-space-1);
+}
+
+.km-semantic-difference-list > li.is-unselected {
+  opacity: 0.68;
+}
+
 .km-semantic-result-list,
 .km-semantic-difference-list,
 .km-semantic-change-list,
@@ -449,6 +499,10 @@
   .km-semantic-value-pair {
     grid-column: 2 / -1;
   }
+
+  .km-semantic-result-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @container km-semantic-explore (max-width: 680px) {
@@ -456,6 +510,10 @@
   .km-semantic-query-bar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .km-semantic-result-controls {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .km-semantic-field-list > div,

@@ -190,6 +190,8 @@ function createComparison(
       entries.push({
         kind: 'removed',
         leftValue: operation.pendingEdit.summary,
+        operationId: operation.operationId,
+        ownerId: selectedSet.changeSetId,
         ownerLabel: selectedSet.name,
         rightValue: null,
         targetLabel
@@ -200,7 +202,9 @@ function createComparison(
       entries.push({
         kind: 'undecodable',
         leftValue: operation.pendingEdit.summary,
-        ownerLabel: summary.changeSetName,
+        operationId: operation.operationId,
+        ownerId: summary.changeSetId ?? selectedSet.changeSetId,
+        ownerLabel: summary.changeSetName ?? selectedSet.name,
         rightValue: summary.description || summary.title,
         targetLabel
       });
@@ -210,7 +214,9 @@ function createComparison(
       entries.push({
         kind: 'unavailable',
         leftValue: operation.pendingEdit.summary,
-        ownerLabel: summary.changeSetName,
+        operationId: operation.operationId,
+        ownerId: summary.changeSetId ?? selectedSet.changeSetId,
+        ownerLabel: summary.changeSetName ?? selectedSet.name,
         rightValue: summary.description || summary.title,
         targetLabel
       });
@@ -220,7 +226,9 @@ function createComparison(
       entries.push({
         kind: 'reordered',
         leftValue: t('changeSets.comparison.position', { position: index + 1 }),
-        ownerLabel: summary.changeSetName,
+        operationId: operation.operationId,
+        ownerId: summary.changeSetId ?? selectedSet.changeSetId,
+        ownerLabel: summary.changeSetName ?? selectedSet.name,
         rightValue: t('changeSets.comparison.position', {
           position: (effectiveSelectedPositions.get(operation.operationId) ?? -1) + 1
         }),
@@ -234,6 +242,8 @@ function createComparison(
     entries.push({
       kind: 'added',
       leftValue: null,
+      operationId: operation.operationId,
+      ownerId: operation.changeSetId,
       ownerLabel: operation.changeSetName,
       rightValue: operation.description || operation.title,
       targetLabel: operation.target

@@ -10,13 +10,14 @@ import {
   Sparkles,
   Undo2
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AdvancedAuthoringController,
   type AuthoringStagedCommitMetadata
 } from '../../authoring/advancedAuthoringController';
 import {
   AdvancedAuthoringError,
+  advancedAuthoringMaximumSelectionCount,
   type AuthoringDraftSnapshot,
   type AuthoringOperationPreview,
   type AuthoringRelativeTransformKind,
@@ -63,9 +64,13 @@ export function AdvancedAuthoringPanel({
   const [secondaryValue, setSecondaryValue] = useState('');
   const [rounding, setRounding] = useState<'ceil' | 'floor' | 'nearest'>('nearest');
   const [recordQuery, setRecordQuery] = useState('');
+  const [recordOrder, setRecordOrder] = useState<'name' | 'identifier'>('name');
   const [sourceRecordKey, setSourceRecordKey] = useState('');
   const [pasteGroupId, setPasteGroupId] = useState('');
-  const [preview, setPreview] = useState<AuthoringOperationPreview | null>(null);
+  const [storedPreview, setStoredPreview] = useState<{
+    inputKey: string;
+    value: AuthoringOperationPreview;
+  } | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -92,17 +97,37 @@ export function AdvancedAuthoringPanel({
     const matches = normalizedQuery
       ? workspace.records.filter((record) => (
           record.displayName.toLocaleLowerCase(formatLocale).includes(normalizedQuery) ||
-          record.record.recordId.toLocaleLowerCase(formatLocale).includes(normalizedQuery)
+          formatAuthoringRecordIdentifier(record.record)
+            .toLocaleLowerCase(formatLocale)
+            .includes(normalizedQuery)
         ))
-      : workspace.records;
+      : [...workspace.records];
+    matches.sort((left, right) => recordOrder === 'identifier'
+      ? formatAuthoringRecordIdentifier(left.record).localeCompare(
+          formatAuthoringRecordIdentifier(right.record)
+        ) ||
+        left.displayName.localeCompare(right.displayName)
+      : left.displayName.localeCompare(right.displayName) ||
+        formatAuthoringRecordIdentifier(left.record).localeCompare(
+          formatAuthoringRecordIdentifier(right.record)
+        ));
     return {
       records: matches.slice(0, maximumRenderedAuthoringRecords),
       total: matches.length
     };
-  }, [formatLocale, recordQuery, workspace]);
-  const sourceRecord = filteredRecordResult.records.find((record) => (
+  }, [formatLocale, recordOrder, recordQuery, workspace]);
+  const sourceRecord = workspace?.records.find((record) => (
     semanticRecordRefKey(record.record) === sourceRecordKey
-  )) ?? filteredRecordResult.records[0] ?? null;
+  )) ?? workspace?.records[0] ?? null;
+  const sourceRecordOptions = useMemo(() => {
+    if (!sourceRecord) return filteredRecordResult.records;
+    const sourceKey = semanticRecordRefKey(sourceRecord.record);
+    return filteredRecordResult.records.some((record) => (
+      semanticRecordRefKey(record.record) === sourceKey
+    ))
+      ? filteredRecordResult.records
+      : [sourceRecord, ...filteredRecordResult.records];
+  }, [filteredRecordResult.records, sourceRecord]);
   const hasCompatibleClipboard = Boolean(
     snapshot.clipboard && snapshot.clipboard.adapterId === workspace?.adapterId
   );
@@ -110,6 +135,49 @@ export function AdvancedAuthoringPanel({
     hasCompatibleClipboard &&
     pasteGroup?.fieldKeys.every((key) => Object.hasOwn(snapshot.clipboard!.fieldValues, key))
   );
+  const operationInputKey = JSON.stringify([
+    revisionKey ?? null,
+    workspace?.adapterId ?? null,
+    field?.fieldKey ?? null,
+    transformKind,
+    primaryValue,
+    secondaryValue,
+    rounding,
+    [...selectedRecordKeys].sort(),
+    sourceRecord ? semanticRecordRefKey(sourceRecord.record) : null,
+    pasteGroup?.id ?? null,
+    snapshot.clipboard ? [
+      snapshot.clipboard.adapterId,
+      snapshot.clipboard.copiedAtRevisionFingerprint,
+      semanticRecordRefKey(snapshot.clipboard.sourceRecord),
+      Object.entries(snapshot.clipboard.fieldValues).sort(([left], [right]) => (
+        left.localeCompare(right)
+      ))
+    ] : null,
+    snapshot.repeatTemplate ? [
+      snapshot.repeatTemplate.adapterId,
+      snapshot.repeatTemplate.createdAtRevisionFingerprint,
+      snapshot.repeatTemplate.kind,
+      snapshot.repeatTemplate.sourceRecord
+        ? semanticRecordRefKey(snapshot.repeatTemplate.sourceRecord)
+        : null,
+      [...snapshot.repeatTemplate.fieldKeys].sort(),
+      Object.entries(snapshot.repeatTemplate.sourceValues).sort(([left], [right]) => (
+        left.localeCompare(right)
+      )),
+      snapshot.repeatTemplate.transform
+    ] : null
+  ]);
+  const preview = storedPreview?.inputKey === operationInputKey
+    ? storedPreview.value
+    : null;
+  const operationInputKeyRef = useRef(operationInputKey);
+
+  useEffect(() => {
+    if (operationInputKeyRef.current === operationInputKey) return;
+    operationInputKeyRef.current = operationInputKey;
+    setStoredPreview(null);
+  }, [operationInputKey]);
 
   useEffect(() => {
     const nextWorkspaces = controller.getWorkspaces();
@@ -122,7 +190,7 @@ export function AdvancedAuthoringPanel({
       : '');
     setPasteGroupId(nextWorkspace?.pasteSpecialGroups[0]?.id ?? '');
     setRecordQuery('');
-    setPreview(null);
+    setStoredPreview(null);
     setErrorKey(null);
   }, [controller, revisionKey]);
 
@@ -130,16 +198,19 @@ export function AdvancedAuthoringPanel({
     if (!workspace) return;
     if (!workspace.fields.some((candidate) => candidate.fieldKey === fieldKey)) {
       setFieldKey(workspace.fields[0]?.fieldKey ?? '');
+      setStoredPreview(null);
     }
-    if (!filteredRecordResult.records.some((record) => (
+    if (!workspace.records.some((record) => (
       semanticRecordRefKey(record.record) === sourceRecordKey
     ))) {
-      setSourceRecordKey(filteredRecordResult.records[0]
-        ? semanticRecordRefKey(filteredRecordResult.records[0].record)
+      setSourceRecordKey(workspace.records[0]
+        ? semanticRecordRefKey(workspace.records[0].record)
         : '');
+      setStoredPreview(null);
     }
     if (!workspace.pasteSpecialGroups.some((group) => group.id === pasteGroupId)) {
       setPasteGroupId(workspace.pasteSpecialGroups[0]?.id ?? '');
+      setStoredPreview(null);
     }
     const activeField = workspace.fields.find((candidate) => candidate.fieldKey === fieldKey);
     if (
@@ -147,8 +218,9 @@ export function AdvancedAuthoringPanel({
       !activeField?.supportedTransforms.includes(transformKind)
     ) {
       setTransformKind('replace');
+      setStoredPreview(null);
     }
-  }, [fieldKey, filteredRecordResult.records, pasteGroupId, sourceRecordKey, transformKind, workspace]);
+  }, [fieldKey, pasteGroupId, sourceRecordKey, transformKind, workspace]);
 
   if (workspaces.length === 0 || !workspace || !field) {
     return null;
@@ -169,7 +241,10 @@ export function AdvancedAuthoringPanel({
     }
   };
   const setOperationPreview = (operation: () => AuthoringOperationPreview) => {
-    run(() => setPreview(operation()));
+    run(() => setStoredPreview({
+      inputKey: operationInputKey,
+      value: operation()
+    }));
   };
   const handleAdapterChange = (nextAdapterId: string) => {
     run(() => controller.clearSelection());
@@ -181,7 +256,7 @@ export function AdvancedAuthoringPanel({
       : '');
     setPasteGroupId(nextWorkspace?.pasteSpecialGroups[0]?.id ?? '');
     setRecordQuery('');
-    setPreview(null);
+    setStoredPreview(null);
   };
   const handleBulkPreview = () => {
     const transform = createTransform(
@@ -205,14 +280,14 @@ export function AdvancedAuthoringPanel({
     if (!sourceRecord) return;
     run(() => {
       controller.copyFields(workspace.adapterId, sourceRecord.record, [field.fieldKey]);
-      setPreview(null);
+      setStoredPreview(null);
     });
   };
   const handleCopyGroup = () => {
     if (!sourceRecord || !pasteGroup) return;
     run(() => {
       controller.copyPasteSpecialGroup(workspace.adapterId, sourceRecord.record, pasteGroup.id);
-      setPreview(null);
+      setStoredPreview(null);
     });
   };
   const runDraftMutation = async (operation: () => AuthoringDraftSnapshot) => {
@@ -225,7 +300,7 @@ export function AdvancedAuthoringPanel({
       const drafts = operation();
       didMutate = true;
       await onDraftsChange(drafts);
-      setPreview(null);
+      setStoredPreview(null);
       refreshSnapshot();
     } catch (error) {
       if (didMutate) {
@@ -256,7 +331,7 @@ export function AdvancedAuthoringPanel({
       const request = controller.createStageRequest(preview);
       const metadata = await onStageRequest(request);
       controller.recordStagedCommit(preview, metadata, priorDrafts);
-      setPreview(null);
+      setStoredPreview(null);
       refreshSnapshot();
       try {
         await onDraftsChange(
@@ -280,7 +355,7 @@ export function AdvancedAuthoringPanel({
       if (direction === 'undo') await controller.undoStaged(executeStagedHistory);
       else await controller.redoStaged(executeStagedHistory);
       refreshSnapshot();
-      setPreview(null);
+      setStoredPreview(null);
     } catch (error) {
       setErrorKey(toAuthoringErrorKey(error));
     } finally {
@@ -382,6 +457,19 @@ export function AdvancedAuthoringPanel({
             type="search"
             value={recordQuery}
           />
+          <label htmlFor="change-set-authoring-record-order">
+            {t('analysisPresentation.controls.sort')}
+          </label>
+          <select
+            className="km-select-control"
+            disabled={controlsBusy}
+            id="change-set-authoring-record-order"
+            onChange={(event) => setRecordOrder(event.currentTarget.value as typeof recordOrder)}
+            value={recordOrder}
+          >
+            <option value="name">{t('analysisPresentation.controls.record')}</option>
+            <option value="identifier">{t('analysisPresentation.controls.identifier')}</option>
+          </select>
           <div className="change-set-authoring-records" role="group" aria-label={t('changeSets.authoring.records')}>
             {filteredRecordResult.records.map((record) => {
               const key = semanticRecordRefKey(record.record);
@@ -393,14 +481,53 @@ export function AdvancedAuthoringPanel({
                     disabled={controlsBusy}
                     onChange={() => {
                       run(() => controller.toggleRecord(workspace.adapterId, record.record));
-                      setPreview(null);
+                      setStoredPreview(null);
                     }}
                     type="checkbox"
                   />
-                  <span>{record.displayName}</span>
+                  <span>
+                    <strong>{record.displayName}</strong>
+                    <small>{formatAuthoringRecordIdentifier(record.record)}</small>
+                  </span>
                 </label>
               );
             })}
+          </div>
+          <div className="change-set-authoring-selection-actions">
+            <button
+              className="secondary-button compact-button"
+              disabled={controlsBusy || filteredRecordResult.records.length === 0 || (
+                filteredRecordResult.records.every((record) => (
+                  selectedRecordKeys.has(semanticRecordRefKey(record.record))
+                ))
+              )}
+              onClick={() => {
+                const combined = new Map(snapshot.selection.records.map((record) => [
+                  semanticRecordRefKey(record),
+                  record
+                ]));
+                for (const record of filteredRecordResult.records) {
+                  if (combined.size >= advancedAuthoringMaximumSelectionCount) break;
+                  combined.set(semanticRecordRefKey(record.record), record.record);
+                }
+                run(() => controller.selectRecords(workspace.adapterId, [...combined.values()]));
+                setStoredPreview(null);
+              }}
+              type="button"
+            >
+              {t('analysisPresentation.controls.selectVisible')}
+            </button>
+            <button
+              className="secondary-button compact-button"
+              disabled={controlsBusy || selectedRecordKeys.size === 0}
+              onClick={() => {
+                run(() => controller.clearSelection());
+                setStoredPreview(null);
+              }}
+              type="button"
+            >
+              {t('analysisPresentation.controls.clearSelection')}
+            </button>
           </div>
           {filteredRecordResult.total > filteredRecordResult.records.length ? (
             <p>{t('changeSets.authoring.recordsTruncated', {
@@ -423,7 +550,7 @@ export function AdvancedAuthoringPanel({
             id="change-set-authoring-field"
             onChange={(event) => {
               setFieldKey(event.currentTarget.value);
-              setPreview(null);
+              setStoredPreview(null);
             }}
             value={field.fieldKey}
           >
@@ -440,7 +567,7 @@ export function AdvancedAuthoringPanel({
             id="change-set-authoring-transform"
             onChange={(event) => {
               setTransformKind(event.currentTarget.value as typeof transformKind);
-              setPreview(null);
+              setStoredPreview(null);
             }}
             value={transformKind}
           >
@@ -456,15 +583,15 @@ export function AdvancedAuthoringPanel({
             kind={transformKind}
             onPrimaryChange={(value) => {
               setPrimaryValue(value);
-              setPreview(null);
+              setStoredPreview(null);
             }}
             onRoundingChange={(value) => {
               setRounding(value);
-              setPreview(null);
+              setStoredPreview(null);
             }}
             onSecondaryChange={(value) => {
               setSecondaryValue(value);
-              setPreview(null);
+              setStoredPreview(null);
             }}
             primaryValue={primaryValue}
             rounding={rounding}
@@ -492,17 +619,17 @@ export function AdvancedAuthoringPanel({
             id="change-set-authoring-source"
             onChange={(event) => {
               setSourceRecordKey(event.currentTarget.value);
-              setPreview(null);
+              setStoredPreview(null);
             }}
             value={sourceRecord ? semanticRecordRefKey(sourceRecord.record) : ''}
           >
-            {filteredRecordResult.records.map((record) => (
+            {sourceRecordOptions.map((record) => (
               <option
                 data-localization-ignore="true"
                 key={semanticRecordRefKey(record.record)}
                 value={semanticRecordRefKey(record.record)}
               >
-                {record.displayName}
+                {`${record.displayName} - ${formatAuthoringRecordIdentifier(record.record)}`}
               </option>
             ))}
           </select>
@@ -540,7 +667,7 @@ export function AdvancedAuthoringPanel({
                 id="change-set-authoring-paste-group"
                 onChange={(event) => {
                   setPasteGroupId(event.currentTarget.value);
-                  setPreview(null);
+                  setStoredPreview(null);
                 }}
                 value={pasteGroup?.id ?? ''}
               >
@@ -697,9 +824,9 @@ function AuthoringPreview({
   if (!preview) {
     return <p className="change-set-authoring-no-preview">{t('changeSets.authoring.noPreview')}</p>;
   }
-  const names = new Map(workspaceRecords.map((record) => [
+  const recordsByKey = new Map(workspaceRecords.map((record) => [
     semanticRecordRefKey(record.record),
-    record.displayName
+    record
   ]));
   const visibleMutations = preview.mutations.slice(0, maximumRenderedPreviewMutations);
   return (
@@ -715,8 +842,12 @@ function AuthoringPreview({
           <dt>{t('changeSets.authoring.sourceRecord')}</dt>
           <dd data-localization-ignore="true">
             {preview.assumptions.sourceRecord
-              ? names.get(semanticRecordRefKey(preview.assumptions.sourceRecord))
-                ?? preview.assumptions.sourceRecord.recordId
+              ? <AuthoringRecordIdentity
+                  displayName={recordsByKey.get(
+                    semanticRecordRefKey(preview.assumptions.sourceRecord)
+                  )?.displayName}
+                  record={preview.assumptions.sourceRecord}
+                />
               : t('changeSets.authoring.none')}
           </dd>
         </div>
@@ -766,7 +897,12 @@ function AuthoringPreview({
           </dd>
         </div>
       </dl>
-      <div className="change-set-authoring-preview-table-wrap">
+      <div
+        aria-label={t('changeSets.authoring.previewTitle')}
+        className="change-set-authoring-preview-table-wrap"
+        role="region"
+        tabIndex={0}
+      >
         <table className="change-set-authoring-preview-table">
           <thead>
             <tr>
@@ -780,7 +916,12 @@ function AuthoringPreview({
             {visibleMutations.map((mutation) => (
               <tr key={`${semanticRecordRefKey(mutation.field.record)}:${mutation.field.fieldKey}`}>
                 <th data-localization-ignore="true" scope="row">
-                  {names.get(semanticRecordRefKey(mutation.field.record)) ?? mutation.field.record.recordId}
+                  <AuthoringRecordIdentity
+                    displayName={recordsByKey.get(
+                      semanticRecordRefKey(mutation.field.record)
+                    )?.displayName}
+                    record={mutation.field.record}
+                  />
                 </th>
                 <td data-localization-ignore="true">{mutation.field.fieldKey}</td>
                 <td data-localization-ignore="true">{mutation.beforeValue}</td>
@@ -806,6 +947,21 @@ function AuthoringPreview({
       </div>
       <p>{t('changeSets.authoring.confirmation')}</p>
     </section>
+  );
+}
+
+function AuthoringRecordIdentity({
+  displayName,
+  record
+}: {
+  displayName?: string;
+  record: SemanticRecordRef;
+}) {
+  return (
+    <span className="change-set-authoring-record-identity">
+      <strong>{displayName ?? record.recordId}</strong>
+      <small>{formatAuthoringRecordIdentifier(record)}</small>
+    </span>
   );
 }
 
@@ -864,6 +1020,16 @@ function formatTransform(
 
 function shortFingerprint(value: string | null | undefined) {
   return value ? value.slice(0, 12) : 'unavailable';
+}
+
+function formatAuthoringRecordIdentifier(record: SemanticRecordRef) {
+  return [
+    record.gameFamily,
+    record.domain,
+    `${record.recordKind.key}@${record.recordKind.schemaVersion}`,
+    record.recordId,
+    record.subrecordId
+  ].filter((value): value is string => Boolean(value)).join(' / ');
 }
 
 const authoringAdapterLabelKeys: Readonly<Record<string, string>> = {

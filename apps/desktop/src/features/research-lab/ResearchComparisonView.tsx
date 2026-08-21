@@ -5,9 +5,10 @@ import {
   FileDiff,
   FolderOpen,
   MessageSquarePlus,
+  Search,
   X
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   researchLabDefaultPageSize,
   researchLabMaximumAccumulatedFindings,
@@ -41,6 +42,11 @@ export function ResearchComparisonView({
 }) {
   const { t } = useLocalization();
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [resultFilter, setResultFilter] = useState('');
+  const [differenceFilter, setDifferenceFilter] = useState<
+    'all' | ResearchFileFinding['differenceKind']
+  >('all');
+  const [resultOrder, setResultOrder] = useState<'path' | 'difference' | 'largest'>('path');
   const pickerGenerationRef = useRef<[number, number]>([0, 0]);
   const isMountedRef = useRef(true);
   const sourceIdentity = [
@@ -76,6 +82,8 @@ export function ResearchComparisonView({
     await controller.openSource(slot, rootPath);
   };
   const data = controller.comparison.data;
+  const committedPaths = controller.comparison.selectedRelativePaths;
+  const selectionMatchesCommitted = samePathSelection(selectedPaths, committedPaths);
   const canCompare = controller.sources.every((source) => (
     source.status === 'ready' &&
     source.data !== null &&
@@ -85,6 +93,40 @@ export function ResearchComparisonView({
     data?.nextCursor &&
     data.items.length + researchLabDefaultPageSize > researchLabMaximumAccumulatedFindings
   );
+  const visibleFindings = useMemo(() => {
+    const normalizedFilter = resultFilter.trim().toLocaleLowerCase();
+    return [...(data?.items ?? [])]
+      .filter((finding) => (
+        (differenceFilter === 'all' || finding.differenceKind === differenceFilter) &&
+        (!normalizedFilter || finding.relativePath.toLocaleLowerCase().includes(normalizedFilter))
+      ))
+      .sort((left, right) => {
+        if (resultOrder === 'difference') {
+          return left.differenceKind.localeCompare(right.differenceKind) ||
+            left.relativePath.localeCompare(right.relativePath);
+        }
+        if (resultOrder === 'largest') {
+          const leftSize = Math.max(left.sourceA.length ?? 0, left.sourceB.length ?? 0);
+          const rightSize = Math.max(right.sourceA.length ?? 0, right.sourceB.length ?? 0);
+          return rightSize - leftSize || left.relativePath.localeCompare(right.relativePath);
+        }
+        return left.relativePath.localeCompare(right.relativePath);
+      });
+  }, [data?.items, differenceFilter, resultFilter, resultOrder]);
+  useEffect(() => {
+    if (
+      differenceFilter !== 'all' &&
+      !data?.items.some((finding) => finding.differenceKind === differenceFilter)
+    ) setDifferenceFilter('all');
+  }, [data?.items, differenceFilter]);
+  const selectVisible = () => setSelectedPaths((current) => {
+    const next = new Set(current);
+    for (const finding of visibleFindings) {
+      if (next.size >= researchLabMaximumSelectedFiles) break;
+      next.add(finding.relativePath);
+    }
+    return next;
+  });
 
   return (
     <section
@@ -134,25 +176,30 @@ export function ResearchComparisonView({
             ? 'researchLab.comparison.refresh'
             : 'researchLab.comparison.run')}</span>
         </button>
-        {selectedPaths.size > 0 ? (
-          <>
-            <span role="status">
-              {t('researchLab.comparison.selected', {
-                count: selectedPaths.size,
-                maximum: researchLabMaximumSelectedFiles
-              })}
-            </span>
-            <button
-              aria-busy={controller.comparison.isAppending || undefined}
-              className="secondary-button compact-button"
-              disabled={controller.isBusy}
-              onClick={() => setSelectedPaths(new Set())}
-              type="button"
-            >
-              {t('researchLab.comparison.clearSelection')}
-            </button>
-          </>
-        ) : null}
+        <span role="status">
+          {t('researchLab.comparison.selected', {
+            count: selectedPaths.size,
+            maximum: researchLabMaximumSelectedFiles
+          })}
+        </span>
+        <button
+          className="secondary-button compact-button"
+          disabled={controller.isBusy || visibleFindings.length === 0 || (
+            selectedPaths.size >= researchLabMaximumSelectedFiles
+          )}
+          onClick={selectVisible}
+          type="button"
+        >
+          {t('analysisPresentation.controls.selectVisible')}
+        </button>
+        <button
+          className="secondary-button compact-button"
+          disabled={controller.isBusy || selectedPaths.size === 0}
+          onClick={() => setSelectedPaths(new Set())}
+          type="button"
+        >
+          {t('researchLab.comparison.clearSelection')}
+        </button>
       </div>
 
       {controller.comparison.status === 'loading' && !data ? (
@@ -165,15 +212,71 @@ export function ResearchComparisonView({
         <Status error messageKey={researchErrorKey(controller.comparison.error)} />
       ) : null}
       {data ? (
+        <div className="km-research-lab-query-summary">
+          <p>
+            {committedPaths.length > 0
+              ? t('researchLab.comparison.committedSelected', { count: committedPaths.length })
+              : t('researchLab.comparison.committedAll')}
+          </p>
+          {!selectionMatchesCommitted ? (
+            <p role="status">{t('researchLab.comparison.rerunRequired')}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {data ? (
         <>
           <p aria-live="polite" className="km-research-lab-result-count">
             {t('researchLab.comparison.loaded', { count: data.items.length })}
           </p>
-          {data.items.length === 0 ? (
-            <p className="km-research-lab-empty">{t('researchLab.comparison.empty')}</p>
+          {data.items.length > 0 ? (
+            <div className="km-research-lab-result-controls">
+              <label>
+                <span>{t('analysisPresentation.controls.filter')}</span>
+                <span className="km-research-lab-filter-input">
+                  <Search aria-hidden="true" size={15} />
+                  <input
+                    onChange={(event) => setResultFilter(event.currentTarget.value)}
+                    type="search"
+                    value={resultFilter}
+                  />
+                </span>
+              </label>
+              <label>
+                <span>{t('analysisPresentation.controls.resultType')}</span>
+                <select
+                  className="km-select-control"
+                  onChange={(event) => setDifferenceFilter(
+                    event.currentTarget.value as typeof differenceFilter
+                  )}
+                  value={differenceFilter}
+                >
+                  <option value="all">{t('analysisPresentation.controls.allResults')}</option>
+                  <option value="added">{t(researchDifferenceKey('added'))}</option>
+                  <option value="removed">{t(researchDifferenceKey('removed'))}</option>
+                  <option value="changed">{t(researchDifferenceKey('changed'))}</option>
+                </select>
+              </label>
+              <label>
+                <span>{t('analysisPresentation.controls.sort')}</span>
+                <select
+                  className="km-select-control"
+                  onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+                  value={resultOrder}
+                >
+                  <option value="path">{t('analysisPresentation.controls.path')}</option>
+                  <option value="difference">{t('analysisPresentation.controls.resultType')}</option>
+                  <option value="largest">{t('analysisPresentation.controls.largestFirst')}</option>
+                </select>
+              </label>
+            </div>
+          ) : null}
+          {visibleFindings.length === 0 ? (
+            <p className="km-research-lab-empty">{t(data.items.length === 0
+              ? 'researchLab.comparison.empty'
+              : 'analysisPresentation.controls.noMatches')}</p>
           ) : (
             <ol aria-label={t('researchLab.comparison.results')} className="km-research-lab-results">
-              {data.items.map((finding) => (
+              {visibleFindings.map((finding) => (
                 <FindingCard
                   checked={selectedPaths.has(finding.relativePath)}
                   controller={controller}
@@ -221,7 +324,7 @@ export function ResearchComparisonView({
           {data.nextCursor && !isWindowCapped ? (
             <button
               className="secondary-button compact-button"
-              disabled={controller.isBusy}
+              disabled={controller.isBusy || !selectionMatchesCommitted}
               onClick={() => void controller.loadMore()}
               type="button"
             >
@@ -247,6 +350,13 @@ export function ResearchComparisonView({
       ) : null}
     </section>
   );
+}
+
+function samePathSelection(
+  draft: ReadonlySet<string>,
+  committed: readonly string[]
+) {
+  return draft.size === committed.length && committed.every((path) => draft.has(path));
 }
 
 function SourceCard({
@@ -339,6 +449,7 @@ function FindingCard({
           </div>
           <label>
             <input
+              aria-label={`${t('researchLab.comparison.includeRanges')}: ${finding.relativePath}`}
               checked={checked}
               className="km-choice-control"
               disabled={disabled}
@@ -368,6 +479,7 @@ function FindingCard({
         </dl>
         <div className="km-research-lab-card-actions">
           <button
+            aria-label={`${t('researchLab.byteWindow.open')}: ${finding.relativePath}`}
             className="secondary-button compact-button"
             disabled={windowLength < 1 || controller.isBusy}
             onClick={() => void controller.loadByteWindow(finding, offset, windowLength)}
@@ -377,6 +489,7 @@ function FindingCard({
             <span>{t('researchLab.byteWindow.open')}</span>
           </button>
           <button
+            aria-label={`${t('researchLab.annotations.addFinding')}: ${finding.relativePath}`}
             className="secondary-button compact-button"
             onClick={onAnnotateFinding}
             type="button"
@@ -386,6 +499,7 @@ function FindingCard({
           </button>
           {firstRange ? (
             <button
+              aria-label={`${t('researchLab.annotations.addRange')}: ${finding.relativePath}`}
               className="secondary-button compact-button"
               onClick={() => onAnnotateRange(firstRange.offset, firstRange.length)}
               type="button"
@@ -456,7 +570,12 @@ function ByteSide({
     <div>
       <strong>{label}</strong>
       {side.exists ? (
-        <pre className="km-research-lab-byte-window" data-localization-ignore="true">
+        <pre
+          aria-label={`${t('researchLab.byteWindow.title')}: ${label}`}
+          className="km-research-lab-byte-window"
+          data-localization-ignore="true"
+          tabIndex={0}
+        >
           {formatHexWindow(side.bytesBase64!, offset)}
         </pre>
       ) : (

@@ -40,6 +40,8 @@ const projectCodes = new Set<string>([
   projectBridgeErrorCodes.dataSupportUnavailable,
   projectBridgeErrorCodes.gameMismatch,
   projectBridgeErrorCodes.ioFailed,
+  projectBridgeErrorCodes.projectOutputMissing,
+  projectBridgeErrorCodes.projectOutputNotConfigured,
   projectBridgeErrorCodes.projectRelocationConflict,
   projectBridgeErrorCodes.projectRelocationMismatch,
   projectBridgeErrorCodes.resourceMissing,

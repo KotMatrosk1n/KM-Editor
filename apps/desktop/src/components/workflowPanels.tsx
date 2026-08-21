@@ -3,14 +3,19 @@
 import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
-import { formatDiagnosticMessage } from '../diagnostics';
+import { formatDiagnosticSummary } from '../diagnostics';
 import { useDiagnosticNavigation } from '../diagnosticActions';
 import { useLocalization } from '../localization';
 import {
   DiagnosticTechnicalDetails,
   OccurrenceCount,
 } from '../features/workbench/AnalysisPresentation';
-import { groupDiagnosticsForPresentation } from '../features/workbench/analysisPresentationUtils';
+import {
+  diagnosticSeverityPriority,
+  groupDiagnosticsForPresentation,
+  presentationDiagnosticMessage,
+  presentationDiagnosticSeverity
+} from '../features/workbench/analysisPresentationUtils';
 import { ContextHelp } from './ContextHelp';
 
 export type WorkflowPanelOutput = {
@@ -246,34 +251,46 @@ export function DiagnosticsSection({
 }) {
   const { t, translateLiteral } = useLocalization();
   const diagnosticNavigation = useDiagnosticNavigation();
+  const formatMessage = (diagnostic: ApiDiagnostic) => (
+    formatDiagnosticSummary(diagnostic, translateLiteral, t)
+  );
+  const presentedMessage = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticMessage(diagnostic, diagnostics, formatMessage)
+  );
+  const presentedSeverity = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticSeverity(diagnostic, diagnostics, formatMessage)
+  );
   const groupedDiagnostics = groupDiagnosticsForPresentation(
     diagnostics,
+    (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
     (diagnostic) => [
       diagnostic.severity,
-      formatDiagnosticMessage(diagnostic, translateLiteral, t)
+      diagnostic.code,
+      diagnostic.domain,
+      diagnostic.field
     ],
-    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+    (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
   const isScrollable = scrollAfterEntries !== undefined &&
     groupedDiagnostics.length > scrollAfterEntries;
   const groups = [
     {
       diagnostics: groupedDiagnostics.filter(
-        ({ diagnostics: identities }) => identities[0]!.diagnostic.severity === 'error'
+        ({ diagnostics: identities }) => presentedSeverity(identities[0]!.diagnostic) === 'error'
       ),
       label: 'Error',
       severity: 'error' as const
     },
     {
       diagnostics: groupedDiagnostics.filter(
-        ({ diagnostics: identities }) => identities[0]!.diagnostic.severity === 'warning'
+        ({ diagnostics: identities }) => presentedSeverity(identities[0]!.diagnostic) === 'warning'
       ),
       label: 'Warnings',
       severity: 'warning' as const
     },
     {
       diagnostics: groupedDiagnostics.filter(
-        ({ diagnostics: identities }) => identities[0]!.diagnostic.severity === 'info'
+        ({ diagnostics: identities }) => presentedSeverity(identities[0]!.diagnostic) === 'info'
       ),
       label: 'Information',
       severity: 'info' as const
@@ -283,7 +300,10 @@ export function DiagnosticsSection({
   if (groups.length === 0) {
     return null;
   }
-  const primaryAction = diagnostics
+  const primaryAction = [...diagnostics]
+    .sort((left, right) => (
+      diagnosticSeverityPriority(right.severity) - diagnosticSeverityPriority(left.severity)
+    ))
     .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
     .find((action) => action !== null);
 
@@ -324,16 +344,17 @@ export function DiagnosticsSection({
             <ul className="diagnostic-list">
               {group.diagnostics.map(({ count, diagnostics: identities, key }) => {
                 const diagnostic = identities[0]!.diagnostic;
+                const severity = presentedSeverity(diagnostic);
                 return (
                 <li
-                  className={`diagnostic diagnostic-${diagnostic.severity}`}
+                  className={`diagnostic diagnostic-${severity}`}
                   key={key}
                 >
                   <strong>
-                    {translateLiteral(formatDiagnosticSeverity(diagnostic.severity))}
+                    {translateLiteral(formatDiagnosticSeverity(severity))}
                   </strong>
                   <div className="km-analysis-diagnostic-copy">
-                    {formatDiagnosticMessage(diagnostic, translateLiteral, t)}
+                    {presentedMessage(diagnostic)}
                     <OccurrenceCount count={count} />
                     <DiagnosticTechnicalDetails
                       diagnostics={identities}

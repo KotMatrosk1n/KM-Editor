@@ -10,13 +10,18 @@ import type {
 import { containsGameModuleLocalPathSignature } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import type { ApiDiagnostic } from '../../bridge/contracts';
+import { useDiagnosticNavigation } from '../../diagnosticActions';
+import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import {
   presentFactValue,
   presentationFactLabelKey,
   relativeRecordTitle,
   humanizeIdentifier,
-  groupDiagnosticsForPresentation
+  diagnosticSeverityPriority,
+  groupDiagnosticsForPresentation,
+  presentationDiagnosticMessage,
+  presentationDiagnosticSeverity
 } from '../workbench/analysisPresentationUtils';
 import {
   DiagnosticTechnicalDetails,
@@ -45,11 +50,13 @@ export function GameModuleResults({
       </p>
       {response.records.length > 0 ? (
         <ol aria-label={t('gameModules.results.label')}>
-          {groups.map(({ related, root }) => (
+          {groups.map(({ hierarchyBoundary, parentRecordId, related, root }) => (
             <GameModuleResultCard
               canNavigateRecord={canNavigateRecord}
+              hierarchyBoundary={hierarchyBoundary}
               key={root.recordId}
               onNavigateRecord={onNavigateRecord}
+              parentRecordId={parentRecordId}
               related={related}
               root={root}
             />
@@ -64,12 +71,16 @@ export function GameModuleResults({
 
 function GameModuleResultCard({
   canNavigateRecord,
+  hierarchyBoundary,
   onNavigateRecord,
+  parentRecordId,
   related,
   root
 }: {
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
+  hierarchyBoundary: 'cycle' | 'missingParent' | null;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
+  parentRecordId: string | null;
   related: readonly GameModuleRecord[];
   root: GameModuleRecord;
 }) {
@@ -90,6 +101,13 @@ function GameModuleResultCard({
             <ConfidenceBadge confidence={root.confidence} />
           </div>
         </header>
+        {hierarchyBoundary ? (
+          <p className="km-game-module-record-boundary">
+            {t(hierarchyBoundary === 'cycle'
+              ? 'gameModules.results.parentCycle'
+              : 'gameModules.results.parentNotLoaded')}
+          </p>
+        ) : null}
         <RecordFacts facts={root.facts} recordConfidence={root.confidence} />
         <RecordNavigation
           canNavigateRecord={canNavigateRecord}
@@ -132,6 +150,7 @@ function GameModuleResultCard({
         <TechnicalDetails summary={translateLiteral('Technical details')}>
           <code>{root.recordKind}</code>
           <code>{root.recordId}</code>
+          {parentRecordId ? <code>{parentRecordId}</code> : null}
           {root.groupId ? <code>{root.groupId}</code> : null}
         </TechnicalDetails>
       </article>
@@ -147,10 +166,14 @@ function RecordFacts({
   recordConfidence: GameModuleConfidence;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const entries = gameFactEntries(facts, (fact) => {
+    const labelKey = presentationFactLabelKey(fact.label);
+    return labelKey ? t(labelKey) : fact.label;
+  });
   const groups = (['verified', 'derived', 'unknown'] as const)
     .map((confidence) => ({
       confidence,
-      facts: facts.filter((fact) => fact.confidence === confidence)
+      facts: entries.filter(({ fact }) => fact.confidence === confidence)
     }))
     .filter((group) => group.facts.length > 0);
   if (groups.length === 0) return null;
@@ -169,17 +192,16 @@ function RecordFacts({
               </div>
             ) : null}
             <dl>
-              {group.facts.map((fact) => {
+              {group.facts.map(({ fact, key, label }) => {
                 const value = presentFactValue(
                   fact.label,
                   fact.value.displayValue,
                   fact.unit,
                   translateLiteral
                 );
-                const labelKey = presentationFactLabelKey(fact.label);
                 return (
-                  <div key={fact.factId}>
-                    <dt data-localization-ignore="true">{labelKey ? t(labelKey) : fact.label}</dt>
+                  <div key={key}>
+                    <dt data-localization-ignore="true">{label}</dt>
                     <dd data-localization-ignore="true">
                       <span>{value.displayValue}</span>
                       {value.unit ? <small>{value.unit}</small> : null}
@@ -213,6 +235,7 @@ function RecordNavigation({
   if (!record.target) return null;
   return canNavigateRecord(record.target) ? (
     <button
+      aria-label={`${t('gameModules.results.openRecord')}: ${record.title}, ${semanticRecordIdentity(record.target)}`}
       className="secondary-button compact-button km-game-module-record-open"
       onClick={() => onNavigateRecord(record.target!)}
       type="button"
@@ -225,6 +248,62 @@ function RecordNavigation({
       {t('gameModules.results.navigationUnavailable')}
     </p>
   );
+}
+
+function semanticRecordIdentity(record: SemanticExploreRecordRef) {
+  return [
+    record.gameFamily,
+    record.domain,
+    `${record.recordKind.key}@${record.recordKind.schemaVersion}`,
+    record.recordId,
+    record.subrecordId
+  ].filter(Boolean).join(' / ');
+}
+
+function gameFactEntries(
+  facts: readonly GameModuleFact[],
+  labelFor: (fact: GameModuleFact) => string
+) {
+  const entries = facts.map((fact, index) => ({ fact, index, label: labelFor(fact) }));
+  const withField = appendFactDiscriminator(entries, (entry) => entry.fact.fieldKey);
+  const withProvider = appendFactDiscriminator(withField, (entry) => entry.fact.providerId);
+  const withFact = appendFactDiscriminator(withProvider, (entry) => entry.fact.factId);
+  const counts = countFactLabels(withFact.map((entry) => entry.label));
+  const occurrences = new Map<string, number>();
+  return withFact.map((entry) => {
+    const normalized = entry.label.toLocaleLowerCase();
+    const occurrence = (occurrences.get(normalized) ?? 0) + 1;
+    occurrences.set(normalized, occurrence);
+    return {
+      fact: entry.fact,
+      key: `${entry.fact.factId}:${entry.index}`,
+      label: (counts.get(normalized) ?? 0) > 1
+        ? `${entry.label} #${occurrence}`
+        : entry.label
+    };
+  });
+}
+
+function appendFactDiscriminator<T extends { label: string }>(
+  entries: readonly T[],
+  discriminator: (entry: T) => string
+) {
+  const counts = countFactLabels(entries.map((entry) => entry.label));
+  return entries.map((entry) => ({
+    ...entry,
+    label: (counts.get(entry.label.toLocaleLowerCase()) ?? 0) > 1
+      ? `${entry.label} [${discriminator(entry)}]`
+      : entry.label
+  }));
+}
+
+function countFactLabels(labels: readonly string[]) {
+  const counts = new Map<string, number>();
+  for (const label of labels) {
+    const normalized = label.toLocaleLowerCase();
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  return counts;
 }
 
 export function ConfidenceBadge({ confidence }: { confidence: GameModuleConfidence }) {
@@ -242,29 +321,59 @@ export function GameModuleDiagnostics({
   diagnostics: readonly ApiDiagnostic[];
 }) {
   const { t, translateLiteral } = useLocalization();
+  const diagnosticNavigation = useDiagnosticNavigation();
   if (diagnostics.length === 0) return null;
+  const formatMessage = (diagnostic: ApiDiagnostic) => (
+    safeDiagnosticMessage(diagnostic.message)
+      ? formatDiagnosticSummary(diagnostic, translateLiteral, t)
+      : t('gameModules.diagnostics.redacted')
+  );
+  const presentedMessage = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticMessage(diagnostic, diagnostics, formatMessage)
+  );
+  const presentedSeverity = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticSeverity(diagnostic, diagnostics, formatMessage)
+  );
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
+    (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
     (diagnostic) => [
       diagnostic.severity,
-      safeDiagnosticMessage(diagnostic.message) ? diagnostic.message : 'redacted'
+      diagnostic.code,
+      diagnostic.domain,
+      diagnostic.field
     ],
-    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+    (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
+  const primaryAction = [...diagnostics]
+    .sort((left, right) => (
+      diagnosticSeverityPriority(right.severity) - diagnosticSeverityPriority(left.severity)
+    ))
+    .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
+    .find((action) => action !== null);
   return (
     <section aria-labelledby="game-module-diagnostics-title" className="km-game-module-diagnostics">
-      <h3 id="game-module-diagnostics-title">{t('gameModules.diagnostics.title')}</h3>
+      <div className="km-analysis-diagnostic-heading">
+        <h3 id="game-module-diagnostics-title">{t('gameModules.diagnostics.title')}</h3>
+        {primaryAction ? (
+          <button
+            className="secondary-button compact-button"
+            onClick={() => diagnosticNavigation.navigate(primaryAction.location)}
+            type="button"
+          >
+            {t('diagnostics.openAction', {
+              target: translateLiteral(primaryAction.targetLabel)
+            })}
+          </button>
+        ) : null}
+      </div>
       <ul>
         {grouped.slice(0, 50).map(({ count, diagnostics: identities, key }) => {
           const diagnostic = identities[0]!.diagnostic;
           return (
-          <li data-severity={diagnostic.severity} key={key}>
+          <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              {safeDiagnosticMessage(diagnostic.message) ? (
-                <span data-localization-ignore="true">{diagnostic.message}</span>
-              ) : (
-                <span>{t('gameModules.diagnostics.redacted')}</span>
-              )}
+              <span>{presentedMessage(diagnostic)}</span>
               <OccurrenceCount count={count} />
             </span>
             <DiagnosticTechnicalDetails
@@ -296,10 +405,48 @@ function groupRecords(records: readonly GameModuleRecord[]) {
   const roots = records.filter((record) => (
     !record.parentRecordId || !byId.has(record.parentRecordId)
   ));
-  const collect = (recordId: string): GameModuleRecord[] => (
-    (children.get(recordId) ?? []).flatMap((record) => [record, ...collect(record.recordId)])
-  );
-  return roots.map((root) => ({ related: collect(root.recordId), root }));
+  const emitted = new Set<string>();
+  const collect = (root: GameModuleRecord) => {
+    const related: GameModuleRecord[] = [];
+    const pending = [...(children.get(root.recordId) ?? [])].reverse();
+    const visited = new Set([root.recordId]);
+    while (pending.length > 0) {
+      const record = pending.pop()!;
+      if (visited.has(record.recordId) || emitted.has(record.recordId)) continue;
+      visited.add(record.recordId);
+      emitted.add(record.recordId);
+      related.push(record);
+      pending.push(...[...(children.get(record.recordId) ?? [])].reverse());
+    }
+    return related;
+  };
+  const groups: Array<{
+    hierarchyBoundary: 'cycle' | 'missingParent' | null;
+    parentRecordId: string | null;
+    related: GameModuleRecord[];
+    root: GameModuleRecord;
+  }> = [];
+  for (const root of roots) {
+    if (emitted.has(root.recordId)) continue;
+    emitted.add(root.recordId);
+    groups.push({
+      hierarchyBoundary: root.parentRecordId ? 'missingParent' : null,
+      parentRecordId: root.parentRecordId,
+      related: collect(root),
+      root
+    });
+  }
+  for (const record of records) {
+    if (emitted.has(record.recordId)) continue;
+    emitted.add(record.recordId);
+    groups.push({
+      hierarchyBoundary: 'cycle',
+      parentRecordId: record.parentRecordId,
+      related: collect(record),
+      root: record
+    });
+  }
+  return groups;
 }
 
 function relatedRecordTitle(record: GameModuleRecord, root: GameModuleRecord) {

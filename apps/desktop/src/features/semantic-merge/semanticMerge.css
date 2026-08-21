@@ -265,6 +265,36 @@
   gap: 0.7rem;
 }
 
+.km-semantic-merge-result-controls {
+  align-items: end;
+  background: var(--km-merge-surface);
+  border: 1px solid var(--km-merge-border);
+  border-radius: 0.65rem;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(14rem, 2fr) repeat(2, minmax(10rem, 1fr));
+  padding: 0.65rem;
+}
+
+.km-semantic-merge-result-controls label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.km-semantic-merge-result-controls input,
+.km-semantic-merge-result-controls select {
+  min-width: 0;
+  width: 100%;
+}
+
+.km-semantic-merge-selection-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .km-semantic-merge-row > header {
   align-items: flex-start;
   display: flex;
@@ -379,7 +409,8 @@
 
 @container km-semantic-merge (max-width: 760px) {
   .km-semantic-merge-source-grid,
-  .km-semantic-merge-recipe-grid {
+  .km-semantic-merge-recipe-grid,
+  .km-semantic-merge-result-controls {
     grid-template-columns: minmax(0, 1fr);
   }
 

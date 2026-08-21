@@ -16,13 +16,20 @@ import {
 } from '../../bridge/balanceLabContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { useDiagnosticNavigation } from '../../diagnosticActions';
+import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import {
   DiagnosticTechnicalDetails,
   OccurrenceCount,
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
-import { groupDiagnosticsForPresentation } from '../workbench/analysisPresentationUtils';
+import {
+  diagnosticSeverityPriority,
+  groupDiagnosticsForPresentation,
+  presentationDiagnosticMessage,
+  presentationDiagnosticSeverity
+} from '../workbench/analysisPresentationUtils';
 import { BalanceLabResults, ConfidenceBadge } from './BalanceLabResults';
 import type { BalanceLabController, BalanceLabLayer } from './useBalanceLabController';
 import './balanceLab.css';
@@ -192,6 +199,7 @@ export function BalanceLabSection({
 
               <BalanceLabResults
                 findings={findings}
+                key={resultData.queryFingerprint}
                 onNavigateFinding={onNavigateFinding}
                 points={points}
                 study={study}
@@ -346,26 +354,58 @@ function SelectControl({
 
 function DiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
   const { t, translateLiteral } = useLocalization();
+  const diagnosticNavigation = useDiagnosticNavigation();
   if (diagnostics.length === 0) return null;
+  const formatMessage = (diagnostic: ApiDiagnostic) => (
+    safeDiagnosticMessage(diagnostic.message)
+      ? formatDiagnosticSummary(diagnostic, translateLiteral, t)
+      : t('balanceLab.diagnostics.redacted')
+  );
+  const presentedMessage = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticMessage(diagnostic, diagnostics, formatMessage)
+  );
+  const presentedSeverity = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticSeverity(diagnostic, diagnostics, formatMessage)
+  );
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
+    (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
     (diagnostic) => [
       diagnostic.severity,
-      safeDiagnosticMessage(diagnostic.message) ? diagnostic.message : 'redacted'
+      diagnostic.code,
+      diagnostic.domain,
+      diagnostic.field
     ],
-    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+    (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
+  const primaryAction = [...diagnostics]
+    .sort((left, right) => (
+      diagnosticSeverityPriority(right.severity) - diagnosticSeverityPriority(left.severity)
+    ))
+    .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
+    .find((action) => action !== null);
   return (
     <section aria-label={t('balanceLab.diagnostics.title')} className="km-balance-diagnostics">
+      {primaryAction ? (
+        <div className="km-analysis-diagnostic-action">
+          <button
+            className="secondary-button compact-button"
+            onClick={() => diagnosticNavigation.navigate(primaryAction.location)}
+            type="button"
+          >
+            {t('diagnostics.openAction', {
+              target: translateLiteral(primaryAction.targetLabel)
+            })}
+          </button>
+        </div>
+      ) : null}
       <ul>
         {grouped.slice(0, 50).map(({ count, diagnostics: identities, key }) => {
           const diagnostic = identities[0]!.diagnostic;
           return (
-          <li data-severity={diagnostic.severity} key={key}>
+          <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              {safeDiagnosticMessage(diagnostic.message)
-                ? <span data-localization-ignore="true">{diagnostic.message}</span>
-                : <span>{t('balanceLab.diagnostics.redacted')}</span>}
+              <span>{presentedMessage(diagnostic)}</span>
               <OccurrenceCount count={count} />
             </span>
             <DiagnosticTechnicalDetails
