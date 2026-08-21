@@ -385,10 +385,39 @@
 }
 
 .km-guided-selection-actions {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+.km-guided-result-controls {
+  align-items: end;
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.55rem;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  margin-block: 0.65rem;
+  padding: 0.65rem;
+}
+
+.km-guided-result-controls label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.km-guided-result-controls input,
+.km-guided-result-controls select {
+  min-width: 0;
+  width: 100%;
+}
+
+.km-guided-result-controls .km-guided-selection-actions {
+  justify-content: flex-start;
 }
 
 .km-guided-target-list label {

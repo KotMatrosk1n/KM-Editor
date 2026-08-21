@@ -44,13 +44,20 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { useDiagnosticNavigation } from '../../diagnosticActions';
+import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import {
   DiagnosticTechnicalDetails,
   OccurrenceCount,
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
-import { groupDiagnosticsForPresentation } from '../workbench/analysisPresentationUtils';
+import {
+  diagnosticSeverityPriority,
+  groupDiagnosticsForPresentation,
+  presentationDiagnosticMessage,
+  presentationDiagnosticSeverity
+} from '../workbench/analysisPresentationUtils';
 import type {
   GuidedDesignController,
   GuidedDesignQueryError
@@ -623,11 +630,19 @@ function GuidedDesignTargetSelection({
 }) {
   const { t } = useLocalization();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const [targetOrder, setTargetOrder] = useState<'name' | 'record'>('name');
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
   }, [response.proposalId]);
   const exactTargets = [...selectedDiscoveryTargets.values()];
   const isBusy = controller.isQuerying || isChangeSetWorkspaceBusy;
+  const orderedTargets = useMemo(() => [...response.eligibleTargets].sort((left, right) => (
+    targetOrder === 'record'
+      ? formatSemanticRecord(left.record).localeCompare(formatSemanticRecord(right.record)) ||
+        left.recordLabel.localeCompare(right.recordLabel)
+      : left.recordLabel.localeCompare(right.recordLabel) ||
+        formatSemanticRecord(left.record).localeCompare(formatSemanticRecord(right.record))
+  )), [response.eligibleTargets, targetOrder]);
   return (
     <section
       aria-busy={controller.preview.isAppending}
@@ -667,10 +682,50 @@ function GuidedDesignTargetSelection({
       ) ? (
         <p className="km-guided-advisory">{t('guidedDesign.selection.windowCapped')}</p>
       ) : null}
+      <div className="km-guided-result-controls">
+        <label>
+          <span>{t('analysisPresentation.controls.sort')}</span>
+          <select
+            className="km-select-control"
+            onChange={(event) => setTargetOrder(event.currentTarget.value as typeof targetOrder)}
+            value={targetOrder}
+          >
+            <option value="name">{t('analysisPresentation.controls.record')}</option>
+            <option value="record">{t('analysisPresentation.controls.identifier')}</option>
+          </select>
+        </label>
+        <div className="km-guided-selection-actions">
+          <button
+            className="secondary-button compact-button"
+            disabled={isBusy || orderedTargets.length === 0 || (
+              selectedDiscoveryTargets.size >= guidedDesignMaximumTargets
+            )}
+            onClick={() => {
+              const next = new Map(selectedDiscoveryTargets);
+              for (const option of orderedTargets) {
+                if (next.size >= guidedDesignMaximumTargets) break;
+                next.set(semanticRecordKey(option.record), option.record);
+              }
+              onSelectedDiscoveryTargetsChange(next);
+            }}
+            type="button"
+          >
+            {t('analysisPresentation.controls.selectVisible')}
+          </button>
+          <button
+            className="secondary-button compact-button"
+            disabled={isBusy || selectedDiscoveryTargets.size === 0}
+            onClick={() => onSelectedDiscoveryTargetsChange(new Map())}
+            type="button"
+          >
+            {t('guidedDesign.selection.clear')}
+          </button>
+        </div>
+      </div>
       <fieldset>
         <legend>{t('guidedDesign.selection.legend')}</legend>
         <div className="km-guided-target-option-list">
-          {response.eligibleTargets.map((option) => {
+          {orderedTargets.map((option) => {
             const key = semanticRecordKey(option.record);
             const isSelected = selectedDiscoveryTargets.has(key);
             return (
@@ -704,6 +759,7 @@ function GuidedDesignTargetSelection({
                   </span>
                 </label>
                 <OpenRecordButton
+                  accessibleName={`${option.recordLabel}, ${formatSemanticRecord(option.record)}`}
                   canNavigate={canNavigateRecord(option.record)}
                   onNavigate={() => onNavigateRecord(option.record)}
                 />
@@ -716,14 +772,6 @@ function GuidedDesignTargetSelection({
         <p className="km-guided-advisory">{t('guidedDesign.selection.limit')}</p>
       ) : null}
       <div className="km-guided-selection-actions">
-        <button
-          className="secondary-button"
-          disabled={isBusy || selectedDiscoveryTargets.size === 0}
-          onClick={() => onSelectedDiscoveryTargetsChange(new Map())}
-          type="button"
-        >
-          {t('guidedDesign.selection.clear')}
-        </button>
         {response.nextCursor &&
         response.eligibleTargets.length < guidedDesignMaximumEligibleTargetWindow ? (
           <button
@@ -1246,6 +1294,7 @@ function AffectedRecords({
             <li key={semanticRecordKey(record)}>
               <code data-localization-ignore="true">{formatSemanticRecord(record)}</code>
               <OpenRecordButton
+                accessibleName={formatSemanticRecord(record)}
                 canNavigate={canNavigateRecord(record)}
                 onNavigate={() => onNavigateRecord(record)}
               />
@@ -1332,14 +1381,36 @@ function TargetConstraints({
       <small>{selectedRecords.size === 0
         ? t('guidedDesign.targets.returnToSelection')
         : t('guidedDesign.targets.selected', { count: selectedRecords.size })}</small>
-      <button
-        className="secondary-button compact-button"
-        disabled={!selectionChanged || controller.isQuerying || isChangeSetWorkspaceBusy}
-        onClick={rerun}
-        type="button"
-      >
-        {t('guidedDesign.targets.rerun')}
-      </button>
+      <div className="km-guided-selection-actions">
+        <button
+          className="secondary-button compact-button"
+          disabled={
+            controller.isQuerying ||
+            isChangeSetWorkspaceBusy ||
+            selectedRecords.size === candidateRecords.length
+          }
+          onClick={() => setSelectedRecords(new Set(candidateRecords.map(semanticRecordKey)))}
+          type="button"
+        >
+          {t('analysisPresentation.controls.selectVisible')}
+        </button>
+        <button
+          className="secondary-button compact-button"
+          disabled={controller.isQuerying || isChangeSetWorkspaceBusy || selectedRecords.size === 0}
+          onClick={() => setSelectedRecords(new Set())}
+          type="button"
+        >
+          {t('analysisPresentation.controls.clearSelection')}
+        </button>
+        <button
+          className="secondary-button compact-button"
+          disabled={!selectionChanged || controller.isQuerying || isChangeSetWorkspaceBusy}
+          onClick={rerun}
+          type="button"
+        >
+          {t('guidedDesign.targets.rerun')}
+        </button>
+      </div>
     </fieldset>
   );
 }
@@ -1354,12 +1425,65 @@ function Findings({
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
 }) {
   const { t } = useLocalization();
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [resultOrder, setResultOrder] = useState<'severity' | 'title' | 'confidence'>('severity');
+  const severities = useMemo(
+    () => [...new Set(findings.map((finding) => finding.severity))].sort(),
+    [findings]
+  );
+  useEffect(() => {
+    if (severityFilter !== 'all' && !severities.some((severity) => (
+      severity === severityFilter
+    ))) {
+      setSeverityFilter('all');
+    }
+  }, [severities, severityFilter]);
+  const visibleFindings = useMemo(() => [...findings]
+    .filter((finding) => severityFilter === 'all' || finding.severity === severityFilter)
+    .sort((left, right) => {
+      if (resultOrder === 'title') return left.title.localeCompare(right.title);
+      if (resultOrder === 'confidence') {
+        return left.confidence.localeCompare(right.confidence) || left.title.localeCompare(right.title);
+      }
+      return diagnosticSeverityPriority(right.severity) -
+        diagnosticSeverityPriority(left.severity) ||
+        left.title.localeCompare(right.title);
+    }), [findings, resultOrder, severityFilter]);
   return (
     <section aria-labelledby="guided-design-findings-title" className="km-guided-findings">
       <h4 id="guided-design-findings-title">{t('guidedDesign.findings.title')}</h4>
       {findings.length > 0 ? (
+        <div className="km-guided-result-controls">
+          <label>
+            <span>{t('analysisPresentation.controls.status')}</span>
+            <select
+              className="km-select-control"
+              onChange={(event) => setSeverityFilter(event.currentTarget.value)}
+              value={severityFilter}
+            >
+              <option value="all">{t('analysisPresentation.controls.allResults')}</option>
+              {severities.map((severity) => (
+                <option key={severity} value={severity}>{t(`guidedDesign.severity.${severity}`)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t('analysisPresentation.controls.sort')}</span>
+            <select
+              className="km-select-control"
+              onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+              value={resultOrder}
+            >
+              <option value="severity">{t('analysisPresentation.controls.status')}</option>
+              <option value="title">{t('analysisPresentation.controls.record')}</option>
+              <option value="confidence">{t('analysisPresentation.controls.confidence')}</option>
+            </select>
+          </label>
+        </div>
+      ) : null}
+      {findings.length > 0 ? (
         <ul>
-          {findings.map((finding) => (
+          {visibleFindings.map((finding) => (
             <li data-severity={finding.severity} key={finding.findingId}>
               <div>
                 <span>{t(`guidedDesign.severity.${finding.severity}`)}</span>
@@ -1369,6 +1493,7 @@ function Findings({
               <p data-localization-ignore="true">{finding.summary}</p>
               {finding.record ? (
                 <OpenRecordButton
+                  accessibleName={`${finding.title}, ${formatSemanticRecord(finding.record)}`}
                   canNavigate={canNavigateRecord(finding.record)}
                   onNavigate={() => onNavigateRecord(finding.record!)}
                 />
@@ -1377,6 +1502,9 @@ function Findings({
           ))}
         </ul>
       ) : <p>{t('guidedDesign.findings.empty')}</p>}
+      {findings.length > 0 && visibleFindings.length === 0 ? (
+        <p>{t('analysisPresentation.controls.noMatches')}</p>
+      ) : null}
     </section>
   );
 }
@@ -1395,12 +1523,125 @@ function MutationDiff({
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
 }) {
   const { t, translateLiteral } = useLocalization();
-  const groups = groupMutationsByRecord(mutations);
+  const [recordFilter, setRecordFilter] = useState('all');
+  const [fieldFilter, setFieldFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pinned' | 'proposed'>('all');
+  const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'status'>('record');
+  const records = useMemo(() => {
+    const byKey = new Map(mutations.map((mutation) => [
+      semanticRecordKey(mutation.record),
+      { label: mutation.recordLabel, record: mutation.record }
+    ]));
+    const labelCounts = new Map<string, number>();
+    for (const { label } of byKey.values()) {
+      labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+    }
+    return [...byKey].map(([key, value]) => ({
+      key,
+      label: (labelCounts.get(value.label) ?? 0) > 1
+        ? `${value.label} - ${formatSemanticRecord(value.record)}`
+        : value.label
+    })).sort((left, right) => left.label.localeCompare(right.label));
+  }, [mutations]);
+  const fields = useMemo(() => [...new Map(mutations.map((mutation) => [
+    mutation.fieldKey,
+    mutation.fieldLabel
+  ])).entries()].sort((left, right) => left[1].localeCompare(right[1])), [mutations]);
+  useEffect(() => {
+    if (recordFilter !== 'all' && !records.some(({ key }) => key === recordFilter)) {
+      setRecordFilter('all');
+    }
+    if (fieldFilter !== 'all' && !fields.some(([key]) => key === fieldFilter)) {
+      setFieldFilter('all');
+    }
+    if (
+      statusFilter !== 'all' &&
+      !mutations.some((mutation) => (statusFilter === 'pinned') === mutation.pinned)
+    ) setStatusFilter('all');
+  }, [fieldFilter, fields, mutations, recordFilter, records, statusFilter]);
+  const visibleMutations = useMemo(() => [...mutations]
+    .filter((mutation) => (
+      (recordFilter === 'all' || semanticRecordKey(mutation.record) === recordFilter) &&
+      (fieldFilter === 'all' || mutation.fieldKey === fieldFilter) &&
+      (statusFilter === 'all' || (statusFilter === 'pinned') === mutation.pinned)
+    ))
+    .sort((left, right) => {
+      if (resultOrder === 'field') {
+        return left.fieldLabel.localeCompare(right.fieldLabel) ||
+          left.recordLabel.localeCompare(right.recordLabel);
+      }
+      if (resultOrder === 'status') {
+        return Number(right.pinned) - Number(left.pinned) ||
+          left.recordLabel.localeCompare(right.recordLabel);
+      }
+      return left.recordLabel.localeCompare(right.recordLabel) ||
+        left.fieldLabel.localeCompare(right.fieldLabel);
+    }), [fieldFilter, mutations, recordFilter, resultOrder, statusFilter]);
+  const groups = groupMutationsByRecord(visibleMutations);
   return (
     <section aria-labelledby="guided-design-diff-title" className="km-guided-diff">
       <h4 id="guided-design-diff-title">{t('guidedDesign.diff.title')}</h4>
       {mutations.length > 0 ? (
-        <div className="km-guided-table-scroll">
+        <div className="km-guided-result-controls">
+          <label>
+            <span>{t('analysisPresentation.controls.record')}</span>
+            <select
+              className="km-select-control"
+              onChange={(event) => setRecordFilter(event.currentTarget.value)}
+              value={recordFilter}
+            >
+              <option value="all">{t('analysisPresentation.controls.allRecords')}</option>
+              {records.map(({ key, label }) => (
+                <option data-localization-ignore="true" key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t('analysisPresentation.controls.field')}</span>
+            <select
+              className="km-select-control"
+              onChange={(event) => setFieldFilter(event.currentTarget.value)}
+              value={fieldFilter}
+            >
+              <option value="all">{t('analysisPresentation.controls.allFields')}</option>
+              {fields.map(([key, label]) => (
+                <option data-localization-ignore="true" key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t('analysisPresentation.controls.status')}</span>
+            <select
+              className="km-select-control"
+              onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
+              value={statusFilter}
+            >
+              <option value="all">{t('analysisPresentation.controls.allResults')}</option>
+              <option value="pinned">{t('guidedDesign.diff.pinned')}</option>
+              <option value="proposed">{t('guidedDesign.diff.proposed')}</option>
+            </select>
+          </label>
+          <label>
+            <span>{t('analysisPresentation.controls.sort')}</span>
+            <select
+              className="km-select-control"
+              onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+              value={resultOrder}
+            >
+              <option value="record">{t('analysisPresentation.controls.record')}</option>
+              <option value="field">{t('analysisPresentation.controls.field')}</option>
+              <option value="status">{t('analysisPresentation.controls.status')}</option>
+            </select>
+          </label>
+        </div>
+      ) : null}
+      {mutations.length > 0 ? (
+        <div
+          aria-label={t('guidedDesign.diff.title')}
+          className="km-guided-table-scroll"
+          role="region"
+          tabIndex={0}
+        >
           <table>
             <thead>
               <tr>
@@ -1455,6 +1696,9 @@ function MutationDiff({
           </table>
         </div>
       ) : <p>{t('guidedDesign.diff.empty')}</p>}
+      {mutations.length > 0 && visibleMutations.length === 0 ? (
+        <p>{t('analysisPresentation.controls.noMatches')}</p>
+      ) : null}
     </section>
   );
 }
@@ -1484,6 +1728,7 @@ function MutationPinControl({
     return <span className="km-guided-shared-effect">{t('guidedDesign.diff.sharedEffect')}</span>;
   }
   const pinKey = mutationPinKey(mutation.pinRecord, mutation.pinFieldKey);
+  const accessibleMutationName = `${formatSemanticRecord(mutation.pinRecord)}, ${mutation.pinFieldKey}`;
   const isValid = isCanonicalInteger(canonicalValue);
   const isBusy = controller.isQuerying || isChangeSetWorkspaceBusy;
   const pinLimitReached = !existingPin && input.pins.length >= guidedDesignMaximumPins;
@@ -1515,6 +1760,7 @@ function MutationPinControl({
           {t('guidedDesign.diff.pinValue')}
         </span>
         <input
+          aria-label={`${t('guidedDesign.diff.pinValue')}: ${accessibleMutationName}`}
           aria-invalid={!isValid}
           disabled={isBusy}
           maxLength={20}
@@ -1526,6 +1772,7 @@ function MutationPinControl({
         />
       </label>
       <button
+        aria-label={`${existingPin ? t('guidedDesign.diff.updatePin') : t('guidedDesign.diff.pin')}: ${accessibleMutationName}`}
         className="secondary-button compact-button"
         disabled={!isValid || isBusy || pinLimitReached}
         onClick={writePin}
@@ -1535,6 +1782,7 @@ function MutationPinControl({
       </button>
       {existingPin ? (
         <button
+          aria-label={`${t('guidedDesign.diff.unpin')}: ${accessibleMutationName}`}
           className="secondary-button compact-button"
           disabled={isBusy}
           onClick={removePin}
@@ -1652,26 +1900,58 @@ function DiagnosticList({
   diagnostics: readonly ApiDiagnostic[];
 }) {
   const { t, translateLiteral } = useLocalization();
+  const diagnosticNavigation = useDiagnosticNavigation();
   if (diagnostics.length === 0) return null;
+  const formatMessage = (diagnostic: ApiDiagnostic) => (
+    safeDiagnosticMessage(diagnostic.message)
+      ? formatDiagnosticSummary(diagnostic, translateLiteral, t)
+      : t('guidedDesign.diagnostics.redacted')
+  );
+  const presentedMessage = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticMessage(diagnostic, diagnostics, formatMessage)
+  );
+  const presentedSeverity = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticSeverity(diagnostic, diagnostics, formatMessage)
+  );
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
+    (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
     (diagnostic) => [
       diagnostic.severity,
-      safeDiagnosticMessage(diagnostic.message) ? diagnostic.message : 'redacted'
+      diagnostic.code,
+      diagnostic.domain,
+      diagnostic.field
     ],
-    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+    (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
+  const primaryAction = [...diagnostics]
+    .sort((left, right) => (
+      diagnosticSeverityPriority(right.severity) - diagnosticSeverityPriority(left.severity)
+    ))
+    .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
+    .find((action) => action !== null);
   return (
     <section aria-label={t('guidedDesign.diagnostics.title')} className="km-guided-diagnostics">
+      {primaryAction ? (
+        <div className="km-analysis-diagnostic-action">
+          <button
+            className="secondary-button compact-button"
+            onClick={() => diagnosticNavigation.navigate(primaryAction.location)}
+            type="button"
+          >
+            {t('diagnostics.openAction', {
+              target: translateLiteral(primaryAction.targetLabel)
+            })}
+          </button>
+        </div>
+      ) : null}
       <ul>
         {grouped.slice(0, 50).map(({ count, diagnostics: identities, key }) => {
           const diagnostic = identities[0]!.diagnostic;
           return (
-          <li data-severity={diagnostic.severity} key={key}>
+          <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              {safeDiagnosticMessage(diagnostic.message)
-                ? <span data-localization-ignore="true">{diagnostic.message}</span>
-                : <span>{t('guidedDesign.diagnostics.redacted')}</span>}
+              <span>{presentedMessage(diagnostic)}</span>
               <OccurrenceCount count={count} />
             </span>
             <DiagnosticTechnicalDetails
@@ -1706,15 +1986,18 @@ function SummaryValue({
 }
 
 function OpenRecordButton({
+  accessibleName,
   canNavigate,
   onNavigate
 }: {
+  accessibleName: string;
   canNavigate: boolean;
   onNavigate: () => void;
 }) {
   const { t } = useLocalization();
   return (
     <button
+      aria-label={`${t('guidedDesign.navigation.open')}: ${accessibleName}`}
       className="secondary-button compact-button"
       disabled={!canNavigate}
       onClick={onNavigate}
@@ -1741,6 +2024,7 @@ function MutationOpenRecordButton({
   const destination = guidedDesignMutationNavigationRecord(record, fieldKey);
   return (
     <OpenRecordButton
+      accessibleName={`${formatSemanticRecord(destination ?? record)}, ${fieldKey}`}
       canNavigate={destination !== null && canNavigateRecord(destination)}
       onNavigate={() => {
         if (destination) onNavigateRecord(destination);
@@ -1994,7 +2278,8 @@ function isCanonicalInteger(value: string | null): value is string {
 
 function formatSemanticRecord(record: SemanticExploreRecordRef) {
   const child = record.subrecordId ? ` / ${record.subrecordId}` : '';
-  return `${record.domain} / ${record.recordKind.key}:${record.recordId}${child}`;
+  return `${record.gameFamily} / ${record.domain} / ` +
+    `${record.recordKind.key}@${record.recordKind.schemaVersion}:${record.recordId}${child}`;
 }
 
 function safeDiagnosticMessage(message: string) {

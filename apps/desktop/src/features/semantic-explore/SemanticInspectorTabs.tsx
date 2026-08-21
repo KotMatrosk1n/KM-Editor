@@ -230,11 +230,13 @@ function InspectorReferences({
                     {direction === 'incoming' ? reference.sourceTitle : reference.targetTitle}
                   </strong>
                   <small>{reference.relationshipLabel}</small>
+                  <small>{semanticInspectorRecordIdentity(relatedRecord)}</small>
                 </span>
                 <small>
                   {t(`semanticExplore.coverage.confidence.${reference.confidence}`)}
                 </small>
                 <button
+                  aria-label={`${t('semanticExplore.entity.openEditor')}: ${semanticInspectorRecordIdentity(relatedRecord)}`}
                   className="secondary-button compact-button"
                   onClick={() => onNavigateEntity(relatedRecord)}
                   type="button"
@@ -313,10 +315,12 @@ function InspectorOwnership({
           <li key={node.nodeId}>
             <span data-localization-ignore="true">
               <strong>{node.label}</strong>
+              {node.record ? <small>{semanticInspectorRecordIdentity(node.record)}</small> : null}
             </span>
             <small>{t(`semanticExplore.ownership.node.${node.kind}`)}</small>
             {node.record ? (
               <button
+                aria-label={`${t('semanticExplore.entity.openEditor')}: ${node.label}, ${semanticInspectorRecordIdentity(node.record)}`}
                 className="secondary-button compact-button"
                 onClick={() => onNavigateEntity(node.record!)}
                 type="button"
@@ -441,4 +445,14 @@ function matchingRecordCount(
 ) {
   const key = semanticRecordRefKey(record);
   return differences.filter((difference) => semanticRecordRefKey(difference.record) === key).length;
+}
+
+function semanticInspectorRecordIdentity(record: SemanticExploreRecordRef) {
+  return [
+    record.gameFamily,
+    record.domain,
+    `${record.recordKind.key}@${record.recordKind.schemaVersion}`,
+    record.recordId,
+    record.subrecordId
+  ].filter(Boolean).join(' / ');
 }

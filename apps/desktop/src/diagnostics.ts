@@ -67,6 +67,8 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-OUTPUT-SUPPORT-REPORT-REDACTED': 'outputSafety.diagnostic.supportRedacted',
   'KM-OUTPUT-UNKNOWN-TARGET-STATE': 'outputSafety.diagnostic.unknownTarget',
   'KM-OUTPUT-UNSAFE-PATH': 'outputSafety.diagnostic.unsafePath',
+  'KM-PROJECT-OUTPUT-MISSING': 'outputSafety.diagnostic.outputRootMissing',
+  'KM-PROJECT-OUTPUT-NOT-CONFIGURED': 'outputSafety.diagnostic.outputRootNotConfigured',
   'KM-PROJECT-RELOCATION-CONFLICT': 'outputSafety.diagnostic.relocationConflict',
   'KM-PROJECT-RELOCATION-MISMATCH': 'outputSafety.diagnostic.relocationMismatch',
   'KM-PROJECT-RELOCATION-REVIEWED': 'outputSafety.diagnostic.relocationReviewed'
@@ -77,12 +79,8 @@ export function formatDiagnosticMessage(
   translateLiteral: DiagnosticTranslator = identityTranslator,
   translateKey?: DiagnosticKeyTranslator
 ) {
-  const localizedCodeMessage = translateKey && diagnostic.code
-    ? translateDiagnosticCode(diagnostic.code, translateKey)
-    : null;
-  const message = normalizeSentence(
-    localizedCodeMessage ?? translateLiteral(diagnostic.message)
-  );
+  const localizedCodeMessage = localizedDiagnosticCodeMessage(diagnostic, translateKey);
+  const message = formatDiagnosticSummary(diagnostic, translateLiteral, translateKey);
 
   // Stable output and relocation codes intentionally replace raw backend prose in normal UI.
   // The code itself remains visible in Diagnostics for technical support.
@@ -110,6 +108,26 @@ export function formatDiagnosticMessage(
   ].filter((detail): detail is string => detail !== null);
 
   return `${message} ${details.join(' ')}`;
+}
+
+export function formatDiagnosticSummary(
+  diagnostic: ApiDiagnostic,
+  translateLiteral: DiagnosticTranslator = identityTranslator,
+  translateKey?: DiagnosticKeyTranslator
+) {
+  return normalizeSentence(
+    localizedDiagnosticCodeMessage(diagnostic, translateKey) ??
+      translateLiteral(diagnostic.message)
+  );
+}
+
+function localizedDiagnosticCodeMessage(
+  diagnostic: ApiDiagnostic,
+  translateKey?: DiagnosticKeyTranslator
+) {
+  return translateKey && diagnostic.code
+    ? translateDiagnosticCode(diagnostic.code, translateKey)
+    : null;
 }
 
 function translateDiagnosticCode(code: string, translateKey: DiagnosticKeyTranslator) {

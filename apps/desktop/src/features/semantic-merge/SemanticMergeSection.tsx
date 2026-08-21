@@ -46,6 +46,8 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { useDiagnosticNavigation } from '../../diagnosticActions';
+import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import {
   DiagnosticTechnicalDetails,
@@ -53,8 +55,11 @@ import {
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
 import {
+  diagnosticSeverityPriority,
   groupDiagnosticsForPresentation,
-  humanizeIdentifier
+  humanizeIdentifier,
+  presentationDiagnosticMessage,
+  presentationDiagnosticSeverity
 } from '../workbench/analysisPresentationUtils';
 import type { ExpectedImportedScalarEdit } from '../change-sets/useChangeSetWorkspaceController';
 import type { SemanticMergeChangeSetOption } from './SemanticMergeRuntime';
@@ -619,7 +624,18 @@ function MergeSurface({
             <TargetDiscovery
               disabled={isBlocked}
               loading={controller.mergePreview.isAppending}
+              onClear={() => setSelectedRows(new Map())}
               onLoadMore={controller.loadMoreMerge}
+              onSelectVisible={(rows) => setSelectedRows((current) => {
+                const next = new Map(current);
+                const domain = selectedDomain ?? rows[0]?.target.record.domain ?? null;
+                for (const row of rows) {
+                  if (next.size >= semanticMergeMaximumTargets) break;
+                  if (domain === null || row.target.record.domain !== domain) continue;
+                  next.set(semanticMergeContractKeys.fieldRefKey(row.target), row);
+                }
+                return next;
+              })}
               onToggle={toggleTarget}
               preview={preview}
               selectedDomain={selectedDomain}
@@ -759,12 +775,21 @@ function SourcePicker({
           : 'semanticMerge.source.empty')}</span>
       )}
       <div>
-        <button disabled={disabled} onClick={onPick} type="button">
+        <button
+          aria-label={`${t(loaded ? 'semanticMerge.source.replace' : 'semanticMerge.source.choose')}: ${label}`}
+          disabled={disabled}
+          onClick={onPick}
+          type="button"
+        >
           <FolderOpen aria-hidden="true" size={16} />
           {t(loaded ? 'semanticMerge.source.replace' : 'semanticMerge.source.choose')}
         </button>
         {loaded ? (
-          <button aria-label={t('semanticMerge.source.clear')} onClick={onClear} type="button">
+          <button
+            aria-label={`${t('semanticMerge.source.clear')}: ${label}`}
+            onClick={onClear}
+            type="button"
+          >
             <Trash2 aria-hidden="true" size={16} />
           </button>
         ) : null}
@@ -800,7 +825,7 @@ function SelectedTargets({
               {row.recordLabel} · {row.fieldLabel} · {formatRecordRef(row.target.record)}
             </span>
             <button
-              aria-label={t('semanticMerge.targets.remove')}
+              aria-label={`${t('semanticMerge.targets.remove')}: ${row.recordLabel}, ${row.fieldLabel} (${row.target.fieldKey}), ${formatRecordRef(row.target.record)}`}
               onClick={() => onRemove(row)}
               type="button"
             >
@@ -816,7 +841,9 @@ function SelectedTargets({
 function TargetDiscovery({
   disabled,
   loading,
+  onClear,
   onLoadMore,
+  onSelectVisible,
   onToggle,
   preview,
   selectedDomain,
@@ -824,13 +851,38 @@ function TargetDiscovery({
 }: {
   disabled: boolean;
   loading: boolean;
+  onClear: () => void;
   onLoadMore: () => Promise<void>;
+  onSelectVisible: (rows: readonly SemanticMergeRow[]) => void;
   onToggle: (row: SemanticMergeRow, checked: boolean) => void;
   preview: NonNullable<SemanticMergeController['mergePreview']['data']>;
   selectedDomain: string | null;
   selectedKeys: ReadonlySet<string>;
 }) {
   const { t } = useLocalization();
+  const [fieldFilter, setFieldFilter] = useState('all');
+  const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'state'>('record');
+  const fieldKeys = useMemo(
+    () => [...new Set(preview.rows.map((row) => row.target.fieldKey))].sort(),
+    [preview.rows]
+  );
+  useEffect(() => {
+    if (fieldFilter !== 'all' && !fieldKeys.includes(fieldFilter)) setFieldFilter('all');
+  }, [fieldFilter, fieldKeys]);
+  const visibleRows = useMemo(() => [...preview.rows]
+    .filter((row) => fieldFilter === 'all' || row.target.fieldKey === fieldFilter)
+    .sort((left, right) => {
+      if (resultOrder === 'field') {
+        return left.fieldLabel.localeCompare(right.fieldLabel) ||
+          left.recordLabel.localeCompare(right.recordLabel);
+      }
+      if (resultOrder === 'state') {
+        return left.state.localeCompare(right.state) ||
+          left.recordLabel.localeCompare(right.recordLabel);
+      }
+      return left.recordLabel.localeCompare(right.recordLabel) ||
+        left.fieldLabel.localeCompare(right.fieldLabel);
+    }), [fieldFilter, preview.rows, resultOrder]);
   return (
     <section aria-labelledby="semantic-merge-target-results" className="km-semantic-merge-discovery">
       <div className="km-semantic-merge-section-heading">
@@ -842,8 +894,55 @@ function TargetDiscovery({
         </div>
       </div>
       {preview.targetWindowCapped ? <p>{t('semanticMerge.targets.windowCapped')}</p> : null}
+      <div className="km-semantic-merge-result-controls">
+        <label>
+          <span>{t('analysisPresentation.controls.field')}</span>
+          <select
+            className="km-select-control"
+            onChange={(event) => setFieldFilter(event.currentTarget.value)}
+            value={fieldFilter}
+          >
+            <option value="all">{t('analysisPresentation.controls.allFields')}</option>
+            {fieldKeys.map((fieldKey) => (
+              <option data-localization-ignore="true" key={fieldKey} value={fieldKey}>
+                {humanizeIdentifier(fieldKey)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{t('analysisPresentation.controls.sort')}</span>
+          <select
+            className="km-select-control"
+            onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+            value={resultOrder}
+          >
+            <option value="record">{t('analysisPresentation.controls.record')}</option>
+            <option value="field">{t('analysisPresentation.controls.field')}</option>
+            <option value="state">{t('analysisPresentation.controls.status')}</option>
+          </select>
+        </label>
+        <div className="km-semantic-merge-selection-actions">
+          <button
+            className="secondary-button compact-button"
+            disabled={disabled || visibleRows.length === 0 || selectedKeys.size >= semanticMergeMaximumTargets}
+            onClick={() => onSelectVisible(visibleRows)}
+            type="button"
+          >
+            {t('analysisPresentation.controls.selectVisible')}
+          </button>
+          <button
+            className="secondary-button compact-button"
+            disabled={disabled || selectedKeys.size === 0}
+            onClick={onClear}
+            type="button"
+          >
+            {t('semanticMerge.targets.clear')}
+          </button>
+        </div>
+      </div>
       <ul className="km-semantic-merge-target-list">
-        {preview.rows.map((row) => {
+        {visibleRows.map((row) => {
           const key = semanticMergeContractKeys.fieldRefKey(row.target);
           const checked = selectedKeys.has(key);
           const wrongDomain = selectedDomain !== null && selectedDomain !== row.target.record.domain;
@@ -904,10 +1003,86 @@ function MergeRows({
   rows: readonly SemanticMergeRow[];
 }) {
   const { t, translateLiteral } = useLocalization();
-  const groups = groupMergeRows(rows);
+  const [resultFilter, setResultFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'state'>('record');
+  const states = useMemo(
+    () => [...new Set(rows.map((row) => row.state))].sort(),
+    [rows]
+  );
+  useEffect(() => {
+    if (stateFilter !== 'all' && !states.some((state) => state === stateFilter)) {
+      setStateFilter('all');
+    }
+  }, [stateFilter, states]);
+  const visibleRows = useMemo(() => {
+    const normalizedFilter = resultFilter.trim().toLocaleLowerCase();
+    return [...rows]
+      .filter((row) => (
+        (stateFilter === 'all' || row.state === stateFilter) &&
+        (
+          !normalizedFilter ||
+          row.recordLabel.toLocaleLowerCase().includes(normalizedFilter) ||
+          row.fieldLabel.toLocaleLowerCase().includes(normalizedFilter) ||
+          formatRecordRef(row.target.record).toLocaleLowerCase().includes(normalizedFilter)
+        )
+      ))
+      .sort((left, right) => {
+        if (resultOrder === 'field') {
+          return left.fieldLabel.localeCompare(right.fieldLabel) ||
+            left.recordLabel.localeCompare(right.recordLabel);
+        }
+        if (resultOrder === 'state') {
+          return left.state.localeCompare(right.state) ||
+            left.recordLabel.localeCompare(right.recordLabel);
+        }
+        return left.recordLabel.localeCompare(right.recordLabel) ||
+          left.fieldLabel.localeCompare(right.fieldLabel);
+      });
+  }, [resultFilter, resultOrder, rows, stateFilter]);
+  const groups = groupMergeRows(visibleRows);
   return (
-    <div className="km-semantic-merge-rows">
-      {groups.map((group) => (
+    <>
+      <div className="km-semantic-merge-result-controls">
+        <label>
+          <span>{t('analysisPresentation.controls.filter')}</span>
+          <input
+            onChange={(event) => setResultFilter(event.currentTarget.value)}
+            type="search"
+            value={resultFilter}
+          />
+        </label>
+        <label>
+          <span>{t('analysisPresentation.controls.status')}</span>
+          <select
+            className="km-select-control"
+            onChange={(event) => setStateFilter(event.currentTarget.value)}
+            value={stateFilter}
+          >
+            <option value="all">{t('analysisPresentation.controls.allResults')}</option>
+            {states.map((state) => (
+              <option key={state} value={state}>{t(`semanticMerge.row.state.${state}`)}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{t('analysisPresentation.controls.sort')}</span>
+          <select
+            className="km-select-control"
+            onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+            value={resultOrder}
+          >
+            <option value="record">{t('analysisPresentation.controls.record')}</option>
+            <option value="field">{t('analysisPresentation.controls.field')}</option>
+            <option value="state">{t('analysisPresentation.controls.status')}</option>
+          </select>
+        </label>
+      </div>
+      {groups.length === 0 ? (
+        <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
+      ) : null}
+      <div className="km-semantic-merge-rows">
+        {groups.map((group) => (
         <article className="km-semantic-merge-row" key={group.key}>
           <header>
             <div data-localization-ignore="true">
@@ -918,6 +1093,7 @@ function MergeRows({
             </div>
             <div>
               <button
+                aria-label={`${t('semanticMerge.row.open')}: ${formatRecordRef(group.rows[0]!.target.record)}, ${group.rows.map((row) => row.target.fieldKey).join(', ')}`}
                 disabled={!canNavigateRecord(group.rows[0]!.target.record)}
                 onClick={() => onNavigateRecord(group.rows[0]!.target.record)}
                 type="button"
@@ -981,8 +1157,9 @@ function MergeRows({
             ))}
           </div>
         </article>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -1029,6 +1206,11 @@ function RecipeSurface({
   const [recipeChangeSetName, setRecipeChangeSetName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState(false);
+  const [compatibilityFilter, setCompatibilityFilter] = useState('all');
+  const [compatibilitySearch, setCompatibilitySearch] = useState('');
+  const [compatibilityOrder, setCompatibilityOrder] = useState<
+    'record' | 'field' | 'state'
+  >('record');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isMountedRef = useRef(true);
   const fileReadGenerationRef = useRef(0);
@@ -1104,6 +1286,43 @@ function RecipeSurface({
     recipeChangeSetName.trim().length <= semanticMergeMaximumChangeSetNameLength &&
     safeDiagnosticMessage(recipeChangeSetName.trim()) !== null
   );
+  const compatibleStates = useMemo(
+    () => [...new Set(preview?.compatibility.map((row) => row.state) ?? [])].sort(),
+    [preview?.compatibility]
+  );
+  useEffect(() => {
+    if (
+      compatibilityFilter !== 'all' &&
+      !compatibleStates.some((state) => state === compatibilityFilter)
+    ) setCompatibilityFilter('all');
+  }, [compatibilityFilter, compatibleStates]);
+  useEffect(() => {
+    controller.clearExport();
+  }, [controller.clearExport, exportName, selectedRootIds]);
+  const visibleCompatibility = useMemo(() => {
+    const normalizedSearch = compatibilitySearch.trim().toLocaleLowerCase();
+    return [...(preview?.compatibility ?? [])]
+      .filter((row) => (
+        (compatibilityFilter === 'all' || row.state === compatibilityFilter) &&
+        (
+          !normalizedSearch ||
+          formatRecordRef(row.target.record).toLocaleLowerCase().includes(normalizedSearch) ||
+          row.target.fieldKey.toLocaleLowerCase().includes(normalizedSearch)
+        )
+      ))
+      .sort((left, right) => {
+        if (compatibilityOrder === 'field') {
+          return left.target.fieldKey.localeCompare(right.target.fieldKey) ||
+            formatRecordRef(left.target.record).localeCompare(formatRecordRef(right.target.record));
+        }
+        if (compatibilityOrder === 'state') {
+          return left.state.localeCompare(right.state) ||
+            formatRecordRef(left.target.record).localeCompare(formatRecordRef(right.target.record));
+        }
+        return formatRecordRef(left.target.record).localeCompare(formatRecordRef(right.target.record)) ||
+          left.target.fieldKey.localeCompare(right.target.fieldKey);
+      });
+  }, [compatibilityFilter, compatibilityOrder, compatibilitySearch, preview?.compatibility]);
 
   const exportRecipe = async () => {
     if (!canExport) return;
@@ -1261,6 +1480,33 @@ function RecipeSurface({
                   </label>
                 ))}
               </div>
+              <div className="km-semantic-merge-selection-actions">
+                <button
+                  className="secondary-button compact-button"
+                  disabled={busy || availableSets.every((changeSet) => (
+                    recipeExportEligibility(changeSet, exportCapability) !== 'eligible' ||
+                    selectedRootIds.has(changeSet.changeSetId)
+                  ))}
+                  onClick={() => setSelectedRootIds(new Set(
+                    availableSets
+                      .filter((changeSet) => (
+                        recipeExportEligibility(changeSet, exportCapability) === 'eligible'
+                      ))
+                      .map((changeSet) => changeSet.changeSetId)
+                  ))}
+                  type="button"
+                >
+                  {t('analysisPresentation.controls.selectVisible')}
+                </button>
+                <button
+                  className="secondary-button compact-button"
+                  disabled={busy || selectedRootIds.size === 0}
+                  onClick={() => setSelectedRootIds(new Set())}
+                  type="button"
+                >
+                  {t('semanticMerge.targets.clear')}
+                </button>
+              </div>
               <p>{t('semanticMerge.recipes.export.closure')
                 .replace('{count}', String(selectedClosure.ids.length))}</p>
               {!selectedClosure.valid || selectedClosure.ids.length > kmRecipeMaximumSteps ? (
@@ -1361,7 +1607,47 @@ function RecipeSurface({
             </dl>
           </div>
           <div className="km-semantic-merge-rows">
-            {preview.compatibility.map((row) => (
+            <div className="km-semantic-merge-result-controls">
+              <label>
+                <span>{t('analysisPresentation.controls.filter')}</span>
+                <input
+                  onChange={(event) => setCompatibilitySearch(event.currentTarget.value)}
+                  type="search"
+                  value={compatibilitySearch}
+                />
+              </label>
+              <label>
+                <span>{t('analysisPresentation.controls.status')}</span>
+                <select
+                  className="km-select-control"
+                  onChange={(event) => setCompatibilityFilter(event.currentTarget.value)}
+                  value={compatibilityFilter}
+                >
+                  <option value="all">{t('analysisPresentation.controls.allResults')}</option>
+                  {compatibleStates.map((state) => (
+                    <option key={state} value={state}>{t(`semanticMerge.recipe.state.${state}`)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>{t('analysisPresentation.controls.sort')}</span>
+                <select
+                  className="km-select-control"
+                  onChange={(event) => setCompatibilityOrder(
+                    event.currentTarget.value as typeof compatibilityOrder
+                  )}
+                  value={compatibilityOrder}
+                >
+                  <option value="record">{t('analysisPresentation.controls.record')}</option>
+                  <option value="field">{t('analysisPresentation.controls.field')}</option>
+                  <option value="state">{t('analysisPresentation.controls.status')}</option>
+                </select>
+              </label>
+            </div>
+            {visibleCompatibility.length === 0 ? (
+              <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
+            ) : null}
+            {visibleCompatibility.map((row) => (
               <article className={`km-semantic-merge-row is-${row.state}`} key={row.rowId}>
                 <header>
                   <div data-localization-ignore="true">
@@ -1371,6 +1657,7 @@ function RecipeSurface({
                   <div>
                     <span>{t(`semanticMerge.recipe.state.${row.state}`)}</span>
                     <button
+                      aria-label={`${t('semanticMerge.row.open')}: ${formatRecordRef(row.target.record)}, ${row.target.fieldKey}`}
                       disabled={!canNavigateRecord(row.target.record)}
                       onClick={() => onNavigateRecord(row.target.record)}
                       type="button"
@@ -1522,28 +1809,60 @@ function ScalarValue({ label, value }: { label: string; value: string | undefine
 
 function Diagnostics({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
   const { t, translateLiteral } = useLocalization();
+  const diagnosticNavigation = useDiagnosticNavigation();
   if (diagnostics.length === 0) return null;
+  const formatMessage = (diagnostic: ApiDiagnostic) => {
+    const message = safeDiagnosticMessage(diagnostic.message);
+    return message
+      ? formatDiagnosticSummary(diagnostic, translateLiteral, t)
+      : t('semanticMerge.diagnostics.redacted');
+  };
+  const presentedMessage = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticMessage(diagnostic, diagnostics, formatMessage)
+  );
+  const presentedSeverity = (diagnostic: ApiDiagnostic) => (
+    presentationDiagnosticSeverity(diagnostic, diagnostics, formatMessage)
+  );
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
+    (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
     (diagnostic) => [
       diagnostic.severity,
-      safeDiagnosticMessage(diagnostic.message) ?? 'redacted'
+      diagnostic.code,
+      diagnostic.domain,
+      diagnostic.field
     ],
-    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+    (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
+  const primaryAction = [...diagnostics]
+    .sort((left, right) => (
+      diagnosticSeverityPriority(right.severity) - diagnosticSeverityPriority(left.severity)
+    ))
+    .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
+    .find((action) => action !== null);
   return (
     <section aria-label={t('semanticMerge.diagnostics.title')} className="km-semantic-merge-diagnostics">
-      <h4>{t('semanticMerge.diagnostics.title')}</h4>
+      <div className="km-analysis-diagnostic-heading">
+        <h4>{t('semanticMerge.diagnostics.title')}</h4>
+        {primaryAction ? (
+          <button
+            className="secondary-button compact-button"
+            onClick={() => diagnosticNavigation.navigate(primaryAction.location)}
+            type="button"
+          >
+            {t('diagnostics.openAction', {
+              target: translateLiteral(primaryAction.targetLabel)
+            })}
+          </button>
+        ) : null}
+      </div>
       <ul>
         {grouped.map(({ count, diagnostics: identities, key }) => {
           const diagnostic = identities[0]!.diagnostic;
-          const message = safeDiagnosticMessage(diagnostic.message);
           return (
-          <li data-severity={diagnostic.severity} key={key}>
+          <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              {message ? (
-                <span data-localization-ignore="true">{message}</span>
-              ) : t('semanticMerge.diagnostics.redacted')}
+              <span>{presentedMessage(diagnostic)}</span>
               <OccurrenceCount count={count} />
             </span>
             <DiagnosticTechnicalDetails

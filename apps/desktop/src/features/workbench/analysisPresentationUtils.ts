@@ -15,7 +15,8 @@ export type PresentedDiagnosticGroup<T> = {
 export function groupDiagnosticsForPresentation<T>(
   diagnostics: readonly T[],
   visibleIdentity: (diagnostic: T) => readonly (string | null | undefined)[],
-  technicalIdentity: (diagnostic: T) => readonly (string | null | undefined)[]
+  technicalIdentity: (diagnostic: T) => readonly (string | null | undefined)[],
+  priority: (diagnostic: T) => number = () => 0
 ): PresentedDiagnosticGroup<T>[] {
   const groups = new Map<string, {
     count: number;
@@ -35,11 +36,85 @@ export function groupDiagnosticsForPresentation<T>(
     if (existing) existing.count += 1;
     else group.diagnostics.set(technicalKey, { count: 1, diagnostic, key: technicalKey });
   }
-  return [...groups.values()].map((group) => ({
-    count: group.count,
-    diagnostics: [...group.diagnostics.values()],
-    key: group.key
-  }));
+  return [...groups.values()]
+    .map((group) => ({
+      count: group.count,
+      diagnostics: [...group.diagnostics.values()].sort((left, right) => (
+        priority(right.diagnostic) - priority(left.diagnostic) || left.key.localeCompare(right.key)
+      )),
+      key: group.key
+    }))
+    .sort((left, right) => (
+      priority(right.diagnostics[0]!.diagnostic) - priority(left.diagnostics[0]!.diagnostic)
+    ));
+}
+
+type PresentableDiagnostic = {
+  code?: string | null;
+  domain?: string | null;
+  field?: string | null;
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+};
+
+const owningWorkflowSummaryMessages = new Set([
+  'The owning workflow reported a diagnostic while preparing this read-only analysis.',
+  'The owning workflow reported a diagnostic while preparing this read-only module.'
+]);
+
+export function diagnosticSeverityPriority(severity: PresentableDiagnostic['severity']) {
+  switch (severity) {
+    case 'error':
+      return 3;
+    case 'warning':
+      return 2;
+    case 'info':
+      return 1;
+  }
+}
+
+export function presentationDiagnosticMessage<T extends PresentableDiagnostic>(
+  diagnostic: T,
+  diagnostics: readonly T[],
+  formatMessage: (value: T) => string
+) {
+  const candidates = presentationDiagnosticCandidates(diagnostic, diagnostics, formatMessage);
+  return candidates
+    ? formatMessage(candidates[0]!)
+    : formatMessage(diagnostic);
+}
+
+export function presentationDiagnosticSeverity<T extends PresentableDiagnostic>(
+  diagnostic: T,
+  diagnostics: readonly T[],
+  formatMessage: (value: T) => string
+) {
+  const candidates = presentationDiagnosticCandidates(diagnostic, diagnostics, formatMessage);
+  return candidates
+    ? [...candidates].sort((left, right) => (
+        diagnosticSeverityPriority(right.severity) - diagnosticSeverityPriority(left.severity)
+      ))[0]!.severity
+    : diagnostic.severity;
+}
+
+function presentationDiagnosticCandidates<T extends PresentableDiagnostic>(
+  diagnostic: T,
+  diagnostics: readonly T[],
+  formatMessage: (value: T) => string
+) {
+  if (
+    diagnostic.code ||
+    diagnostic.field ||
+    !owningWorkflowSummaryMessages.has(diagnostic.message.trim())
+  ) return null;
+
+  const candidates = diagnostics.filter((candidate) => (
+    candidate.domain === diagnostic.domain &&
+    owningWorkflowSummaryMessages.has(candidate.message.trim()) &&
+    (candidate.code || candidate.field)
+  ));
+  const actionableMessages = new Set(candidates.map(formatMessage));
+  return actionableMessages.size === 1 ? candidates : null;
 }
 
 function normalizedIdentity(values: readonly (string | null | undefined)[]) {

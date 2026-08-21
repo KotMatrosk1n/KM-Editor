@@ -59,6 +59,9 @@ export type SemanticExploreControllerSnapshot = {
   ownership: SemanticQueryState<SemanticExploreOwnershipPage>;
   references: SemanticQueryState<SemanticExploreReferencesPage>;
   search: SemanticQueryState<SemanticExploreSearchPage>;
+  submittedChangesSpec: SemanticChangesOptions | null;
+  submittedComparisonSpec: SemanticSubmittedComparisonSpec | null;
+  submittedOwnershipSpec: { record?: SemanticExploreRecordRef } | null;
 };
 
 export type SemanticExploreController = SemanticExploreControllerSnapshot & {
@@ -123,7 +126,17 @@ export type SemanticChangesOptions = {
   to: 'layered' | 'pending';
 };
 
-type SlotName = Exclude<keyof SemanticExploreControllerSnapshot, 'isQuerying'>;
+export type SemanticSubmittedComparisonSpec =
+  | ({ kind: 'internal' } & SemanticCompareOptions)
+  | ({ kind: 'external' } & Omit<SemanticExternalCompareOptions, 'externalRootPath'>);
+
+type SlotName = Exclude<
+  keyof SemanticExploreControllerSnapshot,
+  | 'isQuerying'
+  | 'submittedChangesSpec'
+  | 'submittedComparisonSpec'
+  | 'submittedOwnershipSpec'
+>;
 type RequestToken = { epoch: number; id: number; slot: SlotName; slotGeneration: number };
 type DetachedRequestToken = { cancellationGeneration: number; epoch: number; id: number };
 
@@ -153,7 +166,10 @@ function emptySnapshot(): SemanticExploreControllerSnapshot {
     isQuerying: false,
     ownership: idleState(),
     references: idleState(),
-    search: idleState()
+    search: idleState(),
+    submittedChangesSpec: null,
+    submittedComparisonSpec: null,
+    submittedOwnershipSpec: null
   };
 }
 
@@ -363,6 +379,10 @@ class SemanticExploreControllerStore {
     this.externalComparedModInstanceId = null;
     this.clearSlot('externalComparison');
     this.compareSpec = options;
+    this.snapshot = {
+      ...this.snapshot,
+      submittedComparisonSpec: { kind: 'internal', ...options }
+    };
     await this.runComparison(false);
   }
 
@@ -390,6 +410,10 @@ class SemanticExploreControllerStore {
 
   public async getOwnership(record?: SemanticExploreRecordRef) {
     this.ownershipSpec = { ...(record ? { record } : {}) };
+    this.snapshot = {
+      ...this.snapshot,
+      submittedOwnershipSpec: { ...(record ? { record } : {}) }
+    };
     await this.runOwnership(false);
   }
 
@@ -401,6 +425,14 @@ class SemanticExploreControllerStore {
     this.compareSpec = null;
     this.clearSlot('comparison');
     this.externalSpec = { left: options.left, ...(options.record ? { record: options.record } : {}) };
+    this.snapshot = {
+      ...this.snapshot,
+      submittedComparisonSpec: {
+        kind: 'external',
+        left: options.left,
+        ...(options.record ? { record: options.record } : {})
+      }
+    };
     this.externalComparedModInstanceId = null;
     return this.runInitialExternalComparison(options.externalRootPath);
   }
@@ -411,6 +443,7 @@ class SemanticExploreControllerStore {
 
   public async getSemanticChanges(options: SemanticChangesOptions) {
     this.changesSpec = options;
+    this.snapshot = { ...this.snapshot, submittedChangesSpec: options };
     await this.runChanges(false);
   }
 

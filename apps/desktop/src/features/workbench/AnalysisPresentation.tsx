@@ -39,13 +39,14 @@ export function DiagnosticTechnicalDetails({
   summary: string;
 }) {
   const technical = diagnostics.filter(({ diagnostic }) => (
-    diagnostic.code || diagnostic.domain || diagnostic.field
+    diagnostics.length > 1 || diagnostic.code || diagnostic.domain || diagnostic.field
   ));
   if (technical.length === 0) return null;
   return (
     <TechnicalDetails summary={summary}>
       {technical.map(({ count, diagnostic, key }) => (
         <div className="km-analysis-diagnostic-identity" key={key}>
+          <code>{`severity=${diagnostic.severity}`}</code>
           {diagnostic.code ? <code>{diagnostic.code}</code> : null}
           {diagnostic.domain ? <code>{diagnostic.domain}</code> : null}
           {diagnostic.field ? <code>{diagnostic.field}</code> : null}

@@ -21,6 +21,20 @@
   white-space: pre-line;
 }
 
+.km-analysis-diagnostic-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-end: 0.55rem;
+}
+
+.km-analysis-diagnostic-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: space-between;
+}
+
 .km-analysis-diagnostic-identity {
   align-items: center;
   display: flex;

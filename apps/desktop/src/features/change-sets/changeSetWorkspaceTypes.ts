@@ -68,6 +68,8 @@ export type ChangeSetOutputProfileViewModel = {
 export type ChangeSetComparisonEntryViewModel = {
   kind: 'added' | 'removed' | 'reordered' | 'changed' | 'unavailable' | 'undecodable';
   leftValue: string | null;
+  operationId: string;
+  ownerId: string | null;
   ownerLabel: string | null;
   rightValue: string | null;
   targetLabel: string;

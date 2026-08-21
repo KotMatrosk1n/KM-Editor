@@ -329,6 +329,9 @@ function WorkspaceStatus({ controller }: { controller: ChangeSetWorkspaceControl
     const active = controller.changeSets.find((changeSet) => (
       changeSet.id === controller.activeStagingTargetId
     ));
+    const activeLabel = active
+      ? formatCollisionAwareName(active, controller.changeSets)
+      : null;
     return (
       <div
         className={`change-sets-status ${controller.canMaterialize ? 'is-ready' : 'is-blocked'}`}
@@ -340,7 +343,7 @@ function WorkspaceStatus({ controller }: { controller: ChangeSetWorkspaceControl
         <div>
           <span>
             {active
-              ? t('changeSets.activeTargetNamed', { name: active.name })
+              ? t('changeSets.activeTargetNamed', { name: activeLabel! })
               : t('changeSets.activeTargetMissing')}
           </span>
           <strong>{t(controller.canMaterialize
@@ -408,86 +411,90 @@ function ChangeSetList({
 
   return (
     <ul className="change-set-list" onKeyDown={handleListKeyDown}>
-      {changeSets.map((changeSet, index) => (
-        <li
-          className={changeSet.id === controller.selectedChangeSetId ? 'is-selected' : ''}
-          key={changeSet.id}
-        >
-          <div className="change-set-list-primary">
-            {!changeSet.isArchived ? (
-              <label className="change-set-enabled-toggle">
-                <input
-                  aria-label={t(changeSet.isEnabled
-                    ? 'changeSets.disableNamed'
-                    : 'changeSets.enableNamed', { name: changeSet.name })}
-                  checked={changeSet.isEnabled}
-                  disabled={isBusy}
-                  onChange={(event) => controller.onSetEnabled(
-                    changeSet.id,
-                    event.currentTarget.checked
-                  )}
-                  type="checkbox"
-                />
-                <span aria-hidden="true" />
-              </label>
-            ) : null}
-            <button
-              aria-current={changeSet.id === controller.selectedChangeSetId ? 'true' : undefined}
-              className="change-set-select"
-              data-change-set-select="true"
-              data-localization-ignore="true"
-              onClick={() => controller.setSelectedChangeSetId(changeSet.id)}
-              type="button"
-            >
-              <span>
-                <strong>{changeSet.name}</strong>
-                {changeSet.isActiveStagingTarget ? (
-                  <small>{t('changeSets.activeBadge')}</small>
-                ) : null}
-              </span>
-              <ChevronRight aria-hidden="true" size={16} />
-            </button>
-          </div>
-          <div className="change-set-list-meta">
-            <span>{t('changeSets.operationCount', { count: changeSet.operationCount })}</span>
-            <time dateTime={changeSet.updatedAtUtc}>
-              {formatTimestamp(changeSet.updatedAtUtc, formatLocale)}
-            </time>
-            {changeSet.conflictCount > 0 ? (
-              <span className="is-conflict">
-                {t('changeSets.conflictCount', { count: changeSet.conflictCount })}
-              </span>
-            ) : null}
-            {changeSet.staleOperationCount > 0 ? (
-              <span className="is-stale">
-                {t('changeSets.staleCount', { count: changeSet.staleOperationCount })}
-              </span>
-            ) : null}
-          </div>
-          {!changeSet.isArchived ? (
-            <div className="change-set-reorder-actions">
+      {changeSets.map((changeSet, index) => {
+        const exactName = formatCollisionAwareName(changeSet, controller.changeSets);
+        return (
+          <li
+            className={changeSet.id === controller.selectedChangeSetId ? 'is-selected' : ''}
+            key={changeSet.id}
+          >
+            <div className="change-set-list-primary">
+              {!changeSet.isArchived ? (
+                <label className="change-set-enabled-toggle">
+                  <input
+                    aria-label={t(changeSet.isEnabled
+                      ? 'changeSets.disableNamed'
+                      : 'changeSets.enableNamed', { name: exactName })}
+                    checked={changeSet.isEnabled}
+                    disabled={isBusy}
+                    onChange={(event) => controller.onSetEnabled(
+                      changeSet.id,
+                      event.currentTarget.checked
+                    )}
+                    type="checkbox"
+                  />
+                  <span aria-hidden="true" />
+                </label>
+              ) : null}
               <button
-                aria-label={t('changeSets.moveUpNamed', { name: changeSet.name })}
-                className="icon-button"
-                disabled={isBusy || index === 0}
-                onClick={() => controller.onMove(changeSet.id, 'up')}
+                aria-current={changeSet.id === controller.selectedChangeSetId ? 'true' : undefined}
+                aria-label={exactName}
+                className="change-set-select"
+                data-change-set-select="true"
+                data-localization-ignore="true"
+                onClick={() => controller.setSelectedChangeSetId(changeSet.id)}
                 type="button"
               >
-                <ArrowUp aria-hidden="true" size={14} />
-              </button>
-              <button
-                aria-label={t('changeSets.moveDownNamed', { name: changeSet.name })}
-                className="icon-button"
-                disabled={isBusy || index === changeSets.length - 1}
-                onClick={() => controller.onMove(changeSet.id, 'down')}
-                type="button"
-              >
-                <ArrowDown aria-hidden="true" size={14} />
+                <span>
+                  <strong>{exactName}</strong>
+                  {changeSet.isActiveStagingTarget ? (
+                    <small>{t('changeSets.activeBadge')}</small>
+                  ) : null}
+                </span>
+                <ChevronRight aria-hidden="true" size={16} />
               </button>
             </div>
-          ) : null}
-        </li>
-      ))}
+            <div className="change-set-list-meta">
+              <span>{t('changeSets.operationCount', { count: changeSet.operationCount })}</span>
+              <time dateTime={changeSet.updatedAtUtc}>
+                {formatTimestamp(changeSet.updatedAtUtc, formatLocale)}
+              </time>
+              {changeSet.conflictCount > 0 ? (
+                <span className="is-conflict">
+                  {t('changeSets.conflictCount', { count: changeSet.conflictCount })}
+                </span>
+              ) : null}
+              {changeSet.staleOperationCount > 0 ? (
+                <span className="is-stale">
+                  {t('changeSets.staleCount', { count: changeSet.staleOperationCount })}
+                </span>
+              ) : null}
+            </div>
+            {!changeSet.isArchived ? (
+              <div className="change-set-reorder-actions">
+                <button
+                  aria-label={t('changeSets.moveUpNamed', { name: exactName })}
+                  className="icon-button"
+                  disabled={isBusy || index === 0}
+                  onClick={() => controller.onMove(changeSet.id, 'up')}
+                  type="button"
+                >
+                  <ArrowUp aria-hidden="true" size={14} />
+                </button>
+                <button
+                  aria-label={t('changeSets.moveDownNamed', { name: exactName })}
+                  className="icon-button"
+                  disabled={isBusy || index === changeSets.length - 1}
+                  onClick={() => controller.onMove(changeSet.id, 'down')}
+                  type="button"
+                >
+                  <ArrowDown aria-hidden="true" size={14} />
+                </button>
+              </div>
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -510,6 +517,7 @@ function ChangeSetDetail({
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const parsedTags = parseTags(tags);
+  const exactName = formatCollisionAwareName(changeSet, controller.changeSets);
 
   useEffect(() => {
     setName(changeSet.name);
@@ -544,7 +552,7 @@ function ChangeSetDetail({
     <>
       <header className="change-set-detail-heading">
         <div>
-          <h3 data-localization-ignore="true">{changeSet.name}</h3>
+          <h3 data-localization-ignore="true">{exactName}</h3>
           <p>{changeSet.isArchived
             ? t('changeSets.archivedDescription')
             : t(changeSet.isEnabled ? 'changeSets.enabledDescription' : 'changeSets.disabledDescription')}</p>
@@ -553,6 +561,7 @@ function ChangeSetDetail({
           {changeSet.isArchived ? (
             <>
               <button
+                aria-label={`${t('changeSets.restore')}: ${exactName}`}
                 className="secondary-button compact-button"
                 disabled={isBusy}
                 onClick={() => controller.onRestore(changeSet.id)}
@@ -563,8 +572,8 @@ function ChangeSetDetail({
               </button>
               <button
                 aria-label={confirmDelete
-                  ? t('changeSets.confirmDeleteNamed', { name: changeSet.name })
-                  : t('changeSets.deleteNamed', { name: changeSet.name })}
+                  ? t('changeSets.confirmDeleteNamed', { name: exactName })
+                  : t('changeSets.deleteNamed', { name: exactName })}
                 className={confirmDelete
                   ? 'danger-button compact-button'
                   : 'secondary-button compact-button'}
@@ -592,6 +601,9 @@ function ChangeSetDetail({
           ) : (
             <>
               <button
+                aria-label={`${t(changeSet.isActiveStagingTarget
+                  ? 'changeSets.activeTarget'
+                  : 'changeSets.makeActive')}: ${exactName}`}
                 aria-pressed={changeSet.isActiveStagingTarget}
                 className={changeSet.isActiveStagingTarget
                   ? 'secondary-button compact-button is-active'
@@ -606,6 +618,7 @@ function ChangeSetDetail({
                   : 'changeSets.makeActive')}</span>
               </button>
               <button
+                aria-label={`${t('changeSets.duplicate')}: ${exactName}`}
                 className="secondary-button compact-button"
                 disabled={isBusy}
                 onClick={() => controller.onDuplicate(changeSet.id)}
@@ -615,6 +628,7 @@ function ChangeSetDetail({
                 <span>{t('changeSets.duplicate')}</span>
               </button>
               <button
+                aria-label={`${t('changeSets.export')}: ${exactName}`}
                 className="secondary-button compact-button"
                 disabled={isBusy}
                 onClick={() => controller.onExport(changeSet.id)}
@@ -624,6 +638,7 @@ function ChangeSetDetail({
                 <span>{t('changeSets.export')}</span>
               </button>
               <button
+                aria-label={`${t('changeSets.archive')}: ${exactName}`}
                 className="secondary-button compact-button"
                 disabled={isBusy}
                 onClick={() => controller.onArchive(changeSet.id)}
@@ -716,7 +731,7 @@ function ChangeSetDetail({
                           }}
                           type="checkbox"
                         />
-                        <span>{candidate.name}</span>
+                        <span>{formatCollisionAwareName(candidate, controller.changeSets)}</span>
                       </label>
                     </li>
                   ))}
@@ -868,7 +883,7 @@ function BuildVariants({
                 onClick={() => controller.onSelectBuildVariant(variant.id)}
                 type="button"
               >
-                <strong>{variant.name}</strong>
+                <strong>{formatCollisionAwareName(variant, variants)}</strong>
                 <span>{t('changeSets.variants.summary', {
                   count: variant.enabledChangeSetCount,
                   mode: variant.outputModeLabel
@@ -876,7 +891,9 @@ function BuildVariants({
                 {variant.outputProfileName ? <span>{variant.outputProfileName}</span> : null}
               </button>
               <button
-                aria-label={t('changeSets.variants.deleteNamed', { name: variant.name })}
+                aria-label={t('changeSets.variants.deleteNamed', {
+                  name: formatCollisionAwareName(variant, variants)
+                })}
                 className="icon-button"
                 disabled={isBusy || variant.isActive}
                 onClick={() => controller.onDeleteBuildVariant(variant.id)}
@@ -966,7 +983,7 @@ function BuildVariants({
                         }}
                         type="checkbox"
                       />
-                      <span>{candidate.name}</span>
+                      <span>{formatCollisionAwareName(candidate, controller.changeSets)}</span>
                     </label>
                   </li>
                 ))}
@@ -1114,9 +1131,68 @@ function ChangeSetComparison({
   onLoad: () => void;
 }) {
   const { t } = useLocalization();
+  const [resultFilter, setResultFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState('all');
+  const [resultOrder, setResultOrder] = useState<'target' | 'kind' | 'owner'>('target');
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+  const [selectedEntryKeys, setSelectedEntryKeys] = useState<Set<string>>(new Set());
   const currentComparison = comparison?.selectedChangeSetId === changeSet.id
     ? comparison
     : null;
+  const entriesWithKeys = useMemo(() => currentComparison?.entries.map((entry, index) => ({
+    entry,
+    key: changeSetComparisonEntryKey(entry, index)
+  })) ?? [], [currentComparison?.entries]);
+  const comparisonIdentityLabels = useMemo(
+    () => createComparisonIdentityLabels(currentComparison?.entries ?? []),
+    [currentComparison?.entries]
+  );
+  useEffect(() => {
+    setSelectedEntryKeys(new Set(entriesWithKeys.map(({ key }) => key)));
+  }, [entriesWithKeys]);
+  const kinds = useMemo(
+    () => [...new Set(entriesWithKeys.map(({ entry }) => entry.kind))].sort(),
+    [entriesWithKeys]
+  );
+  useEffect(() => {
+    if (kindFilter !== 'all' && !kinds.some((kind) => kind === kindFilter)) {
+      setKindFilter('all');
+    }
+  }, [kindFilter, kinds]);
+  const matchingEntries = useMemo(() => {
+    const normalizedFilter = resultFilter.trim().toLocaleLowerCase();
+    return [...entriesWithKeys]
+      .filter(({ entry }) => (
+        (kindFilter === 'all' || entry.kind === kindFilter) &&
+        (
+          !normalizedFilter ||
+          entry.targetLabel.toLocaleLowerCase().includes(normalizedFilter) ||
+          entry.ownerLabel?.toLocaleLowerCase().includes(normalizedFilter) ||
+          entry.operationId.toLocaleLowerCase().includes(normalizedFilter) ||
+          entry.ownerId?.toLocaleLowerCase().includes(normalizedFilter) ||
+          entry.leftValue?.toLocaleLowerCase().includes(normalizedFilter) ||
+          entry.rightValue?.toLocaleLowerCase().includes(normalizedFilter)
+        )
+      ))
+      .sort((left, right) => {
+        if (resultOrder === 'kind') {
+          return left.entry.kind.localeCompare(right.entry.kind) ||
+            left.entry.targetLabel.localeCompare(right.entry.targetLabel) ||
+            left.entry.operationId.localeCompare(right.entry.operationId);
+        }
+        if (resultOrder === 'owner') {
+          return (left.entry.ownerLabel ?? '').localeCompare(right.entry.ownerLabel ?? '') ||
+            left.entry.targetLabel.localeCompare(right.entry.targetLabel) ||
+            left.entry.operationId.localeCompare(right.entry.operationId);
+        }
+        return left.entry.targetLabel.localeCompare(right.entry.targetLabel) ||
+          left.entry.operationId.localeCompare(right.entry.operationId);
+      });
+  }, [entriesWithKeys, kindFilter, resultFilter, resultOrder]);
+  const visibleEntries = showSelectedOnly
+    ? matchingEntries.filter(({ key }) => selectedEntryKeys.has(key))
+    : matchingEntries;
+  const visibleKeys = matchingEntries.map(({ key }) => key);
   return (
     <section aria-labelledby="change-set-comparison-heading" className="change-set-card change-set-comparison">
       <div className="change-set-card-heading">
@@ -1140,39 +1216,269 @@ function ChangeSetComparison({
       ) : null}
       {currentComparison?.state === 'available' ? (
         currentComparison.entries.length > 0 ? (
-          <div className="change-set-comparison-table-wrap">
-            <table className="change-set-comparison-table">
-              <thead>
-                <tr>
-                  <th scope="col">{t('changeSets.comparison.target')}</th>
-                  <th scope="col">{t('changeSets.comparison.selected')}</th>
-                  <th scope="col">{t('changeSets.comparison.effective')}</th>
-                  <th scope="col">{t('changeSets.comparison.owner')}</th>
-                  <th scope="col">{t('changeSets.comparison.result')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentComparison.entries.map((entry, index) => (
-                  <tr key={`${entry.targetLabel}-${index}`}>
-                    <th data-localization-ignore="true" scope="row">{entry.targetLabel}</th>
-                    <td data-localization-ignore="true">{entry.leftValue ?? t('changeSets.comparison.none')}</td>
-                    <td data-localization-ignore="true">{entry.rightValue ?? t('changeSets.comparison.none')}</td>
-                    <td data-localization-ignore="true">{entry.ownerLabel ?? t('changeSets.comparison.none')}</td>
-                    <td>{t(`changeSets.comparison.kind.${entry.kind}`)}</td>
+          <>
+            <div className="change-set-result-controls">
+              <label>
+                <span>{t('analysisPresentation.controls.filter')}</span>
+                <input
+                  onChange={(event) => setResultFilter(event.currentTarget.value)}
+                  type="search"
+                  value={resultFilter}
+                />
+              </label>
+              <label>
+                <span>{t('analysisPresentation.controls.resultType')}</span>
+                <select
+                  className="km-select-control"
+                  onChange={(event) => setKindFilter(event.currentTarget.value)}
+                  value={kindFilter}
+                >
+                  <option value="all">{t('analysisPresentation.controls.allResults')}</option>
+                  {kinds.map((kind) => (
+                    <option key={kind} value={kind}>{t(`changeSets.comparison.kind.${kind}`)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>{t('analysisPresentation.controls.sort')}</span>
+                <select
+                  className="km-select-control"
+                  onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+                  value={resultOrder}
+                >
+                  <option value="target">{t('changeSets.comparison.target')}</option>
+                  <option value="kind">{t('analysisPresentation.controls.resultType')}</option>
+                  <option value="owner">{t('changeSets.comparison.owner')}</option>
+                </select>
+              </label>
+            </div>
+            <div className="change-set-comparison-selection">
+              <span role="status">{t('analysisPresentation.controls.selectedCount', {
+                selected: selectedEntryKeys.size,
+                total: currentComparison.entries.length
+              })}</span>
+              <button
+                className="secondary-button compact-button"
+                disabled={visibleKeys.every((key) => selectedEntryKeys.has(key))}
+                onClick={() => setSelectedEntryKeys((current) => new Set([
+                  ...current,
+                  ...visibleKeys
+                ]))}
+                type="button"
+              >
+                {t('analysisPresentation.controls.selectVisible')}
+              </button>
+              <button
+                className="secondary-button compact-button"
+                disabled={selectedEntryKeys.size === 0}
+                onClick={() => setSelectedEntryKeys(new Set())}
+                type="button"
+              >
+                {t('analysisPresentation.controls.clearSelection')}
+              </button>
+              <label>
+                <input
+                  checked={showSelectedOnly}
+                  className="km-choice-control"
+                  onChange={(event) => setShowSelectedOnly(event.currentTarget.checked)}
+                  type="checkbox"
+                />
+                <span>{t('analysisPresentation.controls.showSelectedOnly')}</span>
+              </label>
+            </div>
+            <div
+              aria-label={t('changeSets.comparison.title')}
+              className="change-set-comparison-table-wrap"
+              role="region"
+              tabIndex={0}
+            >
+              <table className="change-set-comparison-table">
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <span className="km-workbench-visually-hidden">
+                        {t('analysisPresentation.controls.selection')}
+                      </span>
+                    </th>
+                    <th scope="col">{t('changeSets.comparison.target')}</th>
+                    <th scope="col">{t('changeSets.comparison.selected')}</th>
+                    <th scope="col">{t('changeSets.comparison.effective')}</th>
+                    <th scope="col">{t('changeSets.comparison.owner')}</th>
+                    <th scope="col">{t('changeSets.comparison.result')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {currentComparison.isTruncated ? (
-              <p className="change-set-bounded-note">{t('changeSets.comparison.truncated')}</p>
-            ) : null}
-          </div>
+                </thead>
+                <tbody>
+                  {visibleEntries.map(({ entry, key }) => {
+                    const exactTarget = comparisonIdentityLabels.targetByOperationId.get(
+                      entry.operationId
+                    ) ?? entry.targetLabel;
+                    const exactOwner = comparisonIdentityLabels.ownerByOperationId.get(
+                      entry.operationId
+                    ) ?? entry.ownerLabel;
+                    return (
+                      <tr className={selectedEntryKeys.has(key) ? 'is-selected' : 'is-unselected'} key={key}>
+                        <td>
+                          <input
+                            aria-label={[
+                              `${t('analysisPresentation.controls.selection')}: ${exactTarget}`,
+                              exactOwner,
+                              t(`changeSets.comparison.kind.${entry.kind}`)
+                            ].filter((value): value is string => Boolean(value)).join(' / ')}
+                            checked={selectedEntryKeys.has(key)}
+                            className="km-choice-control"
+                            onChange={(event) => setSelectedEntryKeys((current) => {
+                              const next = new Set(current);
+                              if (event.currentTarget.checked) next.add(key);
+                              else next.delete(key);
+                              return next;
+                            })}
+                            type="checkbox"
+                          />
+                        </td>
+                        <th data-localization-ignore="true" scope="row">
+                          {exactTarget}
+                        </th>
+                        <td data-localization-ignore="true">{entry.leftValue ?? t('changeSets.comparison.none')}</td>
+                        <td data-localization-ignore="true">{entry.rightValue ?? t('changeSets.comparison.none')}</td>
+                        <td data-localization-ignore="true">
+                          {exactOwner ?? t('changeSets.comparison.none')}
+                        </td>
+                        <td>{t(`changeSets.comparison.kind.${entry.kind}`)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {visibleEntries.length === 0 ? (
+                <p className="change-sets-empty">{t('analysisPresentation.controls.noMatches')}</p>
+              ) : null}
+              {currentComparison.isTruncated ? (
+                <p className="change-set-bounded-note">{t('changeSets.comparison.truncated')}</p>
+              ) : null}
+            </div>
+          </>
         ) : (
           <p className="change-sets-empty">{t('changeSets.comparison.empty')}</p>
         )
       ) : null}
     </section>
   );
+}
+
+function changeSetComparisonEntryKey(
+  entry: ChangeSetComparisonViewModel['entries'][number],
+  index: number
+) {
+  return JSON.stringify([
+    entry.operationId,
+    entry.ownerId,
+    entry.targetLabel,
+    entry.kind,
+    entry.ownerLabel,
+    entry.leftValue,
+    entry.rightValue,
+    index
+  ]);
+}
+
+function createComparisonIdentityLabels(entries: ChangeSetComparisonViewModel['entries']) {
+  const ownerByOperationId = new Map<string, string>();
+  const targetByOperationId = new Map<string, string>();
+  const ownerGroups = new Map<string, typeof entries[number][]>();
+  const targetGroups = new Map<string, typeof entries[number][]>();
+
+  for (const entry of entries) {
+    const targetKey = entry.targetLabel.trim().toLocaleLowerCase();
+    const targetGroup = targetGroups.get(targetKey);
+    if (targetGroup) targetGroup.push(entry);
+    else targetGroups.set(targetKey, [entry]);
+    if (entry.ownerLabel) {
+      const ownerKey = entry.ownerLabel.trim().toLocaleLowerCase();
+      const ownerGroup = ownerGroups.get(ownerKey);
+      if (ownerGroup) ownerGroup.push(entry);
+      else ownerGroups.set(ownerKey, [entry]);
+    }
+  }
+
+  for (const group of targetGroups.values()) {
+    const ids = [...new Set(group.map((entry) => entry.operationId))];
+    const shortIds = createCollisionAwareShortIdMap(ids);
+    for (const entry of group) {
+      targetByOperationId.set(
+        entry.operationId,
+        ids.length < 2
+          ? entry.targetLabel
+          : `${entry.targetLabel} [${shortIds.get(entry.operationId) ?? entry.operationId}]`
+      );
+    }
+  }
+
+  for (const group of ownerGroups.values()) {
+    const ids = [...new Set(group.map((entry) => entry.ownerId ?? entry.operationId))];
+    const shortIds = createCollisionAwareShortIdMap(ids);
+    for (const entry of group) {
+      if (!entry.ownerLabel) continue;
+      const exactId = entry.ownerId ?? entry.operationId;
+      ownerByOperationId.set(
+        entry.operationId,
+        ids.length < 2
+          ? entry.ownerLabel
+          : `${entry.ownerLabel} [${shortIds.get(exactId) ?? exactId}]`
+      );
+    }
+  }
+
+  return { ownerByOperationId, targetByOperationId };
+}
+
+function createCollisionAwareShortIdMap(ids: readonly string[]) {
+  const uniqueIds = [...new Set(ids)];
+  const result = new Map<string, string>();
+  const pending = new Set(uniqueIds);
+  const maximumLength = Math.max(0, ...uniqueIds.map((id) => id.length));
+
+  for (let length = Math.min(12, maximumLength); pending.size > 0; length += 1) {
+    const buckets = new Map<string, string[]>();
+    for (const id of pending) {
+      const candidate = id.slice(0, length);
+      const bucket = buckets.get(candidate);
+      if (bucket) bucket.push(id);
+      else buckets.set(candidate, [id]);
+    }
+    for (const [candidate, bucket] of buckets) {
+      if (bucket.length === 1 || length >= maximumLength) {
+        for (const id of bucket) {
+          result.set(id, candidate || id);
+          pending.delete(id);
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function formatCollisionAwareName<T extends { id: string; name: string }>(
+  item: T,
+  peers: readonly T[]
+) {
+  const normalizedName = item.name.trim().toLocaleLowerCase();
+  const sameNameIds = peers
+    .filter((peer) => peer.name.trim().toLocaleLowerCase() === normalizedName)
+    .map((peer) => peer.id);
+  if (sameNameIds.length < 2) return item.name;
+  return `${item.name} [${shortCollisionAwareId(item.id, sameNameIds)}]`;
+}
+
+function shortCollisionAwareId(id: string, peerIds: readonly string[]) {
+  const minimumLength = Math.min(12, id.length);
+  for (let length = minimumLength; length <= id.length; length += 1) {
+    const candidate = id.slice(0, length);
+    if (peerIds.every((peerId) => peerId === id || !peerId.startsWith(candidate))) {
+      return candidate;
+    }
+  }
+  return id;
 }
 
 function parseTags(value: string) {
