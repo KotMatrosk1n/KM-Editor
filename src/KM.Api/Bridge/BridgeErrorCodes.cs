@@ -39,4 +39,7 @@ public static class BridgeErrorCodes
     public const string GuidedDesignStaleProposal = "KM-GUIDED-DESIGN-STALE-PROPOSAL";
     public const string SemanticMergeStaleProposal = "KM-SEMANTIC-MERGE-STALE-PROPOSAL";
     public const string RecipeStaleProposal = "KM-RECIPE-STALE-PROPOSAL";
+    public const string ResearchSourceExpired = "KM-RESEARCH-SOURCE-EXPIRED";
+    public const string ResearchSourceRejected = "KM-RESEARCH-SOURCE-REJECTED";
+    public const string ResearchComparisonStale = "KM-RESEARCH-COMPARISON-STALE";
 }

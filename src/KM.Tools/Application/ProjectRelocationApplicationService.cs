@@ -9,8 +9,10 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Output;
 using KM.Api.Projects;
+using KM.Api.Research;
 using KM.Api.Workspace;
 using KM.Core.Projects;
+using KM.Core.Workspace;
 using KM.Tools.Bridge;
 
 namespace KM.Tools.Application;
@@ -24,6 +26,7 @@ public sealed class ProjectRelocationApplicationService
     private const string DraftDocumentId = "drafts";
     private const string PersonalStateDocumentId = "personal-state";
     private const string ChangeSetDocumentId = "change-sets";
+    private const string ResearchStateDocumentId = "research-state";
     private static readonly EnumerationOptions MetadataEntryEnumeration = new()
     {
         AttributesToSkip = 0,
@@ -41,6 +44,7 @@ public sealed class ProjectRelocationApplicationService
     private readonly WorkspaceDraftApplicationService workspaceDraftService;
     private readonly WorkspacePersonalStateApplicationService workspacePersonalStateService;
     private readonly ChangeSetApplicationService changeSetService;
+    private readonly ResearchAnnotationApplicationService researchAnnotationService;
     private readonly OutputSafetyApplicationService outputSafetyService;
 
     public ProjectRelocationApplicationService(
@@ -48,6 +52,7 @@ public sealed class ProjectRelocationApplicationService
         WorkspaceDraftApplicationService? workspaceDraftService = null,
         WorkspacePersonalStateApplicationService? workspacePersonalStateService = null,
         ChangeSetApplicationService? changeSetService = null,
+        ResearchAnnotationApplicationService? researchAnnotationService = null,
         OutputSafetyApplicationService? outputSafetyService = null)
     {
         this.relocationService = relocationService ?? new ProjectRelocationService();
@@ -55,6 +60,8 @@ public sealed class ProjectRelocationApplicationService
         this.workspacePersonalStateService = workspacePersonalStateService
             ?? new WorkspacePersonalStateApplicationService();
         this.changeSetService = changeSetService ?? new ChangeSetApplicationService();
+        this.researchAnnotationService = researchAnnotationService
+            ?? new ResearchAnnotationApplicationService();
         this.outputSafetyService = outputSafetyService ?? new OutputSafetyApplicationService();
     }
 
@@ -153,19 +160,39 @@ public sealed class ProjectRelocationApplicationService
             sourceChangeSets,
             destinationChangeSets,
             sameProject: candidateProjectId.Value == request.Source.ProjectId);
+        var sourceResearchState = await researchAnnotationService
+            .ReadForRelocationAsync(request.Source.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationResearchState = candidateProjectId.Value == request.Source.ProjectId
+            ? sourceResearchState
+            : await researchAnnotationService
+                .ReadForRelocationAsync(candidateProjectId.Value, cancellationToken)
+                .ConfigureAwait(false);
+        var relocatedResearchState = sourceResearchState?.Document is null
+            ? null
+            : ResearchAnnotationApplicationService.RelocateDocument(
+                sourceResearchState.Document,
+                candidateProjectId.Value);
+        var researchStateStatus = GetResearchStateDocumentStatus(
+            sourceResearchState,
+            destinationResearchState,
+            relocatedResearchState,
+            sameProject: candidateProjectId.Value == request.Source.ProjectId);
         var outputStoreState = InspectCandidateOutputStore(candidatePaths.OutputRootPath);
         var hasOutputContinuityConflict = result.StableSourceIdentityChanged is true
             && outputStoreState == RelocationOutputStoreState.OccupiedOrUnverifiable;
         var canApply = documentStatus != ProjectRelocationDocumentStatusDto.Conflict
             && personalStateStatus != ProjectRelocationDocumentStatusDto.Conflict
             && changeSetStatus != ProjectRelocationDocumentStatusDto.Conflict
+            && researchStateStatus != ProjectRelocationDocumentStatusDto.Conflict
             && !hasOutputContinuityConflict;
         var diagnostics = result.CandidateHealth.Diagnostics
             .Select(ProjectBridgeMapper.ToDto)
             .ToList();
         if (documentStatus == ProjectRelocationDocumentStatusDto.Conflict
             || personalStateStatus == ProjectRelocationDocumentStatusDto.Conflict
-            || changeSetStatus == ProjectRelocationDocumentStatusDto.Conflict)
+            || changeSetStatus == ProjectRelocationDocumentStatusDto.Conflict
+            || researchStateStatus == ProjectRelocationDocumentStatusDto.Conflict)
         {
             diagnostics.Add(CreateDiagnostic(
                 ApiDiagnosticSeverity.Error,
@@ -201,6 +228,10 @@ public sealed class ProjectRelocationApplicationService
             sourceChangeSets.ETag,
             destinationChangeSets.ETag,
             changeSetStatus,
+            sourceResearchState?.ETag,
+            destinationResearchState?.ETag,
+            researchStateStatus,
+            FingerprintDocument(relocatedResearchState),
             outputStoreState);
         return new PreviewProjectRelocationResponse(
             reviewToken,
@@ -214,6 +245,7 @@ public sealed class ProjectRelocationApplicationService
                 new ProjectRelocationDocumentDto(DraftDocumentId, documentStatus),
                 new ProjectRelocationDocumentDto(PersonalStateDocumentId, personalStateStatus),
                 new ProjectRelocationDocumentDto(ChangeSetDocumentId, changeSetStatus),
+                new ProjectRelocationDocumentDto(ResearchStateDocumentId, researchStateStatus),
             ],
             diagnostics);
     }
@@ -292,6 +324,9 @@ public sealed class ProjectRelocationApplicationService
         var changeSetStatus = preview.WorkspaceDocuments
             .Single(document => document.DocumentId == ChangeSetDocumentId)
             .Status;
+        var researchStateStatus = preview.WorkspaceDocuments
+            .Single(document => document.DocumentId == ResearchStateDocumentId)
+            .Status;
         var sourceDrafts = await workspaceDraftService
             .ReadAsync(request.Source.ProjectId, cancellationToken)
             .ConfigureAwait(false);
@@ -331,6 +366,24 @@ public sealed class ProjectRelocationApplicationService
             sourceChangeSets,
             destinationChangeSets,
             sameProject: destinationProjectId == request.Source.ProjectId);
+        var sourceResearchState = await researchAnnotationService
+            .ReadForRelocationAsync(request.Source.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationResearchState = destinationProjectId == request.Source.ProjectId
+            ? sourceResearchState
+            : await researchAnnotationService
+                .ReadForRelocationAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
+        var relocatedResearchState = sourceResearchState?.Document is null
+            ? null
+            : ResearchAnnotationApplicationService.RelocateDocument(
+                sourceResearchState.Document,
+                destinationProjectId);
+        var currentResearchStateStatus = GetResearchStateDocumentStatus(
+            sourceResearchState,
+            destinationResearchState,
+            relocatedResearchState,
+            sameProject: destinationProjectId == request.Source.ProjectId);
         var currentOutputStoreState = InspectCandidateOutputStore(candidatePaths.OutputRootPath);
         var currentReviewToken = CreateReviewToken(
             request.Source.ProjectId,
@@ -346,10 +399,15 @@ public sealed class ProjectRelocationApplicationService
             sourceChangeSets.ETag,
             destinationChangeSets.ETag,
             currentChangeSetStatus,
+            sourceResearchState?.ETag,
+            destinationResearchState?.ETag,
+            currentResearchStateStatus,
+            FingerprintDocument(relocatedResearchState),
             currentOutputStoreState);
         if (currentDraftStatus != draftStatus
             || currentPersonalStateStatus != personalStateStatus
             || currentChangeSetStatus != changeSetStatus
+            || currentResearchStateStatus != researchStateStatus
             || (destinationProjectId != request.Source.ProjectId
                 && currentOutputStoreState == RelocationOutputStoreState.OccupiedOrUnverifiable)
             || !CryptographicOperations.FixedTimeEquals(
@@ -362,6 +420,7 @@ public sealed class ProjectRelocationApplicationService
         string? copiedDraftETag = null;
         string? copiedPersonalStateETag = null;
         string? copiedChangeSetETag = null;
+        string? copiedResearchStateETag = null;
         try
         {
             if (draftStatus == ProjectRelocationDocumentStatusDto.Copy)
@@ -450,6 +509,35 @@ public sealed class ProjectRelocationApplicationService
                 migratedDocuments.Add(ChangeSetDocumentId);
             }
 
+            if (researchStateStatus == ProjectRelocationDocumentStatusDto.Copy)
+            {
+                if (sourceResearchState?.Document is null || relocatedResearchState is null)
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
+
+                var writeResult = await researchAnnotationService
+                    .WriteForRelocationAsync(
+                        destinationProjectId,
+                        relocatedResearchState,
+                        expectedETag: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                copiedResearchStateETag = writeResult.ETag;
+                var sourceAfterCopy = await researchAnnotationService
+                    .ReadForRelocationAsync(request.Source.ProjectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.Equals(
+                        sourceAfterCopy?.ETag,
+                        sourceResearchState.ETag,
+                        StringComparison.Ordinal))
+                {
+                    throw new ProjectRelocationReviewMismatchException();
+                }
+
+                migratedDocuments.Add(ResearchStateDocumentId);
+            }
+
             await EnsureWorkspaceBindingsUnchangedAsync(
                     request.Source.ProjectId,
                     destinationProjectId,
@@ -459,6 +547,8 @@ public sealed class ProjectRelocationApplicationService
                     copiedPersonalStateETag ?? destinationPersonalState.ETag,
                     sourceChangeSets.ETag,
                     copiedChangeSetETag ?? destinationChangeSets.ETag,
+                    sourceResearchState?.ETag,
+                    copiedResearchStateETag ?? destinationResearchState?.ETag,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -479,7 +569,8 @@ public sealed class ProjectRelocationApplicationService
                     destinationProjectId,
                     copiedDraftETag,
                     copiedPersonalStateETag,
-                    copiedChangeSetETag)
+                    copiedChangeSetETag,
+                    copiedResearchStateETag)
                 .ConfigureAwait(false);
             throw new ProjectRelocationConflictException(exception);
         }
@@ -489,7 +580,8 @@ public sealed class ProjectRelocationApplicationService
                     destinationProjectId,
                     copiedDraftETag,
                     copiedPersonalStateETag,
-                    copiedChangeSetETag)
+                    copiedChangeSetETag,
+                    copiedResearchStateETag)
                 .ConfigureAwait(false);
             throw;
         }
@@ -504,6 +596,8 @@ public sealed class ProjectRelocationApplicationService
         string? expectedDestinationPersonalStateETag,
         string? expectedSourceChangeSetETag,
         string? expectedDestinationChangeSetETag,
+        string? expectedSourceResearchStateETag,
+        string? expectedDestinationResearchStateETag,
         CancellationToken cancellationToken)
     {
         var sourceDrafts = await workspaceDraftService
@@ -530,6 +624,14 @@ public sealed class ProjectRelocationApplicationService
             : await changeSetService
                 .ReadStoredForRelocationAsync(destinationProjectId, cancellationToken)
                 .ConfigureAwait(false);
+        var sourceResearchState = await researchAnnotationService
+            .ReadForRelocationAsync(sourceProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        var destinationResearchState = destinationProjectId == sourceProjectId
+            ? sourceResearchState
+            : await researchAnnotationService
+                .ReadForRelocationAsync(destinationProjectId, cancellationToken)
+                .ConfigureAwait(false);
 
         if (!string.Equals(sourceDrafts.ETag, expectedSourceDraftETag, StringComparison.Ordinal)
             || !string.Equals(
@@ -551,6 +653,14 @@ public sealed class ProjectRelocationApplicationService
             || !string.Equals(
                 destinationChangeSets.ETag,
                 expectedDestinationChangeSetETag,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                sourceResearchState?.ETag,
+                expectedSourceResearchStateETag,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                destinationResearchState?.ETag,
+                expectedDestinationResearchStateETag,
                 StringComparison.Ordinal))
         {
             throw new ProjectRelocationReviewMismatchException();
@@ -561,9 +671,33 @@ public sealed class ProjectRelocationApplicationService
         string destinationProjectId,
         string? copiedDraftETag,
         string? copiedPersonalStateETag,
-        string? copiedChangeSetETag)
+        string? copiedChangeSetETag,
+        string? copiedResearchStateETag)
     {
         List<Exception>? rollbackFailures = null;
+        if (copiedResearchStateETag is not null)
+        {
+            try
+            {
+                var result = await researchAnnotationService
+                    .DeleteForRelocationAsync(
+                        destinationProjectId,
+                        copiedResearchStateETag,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!result.Deleted)
+                {
+                    (rollbackFailures ??= []).Add(
+                        new InvalidOperationException(
+                            "The copied project research state could not be removed."));
+                }
+            }
+            catch (Exception exception) when (!IsFatal(exception))
+            {
+                (rollbackFailures ??= []).Add(exception);
+            }
+        }
+
         if (copiedChangeSetETag is not null)
         {
             try
@@ -741,6 +875,33 @@ public sealed class ProjectRelocationApplicationService
             : ProjectRelocationDocumentStatusDto.Conflict;
     }
 
+    private static ProjectRelocationDocumentStatusDto GetResearchStateDocumentStatus(
+        WorkspaceDocumentReadResult<ResearchAnnotationDocumentDto>? source,
+        WorkspaceDocumentReadResult<ResearchAnnotationDocumentDto>? destination,
+        ResearchAnnotationDocumentDto? relocatedSource,
+        bool sameProject)
+    {
+        if (source?.Document is null || relocatedSource is null || sameProject)
+        {
+            return ProjectRelocationDocumentStatusDto.Skip;
+        }
+
+        if (destination?.Document is null)
+        {
+            return ProjectRelocationDocumentStatusDto.Copy;
+        }
+
+        var sourceBytes = JsonSerializer.SerializeToUtf8Bytes(
+            relocatedSource,
+            FingerprintSerializerOptions);
+        var destinationBytes = JsonSerializer.SerializeToUtf8Bytes(
+            destination.Document,
+            FingerprintSerializerOptions);
+        return sourceBytes.AsSpan().SequenceEqual(destinationBytes)
+            ? ProjectRelocationDocumentStatusDto.Skip
+            : ProjectRelocationDocumentStatusDto.Conflict;
+    }
+
     private static string FingerprintDocument<TDocument>(TDocument? document)
     {
         return document is null
@@ -763,11 +924,15 @@ public sealed class ProjectRelocationApplicationService
         string? sourceChangeSetETag,
         string? destinationChangeSetETag,
         ProjectRelocationDocumentStatusDto changeSetStatus,
+        string? sourceResearchStateETag,
+        string? destinationResearchStateETag,
+        ProjectRelocationDocumentStatusDto researchStateStatus,
+        string researchStateFingerprint,
         RelocationOutputStoreState outputStoreState)
     {
         var framed = string.Create(
             provider: null,
-            $"project-relocation-v5\n{sourceProjectId.Length}:{sourceProjectId}\n{destinationProjectId.Length}:{destinationProjectId}\n{candidatePathsFingerprint}\n{sourceETag ?? "missing"}\n{destinationETag ?? "missing"}\n{documentStatus}\n{sourcePersonalStateETag ?? "missing"}\n{destinationPersonalStateETag ?? "missing"}\n{personalStateStatus}\n{personalStateFingerprint}\n{sourceChangeSetETag ?? "missing"}\n{destinationChangeSetETag ?? "missing"}\n{changeSetStatus}\n{outputStoreState}");
+            $"project-relocation-v6\n{sourceProjectId.Length}:{sourceProjectId}\n{destinationProjectId.Length}:{destinationProjectId}\n{candidatePathsFingerprint}\n{sourceETag ?? "missing"}\n{destinationETag ?? "missing"}\n{documentStatus}\n{sourcePersonalStateETag ?? "missing"}\n{destinationPersonalStateETag ?? "missing"}\n{personalStateStatus}\n{personalStateFingerprint}\n{sourceChangeSetETag ?? "missing"}\n{destinationChangeSetETag ?? "missing"}\n{changeSetStatus}\n{sourceResearchStateETag ?? "missing"}\n{destinationResearchStateETag ?? "missing"}\n{researchStateStatus}\n{researchStateFingerprint}\n{outputStoreState}");
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(framed)));
     }
 
@@ -900,6 +1065,10 @@ public sealed class ProjectRelocationApplicationService
                 sourceChangeSetETag: null,
                 destinationChangeSetETag: null,
                 ProjectRelocationDocumentStatusDto.Skip,
+                sourceResearchStateETag: null,
+                destinationResearchStateETag: null,
+                ProjectRelocationDocumentStatusDto.Skip,
+                researchStateFingerprint: "missing",
                 RelocationOutputStoreState.Unavailable),
             sourceProjectId,
             DestinationProjectId: null,
@@ -911,6 +1080,7 @@ public sealed class ProjectRelocationApplicationService
                 new ProjectRelocationDocumentDto(DraftDocumentId, ProjectRelocationDocumentStatusDto.Skip),
                 new ProjectRelocationDocumentDto(PersonalStateDocumentId, ProjectRelocationDocumentStatusDto.Skip),
                 new ProjectRelocationDocumentDto(ChangeSetDocumentId, ProjectRelocationDocumentStatusDto.Skip),
+                new ProjectRelocationDocumentDto(ResearchStateDocumentId, ProjectRelocationDocumentStatusDto.Skip),
             ],
             diagnostics);
     }

@@ -605,6 +605,7 @@ import {
 } from './workbench/viewAdapterRegistry';
 
 const GameModulesRuntime = lazy(() => import('./features/game-modules/GameModulesRuntime'));
+const ResearchLabRuntime = lazy(() => import('./features/research-lab/ResearchLabRuntime'));
 
 const appVersion = tauriConfig.version;
 const emptyCommunityLocalePacks: readonly CommunityLocalePack[] = [];
@@ -4707,6 +4708,27 @@ export function App({
       setBridgeDiagnostics([{
         domain: 'desktop',
         message: t('semanticMerge.error.generic'),
+        severity: 'error'
+      }]);
+      return null;
+    }
+  }, [desktopServices, setBridgeDiagnostics, t]);
+  const handlePickResearchSource = useCallback(async (slot: 0 | 1) => {
+    if (!desktopServices.isAvailable || criticalWriteOperationRef.current) return null;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    try {
+      const selectedPath = await desktopServices.pickFolder({
+        title: t(slot === 0 ? 'researchLab.source.a' : 'researchLab.source.b')
+      });
+      if (
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current
+      ) return null;
+      return selectedPath;
+    } catch {
+      setBridgeDiagnostics([{
+        domain: 'desktop',
+        message: t('researchLab.error.generic'),
         severity: 'error'
       }]);
       return null;
@@ -15549,6 +15571,29 @@ export function App({
                       onEnsureCapabilities={semanticExploreController.ensureCapabilities}
                       onNavigateRecord={handleNavigateBalanceLabFinding}
                       onOpenSection={handleNavigateSection}
+                      onStaleRevision={handleBalanceLabStaleRevision}
+                      revision={balanceLabRevision}
+                      scope={semanticExploreScope}
+                    />
+                  </Suspense>
+                ) : null
+              }
+              researchLab={
+                semanticExploreScope ? (
+                  <Suspense
+                    fallback={(
+                      <div aria-live="polite" className="km-workbench-empty" role="status">
+                        {t('researchLab.loading')}
+                      </div>
+                    )}
+                  >
+                    <ResearchLabRuntime
+                      bridge={bridge}
+                      canNavigateRecord={canNavigateGameModuleRecord}
+                      capabilityStatus={semanticExploreController.capabilities.status}
+                      onEnsureCapabilities={semanticExploreController.ensureCapabilities}
+                      onNavigateRecord={handleNavigateBalanceLabFinding}
+                      onPickSource={handlePickResearchSource}
                       onStaleRevision={handleBalanceLabStaleRevision}
                       revision={balanceLabRevision}
                       scope={semanticExploreScope}

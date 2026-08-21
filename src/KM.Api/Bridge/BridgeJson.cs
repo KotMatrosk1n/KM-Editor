@@ -8,6 +8,7 @@ using KM.Api.GameModules;
 using KM.Api.GuidedDesign;
 using KM.Api.Output;
 using KM.Api.Projects;
+using KM.Api.Research;
 using KM.Api.Semantics;
 using KM.Api.SemanticMerging;
 using KM.Api.SvCache;
@@ -88,6 +89,12 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<SemanticMergeFallbackKindDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<SemanticMergeFallbackTargetDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<KmRecipeCompatibilityStateDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<ResearchFeatureDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<ResearchExtensionKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<ResearchFileDifferenceKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<ResearchRangeCoverageDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<ResearchAnnotationTargetKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<ResearchAnnotationMutationKindDto>(JsonNamingPolicy.CamelCase, false));
 
         return options;
     }

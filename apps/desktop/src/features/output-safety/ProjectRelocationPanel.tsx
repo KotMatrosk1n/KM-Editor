@@ -206,6 +206,17 @@ export function ProjectRelocationPanel({
       if (!isCurrentAction(generation, requestSourceSignature)) {
         return;
       }
+      const expectedMigratedDocumentIds = preview.workspaceDocuments
+        .filter((document) => document.status === 'copy')
+        .map((document) => document.documentId);
+      if (
+        response.migratedDocumentIds.length !== expectedMigratedDocumentIds.length ||
+        response.migratedDocumentIds.some((documentId, index) => (
+          documentId !== expectedMigratedDocumentIds[index]
+        ))
+      ) {
+        throw new Error('The relocation receipt does not match the reviewed private documents.');
+      }
       setDiagnostics(response.diagnostics);
       setPreview(null);
       setReviewedCandidateSignature(null);

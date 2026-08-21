@@ -64,6 +64,12 @@ export const semanticMergeErrorCodes = {
   staleProposal: 'KM-SEMANTIC-MERGE-STALE-PROPOSAL'
 } as const satisfies Record<string, KmErrorCode>;
 
+export const researchLabErrorCodes = {
+  comparisonStale: 'KM-RESEARCH-COMPARISON-STALE',
+  sourceExpired: 'KM-RESEARCH-SOURCE-EXPIRED',
+  sourceRejected: 'KM-RESEARCH-SOURCE-REJECTED'
+} as const satisfies Record<string, KmErrorCode>;
+
 export const kmRecipeErrorCodes = {
   staleProposal: 'KM-RECIPE-STALE-PROPOSAL'
 } as const satisfies Record<string, KmErrorCode>;

@@ -397,6 +397,18 @@ export const deleteOutputCheckpointResponseSchema = z.strictObject({
 });
 
 export const projectRelocationDocumentStatusSchema = z.enum(['copy', 'skip', 'conflict']);
+export const projectRelocationWorkspaceDocumentIdSchema = z.enum([
+  'drafts',
+  'personal-state',
+  'change-sets',
+  'research-state'
+]);
+const projectRelocationWorkspaceDocumentSchema = (
+  documentId: z.infer<typeof projectRelocationWorkspaceDocumentIdSchema>
+) => z.strictObject({
+  documentId: z.literal(documentId),
+  status: projectRelocationDocumentStatusSchema
+});
 export const previewProjectRelocationRequestSchema = z.strictObject({
   candidatePaths: projectPathsSchema,
   source: outputSafetyScopeSchema
@@ -415,14 +427,12 @@ export const previewProjectRelocationResponseSchema = z.strictObject({
     )
     .max(6),
   sourceProjectId: projectIdSchema,
-  workspaceDocuments: z
-    .array(
-      z.strictObject({
-        documentId: boundedIdentifierSchema,
-        status: projectRelocationDocumentStatusSchema
-      })
-    )
-    .max(64)
+  workspaceDocuments: z.tuple([
+    projectRelocationWorkspaceDocumentSchema('drafts'),
+    projectRelocationWorkspaceDocumentSchema('personal-state'),
+    projectRelocationWorkspaceDocumentSchema('change-sets'),
+    projectRelocationWorkspaceDocumentSchema('research-state')
+  ])
 });
 export const applyProjectRelocationRequestSchema = z.strictObject({
   candidatePaths: projectPathsSchema,
@@ -432,7 +442,10 @@ export const applyProjectRelocationRequestSchema = z.strictObject({
 export const applyProjectRelocationResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema).max(256),
   health: projectHealthSchema,
-  migratedDocumentIds: z.array(boundedIdentifierSchema).max(64),
+  migratedDocumentIds: z
+    .array(projectRelocationWorkspaceDocumentIdSchema)
+    .max(4)
+    .refine((ids) => new Set(ids).size === ids.length),
   projectId: projectIdSchema
 });
 
