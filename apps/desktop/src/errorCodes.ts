@@ -38,6 +38,7 @@ export const projectBridgeErrorCodes = {
   projectRelocationConflict: 'KM-PROJECT-RELOCATION-CONFLICT',
   projectRelocationMismatch: 'KM-PROJECT-RELOCATION-MISMATCH',
   requestTooLarge: 'KM-BRIDGE-REQUEST-TOO-LARGE',
+  responseTooLarge: 'KM-BRIDGE-RESPONSE-TOO-LARGE',
   requestIdMismatch: 'KM-BRIDGE-RESPONSE-REQUEST-ID-MISMATCH',
   resourceMissing: 'KM-BRIDGE-RESOURCE-MISSING',
   transportFailed: 'KM-BRIDGE-TRANSPORT-FAILED',

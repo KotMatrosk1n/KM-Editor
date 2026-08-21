@@ -445,6 +445,7 @@ export const workbenchCapabilityRegistry = [
     icon: Download,
     id: 'gameDump',
     label: 'Game Dump',
+    maturity: 'utility',
     showInWorkflowDashboard: false,
     standalone: true
   }),

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using KM.Api.Projects;
 using KM.Api.Workspace;
@@ -22,7 +21,6 @@ public sealed class WorkspacePersonalStateApplicationService
     private const int MaximumPathLength = 32_767;
     private const int MaximumSubcontextEntries = 32;
     private const int MaximumSubcontextStringLength = 4_096;
-    private const int MaximumSavedViewAggregatePayloadBytes = 512 * 1024;
     private const int MaximumLocalePackEntryCount = 8_192;
     private const int MaximumLocalePackKeyLength = 1_024;
     private const int MaximumLocalePackValueLength = 8_192;
@@ -31,10 +29,8 @@ public sealed class WorkspacePersonalStateApplicationService
     private const int MaximumLocalePackIdLength = 64;
     private const int MaximumLocalePackDisplayNameLength = 64;
     private const string ProjectIdPrefix = "km1_";
-    private static readonly JsonSerializerOptions SizeSerializerOptions = new(JsonSerializerDefaults.Web)
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
+    private static readonly JsonSerializerOptions SizeSerializerOptions =
+        PrivateWorkspaceJson.CreateSerializerOptions();
     private static readonly WorkspaceDocumentDefinition<WorkspaceApplicationStateDocumentDto>
         ApplicationDocumentDefinition = new(
             new WorkspaceDocumentId("application-state"),
@@ -493,7 +489,8 @@ public sealed class WorkspacePersonalStateApplicationService
             }
 
             aggregatePayloadBytes = checked(aggregatePayloadBytes + payloadBytes);
-            if (aggregatePayloadBytes > MaximumSavedViewAggregatePayloadBytes)
+            if (aggregatePayloadBytes
+                > WorkspacePersonalStateContract.MaximumSavedViewAggregatePayloadBytes)
             {
                 throw Invalid("Saved view payloads exceed the supported aggregate size limit.");
             }

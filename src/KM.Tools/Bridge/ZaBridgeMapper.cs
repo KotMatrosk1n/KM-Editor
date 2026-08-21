@@ -1680,6 +1680,8 @@ public static class ZaBridgeMapper
             Timing = move.Timing is null ? null : ToDto(move.Timing),
             TimingRows = move.TimingRows.Select(ToDto).ToArray(),
             GameModuleTimingCounts = new Dictionary<int, int>(move.GameModuleTimingCounts),
+            GameModuleVariantMultiplicities =
+                new Dictionary<int, int>(move.GameModuleVariantMultiplicities),
             PlayerDamageRows = move.PlayerDamageRows.Select(ToDto).ToArray(),
             VanillaValues = move.VanillaValues
                 .Select(value => new MoveVanillaFieldValueDto(value.Field, value.Value))

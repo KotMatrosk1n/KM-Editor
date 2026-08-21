@@ -5,9 +5,12 @@
   --km-merge-muted: var(--color-text-muted);
   --km-merge-surface: var(--color-surface);
   --km-merge-surface-muted: var(--color-surface-muted);
+  container-name: km-semantic-merge;
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
   min-width: 0;
+  width: 100%;
 }
 
 .km-semantic-merge-heading,
@@ -374,7 +377,7 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 760px) {
+@container km-semantic-merge (max-width: 760px) {
   .km-semantic-merge-source-grid,
   .km-semantic-merge-recipe-grid {
     grid-template-columns: minmax(0, 1fr);

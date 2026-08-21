@@ -6,6 +6,7 @@ public static class BridgeErrorCodes
 {
     public const string EmptyRequest = "KM-BRIDGE-EMPTY-REQUEST";
     public const string RequestTooLarge = "KM-BRIDGE-REQUEST-TOO-LARGE";
+    public const string ResponseTooLarge = "KM-BRIDGE-RESPONSE-TOO-LARGE";
     public const string WorkspaceConflict = "KM-WORKSPACE-CONCURRENT-MODIFICATION";
     public const string OutputConcurrentModification = "KM-OUTPUT-CONCURRENT-MODIFICATION";
     public const string OutputRecoveryRequired = "KM-OUTPUT-RECOVERY-REQUIRED";

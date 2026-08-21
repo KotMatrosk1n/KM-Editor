@@ -70,12 +70,37 @@ internal sealed record SemanticRecipeIndexedLayers(
     SemanticLayerData Pending,
     SemanticSourceSnapshotDto PendingSnapshot);
 
+internal static class SemanticIndexSizingLimits
+{
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+
+    internal const int ExpectedEntityCount = 50_000;
+    internal const int ProvisionedEntityCount = checked(
+        ExpectedEntityCount * ProvisionMultiplier);
+    internal const int MaximumEntityCount = checked(
+        ProvisionedEntityCount * HardCeilingMultiplier);
+    internal const int MaximumFieldCountPerEntity = 512;
+    internal const int MaximumComparisonEntityKeyCount = checked(MaximumEntityCount * 2);
+    internal const int ExpectedReferenceCount = 2_000_000;
+    internal const int ProvisionedReferenceCount = checked(
+        ExpectedReferenceCount * ProvisionMultiplier);
+    internal const int MaximumReferenceCount = checked(
+        ProvisionedReferenceCount * HardCeilingMultiplier);
+    internal const int ExpectedOwnershipRowCount = 100_000;
+    internal const int ProvisionedOwnershipRowCount = checked(
+        ExpectedOwnershipRowCount * ProvisionMultiplier);
+    internal const int MaximumOwnershipRowCount = checked(
+        ProvisionedOwnershipRowCount * HardCeilingMultiplier);
+    internal const long ExpectedIndexSizeBytes = 128L * 1024L * 1024L;
+    internal const long ProvisionedIndexSizeBytes = checked(
+        ExpectedIndexSizeBytes * ProvisionMultiplier);
+    internal const long MaximumIndexSizeBytes = checked(
+        ProvisionedIndexSizeBytes * HardCeilingMultiplier);
+}
+
 public sealed class SemanticExploreApplicationService
 {
-    private const int MaximumIndexedEntities = 50_000;
-    private const int MaximumFieldsPerEntity = 512;
-    private const int MaximumIndexedReferences = 2_000_000;
-    private const int MaximumOwnershipRows = 100_000;
     private const int MaximumDomainFilters = 16;
     private const int MaximumPendingSourcesPerEdit = 64;
     private const int MaximumPendingDomainLength = 128;
@@ -89,7 +114,8 @@ public sealed class SemanticExploreApplicationService
     private const int MaximumExternalTraversalDepth = 128;
     private const long MaximumExternalFileBytes = 64L * 1024L * 1024L;
     private const long MaximumExternalAggregateBytes = 512L * 1024L * 1024L;
-    private const long MaximumIndexSizeBytes = 64L * 1024L * 1024L;
+    private const string QueryMaterializationLimitMessage =
+        "The semantic query exceeds its bounded materialization limits.";
     private const string CacheCallerKey = "semantic-explore-v1";
     private const uint FileShareRead = 0x00000001;
     private const uint FileShareWrite = 0x00000002;
@@ -118,19 +144,19 @@ public sealed class SemanticExploreApplicationService
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 8,
-            MaximumSizeBytes = 64L * 1024L * 1024L,
+            MaximumSizeBytes = SemanticIndexSizingLimits.MaximumIndexSizeBytes,
         });
     private readonly BoundedDerivedIndexCache<SemanticIndexedLayer> externalCache = new(
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 4,
-            MaximumSizeBytes = 64L * 1024L * 1024L,
+            MaximumSizeBytes = SemanticIndexSizingLimits.MaximumIndexSizeBytes,
         });
     private readonly BoundedDerivedIndexCache<SemanticExternalRegistration> semanticMergeExternalCache = new(
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 4,
-            MaximumSizeBytes = 64L * 1024L * 1024L,
+            MaximumSizeBytes = SemanticIndexSizingLimits.MaximumIndexSizeBytes,
         });
 
     public SemanticExploreApplicationService(
@@ -181,13 +207,47 @@ public sealed class SemanticExploreApplicationService
         var offset = DecodeCursor(request.Cursor, queryFingerprint);
 
         var baseEntities = index.Base.Data.Entities;
-        var matches = layer.Data.Entities.Values
-            .Where(entity => domains.Count == 0 || domains.Contains(entity.Record.Domain))
-            .Where(entity => SearchMatches(entity, searchText))
-            .OrderBy(entity => entity.Record.Domain, StringComparer.Ordinal)
-            .ThenBy(entity => entity.Title, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(entity => entity.Record.RecordId, SemanticNumericStringComparer.Instance)
-            .ToArray();
+        var queryBudget = new SemanticMaterializationBudget();
+        var matches = new List<SemanticIndexedEntity>();
+        foreach (var entity in layer.Data.Entities.Values)
+        {
+            if ((domains.Count > 0 && !domains.Contains(entity.Record.Domain))
+                || !SearchMatches(entity, searchText))
+            {
+                continue;
+            }
+
+            AdmitQueryRow(
+                queryBudget,
+                matches.Count,
+                SemanticIndexSizingLimits.MaximumEntityCount,
+                SemanticExploreSizeEstimator.EstimateQueryEntitySelection(entity));
+            matches.Add(entity);
+        }
+
+        matches.Sort(static (left, right) =>
+        {
+            var comparison = StringComparer.Ordinal.Compare(
+                left.Record.Domain,
+                right.Record.Domain);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.OrdinalIgnoreCase.Compare(left.Title, right.Title);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = SemanticNumericStringComparer.Instance.Compare(
+                left.Record.RecordId,
+                right.Record.RecordId);
+            return comparison != 0
+                ? comparison
+                : StringComparer.Ordinal.Compare(RecordKey(left.Record), RecordKey(right.Record));
+        });
         var page = Page(matches, offset, request.Limit, queryFingerprint);
         var items = page.Items.Select(entity =>
         {
@@ -299,16 +359,47 @@ public sealed class SemanticExploreApplicationService
             request.Direction.ToString(),
             recordKey);
         var offset = DecodeCursor(request.Cursor, queryFingerprint);
-        var references = layer.Data.References
-            .Where(reference => request.Direction == SemanticReferenceDirectionDto.Incoming
+        var queryBudget = new SemanticMaterializationBudget();
+        var referenceKeys = new HashSet<(string SourceKey, string TargetKey, string RelationshipKey)>();
+        var references = new List<SemanticIndexedReference>();
+        foreach (var reference in layer.Data.References)
+        {
+            var matchesDirection = request.Direction == SemanticReferenceDirectionDto.Incoming
                 ? reference.TargetKey == recordKey
-                : reference.SourceKey == recordKey)
-            .DistinctBy(reference =>
-                (reference.SourceKey, reference.TargetKey, reference.RelationshipKey))
-            .OrderBy(reference => reference.RelationshipKey, StringComparer.Ordinal)
-            .ThenBy(reference => reference.SourceKey, StringComparer.Ordinal)
-            .ThenBy(reference => reference.TargetKey, StringComparer.Ordinal)
-            .ToArray();
+                : reference.SourceKey == recordKey;
+            var identity = (
+                reference.SourceKey,
+                reference.TargetKey,
+                reference.RelationshipKey);
+            if (!matchesDirection || referenceKeys.Contains(identity))
+            {
+                continue;
+            }
+
+            AdmitQueryRow(
+                queryBudget,
+                references.Count,
+                SemanticIndexSizingLimits.MaximumReferenceCount,
+                SemanticExploreSizeEstimator.EstimateQueryReferenceSelection(reference));
+            referenceKeys.Add(identity);
+            references.Add(reference);
+        }
+
+        references.Sort(static (left, right) =>
+        {
+            var comparison = StringComparer.Ordinal.Compare(
+                left.RelationshipKey,
+                right.RelationshipKey);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(left.SourceKey, right.SourceKey);
+            return comparison != 0
+                ? comparison
+                : StringComparer.Ordinal.Compare(left.TargetKey, right.TargetKey);
+        });
         var page = Page(references, offset, request.Limit, queryFingerprint);
         var items = page.Items.Select(reference =>
         {
@@ -349,26 +440,80 @@ public sealed class SemanticExploreApplicationService
             request.Layer.ToString(),
             recordKey);
         var offset = DecodeCursor(request.Cursor, queryFingerprint);
-        var impacts = layer.Data.References
-            .Where(reference => reference.TargetKey == recordKey)
-            .DistinctBy(reference =>
-                (reference.SourceKey, reference.TargetKey, reference.RelationshipKey))
-            .GroupBy(reference => new
+        var queryBudget = new SemanticMaterializationBudget();
+        var referenceKeys = new HashSet<(string SourceKey, string TargetKey, string RelationshipKey)>();
+        var aggregateCounts = new Dictionary<(string RelationshipKey, string SourceDomain), int>();
+        foreach (var reference in layer.Data.References)
+        {
+            var identity = (
+                reference.SourceKey,
+                reference.TargetKey,
+                reference.RelationshipKey);
+            if (reference.TargetKey != recordKey || referenceKeys.Contains(identity))
             {
-                reference.RelationshipKey,
-                SourceDomain = layer.Data.Entities[reference.SourceKey].Record.Domain,
-            })
-            .Select(group => new SemanticImpactDto(
-                group.Key.RelationshipKey,
-                group.Key.SourceDomain,
-                group.Count(),
+                continue;
+            }
+
+            AdmitQueryRow(
+                queryBudget,
+                referenceKeys.Count,
+                SemanticIndexSizingLimits.MaximumReferenceCount,
+                SemanticExploreSizeEstimator.EstimateQueryReferenceSelection(reference));
+            referenceKeys.Add(identity);
+
+            var aggregateKey = (
+                RelationshipKey: reference.RelationshipKey,
+                SourceDomain: layer.Data.Entities[reference.SourceKey].Record.Domain);
+            if (aggregateCounts.TryGetValue(aggregateKey, out var count))
+            {
+                aggregateCounts[aggregateKey] = checked(count + 1);
+            }
+            else
+            {
+                AdmitQueryRow(
+                    queryBudget,
+                    aggregateCounts.Count,
+                    SemanticIndexSizingLimits.MaximumReferenceCount,
+                    checked(
+                        SemanticExploreSizeEstimator.EstimateQueryKey(aggregateKey.RelationshipKey)
+                        + SemanticExploreSizeEstimator.EstimateQueryKey(aggregateKey.SourceDomain)));
+                aggregateCounts.Add(aggregateKey, 1);
+            }
+        }
+
+        var impacts = new List<SemanticImpactDto>(aggregateCounts.Count);
+        foreach (var (aggregateKey, count) in aggregateCounts)
+        {
+            var impact = new SemanticImpactDto(
+                aggregateKey.RelationshipKey,
+                aggregateKey.SourceDomain,
+                count,
                 SemanticImpactSeverityDto.Info,
                 SemanticImpactActionabilityDto.ReadOnly,
-                $"{group.Count().ToString(CultureInfo.InvariantCulture)} verified consumer(s)"))
-            .OrderByDescending(impact => impact.Count)
-            .ThenBy(impact => impact.RelationshipKey, StringComparer.Ordinal)
-            .ThenBy(impact => impact.SourceDomain, StringComparer.Ordinal)
-            .ToArray();
+                $"{count.ToString(CultureInfo.InvariantCulture)} verified consumer(s)");
+            AdmitQueryRow(
+                queryBudget,
+                impacts.Count,
+                SemanticIndexSizingLimits.MaximumReferenceCount,
+                SemanticExploreSizeEstimator.EstimateImpact(impact));
+            impacts.Add(impact);
+        }
+
+        impacts.Sort(static (left, right) =>
+        {
+            var comparison = right.Count.CompareTo(left.Count);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(
+                left.RelationshipKey,
+                right.RelationshipKey);
+            return comparison != 0
+                ? comparison
+                : StringComparer.Ordinal.Compare(left.SourceDomain, right.SourceDomain);
+        });
         var page = Page(impacts, offset, request.Limit, queryFingerprint);
         return new QuerySemanticImpactResponse(
             index.Revision,
@@ -398,13 +543,6 @@ public sealed class SemanticExploreApplicationService
             recordKey ?? "all");
         var offset = DecodeCursor(request.Cursor, queryFingerprint);
         var rows = BuildOwnershipRows(index, request.Scope.PendingSession, recordKey);
-        if (rows.Count > MaximumOwnershipRows)
-        {
-            throw new SemanticExploreValidationException(
-                "The semantic ownership graph exceeds its bounded row limit.",
-                SemanticExploreFailureKind.LimitExceeded);
-        }
-
         var page = Page(
             rows,
             offset,
@@ -478,10 +616,16 @@ public sealed class SemanticExploreApplicationService
         var cacheKey = new DerivedIndexCacheKey(
             ToCoreRevision(index.Revision),
             $"semantic-merge-external-v1.{layer.Snapshot.Layer.InstanceId}");
-        if (!semanticMergeExternalCache.Set(
-                cacheKey,
-                registration,
-                checked(EstimateLayerSize(layer) + EstimateExternalRootSize(registration.Root))))
+        var estimatedSize = checked(
+            EstimateLayerSize(layer) + EstimateExternalRootSize(registration.Root));
+        if (estimatedSize > SemanticIndexSizingLimits.MaximumIndexSizeBytes)
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic merge source snapshot exceeds its bounded cache budget.",
+                SemanticExploreFailureKind.LimitExceeded);
+        }
+
+        if (!semanticMergeExternalCache.Set(cacheKey, registration, estimatedSize))
         {
             throw new SemanticExploreValidationException(
                 "The semantic merge source snapshot exceeds its bounded cache budget.",
@@ -648,29 +792,40 @@ public sealed class SemanticExploreApplicationService
             request.To.ToString(),
             request.Format.ToString());
         var offset = DecodeCursor(request.Cursor, queryFingerprint);
-        var changes = BuildDifferences(from.Data, to.Data, record: null)
-            .Select(difference =>
+        var queryBudget = new SemanticMaterializationBudget();
+        var changes = new List<SemanticChangeDto>();
+        foreach (var difference in BuildDifferences(
+                     from.Data,
+                     to.Data,
+                     record: null,
+                     queryBudget))
+        {
+            var path = CanonicalChangePath(difference.Record, difference.FieldKey);
+            var before = CanonicalValue(difference.Left);
+            var after = CanonicalValue(difference.Right);
+            var marker = difference.Kind switch
             {
-                var path = CanonicalChangePath(difference.Record, difference.FieldKey);
-                var before = CanonicalValue(difference.Left);
-                var after = CanonicalValue(difference.Right);
-                var marker = difference.Kind switch
-                {
-                    SemanticDifferenceKindDto.Added => "+",
-                    SemanticDifferenceKindDto.Removed => "-",
-                    _ => "~",
-                };
-                var line = $"{marker} {path}: {before} -> {after}";
-                return new SemanticChangeDto(
-                    path,
-                    difference.Record,
-                    difference.FieldKey,
-                    difference.Kind,
-                    difference.Left,
-                    difference.Right,
-                    line);
-            })
-            .ToArray();
+                SemanticDifferenceKindDto.Added => "+",
+                SemanticDifferenceKindDto.Removed => "-",
+                _ => "~",
+            };
+            var line = $"{marker} {path}: {before} -> {after}";
+            var change = new SemanticChangeDto(
+                path,
+                difference.Record,
+                difference.FieldKey,
+                difference.Kind,
+                difference.Left,
+                difference.Right,
+                line);
+            AdmitQueryRow(
+                queryBudget,
+                changes.Count,
+                SemanticIndexSizingLimits.MaximumReferenceCount,
+                SemanticExploreSizeEstimator.EstimateChange(change));
+            changes.Add(change);
+        }
+
         var page = Page(changes, offset, request.Limit, queryFingerprint);
         return new QuerySemanticChangesResponse(
             index.Revision,
@@ -737,10 +892,16 @@ public sealed class SemanticExploreApplicationService
         }
 
         var provider = GetProvider(gameFamily);
+        var materializationBudget = new SemanticMaterializationBudget(
+            SemanticExploreSizeEstimator.ProjectEnvelopeSizeBytes);
         var basePaths = scope.Paths with { OutputRootPath = null };
-        var baseData = provider.Build(LoadCorpus(basePaths));
-        var layeredData = provider.Build(LoadCorpus(scope.Paths));
-        var pendingData = ApplyPendingOverlay(layeredData, scope.PendingSession, gameFamily);
+        var baseData = provider.Build(LoadCorpus(basePaths), materializationBudget);
+        var layeredData = provider.Build(LoadCorpus(scope.Paths), materializationBudget);
+        var pendingData = ApplyPendingOverlay(
+            layeredData,
+            scope.PendingSession,
+            gameFamily,
+            materializationBudget);
         ValidateLayerBounds(baseData);
         ValidateLayerBounds(layeredData);
         ValidateLayerBounds(pendingData);
@@ -766,7 +927,7 @@ public sealed class SemanticExploreApplicationService
         var built = new SemanticProjectIndex(revision, baseLayer, layeredLayer, pendingLayer);
 
         var estimatedSize = EstimateSize(built);
-        if (estimatedSize > MaximumIndexSizeBytes)
+        if (estimatedSize > SemanticIndexSizingLimits.MaximumIndexSizeBytes)
         {
             throw new SemanticExploreValidationException(
                 "The semantic index exceeds its bounded cache budget.",
@@ -788,17 +949,17 @@ public sealed class SemanticExploreApplicationService
     private SemanticWorkflowCorpus LoadCorpus(ProjectPathsDto paths)
     {
         return new SemanticWorkflowCorpus(
-            TryLoad(
+            () => TryLoad(
                 () => loadItemsFresh(paths),
                 workflow => workflow.Summary,
                 workflow => workflow.Items.Count,
                 workflow => workflow.Diagnostics),
-            TryLoad(
+            () => TryLoad(
                 () => loadPokemonFresh(paths),
                 workflow => workflow.Summary,
                 workflow => workflow.Pokemon.Count,
                 workflow => workflow.Diagnostics),
-            TryLoad(
+            () => TryLoad(
                 () => loadMovesFresh(paths),
                 workflow => workflow.Summary,
                 workflow => workflow.Moves.Count,
@@ -930,8 +1091,11 @@ public sealed class SemanticExploreApplicationService
                 return new SemanticWorkflowLoad<T>(null, "workflow-disabled");
             }
 
-            var allDiagnostics = workflowSummary.Diagnostics.Concat(diagnostics(value)).ToArray();
-            if (allDiagnostics.Any(diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error))
+            var providerDiagnostics = diagnostics(value);
+            if (workflowSummary.Diagnostics.Any(diagnostic =>
+                    diagnostic.Severity == ApiDiagnosticSeverity.Error)
+                || providerDiagnostics.Any(diagnostic =>
+                    diagnostic.Severity == ApiDiagnosticSeverity.Error))
             {
                 return new SemanticWorkflowLoad<T>(null, "provider-diagnostics-error");
             }
@@ -941,9 +1105,12 @@ public sealed class SemanticExploreApplicationService
                 return new SemanticWorkflowLoad<T>(null, "provider-records-unavailable");
             }
 
-            var partial = allDiagnostics.Any(diagnostic =>
-                diagnostic.Severity == ApiDiagnosticSeverity.Warning
-                && !IsSemanticIrrelevantProjectWarning(diagnostic));
+            var partial = workflowSummary.Diagnostics.Any(diagnostic =>
+                    diagnostic.Severity == ApiDiagnosticSeverity.Warning
+                    && !IsSemanticIrrelevantProjectWarning(diagnostic))
+                || providerDiagnostics.Any(diagnostic =>
+                    diagnostic.Severity == ApiDiagnosticSeverity.Warning
+                    && !IsSemanticIrrelevantProjectWarning(diagnostic));
             return new SemanticWorkflowLoad<T>(
                 value,
                 partial ? "provider-diagnostics-warning" : null,
@@ -980,23 +1147,35 @@ public sealed class SemanticExploreApplicationService
     private static SemanticLayerData ApplyPendingOverlay(
         SemanticLayerData layered,
         EditSessionDto? session,
-        SemanticGameFamilyDto family)
+        SemanticGameFamilyDto family,
+        SemanticMaterializationBudget materializationBudget)
     {
+        ArgumentNullException.ThrowIfNull(materializationBudget);
+        materializationBudget.Admit(
+            SemanticExploreSizeEstimator.MaximumLayerEnvelopeSizeBytes,
+            "The semantic index exceeds its bounded cache budget.");
         if (session is null || session.PendingEdits.Count == 0)
         {
             return layered;
         }
 
-        var entities = layered.Entities.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value with
-            {
-                Fields = pair.Value.Fields.ToDictionary(
-                    field => field.Key,
-                    field => field.Value,
-                    StringComparer.Ordinal),
-            },
-            StringComparer.Ordinal);
+        materializationBudget.Admit(
+            SemanticExploreSizeEstimator.EstimateLayerData(layered),
+            "The semantic index exceeds its bounded cache budget.");
+
+        var entities = new SortedDictionary<string, SemanticIndexedEntity>(StringComparer.Ordinal);
+        foreach (var pair in layered.Entities)
+        {
+            entities.Add(
+                pair.Key,
+                pair.Value with
+                {
+                    Fields = pair.Value.Fields.ToDictionary(
+                        field => field.Key,
+                        field => field.Value,
+                        StringComparer.Ordinal),
+                });
+        }
         var partiallyAppliedDomains = new HashSet<string>(StringComparer.Ordinal);
         foreach (var edit in session.PendingEdits)
         {
@@ -1064,10 +1243,20 @@ public sealed class SemanticExploreApplicationService
             }
 
             var fields = (Dictionary<string, SemanticIndexedField>)entity.Fields;
-            fields[edit.Field] = field with
+            var updatedField = field with
             {
                 Value = ParsePendingValue(field.Value.Kind, edit.NewValue),
             };
+            var previousEstimatedSize = SemanticExploreSizeEstimator.EstimateField(field);
+            var updatedEstimatedSize = SemanticExploreSizeEstimator.EstimateField(updatedField);
+            if (updatedEstimatedSize > previousEstimatedSize)
+            {
+                materializationBudget.Admit(
+                    updatedEstimatedSize - previousEstimatedSize,
+                    "The semantic index exceeds its bounded cache budget.");
+            }
+
+            fields[edit.Field] = updatedField;
         }
 
         var statuses = layered.DomainStatuses
@@ -1193,7 +1382,18 @@ public sealed class SemanticExploreApplicationService
             right.Snapshot.Layer.InstanceId ?? "none",
             recordKey);
         var offset = DecodeCursor(cursor, queryFingerprint);
-        var differences = BuildDifferences(left.Data, right.Data, record).ToArray();
+        var queryBudget = new SemanticMaterializationBudget();
+        var differences = new List<SemanticDifferenceDto>();
+        foreach (var difference in BuildDifferences(left.Data, right.Data, record, queryBudget))
+        {
+            AdmitQueryRow(
+                queryBudget,
+                differences.Count,
+                SemanticIndexSizingLimits.MaximumReferenceCount,
+                SemanticExploreSizeEstimator.EstimateDifference(difference));
+            differences.Add(difference);
+        }
+
         var page = Page(differences, offset, limit, queryFingerprint);
         return new CompareSemanticResponse(
             index.Revision,
@@ -1213,14 +1413,16 @@ public sealed class SemanticExploreApplicationService
     private static IEnumerable<SemanticDifferenceDto> BuildDifferences(
         SemanticLayerData left,
         SemanticLayerData right,
-        SemanticRecordRefDto? record)
+        SemanticRecordRefDto? record,
+        SemanticMaterializationBudget queryBudget)
     {
+        ArgumentNullException.ThrowIfNull(queryBudget);
         var recordFilter = record is null ? null : RecordKey(record);
-        var keys = left.Entities.Keys
-            .Concat(right.Entities.Keys)
-            .Distinct(StringComparer.Ordinal)
-            .Where(key => recordFilter is null || key == recordFilter)
-            .OrderBy(key => key, StringComparer.Ordinal);
+        var observedKeys = new HashSet<string>(StringComparer.Ordinal);
+        var keys = new List<string>();
+        AddComparisonKeys(left.Entities.Keys);
+        AddComparisonKeys(right.Entities.Keys);
+        keys.Sort(StringComparer.Ordinal);
         foreach (var key in keys)
         {
             left.Entities.TryGetValue(key, out var leftEntity);
@@ -1271,6 +1473,26 @@ public sealed class SemanticExploreApplicationService
                     rightField?.OwnerId ?? leftField!.OwnerId);
             }
         }
+
+        void AddComparisonKeys(IEnumerable<string> candidates)
+        {
+            foreach (var key in candidates)
+            {
+                if ((recordFilter is not null && key != recordFilter)
+                    || observedKeys.Contains(key))
+                {
+                    continue;
+                }
+
+                AdmitQueryRow(
+                    queryBudget,
+                    keys.Count,
+                    SemanticIndexSizingLimits.MaximumComparisonEntityKeyCount,
+                    SemanticExploreSizeEstimator.EstimateQueryKey(key));
+                observedKeys.Add(key);
+                keys.Add(key);
+            }
+        }
     }
 
     private static IReadOnlyList<SemanticOwnershipRow> BuildOwnershipRows(
@@ -1278,10 +1500,28 @@ public sealed class SemanticExploreApplicationService
         EditSessionDto? pendingSession,
         string? recordFilter)
     {
+        var queryBudget = new SemanticMaterializationBudget();
         var rows = new List<SemanticOwnershipRow>();
-        foreach (var entity in index.Pending.Data.Entities.Values
-                     .Where(entity => recordFilter is null || RecordKey(entity.Record) == recordFilter)
-                     .OrderBy(entity => RecordKey(entity.Record), StringComparer.Ordinal))
+        var entities = new List<SemanticIndexedEntity>();
+        foreach (var entity in index.Pending.Data.Entities.Values)
+        {
+            if (recordFilter is not null && RecordKey(entity.Record) != recordFilter)
+            {
+                continue;
+            }
+
+            AdmitQueryRow(
+                queryBudget,
+                entities.Count,
+                SemanticIndexSizingLimits.MaximumEntityCount,
+                SemanticExploreSizeEstimator.EstimateQueryEntitySelection(entity));
+            entities.Add(entity);
+        }
+
+        entities.Sort(static (left, right) => StringComparer.Ordinal.Compare(
+            RecordKey(left.Record),
+            RecordKey(right.Record)));
+        foreach (var entity in entities)
         {
             var providerNode = new SemanticOwnershipNodeDto(
                 NodeId("provider", entity.OwnerId),
@@ -1301,14 +1541,14 @@ public sealed class SemanticExploreApplicationService
                 entity.Title,
                 entity.Record,
                 entity.OwnerId);
-            rows.Add(new SemanticOwnershipRow(
+            AddOwnershipRow(rows, queryBudget, new SemanticOwnershipRow(
                 [providerNode, fileNode],
                 new SemanticOwnershipEdgeDto(
                     providerNode.NodeId,
                     fileNode.NodeId,
                     SemanticOwnershipEdgeKindDto.Owns),
                 []));
-            rows.Add(new SemanticOwnershipRow(
+            AddOwnershipRow(rows, queryBudget, new SemanticOwnershipRow(
                 [fileNode, entityNode],
                 new SemanticOwnershipEdgeDto(
                     fileNode.NodeId,
@@ -1317,13 +1557,27 @@ public sealed class SemanticExploreApplicationService
                 []));
         }
 
-        foreach (var reference in index.Pending.Data.References
-                     .DistinctBy(reference =>
-                         (reference.SourceKey, reference.TargetKey, reference.RelationshipKey))
-                     .Where(reference => recordFilter is null
-                         || reference.SourceKey == recordFilter
-                         || reference.TargetKey == recordFilter))
+        var referenceKeys = new HashSet<(string SourceKey, string TargetKey, string RelationshipKey)>();
+        foreach (var reference in index.Pending.Data.References)
         {
+            var identity = (
+                reference.SourceKey,
+                reference.TargetKey,
+                reference.RelationshipKey);
+            if (referenceKeys.Contains(identity)
+                || recordFilter is not null
+                && reference.SourceKey != recordFilter
+                && reference.TargetKey != recordFilter)
+            {
+                continue;
+            }
+
+            AdmitQueryRow(
+                queryBudget,
+                referenceKeys.Count,
+                SemanticIndexSizingLimits.MaximumReferenceCount,
+                SemanticExploreSizeEstimator.EstimateQueryReferenceSelection(reference));
+            referenceKeys.Add(identity);
             var source = index.Pending.Data.Entities[reference.SourceKey];
             var target = index.Pending.Data.Entities[reference.TargetKey];
             var sourceNode = new SemanticOwnershipNodeDto(
@@ -1338,7 +1592,7 @@ public sealed class SemanticExploreApplicationService
                 target.Title,
                 target.Record,
                 target.OwnerId);
-            rows.Add(new SemanticOwnershipRow(
+            AddOwnershipRow(rows, queryBudget, new SemanticOwnershipRow(
                 [sourceNode, targetNode],
                 new SemanticOwnershipEdgeDto(
                     sourceNode.NodeId,
@@ -1385,14 +1639,14 @@ public sealed class SemanticExploreApplicationService
                     entity.SourceFile,
                     Record: null,
                     entity.OwnerId);
-                rows.Add(new SemanticOwnershipRow(
+                AddOwnershipRow(rows, queryBudget, new SemanticOwnershipRow(
                     [operationNode, entityNode],
                     new SemanticOwnershipEdgeDto(
                         operationNode.NodeId,
                         entityNode.NodeId,
                         SemanticOwnershipEdgeKindDto.Targets),
                     []));
-                rows.Add(new SemanticOwnershipRow(
+                AddOwnershipRow(rows, queryBudget, new SemanticOwnershipRow(
                     [operationNode, fileNode],
                     new SemanticOwnershipEdgeDto(
                         operationNode.NodeId,
@@ -1404,23 +1658,27 @@ public sealed class SemanticExploreApplicationService
             foreach (var group in candidates.GroupBy(
                          item => (item.Edit.Domain, item.Edit.RecordId, item.Edit.Field)))
             {
-                var operationNodes = group.Select(item => PendingOperationNode(
-                    pendingSession,
-                    item.Edit,
-                    item.Index,
-                    index.Pending.Data.Entities[
-                        PendingRecordKey(index.Revision.GameFamily, item.Edit)].OwnerId))
-                    .ToArray();
-                if (operationNodes.Length < 2)
+                var operationNodes = new List<SemanticOwnershipNodeDto>();
+                foreach (var item in group)
                 {
-                    continue;
+                    if (operationNodes.Count >= MaximumConflictNodeIds)
+                    {
+                        throw new SemanticExploreValidationException(
+                            "A semantic ownership conflict exceeds its bounded operation limit.",
+                            SemanticExploreFailureKind.LimitExceeded);
+                    }
+
+                    operationNodes.Add(PendingOperationNode(
+                        pendingSession,
+                        item.Edit,
+                        item.Index,
+                        index.Pending.Data.Entities[
+                            PendingRecordKey(index.Revision.GameFamily, item.Edit)].OwnerId));
                 }
 
-                if (operationNodes.Length > MaximumConflictNodeIds)
+                if (operationNodes.Count < 2)
                 {
-                    throw new SemanticExploreValidationException(
-                        "A semantic ownership conflict exceeds its bounded operation limit.",
-                        SemanticExploreFailureKind.LimitExceeded);
+                    continue;
                 }
 
                 var conflictId = "conflict-" + Hash(
@@ -1433,9 +1691,9 @@ public sealed class SemanticExploreApplicationService
                     "Multiple pending operations target the same semantic field.",
                     SemanticImpactSeverityDto.Warning,
                     operationNodes.Select(node => node.NodeId).ToArray());
-                for (var position = 1; position < operationNodes.Length; position++)
+                for (var position = 1; position < operationNodes.Count; position++)
                 {
-                    rows.Add(new SemanticOwnershipRow(
+                    AddOwnershipRow(rows, queryBudget, new SemanticOwnershipRow(
                         [operationNodes[0], operationNodes[position]],
                         new SemanticOwnershipEdgeDto(
                             operationNodes[0].NodeId,
@@ -1447,6 +1705,22 @@ public sealed class SemanticExploreApplicationService
         }
 
         return rows;
+    }
+
+    private static void AddOwnershipRow(
+        ICollection<SemanticOwnershipRow> rows,
+        SemanticMaterializationBudget queryBudget,
+        SemanticOwnershipRow row)
+    {
+        AdmitQueryRow(
+            queryBudget,
+            rows.Count,
+            SemanticIndexSizingLimits.MaximumOwnershipRowCount,
+            SemanticExploreSizeEstimator.EstimateOwnershipRow(
+                row.Nodes,
+                row.Edge,
+                row.Conflicts));
+        rows.Add(row);
     }
 
     private static SemanticOwnershipNodeDto PendingOperationNode(
@@ -1808,7 +2082,9 @@ public sealed class SemanticExploreApplicationService
         EnsureExternalRootIdentity(externalRoot);
         var initialExternalSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
         var provider = GetProvider(index.Revision.GameFamily);
-        var externalData = provider.Build(LoadCorpus(externalPaths));
+        var externalData = provider.Build(
+            LoadCorpus(externalPaths),
+            new SemanticMaterializationBudget());
         EnsureExternalRootIdentity(externalRoot);
         var completedExternalSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
         if (!string.Equals(
@@ -1848,7 +2124,15 @@ public sealed class SemanticExploreApplicationService
         var cacheKey = new DerivedIndexCacheKey(
             coreRevision,
             $"semantic-external-v1.{createdInstanceId}");
-        if (!externalCache.Set(cacheKey, external, EstimateLayerSize(external)))
+        var estimatedSize = EstimateLayerSize(external);
+        if (estimatedSize > SemanticIndexSizingLimits.MaximumIndexSizeBytes)
+        {
+            throw new SemanticExploreValidationException(
+                "The external semantic snapshot exceeds the comparison cache limit.",
+                SemanticExploreFailureKind.LimitExceeded);
+        }
+
+        if (!externalCache.Set(cacheKey, external, estimatedSize))
         {
             throw new SemanticExploreValidationException(
                 "The external semantic snapshot exceeds the comparison cache limit.",
@@ -1867,7 +2151,13 @@ public sealed class SemanticExploreApplicationService
         var externalPaths = projectPaths with { OutputRootPath = externalRoot.Path };
         EnsureExternalRootIdentity(externalRoot);
         var initialSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
-        var data = GetProvider(index.Revision.GameFamily).Build(LoadCorpus(externalPaths));
+        var materializationBudget = new SemanticMaterializationBudget();
+        materializationBudget.Admit(
+            EstimateExternalRootSize(externalRoot),
+            "The semantic merge source snapshot exceeds its bounded cache budget.");
+        var data = GetProvider(index.Revision.GameFamily).Build(
+            LoadCorpus(externalPaths),
+            materializationBudget);
         EnsureExternalRootIdentity(externalRoot);
         var completedSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
         if (!string.Equals(
@@ -1933,7 +2223,9 @@ public sealed class SemanticExploreApplicationService
                 SemanticExploreFailureKind.ExternalSnapshotUnavailable);
         }
 
-        var data = GetProvider(index.Revision.GameFamily).Build(LoadCorpus(externalPaths));
+        var data = GetProvider(index.Revision.GameFamily).Build(
+            LoadCorpus(externalPaths),
+            new SemanticMaterializationBudget());
         EnsureExternalRootIdentity(registration.Root);
         var completedFingerprint = CaptureExternalSourceFingerprint(externalPaths);
         if (!string.Equals(
@@ -2612,6 +2904,23 @@ public sealed class SemanticExploreApplicationService
             nextOffset < items.Count ? EncodeCursor(queryFingerprint, nextOffset) : null);
     }
 
+    private static void AdmitQueryRow(
+        SemanticMaterializationBudget queryBudget,
+        int currentCount,
+        int maximumCount,
+        long estimatedSizeBytes)
+    {
+        ArgumentNullException.ThrowIfNull(queryBudget);
+        if (currentCount >= maximumCount)
+        {
+            throw new SemanticExploreValidationException(
+                QueryMaterializationLimitMessage,
+                SemanticExploreFailureKind.LimitExceeded);
+        }
+
+        queryBudget.Admit(estimatedSizeBytes, QueryMaterializationLimitMessage);
+    }
+
     private static string QueryFingerprint(string operation, params string[] fields)
     {
         return Hash("semantic-query-v1", operation, fields);
@@ -2667,7 +2976,7 @@ public sealed class SemanticExploreApplicationService
             AppendHash(hash, status.ReasonCode ?? string.Empty);
         }
 
-        foreach (var (key, entity) in layer.Entities.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        foreach (var (key, entity) in layer.Entities)
         {
             AppendHash(hash, key);
             AppendHash(hash, entity.Title);
@@ -2715,9 +3024,10 @@ public sealed class SemanticExploreApplicationService
 
     private static void ValidateLayerBounds(SemanticLayerData layer)
     {
-        if (layer.Entities.Count > MaximumIndexedEntities
-            || layer.References.Count > MaximumIndexedReferences
-            || layer.Entities.Values.Any(entity => entity.Fields.Count > MaximumFieldsPerEntity))
+        if (layer.Entities.Count > SemanticIndexSizingLimits.MaximumEntityCount
+            || layer.References.Count > SemanticIndexSizingLimits.MaximumReferenceCount
+            || layer.Entities.Values.Any(entity =>
+                entity.Fields.Count > SemanticIndexSizingLimits.MaximumFieldCountPerEntity))
         {
             throw new SemanticExploreValidationException(
                 "The semantic index exceeds its bounded provider limits.",
@@ -2727,90 +3037,47 @@ public sealed class SemanticExploreApplicationService
 
     private static long EstimateSize(SemanticProjectIndex index)
     {
-        long size = 4_096;
+        long size = SemanticExploreSizeEstimator.ProjectEnvelopeSizeBytes;
+        var observedData = new HashSet<SemanticLayerData>(ReferenceEqualityComparer.Instance);
         foreach (var layer in new[] { index.Base, index.Layered, index.Pending })
         {
-            size = checked(size + EstimateLayerSize(layer));
+            size = checked(size + EstimateLayerSize(layer, observedData.Add(layer.Data)));
         }
 
         return size;
     }
 
-    private static long EstimateLayerSize(SemanticIndexedLayer layer)
+    private static long EstimateLayerSize(SemanticIndexedLayer layer, bool includeData = true)
     {
-        long size = 2_048;
-        size = checked(size + EstimateString(layer.Snapshot.Fingerprint));
-        size = checked(size + EstimateString(layer.Snapshot.Layer.InstanceId));
-        foreach (var entity in layer.Data.Entities.Values)
+        long size = SemanticExploreSizeEstimator.LayerEnvelopeSizeBytes;
+        size = checked(
+            size + SemanticExploreSizeEstimator.EstimateString(layer.Snapshot.Fingerprint));
+        size = checked(
+            size + SemanticExploreSizeEstimator.EstimateString(layer.Snapshot.Layer.InstanceId));
+        if (!includeData)
         {
-            size = checked(size + 640L);
-            size = checked(size + EstimateRecordSize(entity.Record));
-            size = checked(size + EstimateString(entity.Title));
-            size = checked(size + EstimateString(entity.Summary));
-            size = checked(size + EstimateString(entity.DomainLabel));
-            size = checked(size + EstimateString(entity.OwnerId));
-            size = checked(size + EstimateString(entity.SourceFile));
-            foreach (var field in entity.Fields.Values)
-            {
-                size = checked(size + 256L);
-                size = checked(size + EstimateString(field.Key));
-                size = checked(size + EstimateString(field.Label));
-                size = checked(size + EstimateString(field.Group));
-                size = checked(size + EstimateString(field.OwnerId));
-                size = checked(size + EstimateString(field.Value.CanonicalValue));
-                size = checked(size + EstimateString(field.Value.DisplayValue));
-            }
+            return size;
         }
 
-        foreach (var reference in layer.Data.References)
-        {
-            size = checked(size + 320L);
-            size = checked(size + EstimateString(reference.SourceKey));
-            size = checked(size + EstimateString(reference.TargetKey));
-            size = checked(size + EstimateString(reference.RelationshipKey));
-            size = checked(size + EstimateString(reference.RelationshipLabel));
-            size = checked(size + EstimateString(reference.ProviderId));
-        }
-
-        foreach (var status in layer.Data.DomainStatuses)
-        {
-            size = checked(size + 192L);
-            size = checked(size + EstimateString(status.ProviderId));
-            size = checked(size + EstimateString(status.Domain));
-            size = checked(size + EstimateString(status.ReasonCode));
-        }
-
-        return size;
+        return checked(size + SemanticExploreSizeEstimator.EstimateLayerData(layer.Data));
     }
 
     private static long EstimateExternalRootSize(ValidatedExternalRoot root)
     {
-        long size = checked(512L + EstimateString(root.Path) + EstimateString(root.Identity));
+        long size = checked(
+            512L
+            + SemanticExploreSizeEstimator.EstimateString(root.Path)
+            + SemanticExploreSizeEstimator.EstimateString(root.Identity));
         foreach (var privatePath in root.PrivatePaths)
         {
             size = checked(
                 size
                 + 128L
-                + EstimateString(privatePath.Path)
-                + EstimateString(privatePath.Identity));
+                + SemanticExploreSizeEstimator.EstimateString(privatePath.Path)
+                + SemanticExploreSizeEstimator.EstimateString(privatePath.Identity));
         }
 
         return size;
-    }
-
-    private static long EstimateRecordSize(SemanticRecordRefDto record)
-    {
-        return checked(
-            192L
-            + EstimateString(record.Domain)
-            + EstimateString(record.RecordKind.Key)
-            + EstimateString(record.RecordId)
-            + EstimateString(record.SubrecordId));
-    }
-
-    private static long EstimateString(string? value)
-    {
-        return value is null ? 0L : checked(32L + (value.Length * 2L));
     }
 
     private static IReadOnlyList<SemanticProviderCoverageDto> Coverage(

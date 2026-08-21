@@ -25,12 +25,23 @@ export const researchLabMaximumPageSize = 100;
 export const researchLabDefaultPageSize = 50;
 export const researchLabMaximumCursorLength = 2_048;
 export const researchLabMaximumByteWindowLength = 4_096;
-export const researchLabMaximumResultCacheBytes = 32 * 1024 * 1024;
+export const researchLabResultProvisionMultiplier = 4;
+export const researchLabResultCacheCeilingMultiplier = 2;
+export const researchLabExpectedResultSizeBytes = 32 * 1024 * 1024;
+export const researchLabMaximumResultSizeBytes =
+  researchLabExpectedResultSizeBytes * researchLabResultProvisionMultiplier;
+export const researchLabMaximumResultCeilingBytes =
+  researchLabMaximumResultSizeBytes * researchLabResultCacheCeilingMultiplier;
+export const researchLabMaximumResultCacheBytes = researchLabMaximumResultCeilingBytes;
 export const researchLabMaximumRelativePathLength = 4_096;
 export const researchLabMaximumAnnotationCount = 2_048;
 export const researchLabMaximumAnnotationTextLength = 8_192;
 export const researchLabMaximumAnnotationTags = 32;
-export const researchLabMaximumSerializedAnnotationDocumentBytes = 3 * 1024 * 1024;
+export const researchLabExpectedSerializedAnnotationDocumentBytes = 3 * 1024 * 1024;
+export const researchLabProvisionedSerializedAnnotationDocumentBytes =
+  researchLabExpectedSerializedAnnotationDocumentBytes * 4;
+export const researchLabMaximumSerializedAnnotationDocumentBytes =
+  researchLabProvisionedSerializedAnnotationDocumentBytes * 2;
 export const researchLabMaximumExtensionDescriptors = 64;
 export const researchLabMaximumAccumulatedFindings = 500;
 

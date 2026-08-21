@@ -13052,6 +13052,307 @@ input {
   border-width: 3px;
 }
 
+:where(.km-select-control) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--km-control-min-height);
+  padding: 0.45rem 2.1rem 0.45rem 0.7rem;
+  color: var(--color-text);
+  background-color: var(--color-control);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%),
+    linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 0.95rem) calc(50% - 0.08rem),
+    calc(100% - 0.68rem) calc(50% - 0.08rem);
+  background-repeat: no-repeat;
+  background-size: 0.3rem 0.3rem;
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-inset);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  appearance: none;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+select.km-select-control {
+  padding-inline-end: 2.1rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%),
+    linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 0.95rem) calc(50% - 0.08rem),
+    calc(100% - 0.68rem) calc(50% - 0.08rem);
+  background-repeat: no-repeat;
+  background-size: 0.3rem 0.3rem;
+  appearance: none;
+}
+
+select.km-select-control:hover:not(:disabled) {
+  background-color: var(--color-control-hover);
+  border-color: var(--color-accent-bright);
+}
+
+select.km-select-control:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, var(--color-control));
+}
+
+select.km-select-control:focus-visible {
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px rgb(var(--color-accent-bright-rgb) / 20%);
+}
+
+select.km-select-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+select.km-select-control option {
+  color: var(--color-text);
+  background: var(--color-control);
+}
+
+:where(.km-select-control):dir(rtl) {
+  padding-right: 0.7rem;
+  padding-left: 2.1rem;
+  background-position:
+    0.95rem calc(50% - 0.08rem),
+    0.68rem calc(50% - 0.08rem);
+}
+
+select.km-select-control:dir(rtl) {
+  padding-inline-end: 2.1rem;
+  background-position:
+    0.95rem calc(50% - 0.08rem),
+    0.68rem calc(50% - 0.08rem);
+}
+
+:where(.km-choice-control) {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: 0;
+  color: #fff;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  box-shadow: var(--shadow-inset);
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+:where(.km-choice-control[type='checkbox']) {
+  border-radius: 0.3rem;
+}
+
+:where(.km-choice-control[type='radio']) {
+  border-radius: 50%;
+}
+
+:where(.km-choice-control)::before {
+  content: '';
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+:where(.km-choice-control[type='checkbox'])::before {
+  width: 0.28rem;
+  height: 0.56rem;
+  border: solid currentColor;
+  border-width: 0 0.14rem 0.14rem 0;
+  transform: rotate(45deg) scale(0);
+}
+
+:where(.km-choice-control[type='radio'])::before {
+  width: 0.48rem;
+  height: 0.48rem;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+:where(.km-choice-control):hover:not(:disabled) {
+  background-color: var(--color-control-hover);
+  border-color: var(--color-accent-bright);
+}
+
+:where(.km-choice-control):checked {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent-bright);
+}
+
+:where(.km-choice-control):checked::before {
+  transform: scale(1);
+}
+
+:where(.km-choice-control[type='checkbox']):checked::before {
+  transform: rotate(45deg) scale(1);
+}
+
+:where(.km-choice-control):active:not(:disabled) {
+  background-color: var(--color-accent-dark);
+}
+
+:where(.km-choice-control):disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+:where(.km-file-control) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--km-control-min-height);
+  padding: 0.3rem;
+  overflow: hidden;
+  color: var(--color-text-soft);
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font: inherit;
+  text-overflow: ellipsis;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+:where(.km-file-control):hover:not(:disabled) {
+  background-color: var(--color-control-hover);
+  border-color: var(--color-accent-bright);
+}
+
+:where(.km-file-control):disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+:where(.km-file-control)::file-selector-button {
+  min-height: calc(var(--km-control-min-height) - 0.6rem);
+  margin: 0;
+  margin-inline-end: 0.65rem;
+  padding: 0.35rem 0.7rem;
+  color: var(--color-text-soft);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.35rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+}
+
+:where(.km-file-control)::file-selector-button:hover {
+  color: var(--color-text);
+  background: var(--color-accent-dark);
+  border-color: var(--color-accent-bright);
+}
+
+:where(.km-file-control)::file-selector-button:active {
+  background: var(--color-accent-hover);
+}
+
+:where(.km-file-control):disabled::file-selector-button {
+  cursor: not-allowed;
+}
+
+:where(
+  .personalization-settings,
+  .what-changed-tour,
+  .change-sets-workspace,
+  .change-set-authoring,
+  .km-semantic-explore,
+  .km-balance-lab,
+  .km-guided-design,
+  .km-game-modules,
+  .km-research-lab,
+  .km-semantic-merge
+) :where(button) {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: var(--km-control-min-height);
+  padding: 0.5rem 0.85rem;
+  color: var(--color-text-soft);
+  background: linear-gradient(180deg, var(--color-control-hover), var(--color-control));
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-inset);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 100ms ease;
+}
+
+:where(
+  .personalization-settings,
+  .what-changed-tour,
+  .change-sets-workspace,
+  .change-set-authoring,
+  .km-semantic-explore,
+  .km-balance-lab,
+  .km-guided-design,
+  .km-game-modules,
+  .km-research-lab,
+  .km-semantic-merge
+) :where(button):hover:not(:disabled, [aria-disabled='true']) {
+  color: var(--color-text);
+  background: var(--color-surface-strong);
+  border-color: var(--color-accent-bright);
+}
+
+:where(
+  .personalization-settings,
+  .what-changed-tour,
+  .change-sets-workspace,
+  .change-set-authoring,
+  .km-semantic-explore,
+  .km-balance-lab,
+  .km-guided-design,
+  .km-game-modules,
+  .km-research-lab,
+  .km-semantic-merge
+) :where(button):active:not(:disabled, [aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-control));
+  transform: translateY(1px);
+}
+
+:where(
+  .personalization-settings,
+  .what-changed-tour,
+  .change-sets-workspace,
+  .change-set-authoring,
+  .km-semantic-explore,
+  .km-balance-lab,
+  .km-guided-design,
+  .km-game-modules,
+  .km-research-lab,
+  .km-semantic-merge
+) :where(button:disabled, button[aria-disabled='true']) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .personalization-settings {
   display: grid;
   gap: var(--km-panel-gap);
@@ -13286,6 +13587,27 @@ input {
   }
 
   :is(button, input, select, textarea) {
+    color: ButtonText;
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+
+  select.km-select-control {
+    padding-inline-end: 0.7rem;
+    background-image: none;
+    appearance: auto;
+  }
+
+  input.km-choice-control {
+    accent-color: Highlight;
+    appearance: auto;
+  }
+
+  input.km-choice-control::before {
+    content: none;
+  }
+
+  input.km-file-control::file-selector-button {
     color: ButtonText;
     background: ButtonFace;
     border-color: ButtonText;

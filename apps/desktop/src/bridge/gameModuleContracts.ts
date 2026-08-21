@@ -15,6 +15,7 @@ export const gameModuleDefaultPageSize = 50;
 export const gameModuleMaximumPageSize = 100;
 export const gameModuleMaximumAccumulatedRecords = 500;
 export const gameModuleMaximumDiagnostics = 100;
+export const gameModuleMaximumRecordCount = 400_000;
 
 const contractKeySchema = z
   .string()
@@ -359,7 +360,7 @@ export const queryGameModuleResponseSchema = z
     records: z.array(gameModuleRecordSchema).max(gameModuleMaximumPageSize),
     revision: semanticExploreRevisionSchema,
     snapshot: gameModuleSnapshotSchema,
-    totalRecordCount: z.number().int().min(0).max(50_000)
+    totalRecordCount: z.number().int().min(0).max(gameModuleMaximumRecordCount)
   })
   .superRefine((response, context) => {
     const recordIds = response.records.map((record) => record.recordId);

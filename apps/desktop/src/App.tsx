@@ -355,6 +355,7 @@ import {
 } from './components/TooltipIconVisibility';
 import { AppSidebar } from './components/AppSidebar';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
+import { LoadingProgress } from './components/LoadingProgress';
 import {
   TrainerPartySlotContextMenu,
   trainerPartySlotContextMenuId
@@ -538,10 +539,7 @@ import {
   type WorkspaceNavigationCommitOptions,
   type WorkspaceNavigationMode
 } from './workbench/workspaceShellController';
-import {
-  createCapabilityDiscoverySignature,
-  createCapabilityDiscoveryViewModels
-} from './workbench/capabilityDiscovery';
+import { createCapabilityDiscoveryViewModels } from './workbench/capabilityDiscovery';
 import {
   createWorkspaceCommandRegistry,
   type WorkspaceCommand,
@@ -2005,6 +2003,7 @@ export function App({
   const [noteDraft, setNoteDraft] = useState('');
   const [noteStatusKey, setNoteStatusKey] = useState<string | null>(null);
   const [isPersonalWorkspaceMutationBusy, setIsPersonalWorkspaceMutationBusy] = useState(false);
+  const [isSavedViewMutationBusy, setIsSavedViewMutationBusy] = useState(false);
   const [pendingOutputProfileId, setPendingOutputProfileId] = useState<string | null>(null);
   const [activeChangeSetId, setActiveChangeSetId] = useState<string | null>(null);
   const [textCategoryId, setTextCategoryId] = useState<string | null>(null);
@@ -5057,42 +5056,17 @@ export function App({
   const capabilityDiscovery = useMemo(
     () =>
       selectedGame
-        ? createCapabilityDiscoveryViewModels({
+          ? createCapabilityDiscoveryViewModels({
             game: selectedGame,
             health,
-            workflows: gameScopedWorkflows
+            workflows
           }).filter((capability) => capability.id !== 'workbench')
         : [],
-    [gameScopedWorkflows, health, selectedGame]
+    [health, selectedGame, workflows]
   );
-  const capabilityDiscoverySignature = useMemo(
-    () => createCapabilityDiscoverySignature(capabilityDiscovery),
-    [capabilityDiscovery]
-  );
-  useEffect(() => {
-    if (
-      !activeProjectId ||
-      !health?.canOpenReadOnlyWorkflows ||
-      capabilityDiscovery.length === 0
-    ) return;
-    if (
-      readCapabilityDiscoverySignature(activeProjectId) !==
-      capabilityDiscoverySignature
-    ) {
-      setIsCapabilityDiscoveryOpen(true);
-    }
-  }, [
-    activeProjectId,
-    capabilityDiscovery.length,
-    capabilityDiscoverySignature,
-    health?.canOpenReadOnlyWorkflows
-  ]);
   const handleDismissCapabilityDiscovery = useCallback(() => {
-    if (activeProjectId) {
-      writeCapabilityDiscoverySignature(activeProjectId, capabilityDiscoverySignature);
-    }
     setIsCapabilityDiscoveryOpen(false);
-  }, [activeProjectId, capabilityDiscoverySignature]);
+  }, []);
   const activeScopedLocation = useMemo(
     () => activeProjectId && selectedGame && activeLocation.entity
       ? toScopedWorkspaceLocation(activeLocation)
@@ -5620,64 +5594,84 @@ export function App({
   const capturedCurrentWorkspaceView = activeWorkspaceSearchText !== null
     ? captureWorkspaceView(activeSection, { searchText: activeWorkspaceSearchText })
     : null;
+  const currentWorkspaceViewLocation = personalProjectTarget && selectedGame
+    ? toScopedWorkspaceLocation(
+        createSectionLocation(activeSection, {
+          game: selectedGame,
+          projectId: personalProjectTarget.projectId
+        })
+      )
+    : null;
+  const currentWorkspaceViewCanonicalPayload = capturedCurrentWorkspaceView
+    ? canonicalJsonStringify(capturedCurrentWorkspaceView.payload)
+    : null;
+  const currentSavedWorkspaceView =
+    capturedCurrentWorkspaceView &&
+    currentWorkspaceViewLocation &&
+    currentWorkspaceViewCanonicalPayload !== null
+      ? projectWorkspaceDocument?.savedViews.find(
+          (candidate) =>
+            candidate.adapterId === capturedCurrentWorkspaceView.adapterId &&
+            candidate.adapterSchemaVersion ===
+              capturedCurrentWorkspaceView.adapterSchemaVersion &&
+            workspaceScopedLocationKey(candidate.location) ===
+              workspaceScopedLocationKey(currentWorkspaceViewLocation) &&
+            canonicalJsonStringify(candidate.payload) === currentWorkspaceViewCanonicalPayload
+        ) ?? null
+      : null;
   const canSaveCurrentWorkspaceView = Boolean(
-    personalProjectTarget && selectedGame && capturedCurrentWorkspaceView
+    personalProjectTarget && currentWorkspaceViewLocation && capturedCurrentWorkspaceView
   );
-  const handleSaveCurrentWorkspaceView = useCallback(async () => {
+  const handleToggleCurrentWorkspaceView = useCallback(async () => {
     if (
+      isSavedViewMutationBusy ||
       !personalProjectTarget ||
       !capturedCurrentWorkspaceView ||
-      !selectedGame
+      !currentWorkspaceViewLocation ||
+      currentWorkspaceViewCanonicalPayload === null
     ) return;
-    const scopedLocation = toScopedWorkspaceLocation(
-      createSectionLocation(activeSection, {
-        game: selectedGame,
-        projectId: personalProjectTarget.projectId
-      })
-    );
-    const canonicalPayload = canonicalJsonStringify(capturedCurrentWorkspaceView.payload);
-    const existingView = projectWorkspaceDocument?.savedViews.find(
-      (candidate) =>
-        candidate.adapterId === capturedCurrentWorkspaceView.adapterId &&
-        candidate.adapterSchemaVersion ===
-          capturedCurrentWorkspaceView.adapterSchemaVersion &&
-        workspaceScopedLocationKey(candidate.location) ===
-          workspaceScopedLocationKey(scopedLocation) &&
-        canonicalJsonStringify(candidate.payload) === canonicalPayload
-    );
+    setIsSavedViewMutationBusy(true);
     try {
-      const viewId = existingView?.viewId ?? await createDeterministicSavedViewId(
-        capturedCurrentWorkspaceView.adapterId,
-        capturedCurrentWorkspaceView.adapterSchemaVersion,
-        scopedLocation,
-        canonicalPayload
-      );
-      const snapshot = await personalWorkspaceRegistry.saveView(
-        personalProjectTarget,
-        {
-          adapterId: capturedCurrentWorkspaceView.adapterId,
-          adapterSchemaVersion: capturedCurrentWorkspaceView.adapterSchemaVersion,
-          location: scopedLocation,
-          name: t(getWorkbenchSectionLabelKey(activeSection)),
-          payload: capturedCurrentWorkspaceView.payload,
-          updatedAtUtc: new Date().toISOString(),
-          viewId
-        }
-      );
+      const snapshot = currentSavedWorkspaceView
+        ? await personalWorkspaceRegistry.removeView(
+            personalProjectTarget,
+            currentSavedWorkspaceView.viewId
+          )
+        : await personalWorkspaceRegistry.saveView(
+            personalProjectTarget,
+            {
+              adapterId: capturedCurrentWorkspaceView.adapterId,
+              adapterSchemaVersion: capturedCurrentWorkspaceView.adapterSchemaVersion,
+              location: currentWorkspaceViewLocation,
+              name: t(getWorkbenchSectionLabelKey(activeSection)),
+              payload: capturedCurrentWorkspaceView.payload,
+              updatedAtUtc: new Date().toISOString(),
+              viewId: await createDeterministicSavedViewId(
+                capturedCurrentWorkspaceView.adapterId,
+                capturedCurrentWorkspaceView.adapterSchemaVersion,
+                currentWorkspaceViewLocation,
+                currentWorkspaceViewCanonicalPayload
+              )
+            }
+          );
       if (activeProjectIdRef.current === personalProjectTarget.projectId) {
         setProjectWorkspaceSnapshot(snapshot);
+        setPersonalWorkspaceError(null);
       }
     } catch (error) {
       setPersonalWorkspaceError(getErrorMessage(error));
+    } finally {
+      setIsSavedViewMutationBusy(false);
     }
   }, [
     activeSection,
     capturedCurrentWorkspaceView,
-    openProject?.projectId,
+    currentSavedWorkspaceView,
+    currentWorkspaceViewCanonicalPayload,
+    currentWorkspaceViewLocation,
+    isSavedViewMutationBusy,
     personalProjectTarget,
     personalWorkspaceRegistry,
-    projectWorkspaceDocument?.savedViews,
-    selectedGame,
     t
   ]);
   const handleOpenSavedView = useCallback((viewId: string) => {
@@ -5774,6 +5768,7 @@ export function App({
     }
   }, [
     isSemanticInspectorRequested,
+    semanticExploreScope,
     semanticExploreController.capabilities.status,
     semanticExploreController.ensureCapabilities
   ]);
@@ -5939,12 +5934,6 @@ export function App({
             canGoBack: workspaceShellState.historyIndex > 0,
             canGoForward:
               workspaceShellState.historyIndex < workspaceShellState.history.length - 1,
-            capabilities: capabilityDiscovery,
-            createSectionLocation: (section) =>
-              createSectionLocation(section, {
-                game: selectedGame,
-                projectId: activeProjectId
-              }),
             inspectorAvailable: activeScopedLocation !== null,
             pins: workspacePins,
             recents: workspaceRecentTargets,
@@ -5953,9 +5942,7 @@ export function App({
           })
         : [],
     [
-      activeProjectId,
       activeScopedLocation,
-      capabilityDiscovery,
       selectedGame,
       workspacePins,
       workspaceRecentTargets,
@@ -15322,7 +15309,7 @@ export function App({
 
     const response = await bridge.listWorkflows({ paths });
     if (canCommitRefresh()) {
-      setWorkflows(getGameScopedWorkflowSummaries(response.workflows, paths.selectedGame));
+      setWorkflows(response.workflows);
     }
   }
 
@@ -15443,7 +15430,9 @@ export function App({
           canSaveView={canSaveCurrentWorkspaceView}
           hasCriticalWriteOperation={hasCriticalWriteOperation}
           inspectorAvailable={inspectorAvailable}
+          isCurrentViewSaved={currentSavedWorkspaceView !== null}
           isEditSessionOperationBusy={isEditSessionOperationBusy}
+          isSavedViewMutationBusy={isSavedViewMutationBusy}
           activeTargetIsPinned={activeTargetIsPinned}
           onBack={handleNavigateBack}
           onCloseEditor={handleCloseActiveEditor}
@@ -15455,9 +15444,9 @@ export function App({
               : undefined
           }
           onOpenWiki={handleOpenActiveWiki}
-          onSaveView={() => void handleSaveCurrentWorkspaceView()}
           onToggleInspector={handleToggleInspector}
           onTogglePin={() => void handleToggleActivePin()}
+          onToggleSavedView={() => void handleToggleCurrentWorkspaceView()}
         />
 
         <RecordTabRail
@@ -15513,9 +15502,11 @@ export function App({
                   <BalanceLabRuntime
                     availableLayers={balanceLabAvailableLayers}
                     bridge={bridge}
+                    capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     onEnsureCapabilities={semanticExploreController.ensureCapabilities}
                     onNavigateFinding={handleNavigateBalanceLabFinding}
+                    onRefreshCapabilities={semanticExploreController.refreshCapabilities}
                     onStaleRevision={handleBalanceLabStaleRevision}
                     revision={balanceLabRevision}
                     scope={semanticExploreScope}
@@ -15527,6 +15518,7 @@ export function App({
                   <GuidedDesignRuntime
                     authoringContextRevision={guidedDesignAuthoringContextRevision}
                     bridge={bridge}
+                    capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     canImportChangeSet={
                       changeSetWorkspace.controller.readiness === 'ready' &&
@@ -15548,6 +15540,7 @@ export function App({
                     onImportProposal={changeSetWorkspace.importGuidedDesignProposal}
                     onNavigateRecord={handleNavigateGuidedDesignRecord}
                     onOpenChanges={handleOpenGuidedDesignChanges}
+                    onRefreshCapabilities={semanticExploreController.refreshCapabilities}
                     onStaleRevision={handleBalanceLabStaleRevision}
                     revision={balanceLabRevision}
                     scope={semanticExploreScope}
@@ -15558,19 +15551,22 @@ export function App({
                 semanticExploreScope ? (
                   <Suspense
                     fallback={(
-                      <div aria-live="polite" className="km-workbench-empty" role="status">
-                        {t('gameModules.loading')}
-                      </div>
+                      <LoadingProgress
+                        className="km-workbench-empty"
+                        label={t('gameModules.loading')}
+                      />
                     )}
                   >
                     <GameModulesRuntime
                       bridge={bridge}
                       canNavigateRecord={canNavigateGameModuleRecord}
                       canOpenSection={(section) => availableWorkflowSectionIds.has(section)}
+                      capabilityError={semanticExploreController.capabilities.error}
                       capabilityStatus={semanticExploreController.capabilities.status}
                       onEnsureCapabilities={semanticExploreController.ensureCapabilities}
                       onNavigateRecord={handleNavigateBalanceLabFinding}
                       onOpenSection={handleNavigateSection}
+                      onRefreshCapabilities={semanticExploreController.refreshCapabilities}
                       onStaleRevision={handleBalanceLabStaleRevision}
                       revision={balanceLabRevision}
                       scope={semanticExploreScope}
@@ -15582,18 +15578,21 @@ export function App({
                 semanticExploreScope ? (
                   <Suspense
                     fallback={(
-                      <div aria-live="polite" className="km-workbench-empty" role="status">
-                        {t('researchLab.loading')}
-                      </div>
+                      <LoadingProgress
+                        className="km-workbench-empty"
+                        label={t('researchLab.loading')}
+                      />
                     )}
                   >
                     <ResearchLabRuntime
                       bridge={bridge}
                       canNavigateRecord={canNavigateGameModuleRecord}
+                      capabilityError={semanticExploreController.capabilities.error}
                       capabilityStatus={semanticExploreController.capabilities.status}
                       onEnsureCapabilities={semanticExploreController.ensureCapabilities}
                       onNavigateRecord={handleNavigateBalanceLabFinding}
                       onPickSource={handlePickResearchSource}
+                      onRefreshCapabilities={semanticExploreController.refreshCapabilities}
                       onStaleRevision={handleBalanceLabStaleRevision}
                       revision={balanceLabRevision}
                       scope={semanticExploreScope}
@@ -15606,6 +15605,7 @@ export function App({
                   <SemanticMergeRuntime
                     authoringContextRevision={guidedDesignAuthoringContextRevision}
                     bridge={bridge}
+                    capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     canImportChangeSet={
                       changeSetWorkspace.controller.readiness === 'ready' &&
@@ -15640,6 +15640,7 @@ export function App({
                     onNavigateRecord={handleNavigateSemanticMergeRecord}
                     onOpenChanges={handleOpenGuidedDesignChanges}
                     onPickSource={handlePickSemanticMergeSource}
+                    onRefreshCapabilities={semanticExploreController.refreshCapabilities}
                     onStaleRevision={handleBalanceLabStaleRevision}
                     revision={balanceLabRevision}
                     scope={semanticExploreScope}
@@ -15681,6 +15682,7 @@ export function App({
                     }
                     onNavigateEntity={handleNavigateSemanticEntity}
                     onPickExternalMod={handlePickSemanticExternalMod}
+                    scope={semanticExploreScope}
                   />
                 ) : null
               }
@@ -17164,16 +17166,26 @@ function GameSelectionPage({
   onCancel?: () => void;
   onSelectGame: (selectedGame: ProjectGame) => void;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const rememberedGames = new Set(configuredGames);
 
   return (
     <main className="game-selection-shell">
-      <section aria-labelledby="game-selection-heading" className="game-selection-panel">
+      <section
+        aria-busy={isLoading || undefined}
+        aria-labelledby="game-selection-heading"
+        className="game-selection-panel"
+      >
         <img alt="" aria-hidden="true" className="game-selection-logo" src={kmLogoUrl} />
         <h1 id="game-selection-heading">
           {translateLiteral('Which game are you using?')}
         </h1>
+        {isLoading ? (
+          <LoadingProgress
+            className="is-compact"
+            label={t('workbench.personalState.loading')}
+          />
+        ) : null}
         <div className="game-choice-actions">
           {visibleGameSelectionGames.map((game) => {
             const definition = gameDefinitions[game];
@@ -18935,6 +18947,7 @@ function ZaPokemonDexPlacementEditor({
                 label={translateLiteral('Destination Pokédex')}
               />
               <select
+                className="km-select-control"
                 disabled={
                   !editSessionActive ||
                   !canEditPokemon ||
@@ -20686,6 +20699,7 @@ function SelectedPokemonPanel({
                       label={translateLiteral('Compatibility group')}
                     />
                     <select
+                      className="km-select-control"
                       id="pokemon-compatibility-group"
                       onChange={(event) => setSelectedCompatibilityGroupId(event.target.value)}
                       value={selectedCompatibilityGroup?.groupId ?? ''}
@@ -20714,6 +20728,7 @@ function SelectedPokemonPanel({
                       <label className="compatibility-toggle">
                         <input
                           checked={entry.canLearn}
+                          className="km-choice-control"
                           disabled={!canToggleCompatibility}
                           onChange={(event) => {
                             if (pokemon && selectedCompatibilityGroup) {
@@ -22580,6 +22595,7 @@ function SelectedMovePanel({
                       label={t('moves.runtimeVariant.label')}
                     />
                     <select
+                      className="km-select-control"
                       disabled={isMoveUpdating}
                       id="move-runtime-variant"
                       onChange={(event) => onSelectRuntimeVariant(Number(event.target.value))}
@@ -22612,6 +22628,7 @@ function SelectedMovePanel({
                       label={translateLiteral('Profile')}
                     />
                     <select
+                      className="km-select-control"
                       disabled={isMoveUpdating}
                       id="move-timing-profile"
                       onChange={(event) => {
@@ -22650,6 +22667,7 @@ function SelectedMovePanel({
                       label={translateLiteral('Occurrence')}
                     />
                     <select
+                      className="km-select-control"
                       disabled={isMoveUpdating}
                       id="move-timing-occurrence"
                       onChange={(event) => {
@@ -23406,6 +23424,7 @@ function TextSection({
               />
               <select
                 aria-label={t('text.language.ariaLabel')}
+                className="km-select-control"
                 data-localization-ignore="true"
                 disabled={isTextLoading || isTextUpdating}
                 id="text-game-language"
@@ -25310,6 +25329,7 @@ function SelectedTrainerPanel({
                       >
                         <input
                           checked={flag.enabled}
+                          className="km-choice-control"
                           disabled={!canToggleAiFlags || isReserved}
                           id={flagInputId}
                           onChange={(event) => {
@@ -26063,6 +26083,7 @@ function TrainerDraftField({
         <HoverTooltip content={localizedFieldHoverText}>
           <select
             aria-label={localizedFieldLabel}
+            className="km-select-control"
             disabled={effectiveDisabled}
             id={inputId}
             onChange={(event) => onChange(event.target.value)}
@@ -29447,6 +29468,7 @@ function GiftPokemonDraftField({
           <select
             aria-describedby={ariaDescribedBy}
             aria-label={localizedFieldLabel}
+            className="km-select-control"
             disabled={effectiveDisabled}
             id={inputId}
             onChange={(event) => onChange(event.target.value)}
@@ -34738,6 +34760,7 @@ function ShopRowFieldInput({
           aria-describedby={ariaDescribedBy}
           aria-invalid={ariaInvalid}
           aria-label={localizedFieldLabel}
+          className="km-select-control"
           disabled={disabled}
           id={id}
           onChange={(event) => onChange(event.target.value)}
@@ -39006,6 +39029,7 @@ function TeraRaidsSection({
                       <strong>{translateLiteral('Rewards')}</strong>
                       <select
                         aria-label={translateLiteral('Tera raid reward kind')}
+                        className="km-select-control"
                         onChange={(event) => {
                           setRewardKind(event.target.value === 'lottery' ? 'lottery' : 'fixed');
                           setSelectedRewardRecordId(null);
@@ -39039,6 +39063,7 @@ function TeraRaidsSection({
                             <span>{translateLiteral('Add reward in empty slot')}</span>
                             <select
                               aria-label={translateLiteral('Add reward in empty slot')}
+                              className="km-select-control"
                               onChange={(event) =>
                                 setSelectedRewardRecordId(event.target.value || null)
                               }
@@ -39780,6 +39805,7 @@ function SelectedRaidBattlePanel({
               <strong>Battle slots</strong>
               <select
                 aria-label="Raid battle slot"
+                className="km-select-control"
                 disabled={table.slots.length === 0}
                 onChange={(event) => onSelectSlot(Number(event.target.value))}
                 value={selectedSlot ?? ''}
@@ -40400,6 +40426,7 @@ function SelectedRaidRewardPanel({
               <strong>{translateLiteral('Rewards')}</strong>
               <select
                 aria-label={translateLiteral('Raid reward slot')}
+                className="km-select-control"
                 disabled={table.rewards.length === 0}
                 onChange={(event) => onSelectSlot(Number(event.target.value))}
                 value={selectedSlot ?? ''}
@@ -41080,6 +41107,7 @@ function SelectedBehaviorPanel({
                             <HoverTooltip content={localizedBehaviorFieldHover}>
                               <select
                                 aria-label={translateLiteral(field.label)}
+                                className="km-select-control"
                                 disabled={isDisabled}
                                 id={`behavior-field-${field.field}`}
                                 onChange={(event) =>
@@ -46385,6 +46413,7 @@ function SvModMergerSection({
                     <label className="compact-checkbox">
                       <input
                         checked={source.isEnabled}
+                        className="km-choice-control"
                         disabled={isLoading || isStaging || isApplying}
                         onChange={() => onToggleSource(index)}
                         type="checkbox"
@@ -47032,6 +47061,7 @@ function ModMergerFileList({
               >
                 <input
                   checked={isSelected}
+                  className="km-choice-control"
                   onChange={() => onToggleFile(directory, file.relativePath)}
                   type="checkbox"
                 />
@@ -47675,6 +47705,7 @@ function SettingsSection({
                 label={translateLiteral('Maximum cache size')}
               />
               <select
+                className="km-select-control"
                 disabled={isSvCacheClearing}
                 id="settings-cache-limit"
                 onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
@@ -53823,6 +53854,7 @@ function PokemonPersonalFieldInput({
         <HoverTooltip content={localizedHoverText}>
           <select
             aria-label={localizedFieldLabel}
+            className="km-select-control"
             disabled={disabled}
             id={inputId}
             onChange={(event) => onChange(event.target.value)}
@@ -58779,78 +58811,6 @@ function createSafeWorkspaceShortcutRegistry(
     );
   } catch {
     return createWorkspaceShortcutRegistry();
-  }
-}
-
-const capabilityDiscoveryStorageKey = 'km-editor.capability-discovery.v1';
-const maximumCapabilityDiscoveryEntries = 32;
-const maximumCapabilityDiscoverySignatureCharacters = 16 * 1024;
-const maximumCapabilityDiscoveryStorageCharacters = 64 * 1024;
-
-function readCapabilityDiscoveryEntries(): Array<{ projectId: string; signature: string }> {
-  try {
-    const value = window.localStorage.getItem(capabilityDiscoveryStorageKey);
-    if (!value || value.length > maximumCapabilityDiscoveryStorageCharacters) return [];
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    const seenProjectIds = new Set<string>();
-    return parsed.flatMap((entry) => {
-      if (
-        typeof entry !== 'object' ||
-        entry === null ||
-        typeof (entry as { projectId?: unknown }).projectId !== 'string' ||
-        typeof (entry as { signature?: unknown }).signature !== 'string'
-      ) {
-        return [];
-      }
-      const { projectId, signature } = entry as { projectId: string; signature: string };
-      if (
-        projectId.length === 0 ||
-        projectId.length > 128 ||
-        signature.length === 0 ||
-        signature.length > maximumCapabilityDiscoverySignatureCharacters ||
-        seenProjectIds.has(projectId)
-      ) {
-        return [];
-      }
-      seenProjectIds.add(projectId);
-      return [{ projectId, signature }];
-    }).slice(0, maximumCapabilityDiscoveryEntries);
-  } catch {
-    return [];
-  }
-}
-
-function readCapabilityDiscoverySignature(projectId: string) {
-  return readCapabilityDiscoveryEntries().find((entry) => entry.projectId === projectId)
-    ?.signature ?? null;
-}
-
-function writeCapabilityDiscoverySignature(projectId: string, signature: string) {
-  try {
-    if (
-      projectId.length === 0 ||
-      projectId.length > 128 ||
-      signature.length === 0 ||
-      signature.length > maximumCapabilityDiscoverySignatureCharacters
-    ) {
-      return;
-    }
-    const candidates = [
-      { projectId, signature },
-      ...readCapabilityDiscoveryEntries().filter((entry) => entry.projectId !== projectId)
-    ];
-    const entries: Array<{ projectId: string; signature: string }> = [];
-    for (const candidate of candidates) {
-      if (entries.length >= maximumCapabilityDiscoveryEntries) break;
-      const nextEntries = [...entries, candidate];
-      if (JSON.stringify(nextEntries).length <= maximumCapabilityDiscoveryStorageCharacters) {
-        entries.push(candidate);
-      }
-    }
-    window.localStorage.setItem(capabilityDiscoveryStorageKey, JSON.stringify(entries));
-  } catch {
-    // Workbench still exposes discovery if browser preferences cannot persist.
   }
 }
 

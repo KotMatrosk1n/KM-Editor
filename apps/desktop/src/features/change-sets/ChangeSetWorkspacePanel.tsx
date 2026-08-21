@@ -30,7 +30,11 @@ import {
   type FormEvent,
   type KeyboardEvent
 } from 'react';
-import { changeSetMaximumDependencyCount } from '../../bridge/changeSetContracts';
+import {
+  changeSetMaximumDependencyCount,
+  changeSetMaximumPortablePackageBytes
+} from '../../bridge/changeSetContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { DiagnosticsSection } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 import type {
@@ -45,8 +49,6 @@ import {
   type AdvancedAuthoringPanelProps
 } from './AdvancedAuthoringPanel';
 import './changeSets.css';
-
-const maximumPortableChangeSetPackageBytes = 2 * 1024 * 1024;
 
 export type ChangeSetWorkspacePanelProps = {
   advancedAuthoring?: AdvancedAuthoringPanelProps | null;
@@ -120,7 +122,7 @@ export function ChangeSetWorkspacePanel({
                 const input = event.currentTarget;
                 const file = input.files?.[0];
                 if (!file) return;
-                if (file.size > maximumPortableChangeSetPackageBytes) {
+                if (file.size > changeSetMaximumPortablePackageBytes) {
                   setImportError(t('changeSets.importTooLarge'));
                   input.value = '';
                   return;
@@ -147,7 +149,8 @@ export function ChangeSetWorkspacePanel({
               <span>{t('changeSets.import')}</span>
             </button>
             <button
-              aria-label={t('changeSets.refresh')}
+              aria-busy={isBusy || undefined}
+              aria-label={t(isBusy ? 'changeSets.loading' : 'changeSets.refresh')}
               className="secondary-button compact-button"
               disabled={isBusy || controller.readiness === 'unavailable'}
               onClick={controller.onRefresh}
@@ -184,6 +187,9 @@ export function ChangeSetWorkspacePanel({
         </header>
 
         <WorkspaceStatus controller={controller} />
+        {isBusy && controller.readiness === 'ready' ? (
+          <LoadingProgress className="is-compact" label={t('changeSets.loading')} />
+        ) : null}
         {controller.unassignedOperationCount > 0 ||
         controller.legacyUnsupportedOperationCount > 0 ? (
           <div className="change-set-legacy-status" role="status">
@@ -350,6 +356,13 @@ function WorkspaceStatus({ controller }: { controller: ChangeSetWorkspaceControl
     : controller.readiness === 'error'
       ? 'changeSets.loadError'
       : 'changeSets.unavailable';
+  if (controller.readiness === 'loading') {
+    return (
+      <div className="change-sets-status is-loading">
+        <LoadingProgress label={t(key)} />
+      </div>
+    );
+  }
   return (
     <div className={`change-sets-status is-${controller.readiness}`} role="status">
       <span>{t(key)}</span>
@@ -685,6 +698,7 @@ function ChangeSetDetail({
                       <label data-localization-ignore="true">
                         <input
                           checked={dependencyIds.has(candidate.id)}
+                          className="km-choice-control"
                           disabled={
                             isBusy ||
                             changeSet.isArchived ||
@@ -901,6 +915,7 @@ function BuildVariants({
             {t('changeSets.variants.outputMode')}
           </label>
           <select
+            className="km-select-control"
             disabled={isBusy || controller.availableOutputModes.length === 0}
             id="change-set-variant-output-mode"
             onChange={(event) => setOutputMode(event.currentTarget.value)}
@@ -916,6 +931,7 @@ function BuildVariants({
             {t('changeSets.variants.outputProfile')}
           </label>
           <select
+            className="km-select-control"
             disabled={isBusy}
             id="change-set-variant-output-profile"
             onChange={(event) => setOutputProfileId(event.currentTarget.value)}
@@ -937,6 +953,7 @@ function BuildVariants({
                     <label data-localization-ignore="true">
                       <input
                         checked={selectedVariantSetIds.has(candidate.id)}
+                        className="km-choice-control"
                         disabled={isBusy}
                         onChange={(event) => {
                           const checked = event.currentTarget.checked;

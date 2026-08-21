@@ -22,6 +22,29 @@
   gap: 6px;
 }
 
+.workspace-header-toggle {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.workspace-header-toggle[aria-pressed="true"] {
+  color: #fff4c2;
+  background: rgb(var(--color-gold-rgb) / 18%);
+  border-color: rgb(var(--color-gold-rgb) / 72%);
+  box-shadow:
+    0 0 0 1px rgb(var(--color-gold-rgb) / 12%),
+    inset 0 0 18px rgb(var(--color-gold-rgb) / 8%);
+}
+
+.workspace-header-toggle[aria-pressed="true"]:hover {
+  background: rgb(var(--color-gold-rgb) / 26%);
+}
+
 .workspace-command-button kbd,
 .km-command-palette kbd,
 .km-shortcut-overlay kbd {
@@ -113,6 +136,11 @@
   box-shadow: var(--shadow-panel);
 }
 
+.km-command-palette {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  max-height: min(720px, calc(100dvh - min(12dvh, 96px) - 20px));
+}
+
 .km-command-palette-heading {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -148,12 +176,32 @@
   outline: 2px solid transparent;
 }
 
+.km-command-results {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.km-command-results > .km-command-search-state {
+  grid-row: 1;
+}
+
+.km-command-results > .km-command-list,
+.km-command-results > .km-workbench-empty {
+  grid-row: 2;
+}
+
 .km-command-list,
 .km-shortcut-list {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.km-command-list {
+  overflow-y: scroll;
 }
 
 .km-command-entry {
@@ -575,11 +623,17 @@
   width: min(680px, 100%);
 }
 
+.km-capability-dialog-overlay {
+  padding-block: clamp(8px, 3dvh, 24px);
+}
+
 .km-capability-dialog {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
+  min-height: 0;
   width: min(800px, 100%);
-  max-height: min(760px, calc(100vh - 40px));
+  max-height: min(760px, 100%);
   padding: 16px;
   overflow: hidden;
   color: var(--color-text);
@@ -596,6 +650,10 @@
   align-items: start;
 }
 
+.km-capability-dialog-heading > div {
+  min-width: 0;
+}
+
 .km-capability-dialog-heading h2,
 .km-capability-dialog-heading p {
   margin: 0;
@@ -606,13 +664,19 @@
   color: var(--color-text-muted);
 }
 
+.km-capability-dialog-body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .km-capability-dialog-list {
   display: grid;
   gap: 8px;
   margin: 0;
   padding: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
   list-style: none;
 }
 
@@ -834,12 +898,23 @@
 
 @media (max-width: 760px) {
   .workspace-command-button span,
-  .workspace-command-button kbd {
+  .workspace-command-button kbd,
+  .workspace-header-toggle-copy {
     display: none;
+  }
+
+  .tooltip-icon-visibility-control {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
   }
 
   .km-workbench-overlay {
     padding: 12px;
+  }
+
+  .km-capability-dialog-overlay {
+    padding-block: 8px;
   }
 
   .km-command-palette,
@@ -849,6 +924,10 @@
   .km-adaptive-inspector-modal {
     width: 100%;
     max-height: calc(100dvh - 24px);
+  }
+
+  .km-capability-dialog {
+    max-height: 100%;
   }
 
   .km-workbench-home-grid,
@@ -908,8 +987,11 @@
 
 .km-workbench-lab-view {
   display: grid;
+  grid-column: 1 / -1;
   gap: 0.75rem;
+  align-content: start;
   min-width: 0;
+  width: 100%;
 }
 
 .km-workbench-lab-back {
@@ -917,6 +999,28 @@
   display: inline-flex;
   gap: 0.35rem;
   justify-self: start;
+}
+
+@media (max-height: 480px) {
+  .km-capability-dialog-overlay {
+    padding-block: 8px;
+  }
+
+  .km-capability-dialog {
+    gap: 8px;
+    max-height: 100%;
+    padding: 10px;
+  }
+
+  .km-capability-dialog-heading {
+    align-items: center;
+  }
+
+  .km-capability-dialog-heading p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 @media (forced-colors: active) {
@@ -958,10 +1062,12 @@
 
   .km-command-option[aria-selected="true"],
   .km-record-tab[aria-selected="true"],
-  .km-inspector-tabs button[aria-selected="true"] {
+  .km-inspector-tabs button[aria-selected="true"],
+  .workspace-header-toggle[aria-pressed="true"] {
     color: HighlightText;
     background: Highlight;
     border-color: Highlight;
+    box-shadow: none;
   }
 
   .km-record-tab-dirty {
@@ -973,7 +1079,8 @@
 @media (prefers-reduced-motion: reduce) {
   .km-workbench-overlay,
   .km-adaptive-inspector,
-  .km-command-option {
+  .km-command-option,
+  .workspace-header-toggle {
     scroll-behavior: auto;
     transition: none;
     animation: none;

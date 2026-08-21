@@ -12,7 +12,10 @@ import {
   BalanceLabSection,
   BalanceLabStatusPanel
 } from './BalanceLabSection';
-import type { SemanticQueryStatus } from '../semantic-explore/useSemanticExploreController';
+import type {
+  SemanticQueryError,
+  SemanticQueryStatus
+} from '../semantic-explore/useSemanticExploreController';
 import {
   useBalanceLabController,
   type BalanceLabLayer
@@ -21,9 +24,11 @@ import {
 export type BalanceLabRuntimeProps = {
   availableLayers?: readonly BalanceLabLayer[];
   bridge: BalanceLabProjectBridgeApi;
+  capabilityError: SemanticQueryError | null;
   capabilityStatus: SemanticQueryStatus;
   onEnsureCapabilities: () => Promise<void>;
   onNavigateFinding: (record: SemanticExploreRecordRef) => void;
+  onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
   scope: SemanticExploreScope;
@@ -32,9 +37,11 @@ export type BalanceLabRuntimeProps = {
 export function BalanceLabRuntime({
   availableLayers,
   bridge,
+  capabilityError,
   capabilityStatus,
   onEnsureCapabilities,
   onNavigateFinding,
+  onRefreshCapabilities,
   onStaleRevision,
   revision,
   scope
@@ -44,7 +51,7 @@ export function BalanceLabRuntime({
     if (!revision && capabilityStatus === 'idle') {
       void onEnsureCapabilities();
     }
-  }, [capabilityStatus, onEnsureCapabilities, revision]);
+  }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -59,7 +66,12 @@ export function BalanceLabRuntime({
         </header>
         <BalanceLabStatusPanel
           kind={isError ? 'error' : 'loading'}
-          {...(isError ? { onRetry: () => void onEnsureCapabilities() } : {})}
+          {...(isError ? {
+            messageKey: capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'balanceLab.error',
+            onRetry: () => void onRefreshCapabilities()
+          } : {})}
         />
       </section>
     );
@@ -84,7 +96,13 @@ function BalanceLabReadyRuntime({
   onStaleRevision,
   revision,
   scope
-}: Omit<BalanceLabRuntimeProps, 'capabilityStatus' | 'onEnsureCapabilities'> & {
+}: Omit<
+  BalanceLabRuntimeProps,
+  | 'capabilityError'
+  | 'capabilityStatus'
+  | 'onEnsureCapabilities'
+  | 'onRefreshCapabilities'
+> & {
   revision: SemanticExploreRevision;
 }) {
   const controller = useBalanceLabController({

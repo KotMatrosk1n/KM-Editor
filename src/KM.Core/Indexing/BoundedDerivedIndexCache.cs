@@ -5,6 +5,133 @@ using KM.Core.Semantics;
 
 namespace KM.Core.Indexing;
 
+/// <summary>
+/// Coordinates conservative derived-entry size estimates; it does not measure physical memory.
+/// </summary>
+internal static class ProcessWideDerivedIndexCacheBudget
+{
+    private const int ProvisionMultiplier = 4;
+    private const int CacheCeilingMultiplier = 2;
+    private const long ExpectedAggregateEstimatedSizeBytes = checked(
+        (3L * 128L + 256L + 192L) * 1024L * 1024L);
+    internal const long MaximumEstimatedSizeBytes = checked(
+        ExpectedAggregateEstimatedSizeBytes * ProvisionMultiplier * CacheCeilingMultiplier);
+
+    private static readonly object SyncRoot = new();
+    private static long currentSizeBytes;
+
+    internal static bool TryResize(long releasedSizeBytes, long reservedSizeBytes)
+    {
+        if (releasedSizeBytes < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(releasedSizeBytes),
+                releasedSizeBytes,
+                null);
+        }
+
+        if (reservedSizeBytes < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reservedSizeBytes),
+                reservedSizeBytes,
+                null);
+        }
+
+        lock (SyncRoot)
+        {
+            if (releasedSizeBytes > currentSizeBytes)
+            {
+                throw new InvalidOperationException(
+                    "The process-wide derived-index cache size accounting is inconsistent.");
+            }
+
+            var retainedSizeBytes = currentSizeBytes - releasedSizeBytes;
+            if (reservedSizeBytes > MaximumEstimatedSizeBytes
+                || retainedSizeBytes > MaximumEstimatedSizeBytes - reservedSizeBytes)
+            {
+                return false;
+            }
+
+            currentSizeBytes = checked(retainedSizeBytes + reservedSizeBytes);
+            return true;
+        }
+    }
+
+    internal static void Release(long sizeBytes)
+    {
+        if (!TryRelease(sizeBytes))
+        {
+            throw new InvalidOperationException(
+                "The process-wide derived-index cache size accounting is inconsistent.");
+        }
+    }
+
+    internal static bool TryRelease(long sizeBytes)
+    {
+        if (sizeBytes < 0)
+        {
+            return false;
+        }
+
+        lock (SyncRoot)
+        {
+            if (sizeBytes > currentSizeBytes)
+            {
+                return false;
+            }
+
+            currentSizeBytes -= sizeBytes;
+            return true;
+        }
+    }
+}
+
+internal sealed class ProcessWideDerivedIndexCacheBudgetLease
+{
+    private long reservedSizeBytes;
+
+    ~ProcessWideDerivedIndexCacheBudgetLease()
+    {
+        if (reservedSizeBytes > 0)
+        {
+            ProcessWideDerivedIndexCacheBudget.TryRelease(reservedSizeBytes);
+        }
+    }
+
+    internal bool TryResize(long releasedSizeBytes, long reservedSizeBytes)
+    {
+        if (releasedSizeBytes < 0 || releasedSizeBytes > this.reservedSizeBytes)
+        {
+            throw new InvalidOperationException(
+                "The derived-index cache budget lease accounting is inconsistent.");
+        }
+
+        if (!ProcessWideDerivedIndexCacheBudget.TryResize(
+                releasedSizeBytes,
+                reservedSizeBytes))
+        {
+            return false;
+        }
+
+        this.reservedSizeBytes = checked(
+            this.reservedSizeBytes - releasedSizeBytes + reservedSizeBytes);
+        return true;
+    }
+
+    internal void Release(long sizeBytes)
+    {
+        if (sizeBytes < 0 || sizeBytes > reservedSizeBytes)
+        {
+            throw new InvalidOperationException(
+                "The derived-index cache budget lease accounting is inconsistent.");
+        }
+
+        reservedSizeBytes -= sizeBytes;
+        ProcessWideDerivedIndexCacheBudget.Release(sizeBytes);
+    }
+}
+
 public sealed record BoundedDerivedIndexCacheOptions
 {
     public int MaximumEntryCount { get; init; } = 64;
@@ -60,6 +187,7 @@ public sealed record DerivedIndexCacheStatistics(
 /// A thread-safe, size-bounded least-recently-used cache for immutable derived indexes.
 /// </summary>
 /// <remarks>
+/// Every instance also reserves its estimated entry bytes against one process-wide hard ceiling.
 /// Factories run outside the cache lock and may run more than once for the same key. This keeps
 /// unrelated cache reads responsive and leaves cancellation ownership with each caller.
 /// A result whose factory overlaps an explicit removal, invalidation, or clear is returned to its
@@ -70,6 +198,7 @@ public sealed class BoundedDerivedIndexCache<TValue>
     private readonly object syncRoot = new();
     private readonly Dictionary<DerivedIndexCacheKey, CacheEntry> entries = new();
     private readonly LinkedList<DerivedIndexCacheKey> usageOrder = new();
+    private readonly ProcessWideDerivedIndexCacheBudgetLease processWideBudgetLease = new();
     private readonly int maximumEntryCount;
     private readonly long maximumSizeBytes;
     private long currentSizeBytes;
@@ -120,7 +249,7 @@ public sealed class BoundedDerivedIndexCache<TValue>
     }
 
     /// <summary>
-    /// Adds or replaces an entry. Returns false when the entry itself exceeds the cache budget.
+    /// Adds or replaces an entry. Returns false when the entry exceeds a cache budget.
     /// </summary>
     public bool Set(DerivedIndexCacheKey key, TValue value, long sizeBytes)
     {
@@ -128,7 +257,7 @@ public sealed class BoundedDerivedIndexCache<TValue>
     }
 
     /// <summary>
-    /// Adds or replaces an entry. Returns false when the entry itself exceeds the cache budget.
+    /// Adds or replaces an entry. Returns false when the entry exceeds a cache budget.
     /// </summary>
     public bool Set(DerivedIndexCacheKey key, DerivedIndexCacheItem<TValue> item)
     {
@@ -219,6 +348,7 @@ public sealed class BoundedDerivedIndexCache<TValue>
             AdvanceInvalidationEpoch();
             entries.Clear();
             usageOrder.Clear();
+            processWideBudgetLease.Release(currentSizeBytes);
             currentSizeBytes = 0;
         }
     }
@@ -277,23 +407,84 @@ public sealed class BoundedDerivedIndexCache<TValue>
 
     private bool SetCore(DerivedIndexCacheKey key, DerivedIndexCacheItem<TValue> item)
     {
-        RemoveCore(key);
-
         if (item.SizeBytes > maximumSizeBytes)
+        {
+            RemoveCore(key);
+            return false;
+        }
+
+        var replacesExisting = entries.TryGetValue(key, out var replacedEntry);
+        var releasedSizeBytes = replacedEntry?.SizeBytes ?? 0;
+        var remainingEntryCount = entries.Count - (replacesExisting ? 1 : 0);
+        var remainingSizeBytes = currentSizeBytes - releasedSizeBytes;
+        List<DerivedIndexCacheKey>? evictionKeys = null;
+        var candidate = usageOrder.Last;
+        while (remainingEntryCount >= maximumEntryCount
+               || remainingSizeBytes > maximumSizeBytes - item.SizeBytes)
+        {
+            while (candidate is not null && candidate.Value.Equals(key))
+            {
+                candidate = candidate.Previous;
+            }
+
+            if (candidate is null || !entries.TryGetValue(candidate.Value, out var candidateEntry))
+            {
+                throw new InvalidOperationException(
+                    "The derived-index cache size accounting is inconsistent.");
+            }
+
+            evictionKeys ??= [];
+            evictionKeys.Add(candidate.Value);
+            releasedSizeBytes = checked(releasedSizeBytes + candidateEntry.SizeBytes);
+            remainingSizeBytes -= candidateEntry.SizeBytes;
+            remainingEntryCount--;
+            candidate = candidate.Previous;
+        }
+
+        if (!processWideBudgetLease.TryResize(releasedSizeBytes, item.SizeBytes))
         {
             return false;
         }
 
-        while (entries.Count >= maximumEntryCount
-               || currentSizeBytes > maximumSizeBytes - item.SizeBytes)
+        if (replacesExisting && !RemoveCore(key, releaseProcessWideBudget: false))
         {
-            EvictLeastRecentlyUsed();
+            throw new InvalidOperationException(
+                "The derived-index cache replacement accounting is inconsistent.");
         }
 
-        var usageNode = usageOrder.AddFirst(key);
-        entries.Add(key, new CacheEntry(item.Value, item.SizeBytes, usageNode));
-        currentSizeBytes += item.SizeBytes;
-        return true;
+        if (evictionKeys is not null)
+        {
+            foreach (var evictionKey in evictionKeys)
+            {
+                if (!RemoveCore(evictionKey, releaseProcessWideBudget: false))
+                {
+                    throw new InvalidOperationException(
+                        "The derived-index cache eviction accounting is inconsistent.");
+                }
+
+                evictionCount++;
+            }
+        }
+
+        LinkedListNode<DerivedIndexCacheKey>? usageNode = null;
+        try
+        {
+            usageNode = usageOrder.AddFirst(key);
+            entries.Add(key, new CacheEntry(item.Value, item.SizeBytes, usageNode));
+            currentSizeBytes += item.SizeBytes;
+            return true;
+        }
+        catch
+        {
+            entries.Remove(key);
+            if (usageNode?.List is not null)
+            {
+                usageOrder.Remove(usageNode);
+            }
+
+            processWideBudgetLease.Release(item.SizeBytes);
+            throw;
+        }
     }
 
     private void AdvanceInvalidationEpoch()
@@ -301,7 +492,9 @@ public sealed class BoundedDerivedIndexCache<TValue>
         invalidationEpoch = unchecked(invalidationEpoch + 1);
     }
 
-    private bool RemoveCore(DerivedIndexCacheKey key)
+    private bool RemoveCore(
+        DerivedIndexCacheKey key,
+        bool releaseProcessWideBudget = true)
     {
         if (!entries.Remove(key, out var entry))
         {
@@ -310,19 +503,12 @@ public sealed class BoundedDerivedIndexCache<TValue>
 
         usageOrder.Remove(entry.UsageNode);
         currentSizeBytes -= entry.SizeBytes;
-        return true;
-    }
-
-    private void EvictLeastRecentlyUsed()
-    {
-        var leastRecentlyUsed = usageOrder.Last;
-        if (leastRecentlyUsed is null)
+        if (releaseProcessWideBudget)
         {
-            throw new InvalidOperationException("The derived-index cache size accounting is inconsistent.");
+            processWideBudgetLease.Release(entry.SizeBytes);
         }
 
-        RemoveCore(leastRecentlyUsed.Value);
-        evictionCount++;
+        return true;
     }
 
     private sealed record CacheEntry(

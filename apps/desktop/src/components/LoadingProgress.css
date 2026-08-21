@@ -1,0 +1,137 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.km-loading-progress {
+  position: relative;
+  display: grid;
+  gap: 0.625rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.km-loading-progress-heading {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.km-loading-progress-copy {
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text-soft);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.km-loading-progress-count {
+  flex: 0 0 auto;
+  color: var(--color-gold);
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.km-loading-progress-visual {
+  height: 0.625rem;
+  overflow: hidden;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+}
+
+.km-loading-progress-indicator {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-gold));
+  border-radius: inherit;
+  transform: translateX(-70%);
+  animation: km-loading-progress-sweep 1.35s ease-in-out infinite;
+}
+
+.km-loading-progress-visual.is-determinate .km-loading-progress-indicator {
+  width: var(--km-loading-progress-value, 0%);
+  transform: none;
+  animation: none;
+  transition: width 180ms ease;
+}
+
+.km-loading-progress-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.km-loading-progress.is-compact {
+  gap: 0.35rem;
+}
+
+.km-loading-progress.is-compact .km-loading-progress-copy {
+  font-size: 0.82rem;
+}
+
+.km-loading-progress.is-compact .km-loading-progress-visual {
+  height: 0.45rem;
+}
+
+@keyframes km-loading-progress-sweep {
+  0% {
+    transform: translateX(-70%);
+  }
+
+  100% {
+    transform: translateX(230%);
+  }
+}
+
+@media (max-width: 400px) {
+  .km-loading-progress-heading {
+    gap: 0.2rem;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-loading-progress-visual:not(.is-determinate) .km-loading-progress-indicator {
+    width: 100%;
+    background: repeating-linear-gradient(
+      135deg,
+      var(--color-accent) 0 0.5rem,
+      var(--color-gold) 0.5rem 1rem
+    );
+    transform: none;
+    animation: none;
+  }
+}
+
+:root[data-km-motion='reduce']
+  .km-loading-progress-visual:not(.is-determinate)
+  .km-loading-progress-indicator {
+  width: 100%;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-accent) 0 0.5rem,
+    var(--color-gold) 0.5rem 1rem
+  );
+  transform: none;
+  animation: none;
+}
+
+@media (forced-colors: active) {
+  .km-loading-progress-visual {
+    background: Canvas;
+    border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  :root .km-loading-progress .km-loading-progress-indicator {
+    background: Highlight;
+  }
+}

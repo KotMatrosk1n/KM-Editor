@@ -409,6 +409,7 @@ function FairyGymBoostCard({
         />
         <select
           aria-label={`${boost.answerText} outcome`}
+          className="km-select-control"
           disabled={disabled}
           id={outcomeInputId}
           onChange={(event) => onChange(boost.boostId, event.currentTarget.value)}

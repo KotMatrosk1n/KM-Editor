@@ -15,6 +15,7 @@ import type {
   SemanticExploreRecordRef,
   SemanticExploreRevision
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import {
   researchErrorKey,
@@ -109,18 +110,24 @@ export function ResearchAnnotationsView({
           <p>{t('researchLab.annotations.description')}</p>
         </div>
         <button
+          aria-busy={controller.annotations.status === 'loading' || undefined}
           className="secondary-button compact-button"
           disabled={controller.annotations.status === 'loading'}
           onClick={() => void controller.refreshAnnotations()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={14} />
-          <span>{t('researchLab.annotations.refresh')}</span>
+          <span>{t(controller.annotations.status === 'loading'
+            ? 'researchLab.annotations.loading'
+            : 'researchLab.annotations.refresh')}</span>
         </button>
       </div>
 
       {controller.annotations.status === 'loading' && !controller.annotations.data ? (
         <Status messageKey="researchLab.annotations.loading" />
+      ) : null}
+      {controller.annotations.status === 'loading' && controller.annotations.data ? (
+        <Status compact messageKey="researchLab.annotations.loading" />
       ) : null}
       {controller.annotations.error ? (
         <Status error messageKey={researchErrorKey(controller.annotations.error)} />
@@ -186,6 +193,12 @@ export function ResearchAnnotationsView({
               {t('researchLab.annotations.cancel')}
             </button>
           </div>
+          {controller.annotations.isSaving ? (
+            <LoadingProgress
+              className="is-compact"
+              label={t('researchLab.annotations.saving')}
+            />
+          ) : null}
         </form>
       ) : (
         <p className="km-research-lab-empty">{t('researchLab.annotations.selectTarget')}</p>
@@ -335,13 +348,28 @@ function isResearchTargetCurrent(
   return expectedFingerprint === comparison.comparisonFingerprint;
 }
 
-function Status({ error = false, messageKey }: { error?: boolean; messageKey: string }) {
+function Status({
+  compact = false,
+  error = false,
+  messageKey
+}: {
+  compact?: boolean;
+  error?: boolean;
+  messageKey: string;
+}) {
   const { t } = useLocalization();
+  if (!error) {
+    return (
+      <div className="km-research-lab-inline-status">
+        <LoadingProgress className={compact ? 'is-compact' : undefined} label={t(messageKey)} />
+      </div>
+    );
+  }
   return (
     <div
       aria-live="polite"
       className="km-research-lab-inline-status"
-      role={error ? 'alert' : 'status'}
+      role="alert"
     >
       <span>{t(messageKey)}</span>
     </div>

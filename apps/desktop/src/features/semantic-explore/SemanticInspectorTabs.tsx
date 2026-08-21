@@ -7,7 +7,10 @@ import type {
   SemanticExploreCoverage,
   SemanticExploreRecordRef
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { semanticRecordRefKey } from '../../workbench/semanticContracts';
+import { TechnicalDetails } from '../workbench/AnalysisPresentation';
+import { humanizeIdentifier } from '../workbench/analysisPresentationUtils';
 import {
   semanticExploreMaximumAccumulatedResults,
   type QueryableLayer,
@@ -273,7 +276,9 @@ function InspectorImpact({
           <li key={`${impact.sourceDomain}:${impact.relationshipKey}`}>
             <span data-localization-ignore="true">
               <strong>{impact.summary}</strong>
-              <small>{impact.sourceDomain}</small>
+              <small data-localization-ignore="true">
+                {humanizeIdentifier(impact.sourceDomain)}
+              </small>
             </span>
             <em data-localization-ignore="true">{impact.count}</em>
           </li>
@@ -340,7 +345,7 @@ function InspectorOwnership({
 }
 
 function InspectorCoverage({ coverage }: { coverage: readonly SemanticExploreCoverage[] }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   if (coverage.length === 0) return null;
   return (
     <details className="km-semantic-coverage">
@@ -348,13 +353,20 @@ function InspectorCoverage({ coverage }: { coverage: readonly SemanticExploreCov
       <ul>
         {coverage.map((entry) => (
           <li key={entry.providerId}>
-            <span data-localization-ignore="true">{entry.providerId}</span>
-            <span data-localization-ignore="true">{entry.domains.join(', ')}</span>
+            <span data-localization-ignore="true">{humanizeIdentifier(entry.providerId)}</span>
+            <span data-localization-ignore="true">
+              {entry.domains.map(humanizeIdentifier).join(', ')}
+            </span>
             <span>{t(`semanticExplore.coverage.state.${entry.state}`)}</span>
             <span>{t(`semanticExplore.coverage.confidence.${entry.confidence}`)}</span>
             {entry.reasonCode ? (
-              <code data-localization-ignore="true">{entry.reasonCode}</code>
+              <span>{t('analysisPresentation.coverage.limited')}</span>
             ) : null}
+            <TechnicalDetails summary={translateLiteral('Technical details')}>
+              <code>{entry.providerId}</code>
+              {entry.domains.map((domain) => <code key={domain}>{domain}</code>)}
+              {entry.reasonCode ? <code>{entry.reasonCode}</code> : null}
+            </TechnicalDetails>
           </li>
         ))}
       </ul>
@@ -372,10 +384,13 @@ function InspectorBoundary<T>({
 }) {
   const { t } = useLocalization();
   if ((state.status === 'loading' || state.status === 'idle') && !state.data) {
-    return <p className="km-workbench-empty" role="status">{t('semanticExplore.loading')}</p>;
+    return <LoadingProgress label={t('semanticExplore.loading')} />;
   }
   return (
     <>
+      {state.status === 'loading' && state.data && !state.isAppending ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+      ) : null}
       {state.status === 'error' ? (
         <p className="km-semantic-query-error" role="alert">
           {t(`semanticExplore.query.error.${state.error ?? 'generic'}`)}
@@ -403,14 +418,20 @@ function InspectorLoadMore({
     return <p className="km-semantic-advisory">{t('semanticExplore.results.windowLimit')}</p>;
   }
   return (
-    <button
-      className="secondary-button compact-button"
-      disabled={isBusy}
-      onClick={onLoad}
-      type="button"
-    >
-      {t('semanticExplore.results.more')}
-    </button>
+    <>
+      <button
+        aria-busy={isBusy || undefined}
+        className="secondary-button compact-button"
+        disabled={isBusy}
+        onClick={onLoad}
+        type="button"
+      >
+        {isBusy ? t('semanticExplore.loading') : t('semanticExplore.results.more')}
+      </button>
+      {isBusy ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+      ) : null}
+    </>
   );
 }
 

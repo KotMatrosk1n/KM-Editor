@@ -231,6 +231,10 @@ public sealed record MoveRecordDto(
     public IReadOnlyDictionary<int, int> GameModuleTimingCounts { get; init; } =
         new Dictionary<int, int>();
 
+    [JsonIgnore]
+    public IReadOnlyDictionary<int, int> GameModuleVariantMultiplicities { get; init; } =
+        new Dictionary<int, int>();
+
     public IReadOnlyList<MovePlayerDamageRecordDto> PlayerDamageRows { get; init; } = [];
 
     public IReadOnlyList<MoveVanillaFieldValueDto> VanillaValues { get; init; } = [];

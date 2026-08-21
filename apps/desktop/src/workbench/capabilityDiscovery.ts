@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import type {
+  ApiDiagnostic,
   ProjectGame,
   ProjectHealth,
   WorkflowSummary
@@ -9,8 +10,10 @@ import {
   getWorkbenchSectionDescriptionKey,
   getWorkbenchSectionLabelKey,
   isCapabilityRegisteredForGame,
+  standaloneWorkflowSectionIds,
   workbenchCapabilityRegistry
 } from './capabilityRegistry';
+import { resolveWorkflowDataSection } from '../workflowGameSupport';
 import type { WorkbenchSection } from './workbenchSections';
 
 export type CapabilityDiscoveryStatus = 'available' | 'blocked' | 'editable' | 'readOnly';
@@ -39,12 +42,17 @@ export function createCapabilityDiscoveryViewModels(options: {
         isCapabilityRegisteredForGame(registration.id, options.game)
     )
     .map((registration) => {
-      const workflow = workflowsById.get(registration.id);
+      const workflow = workflowsById.get(resolveWorkflowDataSection(registration.id));
       const isWorkflow =
         registration.navigationKind === 'workflow' ||
         registration.navigationKind === 'hidden';
       const resolved = isWorkflow
-        ? resolveWorkflowStatus(registration.maturity, workflow, options.health)
+        ? resolveWorkflowStatus(
+            registration.maturity,
+            workflow,
+            options.health,
+            standaloneWorkflowSectionIds.has(registration.id)
+          )
         : {
             reason: null,
             reasonKey: null,
@@ -61,55 +69,60 @@ export function createCapabilityDiscoveryViewModels(options: {
     });
 }
 
-export function createCapabilityDiscoverySignature(
-  capabilities: readonly CapabilityDiscoveryViewModel[]
-) {
-  return `v1:${capabilities
-    .map((capability) => ({
-      capabilityKinds: [...capability.capabilityKinds].sort(),
-      id: capability.id,
-      status: capability.status
-    }))
-    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
-    .map(
-      (capability) =>
-        `${capability.id}=${capability.status}[${capability.capabilityKinds.join(',')}]`
-    )
-    .join(';')}`;
-}
-
 function resolveWorkflowStatus(
   maturity: 'editable' | 'readOnly' | 'mixed' | 'utility',
   workflow: WorkflowSummary | undefined,
-  health: ProjectHealth | null
+  health: ProjectHealth | null,
+  acceptsMissingWorkflowSummary: boolean
 ): Pick<
   CapabilityDiscoveryViewModel,
   'reason' | 'reasonKey' | 'status' | 'statusKey'
 > {
-  const reason = workflow?.diagnostics.find(
-    (diagnostic) => diagnostic.severity === 'error'
-  )?.message ?? workflow?.diagnostics.find(
-    (diagnostic) => diagnostic.severity === 'warning'
-  )?.message ?? workflow?.diagnostics[0]?.message ?? null;
+  const workflowReason = firstDiagnosticMessage(workflow?.diagnostics ?? []);
+  const healthReason = firstDiagnosticMessage(health?.diagnostics ?? []);
   const readOnly = maturity === 'readOnly' || workflow?.availability === 'readOnly';
-  const healthAllowsOpen = readOnly
+  const supportsReadOnlyAccess =
+    readOnly || maturity === 'mixed' || maturity === 'utility';
+  const healthAllowsOpen = supportsReadOnlyAccess
     ? Boolean(health?.canOpenReadOnlyWorkflows)
     : Boolean(health?.canOpenEditableWorkflows);
 
-  if (!workflow || workflow.availability === 'disabled' || !healthAllowsOpen) {
+  if (!healthAllowsOpen) {
     return {
-      reason,
-      reasonKey: reason ? null : 'workbench.capability.reason.projectUnavailable',
+      reason: healthReason ?? workflowReason,
+      reasonKey:
+        healthReason || workflowReason
+          ? null
+          : 'workbench.capability.reason.projectUnavailable',
       status: 'blocked',
       statusKey: 'workbench.capability.status.blocked'
     };
   }
-  if (readOnly) {
+  if (
+    workflow?.availability === 'disabled' ||
+    (!workflow && !acceptsMissingWorkflowSummary)
+  ) {
+    return {
+      reason: workflowReason,
+      reasonKey: workflowReason ? null : 'workbench.capability.reason.projectUnavailable',
+      status: 'blocked',
+      statusKey: 'workbench.capability.status.blocked'
+    };
+  }
+  if (readOnly || (maturity === 'mixed' && !health?.canOpenEditableWorkflows)) {
     return {
       reason: null,
       reasonKey: null,
       status: 'readOnly',
       statusKey: 'workbench.capability.status.readOnly'
+    };
+  }
+  if (maturity === 'utility') {
+    return {
+      reason: null,
+      reasonKey: null,
+      status: 'available',
+      statusKey: 'workbench.capability.status.available'
     };
   }
   return {
@@ -118,4 +131,15 @@ function resolveWorkflowStatus(
     status: 'editable',
     statusKey: 'workbench.capability.status.editable'
   };
+}
+
+function firstDiagnosticMessage(
+  diagnostics: readonly ApiDiagnostic[]
+) {
+  return (
+    diagnostics.find((diagnostic) => diagnostic.severity === 'error')?.message ??
+    diagnostics.find((diagnostic) => diagnostic.severity === 'warning')?.message ??
+    diagnostics[0]?.message ??
+    null
+  );
 }

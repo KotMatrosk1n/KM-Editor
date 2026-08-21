@@ -16,16 +16,31 @@ export const guidedDesignDefaultPageSize = 50;
 export const guidedDesignMaximumPageSize = 100;
 export const guidedDesignMaximumTargets = 128;
 export const guidedDesignMaximumPins = 128;
-export const guidedDesignMaximumMutations = 128;
-export const guidedDesignMaximumAffectedRecords = 128;
-export const guidedDesignMaximumEligibleTargetCount = 50_000;
+export const guidedDesignExpectedMutations = 768;
+export const guidedDesignProvisionedMutations = guidedDesignExpectedMutations * 4;
+export const guidedDesignMaximumMutations = guidedDesignProvisionedMutations * 2;
+export const guidedDesignExpectedAffectedRecords = 128;
+export const guidedDesignProvisionedAffectedRecords = guidedDesignExpectedAffectedRecords * 4;
+export const guidedDesignMaximumAffectedRecords = guidedDesignProvisionedAffectedRecords * 2;
+export const guidedDesignExpectedEligibleTargetCount = 50_000;
+export const guidedDesignProvisionedEligibleTargetCount =
+  guidedDesignExpectedEligibleTargetCount * 4;
+export const guidedDesignMaximumEligibleTargetCount =
+  guidedDesignProvisionedEligibleTargetCount * 2;
 export const guidedDesignMaximumEligibleTargetWindow = 500;
 export const guidedDesignMaximumTargetSearchLength = 256;
-export const guidedDesignMaximumFindings = 100;
+export const guidedDesignExpectedFindings = 100;
+export const guidedDesignProvisionedFindings = guidedDesignExpectedFindings * 4;
+export const guidedDesignMaximumFindings = guidedDesignProvisionedFindings * 2;
 export const guidedDesignMaximumAccumulatedResults =
   guidedDesignMaximumMutations + guidedDesignMaximumFindings;
 export const guidedDesignMaximumFieldKeys = 32;
 export const guidedDesignMaximumChangeSetNameLength = 128;
+export const guidedDesignExpectedCanonicalExportBytes = 1 * 1_024 * 1_024;
+export const guidedDesignProvisionedCanonicalExportBytes =
+  guidedDesignExpectedCanonicalExportBytes * 4;
+export const guidedDesignMaximumCanonicalExportBytes =
+  guidedDesignProvisionedCanonicalExportBytes * 2;
 
 const contractKeySchema = z
   .string()
@@ -242,8 +257,10 @@ export const guidedDesignFindingSchema = z.strictObject({
 
 export const guidedDesignCanonicalExportSchema = z.strictObject({
   content: z.string().refine(
-    (value) => new TextEncoder().encode(value).byteLength <= 131_072,
-    { message: 'Guided Design export content exceeds 128 KiB of UTF-8.' }
+    (value) => (
+      new TextEncoder().encode(value).byteLength <= guidedDesignMaximumCanonicalExportBytes
+    ),
+    { message: 'Guided Design export content exceeds 8 MiB of UTF-8.' }
   ),
   kind: z.enum(['spoiler', 'race']),
   mediaType: z.literal('application/json'),

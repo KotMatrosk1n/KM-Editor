@@ -22,10 +22,21 @@ internal sealed record GameModuleData(
     IReadOnlyList<ApiDiagnostic> Diagnostics,
     bool Cacheable);
 
+internal static class GameModuleSizingLimits
+{
+    internal const int ProvisionMultiplier = 4;
+    internal const int CacheCeilingMultiplier = 2;
+    internal const long ExpectedModuleSizeBytes = 192L * 1024L * 1024L;
+    internal const long ModuleProvisionSizeBytes = checked(
+        ExpectedModuleSizeBytes * ProvisionMultiplier);
+    internal const long ModuleCacheCeilingBytes = checked(
+        ModuleProvisionSizeBytes * CacheCeilingMultiplier);
+}
+
 internal static class GameModuleProviders
 {
     private const int RecordSchemaVersion = 1;
-    private const long MaximumProjectedBytes = 56L * 1024L * 1024L;
+    private const long MaximumProjectedBytes = GameModuleSizingLimits.ModuleCacheCeilingBytes;
     private sealed record PlayerDamageAggregate(int RowCount, int? LaunchCount)
     {
         public static PlayerDamageAggregate Empty { get; } = new(0, 0);
@@ -281,7 +292,10 @@ internal static class GameModuleProviders
                          .ThenBy(phase => phase.HpPhase)
                          .ThenBy(phase => phase.Key, StringComparer.Ordinal))
             {
-                var phaseId = RecordId(providerId, "phase", $"{profile.Key}:{phase.Key}");
+                var phaseId = RecordId(
+                    providerId,
+                    "phase",
+                    CompositeSourceIdentity(profile.Key, phase.Key));
                 records.Add(CreateRecord(
                     phaseId,
                     "scriptedBossPhase",
@@ -530,7 +544,7 @@ internal static class GameModuleProviders
         var moveCount = workflow.Moves.LongCount(move => move.RuntimeVariants.Count > 0);
         EnsureProjectionCounts(
             checked(moveCount + variantCount),
-            checked(moveCount * 4L + variantCount * 9L));
+            checked(moveCount * 4L + variantCount * 10L));
         var records = new BoundedRecordCollection();
         foreach (var move in workflow.Moves
                      .Where(move => move.RuntimeVariants.Count > 0)
@@ -598,11 +612,19 @@ internal static class GameModuleProviders
                     moveRecordId,
                     records.Count,
                     $"{SafePresentation(move.Name, 192)} - {VariantLabel(variant.Variant)}",
-                    "Verified battle parameter variant. Consumer coverage is not inferred.",
+                    "Verified battle parameter variant. Exact repeated source rows are collapsed and their multiplicity is explicit. Consumer coverage is not inferred.",
                     target,
                     capability,
                     [
                         SignedFact(providerId, variantRecordId, "variant", "Variant", variant.Variant, evidence: target),
+                        DerivedSignedFact(
+                            providerId,
+                            variantRecordId,
+                            "sourceMultiplicity",
+                            "Source row multiplicity",
+                            move.GameModuleVariantMultiplicities.GetValueOrDefault(variant.Variant, 1),
+                            "rows",
+                            target),
                         SignedFact(providerId, variantRecordId, "type", "Type", variant.Type, evidence: target),
                         SignedFact(providerId, variantRecordId, "power", "Power", variant.Power, evidence: target),
                         SignedFact(providerId, variantRecordId, "criticalRank", "Critical rank", variant.CriticalRank, evidence: target),
@@ -700,7 +722,10 @@ internal static class GameModuleProviders
                 "workflow.moves",
                 "move",
                 matchingMove.Move.MoveId.ToString(CultureInfo.InvariantCulture));
-        var actionId = RecordId(providerId, "action", $"{profile.Key}:{action.Key}");
+        var actionId = RecordId(
+            providerId,
+            "action",
+            CompositeSourceIdentity(profile.Key, action.Key));
         PlayerDamageAggregate? playerDamage = null;
         if (matchingMove is not null)
         {
@@ -825,7 +850,7 @@ internal static class GameModuleProviders
             ordered,
             diagnostics,
             Cacheable: summary.Availability != WorkflowAvailabilityDto.Disabled
-                && sourceDiagnostics.Length == 0);
+                && sourceDiagnostics.All(diagnostic => diagnostic.Severity != ApiDiagnosticSeverity.Error));
     }
 
     private static GameModuleData? WorkflowUnavailable(
@@ -1354,8 +1379,7 @@ internal static class GameModuleProviders
         var projectedBytes = EstimatePayloadBytes(records, diagnostics);
         if (records.Count > GameModuleContract.MaximumRecords
             || factCount > GameModuleContract.MaximumFacts
-            || evidenceCount > GameModuleContract.MaximumFacts
-                * GameModuleContract.MaximumEvidenceRecordsPerFact
+            || evidenceCount > GameModuleContract.MaximumEvidenceRecords
             || diagnostics.Count > GameModuleContract.MaximumDiagnostics
             || projectedBytes > MaximumProjectedBytes)
         {
@@ -1548,6 +1572,12 @@ internal static class GameModuleProviders
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexStringLower(bytes.AsSpan(0, 12));
+    }
+
+    private static string CompositeSourceIdentity(params string[] components)
+    {
+        ArgumentNullException.ThrowIfNull(components);
+        return string.Join('.', components.Select(StableComponent));
     }
 
     private static string StableIdentity(string value)
@@ -1813,11 +1843,8 @@ internal static class GameModuleProviders
             }
 
             var nextEvidenceCount = checked(evidenceCount + itemEvidenceCount);
-            var maximumEvidenceCount = checked(
-                (long)GameModuleContract.MaximumFacts
-                * GameModuleContract.MaximumEvidenceRecordsPerFact);
             var nextProjectedBytes = checked(projectedBytes + RecordBytes(item));
-            if (nextEvidenceCount > maximumEvidenceCount
+            if (nextEvidenceCount > GameModuleContract.MaximumEvidenceRecords
                 || nextProjectedBytes > MaximumProjectedBytes)
             {
                 throw new SemanticExploreValidationException(

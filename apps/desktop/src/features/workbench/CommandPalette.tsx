@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -61,6 +62,7 @@ function OpenCommandPalette({
   const [entityCommands, setEntityCommands] = useState<readonly WorkspaceCommand[]>([]);
   const [entitySearchState, setEntitySearchState] = useState<'idle' | 'loading' | 'error'>('idle');
   const entityRequestGenerationRef = useRef(0);
+  const activeOptionRef = useRef<HTMLButtonElement | null>(null);
   const closePalette = useCallback(() => {
     entityRequestGenerationRef.current += 1;
     onCancelEntitySearch?.();
@@ -141,6 +143,10 @@ function OpenCommandPalette({
   const activeCommandIndex = activeCommand
     ? visibleCommands.findIndex((command) => command.id === activeCommand.id)
     : -1;
+
+  useLayoutEffect(() => {
+    activeOptionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeCommand?.id, activeCommandIndex, query]);
 
   const moveActiveCommand = (offset: number) => {
     if (enabledCommands.length === 0) {
@@ -237,75 +243,84 @@ function OpenCommandPalette({
           />
         </label>
 
-        {entitySearchState === 'loading' ? (
-          <p
-            aria-live="polite"
-            className="km-command-search-state"
-            id={`${listboxId}-semantic-status`}
-          >
-              {t('semanticExplore.command.loading')}
-          </p>
-        ) : null}
-        {entitySearchState === 'error' ? (
-          <p
-            className="km-command-search-state"
-            id={`${listboxId}-semantic-status`}
-            role="alert"
-          >
-              {t('semanticExplore.command.error')}
-          </p>
-        ) : null}
+        <div className="km-command-results">
+          {entitySearchState === 'loading' ? (
+            <p
+              aria-live="polite"
+              className="km-command-search-state"
+              id={`${listboxId}-semantic-status`}
+            >
+                {t('semanticExplore.command.loading')}
+            </p>
+          ) : null}
+          {entitySearchState === 'error' ? (
+            <p
+              className="km-command-search-state"
+              id={`${listboxId}-semantic-status`}
+              role="alert"
+            >
+                {t('semanticExplore.command.error')}
+            </p>
+          ) : null}
 
-        <div aria-label={t('workbench.commandPalette.resultsLabel')} className="km-command-list" id={listboxId} role="listbox">
-          {visibleCommands.length > 0 ? visibleCommands.map((command, index) => {
-            const previousGroup = visibleCommands[index - 1]?.group;
-            const label = command.labelKey ? t(command.labelKey) : command.label ?? command.id;
-            const description = command.descriptionKey
-              ? t(command.descriptionKey)
-              : command.description ?? null;
-            return (
-              <div className="km-command-entry" key={command.id} role="presentation">
-                {previousGroup !== command.group ? (
-                  <p aria-hidden="true" className="km-command-group-label">
-                    {t(`workbench.command.group.${command.group}`)}
-                  </p>
-                ) : null}
-                <button
-                  aria-selected={activeCommand?.id === command.id}
-                  className="km-command-option"
-                  disabled={!command.isEnabled}
-                  id={commandOptionId(listboxId, index)}
-                  onClick={() => execute(command)}
-                  onMouseEnter={() => command.isEnabled && setActiveCommandId(command.id)}
-                  role="option"
-                  type="button"
-                >
-                  <span
-                    className="km-command-option-copy"
-                    data-localization-ignore={command.labelIsRawData ? 'true' : undefined}
+          <div
+            aria-label={t('workbench.commandPalette.resultsLabel')}
+            className="km-command-list"
+            id={listboxId}
+            role="listbox"
+          >
+            {visibleCommands.length > 0 ? visibleCommands.map((command, index) => {
+              const previousGroup = visibleCommands[index - 1]?.group;
+              const label = command.labelKey ? t(command.labelKey) : command.label ?? command.id;
+              const description = command.descriptionKey
+                ? t(command.descriptionKey)
+                : command.description ?? null;
+              const isActive = activeCommand?.id === command.id;
+              return (
+                <div className="km-command-entry" key={command.id} role="presentation">
+                  {previousGroup !== command.group ? (
+                    <p aria-hidden="true" className="km-command-group-label">
+                      {t(`workbench.command.group.${command.group}`)}
+                    </p>
+                  ) : null}
+                  <button
+                    aria-selected={isActive}
+                    className="km-command-option"
+                    disabled={!command.isEnabled}
+                    id={commandOptionId(listboxId, index)}
+                    onClick={() => execute(command)}
+                    onMouseEnter={() => command.isEnabled && setActiveCommandId(command.id)}
+                    ref={isActive ? activeOptionRef : undefined}
+                    role="option"
+                    type="button"
                   >
-                    <strong>{label}</strong>
-                    {description ? (
-                      <small
-                        data-localization-ignore={
-                          command.descriptionIsRawData ? 'true' : undefined
-                        }
-                      >
-                        {description}
-                      </small>
-                    ) : null}
-                  </span>
-                  {command.shortcut ? <kbd>{command.shortcut}</kbd> : null}
-                </button>
-              </div>
-            );
-          }) : null}
+                    <span
+                      className="km-command-option-copy"
+                      data-localization-ignore={command.labelIsRawData ? 'true' : undefined}
+                    >
+                      <strong>{label}</strong>
+                      {description ? (
+                        <small
+                          data-localization-ignore={
+                            command.descriptionIsRawData ? 'true' : undefined
+                          }
+                        >
+                          {description}
+                        </small>
+                      ) : null}
+                    </span>
+                    {command.shortcut ? <kbd>{command.shortcut}</kbd> : null}
+                  </button>
+                </div>
+              );
+            }) : null}
+          </div>
+          {visibleCommands.length === 0 ? (
+            <p className="km-workbench-empty" role="status">
+              {t('workbench.commandPalette.empty')}
+            </p>
+          ) : null}
         </div>
-        {visibleCommands.length === 0 ? (
-          <p className="km-workbench-empty" role="status">
-            {t('workbench.commandPalette.empty')}
-          </p>
-        ) : null}
       </div>
     </div>
   );

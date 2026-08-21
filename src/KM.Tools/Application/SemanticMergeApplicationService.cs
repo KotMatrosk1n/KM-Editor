@@ -64,7 +64,13 @@ public sealed class SemanticMergeApplicationService : IDisposable
     private const string RecipeProviderValidationCode = "KM-RECIPE-PROVIDER-VALIDATION-FAILED";
     private const int MaximumSourceHandles = 4;
     private const int MaximumRecipeHandles = 8;
-    private const long MaximumRecipeCacheBytes = 16L * 1024L * 1024L;
+    private const int RecipeCacheProvisionMultiplier = 4;
+    private const int RecipeCacheHardCeilingMultiplier = 2;
+    private const long ExpectedRecipeCacheBytes = 32L * 1024L * 1024L;
+    private const long ProvisionedRecipeCacheBytes = checked(
+        ExpectedRecipeCacheBytes * RecipeCacheProvisionMultiplier);
+    private const long MaximumRecipeCacheBytes = checked(
+        ProvisionedRecipeCacheBytes * RecipeCacheHardCeilingMultiplier);
     private static readonly TimeSpan HandleTimeToLive = TimeSpan.FromMinutes(30);
     private static readonly string[] PokemonProviderFields =
     [
@@ -1468,7 +1474,7 @@ public sealed class SemanticMergeApplicationService : IDisposable
                 .Distinct(StringComparer.Ordinal).Count() != pendingOperations.Count)
         {
             throw Invalid(
-                "Recipe export requires one through 128 unique scalar operations from exactly one workflow domain.");
+                $"Recipe export requires one through {SemanticMergeContract.MaximumRecipeOperations:N0} unique scalar operations from exactly one workflow domain.");
         }
 
 

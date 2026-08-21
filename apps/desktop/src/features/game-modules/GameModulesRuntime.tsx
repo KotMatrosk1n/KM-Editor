@@ -7,9 +7,13 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import type { WorkbenchSection } from '../../workbench/workbenchSections';
-import type { SemanticQueryStatus } from '../semantic-explore/useSemanticExploreController';
+import type {
+  SemanticQueryError,
+  SemanticQueryStatus
+} from '../semantic-explore/useSemanticExploreController';
 import { GameModulesSection } from './GameModulesSection';
 import { useGameModuleController } from './useGameModuleController';
 import './gameModules.css';
@@ -18,10 +22,12 @@ export type GameModulesRuntimeProps = {
   bridge: GameModuleProjectBridgeApi;
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
   canOpenSection: (section: WorkbenchSection) => boolean;
+  capabilityError: SemanticQueryError | null;
   capabilityStatus: SemanticQueryStatus;
   onEnsureCapabilities: () => Promise<void>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenSection: (section: WorkbenchSection) => void;
+  onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
   scope: SemanticExploreScope;
@@ -31,10 +37,12 @@ export default function GameModulesRuntime({
   bridge,
   canNavigateRecord,
   canOpenSection,
+  capabilityError,
   capabilityStatus,
   onEnsureCapabilities,
   onNavigateRecord,
   onOpenSection,
+  onRefreshCapabilities,
   onStaleRevision,
   revision,
   scope
@@ -44,7 +52,7 @@ export default function GameModulesRuntime({
     if (!revision && capabilityStatus === 'idle') {
       void onEnsureCapabilities();
     }
-  }, [capabilityStatus, onEnsureCapabilities, revision]);
+  }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -57,18 +65,20 @@ export default function GameModulesRuntime({
             <span>{t('gameModules.description')}</span>
           </div>
         </header>
-        <div
-          aria-live="polite"
-          className="km-game-module-status"
-          role={isError ? 'alert' : 'status'}
-        >
-          <p>{t(isError ? 'gameModules.error' : 'gameModules.loading')}</p>
-          {isError ? (
-            <button onClick={() => void onEnsureCapabilities()} type="button">
+        {isError ? (
+          <div aria-live="polite" className="km-game-module-status" role="alert">
+            <p>{t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'gameModules.error')}</p>
+            <button onClick={() => void onRefreshCapabilities()} type="button">
               {t('gameModules.retry')}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <div className="km-game-module-status">
+            <LoadingProgress label={t('gameModules.loading')} />
+          </div>
+        )}
       </section>
     );
   }
@@ -98,7 +108,11 @@ function GameModulesReadyRuntime({
   scope
 }: Omit<
   GameModulesRuntimeProps,
-  'capabilityStatus' | 'onEnsureCapabilities' | 'revision'
+  | 'capabilityError'
+  | 'capabilityStatus'
+  | 'onEnsureCapabilities'
+  | 'onRefreshCapabilities'
+  | 'revision'
 > & { revision: SemanticExploreRevision }) {
   const controller = useGameModuleController({
     bridge,

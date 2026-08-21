@@ -58,7 +58,16 @@ public sealed record WorkspaceDocumentDeleteResult(
 
 public sealed record WorkspaceDocumentStoreOptions
 {
-    public long MaximumDocumentBytes { get; init; } = 4L * 1024L * 1024L;
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+
+    public const long ExpectedDocumentBytes = 4L * 1024L * 1024L;
+    public const long ProvisionedDocumentBytes = checked(
+        ExpectedDocumentBytes * ProvisionMultiplier);
+    public const long MaximumDocumentHardCeilingBytes = checked(
+        ProvisionedDocumentBytes * HardCeilingMultiplier);
+
+    public long MaximumDocumentBytes { get; init; } = MaximumDocumentHardCeilingBytes;
 
     public int MaximumJsonDepth { get; init; } = 64;
 

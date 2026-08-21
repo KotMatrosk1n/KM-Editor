@@ -9,22 +9,57 @@ namespace KM.Api.Workspace;
 
 public static class WorkspacePersonalStateContract
 {
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+
     public const int SchemaVersion = 1;
-    public const int ApplicationMaximumSerializedDocumentBytes = 3 * 1024 * 1024;
-    public const int ProjectMaximumSerializedDocumentBytes = 2 * 1024 * 1024;
+    public const int ApplicationExpectedSerializedDocumentBytes = 3 * 1024 * 1024;
+    public const int ApplicationProvisionedSerializedDocumentBytes = checked(
+        ApplicationExpectedSerializedDocumentBytes * ProvisionMultiplier);
+    public const int ApplicationMaximumSerializedDocumentBytes = checked(
+        ApplicationProvisionedSerializedDocumentBytes * HardCeilingMultiplier);
+    public const int ProjectExpectedSerializedDocumentBytes = 2 * 1024 * 1024;
+    public const int ProjectProvisionedSerializedDocumentBytes = checked(
+        ProjectExpectedSerializedDocumentBytes * ProvisionMultiplier);
+    public const int ProjectMaximumSerializedDocumentBytes = checked(
+        ProjectProvisionedSerializedDocumentBytes * HardCeilingMultiplier);
     public const int MaximumRecentProjectCount = 24;
     public const int MaximumShortcutOverrideCount = 128;
     public const int MaximumLocalePackCount = 4;
-    public const int MaximumLocalePackBytes = 512 * 1024;
-    public const int MaximumLocalePackAggregateBytes = 2 * 1024 * 1024;
+    public const int ExpectedLocalePackBytes = 512 * 1024;
+    public const int ProvisionedLocalePackBytes = checked(
+        ExpectedLocalePackBytes * ProvisionMultiplier);
+    public const int MaximumLocalePackBytes = checked(
+        ProvisionedLocalePackBytes * HardCeilingMultiplier);
+    public const int ExpectedLocalePackAggregateBytes = 2 * 1024 * 1024;
+    public const int ProvisionedLocalePackAggregateBytes = checked(
+        ExpectedLocalePackAggregateBytes * ProvisionMultiplier);
+    public const int MaximumLocalePackAggregateBytes = checked(
+        ProvisionedLocalePackAggregateBytes * HardCeilingMultiplier);
     public const int MaximumGameDumpDestinationCount = 5;
     public const int MaximumRecentTargetCount = 64;
     public const int MaximumBookmarkCount = 256;
     public const int MaximumNoteCount = 256;
-    public const int MaximumNoteBytes = 32 * 1024;
-    public const int MaximumAggregateNoteBytes = 1024 * 1024;
+    public const int ExpectedNoteBytes = 32 * 1024;
+    public const int ProvisionedNoteBytes = checked(ExpectedNoteBytes * ProvisionMultiplier);
+    public const int MaximumNoteBytes = checked(
+        ProvisionedNoteBytes * HardCeilingMultiplier);
+    public const int ExpectedAggregateNoteBytes = 1024 * 1024;
+    public const int ProvisionedAggregateNoteBytes = checked(
+        ExpectedAggregateNoteBytes * ProvisionMultiplier);
+    public const int MaximumAggregateNoteBytes = checked(
+        ProvisionedAggregateNoteBytes * HardCeilingMultiplier);
     public const int MaximumSavedViewCount = 128;
-    public const int MaximumSavedViewPayloadBytes = 64 * 1024;
+    public const int ExpectedSavedViewPayloadBytes = 64 * 1024;
+    public const int ProvisionedSavedViewPayloadBytes = checked(
+        ExpectedSavedViewPayloadBytes * ProvisionMultiplier);
+    public const int MaximumSavedViewPayloadBytes = checked(
+        ProvisionedSavedViewPayloadBytes * HardCeilingMultiplier);
+    public const int ExpectedSavedViewAggregatePayloadBytes = 512 * 1024;
+    public const int ProvisionedSavedViewAggregatePayloadBytes = checked(
+        ExpectedSavedViewAggregatePayloadBytes * ProvisionMultiplier);
+    public const int MaximumSavedViewAggregatePayloadBytes = checked(
+        ProvisionedSavedViewAggregatePayloadBytes * HardCeilingMultiplier);
     public const int MaximumOutputProfileCount = 32;
 }
 

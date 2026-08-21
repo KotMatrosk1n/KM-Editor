@@ -69,9 +69,7 @@ public sealed class VersionedWorkspaceDocumentStore
             CommentHandling = JsonCommentHandling.Disallow,
             MaxDepth = options.MaximumJsonDepth,
         };
-        this.serializerOptions = serializerOptions is null
-            ? new JsonSerializerOptions(JsonSerializerDefaults.Web)
-            : new JsonSerializerOptions(serializerOptions);
+        this.serializerOptions = PrivateWorkspaceJson.CreateSerializerOptions(serializerOptions);
         this.serializerOptions.MaxDepth = options.MaximumJsonDepth;
         this.migrations = BuildMigrationMap(migrations ?? Array.Empty<IWorkspaceDocumentMigration>());
     }

@@ -236,9 +236,9 @@ public sealed class ResearchLabApplicationService : IDisposable
                 normalizedSelected,
                 request.Limit);
             var sizeBytes = EstimateComparisonSize(middleA, firstB, findings, normalizedSelected);
-            if (sizeBytes > ResearchLabContract.MaximumResultCacheBytes)
+            if (sizeBytes > ResearchLabContract.MaximumResultCeilingBytes)
             {
-                throw Limit("The research comparison exceeds the result cache bound.");
+                throw Limit("The research comparison exceeds the result size bound.");
             }
 
             var after = ObserveAndValidate(request.Scope, request.ExpectedRevision);
@@ -971,7 +971,7 @@ public sealed class ResearchLabApplicationService : IDisposable
 
                     projectedBytes = checked(projectedBytes
                         + StringStorageBytes(relative) + 256L);
-                    if (projectedBytes > ResearchLabContract.MaximumResultCacheBytes)
+                    if (projectedBytes > ResearchLabContract.MaximumResultCeilingBytes)
                     {
                         throw Limit("The research source catalog exceeds the bounded projection size.");
                     }
@@ -1130,7 +1130,7 @@ public sealed class ResearchLabApplicationService : IDisposable
 
             projectedBytes = checked(projectedBytes + StringStorageBytes(key) + 768L
                 + ranges.Count * 32L);
-            if (projectedBytes > ResearchLabContract.MaximumResultCacheBytes)
+            if (projectedBytes > ResearchLabContract.MaximumResultCeilingBytes)
             {
                 throw Limit("The research comparison result exceeds the bounded projection size.");
             }

@@ -728,6 +728,7 @@ export function RandomizerSection({
                   <HoverTooltip content={category.help}>
                     <input
                       checked={categoryEnabled}
+                      className="km-choice-control"
                       disabled={isConfigurationLocked}
                       id={`randomizer-${category.id}-enabled`}
                       onChange={() => handleToggleOption(category.enabledKey)}
@@ -749,6 +750,7 @@ export function RandomizerSection({
                       <HoverTooltip content={field.help}>
                         <input
                           checked={isFieldChecked}
+                          className="km-choice-control"
                           disabled={isConfigurationLocked || !categoryEnabled}
                           id={inputId}
                           onChange={() => handleToggleOption(field.key)}
@@ -777,6 +779,7 @@ export function RandomizerSection({
                 <HoverTooltip content={option.help}>
                   <input
                     checked={options[option.key]}
+                    className="km-choice-control"
                     disabled={isConfigurationLocked}
                     id={inputId}
                     onChange={() => handleToggleOption(option.key)}
@@ -800,6 +803,7 @@ export function RandomizerSection({
             <HoverTooltip content="Randomize the Sword/Shield type-effectiveness table in exefs/main.">
               <input
                 checked={options.randomizeTypeChart}
+                className="km-choice-control"
                 disabled={isConfigurationLocked}
                 id="randomizer-type-chart-enabled"
                 onChange={() => handleToggleOption('randomizeTypeChart')}
@@ -821,6 +825,7 @@ export function RandomizerSection({
                 <HoverTooltip content={option.help}>
                   <input
                     checked={isChecked}
+                    className="km-choice-control"
                     disabled={isConfigurationLocked || !options.randomizeTypeChart}
                     id={inputId}
                     onChange={() => handleToggleOption(option.key)}

@@ -1060,7 +1060,8 @@ internal static class GuidedDesignProviders
             .ToArray();
         if (options.Length > GuidedDesignContract.MaximumEligibleTargets)
         {
-            throw Limit("Guided Design target discovery exceeds its bounded 50,000-record limit.");
+            throw Limit(
+                $"Guided Design target discovery exceeds its bounded {GuidedDesignContract.MaximumEligibleTargets:N0}-record limit.");
         }
 
         var normalized = NormalizeInput(input, [], defaultFields);

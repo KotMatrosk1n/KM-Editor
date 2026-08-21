@@ -9,17 +9,33 @@ namespace KM.Api.ChangeSets;
 
 public static class ChangeSetContract
 {
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+
     public const int SchemaVersion = 1;
     public const int AssociationVersion = 1;
     public const int PortableSchemaVersion = 1;
     public const int MaximumChangeSetCount = 64;
-    public const int MaximumOperationCount = 256;
-    public const int MaximumOperationsPerChangeSet = 128;
+    public const int ExpectedOperationCount = 768;
+    public const int ProvisionedOperationCount = checked(
+        ExpectedOperationCount * ProvisionMultiplier);
+    public const int MaximumOperationCount = checked(
+        ProvisionedOperationCount * HardCeilingMultiplier);
+    public const int MaximumOperationsPerChangeSet = MaximumOperationCount;
     public const int MaximumBuildVariantCount = 32;
     public const int MaximumHistoryCount = 16;
     public const int MaximumTagCount = 32;
     public const int MaximumDependencyCount = 32;
-    public const int MaximumSerializedDocumentBytes = 3 * 1024 * 1024;
+    public const int ExpectedSerializedDocumentBytes = 3 * 1024 * 1024;
+    public const int ProvisionedSerializedDocumentBytes = checked(
+        ExpectedSerializedDocumentBytes * ProvisionMultiplier);
+    public const int MaximumSerializedDocumentBytes = checked(
+        ProvisionedSerializedDocumentBytes * HardCeilingMultiplier);
+    public const int ExpectedPortablePackageBytes = 4 * 1024 * 1024;
+    public const int ProvisionedPortablePackageBytes = checked(
+        ExpectedPortablePackageBytes * ProvisionMultiplier);
+    public const int MaximumPortablePackageBytes = checked(
+        ProvisionedPortablePackageBytes * HardCeilingMultiplier);
 }
 
 public sealed record ChangeSetWorkspaceScopeDto(

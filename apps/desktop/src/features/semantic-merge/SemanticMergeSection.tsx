@@ -45,7 +45,17 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
+import {
+  DiagnosticTechnicalDetails,
+  OccurrenceCount,
+  TechnicalDetails
+} from '../workbench/AnalysisPresentation';
+import {
+  groupDiagnosticsForPresentation,
+  humanizeIdentifier
+} from '../workbench/analysisPresentationUtils';
 import type { ExpectedImportedScalarEdit } from '../change-sets/useChangeSetWorkspaceController';
 import type { SemanticMergeChangeSetOption } from './SemanticMergeRuntime';
 import type {
@@ -151,10 +161,13 @@ export function SemanticMergeSection({
           <h3 id="semantic-merge-capabilities-title">
             {t('semanticMerge.capabilities.title')}
           </h3>
-          {controller.capabilities.status === 'loading' ? (
-            <span role="status">{t('semanticMerge.capabilities.loading')}</span>
-          ) : null}
         </div>
+        {controller.capabilities.status === 'loading' ? (
+          <LoadingProgress
+            className="is-compact"
+            label={t('semanticMerge.capabilities.loading')}
+          />
+        ) : null}
         {controller.capabilities.error ? (
           <QueryError error={controller.capabilities.error} onRetry={controller.ensureCapabilities} />
         ) : null}
@@ -255,7 +268,7 @@ function CapabilityCard({
   capability: SemanticMergeCapability | null;
   feature: (typeof featureOrder)[number];
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const state = capability?.state ?? 'unavailable';
   return (
     <article className={`km-semantic-merge-capability is-${state}`}>
@@ -270,10 +283,21 @@ function CapabilityCard({
         <ul>
           {capability.domains.map((domain) => (
             <li data-localization-ignore="true" key={`${domain.domain}:${domain.recordKind}`}>
-              {domain.domain} · {domain.recordKind} · {domain.fieldKeys.join(', ')}
+              {humanizeIdentifier(domain.domain)}: {' '}
+              {domain.fieldKeys.map(humanizeIdentifier).join(', ')}
             </li>
           ))}
         </ul>
+      ) : null}
+      {capability && (capability.reasonCode || capability.domains.length > 0) ? (
+        <TechnicalDetails summary={translateLiteral('Technical details')}>
+          {capability.reasonCode ? <code>{capability.reasonCode}</code> : null}
+          {capability.domains.map((domain) => (
+            <code key={`${domain.domain}:${domain.recordKind}`}>
+              {domain.domain} / {domain.recordKind} / {domain.fieldKeys.join(', ')}
+            </code>
+          ))}
+        </TechnicalDetails>
       ) : null}
     </article>
   );
@@ -336,7 +360,7 @@ function MergeSurface({
   const pickerContextIdentityRef = useRef(pickerContextIdentity);
   pickerContextIdentityRef.current = pickerContextIdentity;
   const preview = controller.mergePreview.data;
-  const isAvailable = capability?.state !== 'unavailable';
+  const isAvailable = capability !== null && capability.state !== 'unavailable';
   const isBlocked = !isAvailable ||
     !isChangeSetWorkspaceReady ||
     isChangeSetWorkspaceBusy ||
@@ -498,7 +522,16 @@ function MergeSurface({
   };
 
   return (
-    <section aria-labelledby="semantic-merge-merge-title" className="km-semantic-merge-surface">
+    <section
+      aria-busy={
+        controller.mergePreview.status === 'loading' ||
+        controller.sourceA.status === 'loading' ||
+        controller.sourceB.status === 'loading' ||
+        isImporting
+      }
+      aria-labelledby="semantic-merge-merge-title"
+      className="km-semantic-merge-surface"
+    >
       <div className="km-semantic-merge-section-heading">
         <div>
           <h3 id="semantic-merge-merge-title">{t('semanticMerge.merge.title')}</h3>
@@ -570,6 +603,11 @@ function MergeSurface({
             </fieldset>
           ) : null}
 
+          {controller.mergePreview.status === 'loading' &&
+          !controller.mergePreview.isAppending ? (
+            <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+          ) : null}
+
           {controller.mergePreview.error ? (
             <QueryError
               error={controller.mergePreview.error}
@@ -580,6 +618,7 @@ function MergeSurface({
           {preview?.selectionRequired && searchMatchesPreview ? (
             <TargetDiscovery
               disabled={isBlocked}
+              loading={controller.mergePreview.isAppending}
               onLoadMore={controller.loadMoreMerge}
               onToggle={toggleTarget}
               preview={preview}
@@ -616,13 +655,24 @@ function MergeSurface({
               />
               {preview.nextCursor ? (
                 <button
+                  aria-busy={controller.mergePreview.isAppending || undefined}
                   disabled={isBlocked || controller.mergePreview.isAppending}
                   onClick={() => void controller.loadMoreMerge()}
                   type="button"
                 >
                   <ChevronDown aria-hidden="true" size={16} />
-                  {t('semanticMerge.loadMore')}
+                  {controller.mergePreview.isAppending
+                    ? t('semanticExplore.loading')
+                    : t('semanticMerge.loadMore')}
                 </button>
+              ) : null}
+              {controller.mergePreview.isAppending ? (
+                <LoadingProgress
+                  className="is-compact"
+                  completed={preview.rows.length}
+                  label={t('semanticExplore.loading')}
+                  total={preview.totalRowCount}
+                />
               ) : null}
               {!resolutionsMatchProposal ? (
                 <div className="km-semantic-merge-review-needed">
@@ -647,11 +697,22 @@ function MergeSurface({
                 />
                 {!completeReview ? <p>{t('semanticMerge.import.loadAll')}</p> : null}
                 {!preview.canImport ? <p>{t('semanticMerge.import.blocked')}</p> : null}
-                <button disabled={!canImport} onClick={() => void importProposal()} type="button">
+                <button
+                  aria-busy={isImporting || undefined}
+                  disabled={!canImport}
+                  onClick={() => void importProposal()}
+                  type="button"
+                >
                   {isImporting
                     ? t('semanticMerge.import.importing')
                     : t('semanticMerge.import.merge.action')}
                 </button>
+                {isImporting ? (
+                  <LoadingProgress
+                    className="is-compact"
+                    label={t('semanticMerge.import.importing')}
+                  />
+                ) : null}
                 {importError ? (
                   <div ref={importStatusRef} role="alert" tabIndex={-1}>
                     {t('semanticMerge.import.error')}
@@ -687,11 +748,16 @@ function SourcePicker({
   return (
     <article aria-busy={loading} className="km-semantic-merge-source">
       <strong>{label}</strong>
-      <span role="status">{t(loading
-        ? 'semanticMerge.source.loading'
-        : loaded
+      {loading ? (
+        <LoadingProgress
+          className="is-compact"
+          label={t('semanticMerge.source.loading')}
+        />
+      ) : (
+        <span>{t(loaded
           ? 'semanticMerge.source.loaded'
           : 'semanticMerge.source.empty')}</span>
+      )}
       <div>
         <button disabled={disabled} onClick={onPick} type="button">
           <FolderOpen aria-hidden="true" size={16} />
@@ -749,6 +815,7 @@ function SelectedTargets({
 
 function TargetDiscovery({
   disabled,
+  loading,
   onLoadMore,
   onToggle,
   preview,
@@ -756,6 +823,7 @@ function TargetDiscovery({
   selectedKeys
 }: {
   disabled: boolean;
+  loading: boolean;
   onLoadMore: () => Promise<void>;
   onToggle: (row: SemanticMergeRow, checked: boolean) => void;
   preview: NonNullable<SemanticMergeController['mergePreview']['data']>;
@@ -784,6 +852,7 @@ function TargetDiscovery({
               <label>
                 <input
                   checked={checked}
+                  className="km-choice-control"
                   disabled={disabled || (!checked && (wrongDomain || selectedKeys.size >= semanticMergeMaximumTargets))}
                   onChange={(event) => onToggle(row, event.target.checked)}
                   type="checkbox"
@@ -799,10 +868,23 @@ function TargetDiscovery({
         })}
       </ul>
       {preview.nextCursor ? (
-        <button disabled={disabled} onClick={() => void onLoadMore()} type="button">
+        <button
+          aria-busy={loading || undefined}
+          disabled={disabled}
+          onClick={() => void onLoadMore()}
+          type="button"
+        >
           <ChevronDown aria-hidden="true" size={16} />
-          {t('semanticMerge.loadMore')}
+          {loading ? t('semanticExplore.loading') : t('semanticMerge.loadMore')}
         </button>
+      ) : null}
+      {loading ? (
+        <LoadingProgress
+          className="is-compact"
+          completed={preview.rows.length}
+          label={t('semanticExplore.loading')}
+          total={preview.totalRowCount}
+        />
       ) : null}
     </section>
   );
@@ -821,65 +903,83 @@ function MergeRows({
   resolutionDraft: ReadonlyMap<string, SemanticMergeConflictChoice>;
   rows: readonly SemanticMergeRow[];
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
+  const groups = groupMergeRows(rows);
   return (
     <div className="km-semantic-merge-rows">
-      {rows.map((row) => (
-        <article className={`km-semantic-merge-row is-${row.state}`} key={row.rowId}>
+      {groups.map((group) => (
+        <article className="km-semantic-merge-row" key={group.key}>
           <header>
             <div data-localization-ignore="true">
-              <strong>{row.recordLabel}</strong>
-              <span>{row.fieldLabel} · {formatRecordRef(row.target.record)}</span>
+              <strong>{group.rows[0]!.recordLabel}</strong>
+              <TechnicalDetails summary={translateLiteral('Technical details')}>
+                <code>{formatRecordRef(group.rows[0]!.target.record)}</code>
+              </TechnicalDetails>
             </div>
             <div>
-              <span>{t(`semanticMerge.row.state.${row.state}`)}</span>
               <button
-                disabled={!canNavigateRecord(row.target.record)}
-                onClick={() => onNavigateRecord(row.target.record)}
+                disabled={!canNavigateRecord(group.rows[0]!.target.record)}
+                onClick={() => onNavigateRecord(group.rows[0]!.target.record)}
                 type="button"
               >
                 {t('semanticMerge.row.open')}
               </button>
             </div>
           </header>
-          <dl className="km-semantic-merge-values">
-            <ScalarValue label={t('semanticMerge.value.base')} value={row.baseValue?.displayValue} />
-            <ScalarValue label={t('semanticMerge.value.modA')} value={row.sourceAValue?.displayValue} />
-            <ScalarValue label={t('semanticMerge.value.modB')} value={row.sourceBValue?.displayValue} />
-            <ScalarValue label={t('semanticMerge.value.layered')} value={row.currentValue?.displayValue} />
-            <ScalarValue label={t('semanticMerge.value.pending')} value={row.pendingValue?.displayValue} />
-            <ScalarValue label={t('semanticMerge.value.result')} value={row.resultValue?.displayValue} />
-          </dl>
-          {row.conflicts.map((conflict) => (
-            <fieldset className="km-semantic-merge-conflict" key={conflict.conflictId}>
-              <legend>{t(`semanticMerge.conflict.${conflict.kind}`)}</legend>
-              <p>{reasonText(conflict.reasonCode, t)}</p>
-              {conflict.allowedChoices.length === 0 ? (
-                <p>{t('semanticMerge.conflict.noResolution')}</p>
-              ) : (
-                <div>
-                  {conflict.allowedChoices.map((choice) => (
-                    <label key={choice}>
-                      <input
-                        checked={(resolutionDraft.get(conflict.conflictId) ?? conflict.selectedChoice) === choice}
-                        name={`semantic-merge-conflict-${conflict.conflictId}`}
-                        onChange={() => onChoice(conflict.conflictId, choice)}
-                        type="radio"
-                      />
-                      {t(`semanticMerge.choice.${choice}`)}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </fieldset>
-          ))}
-          <p className="km-semantic-merge-coverage">
-            {t('semanticMerge.row.coverage')}: {t(`semanticMerge.state.${row.coverage}`)} ·{' '}
-            {t(`semanticMerge.confidence.${row.confidence}`)}
-          </p>
-          {row.fallback.kind === 'unavailable' ? (
-            <p>{reasonText(row.fallback.reasonCode, t)}</p>
-          ) : null}
+          <div className="km-analysis-related-records">
+            {group.rows.map((row) => (
+              <div className="km-analysis-related-record" key={row.rowId}>
+                <header>
+                  <strong data-localization-ignore="true">{row.fieldLabel}</strong>
+                  <div>
+                    <span>{t(`semanticMerge.row.state.${row.state}`)}</span>
+                  </div>
+                </header>
+                <TechnicalDetails summary={translateLiteral('Technical details')}>
+                  <code>{row.target.fieldKey}</code>
+                </TechnicalDetails>
+                <dl className="km-semantic-merge-values">
+                  <ScalarValue label={t('semanticMerge.value.base')} value={row.baseValue?.displayValue} />
+                  <ScalarValue label={t('semanticMerge.value.modA')} value={row.sourceAValue?.displayValue} />
+                  <ScalarValue label={t('semanticMerge.value.modB')} value={row.sourceBValue?.displayValue} />
+                  <ScalarValue label={t('semanticMerge.value.layered')} value={row.currentValue?.displayValue} />
+                  <ScalarValue label={t('semanticMerge.value.pending')} value={row.pendingValue?.displayValue} />
+                  <ScalarValue label={t('semanticMerge.value.result')} value={row.resultValue?.displayValue} />
+                </dl>
+                {row.conflicts.map((conflict) => (
+                  <fieldset className="km-semantic-merge-conflict" key={conflict.conflictId}>
+                    <legend>{t(`semanticMerge.conflict.${conflict.kind}`)}</legend>
+                    <p>{reasonText(conflict.reasonCode, t)}</p>
+                    {conflict.allowedChoices.length === 0 ? (
+                      <p>{t('semanticMerge.conflict.noResolution')}</p>
+                    ) : (
+                      <div>
+                        {conflict.allowedChoices.map((choice) => (
+                          <label key={choice}>
+                            <input
+                              checked={(resolutionDraft.get(conflict.conflictId) ?? conflict.selectedChoice) === choice}
+                              className="km-choice-control"
+                              name={`semantic-merge-conflict-${conflict.conflictId}`}
+                              onChange={() => onChoice(conflict.conflictId, choice)}
+                              type="radio"
+                            />
+                            {t(`semanticMerge.choice.${choice}`)}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
+                ))}
+                <p className="km-semantic-merge-coverage">
+                  {t('semanticMerge.row.coverage')}: {t(`semanticMerge.state.${row.coverage}`)} ·{' '}
+                  {t(`semanticMerge.confidence.${row.confidence}`)}
+                </p>
+                {row.fallback.kind === 'unavailable' ? (
+                  <p>{reasonText(row.fallback.reasonCode, t)}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </article>
       ))}
     </div>
@@ -945,8 +1045,8 @@ function RecipeSurface({
   const importStatusRef = useRef<HTMLDivElement | null>(null);
   const validation = controller.recipeValidation.data;
   const preview = controller.recipePreview.data;
-  const exportReady = exportCapability?.state !== 'unavailable';
-  const importReady = importCapability?.state !== 'unavailable';
+  const exportReady = exportCapability !== null && exportCapability.state !== 'unavailable';
+  const importReady = importCapability !== null && importCapability.state !== 'unavailable';
   const availableSets = changeSets.filter((changeSet) => !changeSet.archived);
   const selectedClosure = useMemo(
     () => resolveChangeSetClosure(selectedRootIds, changeSets, exportCapability),
@@ -1085,13 +1185,34 @@ function RecipeSurface({
   };
 
   return (
-    <section aria-labelledby="semantic-merge-recipes-title" className="km-semantic-merge-surface">
+    <section
+      aria-busy={busy || isImporting}
+      aria-labelledby="semantic-merge-recipes-title"
+      className="km-semantic-merge-surface"
+    >
       <div className="km-semantic-merge-section-heading">
         <div>
           <h3 id="semantic-merge-recipes-title">{t('semanticMerge.recipes.title')}</h3>
           <p>{t('semanticMerge.recipes.description')}</p>
         </div>
       </div>
+
+      {controller.exportRecipe.status === 'loading' ? (
+        <LoadingProgress
+          className="is-compact"
+          label={t('semanticMerge.recipes.export.action')}
+        />
+      ) : null}
+      {controller.recipeValidation.status === 'loading' ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+      ) : null}
+      {controller.recipePreview.status === 'loading' &&
+      !controller.recipePreview.isAppending ? (
+        <LoadingProgress
+          className="is-compact"
+          label={t('semanticMerge.recipes.import.preview')}
+        />
+      ) : null}
 
       <div className="km-semantic-merge-recipe-grid">
         <fieldset className="km-semantic-merge-fieldset">
@@ -1115,6 +1236,7 @@ function RecipeSurface({
                   <label key={changeSet.changeSetId}>
                     <input
                       checked={selectedRootIds.has(changeSet.changeSetId)}
+                      className="km-choice-control"
                       disabled={busy || recipeExportEligibility(
                         changeSet,
                         exportCapability
@@ -1145,7 +1267,12 @@ function RecipeSurface({
                 <p>{t('semanticMerge.recipes.export.invalidClosure')}</p>
               ) : null}
               <p>{t('semanticMerge.recipes.seedUnavailable')}</p>
-              <button disabled={!canExport} onClick={() => void exportRecipe()} type="button">
+              <button
+                aria-busy={controller.exportRecipe.status === 'loading' || undefined}
+                disabled={!canExport}
+                onClick={() => void exportRecipe()}
+                type="button"
+              >
                 <FileJson aria-hidden="true" size={16} />
                 {t('semanticMerge.recipes.export.action')}
               </button>
@@ -1175,7 +1302,12 @@ function RecipeSurface({
                 ref={inputRef}
                 type="file"
               />
-              <button disabled={busy} onClick={() => inputRef.current?.click()} type="button">
+              <button
+                aria-busy={controller.recipeValidation.status === 'loading' || undefined}
+                disabled={busy}
+                onClick={() => inputRef.current?.click()}
+                type="button"
+              >
                 <FolderOpen aria-hidden="true" size={16} />
                 {t('semanticMerge.recipes.import.choose')}
               </button>
@@ -1190,6 +1322,7 @@ function RecipeSurface({
                     <p>{t('semanticMerge.recipes.import.gameMismatch')}</p>
                   ) : null}
                   <button
+                    aria-busy={controller.recipePreview.status === 'loading' || undefined}
                     disabled={busy || validation.game !== scope.paths.selectedGame}
                     onClick={() => void controller.previewRecipe()}
                     type="button"
@@ -1259,10 +1392,25 @@ function RecipeSurface({
             ))}
           </div>
           {preview.nextCursor ? (
-            <button disabled={busy} onClick={() => void controller.loadMoreRecipe()} type="button">
+            <button
+              aria-busy={controller.recipePreview.isAppending || undefined}
+              disabled={busy}
+              onClick={() => void controller.loadMoreRecipe()}
+              type="button"
+            >
               <ChevronDown aria-hidden="true" size={16} />
-              {t('semanticMerge.loadMore')}
+              {controller.recipePreview.isAppending
+                ? t('semanticExplore.loading')
+                : t('semanticMerge.loadMore')}
             </button>
+          ) : null}
+          {controller.recipePreview.isAppending ? (
+            <LoadingProgress
+              className="is-compact"
+              completed={preview.compatibility.length}
+              label={t('semanticExplore.loading')}
+              total={preview.totalCompatibilityCount}
+            />
           ) : null}
           <Diagnostics diagnostics={preview.diagnostics} />
           <fieldset className="km-semantic-merge-fieldset">
@@ -1279,11 +1427,22 @@ function RecipeSurface({
             />
             {preview.nextCursor ? <p>{t('semanticMerge.import.loadAll')}</p> : null}
             {!preview.canImport ? <p>{t('semanticMerge.import.blocked')}</p> : null}
-            <button disabled={!canImport} onClick={() => void importRecipe()} type="button">
+            <button
+              aria-busy={isImporting || undefined}
+              disabled={!canImport}
+              onClick={() => void importRecipe()}
+              type="button"
+            >
               {isImporting
                 ? t('semanticMerge.import.importing')
                 : t('semanticMerge.import.recipe.action')}
             </button>
+            {isImporting ? (
+              <LoadingProgress
+                className="is-compact"
+                label={t('semanticMerge.import.importing')}
+              />
+            ) : null}
             {importError ? (
               <div ref={importStatusRef} role="alert" tabIndex={-1}>
                 {t('semanticMerge.import.error')}
@@ -1362,18 +1521,38 @@ function ScalarValue({ label, value }: { label: string; value: string | undefine
 }
 
 function Diagnostics({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   if (diagnostics.length === 0) return null;
+  const grouped = groupDiagnosticsForPresentation(
+    diagnostics,
+    (diagnostic) => [
+      diagnostic.severity,
+      safeDiagnosticMessage(diagnostic.message) ?? 'redacted'
+    ],
+    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+  );
   return (
     <section aria-label={t('semanticMerge.diagnostics.title')} className="km-semantic-merge-diagnostics">
       <h4>{t('semanticMerge.diagnostics.title')}</h4>
       <ul>
-        {diagnostics.map((diagnostic, index) => (
-          <li key={`${diagnostic.code ?? 'diagnostic'}:${index}`}>
-            {diagnostic.code ? <code data-localization-ignore="true">{diagnostic.code}</code> : null}
-            <span>{safeDiagnosticMessage(diagnostic.message) ?? t('semanticMerge.diagnostics.redacted')}</span>
+        {grouped.map(({ count, diagnostics: identities, key }) => {
+          const diagnostic = identities[0]!.diagnostic;
+          const message = safeDiagnosticMessage(diagnostic.message);
+          return (
+          <li data-severity={diagnostic.severity} key={key}>
+            <span>
+              {message ? (
+                <span data-localization-ignore="true">{message}</span>
+              ) : t('semanticMerge.diagnostics.redacted')}
+              <OccurrenceCount count={count} />
+            </span>
+            <DiagnosticTechnicalDetails
+              diagnostics={identities}
+              summary={translateLiteral('Technical details')}
+            />
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );
@@ -1430,6 +1609,25 @@ function formatRecordRef(record: SemanticExploreRecordRef) {
     record.recordId,
     record.subrecordId
   ].filter((value) => value !== null).join(' · ');
+}
+
+function groupMergeRows(rows: readonly SemanticMergeRow[]) {
+  const groups = new Map<string, SemanticMergeRow[]>();
+  for (const row of rows) {
+    const record = row.target.record;
+    const key = JSON.stringify([
+      record.gameFamily,
+      record.domain,
+      record.recordKind.key,
+      record.recordKind.schemaVersion,
+      record.recordId,
+      record.subrecordId
+    ]);
+    const values = groups.get(key);
+    if (values) values.push(row);
+    else groups.set(key, [row]);
+  }
+  return [...groups].map(([key, groupedRows]) => ({ key, rows: groupedRows }));
 }
 
 function sameFieldRefSet(

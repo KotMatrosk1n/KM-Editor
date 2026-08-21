@@ -15,12 +15,11 @@ namespace KM.Tools.Application;
 public sealed class WorkspaceDraftApplicationService
 {
     private const int MaximumDraftCount = 256;
-    private const int MaximumDraftPayloadBytes = 512 * 1024;
     private const int MaximumEntityIdLength = 4_096;
     private const int MaximumIdentifierLength = 256;
     private const int MaximumStableIdLength = 1_024;
     private static readonly JsonSerializerOptions DocumentSizeSerializerOptions =
-        new(JsonSerializerDefaults.Web);
+        PrivateWorkspaceJson.CreateSerializerOptions();
     private static readonly WorkspaceDocumentDefinition<WorkspaceDraftDocumentDto> DocumentDefinition =
         new(
             new WorkspaceDocumentId("drafts"),
@@ -219,10 +218,10 @@ public sealed class WorkspaceDraftApplicationService
             }
 
             var payloadBytes = Encoding.UTF8.GetByteCount(draft.Payload.GetRawText());
-            if (payloadBytes > MaximumDraftPayloadBytes)
+            if (payloadBytes > WorkspaceDraftContract.MaximumPayloadBytes)
             {
                 throw new WorkspaceDraftValidationException(
-                    $"A workspace draft payload cannot exceed {MaximumDraftPayloadBytes} bytes.");
+                    $"A workspace draft payload cannot exceed {WorkspaceDraftContract.MaximumPayloadBytes} bytes.");
             }
 
             aggregatePayloadBytes = checked(aggregatePayloadBytes + payloadBytes);

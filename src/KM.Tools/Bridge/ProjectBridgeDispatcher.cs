@@ -120,7 +120,23 @@ namespace KM.Tools.Bridge;
 
 public sealed class ProjectBridgeDispatcher : IDisposable
 {
-    internal const int MaximumBridgeRequestCharacters = 16 * 1024 * 1024;
+    private const int BridgeProvisionMultiplier = 4;
+    private const int BridgeHardCeilingMultiplier = 2;
+    internal const int ExpectedBridgeRequestCharacters = 16 * 1024 * 1024;
+    internal const int ProvisionedBridgeRequestCharacters = checked(
+        ExpectedBridgeRequestCharacters * BridgeProvisionMultiplier);
+    internal const int MaximumBridgeRequestCharacters = checked(
+        ProvisionedBridgeRequestCharacters * BridgeHardCeilingMultiplier);
+    internal const int ExpectedBridgeRequestBytes = 16 * 1024 * 1024;
+    internal const int ProvisionedBridgeRequestBytes = checked(
+        ExpectedBridgeRequestBytes * BridgeProvisionMultiplier);
+    internal const int MaximumBridgeRequestBytes = checked(
+        ProvisionedBridgeRequestBytes * BridgeHardCeilingMultiplier);
+    internal const int ExpectedBridgeResponseBytes = 30 * 1024 * 1024;
+    internal const int ProvisionedBridgeResponseBytes = checked(
+        ExpectedBridgeResponseBytes * BridgeProvisionMultiplier);
+    internal const int MaximumBridgeResponseBytes = checked(
+        ProvisionedBridgeResponseBytes * BridgeHardCeilingMultiplier);
     private static readonly object SwShApplySyncRoot = new();
     private static readonly JsonSerializerOptions RequestSerializerOptions =
         new(BridgeJson.SerializerOptions)
@@ -406,6 +422,14 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             requestId: null);
     }
 
+    internal static string SerializeResponseTooLargeFailure(string? requestId)
+    {
+        return SerializeFailure(
+            BridgeErrorCodes.ResponseTooLarge,
+            "Bridge response JSON exceeds the supported size limit.",
+            requestId);
+    }
+
     internal (string ResponseJson, bool RequiresDispatcherReset) DispatchForLongLivedRunner(
         string requestJson)
     {
@@ -419,7 +443,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 RequiresDispatcherReset: false);
         }
 
-        if (requestJson.Length > MaximumBridgeRequestCharacters)
+        if (requestJson.Length > MaximumBridgeRequestCharacters
+            || Encoding.UTF8.GetByteCount(requestJson) > MaximumBridgeRequestBytes)
         {
             return (
                 SerializeRequestTooLargeFailure(),
@@ -686,7 +711,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 ClearWorkflowMemoryCaches(clearReusableDataCaches: false);
             }
 
-            return (response, RequiresDispatcherReset: false);
+            return (
+                BoundSerializedResponse(response, requestId),
+                RequiresDispatcherReset: false);
         }
         catch (BridgeRequestException exception)
         {
@@ -5517,7 +5544,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 envelope.RequestId);
         }
 
-        if (IsPokemonLegendsZA(selectedGame.Value) && !IsPokemonLegendsZAAllowedCommand(command))
+        if (IsPokemonLegendsZA(selectedGame.Value)
+            && !IsPokemonLegendsZAAllowedCommand(command)
+            && !IsChangeSetCommand(command)
+            && !IsOutputSafetyCommand(command))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -6312,6 +6342,17 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.BuildSupportReport;
     }
 
+    private static bool IsChangeSetCommand(string? command)
+    {
+        return command is
+            KmCommandNames.ReadChangeSets or
+            KmCommandNames.MutateChangeSets or
+            KmCommandNames.CaptureChangeSetSession or
+            KmCommandNames.MaterializeChangeSets or
+            KmCommandNames.ExportChangeSets or
+            KmCommandNames.ImportChangeSets;
+    }
+
     private static bool IsSwordShieldOnlyCommand(string command)
     {
         return command is
@@ -6735,6 +6776,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             NumberStyles.None,
             CultureInfo.InvariantCulture,
             out seed);
+    }
+
+    private static string BoundSerializedResponse(string responseJson, string? requestId)
+    {
+        return Encoding.UTF8.GetByteCount(responseJson) <= MaximumBridgeResponseBytes
+            ? responseJson
+            : SerializeResponseTooLargeFailure(requestId);
     }
 
     private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)

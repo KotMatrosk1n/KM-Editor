@@ -19,6 +19,20 @@ internal sealed record BalanceLabStudyData(
     IReadOnlyList<ApiDiagnostic> Diagnostics,
     bool Cacheable);
 
+internal static class BalanceLabSizingLimits
+{
+    internal const int ProvisionMultiplier = 4;
+    internal const int ProvisionToHardCeilingMultiplier = 2;
+    internal const int ExpectedToHardCeilingMultiplier = checked(
+        ProvisionMultiplier * ProvisionToHardCeilingMultiplier);
+    internal const long ExpectedStudySizeBytes = 256L * 1024L * 1024L;
+    internal const long StudyProvisionSizeBytes = checked(
+        ExpectedStudySizeBytes * ProvisionMultiplier);
+    internal const long StudyHardCeilingBytes = checked(
+        StudyProvisionSizeBytes * ProvisionToHardCeilingMultiplier);
+    internal const long StudyCacheCeilingBytes = StudyHardCeilingBytes;
+}
+
 internal interface IBalanceLabFamilyProvider
 {
     SemanticGameFamilyDto GameFamily { get; }
@@ -39,12 +53,20 @@ internal interface IBalanceLabFamilyProvider
 internal abstract class BalanceLabFamilyProviderBase : IBalanceLabFamilyProvider
 {
     private const int RecordSchemaVersion = 1;
-    private const int MaximumPoints = 50_000;
-    private const int MaximumFacts = 100_000;
-    private const int MaximumEvidenceRecords = 150_000;
-    private const int MaximumFindings = 100_000;
+    private const int ExpectedMaximumPoints = 50_000;
+    private const int ExpectedMaximumFacts = 300_000;
+    private const int ExpectedMaximumEvidenceRecords = 350_000;
+    private const int ExpectedMaximumFindings = 100_000;
+    private const int MaximumPoints = checked(
+        ExpectedMaximumPoints * BalanceLabSizingLimits.ExpectedToHardCeilingMultiplier);
+    private const int MaximumFacts = checked(
+        ExpectedMaximumFacts * BalanceLabSizingLimits.ExpectedToHardCeilingMultiplier);
+    private const int MaximumEvidenceRecords = checked(
+        ExpectedMaximumEvidenceRecords * BalanceLabSizingLimits.ExpectedToHardCeilingMultiplier);
+    private const int MaximumFindings = checked(
+        ExpectedMaximumFindings * BalanceLabSizingLimits.ExpectedToHardCeilingMultiplier);
     private const int MaximumDiagnostics = 100;
-    private const long MaximumProjectedBytes = 56L * 1024L * 1024L;
+    private const long MaximumProjectedBytes = BalanceLabSizingLimits.StudyHardCeilingBytes;
 
     protected const string TrainersDomain = "workflow.trainers";
     protected const string EncountersDomain = "workflow.encounters";

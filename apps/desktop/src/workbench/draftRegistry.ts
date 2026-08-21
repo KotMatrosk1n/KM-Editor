@@ -4,8 +4,10 @@ import type { ProjectGame } from '../bridge/contracts';
 import {
   workspaceDraftDocumentSchema,
   workspaceDraftMaximumCount,
+  workspaceDraftMaximumDocumentBytes,
   workspaceDraftMaximumEntityIdLength,
   workspaceDraftMaximumIdentifierLength,
+  workspaceDraftMaximumPayloadBytes,
   workspaceDraftMaximumStableIdLength,
   workspaceDraftSchemaVersion,
   type WorkspaceDraftDocument,
@@ -71,7 +73,7 @@ export type ProjectDraftRegistryOptions = {
   storage?: PrivateWorkspaceStorage<WorkspaceDraftDocument>;
 };
 
-const defaultMaxDraftBytes = 512 * 1024;
+const defaultMaxDraftBytes = workspaceDraftMaximumPayloadBytes;
 const defaultMaxConflictRetries = 3;
 
 export class ProjectDraftRegistry {
@@ -89,7 +91,9 @@ export class ProjectDraftRegistry {
     this.now = options.now ?? (() => new Date());
     this.storage =
       options.storage ??
-      createBoundedMemoryWorkspaceStorage<WorkspaceDraftDocument>();
+      createBoundedMemoryWorkspaceStorage<WorkspaceDraftDocument>({
+        maxDocumentBytes: workspaceDraftMaximumDocumentBytes
+      });
   }
 
   public async load<TDraft>(

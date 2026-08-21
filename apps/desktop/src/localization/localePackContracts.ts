@@ -3,7 +3,9 @@
 import enResource from './resources/en.json';
 
 export const communityLocalePackSchemaVersion = 1 as const;
-export const maximumCommunityLocalePackBytes = 512 * 1024;
+export const expectedCommunityLocalePackBytes = 512 * 1024;
+export const provisionedCommunityLocalePackBytes = expectedCommunityLocalePackBytes * 4;
+export const maximumCommunityLocalePackBytes = provisionedCommunityLocalePackBytes * 2;
 export const maximumCommunityLocalePacks = 4;
 export const maximumCommunityLocaleTranslationLength = 8192;
 

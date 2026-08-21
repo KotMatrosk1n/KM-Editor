@@ -24,6 +24,14 @@ internal sealed class OutputPathSafety
         "sv-mod-merger-manifest.json",
         "za-mod-merger-manifest.json",
     ];
+    // An unclaimed layout may adopt only the framework-owned roots that the
+    // current layout creates itself. Journal or checkpoint content is never
+    // inferred, rewritten, or discarded here.
+    private static readonly string[] RecognizedEmptyMetadataDirectoryNames =
+    [
+        "transactions",
+        "checkpoints",
+    ];
     private static readonly byte[] MetadataMarkerContent =
         Encoding.ASCII.GetBytes("KM output metadata store v1\n");
     private readonly StringComparison pathComparison = OperatingSystem.IsWindows()
@@ -555,6 +563,8 @@ internal sealed class OutputPathSafety
         {
             ValidateUnclaimedMetadataRoot(pendingPath);
             EnsurePrivateMetadataDirectoryPermissions(MetadataRoot);
+            EnsurePrivateUnclaimedMetadataEntries(pendingPath);
+            ValidateUnclaimedMetadataRoot(pendingPath);
             PublishMetadataMarker(markerPath, pendingPath);
             ValidateMetadataMarker(markerPath);
         }
@@ -567,13 +577,20 @@ internal sealed class OutputPathSafety
 
     private void ValidateUnclaimedMetadataRoot(string pendingPath)
     {
-        var entries = Directory.EnumerateFileSystemEntries(MetadataRoot).Take(4).ToArray();
+        var maximumEntryCount = checked(
+            RecognizedManifestNames.Length
+            + RecognizedEmptyMetadataDirectoryNames.Length
+            + 1);
+        var entries = Directory
+            .EnumerateFileSystemEntries(MetadataRoot)
+            .Take(checked(maximumEntryCount + 1))
+            .ToArray();
         if (entries.Length == 0)
         {
             return;
         }
 
-        if (entries.Length > RecognizedManifestNames.Length + 1)
+        if (entries.Length > maximumEntryCount)
         {
             throw new OutputPathSecurityException();
         }
@@ -583,29 +600,81 @@ internal sealed class OutputPathSafety
         foreach (var entry in entries)
         {
             var name = Path.GetFileName(entry);
-            if (!names.Add(name) || Directory.Exists(entry) || HasLinkTarget(new FileInfo(entry)))
+            var entryInfo = new FileInfo(entry);
+            entryInfo.Refresh();
+            if (!names.Add(name) || HasLinkTarget(entryInfo))
+            {
+                throw new OutputPathSecurityException();
+            }
+
+            var isDirectory = Directory.Exists(entry);
+            var isFile = File.Exists(entry);
+            if (isDirectory == isFile)
             {
                 throw new OutputPathSecurityException();
             }
 
             if (string.Equals(entry, pendingPath, pathComparison))
             {
+                if (!isFile)
+                {
+                    throw new OutputPathSecurityException();
+                }
+
                 hasPendingMarker = true;
                 continue;
             }
 
-            if (!RecognizedManifestNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+            if (RecognizedEmptyMetadataDirectoryNames.Contains(name, StringComparer.Ordinal))
+            {
+                if (!isDirectory)
+                {
+                    throw new OutputPathSecurityException();
+                }
+
+                ValidateDirectory(entry);
+                if (Directory.EnumerateFileSystemEntries(entry).Any())
+                {
+                    throw new OutputPathSecurityException();
+                }
+
+                continue;
+            }
+
+            if (!isFile
+                || !RecognizedManifestNames.Contains(name, StringComparer.OrdinalIgnoreCase))
             {
                 throw new OutputPathSecurityException();
             }
 
             ValidateRecognizedManifest(entry);
-            EnsurePrivateMetadataFile(entry);
         }
 
         if (hasPendingMarker)
         {
             ValidateRecognizedPendingMarkerWithRetry(pendingPath);
+        }
+    }
+
+    private void EnsurePrivateUnclaimedMetadataEntries(string pendingPath)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(MetadataRoot))
+        {
+            var name = Path.GetFileName(entry);
+            if (string.Equals(entry, pendingPath, pathComparison)
+                || RecognizedManifestNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                EnsurePrivateMetadataFile(entry);
+                continue;
+            }
+
+            if (!RecognizedEmptyMetadataDirectoryNames.Contains(name, StringComparer.Ordinal))
+            {
+                throw new OutputPathSecurityException();
+            }
+
+            ValidateDirectory(entry);
+            EnsurePrivateMetadataDirectoryPermissions(entry);
         }
     }
 
@@ -1082,8 +1151,10 @@ internal sealed class OutputPathSafety
     {
         try
         {
-            var security = CreatePrivateWindowsDirectorySecurity();
             var directory = new DirectoryInfo(path);
+            ValidateCurrentWindowsOwner(
+                directory.GetAccessControl(AccessControlSections.Owner));
+            var security = CreatePrivateWindowsDirectorySecurity(setOwner: false);
             directory.SetAccessControl(security);
             ValidatePrivateWindowsAcl(
                 directory.GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner));
@@ -1100,7 +1171,7 @@ internal sealed class OutputPathSafety
         try
         {
             var directory = new DirectoryInfo(path);
-            directory.Create(CreatePrivateWindowsDirectorySecurity());
+            directory.Create(CreatePrivateWindowsDirectorySecurity(setOwner: true));
             ValidatePrivateWindowsAcl(
                 directory.GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner));
         }
@@ -1111,11 +1182,15 @@ internal sealed class OutputPathSafety
     }
 
     [SupportedOSPlatform("windows")]
-    private DirectorySecurity CreatePrivateWindowsDirectorySecurity()
+    private DirectorySecurity CreatePrivateWindowsDirectorySecurity(bool setOwner)
     {
         var security = new DirectorySecurity();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.SetOwner(currentUserSid!);
+        if (setOwner)
+        {
+            security.SetOwner(currentUserSid!);
+        }
+
         security.AddAccessRule(new FileSystemAccessRule(
             currentUserSid!,
             FileSystemRights.FullControl,
@@ -1131,6 +1206,8 @@ internal sealed class OutputPathSafety
         try
         {
             var file = new FileInfo(path);
+            ValidateCurrentWindowsOwner(
+                file.GetAccessControl(AccessControlSections.Owner));
             var security = CreatePrivateWindowsFileSecurity();
             file.SetAccessControl(security);
             ValidatePrivateWindowsAcl(
@@ -1153,12 +1230,21 @@ internal sealed class OutputPathSafety
     {
         var security = new FileSecurity();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.SetOwner(currentUserSid!);
         security.AddAccessRule(new FileSystemAccessRule(
             currentUserSid!,
             FileSystemRights.FullControl,
             AccessControlType.Allow));
         return security;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private void ValidateCurrentWindowsOwner(FileSystemSecurity security)
+    {
+        var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        if (owner != currentUserSid)
+        {
+            throw new OutputPathSecurityException();
+        }
     }
 
     [SupportedOSPlatform("windows")]

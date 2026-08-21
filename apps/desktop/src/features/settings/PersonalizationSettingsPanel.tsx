@@ -113,6 +113,7 @@ export function PersonalizationSettingsPanel({
             <label>
               <span>{t('settings.appearance.theme')}</span>
               <select
+                className="km-select-control"
                 onChange={(event) => setTheme(event.currentTarget.value as AppearanceTheme)}
                 value={preferences.theme}
               >
@@ -124,6 +125,7 @@ export function PersonalizationSettingsPanel({
             <label>
               <span>{t('settings.appearance.motion')}</span>
               <select
+                className="km-select-control"
                 onChange={(event) => setMotion(event.currentTarget.value as MotionPreference)}
                 value={preferences.motion}
               >
@@ -134,6 +136,7 @@ export function PersonalizationSettingsPanel({
             <label>
               <span>{t('settings.appearance.typeScale')}</span>
               <select
+                className="km-select-control"
                 onChange={(event) => setTypeScale(event.currentTarget.value as TypeScalePreference)}
                 value={preferences.typeScale}
               >
@@ -145,6 +148,7 @@ export function PersonalizationSettingsPanel({
             <label>
               <span>{t('settings.appearance.density')}</span>
               <select
+                className="km-select-control"
                 onChange={(event) => setDensity(event.currentTarget.value as DensityPreference)}
                 value={preferences.density}
               >
@@ -173,6 +177,7 @@ export function PersonalizationSettingsPanel({
           <label className="km-settings-field">
             <span>{t('settings.localePacks.interfaceLanguage')}</span>
             <select
+              className="km-select-control"
               disabled={isLocalePackBusy}
               onChange={(event) => setLanguage(event.currentTarget.value as InterfaceLocale)}
               value={interfaceLocale}
@@ -189,6 +194,7 @@ export function PersonalizationSettingsPanel({
             <span>{t('settings.localePacks.install')}</span>
             <input
               accept="application/json,.json"
+              className="km-file-control"
               disabled={isLocalePackBusy}
               onChange={(event) => void installLocalePack(event)}
               type="file"

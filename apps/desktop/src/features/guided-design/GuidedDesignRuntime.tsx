@@ -11,14 +11,19 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
-import type { SemanticQueryStatus } from '../semantic-explore/useSemanticExploreController';
+import type {
+  SemanticQueryError,
+  SemanticQueryStatus
+} from '../semantic-explore/useSemanticExploreController';
 import { GuidedDesignSection } from './GuidedDesignSection';
 import { useGuidedDesignController } from './useGuidedDesignController';
 
 export type GuidedDesignRuntimeProps = {
   authoringContextRevision: string | null;
   bridge: GuidedDesignProjectBridgeApi;
+  capabilityError: SemanticQueryError | null;
   capabilityStatus: SemanticQueryStatus;
   canImportChangeSet: boolean;
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
@@ -31,6 +36,7 @@ export type GuidedDesignRuntimeProps = {
   ) => Promise<GuidedDesignImportResponse>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenChanges: () => void;
+  onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
   scope: SemanticExploreScope;
@@ -39,6 +45,7 @@ export type GuidedDesignRuntimeProps = {
 export function GuidedDesignRuntime({
   authoringContextRevision,
   bridge,
+  capabilityError,
   capabilityStatus,
   canImportChangeSet,
   canNavigateRecord,
@@ -49,6 +56,7 @@ export function GuidedDesignRuntime({
   onImportProposal,
   onNavigateRecord,
   onOpenChanges,
+  onRefreshCapabilities,
   onStaleRevision,
   revision,
   scope
@@ -58,7 +66,7 @@ export function GuidedDesignRuntime({
     if (!revision && capabilityStatus === 'idle') {
       void onEnsureCapabilities();
     }
-  }, [capabilityStatus, onEnsureCapabilities, revision]);
+  }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -71,20 +79,20 @@ export function GuidedDesignRuntime({
             <span>{t('guidedDesign.description')}</span>
           </div>
         </header>
-        <div
-          aria-live="polite"
-          className="km-guided-status"
-          role={isError ? 'alert' : 'status'}
-        >
-          <p>{t(isError
-            ? 'guidedDesign.error.generic'
-            : 'guidedDesign.capabilities.loading')}</p>
-          {isError ? (
-            <button onClick={() => void onEnsureCapabilities()} type="button">
+        {isError ? (
+          <div aria-live="polite" className="km-guided-status" role="alert">
+            <p>{t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'guidedDesign.error.generic')}</p>
+            <button onClick={() => void onRefreshCapabilities()} type="button">
               {t('guidedDesign.retry')}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <div className="km-guided-status">
+            <LoadingProgress label={t('guidedDesign.capabilities.loading')} />
+          </div>
+        )}
       </section>
     );
   }
@@ -122,7 +130,14 @@ function GuidedDesignReadyRuntime({
   onStaleRevision,
   revision,
   scope
-}: Omit<GuidedDesignRuntimeProps, 'capabilityStatus' | 'onEnsureCapabilities' | 'revision'> & {
+}: Omit<
+  GuidedDesignRuntimeProps,
+  | 'capabilityError'
+  | 'capabilityStatus'
+  | 'onEnsureCapabilities'
+  | 'onRefreshCapabilities'
+  | 'revision'
+> & {
   revision: SemanticExploreRevision;
 }) {
   const controller = useGuidedDesignController({

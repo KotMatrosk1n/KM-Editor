@@ -8,9 +8,12 @@
   --km-research-surface-muted: var(--color-surface-muted);
   --km-research-text: var(--color-text);
   --km-research-text-muted: var(--color-text-muted);
+  container-name: km-research-lab;
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
   min-width: 0;
+  width: 100%;
 }
 
 .km-research-lab-heading {
@@ -141,6 +144,10 @@
   grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
 }
 
+.km-research-lab-results {
+  grid-template-columns: repeat(auto-fit, minmax(min(32rem, 100%), 1fr));
+}
+
 .km-research-lab-capabilities > li,
 .km-research-lab-results > li,
 .km-research-lab-ownership > li,
@@ -212,7 +219,14 @@
 .km-research-lab-comparison-summary {
   display: grid;
   gap: 0.7rem;
+}
+
+.km-research-lab-source-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.km-research-lab-comparison-summary {
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
 }
 
 .km-research-lab-source {
@@ -345,7 +359,7 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 720px) {
+@container km-research-lab (max-width: 720px) {
   .km-research-lab-heading,
   .km-research-lab-panel-heading {
     align-items: stretch;

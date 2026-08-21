@@ -21,6 +21,12 @@ internal sealed class ZaMovesWorkflowService
     private const int MaximumGameModuleRecordCount = 50_000;
     private const int MaximumGameModuleTimingBucketCount = 100_000;
 
+    private sealed record GameModuleBattleIndex(
+        IReadOnlyDictionary<int, IReadOnlyList<ZaBattleMoveParameterT>> RowsByMove,
+        IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> MultiplicitiesByMove,
+        int ExactDuplicateGroupCount,
+        int ExactDuplicateRowCount);
+
     public const string CanUseMoveField = "canUseMove";
     public const string TypeField = "type";
     public const string QualityField = "quality";
@@ -745,8 +751,17 @@ internal sealed class ZaMovesWorkflowService
                     expected: "A structurally valid active and verified-base bullet parameter catalog"));
             }
 
-            var battleByMove = IndexGameModuleBattleRows(
+            var battleIndex = IndexGameModuleBattleRows(
                 ZaRuntimeMoveData.BattleRows(battleTable));
+            var battleByMove = battleIndex.RowsByMove;
+            if (battleIndex.ExactDuplicateRowCount > 0)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"The Z-A battle-move table contains {battleIndex.ExactDuplicateRowCount.ToString(CultureInfo.InvariantCulture)} exact repeated rows across {battleIndex.ExactDuplicateGroupCount.ToString(CultureInfo.InvariantCulture)} move and variant identities. The read-only game-module projection collapses those exact repeats and retains their source multiplicity.",
+                    $"romfs/{ZaDataPaths.BattleMoveParameterArray}",
+                    expected: "Canonical move and variant identities with explicit exact-source multiplicity"));
+            }
+
             var projectedRecordCount = checked(
                 battleByMove.Values.Sum(rows => rows.Count) + battleByMove.Count);
             if (projectedRecordCount > MaximumGameModuleRecordCount)
@@ -767,6 +782,8 @@ internal sealed class ZaMovesWorkflowService
                 .Select(move => AddGameModuleRuntimeData(
                     move,
                     battleByMove.GetValueOrDefault(move.MoveId) ?? [],
+                    battleIndex.MultiplicitiesByMove.GetValueOrDefault(move.MoveId)
+                        ?? new Dictionary<int, int>(),
                     timingCountsByMove.GetValueOrDefault(move.MoveId)
                         ?? new Dictionary<int, int>(),
                     battleSource.RelativePath,
@@ -1231,31 +1248,45 @@ internal sealed class ZaMovesWorkflowService
                     .ToArray());
     }
 
-    private static IReadOnlyDictionary<int, IReadOnlyList<ZaBattleMoveParameterT>>
+    private static GameModuleBattleIndex
         IndexGameModuleBattleRows(IEnumerable<ZaBattleMoveParameterT> rows)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
         var byMove = new Dictionary<int, List<ZaBattleMoveParameterT>>();
-        var identities = new HashSet<(int MoveId, int Variant)>();
+        var fingerprintByIdentity = new Dictionary<(int MoveId, int Variant), string>();
+        var multiplicityByIdentity = new Dictionary<(int MoveId, int Variant), int>();
         var rowCount = 0;
         foreach (var row in rows)
         {
             var moveId = checked((int)row.MoveId);
             var variant = checked((int)row.VariantType);
-            if (!identities.Add((moveId, variant)))
+            var identity = (moveId, variant);
+            var fingerprint = ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]);
+            if (fingerprintByIdentity.TryGetValue(identity, out var existingFingerprint))
             {
-                throw new InvalidDataException(
-                    "The Z-A battle-move table contains a duplicate move and variant identity.");
+                if (!string.Equals(existingFingerprint, fingerprint, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "The Z-A battle-move table contains conflicting rows for one move and variant identity.");
+                }
+
+                multiplicityByIdentity[identity] = checked(multiplicityByIdentity[identity] + 1);
+            }
+            else
+            {
+                fingerprintByIdentity.Add(identity, fingerprint);
+                multiplicityByIdentity.Add(identity, 1);
+
+                if (!byMove.TryGetValue(moveId, out var moveRows))
+                {
+                    moveRows = [];
+                    byMove.Add(moveId, moveRows);
+                }
+
+                moveRows.Add(row);
             }
 
-            if (!byMove.TryGetValue(moveId, out var moveRows))
-            {
-                moveRows = [];
-                byMove.Add(moveId, moveRows);
-            }
-
-            moveRows.Add(row);
             rowCount = checked(rowCount + 1);
             if (checked(rowCount + byMove.Count) > MaximumGameModuleRecordCount)
             {
@@ -1264,11 +1295,25 @@ internal sealed class ZaMovesWorkflowService
             }
         }
 
-        return byMove.ToDictionary(
-            entry => entry.Key,
-            entry => (IReadOnlyList<ZaBattleMoveParameterT>)entry.Value
-                .OrderBy(row => row.VariantType)
-                .ToArray());
+        var duplicateGroups = multiplicityByIdentity.Count(entry => entry.Value > 1);
+        var duplicateRows = multiplicityByIdentity
+            .Where(entry => entry.Value > 1)
+            .Sum(entry => checked(entry.Value - 1));
+        return new GameModuleBattleIndex(
+            byMove.ToDictionary(
+                entry => entry.Key,
+                entry => (IReadOnlyList<ZaBattleMoveParameterT>)entry.Value
+                    .OrderBy(row => row.VariantType)
+                    .ToArray()),
+            multiplicityByIdentity
+                .GroupBy(entry => entry.Key.MoveId)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyDictionary<int, int>)group.ToDictionary(
+                        entry => entry.Key.Variant,
+                        entry => entry.Value)),
+            duplicateGroups,
+            duplicateRows);
     }
 
     private static IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>>
@@ -1404,6 +1449,7 @@ internal sealed class ZaMovesWorkflowService
     private static ZaMoveRecord AddGameModuleRuntimeData(
         ZaMoveRecord move,
         IReadOnlyList<ZaBattleMoveParameterT> battleRows,
+        IReadOnlyDictionary<int, int> variantMultiplicities,
         IReadOnlyDictionary<int, int> timingCounts,
         string battleSourceFile,
         ProjectFileLayer battleSourceLayer,
@@ -1450,6 +1496,7 @@ internal sealed class ZaMovesWorkflowService
         return move with
         {
             RuntimeVariants = variants,
+            GameModuleVariantMultiplicities = new Dictionary<int, int>(variantMultiplicities),
             GameModuleTimingCounts = new Dictionary<int, int>(timingCounts),
             PlayerDamageRows = playerDamageRows,
             RuntimeSourceFiles = runtimeSourceFiles,

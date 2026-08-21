@@ -8,9 +8,12 @@ export const workspaceDraftMaximumCount = 256;
 export const workspaceDraftMaximumIdentifierLength = 256;
 export const workspaceDraftMaximumStableIdLength = 1024;
 export const workspaceDraftMaximumEntityIdLength = 4096;
-// The generic workspace store reserves four MiB per envelope. Keep one MiB
-// available for the envelope and serializer overhead.
-export const workspaceDraftMaximumDocumentBytes = 3 * 1024 * 1024;
+export const workspaceDraftExpectedDocumentBytes = 3 * 1024 * 1024;
+export const workspaceDraftProvisionedDocumentBytes = workspaceDraftExpectedDocumentBytes * 4;
+export const workspaceDraftMaximumDocumentBytes = workspaceDraftProvisionedDocumentBytes * 2;
+export const workspaceDraftExpectedPayloadBytes = 512 * 1024;
+export const workspaceDraftProvisionedPayloadBytes = workspaceDraftExpectedPayloadBytes * 4;
+export const workspaceDraftMaximumPayloadBytes = workspaceDraftProvisionedPayloadBytes * 2;
 
 type JsonValue =
   | boolean
@@ -88,6 +91,15 @@ export const workspaceDraftDocumentSchema = z
   .superRefine((document, context) => {
     const keys = new Set<string>();
     document.drafts.forEach((draft, index) => {
+      const payloadBytes = new TextEncoder().encode(JSON.stringify(draft.payload)).byteLength;
+      if (payloadBytes > workspaceDraftMaximumPayloadBytes) {
+        context.addIssue({
+          code: 'custom',
+          message: `A workspace draft payload cannot exceed ${workspaceDraftMaximumPayloadBytes} bytes.`,
+          path: ['drafts', index, 'payload']
+        });
+      }
+
       const key = JSON.stringify(draft.key);
       if (keys.has(key)) {
         context.addIssue({
@@ -99,13 +111,6 @@ export const workspaceDraftDocumentSchema = z
       keys.add(key);
     });
 
-    const serializedBytes = new TextEncoder().encode(JSON.stringify(document)).byteLength;
-    if (serializedBytes > workspaceDraftMaximumDocumentBytes) {
-      context.addIssue({
-        code: 'custom',
-        message: `A workspace draft document cannot exceed ${workspaceDraftMaximumDocumentBytes} bytes.`
-      });
-    }
   });
 
 export const readWorkspaceDraftsRequestSchema = z.strictObject({

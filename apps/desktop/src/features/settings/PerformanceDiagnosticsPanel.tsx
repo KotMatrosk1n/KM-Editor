@@ -38,6 +38,7 @@ export function PerformanceDiagnosticsPanel() {
         <label className="km-settings-toggle">
           <input
             checked={snapshot.enabled}
+            className="km-choice-control"
             onChange={(event) => setPerformanceDiagnosticsEnabled(event.currentTarget.checked)}
             type="checkbox"
           />
