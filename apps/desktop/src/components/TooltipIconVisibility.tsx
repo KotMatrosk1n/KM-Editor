@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { CircleHelp } from 'lucide-react';
 import {
   createContext,
   type ReactNode,
@@ -70,17 +71,20 @@ export function TooltipIconVisibilityControl() {
   const { t } = useLocalization();
   const { setShowIcons, showIcons } = useTooltipIconVisibility();
   const label = t('contextHelp.showIcons');
+  const actionLabel = t(showIcons ? 'contextHelp.hideIcons' : 'contextHelp.showIcons');
 
   return (
-    <label className="compact-checkbox tooltip-icon-visibility-control">
-      <input
-        aria-label={label}
-        checked={showIcons}
-        onChange={(event) => setShowIcons(event.target.checked)}
-        type="checkbox"
-      />
-      <span>{label}</span>
-    </label>
+    <button
+      aria-label={label}
+      aria-pressed={showIcons}
+      className="secondary-button workspace-header-toggle tooltip-icon-visibility-control"
+      onClick={() => setShowIcons(!showIcons)}
+      title={actionLabel}
+      type="button"
+    >
+      <CircleHelp aria-hidden="true" size={17} />
+      <span className="workspace-header-toggle-copy">{label}</span>
+    </button>
   );
 }
 

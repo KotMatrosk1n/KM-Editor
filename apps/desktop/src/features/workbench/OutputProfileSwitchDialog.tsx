@@ -9,6 +9,7 @@ import type {
   PreviewProjectRelocationResponse
 } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
 import { useLocalization } from '../../localization';
@@ -177,6 +178,13 @@ export function OutputProfileSwitchDialog({
     }
   };
 
+  const busyPhase = isBusy ? actionPhaseRef.current : null;
+  const busyLabel = busyPhase === 'review'
+    ? translateLiteral('Reviewing')
+    : busyPhase === 'activation'
+      ? translateLiteral('Refreshing loaded editors')
+      : translateLiteral('Applying');
+
   return (
     <div
       className="km-workbench-overlay"
@@ -187,6 +195,7 @@ export function OutputProfileSwitchDialog({
       }}
     >
       <div
+        aria-busy={isBusy || undefined}
         aria-labelledby={headingId}
         aria-modal="true"
         className="km-output-profile-switch-dialog"
@@ -215,6 +224,8 @@ export function OutputProfileSwitchDialog({
           </button>
         </header>
 
+        {isBusy ? <LoadingProgress className="is-compact" label={busyLabel} /> : null}
+
         {!canApply ? (
           <p className="km-output-profile-switch-blocked" role="status">
             <AlertCircle aria-hidden="true" size={16} />
@@ -224,23 +235,33 @@ export function OutputProfileSwitchDialog({
 
         <div className="km-output-profile-switch-actions">
           <button
+            aria-busy={busyPhase === 'review' || undefined}
             className="secondary-button"
             disabled={!canApply || isBusy}
             onClick={() => void review()}
             type="button"
           >
             <ShieldCheck aria-hidden="true" size={16} />
-            <span>{t('workbench.outputProfileSwitch.review')}</span>
+            <span>
+              {busyPhase === 'review'
+                ? busyLabel
+                : t('workbench.outputProfileSwitch.review')}
+            </span>
           </button>
           {preview ? (
             <button
+              aria-busy={busyPhase === 'apply' || undefined}
               className="primary-button"
               disabled={!preview.canApply || !canApply || isBusy}
               onClick={() => void apply()}
               type="button"
             >
               <Move aria-hidden="true" size={16} />
-              <span>{t('workbench.outputProfileSwitch.apply')}</span>
+              <span>
+                {busyPhase === 'apply'
+                  ? busyLabel
+                  : t('workbench.outputProfileSwitch.apply')}
+              </span>
             </button>
           ) : null}
         </div>

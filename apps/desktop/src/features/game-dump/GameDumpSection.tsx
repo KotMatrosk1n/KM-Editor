@@ -556,6 +556,7 @@ export function GameDumpSection({
                   <div className="game-dump-category-check">
                     <input
                       checked={state.selected && category.isAvailable}
+                      className="km-choice-control"
                       disabled={!category.isAvailable || isLoading || isGenerating}
                       id={categoryInputId}
                       onChange={(event) => {
@@ -596,6 +597,7 @@ export function GameDumpSection({
                       />
                       <select
                         aria-label={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
+                        className="km-select-control"
                         disabled={
                           !category.isAvailable || !state.selected || isLoading || isGenerating
                         }
@@ -634,6 +636,7 @@ export function GameDumpSection({
                           aria-label={`${translateLiteral(category.label)} ${t(
                             'gameDump.language.label'
                           )}`}
+                          className="km-select-control"
                           data-localization-ignore="true"
                           disabled={
                             !category.isAvailable || !state.selected || isLoading || isGenerating

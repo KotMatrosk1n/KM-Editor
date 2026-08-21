@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  BookmarkCheck,
   BookmarkPlus,
   Command,
   ExternalLink,
@@ -27,13 +28,15 @@ export type WorkspaceHeaderProps = {
   hasCriticalWriteOperation: boolean;
   inspectorAvailable?: boolean;
   isEditSessionOperationBusy: boolean;
+  isCurrentViewSaved?: boolean;
+  isSavedViewMutationBusy?: boolean;
   onBack?: () => void;
   onCloseEditor: () => void;
   onForward?: () => void;
   onOpenCommandPalette?: () => void;
   onOpenMore?: () => void;
-  onSaveView?: () => void;
   onOpenWiki: () => void;
+  onToggleSavedView?: () => void;
   onToggleInspector?: () => void;
   onTogglePin?: () => void;
 };
@@ -50,13 +53,15 @@ export function WorkspaceHeader({
   hasCriticalWriteOperation,
   inspectorAvailable = false,
   isEditSessionOperationBusy,
+  isCurrentViewSaved = false,
+  isSavedViewMutationBusy = false,
   onBack,
   onCloseEditor,
   onForward,
   onOpenCommandPalette,
   onOpenMore,
-  onSaveView,
   onOpenWiki,
+  onToggleSavedView,
   onToggleInspector,
   onTogglePin
 }: WorkspaceHeaderProps) {
@@ -114,15 +119,30 @@ export function WorkspaceHeader({
           </button>
         ) : null}
 
-        {canSaveView && onSaveView ? (
+        {canSaveView && onToggleSavedView ? (
           <button
-            aria-label={t('workbench.header.saveView')}
-            className="secondary-button icon-button"
-            onClick={onSaveView}
-            title={t('workbench.header.saveView')}
+            aria-busy={isSavedViewMutationBusy}
+            aria-label={t(
+              isCurrentViewSaved
+                ? 'workbench.header.removeSavedView'
+                : 'workbench.header.saveView'
+            )}
+            aria-pressed={isCurrentViewSaved}
+            className="secondary-button icon-button workspace-header-toggle saved-view-toggle"
+            disabled={isSavedViewMutationBusy}
+            onClick={onToggleSavedView}
+            title={t(
+              isCurrentViewSaved
+                ? 'workbench.header.removeSavedView'
+                : 'workbench.header.saveView'
+            )}
             type="button"
           >
-            <BookmarkPlus aria-hidden="true" size={17} />
+            {isCurrentViewSaved ? (
+              <BookmarkCheck aria-hidden="true" size={17} />
+            ) : (
+              <BookmarkPlus aria-hidden="true" size={17} />
+            )}
           </button>
         ) : null}
 
@@ -167,7 +187,6 @@ export function WorkspaceHeader({
           </button>
         ) : null}
 
-        {activeSectionIsEditor ? <TooltipIconVisibilityControl /> : null}
         {activeWikiUrl ? (
           <button
             aria-label={`Go to Wiki for ${activeSectionLabel}`}
@@ -180,6 +199,7 @@ export function WorkspaceHeader({
             <span>Go to Wiki</span>
           </button>
         ) : null}
+        {activeSectionIsEditor ? <TooltipIconVisibilityControl /> : null}
 
         {activeSectionIsEditor ? (
           <button

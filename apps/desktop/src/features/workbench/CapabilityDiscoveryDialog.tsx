@@ -24,14 +24,16 @@ function OpenCapabilityDiscoveryDialog({
   onOpenCapability
 }: CapabilityDiscoveryDialogProps) {
   const { t } = useLocalization();
+  const descriptionId = useId();
   const headingId = useId();
   const dialogRef = useModalDialog<HTMLDivElement>({ onClose });
   return (
     <div
-      className="km-workbench-overlay"
+      className="km-workbench-overlay km-capability-dialog-overlay"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
+        aria-describedby={descriptionId}
         aria-labelledby={headingId}
         aria-modal="true"
         className="km-capability-dialog"
@@ -43,7 +45,7 @@ function OpenCapabilityDiscoveryDialog({
           <Compass aria-hidden="true" size={20} />
           <div>
             <h2 id={headingId}>{t('workbench.capabilityDialog.title')}</h2>
-            <p>{t('workbench.capabilityDialog.description')}</p>
+            <p id={descriptionId}>{t('workbench.capabilityDialog.description')}</p>
           </div>
           <button
             aria-label={t('workbench.capabilityDialog.close')}
@@ -55,41 +57,43 @@ function OpenCapabilityDiscoveryDialog({
             <X aria-hidden="true" size={17} />
           </button>
         </header>
-        {capabilities.length > 0 ? (
-          <ul className="km-capability-dialog-list">
-            {capabilities.map((capability) => (
-              <li key={capability.id}>
-                <div>
-                  <strong>{t(capability.labelKey)}</strong>
-                  <small>{t(capability.descriptionKey)}</small>
-                </div>
-                <div className="km-capability-dialog-action">
-                  <span className={`km-capability-status is-${capability.status}`}>
-                    {t(capability.statusKey)}
-                  </span>
-                  {capability.reason || capability.reasonKey ? (
-                    <small data-localization-ignore={capability.reason ? 'true' : undefined}>
-                      {capability.reason ?? t(capability.reasonKey!)}
-                    </small>
-                  ) : null}
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={capability.status === 'blocked'}
-                    onClick={() => {
-                      onOpenCapability(capability.id);
-                      onClose();
-                    }}
-                    type="button"
-                  >
-                    {t('workbench.capabilityDialog.open')}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="km-workbench-empty">{t('workbench.capabilityDialog.empty')}</p>
-        )}
+        <div className="km-capability-dialog-body">
+          {capabilities.length > 0 ? (
+            <ul className="km-capability-dialog-list">
+              {capabilities.map((capability) => (
+                <li key={capability.id}>
+                  <div>
+                    <strong>{t(capability.labelKey)}</strong>
+                    <small>{t(capability.descriptionKey)}</small>
+                  </div>
+                  <div className="km-capability-dialog-action">
+                    <span className={`km-capability-status is-${capability.status}`}>
+                      {t(capability.statusKey)}
+                    </span>
+                    {capability.reason || capability.reasonKey ? (
+                      <small data-localization-ignore={capability.reason ? 'true' : undefined}>
+                        {capability.reason ?? t(capability.reasonKey!)}
+                      </small>
+                    ) : null}
+                    <button
+                      className="secondary-button compact-button"
+                      disabled={capability.status === 'blocked'}
+                      onClick={() => {
+                        onOpenCapability(capability.id);
+                        onClose();
+                      }}
+                      type="button"
+                    >
+                      {t('workbench.capabilityDialog.open')}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="km-workbench-empty">{t('workbench.capabilityDialog.empty')}</p>
+          )}
+        </div>
       </div>
     </div>
   );

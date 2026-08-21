@@ -10,6 +10,7 @@ import {
   gameModuleMaximumAccumulatedRecords
 } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { getWorkbenchSectionLabelKey } from '../../workbench/capabilityRegistry';
 import type { WorkbenchSection } from '../../workbench/workbenchSections';
@@ -95,7 +96,11 @@ export function GameModulesSection({
   }
 
   return (
-    <section aria-labelledby="game-modules-title" className="km-game-modules wide-panel">
+    <section
+      aria-busy={controller.isBusy || undefined}
+      aria-labelledby="game-modules-title"
+      className="km-game-modules wide-panel"
+    >
       <header className="km-game-modules-heading">
         <div>
           <p>{t('gameModules.eyebrow')}</p>
@@ -103,13 +108,14 @@ export function GameModulesSection({
           <span>{t('gameModules.description')}</span>
         </div>
         <button
+          aria-busy={controller.isBusy || undefined}
           className="secondary-button compact-button"
           disabled={controller.isBusy}
           onClick={() => void controller.refreshCapabilities()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={15} />
-          <span>{t('gameModules.refresh')}</span>
+          <span>{t(controller.isBusy ? 'gameModules.loading' : 'gameModules.refresh')}</span>
         </button>
       </header>
 
@@ -241,7 +247,11 @@ function GameModuleDetail({
     ? controller.result.data
     : null;
   return (
-    <section aria-labelledby="game-module-detail-title" className="km-game-modules wide-panel">
+    <section
+      aria-busy={controller.isBusy || undefined}
+      aria-labelledby="game-module-detail-title"
+      className="km-game-modules wide-panel"
+    >
       <button
         ref={backRef}
         className="secondary-button compact-button km-game-module-detail-back"
@@ -258,13 +268,14 @@ function GameModuleDetail({
           <span>{t(gameModuleDescriptionKey(capability.module))}</span>
         </div>
         <button
+          aria-busy={controller.isBusy || undefined}
           className="secondary-button compact-button"
           disabled={controller.isBusy}
           onClick={() => void controller.refresh()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={15} />
-          <span>{t('gameModules.refresh')}</span>
+          <span>{t(controller.isBusy ? 'gameModules.loading' : 'gameModules.refresh')}</span>
         </button>
       </header>
       {!result && controller.result.status === 'loading' ? <StatusPanel kind="loading" /> : null}
@@ -273,6 +284,11 @@ function GameModuleDetail({
       ) : null}
       {result ? (
         <>
+          {controller.result.status === 'loading' && !controller.result.isAppending ? (
+            <div className="km-game-module-status">
+              <LoadingProgress className="is-compact" label={t('gameModules.loading')} />
+            </div>
+          ) : null}
           {controller.result.status === 'error' ? (
             <InlineError onRetry={() => void controller.refresh()} />
           ) : null}
@@ -288,16 +304,30 @@ function GameModuleDetail({
                 {t('gameModules.results.windowLimit')}
               </p>
             ) : (
-              <button
-                className="secondary-button km-game-module-load-more"
-                disabled={controller.result.isAppending}
-                onClick={() => void controller.loadMore()}
-                type="button"
-              >
-                {controller.result.isAppending
-                  ? t('gameModules.loading')
-                  : t('gameModules.results.more')}
-              </button>
+              <>
+                <button
+                  aria-busy={controller.result.isAppending || undefined}
+                  className="secondary-button km-game-module-load-more"
+                  disabled={controller.result.isAppending}
+                  onClick={() => void controller.loadMore()}
+                  type="button"
+                >
+                  {controller.result.isAppending
+                    ? t('gameModules.loading')
+                    : t('gameModules.results.more')}
+                </button>
+                {controller.result.isAppending ? (
+                  <LoadingProgress
+                    className="is-compact"
+                    completed={result.records.length}
+                    label={t('gameModules.loading')}
+                    total={Math.min(
+                      result.totalRecordCount,
+                      gameModuleMaximumAccumulatedRecords
+                    )}
+                  />
+                ) : null}
+              </>
             )
           ) : null}
         </>
@@ -314,13 +344,20 @@ function StatusPanel({
   onRetry?: () => void;
 }) {
   const { t } = useLocalization();
+  if (kind === 'loading') {
+    return (
+      <div className="km-game-module-status">
+        <LoadingProgress label={t('gameModules.loading')} />
+      </div>
+    );
+  }
   return (
     <div
       aria-live="polite"
       className="km-game-module-status"
-      role={kind === 'error' ? 'alert' : 'status'}
+      role="alert"
     >
-      <p>{t(kind === 'loading' ? 'gameModules.loading' : 'gameModules.error')}</p>
+      <p>{t('gameModules.error')}</p>
       {onRetry ? <button onClick={onRetry} type="button">{t('gameModules.retry')}</button> : null}
     </div>
   );

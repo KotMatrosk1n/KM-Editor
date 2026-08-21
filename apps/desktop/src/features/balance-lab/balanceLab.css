@@ -9,9 +9,12 @@
   --km-balance-surface-muted: var(--color-surface-muted);
   --km-balance-text: var(--color-text);
   --km-balance-text-muted: var(--color-text-muted);
+  container-name: km-balance-lab;
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
   min-width: 0;
+  width: 100%;
 }
 
 .km-balance-heading {
@@ -69,6 +72,7 @@
 .km-balance-coverage ul {
   display: grid;
   gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr));
   list-style: none;
   margin: 0.75rem 0 0;
   padding: 0;
@@ -173,6 +177,12 @@
   gap: 0.625rem;
   grid-template-columns: minmax(16rem, 2fr) repeat(3, minmax(8rem, 1fr));
   padding: 0.75rem;
+}
+
+#balance-lab-study-panel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
 }
 
 .km-balance-controls label {
@@ -328,7 +338,7 @@
 .km-balance-point-grid {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
 }
 
 .km-balance-point-grid article {
@@ -520,7 +530,7 @@
   justify-self: center;
 }
 
-@media (max-width: 900px) {
+@container km-balance-lab (max-width: 900px) {
   .km-balance-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -539,7 +549,7 @@
   }
 }
 
-@media (max-width: 580px) {
+@container km-balance-lab (max-width: 580px) {
   .km-balance-heading,
   .km-balance-status,
   .km-balance-inline-error {

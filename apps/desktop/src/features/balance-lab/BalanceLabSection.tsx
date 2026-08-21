@@ -9,12 +9,20 @@ import type {
   BalanceLabPoint,
   BalanceLabStudy
 } from '../../bridge/balanceLabContracts';
+import type { ApiDiagnostic } from '../../bridge/contracts';
 import {
   balanceLabMaximumContinuationStartCount,
   balanceLabMaximumSearchTextLength
 } from '../../bridge/balanceLabContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
+import {
+  DiagnosticTechnicalDetails,
+  OccurrenceCount,
+  TechnicalDetails
+} from '../workbench/AnalysisPresentation';
+import { groupDiagnosticsForPresentation } from '../workbench/analysisPresentationUtils';
 import { BalanceLabResults, ConfidenceBadge } from './BalanceLabResults';
 import type { BalanceLabController, BalanceLabLayer } from './useBalanceLabController';
 import './balanceLab.css';
@@ -77,7 +85,11 @@ export function BalanceLabSection({
   );
 
   return (
-    <section aria-labelledby="balance-lab-title" className="km-balance-lab wide-panel">
+    <section
+      aria-busy={controller.isQuerying || undefined}
+      aria-labelledby="balance-lab-title"
+      className="km-balance-lab wide-panel"
+    >
       <header className="km-balance-heading">
         <div>
           <p>{t('balanceLab.eyebrow')}</p>
@@ -85,13 +97,14 @@ export function BalanceLabSection({
           <span>{t('balanceLab.description')}</span>
         </div>
         <button
+          aria-busy={controller.isQuerying || undefined}
           className="secondary-button compact-button"
           disabled={!controller.activeQuery || controller.isQuerying}
           onClick={() => void controller.refresh()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={15} />
-          <span>{t('balanceLab.refresh')}</span>
+          <span>{t(controller.isQuerying ? 'balanceLab.loading' : 'balanceLab.refresh')}</span>
         </button>
       </header>
 
@@ -100,6 +113,11 @@ export function BalanceLabSection({
       ) : null}
       {resultMatchesSelection && controller.result.status === 'error' && !resultData ? (
         <BalanceLabStatusPanel kind="error" onRetry={() => void controller.refresh()} />
+      ) : null}
+      {resultData && controller.result.status === 'loading' && !controller.result.isAppending ? (
+        <div className="km-balance-status">
+          <LoadingProgress className="is-compact" label={t('balanceLab.loading')} />
+        </div>
       ) : null}
 
       {resultData ? (
@@ -189,16 +207,22 @@ export function BalanceLabSection({
                   balanceLabMaximumContinuationStartCount ? (
                   <p className="km-balance-advisory">{t('balanceLab.results.windowLimit')}</p>
                 ) : (
-                  <button
-                    className="secondary-button km-balance-load-more"
-                    disabled={controller.result.isAppending}
-                    onClick={() => void controller.loadMore()}
-                    type="button"
-                  >
-                    {controller.result.isAppending
-                      ? t('balanceLab.loading')
-                      : t('balanceLab.results.more')}
-                  </button>
+                  <>
+                    <button
+                      aria-busy={controller.result.isAppending || undefined}
+                      className="secondary-button km-balance-load-more"
+                      disabled={controller.result.isAppending}
+                      onClick={() => void controller.loadMore()}
+                      type="button"
+                    >
+                      {controller.result.isAppending
+                        ? t('balanceLab.loading')
+                        : t('balanceLab.results.more')}
+                    </button>
+                    {controller.result.isAppending ? (
+                      <LoadingProgress className="is-compact" label={t('balanceLab.loading')} />
+                    ) : null}
+                  </>
                 )
               ) : null}
             </>
@@ -213,7 +237,7 @@ export function BalanceLabSection({
 }
 
 function CapabilitySummary({ capabilities }: { capabilities: readonly BalanceLabCapability[] }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   return (
     <section aria-labelledby="balance-lab-coverage-title" className="km-balance-coverage">
       <header>
@@ -232,10 +256,12 @@ function CapabilitySummary({ capabilities }: { capabilities: readonly BalanceLab
             </span>
             <ConfidenceBadge confidence={capability.confidence} />
             {capability.reasonCode ? (
-              <span className="km-balance-coverage-reason">
+              <div className="km-balance-coverage-reason">
                 <span>{t(coverageReasonKey(capability.reasonCode))}</span>
-                <code data-localization-ignore="true">{capability.reasonCode}</code>
-              </span>
+                <TechnicalDetails summary={translateLiteral('Technical details')}>
+                  <code>{capability.reasonCode}</code>
+                </TechnicalDetails>
+              </div>
             ) : null}
           </li>
         ))}
@@ -305,7 +331,11 @@ function SelectControl({
   return (
     <label>
       <span>{t(labelKey)}</span>
-      <select onChange={(event) => onChange(event.currentTarget.value)} value={value}>
+      <select
+        className="km-select-control"
+        onChange={(event) => onChange(event.currentTarget.value)}
+        value={value}
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
         ))}
@@ -314,21 +344,39 @@ function SelectControl({
   );
 }
 
-function DiagnosticList({ diagnostics }: { diagnostics: readonly { message: string; severity: string }[] }) {
-  const { t } = useLocalization();
+function DiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
+  const { t, translateLiteral } = useLocalization();
   if (diagnostics.length === 0) return null;
+  const grouped = groupDiagnosticsForPresentation(
+    diagnostics,
+    (diagnostic) => [
+      diagnostic.severity,
+      safeDiagnosticMessage(diagnostic.message) ? diagnostic.message : 'redacted'
+    ],
+    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+  );
   return (
     <section aria-label={t('balanceLab.diagnostics.title')} className="km-balance-diagnostics">
       <ul>
-        {diagnostics.slice(0, 50).map((diagnostic, index) => (
-          <li data-severity={diagnostic.severity} key={`${diagnostic.severity}:${index}`}>
-            {safeDiagnosticMessage(diagnostic.message)
-              ? <span data-localization-ignore="true">{diagnostic.message}</span>
-              : <span>{t('balanceLab.diagnostics.redacted')}</span>}
+        {grouped.slice(0, 50).map(({ count, diagnostics: identities, key }) => {
+          const diagnostic = identities[0]!.diagnostic;
+          return (
+          <li data-severity={diagnostic.severity} key={key}>
+            <span>
+              {safeDiagnosticMessage(diagnostic.message)
+                ? <span data-localization-ignore="true">{diagnostic.message}</span>
+                : <span>{t('balanceLab.diagnostics.redacted')}</span>}
+              <OccurrenceCount count={count} />
+            </span>
+            <DiagnosticTechnicalDetails
+              diagnostics={identities}
+              summary={translateLiteral('Technical details')}
+            />
           </li>
-        ))}
+          );
+        })}
       </ul>
-      {diagnostics.length > 50 ? <p>{t('balanceLab.diagnostics.bounded')}</p> : null}
+      {grouped.length > 50 ? <p>{t('balanceLab.diagnostics.bounded')}</p> : null}
     </section>
   );
 }
@@ -359,15 +407,25 @@ function ResultWindowSummary({
 
 export function BalanceLabStatusPanel({
   kind,
+  messageKey,
   onRetry
 }: {
   kind: 'loading' | 'error';
+  messageKey?: string;
   onRetry?: () => void;
 }) {
   const { t } = useLocalization();
+  const label = t(messageKey ?? (kind === 'loading' ? 'balanceLab.loading' : 'balanceLab.error'));
+  if (kind === 'loading') {
+    return (
+      <div className="km-balance-status">
+        <LoadingProgress label={label} />
+      </div>
+    );
+  }
   return (
-    <div aria-live="polite" className="km-balance-status" role={kind === 'error' ? 'alert' : 'status'}>
-      <p>{t(kind === 'loading' ? 'balanceLab.loading' : 'balanceLab.error')}</p>
+    <div aria-live="polite" className="km-balance-status" role="alert">
+      <p>{label}</p>
       {onRetry ? <button onClick={onRetry} type="button">{t('balanceLab.retry')}</button> : null}
     </div>
   );

@@ -38,7 +38,6 @@ public sealed class ChangeSetApplicationService
     private const int MaximumSourceCount = 128;
     private const int MaximumOwnedTargetCount = 64;
     private const int MaximumRelativePathLength = 4_096;
-    private const int MaximumPortablePackageBytes = 2 * 1024 * 1024;
     private const int MaximumPortableNumericValueLength = 20;
     private const string PortablePendingEditAdapterId = "pending-edit.v1";
     private const int PortablePendingEditAdapterSchemaVersion = 1;
@@ -54,13 +53,7 @@ public sealed class ChangeSetApplicationService
         };
     private static readonly WorkspaceDocumentId OperationLeaseId =
         new("change-sets-operation");
-    private static readonly JsonSerializerOptions SerializerOptions =
-        new(BridgeJson.SerializerOptions)
-        {
-            RespectNullableAnnotations = true,
-            RespectRequiredConstructorParameters = true,
-            UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
-        };
+    private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
     private static readonly WorkspaceDocumentDefinition<StoredChangeSetWorkspaceDocument> Definition =
         new(
             new WorkspaceDocumentId(DocumentId),
@@ -79,6 +72,16 @@ public sealed class ChangeSetApplicationService
             serializerOptions: SerializerOptions);
         this.workspacePersonalStateService = workspacePersonalStateService
             ?? new WorkspacePersonalStateApplicationService();
+    }
+
+    private static JsonSerializerOptions CreateSerializerOptions()
+    {
+        var options = PrivateWorkspaceJson.CreateSerializerOptions(BridgeJson.SerializerOptions);
+        options.RespectNullableAnnotations = true;
+        options.RespectRequiredConstructorParameters = true;
+        options.UnmappedMemberHandling =
+            System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
+        return options;
     }
 
     public async Task<ChangeSetWorkspaceSnapshotDto> ReadAsync(
@@ -906,7 +909,7 @@ public sealed class ChangeSetApplicationService
             scope.Game,
             portableSets);
         var packageJson = JsonSerializer.Serialize(package, SerializerOptions);
-        if (Encoding.UTF8.GetByteCount(packageJson) > MaximumPortablePackageBytes)
+        if (Encoding.UTF8.GetByteCount(packageJson) > ChangeSetContract.MaximumPortablePackageBytes)
         {
             return new ExportChangeSetsResponse(
                 Available: false,
@@ -966,7 +969,7 @@ public sealed class ChangeSetApplicationService
         }
 
         var payloadJson = JsonSerializer.Serialize(payload, SerializerOptions);
-        if (Encoding.UTF8.GetByteCount(payloadJson) > MaximumPortablePackageBytes)
+        if (Encoding.UTF8.GetByteCount(payloadJson) > ChangeSetContract.MaximumPortablePackageBytes)
         {
             return false;
         }
@@ -994,7 +997,7 @@ public sealed class ChangeSetApplicationService
             || !IsSha256(portableOperation.SourceFingerprint)
             || string.IsNullOrEmpty(portableOperation.PayloadJson)
             || Encoding.UTF8.GetByteCount(portableOperation.PayloadJson)
-                > MaximumPortablePackageBytes)
+                > ChangeSetContract.MaximumPortablePackageBytes)
         {
             throw Invalid("A portable change-set operation adapter is unsupported or invalid.");
         }
@@ -1139,7 +1142,8 @@ public sealed class ChangeSetApplicationService
         }
 
         if (string.IsNullOrEmpty(request.PackageJson)
-            || Encoding.UTF8.GetByteCount(request.PackageJson) > MaximumPortablePackageBytes)
+            || Encoding.UTF8.GetByteCount(request.PackageJson)
+                > ChangeSetContract.MaximumPortablePackageBytes)
         {
             throw Invalid("The portable change-set package is empty or too large.");
         }
@@ -1323,7 +1327,7 @@ public sealed class ChangeSetApplicationService
         {
             return new GeneratedChangeSetProposalValidation(
                 false,
-                "A generated proposal must contain one through 128 pending edits.",
+                $"A generated proposal must contain one through {ChangeSetContract.MaximumOperationsPerChangeSet:N0} pending edits.",
                 Array.Empty<GeneratedChangeSetOperationBinding>());
         }
 

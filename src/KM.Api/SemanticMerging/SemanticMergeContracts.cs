@@ -10,6 +10,9 @@ namespace KM.Api.SemanticMerging;
 
 public static class SemanticMergeContract
 {
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+
     public const int SchemaVersion = 1;
     public const int MaximumPageSize = 100;
     public const int MaximumCursorLength = 2_048;
@@ -17,7 +20,10 @@ public static class SemanticMergeContract
     public const int MaximumTargets = 128;
     public const int MaximumDomainsPerProposal = 1;
     public const int MaximumResolutions = MaximumTargets * MaximumConflictsPerRow;
-    public const int MaximumIndexedRows = 50_000;
+    public const int ExpectedIndexedRows = 50_000;
+    public const int ProvisionedIndexedRows = checked(ExpectedIndexedRows * ProvisionMultiplier);
+    public const int MaximumIndexedRows = checked(
+        ProvisionedIndexedRows * HardCeilingMultiplier);
     public const int MaximumTargetSelectionWindow = 500;
     public const int MaximumTargetSearchTextLength = 256;
     public const int MaximumConflictsPerRow = 3;
@@ -25,9 +31,20 @@ public static class SemanticMergeContract
         MaximumTargetSelectionWindow * MaximumConflictsPerRow;
     public const int MaximumDiagnostics = 100;
     public const int MaximumChangeSetNameLength = 128;
-    public const int MaximumRecipeBytes = 2 * 1_024 * 1_024;
-    public const int MaximumRecipeOperations = 128;
-    public const int MaximumRecipeSteps = 32;
+    public const int ExpectedRecipeBytes = 4 * 1_024 * 1_024;
+    public const int ProvisionedRecipeBytes = checked(ExpectedRecipeBytes * ProvisionMultiplier);
+    public const int MaximumRecipeBytes = checked(
+        ProvisionedRecipeBytes * HardCeilingMultiplier);
+    public const int ExpectedRecipeOperations = 768;
+    public const int ProvisionedRecipeOperations = checked(
+        ExpectedRecipeOperations * ProvisionMultiplier);
+    public const int MaximumRecipeOperations = checked(
+        ProvisionedRecipeOperations * HardCeilingMultiplier);
+    public const int ExpectedRecipeSteps = 64;
+    public const int ProvisionedRecipeSteps = checked(
+        ExpectedRecipeSteps * ProvisionMultiplier);
+    public const int MaximumRecipeSteps = checked(
+        ProvisionedRecipeSteps * HardCeilingMultiplier);
     public const int MaximumRecipeDependencies = 32;
     public const int MaximumRecipeNameLength = 128;
     public const int MaximumRecipeNotesLength = 4_096;

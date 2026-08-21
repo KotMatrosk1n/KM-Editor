@@ -1,0 +1,129 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.km-analysis-occurrence-count {
+  align-items: center;
+  background: color-mix(in srgb, var(--color-accent-bright) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent-bright) 48%, transparent);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.22rem 0.42rem;
+  margin-inline-start: 0.35rem;
+}
+
+.km-analysis-diagnostic-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.km-analysis-diagnostic-identity {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.km-analysis-technical-details {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.km-analysis-technical-details > summary {
+  cursor: pointer;
+  inline-size: fit-content;
+}
+
+.km-analysis-technical-details > div {
+  display: grid;
+  gap: 0.3rem;
+  margin-block-start: 0.4rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-analysis-technical-details code {
+  font-size: 0.74rem;
+  white-space: normal;
+}
+
+.km-analysis-confidence-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.km-analysis-confidence-group + .km-analysis-confidence-group {
+  margin-block-start: 0.65rem;
+}
+
+.km-analysis-confidence-heading {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+  justify-content: space-between;
+}
+
+.km-analysis-confidence-heading > small {
+  color: var(--color-text-secondary);
+}
+
+.km-analysis-related-records {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.km-analysis-related-record {
+  background: color-mix(in srgb, var(--color-surface-muted) 76%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.km-analysis-related-record > header {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  justify-content: space-between;
+}
+
+.km-analysis-related-record > header > div:last-child {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.km-analysis-field-groups {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.km-analysis-field-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.km-analysis-field-group > h4 {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+@media (forced-colors: active) {
+  .km-analysis-occurrence-count,
+  .km-analysis-related-record {
+    border-color: CanvasText;
+  }
+}

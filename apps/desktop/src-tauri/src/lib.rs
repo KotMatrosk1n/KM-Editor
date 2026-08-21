@@ -15,13 +15,53 @@ use tauri_plugin_shell::ShellExt;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 const MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS: usize = 8;
-const MAX_PROJECT_BRIDGE_REQUEST_BYTES: usize = 16 * 1024 * 1024;
-const MAX_PROJECT_BRIDGE_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+const PROJECT_BRIDGE_LIMIT_PROVISION_MULTIPLIER: usize = 4;
+const PROJECT_BRIDGE_LIMIT_HARD_CEILING_MULTIPLIER: usize = 2;
+const PROJECT_BRIDGE_EXPECTED_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+const PROJECT_BRIDGE_PROVISIONED_REQUEST_BYTES: usize = checked_project_bridge_limit(
+    PROJECT_BRIDGE_EXPECTED_REQUEST_BYTES,
+    PROJECT_BRIDGE_LIMIT_PROVISION_MULTIPLIER,
+);
+const MAX_PROJECT_BRIDGE_REQUEST_BYTES: usize = checked_project_bridge_limit(
+    PROJECT_BRIDGE_PROVISIONED_REQUEST_BYTES,
+    PROJECT_BRIDGE_LIMIT_HARD_CEILING_MULTIPLIER,
+);
+// Tauri JSON framing can approximately double an inner response containing quotes or
+// backslashes. The current x86_64 desktop build therefore keeps the decoded inner
+// ceiling below half of V8's maximum string length with additional margin.
+const PROJECT_BRIDGE_EXPECTED_RESPONSE_BYTES: usize = 30 * 1024 * 1024;
+const PROJECT_BRIDGE_PROVISIONED_RESPONSE_BYTES: usize = checked_project_bridge_limit(
+    PROJECT_BRIDGE_EXPECTED_RESPONSE_BYTES,
+    PROJECT_BRIDGE_LIMIT_PROVISION_MULTIPLIER,
+);
+const MAX_PROJECT_BRIDGE_RESPONSE_BYTES: usize = checked_project_bridge_limit(
+    PROJECT_BRIDGE_PROVISIONED_RESPONSE_BYTES,
+    PROJECT_BRIDGE_LIMIT_HARD_CEILING_MULTIPLIER,
+);
+const MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES: usize =
+    match MAX_PROJECT_BRIDGE_RESPONSE_BYTES.checked_add(2) {
+        Some(limit) => limit,
+        None => panic!("project bridge framed response limit overflow"),
+    };
 const PROJECT_BRIDGE_RECYCLED_ERROR: &str =
     "Project bridge request was canceled because the bridge was recycled.";
 const PROJECT_BRIDGE_PROJECT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT: Duration = Duration::from_secs(45);
-const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(120);
+const PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS: u64 = 75;
+const PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER: u64 = 4;
+const PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER: u64 = 2;
+const PROJECT_BRIDGE_QUEUE_WAIT_PROVISION_TIMEOUT: Duration = Duration::from_secs(
+    PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER,
+);
+const PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(
+    PROJECT_BRIDGE_QUEUE_WAIT_PROVISION_TIMEOUT.as_secs()
+        * PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER,
+);
+const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(
+    PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS
+        * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER
+        * PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER,
+);
 const PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const PROJECT_BRIDGE_REQUEST_RUNNING: usize = 0;
 const PROJECT_BRIDGE_REQUEST_COMPLETED: usize = 1;
@@ -35,6 +75,13 @@ const UPDATER_TEMP_DIRECTORY_MARKER: &str = "-updater-";
 const STALE_UPDATER_TEMP_DIRECTORY_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+const fn checked_project_bridge_limit(value: usize, multiplier: usize) -> usize {
+    match value.checked_mul(multiplier) {
+        Some(limit) => limit,
+        None => panic!("project bridge size limit overflow"),
+    }
+}
 
 struct CloseGuardState {
     is_guarded: AtomicBool,
@@ -316,6 +363,24 @@ impl ProjectBridgeProcess {
         read_only_timeout: Option<Duration>,
     ) -> Result<String, ProjectBridgeRequestFailure> {
         let request_token = self.allocate_request_token();
+        let mut io = match lock_project_bridge_request_io(
+            &self.io,
+            read_only_timeout.map(|_| PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT),
+        ) {
+            Ok(io) => io,
+            Err(ProjectBridgeIoLockFailure::TimedOut) => {
+                return Err(ProjectBridgeRequestFailure::TimedOut(
+                    create_project_bridge_timeout_error(PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT),
+                ));
+            }
+            Err(ProjectBridgeIoLockFailure::Poisoned) => {
+                return Err(ProjectBridgeRequestFailure::Retryable(
+                    "Project bridge I/O lock was poisoned.".to_owned(),
+                ));
+            }
+        };
+        let _active_request =
+            ProjectBridgeActiveRequest::begin(&self.active_request_token, request_token);
         let watchdog = read_only_timeout.map(|timeout| {
             ProjectBridgeReadOnlyWatchdog::start(
                 bridge_state.clone(),
@@ -325,50 +390,6 @@ impl ProjectBridgeProcess {
                 timeout,
             )
         });
-        let mut io = match lock_project_bridge_request_io(
-            &self.io,
-            watchdog
-                .as_ref()
-                .map(|watchdog| watchdog.request_state.as_ref()),
-        ) {
-            Ok(io) => io,
-            Err(ProjectBridgeIoLockFailure::TimedOut) => {
-                let _ = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
-                return Err(ProjectBridgeRequestFailure::TimedOut(
-                    create_project_bridge_timeout_error(
-                        read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
-                    ),
-                ));
-            }
-            Err(ProjectBridgeIoLockFailure::Poisoned) => {
-                let timed_out = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
-                return if timed_out {
-                    Err(ProjectBridgeRequestFailure::TimedOut(
-                        create_project_bridge_timeout_error(
-                            read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
-                        ),
-                    ))
-                } else {
-                    Err(ProjectBridgeRequestFailure::Retryable(
-                        "Project bridge I/O lock was poisoned.".to_owned(),
-                    ))
-                };
-            }
-        };
-        let _active_request =
-            ProjectBridgeActiveRequest::begin(&self.active_request_token, request_token);
-
-        if watchdog
-            .as_ref()
-            .is_some_and(ProjectBridgeReadOnlyWatchdog::has_timed_out)
-        {
-            let _ = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
-            return Err(ProjectBridgeRequestFailure::TimedOut(
-                create_project_bridge_timeout_error(
-                    read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
-                ),
-            ));
-        }
 
         let request_result = (|| -> Result<String, ProjectBridgeRequestFailure> {
             ensure_project_bridge_request_is_current(bridge_state, request_generation)
@@ -446,12 +467,12 @@ fn read_bounded_project_bridge_response(
 
         let newline = available.iter().position(|byte| *byte == b'\n');
         let chunk_length = newline.map_or(available.len(), |index| index + 1);
-        let next_length = response.len().checked_add(chunk_length).ok_or_else(|| {
+        let next_framed_length = response.len().checked_add(chunk_length).ok_or_else(|| {
             ProjectBridgeRequestFailure::NonRetryable(
                 "Project bridge response exceeded the supported size limit.".to_owned(),
             )
         })?;
-        if next_length > MAX_PROJECT_BRIDGE_RESPONSE_BYTES {
+        if next_framed_length > MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES {
             return Err(ProjectBridgeRequestFailure::NonRetryable(
                 "Project bridge response exceeded the supported size limit.".to_owned(),
             ));
@@ -467,6 +488,20 @@ fn read_bounded_project_bridge_response(
     if response.is_empty() {
         return Err(ProjectBridgeRequestFailure::Retryable(
             "Project bridge runner returned an empty response.".to_owned(),
+        ));
+    }
+
+    let had_line_feed = response.last() == Some(&b'\n');
+    if had_line_feed {
+        response.pop();
+        if response.last() == Some(&b'\r') {
+            response.pop();
+        }
+    }
+
+    if response.len() > MAX_PROJECT_BRIDGE_RESPONSE_BYTES {
+        return Err(ProjectBridgeRequestFailure::NonRetryable(
+            "Project bridge response exceeded the supported size limit.".to_owned(),
         ));
     }
 
@@ -539,10 +574,6 @@ impl ProjectBridgeReadOnlyWatchdog {
         }
     }
 
-    fn has_timed_out(&self) -> bool {
-        self.request_state.load(Ordering::Acquire) == PROJECT_BRIDGE_REQUEST_TIMED_OUT
-    }
-
     fn finish(mut self) -> bool {
         let _ = self.request_state.compare_exchange(
             PROJECT_BRIDGE_REQUEST_RUNNING,
@@ -569,19 +600,18 @@ fn active_project_bridge_request_matches(
 
 fn lock_project_bridge_request_io<'a, T>(
     io: &'a Mutex<T>,
-    timeout_state: Option<&AtomicUsize>,
+    timeout: Option<Duration>,
 ) -> Result<MutexGuard<'a, T>, ProjectBridgeIoLockFailure> {
-    let Some(timeout_state) = timeout_state else {
+    let Some(timeout) = timeout else {
         return io.lock().map_err(|_| ProjectBridgeIoLockFailure::Poisoned);
     };
+    let started_at = Instant::now();
 
     loop {
         match io.try_lock() {
             Ok(io) => return Ok(io),
             Err(TryLockError::Poisoned(_)) => return Err(ProjectBridgeIoLockFailure::Poisoned),
-            Err(TryLockError::WouldBlock)
-                if timeout_state.load(Ordering::Acquire) == PROJECT_BRIDGE_REQUEST_TIMED_OUT =>
-            {
+            Err(TryLockError::WouldBlock) if started_at.elapsed() >= timeout => {
                 return Err(ProjectBridgeIoLockFailure::TimedOut)
             }
             Err(TryLockError::WouldBlock) => {

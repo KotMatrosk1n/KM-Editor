@@ -19,7 +19,8 @@ public sealed class ResearchAnnotationApplicationService
             ResearchLabContract.SchemaVersion);
     private static readonly WorkspaceDocumentId AuthoringOperationLeaseId =
         new("change-sets-operation");
-    private static readonly JsonSerializerOptions SizeOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions SizeOptions =
+        PrivateWorkspaceJson.CreateSerializerOptions();
     private readonly VersionedWorkspaceDocumentStore store;
 
     public ResearchAnnotationApplicationService(VersionedWorkspaceDocumentStore? store = null)

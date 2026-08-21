@@ -25,6 +25,7 @@ import type {
   SemanticExploreRecordRef,
   SemanticExploreRevision
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { ResearchAnnotationsView } from './ResearchAnnotationsView';
 import {
@@ -126,7 +127,11 @@ export function ResearchLabSection({
   };
 
   return (
-    <section aria-labelledby="research-lab-title" className="km-research-lab wide-panel">
+    <section
+      aria-busy={controller.isBusy || undefined}
+      aria-labelledby="research-lab-title"
+      className="km-research-lab wide-panel"
+    >
       <header className="km-research-lab-heading">
         <div>
           <p>{t('researchLab.eyebrow')}</p>
@@ -134,13 +139,14 @@ export function ResearchLabSection({
           <span>{t('researchLab.description')}</span>
         </div>
         <button
+          aria-busy={controller.isBusy || undefined}
           className="secondary-button compact-button"
           disabled={controller.isBusy}
           onClick={() => void controller.refreshCapabilities()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={14} />
-          <span>{t('researchLab.refresh')}</span>
+          <span>{t(controller.isBusy ? 'researchLab.loading' : 'researchLab.refresh')}</span>
         </button>
       </header>
 
@@ -149,8 +155,8 @@ export function ResearchLabSection({
         <span>{t('researchLab.boundary')}</span>
       </p>
 
-      {controller.capabilities.status === 'loading' && !capabilities ? (
-        <Status messageKey="researchLab.loading" />
+      {controller.capabilities.status === 'loading' ? (
+        <Status compact={Boolean(capabilities)} messageKey="researchLab.loading" />
       ) : null}
       {controller.capabilities.error ? (
         <div className="km-research-lab-status" role="alert">
@@ -228,11 +234,11 @@ export function ResearchLabSection({
   );
 }
 
-function Status({ messageKey }: { messageKey: string }) {
+function Status({ compact = false, messageKey }: { compact?: boolean; messageKey: string }) {
   const { t } = useLocalization();
   return (
-    <div aria-live="polite" className="km-research-lab-status" role="status">
-      <p>{t(messageKey)}</p>
+    <div className="km-research-lab-status">
+      <LoadingProgress className={compact ? 'is-compact' : undefined} label={t(messageKey)} />
     </div>
   );
 }

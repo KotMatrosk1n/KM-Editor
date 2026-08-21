@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -131,81 +132,10 @@ public sealed class GuidedDesignApplicationService
     {
         var readiness = Enum.GetValues<GuidedDesignProposalKindDto>()
             .ToDictionary(kind => kind, _ => false);
-        var trainers = family == SemanticGameFamilyDto.SwordShield
-            ? null
-            : TryLoad(() => loadTrainersFresh(paths));
-        if (trainers is not null && WorkflowReady(trainers.Summary, trainers.Diagnostics))
-        {
-            var hasEligibleMember = trainers.Trainers.Any(trainer =>
-                trainer.Team.Any(member => member.SpeciesId > 0));
-            readiness[GuidedDesignProposalKindDto.TrainerLevelAdjustment] =
-                hasEligibleMember && HasTrainerField(trainers, "level");
-            readiness[GuidedDesignProposalKindDto.TrainerEvArchetype] =
-                hasEligibleMember && new[]
-                {
-                    "evHp",
-                    "evAttack",
-                    "evDefense",
-                    "evSpecialAttack",
-                    "evSpecialDefense",
-                    "evSpeed",
-                }.All(field => HasTrainerField(trainers, field));
-        }
-
-        var encounters = TryLoad(() => loadEncountersFresh(paths));
-        if (encounters is not null && WorkflowReady(encounters.Summary, encounters.Diagnostics))
-        {
-            var eligibleSlots = encounters.Tables
-                .SelectMany(table => table.Slots)
-                .Where(slot => slot.SpeciesId > 0)
-                .ToArray();
-            readiness[GuidedDesignProposalKindDto.EncounterLevelAdjustment] =
-                eligibleSlots.Length > 0
-                && HasEncounterField(encounters, "levelMin")
-                && HasEncounterField(encounters, "levelMax");
-            readiness[GuidedDesignProposalKindDto.EncounterWeightScale] = family switch
-            {
-                SemanticGameFamilyDto.ScarletViolet => eligibleSlots.Length > 0
-                    && HasEncounterField(encounters, "probability"),
-                SemanticGameFamilyDto.LegendsZA => HasEncounterField(encounters, "weight")
-                    && eligibleSlots
-                        .Any(slot => slot.CanEditWeight == true),
-                _ => false,
-            };
-        }
-
-        var items = TryLoad(() => loadItemsFresh(paths));
-        if (items is not null && WorkflowReady(items.Summary, items.Diagnostics))
-        {
-            var field = family == SemanticGameFamilyDto.LegendsZA ? "price" : "buyPrice";
-            readiness[GuidedDesignProposalKindDto.EconomyPrimaryPriceScale] =
-                items.Items.Any(item => item.ItemId > 0)
-                && items.EditableFields.Count(candidate =>
-                    string.Equals(candidate.Field, field, StringComparison.Ordinal)
-                    && !candidate.IsReadOnly
-                    && candidate.MinimumValue is not null
-                    && candidate.MaximumValue is not null) == 1;
-        }
-
-        var pokemon = TryLoad(() => loadPokemonFresh(paths));
-        if (pokemon is not null && WorkflowReady(pokemon.Summary, pokemon.Diagnostics))
-        {
-            readiness[GuidedDesignProposalKindDto.PokemonBaseStatShuffle] =
-                new[] { "hp", "attack", "defense", "specialAttack", "specialDefense", "speed" }
-                    .All(field => HasPokemonField(pokemon, field))
-                && pokemon.Pokemon.Any(IsEligiblePokemon);
-            var methods = pokemon.EvolutionMethodOptions
-                .GroupBy(option => option.Value)
-                .ToDictionary(group => group.Key, group => group.ToArray());
-            readiness[GuidedDesignProposalKindDto.EvolutionLevelClamp] =
-                family == SemanticGameFamilyDto.LegendsZA
-                && pokemon.Pokemon.Any(candidate =>
-                    IsEligiblePokemon(candidate)
-                    && candidate.Evolutions.Any(evolution =>
-                        methods.TryGetValue(evolution.Method, out var options)
-                        && options.Length == 1
-                        && options[0].UsesLevel));
-        }
+        var trainersCacheable = ProjectTrainerReadiness(paths, family, readiness);
+        var encountersCacheable = ProjectEncounterReadiness(paths, family, readiness);
+        var itemsCacheable = ProjectItemReadiness(paths, family, readiness);
+        var pokemonCacheable = ProjectPokemonReadiness(paths, family, readiness);
 
         var capabilities = GuidedDesignProviders.Capabilities(family).Select(capability =>
         {
@@ -239,12 +169,145 @@ public sealed class GuidedDesignApplicationService
                     ProposalKinds = availableKinds,
                 };
         }).ToArray();
-        var cacheable = (family == SemanticGameFamilyDto.SwordShield
-                || trainers is not null && WorkflowCacheable(trainers.Summary, trainers.Diagnostics))
-            && encounters is not null && WorkflowCacheable(encounters.Summary, encounters.Diagnostics)
-            && items is not null && WorkflowCacheable(items.Summary, items.Diagnostics)
-            && pokemon is not null && WorkflowCacheable(pokemon.Summary, pokemon.Diagnostics);
+        var cacheable = trainersCacheable
+            && encountersCacheable
+            && itemsCacheable
+            && pokemonCacheable;
         return new ProjectCapabilityRead(capabilities, cacheable);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool ProjectTrainerReadiness(
+        ProjectPathsDto paths,
+        SemanticGameFamilyDto family,
+        IDictionary<GuidedDesignProposalKindDto, bool> readiness)
+    {
+        if (family == SemanticGameFamilyDto.SwordShield)
+        {
+            return true;
+        }
+
+        var trainers = TryLoad(() => loadTrainersFresh(paths));
+        if (trainers is null)
+        {
+            return false;
+        }
+
+        if (WorkflowReady(trainers.Summary, trainers.Diagnostics))
+        {
+            var hasEligibleMember = trainers.Trainers.Any(trainer =>
+                trainer.Team.Any(member => member.SpeciesId > 0));
+            readiness[GuidedDesignProposalKindDto.TrainerLevelAdjustment] =
+                hasEligibleMember && HasTrainerField(trainers, "level");
+            readiness[GuidedDesignProposalKindDto.TrainerEvArchetype] =
+                hasEligibleMember && new[]
+                {
+                    "evHp",
+                    "evAttack",
+                    "evDefense",
+                    "evSpecialAttack",
+                    "evSpecialDefense",
+                    "evSpeed",
+                }.All(field => HasTrainerField(trainers, field));
+        }
+
+        return WorkflowCacheable(trainers.Summary, trainers.Diagnostics);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool ProjectEncounterReadiness(
+        ProjectPathsDto paths,
+        SemanticGameFamilyDto family,
+        IDictionary<GuidedDesignProposalKindDto, bool> readiness)
+    {
+        var encounters = TryLoad(() => loadEncountersFresh(paths));
+        if (encounters is null)
+        {
+            return false;
+        }
+
+        if (WorkflowReady(encounters.Summary, encounters.Diagnostics))
+        {
+            var eligibleSlots = encounters.Tables
+                .SelectMany(table => table.Slots)
+                .Where(slot => slot.SpeciesId > 0)
+                .ToArray();
+            readiness[GuidedDesignProposalKindDto.EncounterLevelAdjustment] =
+                eligibleSlots.Length > 0
+                && HasEncounterField(encounters, "levelMin")
+                && HasEncounterField(encounters, "levelMax");
+            readiness[GuidedDesignProposalKindDto.EncounterWeightScale] = family switch
+            {
+                SemanticGameFamilyDto.ScarletViolet => eligibleSlots.Length > 0
+                    && HasEncounterField(encounters, "probability"),
+                SemanticGameFamilyDto.LegendsZA => HasEncounterField(encounters, "weight")
+                    && eligibleSlots.Any(slot => slot.CanEditWeight == true),
+                _ => false,
+            };
+        }
+
+        return WorkflowCacheable(encounters.Summary, encounters.Diagnostics);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool ProjectItemReadiness(
+        ProjectPathsDto paths,
+        SemanticGameFamilyDto family,
+        IDictionary<GuidedDesignProposalKindDto, bool> readiness)
+    {
+        var items = TryLoad(() => loadItemsFresh(paths));
+        if (items is null)
+        {
+            return false;
+        }
+
+        if (WorkflowReady(items.Summary, items.Diagnostics))
+        {
+            var field = family == SemanticGameFamilyDto.LegendsZA ? "price" : "buyPrice";
+            readiness[GuidedDesignProposalKindDto.EconomyPrimaryPriceScale] =
+                items.Items.Any(item => item.ItemId > 0)
+                && items.EditableFields.Count(candidate =>
+                    string.Equals(candidate.Field, field, StringComparison.Ordinal)
+                    && !candidate.IsReadOnly
+                    && candidate.MinimumValue is not null
+                    && candidate.MaximumValue is not null) == 1;
+        }
+
+        return WorkflowCacheable(items.Summary, items.Diagnostics);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool ProjectPokemonReadiness(
+        ProjectPathsDto paths,
+        SemanticGameFamilyDto family,
+        IDictionary<GuidedDesignProposalKindDto, bool> readiness)
+    {
+        var pokemon = TryLoad(() => loadPokemonFresh(paths));
+        if (pokemon is null)
+        {
+            return false;
+        }
+
+        if (WorkflowReady(pokemon.Summary, pokemon.Diagnostics))
+        {
+            readiness[GuidedDesignProposalKindDto.PokemonBaseStatShuffle] =
+                new[] { "hp", "attack", "defense", "specialAttack", "specialDefense", "speed" }
+                    .All(field => HasPokemonField(pokemon, field))
+                && pokemon.Pokemon.Any(IsEligiblePokemon);
+            var methods = pokemon.EvolutionMethodOptions
+                .GroupBy(option => option.Value)
+                .ToDictionary(group => group.Key, group => group.ToArray());
+            readiness[GuidedDesignProposalKindDto.EvolutionLevelClamp] =
+                family == SemanticGameFamilyDto.LegendsZA
+                && pokemon.Pokemon.Any(candidate =>
+                    IsEligiblePokemon(candidate)
+                    && candidate.Evolutions.Any(evolution =>
+                        methods.TryGetValue(evolution.Method, out var options)
+                        && options.Length == 1
+                        && options[0].UsesLevel));
+        }
+
+        return WorkflowCacheable(pokemon.Summary, pokemon.Diagnostics);
     }
 
     private ProjectCapabilityRead ReadProjectCapabilitiesCached(

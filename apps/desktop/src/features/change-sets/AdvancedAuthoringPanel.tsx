@@ -358,6 +358,7 @@ export function AdvancedAuthoringPanel({
           </div>
           <label htmlFor="change-set-authoring-adapter">{t('changeSets.authoring.loadedEditor')}</label>
           <select
+            className="km-select-control"
             disabled={controlsBusy}
             id="change-set-authoring-adapter"
             onChange={(event) => handleAdapterChange(event.currentTarget.value)}
@@ -388,6 +389,7 @@ export function AdvancedAuthoringPanel({
                 <label data-localization-ignore="true" key={key}>
                   <input
                     checked={selectedRecordKeys.has(key)}
+                    className="km-choice-control"
                     disabled={controlsBusy}
                     onChange={() => {
                       run(() => controller.toggleRecord(workspace.adapterId, record.record));
@@ -416,6 +418,7 @@ export function AdvancedAuthoringPanel({
           </div>
           <label htmlFor="change-set-authoring-field">{t('changeSets.authoring.field')}</label>
           <select
+            className="km-select-control"
             disabled={controlsBusy}
             id="change-set-authoring-field"
             onChange={(event) => {
@@ -432,6 +435,7 @@ export function AdvancedAuthoringPanel({
           </select>
           <label htmlFor="change-set-authoring-transform">{t('changeSets.authoring.transform')}</label>
           <select
+            className="km-select-control"
             disabled={controlsBusy}
             id="change-set-authoring-transform"
             onChange={(event) => {
@@ -483,6 +487,7 @@ export function AdvancedAuthoringPanel({
           </div>
           <label htmlFor="change-set-authoring-source">{t('changeSets.authoring.source')}</label>
           <select
+            className="km-select-control"
             disabled={controlsBusy}
             id="change-set-authoring-source"
             onChange={(event) => {
@@ -530,6 +535,7 @@ export function AdvancedAuthoringPanel({
                 {t('changeSets.authoring.pasteGroup')}
               </label>
               <select
+                className="km-select-control"
                 disabled={controlsBusy}
                 id="change-set-authoring-paste-group"
                 onChange={(event) => {
@@ -658,7 +664,12 @@ function TransformInputs({
       {kind === 'multiply' ? (
         <label>
           <span>{t('changeSets.authoring.rounding')}</span>
-          <select disabled={disabled} onChange={(event) => onRoundingChange(event.currentTarget.value as typeof rounding)} value={rounding}>
+          <select
+            className="km-select-control"
+            disabled={disabled}
+            onChange={(event) => onRoundingChange(event.currentTarget.value as typeof rounding)}
+            value={rounding}
+          >
             <option value="nearest">{t('changeSets.authoring.rounding.nearest')}</option>
             <option value="floor">{t('changeSets.authoring.rounding.floor')}</option>
             <option value="ceil">{t('changeSets.authoring.rounding.ceil')}</option>

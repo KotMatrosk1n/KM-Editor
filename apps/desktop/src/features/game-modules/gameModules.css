@@ -8,9 +8,12 @@
   --km-game-module-surface-muted: var(--color-surface-muted);
   --km-game-module-text: var(--color-text);
   --km-game-module-text-muted: var(--color-text-muted);
+  container-name: km-game-modules;
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
   min-width: 0;
+  width: 100%;
 }
 
 .km-game-modules-heading {
@@ -200,9 +203,15 @@
 .km-game-module-results > ol {
   display: grid;
   gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(32rem, 100%), 1fr));
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.km-game-module-results > ol > li {
+  display: flex;
+  min-width: 0;
 }
 
 .km-game-module-results article {
@@ -213,6 +222,7 @@
   gap: 0.75rem;
   min-width: 0;
   padding: 0.8rem;
+  width: 100%;
 }
 
 .km-game-module-results article > header {
@@ -340,7 +350,7 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 720px) {
+@container km-game-modules (max-width: 720px) {
   .km-game-modules-heading,
   .km-game-module-inline-error {
     align-items: stretch;

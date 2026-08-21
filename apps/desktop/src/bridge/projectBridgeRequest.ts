@@ -12,7 +12,26 @@ import { recordBridgePerformanceDiagnostic } from '../performanceDiagnostics';
 
 export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
 
-const maximumProjectBridgeRequestBytes = 16 * 1024 * 1024;
+const projectBridgeRequestProvisionMultiplier = 4;
+const projectBridgeRequestHardCeilingMultiplier = 2;
+const projectBridgeExpectedRequestBytes = 16 * 1024 * 1024;
+const projectBridgeProvisionedRequestBytes = checkedProjectBridgeLimit(
+  projectBridgeExpectedRequestBytes,
+  projectBridgeRequestProvisionMultiplier
+);
+const maximumProjectBridgeRequestBytes = checkedProjectBridgeLimit(
+  projectBridgeProvisionedRequestBytes,
+  projectBridgeRequestHardCeilingMultiplier
+);
+
+function checkedProjectBridgeLimit(value: number, multiplier: number): number {
+  const limit = value * multiplier;
+  if (!Number.isSafeInteger(limit) || limit <= 0) {
+    throw new RangeError('The project bridge request size limit is invalid.');
+  }
+
+  return limit;
+}
 
 export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny>(
   transport: ProjectBridgeTransport,

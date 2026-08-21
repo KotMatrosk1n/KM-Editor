@@ -54,10 +54,13 @@ export type PrivateWorkspaceDocumentDefinition<
 
 export type BoundedMemoryWorkspaceStorageOptions = {
   maxBytes?: number;
+  maxDocumentBytes?: number;
   maxProjects?: number;
 };
 
-const defaultMaxWorkspaceBytes = 4 * 1024 * 1024;
+const expectedMaxWorkspaceBytes = 4 * 1024 * 1024;
+const provisionedMaxWorkspaceBytes = expectedMaxWorkspaceBytes * 4;
+const defaultMaxWorkspaceBytes = provisionedMaxWorkspaceBytes * 2;
 const defaultMaxWorkspaceProjects = 16;
 
 // Authored data never falls back to localStorage. This bounded adapter is safe for
@@ -68,9 +71,14 @@ export function createBoundedMemoryWorkspaceStorage<
   options: BoundedMemoryWorkspaceStorageOptions = {}
 ): PrivateWorkspaceStorage<TDocument> {
   const maxBytes = options.maxBytes ?? defaultMaxWorkspaceBytes;
+  const maxDocumentBytes = options.maxDocumentBytes ?? maxBytes;
   const maxProjects = options.maxProjects ?? defaultMaxWorkspaceProjects;
   assertPositiveInteger(maxBytes, 'maxBytes');
+  assertPositiveInteger(maxDocumentBytes, 'maxDocumentBytes');
   assertPositiveInteger(maxProjects, 'maxProjects');
+  if (maxDocumentBytes > maxBytes) {
+    throw new RangeError('maxDocumentBytes cannot exceed maxBytes.');
+  }
   const documents = new Map<string, { etag: string; serializedDocument: string }>();
   let storedBytes = 0;
   let etagCounter = 0;
@@ -133,7 +141,11 @@ export function createBoundedMemoryWorkspaceStorage<
     },
     write: async (projectId, document, expectedETag) => {
       const serializedDocument = JSON.stringify(document);
-      const entryBytes = workspaceStringBytes(projectId) + workspaceStringBytes(serializedDocument);
+      const documentBytes = workspaceStringBytes(serializedDocument);
+      if (documentBytes > maxDocumentBytes) {
+        throw new Error('Private workspace document exceeds its in-memory document bound.');
+      }
+      const entryBytes = workspaceStringBytes(projectId) + documentBytes;
       if (entryBytes > maxBytes) {
         throw new Error('Private workspace document exceeds the in-memory storage bound.');
       }

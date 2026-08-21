@@ -677,6 +677,7 @@ export function ZaDexLayoutSection({
                         label={translateLiteral('Destination Pokédex')}
                       />
                       <select
+                        className="km-select-control"
                         disabled={
                           !hasActiveEditSession ||
                           !dexEditor.canEdit ||

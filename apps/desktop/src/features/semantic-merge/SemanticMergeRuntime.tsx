@@ -13,8 +13,12 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
-import type { SemanticQueryStatus } from '../semantic-explore/useSemanticExploreController';
+import type {
+  SemanticQueryError,
+  SemanticQueryStatus
+} from '../semantic-explore/useSemanticExploreController';
 import type { ExpectedImportedScalarEdit } from '../change-sets/useChangeSetWorkspaceController';
 import { SemanticMergeSection } from './SemanticMergeSection';
 import { useSemanticMergeController } from './useSemanticMergeController';
@@ -37,6 +41,7 @@ export type SemanticMergeRuntimeProps = {
   bridge: SemanticMergeProjectBridgeApi;
   canImportChangeSet: boolean;
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
+  capabilityError: SemanticQueryError | null;
   capabilityStatus: SemanticQueryStatus;
   changeSets: readonly SemanticMergeChangeSetOption[];
   expectedChangeSetETag: string | null;
@@ -54,6 +59,7 @@ export type SemanticMergeRuntimeProps = {
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenChanges: () => void;
   onPickSource: (slot: 'a' | 'b') => Promise<string | null>;
+  onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
   scope: SemanticExploreScope;
@@ -64,6 +70,7 @@ export function SemanticMergeRuntime({
   bridge,
   canImportChangeSet,
   canNavigateRecord,
+  capabilityError,
   capabilityStatus,
   changeSets,
   expectedChangeSetETag,
@@ -75,6 +82,7 @@ export function SemanticMergeRuntime({
   onNavigateRecord,
   onOpenChanges,
   onPickSource,
+  onRefreshCapabilities,
   onStaleRevision,
   revision,
   scope
@@ -82,7 +90,7 @@ export function SemanticMergeRuntime({
   const { t } = useLocalization();
   useEffect(() => {
     if (!revision && capabilityStatus === 'idle') void onEnsureCapabilities();
-  }, [capabilityStatus, onEnsureCapabilities, revision]);
+  }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -95,20 +103,20 @@ export function SemanticMergeRuntime({
             <span>{t('semanticMerge.description')}</span>
           </div>
         </header>
-        <div
-          aria-live="polite"
-          className="km-semantic-merge-status"
-          role={isError ? 'alert' : 'status'}
-        >
-          <p>{t(isError
-            ? 'semanticMerge.error.generic'
-            : 'semanticMerge.capabilities.loading')}</p>
-          {isError ? (
-            <button onClick={() => void onEnsureCapabilities()} type="button">
+        {isError ? (
+          <div aria-live="polite" className="km-semantic-merge-status" role="alert">
+            <p>{t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'semanticMerge.error.generic')}</p>
+            <button onClick={() => void onRefreshCapabilities()} type="button">
               {t('semanticMerge.retry')}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <div className="km-semantic-merge-status">
+            <LoadingProgress label={t('semanticMerge.capabilities.loading')} />
+          </div>
+        )}
       </section>
     );
   }
@@ -154,7 +162,11 @@ function SemanticMergeReadyRuntime({
   scope
 }: Omit<
   SemanticMergeRuntimeProps,
-  'capabilityStatus' | 'onEnsureCapabilities' | 'revision'
+  | 'capabilityError'
+  | 'capabilityStatus'
+  | 'onEnsureCapabilities'
+  | 'onRefreshCapabilities'
+  | 'revision'
 > & { revision: SemanticExploreRevision }) {
   const controller = useSemanticMergeController({
     authoringContextRevision,
@@ -167,8 +179,18 @@ function SemanticMergeReadyRuntime({
   });
 
   useEffect(() => {
-    void controller.ensureCapabilities();
-  }, [controller.ensureCapabilities]);
+    if (controller.capabilities.status === 'idle') {
+      void controller.ensureCapabilities();
+    }
+  }, [
+    authoringContextRevision,
+    bridge,
+    controller.capabilities.status,
+    controller.ensureCapabilities,
+    expectedChangeSetETag,
+    revision,
+    scope
+  ]);
 
   return (
     <SemanticMergeSection

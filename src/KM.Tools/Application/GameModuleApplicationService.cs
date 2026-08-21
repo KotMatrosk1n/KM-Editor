@@ -18,7 +18,6 @@ namespace KM.Tools.Application;
 
 public sealed class GameModuleApplicationService
 {
-    private const long MaximumCachedModuleBytes = 32L * 1024L * 1024L;
     private const string CacheCallerKeyPrefix = "game-modules-v1";
 
     private readonly SemanticExploreApplicationService semanticExploreService;
@@ -40,7 +39,7 @@ public sealed class GameModuleApplicationService
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 12,
-            MaximumSizeBytes = MaximumCachedModuleBytes,
+            MaximumSizeBytes = GameModuleSizingLimits.ModuleCacheCeilingBytes,
         });
 
     public GameModuleApplicationService(
@@ -126,8 +125,15 @@ public sealed class GameModuleApplicationService
                 {
                     foreach (var candidate in missing)
                     {
-                        resolvedByModule[candidate.Capability.Module] =
-                            UnavailableCapability(candidate.Capability, exception);
+                        ResolveCapabilityCandidate(
+                            candidate,
+                            () => BuildModule(
+                                request.Scope,
+                                candidate.Capability.Module,
+                                CancellationToken.None),
+                            resolvedByModule,
+                            pendingCacheItems,
+                            ref pendingCacheBytes);
                     }
                 }
             }
@@ -217,7 +223,8 @@ public sealed class GameModuleApplicationService
             var built = await ValueTask.FromResult(
                 BuildModule(request.Scope, request.Module, cancellationToken)).ConfigureAwait(false);
             data = built.Value;
-            pendingCacheItem = data.Cacheable && built.SizeBytes <= MaximumCachedModuleBytes
+            pendingCacheItem = data.Cacheable
+                && built.SizeBytes <= GameModuleSizingLimits.ModuleCacheCeilingBytes
                 ? built
                 : null;
         }
@@ -383,7 +390,7 @@ public sealed class GameModuleApplicationService
             var built = factory();
             resolved[candidate.Capability.Module] = built.Value.Capability;
             if (built.Value.Cacheable
-                && built.SizeBytes <= MaximumCachedModuleBytes - pendingBytes)
+                && built.SizeBytes <= GameModuleSizingLimits.ModuleCacheCeilingBytes - pendingBytes)
             {
                 pending.Add((candidate.Key, built));
                 pendingBytes = checked(pendingBytes + built.SizeBytes);

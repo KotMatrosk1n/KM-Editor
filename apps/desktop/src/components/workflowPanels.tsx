@@ -6,6 +6,11 @@ import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge
 import { formatDiagnosticMessage } from '../diagnostics';
 import { useDiagnosticNavigation } from '../diagnosticActions';
 import { useLocalization } from '../localization';
+import {
+  DiagnosticTechnicalDetails,
+  OccurrenceCount,
+} from '../features/workbench/AnalysisPresentation';
+import { groupDiagnosticsForPresentation } from '../features/workbench/analysisPresentationUtils';
 import { ContextHelp } from './ContextHelp';
 
 export type WorkflowPanelOutput = {
@@ -239,22 +244,37 @@ export function DiagnosticsSection({
   diagnostics: ApiDiagnostic[];
   scrollAfterEntries?: number;
 }) {
-  const isScrollable = scrollAfterEntries !== undefined && diagnostics.length > scrollAfterEntries;
   const { t, translateLiteral } = useLocalization();
   const diagnosticNavigation = useDiagnosticNavigation();
+  const groupedDiagnostics = groupDiagnosticsForPresentation(
+    diagnostics,
+    (diagnostic) => [
+      diagnostic.severity,
+      formatDiagnosticMessage(diagnostic, translateLiteral, t)
+    ],
+    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+  );
+  const isScrollable = scrollAfterEntries !== undefined &&
+    groupedDiagnostics.length > scrollAfterEntries;
   const groups = [
     {
-      diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
+      diagnostics: groupedDiagnostics.filter(
+        ({ diagnostics: identities }) => identities[0]!.diagnostic.severity === 'error'
+      ),
       label: 'Error',
       severity: 'error' as const
     },
     {
-      diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'warning'),
+      diagnostics: groupedDiagnostics.filter(
+        ({ diagnostics: identities }) => identities[0]!.diagnostic.severity === 'warning'
+      ),
       label: 'Warnings',
       severity: 'warning' as const
     },
     {
-      diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'info'),
+      diagnostics: groupedDiagnostics.filter(
+        ({ diagnostics: identities }) => identities[0]!.diagnostic.severity === 'info'
+      ),
       label: 'Information',
       severity: 'info' as const
     }
@@ -263,8 +283,7 @@ export function DiagnosticsSection({
   if (groups.length === 0) {
     return null;
   }
-  const primaryAction = groups
-    .flatMap((group) => group.diagnostics)
+  const primaryAction = diagnostics
     .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
     .find((action) => action !== null);
 
@@ -298,28 +317,32 @@ export function DiagnosticsSection({
           >
             <summary>
               <span>{translateLiteral(group.label)}</span>
-              <span className="diagnostic-count">{group.diagnostics.length}</span>
+              <span className="diagnostic-count">
+                {group.diagnostics.reduce((total, entry) => total + entry.count, 0)}
+              </span>
             </summary>
             <ul className="diagnostic-list">
-              {group.diagnostics.map((diagnostic, index) => (
+              {group.diagnostics.map(({ count, diagnostics: identities, key }) => {
+                const diagnostic = identities[0]!.diagnostic;
+                return (
                 <li
                   className={`diagnostic diagnostic-${diagnostic.severity}`}
-                  key={`${diagnostic.code ?? 'uncoded'}-${diagnostic.severity}-${diagnostic.message}-${index}`}
+                  key={key}
                 >
                   <strong>
                     {translateLiteral(formatDiagnosticSeverity(diagnostic.severity))}
                   </strong>
-                  <span>
-                    {diagnostic.code ? (
-                      <code className="diagnostic-code" data-localization-ignore="true">
-                        {diagnostic.code}
-                      </code>
-                    ) : null}
-                    {diagnostic.code ? ' ' : null}
+                  <div className="km-analysis-diagnostic-copy">
                     {formatDiagnosticMessage(diagnostic, translateLiteral, t)}
-                  </span>
+                    <OccurrenceCount count={count} />
+                    <DiagnosticTechnicalDetails
+                      diagnostics={identities}
+                      summary={translateLiteral('Technical details')}
+                    />
+                  </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </details>
         ))}

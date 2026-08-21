@@ -97,7 +97,10 @@ public sealed class BridgeLineRunner : IDisposable
             retired?.Dispose();
         }
 
-        return result.ResponseJson;
+        return Encoding.UTF8.GetByteCount(result.ResponseJson)
+                <= ProjectBridgeDispatcher.MaximumBridgeResponseBytes
+            ? result.ResponseJson
+            : ProjectBridgeDispatcher.SerializeResponseTooLargeFailure(requestId: null);
     }
 
     private static ProjectBridgeDispatcher CreateDispatcher()

@@ -26,9 +26,12 @@
 }
 
 .km-semantic-explore {
+  container-name: km-semantic-explore;
+  container-type: inline-size;
   display: grid;
   gap: var(--km-space-4);
   min-width: 0;
+  width: 100%;
 }
 
 .km-semantic-heading {
@@ -433,7 +436,7 @@
   font-style: normal;
 }
 
-@media (max-width: 1100px) {
+@container km-semantic-explore (max-width: 1100px) {
   .km-semantic-explore-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -448,7 +451,7 @@
   }
 }
 
-@media (max-width: 680px) {
+@container km-semantic-explore (max-width: 680px) {
   .km-semantic-search,
   .km-semantic-query-bar {
     align-items: stretch;

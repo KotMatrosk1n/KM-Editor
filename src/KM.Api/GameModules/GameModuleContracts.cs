@@ -7,10 +7,24 @@ namespace KM.Api.GameModules;
 
 public static class GameModuleContract
 {
-    public const int MaximumRecords = 50_000;
-    public const int MaximumFacts = 100_000;
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+    private const int ExpectedMaximumRecords = 50_000;
+    private const int ExpectedMaximumFacts = 100_000;
+
+    private const int ProvisionedMaximumRecords = checked(
+        ExpectedMaximumRecords * ProvisionMultiplier);
+    private const int ProvisionedMaximumFacts = checked(
+        ExpectedMaximumFacts * ProvisionMultiplier);
+
+    public const int MaximumRecords = checked(
+        ProvisionedMaximumRecords * HardCeilingMultiplier);
+    public const int MaximumFacts = checked(
+        ProvisionedMaximumFacts * HardCeilingMultiplier);
     public const int MaximumFactsPerRecord = 32;
     public const int MaximumEvidenceRecordsPerFact = 16;
+    public const long MaximumEvidenceRecords = checked(
+        (long)MaximumFacts * MaximumEvidenceRecordsPerFact);
     public const int MaximumDiagnostics = 100;
 }
 

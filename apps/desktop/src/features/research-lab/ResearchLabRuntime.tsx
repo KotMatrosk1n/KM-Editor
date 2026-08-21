@@ -7,8 +7,12 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
-import type { SemanticQueryStatus } from '../semantic-explore/useSemanticExploreController';
+import type {
+  SemanticQueryError,
+  SemanticQueryStatus
+} from '../semantic-explore/useSemanticExploreController';
 import { ResearchLabSection } from './ResearchLabSection';
 import { useResearchLabController } from './useResearchLabController';
 import './researchLab.css';
@@ -16,10 +20,12 @@ import './researchLab.css';
 export type ResearchLabRuntimeProps = {
   bridge: ResearchLabProjectBridgeApi;
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
+  capabilityError: SemanticQueryError | null;
   capabilityStatus: SemanticQueryStatus;
   onEnsureCapabilities: () => Promise<void>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onPickSource: (slot: 0 | 1) => Promise<string | null>;
+  onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
   scope: SemanticExploreScope;
@@ -28,10 +34,12 @@ export type ResearchLabRuntimeProps = {
 export default function ResearchLabRuntime({
   bridge,
   canNavigateRecord,
+  capabilityError,
   capabilityStatus,
   onEnsureCapabilities,
   onNavigateRecord,
   onPickSource,
+  onRefreshCapabilities,
   onStaleRevision,
   revision,
   scope
@@ -39,7 +47,7 @@ export default function ResearchLabRuntime({
   const { t } = useLocalization();
   useEffect(() => {
     if (!revision && capabilityStatus === 'idle') void onEnsureCapabilities();
-  }, [capabilityStatus, onEnsureCapabilities, revision]);
+  }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -52,18 +60,20 @@ export default function ResearchLabRuntime({
             <span>{t('researchLab.description')}</span>
           </div>
         </header>
-        <div
-          aria-live="polite"
-          className="km-research-lab-status"
-          role={isError ? 'alert' : 'status'}
-        >
-          <p>{t(isError ? 'researchLab.error.generic' : 'researchLab.loading')}</p>
-          {isError ? (
-            <button onClick={() => void onEnsureCapabilities()} type="button">
+        {isError ? (
+          <div aria-live="polite" className="km-research-lab-status" role="alert">
+            <p>{t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'researchLab.error.generic')}</p>
+            <button onClick={() => void onRefreshCapabilities()} type="button">
               {t('researchLab.retry')}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <div className="km-research-lab-status">
+            <LoadingProgress label={t('researchLab.loading')} />
+          </div>
+        )}
       </section>
     );
   }
@@ -91,7 +101,11 @@ function ResearchLabReadyRuntime({
   scope
 }: Omit<
   ResearchLabRuntimeProps,
-  'capabilityStatus' | 'onEnsureCapabilities' | 'revision'
+  | 'capabilityError'
+  | 'capabilityStatus'
+  | 'onEnsureCapabilities'
+  | 'onRefreshCapabilities'
+  | 'revision'
 > & { revision: SemanticExploreRevision }) {
   const controller = useResearchLabController({
     bridge,

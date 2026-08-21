@@ -40,17 +40,14 @@ function ProgressionChart({ points }: { points: readonly BalanceLabPoint[] }) {
   const low = Math.min(...values.map((entry) => entry.value));
   const high = Math.max(...values.map((entry) => entry.value));
   const range = high - low || 1;
-  const lowX = Math.min(...values.map((entry) => entry.xValue));
-  const highX = Math.max(...values.map((entry) => entry.xValue));
-  const xRange = highX - lowX || 1;
-  const x = (value: number) => padding + (
-    (width - padding * 2) * (value - lowX) / xRange
-  );
+  const x = (index: number) => values.length === 1
+    ? width / 2
+    : padding + (width - padding * 2) * index / (values.length - 1);
   const y = (value: number) => height - padding - (
     (height - padding * 2) * (value - low) / range
   );
   const path = values.map((entry, index) => (
-    `${index === 0 ? 'M' : 'L'} ${x(entry.xValue).toFixed(2)} ${y(entry.value).toFixed(2)}`
+    `${index === 0 ? 'M' : 'L'} ${x(index).toFixed(2)} ${y(entry.value).toFixed(2)}`
   )).join(' ');
   return (
     <figure className="km-balance-chart km-balance-progression-chart">
@@ -69,9 +66,9 @@ function ProgressionChart({ points }: { points: readonly BalanceLabPoint[] }) {
           y2={height - padding}
         />
         <path className="km-balance-chart-line" d={path} />
-        {values.map((entry) => (
+        {values.map((entry, index) => (
           <circle
-            cx={x(entry.xValue)}
+            cx={x(index)}
             cy={y(entry.value)}
             key={entry.point.pointId}
             r="5"

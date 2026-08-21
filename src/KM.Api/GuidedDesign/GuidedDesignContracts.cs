@@ -8,21 +8,41 @@ namespace KM.Api.GuidedDesign;
 
 public static class GuidedDesignContract
 {
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
+
     public const int SchemaVersion = 1;
     public const int MaximumTargets = 128;
     public const int MaximumPins = 128;
-    public const int MaximumMutations = 128;
-    public const int MaximumAffectedRecords = 128;
-    public const int MaximumEligibleTargets = 50_000;
+    public const int ExpectedMutations = 768;
+    public const int ProvisionedMutations = checked(ExpectedMutations * ProvisionMultiplier);
+    public const int MaximumMutations = checked(ProvisionedMutations * HardCeilingMultiplier);
+    public const int ExpectedAffectedRecords = 128;
+    public const int ProvisionedAffectedRecords = checked(
+        ExpectedAffectedRecords * ProvisionMultiplier);
+    public const int MaximumAffectedRecords = checked(
+        ProvisionedAffectedRecords * HardCeilingMultiplier);
+    public const int ExpectedEligibleTargets = 50_000;
+    public const int ProvisionedEligibleTargets = checked(
+        ExpectedEligibleTargets * ProvisionMultiplier);
+    public const int MaximumEligibleTargets = checked(
+        ProvisionedEligibleTargets * HardCeilingMultiplier);
     public const int MaximumTargetSelectionWindow = 500;
     public const int MaximumTargetSearchTextLength = 256;
-    public const int MaximumFindings = 100;
+    public const int ExpectedFindings = 100;
+    public const int ProvisionedFindings = checked(ExpectedFindings * ProvisionMultiplier);
+    public const int MaximumFindings = checked(
+        ProvisionedFindings * HardCeilingMultiplier);
     public const int MaximumPageSize = 100;
     public const int MaximumCursorLength = 2_048;
     public const int MaximumFieldKeys = 32;
     public const int MaximumChangeSetNameLength = 128;
     public const int MaximumCanonicalIntegerLength = 20;
-    public const int MaximumCanonicalExportBytes = 128 * 1_024;
+    public const int ExpectedCanonicalExportBytes = 1 * 1_024 * 1_024;
+    public const int ProvisionedCanonicalExportBytes = checked(
+        ExpectedCanonicalExportBytes * ProvisionMultiplier);
+    public const int MaximumCanonicalExportBytes = checked(
+        ProvisionedCanonicalExportBytes * HardCeilingMultiplier);
 }
 
 public enum GuidedDesignFeatureDto

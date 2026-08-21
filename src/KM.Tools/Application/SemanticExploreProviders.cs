@@ -14,7 +14,9 @@ internal interface ISemanticExploreFamilyProvider
 {
     SemanticGameFamilyDto GameFamily { get; }
 
-    SemanticLayerData Build(SemanticWorkflowCorpus corpus);
+    SemanticLayerData Build(
+        SemanticWorkflowCorpus corpus,
+        SemanticMaterializationBudget materializationBudget);
 }
 
 internal sealed record SemanticWorkflowLoad<T>(
@@ -24,12 +26,12 @@ internal sealed record SemanticWorkflowLoad<T>(
     where T : class;
 
 internal sealed record SemanticWorkflowCorpus(
-    SemanticWorkflowLoad<ItemsWorkflowDto> Items,
-    SemanticWorkflowLoad<PokemonWorkflowDto> Pokemon,
-    SemanticWorkflowLoad<MovesWorkflowDto> Moves);
+    Func<SemanticWorkflowLoad<ItemsWorkflowDto>> LoadItems,
+    Func<SemanticWorkflowLoad<PokemonWorkflowDto>> LoadPokemon,
+    Func<SemanticWorkflowLoad<MovesWorkflowDto>> LoadMoves);
 
 internal sealed record SemanticLayerData(
-    IReadOnlyDictionary<string, SemanticIndexedEntity> Entities,
+    SortedDictionary<string, SemanticIndexedEntity> Entities,
     IReadOnlyList<SemanticIndexedReference> References,
     IReadOnlyList<SemanticDomainStatus> DomainStatuses);
 
@@ -67,6 +69,8 @@ internal sealed record SemanticIndexedReference(
 internal abstract class SemanticExploreFamilyProviderBase : ISemanticExploreFamilyProvider
 {
     private const int RecordSchemaVersion = 1;
+    private const string ProviderLimitMessage =
+        "The semantic index exceeds its bounded provider limits.";
 
     protected const string ItemsDomain = "workflow.items";
     protected const string PokemonDomain = "workflow.pokemon";
@@ -76,75 +80,43 @@ internal abstract class SemanticExploreFamilyProviderBase : ISemanticExploreFami
 
     protected abstract string FamilyKey { get; }
 
-    public SemanticLayerData Build(SemanticWorkflowCorpus corpus)
+    public SemanticLayerData Build(
+        SemanticWorkflowCorpus corpus,
+        SemanticMaterializationBudget materializationBudget)
     {
         ArgumentNullException.ThrowIfNull(corpus);
+        ArgumentNullException.ThrowIfNull(materializationBudget);
 
-        var entities = new Dictionary<string, SemanticIndexedEntity>(StringComparer.Ordinal);
-        var references = new List<SemanticIndexedReference>();
-        var statuses = new List<SemanticDomainStatus>(3);
+        var builder = new SemanticLayerBuilder(materializationBudget);
 
-        BuildItems(corpus.Items, entities, references, statuses);
-        BuildPokemon(corpus.Pokemon, entities, references, statuses);
-        BuildMoves(corpus.Moves, entities, references, statuses);
+        BuildItems(corpus.LoadItems(), builder);
+        BuildPokemon(corpus.LoadPokemon(), builder);
+        BuildMoves(corpus.LoadMoves(), builder);
 
-        references.RemoveAll(reference =>
-            !entities.ContainsKey(reference.SourceKey) || !entities.ContainsKey(reference.TargetKey));
-        references.Sort(SemanticIndexedReferenceComparer.Instance);
-
-        var safeEntities = entities.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value with
-            {
-                Title = SafePresentation(pair.Value.Title, 256),
-                Summary = pair.Value.Summary is null
-                    ? null
-                    : SafePresentation(pair.Value.Summary, 1_024),
-                Fields = pair.Value.Fields.ToDictionary(
-                    field => field.Key,
-                    field => field.Value with
-                    {
-                        Label = SafePresentation(field.Value.Label, 256),
-                        Group = SafePresentation(field.Value.Group, 128),
-                        Value = field.Value.Value with
-                        {
-                            DisplayValue = SafePresentation(field.Value.Value.DisplayValue, 1_024),
-                        },
-                    },
-                    StringComparer.Ordinal),
-            },
-            StringComparer.Ordinal);
-
-        return new SemanticLayerData(safeEntities, references, statuses);
+        return builder.Complete();
     }
 
     protected abstract void BuildItems(
         SemanticWorkflowLoad<ItemsWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses);
+        SemanticLayerBuilder builder);
 
     protected abstract void BuildPokemon(
         SemanticWorkflowLoad<PokemonWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses);
+        SemanticLayerBuilder builder);
 
     protected abstract void BuildMoves(
         SemanticWorkflowLoad<MovesWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses);
+        SemanticLayerBuilder builder);
 
     protected string ProviderId(string domainKey) => $"{FamilyKey}.{domainKey}.semantic";
 
     protected void AddUnavailable(
-        ICollection<SemanticDomainStatus> statuses,
+        SemanticLayerBuilder builder,
         string providerId,
         string domain,
         string? reasonCode)
     {
-        statuses.Add(new SemanticDomainStatus(
+        builder.AddStatus(new SemanticDomainStatus(
             providerId,
             domain,
             Available: false,
@@ -152,13 +124,13 @@ internal abstract class SemanticExploreFamilyProviderBase : ISemanticExploreFami
     }
 
     protected void AddAvailable(
-        ICollection<SemanticDomainStatus> statuses,
+        SemanticLayerBuilder builder,
         string providerId,
         string domain,
         bool partial = false,
         string? reasonCode = null)
     {
-        statuses.Add(new SemanticDomainStatus(
+        builder.AddStatus(new SemanticDomainStatus(
             providerId,
             domain,
             Available: true,
@@ -382,6 +354,14 @@ internal abstract class SemanticExploreFamilyProviderBase : ISemanticExploreFami
         ItemsWorkflowDto workflow,
         string ownerId)
     {
+        if (workflow.EditableFields.Count > SemanticIndexSizingLimits.MaximumFieldCountPerEntity
+            || item.FieldValues.Count > SemanticIndexSizingLimits.MaximumFieldCountPerEntity)
+        {
+            throw new SemanticExploreValidationException(
+                ProviderLimitMessage,
+                SemanticExploreFailureKind.LimitExceeded);
+        }
+
         var definitions = workflow.EditableFields.ToDictionary(field => field.Field, StringComparer.Ordinal);
         var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal);
         foreach (var (key, value) in item.FieldValues.OrderBy(pair => pair.Key, StringComparer.Ordinal))
@@ -406,16 +386,156 @@ internal abstract class SemanticExploreFamilyProviderBase : ISemanticExploreFami
         return fields;
     }
 
-    protected static void AddEntity(
-        IDictionary<string, SemanticIndexedEntity> entities,
-        SemanticIndexedEntity entity)
+    protected static IReadOnlyDictionary<(int SpeciesId, int Form), int> UniqueSpeciesForms(
+        IReadOnlyList<PokemonRecordDto> pokemon)
     {
-        var key = Key(entity.Record);
-        if (!entities.TryAdd(key, entity))
+        ArgumentNullException.ThrowIfNull(pokemon);
+        var speciesForms = new Dictionary<(int SpeciesId, int Form), int>();
+        var duplicateKeys = new HashSet<(int SpeciesId, int Form)>();
+        foreach (var record in pokemon)
         {
-            throw new SemanticExploreValidationException(
-                "A semantic provider returned duplicate record identities.",
-                SemanticExploreFailureKind.InvalidData);
+            var key = (record.SpeciesId, record.Form);
+            if (duplicateKeys.Contains(key))
+            {
+                continue;
+            }
+
+            if (!speciesForms.TryAdd(key, record.PersonalId))
+            {
+                speciesForms.Remove(key);
+                duplicateKeys.Add(key);
+            }
+        }
+
+        return speciesForms;
+    }
+
+    protected sealed class SemanticLayerBuilder
+    {
+        private readonly SemanticMaterializationBudget materializationBudget;
+        private readonly SortedDictionary<string, SemanticIndexedEntity> entities =
+            new(StringComparer.Ordinal);
+        private readonly List<SemanticIndexedReference> references = [];
+        private readonly List<SemanticDomainStatus> statuses = new(3);
+
+        internal SemanticLayerBuilder(SemanticMaterializationBudget materializationBudget)
+        {
+            this.materializationBudget = materializationBudget;
+            materializationBudget.Admit(
+                SemanticExploreSizeEstimator.MaximumLayerEnvelopeSizeBytes,
+                ProviderLimitMessage);
+        }
+
+        public void AddEntity(SemanticIndexedEntity entity)
+        {
+            ArgumentNullException.ThrowIfNull(entity);
+            if (entities.Count >= SemanticIndexSizingLimits.MaximumEntityCount
+                || entity.Fields.Count > SemanticIndexSizingLimits.MaximumFieldCountPerEntity)
+            {
+                throw new SemanticExploreValidationException(
+                    ProviderLimitMessage,
+                    SemanticExploreFailureKind.LimitExceeded);
+            }
+
+            var key = Key(entity.Record);
+            if (entities.ContainsKey(key))
+            {
+                throw new SemanticExploreValidationException(
+                    "A semantic provider returned duplicate record identities.",
+                    SemanticExploreFailureKind.InvalidData);
+            }
+
+            materializationBudget.Admit(
+                SemanticExploreSizeEstimator.EstimateEntity(entity),
+                ProviderLimitMessage);
+            entities.Add(key, SanitizeEntity(entity));
+        }
+
+        public void EnsureAdditionalEntityCapacity(int additionalEntityCount)
+        {
+            if (additionalEntityCount < 0
+                || additionalEntityCount > SemanticIndexSizingLimits.MaximumEntityCount - entities.Count)
+            {
+                throw new SemanticExploreValidationException(
+                    ProviderLimitMessage,
+                    SemanticExploreFailureKind.LimitExceeded);
+            }
+        }
+
+        public IDisposable ReserveTemporaryIndex(int maximumEntryCount)
+        {
+            if (maximumEntryCount < 0
+                || maximumEntryCount > SemanticIndexSizingLimits.MaximumEntityCount)
+            {
+                throw new SemanticExploreValidationException(
+                    ProviderLimitMessage,
+                    SemanticExploreFailureKind.LimitExceeded);
+            }
+
+            return materializationBudget.ReserveTemporary(
+                checked(
+                    maximumEntryCount
+                    * SemanticExploreSizeEstimator.TemporaryIndexEntrySizeBytes),
+                ProviderLimitMessage);
+        }
+
+        public void AddReference(SemanticIndexedReference reference)
+        {
+            ArgumentNullException.ThrowIfNull(reference);
+            if (references.Count >= SemanticIndexSizingLimits.MaximumReferenceCount)
+            {
+                throw new SemanticExploreValidationException(
+                    ProviderLimitMessage,
+                    SemanticExploreFailureKind.LimitExceeded);
+            }
+
+            materializationBudget.Admit(
+                SemanticExploreSizeEstimator.EstimateReference(reference),
+                ProviderLimitMessage);
+            references.Add(reference);
+        }
+
+        public void AddStatus(SemanticDomainStatus status)
+        {
+            ArgumentNullException.ThrowIfNull(status);
+            materializationBudget.Admit(
+                SemanticExploreSizeEstimator.EstimateStatus(status),
+                ProviderLimitMessage);
+            statuses.Add(status);
+        }
+
+        internal SemanticLayerData Complete()
+        {
+            references.RemoveAll(reference =>
+                !entities.ContainsKey(reference.SourceKey)
+                || !entities.ContainsKey(reference.TargetKey));
+            references.Sort(SemanticIndexedReferenceComparer.Instance);
+            return new SemanticLayerData(entities, references, statuses);
+        }
+
+        private static SemanticIndexedEntity SanitizeEntity(SemanticIndexedEntity entity)
+        {
+            return entity with
+            {
+                Title = SafePresentation(entity.Title, 256),
+                Summary = entity.Summary is null
+                    ? null
+                    : SafePresentation(entity.Summary, 1_024),
+                Fields = entity.Fields.ToDictionary(
+                    field => field.Key,
+                    field => field.Value with
+                    {
+                        Label = SafePresentation(field.Value.Label, 256),
+                        Group = SafePresentation(field.Value.Group, 128),
+                        Value = field.Value.Value with
+                        {
+                            DisplayValue = SafePresentation(
+                                field.Value.Value.DisplayValue,
+                                1_024),
+                        },
+                    },
+                    StringComparer.Ordinal),
+            };
         }
     }
 
@@ -462,21 +582,20 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
 
     protected override void BuildItems(
         SemanticWorkflowLoad<ItemsWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("items");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, ItemsDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, ItemsDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var item in workflow.Items.OrderBy(item => item.ItemId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Items.Count);
+        foreach (var item in workflow.Items)
         {
             var record = Record(ItemsDomain, "item", item.ItemId);
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 item.Name,
                 $"Sword and Shield item {item.ItemId.ToString(CultureInfo.InvariantCulture)}",
@@ -488,7 +607,7 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
 
             if (item.Metadata.MachineMoveId is { } moveId)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", moveId)),
                     "teaches-move",
@@ -497,23 +616,22 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
             }
         }
 
-        AddAvailable(statuses, providerId, ItemsDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, ItemsDomain, load.Partial, load.ReasonCode);
     }
 
     protected override void BuildPokemon(
         SemanticWorkflowLoad<PokemonWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("pokemon");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, PokemonDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, PokemonDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var pokemon in workflow.Pokemon.OrderBy(pokemon => pokemon.PersonalId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Pokemon.Count);
+        foreach (var pokemon in workflow.Pokemon)
         {
             var record = Record(PokemonDomain, "pokemon-personal", pokemon.PersonalId);
             var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal)
@@ -535,7 +653,7 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
                 ["heldItem2"] = Signed("heldItem2", "Held item 2", "Held items", pokemon.Personal.HeldItem2, providerId),
                 ["heldItem3"] = Signed("heldItem3", "Held item 3", "Held items", pokemon.Personal.HeldItem3, providerId),
             };
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 pokemon.Name,
                 pokemon.FormLabel,
@@ -547,7 +665,7 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
 
             foreach (var move in pokemon.Learnset)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", move.MoveId)),
                     "learns-move",
@@ -561,7 +679,7 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
                     candidate.SpeciesId == evolution.Species && candidate.Form == evolution.Form);
                 if (target is not null)
                 {
-                    references.Add(new SemanticIndexedReference(
+                    builder.AddReference(new SemanticIndexedReference(
                         Key(record),
                     Key(Record(PokemonDomain, "pokemon-personal", target.PersonalId)),
                         "evolves-to",
@@ -571,23 +689,22 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
             }
         }
 
-        AddAvailable(statuses, providerId, PokemonDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, PokemonDomain, load.Partial, load.ReasonCode);
     }
 
     protected override void BuildMoves(
         SemanticWorkflowLoad<MovesWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("moves");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, MovesDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, MovesDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var move in workflow.Moves.OrderBy(move => move.MoveId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Moves.Count);
+        foreach (var move in workflow.Moves)
         {
             var record = Record(MovesDomain, "move", move.MoveId);
             var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal)
@@ -610,7 +727,7 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
                 ["recoil"] = Signed("recoil", "Recoil", "Effects", move.Recoil, providerId),
                 ["rawHealing"] = Signed("rawHealing", "Healing", "Effects", move.RawHealing, providerId),
             };
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 move.Name,
                 move.Description,
@@ -621,7 +738,7 @@ internal sealed class SwShSemanticExploreProvider : SemanticExploreFamilyProvide
                 fields));
         }
 
-        AddAvailable(statuses, providerId, MovesDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, MovesDomain, load.Partial, load.ReasonCode);
     }
 }
 
@@ -633,21 +750,20 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
 
     protected override void BuildItems(
         SemanticWorkflowLoad<ItemsWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("items");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, ItemsDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, ItemsDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var item in workflow.Items.OrderBy(item => item.ItemId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Items.Count);
+        foreach (var item in workflow.Items)
         {
             var record = Record(ItemsDomain, "item", item.ItemId);
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 item.Name,
                 $"Scarlet and Violet item {item.ItemId.ToString(CultureInfo.InvariantCulture)}",
@@ -659,7 +775,7 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
 
             if (item.Metadata.MachineMoveId is { } moveId)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", moveId)),
                     "machine-move",
@@ -668,27 +784,24 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
             }
         }
 
-        AddAvailable(statuses, providerId, ItemsDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, ItemsDomain, load.Partial, load.ReasonCode);
     }
 
     protected override void BuildPokemon(
         SemanticWorkflowLoad<PokemonWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("pokemon");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, PokemonDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, PokemonDomain, load.ReasonCode);
             return;
         }
 
-        var speciesForms = workflow.Pokemon
-            .GroupBy(pokemon => (pokemon.SpeciesId, pokemon.Form))
-            .Where(group => group.Count() == 1)
-            .ToDictionary(group => group.Key, group => group.Single().PersonalId);
-        foreach (var pokemon in workflow.Pokemon.OrderBy(pokemon => pokemon.PersonalId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Pokemon.Count);
+        using var speciesFormReservation = builder.ReserveTemporaryIndex(workflow.Pokemon.Count);
+        var speciesForms = UniqueSpeciesForms(workflow.Pokemon);
+        foreach (var pokemon in workflow.Pokemon)
         {
             var record = Record(PokemonDomain, "pokemon-personal", pokemon.PersonalId);
             var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal)
@@ -710,7 +823,7 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
                 ["hiddenAbility"] = Enumeration("hiddenAbility", "Hidden ability", "Abilities", pokemon.Abilities.HiddenAbility, pokemon.Abilities.HiddenAbilityLabel, providerId),
                 ["isPresentInGame"] = Boolean("isPresentInGame", "Present in game", "Availability", pokemon.Personal.IsPresentInGame, providerId),
             };
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 pokemon.Name,
                 pokemon.FormLabel,
@@ -722,7 +835,7 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
 
             foreach (var move in pokemon.Learnset)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", move.MoveId)),
                     "learns-move",
@@ -734,7 +847,7 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
             {
                 if (speciesForms.TryGetValue((evolution.Species, evolution.Form), out var targetPersonalId))
                 {
-                    references.Add(new SemanticIndexedReference(
+                    builder.AddReference(new SemanticIndexedReference(
                         Key(record),
                         Key(Record(PokemonDomain, "pokemon-personal", targetPersonalId)),
                         "evolves-to",
@@ -744,23 +857,22 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
             }
         }
 
-        AddAvailable(statuses, providerId, PokemonDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, PokemonDomain, load.Partial, load.ReasonCode);
     }
 
     protected override void BuildMoves(
         SemanticWorkflowLoad<MovesWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("moves");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, MovesDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, MovesDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var move in workflow.Moves.OrderBy(move => move.MoveId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Moves.Count);
+        foreach (var move in workflow.Moves)
         {
             var record = Record(MovesDomain, "move", move.MoveId);
             var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal)
@@ -785,7 +897,7 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
                 ["recoil"] = Signed("recoil", "Recoil", "Effects", move.Recoil, providerId),
                 ["rawHealing"] = Signed("rawHealing", "Healing", "Effects", move.RawHealing, providerId),
             };
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 move.Name,
                 move.Description,
@@ -796,7 +908,7 @@ internal sealed class SvSemanticExploreProvider : SemanticExploreFamilyProviderB
                 fields));
         }
 
-        AddAvailable(statuses, providerId, MovesDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, MovesDomain, load.Partial, load.ReasonCode);
     }
 }
 
@@ -808,21 +920,20 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
 
     protected override void BuildItems(
         SemanticWorkflowLoad<ItemsWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("items");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, ItemsDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, ItemsDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var item in workflow.Items.OrderBy(item => item.ItemId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Items.Count);
+        foreach (var item in workflow.Items)
         {
             var record = Record(ItemsDomain, "item", item.ItemId);
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 item.Name,
                 $"Legends Z-A item {item.ItemId.ToString(CultureInfo.InvariantCulture)}",
@@ -834,7 +945,7 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
 
             if (item.Metadata.MachineMoveId is { } moveId)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", moveId)),
                     "technical-machine-move",
@@ -843,27 +954,24 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
             }
         }
 
-        AddAvailable(statuses, providerId, ItemsDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, ItemsDomain, load.Partial, load.ReasonCode);
     }
 
     protected override void BuildPokemon(
         SemanticWorkflowLoad<PokemonWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("pokemon");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, PokemonDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, PokemonDomain, load.ReasonCode);
             return;
         }
 
-        var speciesForms = workflow.Pokemon
-            .GroupBy(pokemon => (pokemon.SpeciesId, pokemon.Form))
-            .Where(group => group.Count() == 1)
-            .ToDictionary(group => group.Key, group => group.Single().PersonalId);
-        foreach (var pokemon in workflow.Pokemon.OrderBy(pokemon => pokemon.PersonalId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Pokemon.Count);
+        using var speciesFormReservation = builder.ReserveTemporaryIndex(workflow.Pokemon.Count);
+        var speciesForms = UniqueSpeciesForms(workflow.Pokemon);
+        foreach (var pokemon in workflow.Pokemon)
         {
             var record = Record(PokemonDomain, "pokemon-personal", pokemon.PersonalId);
             var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal)
@@ -886,7 +994,7 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
                 ["hiddenAbility"] = Enumeration("hiddenAbility", "Hidden ability", "Abilities", pokemon.Abilities.HiddenAbility, pokemon.Abilities.HiddenAbilityLabel, providerId),
                 ["alphaMove"] = NullableSigned("alphaMove", "Alpha-exclusive move", "Moves", pokemon.AlphaMove?.MoveId, providerId),
             };
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 pokemon.Name,
                 pokemon.FormLabel,
@@ -898,7 +1006,7 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
 
             foreach (var move in pokemon.Learnset)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", move.MoveId)),
                     "learns-move",
@@ -908,7 +1016,7 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
 
             if (pokemon.AlphaMove?.MoveId is { } alphaMoveId)
             {
-                references.Add(new SemanticIndexedReference(
+                builder.AddReference(new SemanticIndexedReference(
                     Key(record),
                     Key(Record(MovesDomain, "move", alphaMoveId)),
                     "alpha-exclusive-move",
@@ -920,7 +1028,7 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
             {
                 if (speciesForms.TryGetValue((evolution.Species, evolution.Form), out var targetPersonalId))
                 {
-                    references.Add(new SemanticIndexedReference(
+                    builder.AddReference(new SemanticIndexedReference(
                         Key(record),
                         Key(Record(PokemonDomain, "pokemon-personal", targetPersonalId)),
                         "evolves-to",
@@ -930,23 +1038,22 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
             }
         }
 
-        AddAvailable(statuses, providerId, PokemonDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, PokemonDomain, load.Partial, load.ReasonCode);
     }
 
     protected override void BuildMoves(
         SemanticWorkflowLoad<MovesWorkflowDto> load,
-        IDictionary<string, SemanticIndexedEntity> entities,
-        ICollection<SemanticIndexedReference> references,
-        ICollection<SemanticDomainStatus> statuses)
+        SemanticLayerBuilder builder)
     {
         var providerId = ProviderId("moves");
         if (load.Value is not { } workflow)
         {
-            AddUnavailable(statuses, providerId, MovesDomain, load.ReasonCode);
+            AddUnavailable(builder, providerId, MovesDomain, load.ReasonCode);
             return;
         }
 
-        foreach (var move in workflow.Moves.OrderBy(move => move.MoveId))
+        builder.EnsureAdditionalEntityCapacity(workflow.Moves.Count);
+        foreach (var move in workflow.Moves)
         {
             var record = Record(MovesDomain, "move", move.MoveId);
             var fields = new Dictionary<string, SemanticIndexedField>(StringComparer.Ordinal)
@@ -973,7 +1080,7 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
                 fields.Add("projectileCountMax", Signed("projectileCountMax", "Maximum projectiles", "Real-time behavior", timing.ProjectileCountMax, providerId));
             }
 
-            AddEntity(entities, new SemanticIndexedEntity(
+            builder.AddEntity(new SemanticIndexedEntity(
                 record,
                 move.Name,
                 move.Description,
@@ -984,6 +1091,6 @@ internal sealed class ZaSemanticExploreProvider : SemanticExploreFamilyProviderB
                 fields));
         }
 
-        AddAvailable(statuses, providerId, MovesDomain, load.Partial, load.ReasonCode);
+        AddAvailable(builder, providerId, MovesDomain, load.Partial, load.ReasonCode);
     }
 }

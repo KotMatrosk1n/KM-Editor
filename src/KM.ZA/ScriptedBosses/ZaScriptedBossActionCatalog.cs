@@ -557,15 +557,22 @@ internal static class ZaScriptedBossActionCatalog
             else
             {
                 var identities = new HashSet<(int MoveId, int Variant)>();
+                var fingerprints = new Dictionary<(int MoveId, int Variant), string>();
                 foreach (var row in battleRows)
                 {
-                    if (!identities.Add((
-                            checked((int)row.MoveId),
-                            checked((int)row.VariantType))))
+                    var identity = (
+                        MoveId: checked((int)row.MoveId),
+                        Variant: checked((int)row.VariantType));
+                    var fingerprint = ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]);
+                    if (fingerprints.TryGetValue(identity, out var existingFingerprint)
+                        && !string.Equals(existingFingerprint, fingerprint, StringComparison.Ordinal))
                     {
                         throw new InvalidDataException(
-                            "The Z-A battle-move table contains a duplicate move and variant identity.");
+                            "The Z-A battle-move table contains conflicting rows for one move and variant identity.");
                     }
+
+                    fingerprints.TryAdd(identity, fingerprint);
+                    identities.Add(identity);
                 }
 
                 battleMoveVariants = identities;

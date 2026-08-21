@@ -21,7 +21,6 @@ namespace KM.Tools.Application;
 public sealed class BalanceLabApplicationService
 {
     private const int MaximumFindingsPerResponse = 100;
-    private const long MaximumCachedStudyBytes = 32L * 1024L * 1024L;
     private const string CacheCallerKeyPrefix = "balance-lab-v1";
 
     private readonly SemanticExploreApplicationService semanticExploreService;
@@ -34,7 +33,7 @@ public sealed class BalanceLabApplicationService
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 12,
-            MaximumSizeBytes = MaximumCachedStudyBytes,
+            MaximumSizeBytes = BalanceLabSizingLimits.StudyCacheCeilingBytes,
         });
 
     public BalanceLabApplicationService(
@@ -275,7 +274,7 @@ public sealed class BalanceLabApplicationService
 
         cancellationToken.ThrowIfCancellationRequested();
         var estimatedSize = EstimateSize(data);
-        if (estimatedSize > MaximumCachedStudyBytes)
+        if (estimatedSize > BalanceLabSizingLimits.StudyHardCeilingBytes)
         {
             throw new SemanticExploreValidationException(
                 "The Balance Lab study exceeds its bounded cache budget.",

@@ -8,6 +8,8 @@ import type {
   ResearchCoverageState
 } from '../../bridge/researchLabContracts';
 import { useLocalization } from '../../localization';
+import { TechnicalDetails } from '../workbench/AnalysisPresentation';
+import { humanizeIdentifier } from '../workbench/analysisPresentationUtils';
 import {
   researchConfidenceKey,
   researchCoverageKey,
@@ -96,7 +98,7 @@ export function ResearchOwnershipView({
   capabilities: ReadResearchLabCapabilitiesResponse;
   comparison: CompareResearchSourcesResponse | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const capability = capabilities.capabilities.find(
     (candidate) => candidate.feature === 'ownershipEvidence'
   );
@@ -140,10 +142,17 @@ export function ResearchOwnershipView({
                     <ResearchBadge confidence={item.ownership.confidence} />
                   </div>
                   {item.ownership.ownerId ? (
-                    <p>
-                      <span>{t('researchLab.ownership.owner')}</span>{' '}
-                      <code data-localization-ignore="true">{item.ownership.ownerId}</code>
-                    </p>
+                    <>
+                      <p>
+                        <span>{t('researchLab.ownership.owner')}</span>{' '}
+                        <span data-localization-ignore="true">
+                          {humanizeIdentifier(item.ownership.ownerId)}
+                        </span>
+                      </p>
+                      <TechnicalDetails summary={translateLiteral('Technical details')}>
+                        <code>{item.ownership.ownerId}</code>
+                      </TechnicalDetails>
+                    </>
                   ) : null}
                   {reasonKey ? <small>{t(reasonKey)}</small> : null}
                 </article>

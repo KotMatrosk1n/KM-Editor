@@ -7,6 +7,9 @@ namespace KM.Api.Research;
 
 public static class ResearchLabContract
 {
+    private const int AuthoredProvisionMultiplier = 4;
+    private const int AuthoredHardCeilingMultiplier = 2;
+
     public const int SchemaVersion = 1;
     public const int MaximumRegistrations = 4;
     public const int RequiredComparisonSources = 2;
@@ -22,12 +25,23 @@ public static class ResearchLabContract
     public const int MaximumPageSize = 100;
     public const int MaximumCursorLength = 2_048;
     public const int MaximumByteWindowLength = 4_096;
-    public const long MaximumResultCacheBytes = 32L * 1024L * 1024L;
+    public const int ResultProvisionMultiplier = 4;
+    public const int ResultCacheCeilingMultiplier = 2;
+    public const long ExpectedResultSizeBytes = 32L * 1024L * 1024L;
+    public const long MaximumResultSizeBytes = checked(
+        ExpectedResultSizeBytes * ResultProvisionMultiplier);
+    public const long MaximumResultCeilingBytes = checked(
+        MaximumResultSizeBytes * ResultCacheCeilingMultiplier);
+    public const long MaximumResultCacheBytes = MaximumResultCeilingBytes;
     public const int MaximumRelativePathLength = 4_096;
     public const int MaximumAnnotationCount = 2_048;
     public const int MaximumAnnotationTextLength = 8_192;
     public const int MaximumAnnotationTags = 32;
-    public const int MaximumSerializedAnnotationDocumentBytes = 3 * 1024 * 1024;
+    public const int ExpectedSerializedAnnotationDocumentBytes = 3 * 1024 * 1024;
+    public const int ProvisionedSerializedAnnotationDocumentBytes = checked(
+        ExpectedSerializedAnnotationDocumentBytes * AuthoredProvisionMultiplier);
+    public const int MaximumSerializedAnnotationDocumentBytes = checked(
+        ProvisionedSerializedAnnotationDocumentBytes * AuthoredHardCeilingMultiplier);
     public const int MaximumExtensionDescriptors = 64;
 }
 

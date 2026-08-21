@@ -207,6 +207,9 @@ public sealed record ZaMoveRecord(
     public IReadOnlyDictionary<int, int> GameModuleTimingCounts { get; init; } =
         new Dictionary<int, int>();
 
+    public IReadOnlyDictionary<int, int> GameModuleVariantMultiplicities { get; init; } =
+        new Dictionary<int, int>();
+
     public IReadOnlyList<ZaMovePlayerDamageRecord> PlayerDamageRows { get; init; } = [];
 
     public IReadOnlyList<ZaMoveVanillaFieldValue> VanillaValues { get; init; } = [];

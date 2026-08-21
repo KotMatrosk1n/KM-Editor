@@ -10,22 +10,44 @@ import { isCapabilityRegisteredForGame } from '../workbench/capabilityRegistry';
 import { workbenchSections } from '../workbench/workbenchSections';
 
 export const workspacePersonalStateSchemaVersion = 1 as const;
-export const workspaceApplicationStateMaximumBytes = 3 * 1024 * 1024;
-export const workspaceProjectStateMaximumBytes = 2 * 1024 * 1024;
+export const workspaceApplicationStateExpectedBytes = 3 * 1024 * 1024;
+export const workspaceApplicationStateProvisionedBytes =
+  workspaceApplicationStateExpectedBytes * 4;
+export const workspaceApplicationStateMaximumBytes =
+  workspaceApplicationStateProvisionedBytes * 2;
+export const workspaceProjectStateExpectedBytes = 2 * 1024 * 1024;
+export const workspaceProjectStateProvisionedBytes = workspaceProjectStateExpectedBytes * 4;
+export const workspaceProjectStateMaximumBytes = workspaceProjectStateProvisionedBytes * 2;
 export const workspaceMaximumRecentProjects = 24;
 export const workspaceMaximumShortcutOverrides = 128;
 export const workspaceMaximumLocalePacks = 4;
-export const workspaceMaximumLocalePackBytes = 512 * 1024;
-export const workspaceMaximumLocalePackAggregateBytes = 2 * 1024 * 1024;
+export const workspaceExpectedLocalePackBytes = 512 * 1024;
+export const workspaceProvisionedLocalePackBytes = workspaceExpectedLocalePackBytes * 4;
+export const workspaceMaximumLocalePackBytes = workspaceProvisionedLocalePackBytes * 2;
+export const workspaceExpectedLocalePackAggregateBytes = 2 * 1024 * 1024;
+export const workspaceProvisionedLocalePackAggregateBytes =
+  workspaceExpectedLocalePackAggregateBytes * 4;
+export const workspaceMaximumLocalePackAggregateBytes =
+  workspaceProvisionedLocalePackAggregateBytes * 2;
 export const workspaceMaximumGameDumpDestinations = 5;
 export const workspaceMaximumRecentTargets = 64;
 export const workspaceMaximumBookmarks = 256;
 export const workspaceMaximumNotes = 256;
-export const workspaceMaximumNoteBytes = 32 * 1024;
-export const workspaceMaximumAggregateNoteBytes = 1024 * 1024;
+export const workspaceExpectedNoteBytes = 32 * 1024;
+export const workspaceProvisionedNoteBytes = workspaceExpectedNoteBytes * 4;
+export const workspaceMaximumNoteBytes = workspaceProvisionedNoteBytes * 2;
+export const workspaceExpectedAggregateNoteBytes = 1024 * 1024;
+export const workspaceProvisionedAggregateNoteBytes = workspaceExpectedAggregateNoteBytes * 4;
+export const workspaceMaximumAggregateNoteBytes = workspaceProvisionedAggregateNoteBytes * 2;
 export const workspaceMaximumSavedViews = 128;
-export const workspaceMaximumSavedViewPayloadBytes = 64 * 1024;
-export const workspaceMaximumAggregateSavedViewPayloadBytes = 512 * 1024;
+export const workspaceExpectedSavedViewPayloadBytes = 64 * 1024;
+export const workspaceProvisionedSavedViewPayloadBytes = workspaceExpectedSavedViewPayloadBytes * 4;
+export const workspaceMaximumSavedViewPayloadBytes = workspaceProvisionedSavedViewPayloadBytes * 2;
+export const workspaceExpectedAggregateSavedViewPayloadBytes = 512 * 1024;
+export const workspaceProvisionedAggregateSavedViewPayloadBytes =
+  workspaceExpectedAggregateSavedViewPayloadBytes * 4;
+export const workspaceMaximumAggregateSavedViewPayloadBytes =
+  workspaceProvisionedAggregateSavedViewPayloadBytes * 2;
 export const workspaceMaximumOutputProfiles = 32;
 
 type JsonValue =
@@ -298,9 +320,6 @@ export const workspaceApplicationStateDocumentSchema = z
     if (localeBytes > workspaceMaximumLocalePackAggregateBytes) {
       context.addIssue({ code: 'custom', message: 'Locale packs exceed their aggregate byte limit.' });
     }
-    if (utf8Bytes(document) > workspaceApplicationStateMaximumBytes) {
-      context.addIssue({ code: 'custom', message: 'Application workspace state is too large.' });
-    }
   });
 
 export const workspaceBookmarkSchema = z.strictObject({
@@ -417,9 +436,6 @@ export const workspaceProjectPersonalStateDocumentSchema = z
         code: 'custom',
         message: 'Saved view payloads exceed their aggregate byte limit.'
       });
-    }
-    if (utf8Bytes(document) > workspaceProjectStateMaximumBytes) {
-      context.addIssue({ code: 'custom', message: 'Project personal state is too large.' });
     }
   });
 

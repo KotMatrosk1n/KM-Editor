@@ -12,11 +12,20 @@ namespace KM.Api.Workspace;
 /// </summary>
 public static class WorkspaceDraftContract
 {
-    public const int SchemaVersion = 1;
+    private const int ProvisionMultiplier = 4;
+    private const int HardCeilingMultiplier = 2;
 
-    // Leaves one MiB of the generic four-MiB workspace envelope budget for
-    // envelope fields and serializer overhead.
-    public const int MaximumSerializedDocumentBytes = 3 * 1024 * 1024;
+    public const int SchemaVersion = 1;
+    public const int ExpectedSerializedDocumentBytes = 3 * 1024 * 1024;
+    public const int ProvisionedSerializedDocumentBytes = checked(
+        ExpectedSerializedDocumentBytes * ProvisionMultiplier);
+    public const int MaximumSerializedDocumentBytes = checked(
+        ProvisionedSerializedDocumentBytes * HardCeilingMultiplier);
+    public const int ExpectedPayloadBytes = 512 * 1024;
+    public const int ProvisionedPayloadBytes = checked(
+        ExpectedPayloadBytes * ProvisionMultiplier);
+    public const int MaximumPayloadBytes = checked(
+        ProvisionedPayloadBytes * HardCeilingMultiplier);
 }
 
 public sealed record WorkspaceDraftKeyDto(

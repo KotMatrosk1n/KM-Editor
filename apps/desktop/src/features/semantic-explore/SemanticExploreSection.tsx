@@ -21,14 +21,22 @@ import type {
   SemanticExploreDifference,
   SemanticExploreRecordRef,
   SemanticExploreRevision,
-  SemanticExploreScalar
+  SemanticExploreScalar,
+  SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey } from '../../workbench/semanticContracts';
+import { TechnicalDetails } from '../workbench/AnalysisPresentation';
+import {
+  humanizeIdentifier,
+  presentFactValue
+} from '../workbench/analysisPresentationUtils';
 import {
   semanticExploreMaximumAccumulatedResults,
   type QueryableLayer,
   type SemanticExploreController,
+  type SemanticQueryError,
   type SemanticQueryState
 } from './useSemanticExploreController';
 import './semanticExplore.css';
@@ -38,6 +46,7 @@ export type SemanticExploreSectionProps = {
   externalComparisonDisabled: boolean;
   onNavigateEntity: (record: SemanticExploreRecordRef) => void;
   onPickExternalMod: () => Promise<string | null>;
+  scope: SemanticExploreScope;
 };
 
 type ExploreModule = 'explore' | 'compare' | 'ownership' | 'changes';
@@ -46,7 +55,8 @@ export function SemanticExploreSection({
   controller,
   externalComparisonDisabled,
   onNavigateEntity,
-  onPickExternalMod
+  onPickExternalMod,
+  scope
 }: SemanticExploreSectionProps) {
   const { t } = useLocalization();
   const features = useMemo(
@@ -67,7 +77,7 @@ export function SemanticExploreSection({
     if (controller.capabilities.status === 'idle') {
       void controller.ensureCapabilities();
     }
-  }, [controller.capabilities.status, controller.ensureCapabilities]);
+  }, [controller.capabilities.status, controller.ensureCapabilities, scope]);
 
   useEffect(() => {
     if (modules.length > 0 && !modules.includes(activeModule)) {
@@ -75,12 +85,16 @@ export function SemanticExploreSection({
     }
   }, [activeModule, modules]);
 
-  if (controller.capabilities.status === 'idle' || controller.capabilities.status === 'loading') {
+  if (
+    controller.capabilities.status === 'idle' ||
+    (controller.capabilities.status === 'loading' && !controller.capabilities.data)
+  ) {
     return <SemanticStatus kind="loading" />;
   }
   if (controller.capabilities.status === 'error') {
     return (
       <SemanticStatus
+        error={controller.capabilities.error}
         kind="error"
         onRetry={() => void controller.refreshCapabilities()}
       />
@@ -91,8 +105,15 @@ export function SemanticExploreSection({
       (provider) => provider.coverage
     ) ?? [];
     return (
-      <section className="km-semantic-explore" aria-labelledby="semantic-explore-title">
+      <section
+        aria-busy={controller.isQuerying || undefined}
+        aria-labelledby="semantic-explore-title"
+        className="km-semantic-explore"
+      >
         <SemanticHeading />
+        {controller.capabilities.status === 'loading' ? (
+          <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+        ) : null}
         <p className="km-workbench-empty">{t('semanticExplore.unavailable')}</p>
         <CoverageSummary coverage={coverage} />
       </section>
@@ -100,8 +121,15 @@ export function SemanticExploreSection({
   }
 
   return (
-    <section className="km-semantic-explore" aria-labelledby="semantic-explore-title">
+    <section
+      aria-busy={controller.isQuerying || undefined}
+      aria-labelledby="semantic-explore-title"
+      className="km-semantic-explore"
+    >
       <SemanticHeading />
+      {controller.capabilities.status === 'loading' ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+      ) : null}
       <div
         aria-label={t('semanticExplore.modules.label')}
         className="km-semantic-module-tabs"
@@ -274,8 +302,11 @@ function EntityPage({
   controller,
   onNavigateEntity
 }: Pick<SemanticExploreSectionProps, 'controller' | 'onNavigateEntity'>) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const entity = controller.entity.data?.entity;
+  const fieldGroups = entity
+    ? groupEntityFields(entity.fields, t('analysisPresentation.group.details'))
+    : [];
   return (
     <aside className="km-semantic-entity" aria-label={t('semanticExplore.entity.title')}>
       <QueryBoundary state={controller.entity} idleKey="semanticExplore.entity.empty">
@@ -297,17 +328,35 @@ function EntityPage({
               </button>
             </header>
             <CoverageSummary coverage={controller.entity.data?.coverage ?? []} />
-            <dl className="km-semantic-field-list">
-              {entity.fields.map((field) => (
-                <div key={field.key}>
-                  <dt data-localization-ignore="true">
-                    <span>{field.label}</span>
-                    <small>{field.group}</small>
-                  </dt>
-                  <dd data-localization-ignore="true">{field.value.displayValue}</dd>
-                </div>
+            <div className="km-analysis-field-groups">
+              {fieldGroups.map((group) => (
+                <section className="km-analysis-field-group" key={group.key}>
+                  <h4 data-localization-ignore="true">{humanizeIdentifier(group.key)}</h4>
+                  <dl className="km-semantic-field-list">
+                    {group.fields.map((field) => {
+                      const value = presentFactValue(
+                        field.label,
+                        field.value.displayValue,
+                        null,
+                        translateLiteral
+                      );
+                      return (
+                        <div key={field.key}>
+                          <dt data-localization-ignore="true"><span>{field.label}</span></dt>
+                          <dd data-localization-ignore="true">
+                            {value.displayValue}
+                            <TechnicalDetails summary={translateLiteral('Technical details')}>
+                              <code>{field.key}</code>
+                              {value.changed ? <code>{value.exactValue}</code> : null}
+                            </TechnicalDetails>
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </section>
               ))}
-            </dl>
+            </div>
           </>
         ) : null}
       </QueryBoundary>
@@ -320,7 +369,13 @@ function CompareModulePanel({
   externalComparisonDisabled,
   onNavigateEntity,
   onPickExternalMod
-}: SemanticExploreSectionProps) {
+}: Pick<
+  SemanticExploreSectionProps,
+  | 'controller'
+  | 'externalComparisonDisabled'
+  | 'onNavigateEntity'
+  | 'onPickExternalMod'
+>) {
   const { t } = useLocalization();
   const layers = availableQueryableLayers(controller);
   const [left, setLeft] = useState<QueryableLayer>('base');
@@ -489,6 +544,7 @@ function OwnershipModulePanel({
 }: Pick<SemanticExploreSectionProps, 'controller' | 'onNavigateEntity'>) {
   const { t } = useLocalization();
   const ownership = controller.ownership.data;
+  const nodeLabels = new Map(ownership?.nodes.map((node) => [node.nodeId, node.label]) ?? []);
   return (
     <div>
       <div className="km-semantic-query-bar">
@@ -543,9 +599,13 @@ function OwnershipModulePanel({
                   key={`${edge.sourceNodeId}:${edge.targetNodeId}:${index}`}
                   role="listitem"
                 >
-                  <span data-localization-ignore="true">{edge.sourceNodeId}</span>
+                  <span data-localization-ignore="true">
+                    {nodeLabels.get(edge.sourceNodeId) ?? humanizeIdentifier(edge.sourceNodeId)}
+                  </span>
                   <strong>{t(`semanticExplore.ownership.edge.${edge.kind}`)}</strong>
-                  <span data-localization-ignore="true">{edge.targetNodeId}</span>
+                  <span data-localization-ignore="true">
+                    {nodeLabels.get(edge.targetNodeId) ?? humanizeIdentifier(edge.targetNodeId)}
+                  </span>
                 </p>
               ))}
             </div>
@@ -587,21 +647,33 @@ function ChangesModulePanel({
       <div className="km-semantic-query-bar">
         <label>
           <span>{t('semanticExplore.changes.from')}</span>
-          <select onChange={(event) => setFrom(event.currentTarget.value as typeof from)} value={from}>
+          <select
+            className="km-select-control"
+            onChange={(event) => setFrom(event.currentTarget.value as typeof from)}
+            value={from}
+          >
             <option value="base">{t('semanticExplore.layer.base')}</option>
             {hasLayered ? <option value="layered">{t('semanticExplore.layer.layered')}</option> : null}
           </select>
         </label>
         <label>
           <span>{t('semanticExplore.changes.to')}</span>
-          <select onChange={(event) => setTo(event.currentTarget.value as typeof to)} value={to}>
+          <select
+            className="km-select-control"
+            onChange={(event) => setTo(event.currentTarget.value as typeof to)}
+            value={to}
+          >
             {hasLayered ? <option value="layered">{t('semanticExplore.layer.layered')}</option> : null}
             {hasPending ? <option value="pending">{t('semanticExplore.layer.pending')}</option> : null}
           </select>
         </label>
         <label>
           <span>{t('semanticExplore.changes.format')}</span>
-          <select onChange={(event) => setFormat(event.currentTarget.value as typeof format)} value={format}>
+          <select
+            className="km-select-control"
+            onChange={(event) => setFormat(event.currentTarget.value as typeof format)}
+            value={format}
+          >
             <option value="structured">{t('semanticExplore.changes.structured')}</option>
             <option value="canonicalText">{t('semanticExplore.changes.canonicalText')}</option>
           </select>
@@ -683,6 +755,9 @@ function QueryBoundary<T>({
   }
   return (
     <>
+      {state.status === 'loading' && state.data && !state.isAppending ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+      ) : null}
       {state.status === 'error' ? (
         <p className="km-semantic-query-error" role="alert">
           {t(`semanticExplore.query.error.${state.error ?? 'generic'}`)}
@@ -694,16 +769,28 @@ function QueryBoundary<T>({
 }
 
 function SemanticStatus({
+  error,
   kind,
   onRetry
 }: {
+  error?: SemanticQueryError | null;
   kind: 'loading' | 'error';
   onRetry?: () => void;
 }) {
   const { t } = useLocalization();
+  const label = t(kind === 'error' && error
+    ? `semanticExplore.query.error.${error}`
+    : `semanticExplore.${kind}`);
+  if (kind === 'loading') {
+    return (
+      <div className="km-semantic-status">
+        <LoadingProgress label={label} />
+      </div>
+    );
+  }
   return (
-    <div className="km-semantic-status" role={kind === 'error' ? 'alert' : 'status'}>
-      <p>{t(`semanticExplore.${kind}`)}</p>
+    <div className="km-semantic-status" role="alert">
+      <p>{label}</p>
       {onRetry ? (
         <button className="secondary-button compact-button" onClick={onRetry} type="button">
           {t('semanticExplore.retry')}
@@ -714,7 +801,7 @@ function SemanticStatus({
 }
 
 function CoverageSummary({ coverage }: { coverage: readonly SemanticExploreCoverage[] }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   if (coverage.length === 0) return null;
   return (
     <details className="km-semantic-coverage">
@@ -722,19 +809,37 @@ function CoverageSummary({ coverage }: { coverage: readonly SemanticExploreCover
       <ul>
         {coverage.map((entry) => (
           <li key={entry.providerId}>
-            <span data-localization-ignore="true">{entry.providerId}</span>
-            <span data-localization-ignore="true">{entry.domains.join(', ')}</span>
+            <span data-localization-ignore="true">{humanizeIdentifier(entry.providerId)}</span>
+            <span data-localization-ignore="true">
+              {entry.domains.map(humanizeIdentifier).join(', ')}
+            </span>
             <span>{t(`semanticExplore.coverage.state.${entry.state}`)}</span>
             <span>{t(`semanticExplore.coverage.confidence.${entry.confidence}`)}</span>
             {entry.reasonCode ? (
-              <code data-localization-ignore="true">{entry.reasonCode}</code>
+              <span>{t('analysisPresentation.coverage.limited')}</span>
             ) : null}
+            <TechnicalDetails summary={translateLiteral('Technical details')}>
+              <code>{entry.providerId}</code>
+              {entry.domains.map((domain) => <code key={domain}>{domain}</code>)}
+              {entry.reasonCode ? <code>{entry.reasonCode}</code> : null}
+            </TechnicalDetails>
           </li>
         ))}
       </ul>
       <p>{t('semanticExplore.coverage.disclaimer')}</p>
     </details>
   );
+}
+
+function groupEntityFields<T extends { group: string }>(fields: readonly T[], fallback: string) {
+  const groups = new Map<string, T[]>();
+  for (const field of fields) {
+    const key = field.group.trim() || fallback;
+    const values = groups.get(key);
+    if (values) values.push(field);
+    else groups.set(key, [field]);
+  }
+  return [...groups].map(([key, groupedFields]) => ({ fields: groupedFields, key }));
 }
 
 function LayerSelect({
@@ -753,6 +858,7 @@ function LayerSelect({
     <label>
       <span>{t(labelKey)}</span>
       <select
+        className="km-select-control"
         onChange={(event) => onChange(event.currentTarget.value as QueryableLayer)}
         value={value}
       >
@@ -799,14 +905,20 @@ function LoadMoreButton({
     return <p className="km-semantic-advisory">{t('semanticExplore.results.windowLimit')}</p>;
   }
   return (
-    <button
-      className="secondary-button km-semantic-load-more"
-      disabled={isBusy}
-      onClick={onLoad}
-      type="button"
-    >
-      {isBusy ? t('semanticExplore.loading') : t('semanticExplore.results.more')}
-    </button>
+    <>
+      <button
+        aria-busy={isBusy || undefined}
+        className="secondary-button km-semantic-load-more"
+        disabled={isBusy}
+        onClick={onLoad}
+        type="button"
+      >
+        {isBusy ? t('semanticExplore.loading') : t('semanticExplore.results.more')}
+      </button>
+      {isBusy ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
+      ) : null}
+    </>
   );
 }
 

@@ -19,6 +19,7 @@ import {
   type ResearchFileFinding
 } from '../../bridge/researchLabContracts';
 import type { SemanticExploreRevision } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import {
   researchDifferenceKey,
@@ -142,6 +143,7 @@ export function ResearchComparisonView({
               })}
             </span>
             <button
+              aria-busy={controller.comparison.isAppending || undefined}
               className="secondary-button compact-button"
               disabled={controller.isBusy}
               onClick={() => setSelectedPaths(new Set())}
@@ -155,6 +157,9 @@ export function ResearchComparisonView({
 
       {controller.comparison.status === 'loading' && !data ? (
         <Status messageKey="researchLab.comparison.loading" />
+      ) : null}
+      {controller.comparison.status === 'loading' && data && !controller.comparison.isAppending ? (
+        <Status compact messageKey="researchLab.comparison.loading" />
       ) : null}
       {controller.comparison.error ? (
         <Status error messageKey={researchErrorKey(controller.comparison.error)} />
@@ -225,6 +230,12 @@ export function ResearchComparisonView({
                 : t('researchLab.comparison.more')}
             </button>
           ) : null}
+          {controller.comparison.isAppending ? (
+            <LoadingProgress
+              className="is-compact"
+              label={t('researchLab.comparison.loadingMore')}
+            />
+          ) : null}
           {isWindowCapped ? (
             <p className="km-research-lab-inline-status" role="status">
               {t('researchLab.comparison.windowLimit', {
@@ -258,6 +269,9 @@ function SourceCard({
         : 'researchLab.source.private')}</span>
       {source.error ? (
         <span role="alert">{t(researchErrorKey(source.error))}</span>
+      ) : null}
+      {source.status === 'loading' ? (
+        <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
       ) : null}
       <div className="km-research-lab-source-actions">
         <button
@@ -326,6 +340,7 @@ function FindingCard({
           <label>
             <input
               checked={checked}
+              className="km-choice-control"
               disabled={disabled}
               onChange={(event) => onToggle(event.target.checked)}
               type="checkbox"
@@ -451,13 +466,28 @@ function ByteSide({
   );
 }
 
-function Status({ error = false, messageKey }: { error?: boolean; messageKey: string }) {
+function Status({
+  compact = false,
+  error = false,
+  messageKey
+}: {
+  compact?: boolean;
+  error?: boolean;
+  messageKey: string;
+}) {
   const { t } = useLocalization();
+  if (!error) {
+    return (
+      <div className="km-research-lab-inline-status">
+        <LoadingProgress className={compact ? 'is-compact' : undefined} label={t(messageKey)} />
+      </div>
+    );
+  }
   return (
     <div
       aria-live="polite"
       className="km-research-lab-inline-status"
-      role={error ? 'alert' : 'status'}
+      role="alert"
     >
       <span>{t(messageKey)}</span>
     </div>

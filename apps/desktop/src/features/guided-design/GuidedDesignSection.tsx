@@ -43,7 +43,14 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
+import {
+  DiagnosticTechnicalDetails,
+  OccurrenceCount,
+  TechnicalDetails
+} from '../workbench/AnalysisPresentation';
+import { groupDiagnosticsForPresentation } from '../workbench/analysisPresentationUtils';
 import type {
   GuidedDesignController,
   GuidedDesignQueryError
@@ -218,7 +225,11 @@ export function GuidedDesignSection({
   };
 
   return (
-    <section aria-labelledby="guided-design-title" className="km-guided-design wide-panel">
+    <section
+      aria-busy={controller.isQuerying || isChangeSetWorkspaceBusy || undefined}
+      aria-labelledby="guided-design-title"
+      className="km-guided-design wide-panel"
+    >
       <header className="km-guided-heading">
         <div>
           <p>{t('guidedDesign.eyebrow')}</p>
@@ -226,6 +237,7 @@ export function GuidedDesignSection({
           <span>{t('guidedDesign.description')}</span>
         </div>
         <button
+          aria-busy={controller.isQuerying || undefined}
           className="secondary-button compact-button"
           disabled={
             !controller.preview.data ||
@@ -238,7 +250,9 @@ export function GuidedDesignSection({
           type="button"
         >
           <RefreshCw aria-hidden="true" size={15} />
-          <span>{t('guidedDesign.refresh')}</span>
+          <span>{t(controller.isQuerying
+            ? 'guidedDesign.preview.loading'
+            : 'guidedDesign.refresh')}</span>
         </button>
       </header>
 
@@ -280,6 +294,7 @@ export function GuidedDesignSection({
                 <label>
                   <span>{t('guidedDesign.inputs.kind')}</span>
                   <select
+                    className="km-select-control"
                     disabled={controller.isQuerying}
                     onChange={(event) => setKind(
                       event.currentTarget.value as GuidedDesignProposalKind
@@ -439,6 +454,11 @@ export function GuidedDesignSection({
                 </p>
               ) : null}
               <button
+                aria-busy={
+                  controller.preview.status === 'loading' &&
+                  !controller.preview.isAppending ||
+                  undefined
+                }
                 className="primary-button"
                 disabled={
                   !parsedInput.success ||
@@ -459,6 +479,12 @@ export function GuidedDesignSection({
           ) : (
             <p className="km-workbench-empty">{t('guidedDesign.unavailable')}</p>
           )}
+          {controller.preview.status === 'loading' && !controller.preview.isAppending ? (
+            <LoadingProgress
+              className="is-compact"
+              label={t('guidedDesign.preview.loading')}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -502,7 +528,7 @@ export function GuidedDesignSection({
 }
 
 function CapabilityGrid({ capabilities }: { capabilities: readonly GuidedDesignCapability[] }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   return (
     <section aria-labelledby="guided-design-coverage-title" className="km-guided-coverage">
       <div className="km-guided-section-heading">
@@ -530,10 +556,12 @@ function CapabilityGrid({ capabilities }: { capabilities: readonly GuidedDesignC
               </small>
             ) : null}
             {capability.reasonCode ? (
-              <small className="km-guided-coverage-reason">
+              <div className="km-guided-coverage-reason">
                 <span>{t(coverageReasonKey(capability.reasonCode))}</span>
-                <code data-localization-ignore="true">{capability.reasonCode}</code>
-              </small>
+                <TechnicalDetails summary={translateLiteral('Technical details')}>
+                  <code>{capability.reasonCode}</code>
+                </TechnicalDetails>
+              </div>
             ) : null}
           </li>
         ))}
@@ -650,6 +678,7 @@ function GuidedDesignTargetSelection({
                 <label>
                   <input
                     checked={isSelected}
+                    className="km-choice-control"
                     disabled={
                       isBusy ||
                       (!isSelected && selectedDiscoveryTargets.size >= guidedDesignMaximumTargets)
@@ -698,6 +727,7 @@ function GuidedDesignTargetSelection({
         {response.nextCursor &&
         response.eligibleTargets.length < guidedDesignMaximumEligibleTargetWindow ? (
           <button
+            aria-busy={controller.preview.isAppending || undefined}
             className="secondary-button"
             disabled={isBusy}
             onClick={() => void controller.loadMore()}
@@ -724,6 +754,17 @@ function GuidedDesignTargetSelection({
           <span>{t('guidedDesign.selection.generate')}</span>
         </button>
       </div>
+      {controller.preview.isAppending ? (
+        <LoadingProgress
+          className="is-compact"
+          completed={response.eligibleTargets.length}
+          label={t('guidedDesign.selection.loadingMore')}
+          total={Math.min(
+            response.totalEligibleTargetCount,
+            guidedDesignMaximumEligibleTargetWindow
+          )}
+        />
+      ) : null}
       <DiagnosticList diagnostics={response.diagnostics} />
     </section>
   );
@@ -917,6 +958,7 @@ function GuidedDesignProposalResults({
       />
       {response.nextCursor ? (
         <button
+          aria-busy={controller.preview.isAppending || undefined}
           className="secondary-button km-guided-load-more"
           disabled={controller.preview.isAppending || isChangeSetWorkspaceBusy}
           onClick={() => void controller.loadMore()}
@@ -926,6 +968,14 @@ function GuidedDesignProposalResults({
             ? t('guidedDesign.preview.loadingMore')
             : t('guidedDesign.preview.loadMore')}
         </button>
+      ) : null}
+      {controller.preview.isAppending ? (
+        <LoadingProgress
+          className="is-compact"
+          completed={response.mutations.length + response.findings.length}
+          label={t('guidedDesign.preview.loadingMore')}
+          total={response.totalMutationCount + response.totalFindingCount}
+        />
       ) : null}
       <DiagnosticList diagnostics={response.diagnostics} />
       <CanonicalExports key={response.proposalFingerprint} exports={response.exports} />
@@ -958,11 +1008,19 @@ function GuidedDesignProposalResults({
         ) : isChangeSetWorkspaceBusy ? (
           <p className="km-guided-advisory">{t('guidedDesign.import.workspaceBusy')}</p>
         ) : null}
-        <button className="primary-button" disabled={!importAllowed} type="submit">
+        <button
+          aria-busy={importState.status === 'busy' || undefined}
+          className="primary-button"
+          disabled={!importAllowed}
+          type="submit"
+        >
           {importState.status === 'busy'
             ? t('guidedDesign.import.loading')
             : t('guidedDesign.import.action')}
         </button>
+        {importState.status === 'busy' ? (
+          <LoadingProgress className="is-compact" label={t('guidedDesign.import.loading')} />
+        ) : null}
         {importState.error ? (
           <p
             className="km-guided-form-error"
@@ -1253,6 +1311,7 @@ function TargetConstraints({
               <label key={key}>
                 <input
                   checked={selectedRecords.has(key)}
+                  className="km-choice-control"
                   disabled={controller.isQuerying || isChangeSetWorkspaceBusy}
                   onChange={(event) => {
                     setSelectedRecords((current) => {
@@ -1335,7 +1394,8 @@ function MutationDiff({
   mutations: GuidedDesignPreviewResponse['mutations'];
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
+  const groups = groupMutationsByRecord(mutations);
   return (
     <section aria-labelledby="guided-design-diff-title" className="km-guided-diff">
       <h4 id="guided-design-diff-title">{t('guidedDesign.diff.title')}</h4>
@@ -1353,15 +1413,21 @@ function MutationDiff({
               </tr>
             </thead>
             <tbody>
-              {mutations.map((mutation) => (
+              {groups.flatMap((group) => group.mutations.map((mutation, index) => (
                 <tr key={mutation.mutationId}>
-                  <td data-localization-ignore="true">
-                    <strong>{mutation.recordLabel}</strong>
-                    <small>{formatSemanticRecord(mutation.record)}</small>
-                  </td>
+                  {index === 0 ? (
+                    <td data-localization-ignore="true" rowSpan={group.mutations.length}>
+                      <strong>{mutation.recordLabel}</strong>
+                      <TechnicalDetails summary={translateLiteral('Technical details')}>
+                        <code>{formatSemanticRecord(mutation.record)}</code>
+                      </TechnicalDetails>
+                    </td>
+                  ) : null}
                   <td data-localization-ignore="true">
                     {mutation.fieldLabel}
-                    <small>{mutation.fieldKey}</small>
+                    <TechnicalDetails summary={translateLiteral('Technical details')}>
+                      <code>{mutation.fieldKey}</code>
+                    </TechnicalDetails>
                   </td>
                   <td data-localization-ignore="true">{mutation.before.displayValue}</td>
                   <td data-localization-ignore="true">{mutation.after.displayValue}</td>
@@ -1384,7 +1450,7 @@ function MutationDiff({
                     </div>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>
@@ -1585,20 +1651,38 @@ function DiagnosticList({
 }: {
   diagnostics: readonly ApiDiagnostic[];
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   if (diagnostics.length === 0) return null;
+  const grouped = groupDiagnosticsForPresentation(
+    diagnostics,
+    (diagnostic) => [
+      diagnostic.severity,
+      safeDiagnosticMessage(diagnostic.message) ? diagnostic.message : 'redacted'
+    ],
+    (diagnostic) => [diagnostic.code, diagnostic.domain, diagnostic.field]
+  );
   return (
     <section aria-label={t('guidedDesign.diagnostics.title')} className="km-guided-diagnostics">
       <ul>
-        {diagnostics.slice(0, 50).map((diagnostic, index) => (
-          <li data-severity={diagnostic.severity} key={`${diagnostic.code}:${index}`}>
-            {safeDiagnosticMessage(diagnostic.message)
-              ? <span data-localization-ignore="true">{diagnostic.message}</span>
-              : <span>{t('guidedDesign.diagnostics.redacted')}</span>}
+        {grouped.slice(0, 50).map(({ count, diagnostics: identities, key }) => {
+          const diagnostic = identities[0]!.diagnostic;
+          return (
+          <li data-severity={diagnostic.severity} key={key}>
+            <span>
+              {safeDiagnosticMessage(diagnostic.message)
+                ? <span data-localization-ignore="true">{diagnostic.message}</span>
+                : <span>{t('guidedDesign.diagnostics.redacted')}</span>}
+              <OccurrenceCount count={count} />
+            </span>
+            <DiagnosticTechnicalDetails
+              diagnostics={identities}
+              summary={translateLiteral('Technical details')}
+            />
           </li>
-        ))}
+          );
+        })}
       </ul>
-      {diagnostics.length > 50 ? <p>{t('guidedDesign.diagnostics.bounded')}</p> : null}
+      {grouped.length > 50 ? <p>{t('guidedDesign.diagnostics.bounded')}</p> : null}
     </section>
   );
 }
@@ -1712,7 +1796,11 @@ function SelectControl({
   return (
     <label>
       <span>{t(labelKey)}</span>
-      <select onChange={(event) => onChange(event.currentTarget.value)} value={value}>
+      <select
+        className="km-select-control"
+        onChange={(event) => onChange(event.currentTarget.value)}
+        value={value}
+      >
         {options.map((option) => (
           <option key={option} value={option}>{t(`${translationPrefix}.${option}`)}</option>
         ))}
@@ -1731,11 +1819,16 @@ function StatusPanel({
   onRetry?: () => void;
 }) {
   const { t } = useLocalization();
+  if (kind === 'loading') {
+    return (
+      <div className="km-guided-status">
+        <LoadingProgress label={t('guidedDesign.capabilities.loading')} />
+      </div>
+    );
+  }
   return (
-    <div aria-live="polite" className="km-guided-status" role={kind === 'error' ? 'alert' : 'status'}>
-      <p>{kind === 'loading'
-        ? t('guidedDesign.capabilities.loading')
-        : t(queryErrorKey(error))}</p>
+    <div aria-live="polite" className="km-guided-status" role="alert">
+      <p>{t(queryErrorKey(error))}</p>
       {onRetry ? <button onClick={onRetry} type="button">{t('guidedDesign.retry')}</button> : null}
     </div>
   );
@@ -1819,6 +1912,20 @@ function semanticRecordKey(record: SemanticExploreRecordRef) {
     record.recordId,
     record.subrecordId
   ]);
+}
+
+function groupMutationsByRecord(mutations: GuidedDesignPreviewResponse['mutations']) {
+  const groups = new Map<string, GuidedDesignMutation[]>();
+  for (const mutation of mutations) {
+    const key = semanticRecordKey(mutation.record);
+    const group = groups.get(key);
+    if (group) group.push(mutation);
+    else groups.set(key, [mutation]);
+  }
+  return [...groups].map(([key, groupedMutations]) => ({
+    key,
+    mutations: groupedMutations
+  }));
 }
 
 function semanticRevisionKey(revision: SemanticExploreRevision) {

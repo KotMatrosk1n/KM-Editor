@@ -19,14 +19,24 @@ export const portableChangeSetSchemaVersion = 1 as const;
 export const portablePendingEditAdapterId = 'pending-edit.v1' as const;
 export const portablePendingEditAdapterSchemaVersion = 1 as const;
 export const changeSetMaximumCount = 64;
-export const changeSetMaximumOperationCount = 256;
-export const changeSetMaximumOperationsPerSet = 128;
+export const changeSetExpectedOperationCount = 768;
+export const changeSetProvisionedOperationCount = changeSetExpectedOperationCount * 4;
+export const changeSetMaximumOperationCount = changeSetProvisionedOperationCount * 2;
+export const changeSetMaximumOperationsPerSet = changeSetMaximumOperationCount;
 export const changeSetMaximumBuildVariantCount = 32;
 export const changeSetMaximumHistoryCount = 16;
 export const changeSetMaximumTagCount = 32;
 export const changeSetMaximumDependencyCount = 32;
-export const changeSetMaximumSerializedDocumentBytes = 3 * 1024 * 1024;
-export const changeSetMaximumPortablePackageBytes = 2 * 1024 * 1024;
+export const changeSetExpectedSerializedDocumentBytes = 3 * 1024 * 1024;
+export const changeSetProvisionedSerializedDocumentBytes =
+  changeSetExpectedSerializedDocumentBytes * 4;
+export const changeSetMaximumSerializedDocumentBytes =
+  changeSetProvisionedSerializedDocumentBytes * 2;
+export const changeSetExpectedPortablePackageBytes = 4 * 1024 * 1024;
+export const changeSetProvisionedPortablePackageBytes =
+  changeSetExpectedPortablePackageBytes * 4;
+export const changeSetMaximumPortablePackageBytes =
+  changeSetProvisionedPortablePackageBytes * 2;
 
 const stableIdSchema = z
   .string()

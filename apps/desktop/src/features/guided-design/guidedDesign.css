@@ -7,8 +7,17 @@
   --km-guided-muted: var(--color-text-muted);
   --km-guided-surface: var(--color-surface);
   --km-guided-surface-muted: var(--color-surface-muted);
+  container-name: km-guided-design;
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.km-guided-design > * {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
@@ -340,6 +349,7 @@
 .km-guided-target-option-list {
   display: grid;
   gap: 0.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
   max-height: 28rem;
   overflow: auto;
 }
@@ -558,7 +568,17 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 760px) {
+@container km-guided-design (min-width: 76rem) {
+  .km-guided-design:has(> .km-guided-inputs) > .km-guided-coverage {
+    grid-column: span 4;
+  }
+
+  .km-guided-design:has(> .km-guided-inputs) > .km-guided-inputs {
+    grid-column: span 8;
+  }
+}
+
+@container km-guided-design (max-width: 760px) {
   .km-guided-heading {
     align-items: stretch;
     flex-direction: column;

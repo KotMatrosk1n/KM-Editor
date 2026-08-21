@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import type { CapabilityDiscoveryViewModel } from './capabilityDiscovery';
 import type { WorkbenchLocation } from './workbenchLocation';
 import { semanticRecordRefKey } from './semanticContracts';
-import type { WorkbenchSection } from './workbenchSections';
 import type {
   ResolvedWorkspaceShortcut,
   SafeWorkspaceShortcutCommand
@@ -20,7 +18,6 @@ export const maximumWorkspaceEntitySearchTextLength = 256;
 export type WorkspaceCommandGroup =
   | 'entities'
   | 'history'
-  | 'navigation'
   | 'shell'
   | 'targets'
   | 'views';
@@ -72,32 +69,12 @@ export type WorkspaceEntityCommandSearch = (
 export function createWorkspaceCommandRegistry(options: {
   canGoBack: boolean;
   canGoForward: boolean;
-  capabilities: readonly CapabilityDiscoveryViewModel[];
-  createSectionLocation: (section: WorkbenchSection) => WorkbenchLocation;
   inspectorAvailable: boolean;
   pins: readonly WorkspaceTargetViewModel[];
   recents: readonly WorkspaceTargetViewModel[];
   shortcuts: readonly ResolvedWorkspaceShortcut[];
   views: readonly WorkspaceSavedViewViewModel[];
 }): WorkspaceCommand[] {
-  const sectionCommands: WorkspaceCommand[] = options.capabilities
-    .filter((capability) => capability.status !== 'blocked')
-    .map((capability) => ({
-      action: {
-        kind: 'navigate',
-        location: options.createSectionLocation(capability.id)
-      },
-      descriptionKey: capability.descriptionKey,
-      group: 'navigation',
-      id: `navigate.${capability.id}`,
-      isEnabled: true,
-      keywords: [capability.id, ...capability.capabilityKinds],
-      label: null,
-      labelIsRawData: false,
-      labelKey: capability.labelKey,
-      shortcut: null
-    }));
-
   const historyCommands: WorkspaceCommand[] = [
     {
       action: { kind: 'back' },
@@ -170,7 +147,6 @@ export function createWorkspaceCommandRegistry(options: {
 
   const commands = [
     ...historyCommands,
-    ...sectionCommands,
     ...targetCommands,
     ...viewCommands,
     ...shellCommands
