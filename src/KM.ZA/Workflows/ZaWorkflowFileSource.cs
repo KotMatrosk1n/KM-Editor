@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
@@ -42,20 +43,33 @@ internal sealed class ZaWorkflowFileSource
     private readonly ZaCacheManager cacheManager;
     private readonly bool bypassReusableBaseCache;
     private readonly int? maximumReadBytes;
+    private readonly int? maximumReadCount;
+    private readonly long? maximumAggregateReadBytes;
+    private readonly Dictionary<BoundedReadMemoKey, BoundedReadMemoEntry> boundedReadMemo = [];
+    private int boundedReadCount;
+    private long boundedReadBytes;
 
     public ZaWorkflowFileSource(
         ZaCacheManager? cacheManager = null,
         bool bypassReusableBaseCache = false,
-        int? maximumReadBytes = null)
+        int? maximumReadBytes = null,
+        int? maximumReadCount = null,
+        long? maximumAggregateReadBytes = null)
     {
-        if (maximumReadBytes is <= 0)
+        if (maximumReadBytes is <= 0
+            || maximumReadCount is <= 0
+            || maximumAggregateReadBytes is <= 0
+            || (maximumReadCount is null) != (maximumAggregateReadBytes is null)
+            || maximumReadCount is not null && maximumReadBytes is null)
         {
-            throw new ArgumentOutOfRangeException(nameof(maximumReadBytes));
+            throw new ArgumentOutOfRangeException(nameof(maximumReadBytes), "The bounded read budget is invalid.");
         }
 
         this.cacheManager = cacheManager ?? new ZaCacheManager();
         this.bypassReusableBaseCache = bypassReusableBaseCache;
         this.maximumReadBytes = maximumReadBytes;
+        this.maximumReadCount = maximumReadCount;
+        this.maximumAggregateReadBytes = maximumAggregateReadBytes;
     }
 
     internal int? BoundedTableRecordLimit => maximumReadBytes is null
@@ -68,9 +82,24 @@ internal sealed class ZaWorkflowFileSource
 
     internal bool IsBoundedSemanticLimit(Exception exception)
     {
-        return maximumReadBytes is not null
-            && exception is InvalidDataException
-            && exception.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase);
+        if (maximumReadBytes is null)
+        {
+            return false;
+        }
+
+        Exception? candidate = exception;
+        for (var depth = 0; candidate is not null && depth < 8; depth++)
+        {
+            if (candidate is InvalidDataException
+                && candidate.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            candidate = candidate.InnerException;
+        }
+
+        return false;
     }
 
     internal void EnsureBoundedTableCount(int count, string label)
@@ -91,7 +120,94 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
+    private void EnsureBoundedReadAvailable()
+    {
+        if (maximumReadCount is null || maximumAggregateReadBytes is null || maximumReadBytes is null)
+        {
+            return;
+        }
+
+        if (boundedReadCount >= maximumReadCount.Value
+            || boundedReadBytes > maximumAggregateReadBytes.Value - maximumReadBytes.Value)
+        {
+            throw new InvalidDataException("The workflow exceeds its bounded fresh source-read budget.");
+        }
+
+        boundedReadCount = checked(boundedReadCount + 1);
+    }
+
+    private void ObserveBoundedRead(int byteCount)
+    {
+        if (maximumReadCount is null || maximumAggregateReadBytes is null)
+        {
+            return;
+        }
+
+        var nextBytes = checked(boundedReadBytes + byteCount);
+        if (nextBytes > maximumAggregateReadBytes.Value)
+        {
+            throw new InvalidDataException("The workflow exceeds its bounded fresh source-byte budget.");
+        }
+
+        boundedReadBytes = nextBytes;
+    }
+
+    private void ObserveFailedBoundedRead(Exception exception)
+    {
+        if (maximumReadBytes is not null && !IsDefinitelyMissing(exception))
+        {
+            ObserveBoundedRead(maximumReadBytes.Value);
+        }
+    }
+
+    private static bool IsDefinitelyMissing(Exception exception)
+    {
+        Exception? candidate = exception;
+        for (var depth = 0; candidate is not null && depth < 8; depth++)
+        {
+            if (candidate is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return true;
+            }
+
+            candidate = candidate.InnerException;
+        }
+
+        return false;
+    }
+
     public ZaWorkflowFile Read(OpenedProject project, string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+        var memoKey = new BoundedReadMemoKey(
+            project.Id,
+            BaseOnly: false,
+            NormalizeVirtualPath(virtualRomFsPath));
+        if (TryGetBoundedReadMemo(memoKey, out var memoized))
+        {
+            return memoized;
+        }
+
+        EnsureBoundedReadAvailable();
+        ZaWorkflowFile result;
+        try
+        {
+            result = ReadCore(project, virtualRomFsPath);
+        }
+        catch (Exception exception)
+        {
+            ObserveFailedBoundedRead(exception);
+            StoreBoundedReadFailure(memoKey, exception);
+            throw;
+        }
+
+        ObserveBoundedRead(result.Bytes.Length);
+        StoreBoundedReadResult(memoKey, result);
+        return result;
+    }
+
+    private ZaWorkflowFile ReadCore(OpenedProject project, string virtualRomFsPath)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
@@ -218,6 +334,74 @@ internal sealed class ZaWorkflowFileSource
     }
 
     public ZaWorkflowFile ReadBase(OpenedProject project, string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+        var memoKey = new BoundedReadMemoKey(
+            project.Id,
+            BaseOnly: true,
+            NormalizeVirtualPath(virtualRomFsPath));
+        if (TryGetBoundedReadMemo(memoKey, out var memoized))
+        {
+            return memoized;
+        }
+
+        EnsureBoundedReadAvailable();
+        ZaWorkflowFile result;
+        try
+        {
+            result = ReadBaseCore(project, virtualRomFsPath);
+        }
+        catch (Exception exception)
+        {
+            ObserveFailedBoundedRead(exception);
+            StoreBoundedReadFailure(memoKey, exception);
+            throw;
+        }
+
+        ObserveBoundedRead(result.Bytes.Length);
+        StoreBoundedReadResult(memoKey, result);
+        return result;
+    }
+
+    private bool TryGetBoundedReadMemo(BoundedReadMemoKey key, out ZaWorkflowFile result)
+    {
+        result = null!;
+        if (maximumReadCount is null || !boundedReadMemo.TryGetValue(key, out var memo))
+        {
+            return false;
+        }
+
+        if (memo.Failure is not null)
+        {
+            memo.Failure.Throw();
+        }
+
+        result = memo.Result!;
+        return true;
+    }
+
+    private void StoreBoundedReadResult(BoundedReadMemoKey key, ZaWorkflowFile result)
+    {
+        if (maximumReadCount is not null)
+        {
+            boundedReadMemo.Add(key, new BoundedReadMemoEntry(result, Failure: null));
+        }
+    }
+
+    private void StoreBoundedReadFailure(BoundedReadMemoKey key, Exception exception)
+    {
+        if (maximumReadCount is not null)
+        {
+            boundedReadMemo.Add(
+                key,
+                new BoundedReadMemoEntry(
+                    Result: null,
+                    ExceptionDispatchInfo.Capture(exception)));
+        }
+    }
+
+    private ZaWorkflowFile ReadBaseCore(OpenedProject project, string virtualRomFsPath)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
@@ -1988,6 +2172,15 @@ internal sealed class ZaWorkflowFileSource
         string Path,
         bool IsStandalone,
         int Priority);
+
+    private readonly record struct BoundedReadMemoKey(
+        ProjectId ProjectId,
+        bool BaseOnly,
+        string VirtualPath);
+
+    private sealed record BoundedReadMemoEntry(
+        ZaWorkflowFile? Result,
+        ExceptionDispatchInfo? Failure);
 }
 
 internal sealed record ZaWorkflowFile(

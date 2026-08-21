@@ -133,7 +133,8 @@ public sealed record ZaMovePlayerDamageTimelineLaunchRecord(
     ZaMovePlayerDamageLocalConditionRecord LocalCondition)
 {
     public IReadOnlyList<IReadOnlyList<ZaMovePlayerDamageTimelinePathEdgeRecord>>
-        RelationshipPaths { get; init; } = [];
+        RelationshipPaths
+    { get; init; } = [];
 }
 
 public sealed record ZaMovePlayerDamageInvocationRecord(
@@ -202,6 +203,9 @@ public sealed record ZaMoveRecord(
     public ZaMoveTimingRecord? Timing { get; init; }
 
     public IReadOnlyList<ZaMoveTimingRecord> TimingRows { get; init; } = [];
+
+    public IReadOnlyDictionary<int, int> GameModuleTimingCounts { get; init; } =
+        new Dictionary<int, int>();
 
     public IReadOnlyList<ZaMovePlayerDamageRecord> PlayerDamageRows { get; init; } = [];
 

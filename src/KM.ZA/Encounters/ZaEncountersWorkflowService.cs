@@ -151,6 +151,34 @@ internal sealed class ZaEncountersWorkflowService
 
     public ZaEncountersWorkflow Load(OpenedProject project)
     {
+        return Load(
+            project,
+            includeEditorMetadata: true,
+            includeVanillaRestoreAvailability: true,
+            includeScriptedBosses: true,
+            includeEncounterTables: true);
+    }
+
+    internal ZaEncountersWorkflow LoadGameModuleReadOnly(
+        OpenedProject project,
+        bool includeScriptedBosses,
+        bool includeEncounterTables)
+    {
+        return Load(
+            project,
+            includeEditorMetadata: false,
+            includeVanillaRestoreAvailability: false,
+            includeScriptedBosses,
+            includeEncounterTables);
+    }
+
+    private ZaEncountersWorkflow Load(
+        OpenedProject project,
+        bool includeEditorMetadata,
+        bool includeVanillaRestoreAvailability,
+        bool includeScriptedBosses,
+        bool includeEncounterTables)
+    {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -166,23 +194,31 @@ internal sealed class ZaEncountersWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
-            encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
-            spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
-            outzoneAvailability = TryLoadOutzoneAvailability(project);
-            var bossBattleConsumers = TryLoadBossBattleConsumers(
-                project,
-                diagnostics,
-                out bossBattleSource);
-            tables = LoadTables(
-                spawnerSource,
-                encounterSource,
-                bossBattleConsumers,
-                labels,
-                pokemonAvailability,
-                diagnostics).ToArray();
+            if (includeEncounterTables)
+            {
+                pokemonAvailability = includeEditorMetadata
+                    ? ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel)
+                    : ZaPokemonAvailability.Unfiltered;
+                encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
+                spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
+                outzoneAvailability = includeEditorMetadata
+                    ? TryLoadOutzoneAvailability(project)
+                    : ZaOutzoneEncounterAvailability.Unknown;
+                var bossBattleConsumers = TryLoadBossBattleConsumers(
+                    project,
+                    diagnostics,
+                    out bossBattleSource);
+                tables = LoadTables(
+                    spawnerSource,
+                    encounterSource,
+                    bossBattleConsumers,
+                    labels,
+                    pokemonAvailability,
+                    includeEditorMetadata,
+                    diagnostics).ToArray();
+            }
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
+        catch (Exception exception) when ((exception is IOException or InvalidDataException or ArgumentException)
             && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
@@ -190,14 +226,24 @@ internal sealed class ZaEncountersWorkflowService
                 $"romfs/{ZaDataPaths.EncountDataArray}"));
         }
 
-        var scriptedBossCatalog = ZaScriptedBossActionCatalog.Load(
-            project,
-            fileSource,
-            labels,
-            diagnostics);
-        tables = AttachScriptedMoveOwnership(tables, scriptedBossCatalog.Profiles);
-        var editableFields = CreateEditableFields(labels, pokemonAvailability);
-        if (tables.Any(ZaEncounterPlayerPartnerCatalog.IsTargetTable))
+        var scriptedBossCatalog = includeScriptedBosses
+            ? ZaScriptedBossActionCatalog.Load(
+                project,
+                fileSource,
+                labels,
+                diagnostics,
+                includeMoveOptions: includeEditorMetadata)
+            : new ZaScriptedBossCatalogProjection([], [], 0, HasSelectorSource: false);
+        if (includeEditorMetadata)
+        {
+            tables = AttachScriptedMoveOwnership(tables, scriptedBossCatalog.Profiles);
+        }
+
+        IReadOnlyList<ZaEncounterEditableField> editableFields = includeEditorMetadata
+            ? CreateEditableFields(labels, pokemonAvailability)
+            : [];
+        if (includeEditorMetadata
+            && tables.Any(ZaEncounterPlayerPartnerCatalog.IsTargetTable))
         {
             tables = TryAttachPlayerPartner(
                 project,
@@ -228,11 +274,15 @@ internal sealed class ZaEncountersWorkflowService
             diagnostics)
         {
             ScriptedBosses = scriptedBossCatalog.Profiles,
-            ScriptedBossMoveOptions = scriptedBossCatalog.MoveOptions,
+            ScriptedBossMoveOptions = includeEditorMetadata
+                ? scriptedBossCatalog.MoveOptions
+                : [],
             PokemonAvailability = pokemonAvailability,
             OutzoneAvailability = outzoneAvailability,
         };
-        return AddVanillaRestoreAvailability(project, workflow);
+        return includeVanillaRestoreAvailability
+            ? AddVanillaRestoreAvailability(project, workflow)
+            : workflow;
     }
 
     private static ZaEncounterTableRecord[] AttachScriptedMoveOwnership(
@@ -455,10 +505,10 @@ internal sealed class ZaEncountersWorkflowService
             source = candidateSource;
             return consumers;
         }
-        catch (Exception exception) when (exception is IOException
+        catch (Exception exception) when ((exception is IOException
             or InvalidDataException
             or ArgumentException
-            or UnauthorizedAccessException
+            or UnauthorizedAccessException)
             && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
@@ -554,10 +604,10 @@ internal sealed class ZaEncountersWorkflowService
                 .ToArray();
         }
         catch (Exception exception) when (
-            exception is IOException
+            (exception is IOException
                 or InvalidDataException
                 or ArgumentException
-                or UnauthorizedAccessException
+                or UnauthorizedAccessException)
             && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
@@ -599,10 +649,10 @@ internal sealed class ZaEncountersWorkflowService
             return true;
         }
         catch (Exception exception) when (
-            exception is IOException
+            (exception is IOException
                 or InvalidDataException
                 or ArgumentException
-                or UnauthorizedAccessException
+                or UnauthorizedAccessException)
             && !fileSource.IsBoundedSemanticLimit(exception))
         {
             blockedReason = $"Verified base PokemonData could not be read: {exception.Message}";
@@ -744,28 +794,37 @@ internal sealed class ZaEncountersWorkflowService
         IReadOnlyList<ZaBossBattleConsumerRecord>? bossBattleConsumers,
         ZaTextLabelLookup labels,
         ZaPokemonAvailability pokemonAvailability,
+        bool includeEditorMetadata,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
         EnsureBoundedSpawnerTable(table);
-        var pokemonRows = ZaEncounterDataDocument.Parse(
+        IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows = includeEditorMetadata
+            ? ZaEncounterDataDocument.Parse(
+                    encounterSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit)
+                .Entries
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
+                .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal)
+            : ZaEncounterGameModulePokemonIndex.Parse(
                 encounterSource.Bytes,
                 fileSource.BoundedTableRecordLimit,
-                fileSource.BoundedNestedRecordLimit)
-            .Entries
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
-            .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+                fileSource.BoundedNestedRecordLimit);
 
         var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
-        var scalarSpawners = ZaPokemonSpawnerDataDocument.Parse(
-                spawnerSource.Bytes,
-                fileSource.BoundedTableRecordLimit,
-                fileSource.BoundedNestedRecordLimit)
-            .Entries
-            .ToDictionary(
-                entry => (entry.GroupIndex, entry.SpawnerIndex),
-                entry => entry);
+        IReadOnlyDictionary<(int GroupIndex, int SpawnerIndex), ZaPokemonSpawnerDataEntry>
+            scalarSpawners = includeEditorMetadata
+                ? ZaPokemonSpawnerDataDocument.Parse(
+                        spawnerSource.Bytes,
+                        fileSource.BoundedTableRecordLimit,
+                        fileSource.BoundedNestedRecordLimit)
+                    .Entries
+                    .ToDictionary(
+                        entry => (entry.GroupIndex, entry.SpawnerIndex),
+                        entry => entry)
+                : new Dictionary<(int GroupIndex, int SpawnerIndex), ZaPokemonSpawnerDataEntry>();
         var availableSpawnerIds = new List<string>();
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
         {
@@ -836,7 +895,8 @@ internal sealed class ZaEncountersWorkflowService
                         AppearanceMinCountField,
                         "Matching count values on every appearance object"));
                 }
-                else if (appearanceCounts.ObjectCount > 0
+                else if (includeEditorMetadata
+                    && appearanceCounts.ObjectCount > 0
                     && !appearanceCounts.CanEdit)
                 {
                     diagnostics.Add(ZaWorkflowSupport.Warning(
@@ -854,6 +914,7 @@ internal sealed class ZaEncountersWorkflowService
                     encounterSource,
                     labels,
                     pokemonAvailability,
+                    includeEditorMetadata,
                     IsNumberedWildZone(locationKey),
                     appearanceCounts,
                     diagnostics,
@@ -916,6 +977,7 @@ internal sealed class ZaEncountersWorkflowService
 
             fileSource.EnsureBoundedTableCount(db.Value.RootLength, "A Z-A spawner group");
             nestedCount = checked(nestedCount + db.Value.RootLength);
+            fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A spawner nested vectors");
             for (var spawnerIndex = 0; spawnerIndex < db.Value.RootLength; spawnerIndex++)
             {
                 var spawner = db.Value.Root(spawnerIndex);
@@ -939,6 +1001,74 @@ internal sealed class ZaEncountersWorkflowService
                     + spawner.Value.AppearanceSpawnerObjectInfoListLength
                     + spawner.Value.ActivationConditionLength);
                 fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A spawner nested vectors");
+
+                for (var appearanceIndex = 0;
+                     appearanceIndex < spawner.Value.AppearanceSpawnerObjectInfoListLength;
+                     appearanceIndex++)
+                {
+                    var appearance = spawner.Value.AppearanceSpawnerObjectInfoList(appearanceIndex);
+                    if (appearance is null)
+                    {
+                        continue;
+                    }
+
+                    fileSource.EnsureBoundedTableCount(
+                        appearance.Value.TagListLength,
+                        "A Z-A spawner appearance tag vector");
+                    nestedCount = checked(nestedCount + appearance.Value.TagListLength);
+                    fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A spawner nested vectors");
+                }
+
+                for (var conditionIndex = 0;
+                     conditionIndex < spawner.Value.ActivationConditionLength;
+                     conditionIndex++)
+                {
+                    var condition = spawner.Value.ActivationCondition(conditionIndex);
+                    if (condition is null)
+                    {
+                        continue;
+                    }
+
+                    fileSource.EnsureBoundedTableCount(
+                        condition.Value.ElementLength,
+                        "A Z-A spawner condition element vector");
+                    nestedCount = checked(nestedCount + condition.Value.ElementLength);
+                    fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A spawner nested vectors");
+                    for (var elementIndex = 0;
+                         elementIndex < condition.Value.ElementLength;
+                         elementIndex++)
+                    {
+                        var element = condition.Value.Element(elementIndex);
+                        if (element is null)
+                        {
+                            continue;
+                        }
+
+                        fileSource.EnsureBoundedTableCount(
+                            element.Value.ParamLength,
+                            "A Z-A spawner condition parameter vector");
+                        nestedCount = checked(nestedCount + element.Value.ParamLength);
+                        fileSource.EnsureBoundedNestedCount(nestedCount, "The Z-A spawner nested vectors");
+                        for (var parameterIndex = 0;
+                             parameterIndex < element.Value.ParamLength;
+                             parameterIndex++)
+                        {
+                            var parameter = element.Value.Param(parameterIndex);
+                            if (parameter is null)
+                            {
+                                continue;
+                            }
+
+                            fileSource.EnsureBoundedTableCount(
+                                parameter.Value.ParamLength,
+                                "A Z-A spawner condition value vector");
+                            nestedCount = checked(nestedCount + parameter.Value.ParamLength);
+                            fileSource.EnsureBoundedNestedCount(
+                                nestedCount,
+                                "The Z-A spawner nested vectors");
+                        }
+                    }
+                }
             }
         }
     }
@@ -950,6 +1080,7 @@ internal sealed class ZaEncountersWorkflowService
         ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels,
         ZaPokemonAvailability pokemonAvailability,
+        bool includeEditorMetadata,
         bool isNumberedWildZone,
         AppearanceCountSummary appearanceCounts,
         ICollection<ValidationDiagnostic> diagnostics,
@@ -1041,48 +1172,62 @@ internal sealed class ZaEncountersWorkflowService
                 pokemon?.OyabunProbability > 0)
             {
                 SlotMaxCount = encounter.Value.MaxCount,
-                CanEditWeight = hasMatchingScalarSlot && scalarSlot!.CanEditWeight,
-                CanEditSlotMaxCount = hasMatchingScalarSlot && scalarSlot!.CanEditMaxCount,
+                CanEditWeight = includeEditorMetadata
+                    && hasMatchingScalarSlot
+                    && scalarSlot!.CanEditWeight,
+                CanEditSlotMaxCount = includeEditorMetadata
+                    && hasMatchingScalarSlot
+                    && scalarSlot!.CanEditMaxCount,
                 AppearanceMinCount = appearanceCounts.Minimum,
                 AppearanceMaxCount = appearanceCounts.Maximum,
                 AppearanceObjectCount = appearanceCounts.ObjectCount,
-                CanEditAppearanceCounts = appearanceCounts.CanEdit,
-                CanEditAppearanceMinCount = appearanceCounts.CanEditMinimum,
-                CanEditAppearanceMaxCount = appearanceCounts.CanEditMaximum,
-                FormOptions = CreateFormOptions(
-                    speciesId,
-                    labels.Pokemon(speciesId),
-                    pokemonAvailability),
-                HeldItemId = pokemon is null ? null : pokemon.HoldItem ?? 0,
-                Ability = pokemon?.Tokusei,
-                Nature = pokemon?.Seikaku,
-                Gender = pokemon?.Sex,
-                ShinyMode = pokemon?.Rare,
-                MoveIds = pokemon is null
+                CanEditAppearanceCounts = includeEditorMetadata && appearanceCounts.CanEdit,
+                CanEditAppearanceMinCount = includeEditorMetadata && appearanceCounts.CanEditMinimum,
+                CanEditAppearanceMaxCount = includeEditorMetadata && appearanceCounts.CanEditMaximum,
+                FormOptions = includeEditorMetadata
+                    ? CreateFormOptions(
+                        speciesId,
+                        labels.Pokemon(speciesId),
+                        pokemonAvailability)
+                    : [],
+                HeldItemId = includeEditorMetadata && pokemon is not null
+                    ? pokemon.HoldItem ?? 0
+                    : null,
+                Ability = includeEditorMetadata ? pokemon?.Tokusei : null,
+                Nature = includeEditorMetadata ? pokemon?.Seikaku : null,
+                Gender = includeEditorMetadata ? pokemon?.Sex : null,
+                ShinyMode = includeEditorMetadata ? pokemon?.Rare : null,
+                MoveIds = !includeEditorMetadata || pokemon is null
                     ? null
                     : pokemon.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0],
-                HasExplicitMoves = pokemon?.WazaList is not null,
-                FlawlessIvCount = pokemon is null
+                HasExplicitMoves = includeEditorMetadata && pokemon?.WazaList is not null,
+                FlawlessIvCount = !includeEditorMetadata || pokemon is null
                     ? null
                     : ZaPokemonDataIvEncoding.ReadFlawlessIvCount(pokemon),
-                IvHp = ReadIv(pokemon?.TalentValue, stats => stats.HP),
-                IvAttack = ReadIv(pokemon?.TalentValue, stats => stats.Attack),
-                IvDefense = ReadIv(pokemon?.TalentValue, stats => stats.Defense),
-                IvSpecialAttack = ReadIv(pokemon?.TalentValue, stats => stats.SpecialAttack),
-                IvSpecialDefense = ReadIv(pokemon?.TalentValue, stats => stats.SpecialDefense),
-                IvSpeed = ReadIv(pokemon?.TalentValue, stats => stats.Speed),
-                TalentScale = pokemon?.TalentScale,
-                TalentVCount = pokemon?.TalentVNum,
-                StrengthenHp = strengthenValue?.HP,
-                StrengthenAttack = strengthenValue?.Attack,
-                StrengthenDefense = strengthenValue?.Defense,
-                StrengthenSpecialAttack = strengthenValue?.SpecialAttack,
-                StrengthenSpecialDefense = strengthenValue?.SpecialDefense,
-                StrengthenSpeed = strengthenValue?.Speed,
-                CanEditStrengthenValues = CanEditStrengthenValues(strengthenValue),
-                EncounterActivationConditions = FormatEncounterActivationConditions(pokemon),
-                StrengthenValueSummary = FormatStats(strengthenValue),
-                ItemDropSummaries = FormatItemDrops(encounterPokemon),
+                IvHp = includeEditorMetadata ? ReadIv(pokemon?.TalentValue, stats => stats.HP) : null,
+                IvAttack = includeEditorMetadata ? ReadIv(pokemon?.TalentValue, stats => stats.Attack) : null,
+                IvDefense = includeEditorMetadata ? ReadIv(pokemon?.TalentValue, stats => stats.Defense) : null,
+                IvSpecialAttack = includeEditorMetadata
+                    ? ReadIv(pokemon?.TalentValue, stats => stats.SpecialAttack)
+                    : null,
+                IvSpecialDefense = includeEditorMetadata
+                    ? ReadIv(pokemon?.TalentValue, stats => stats.SpecialDefense)
+                    : null,
+                IvSpeed = includeEditorMetadata ? ReadIv(pokemon?.TalentValue, stats => stats.Speed) : null,
+                TalentScale = includeEditorMetadata ? pokemon?.TalentScale : null,
+                TalentVCount = includeEditorMetadata ? pokemon?.TalentVNum : null,
+                StrengthenHp = includeEditorMetadata ? strengthenValue?.HP : null,
+                StrengthenAttack = includeEditorMetadata ? strengthenValue?.Attack : null,
+                StrengthenDefense = includeEditorMetadata ? strengthenValue?.Defense : null,
+                StrengthenSpecialAttack = includeEditorMetadata ? strengthenValue?.SpecialAttack : null,
+                StrengthenSpecialDefense = includeEditorMetadata ? strengthenValue?.SpecialDefense : null,
+                StrengthenSpeed = includeEditorMetadata ? strengthenValue?.Speed : null,
+                CanEditStrengthenValues = includeEditorMetadata && CanEditStrengthenValues(strengthenValue),
+                EncounterActivationConditions = includeEditorMetadata
+                    ? FormatEncounterActivationConditions(pokemon)
+                    : [],
+                StrengthenValueSummary = includeEditorMetadata ? FormatStats(strengthenValue) : null,
+                ItemDropSummaries = includeEditorMetadata ? FormatItemDrops(encounterPokemon) : [],
             };
         }
     }

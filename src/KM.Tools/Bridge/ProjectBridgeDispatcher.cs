@@ -16,6 +16,7 @@ using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.FpsPatch;
 using KM.Api.GameDump;
+using KM.Api.GameModules;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.GuidedDesign;
@@ -179,6 +180,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly ProjectRelocationApplicationService projectRelocationApplicationService;
     private readonly SemanticExploreApplicationService semanticExploreApplicationService;
     private readonly BalanceLabApplicationService balanceLabApplicationService;
+    private readonly GameModuleApplicationService gameModuleApplicationService;
     private readonly GuidedDesignApplicationService guidedDesignApplicationService;
     private readonly SemanticMergeApplicationService semanticMergeApplicationService;
     private readonly bool ownsSemanticMergeApplicationService;
@@ -235,6 +237,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         ProjectRelocationApplicationService? projectRelocationApplicationService = null,
         SemanticExploreApplicationService? semanticExploreApplicationService = null,
         BalanceLabApplicationService? balanceLabApplicationService = null,
+        GameModuleApplicationService? gameModuleApplicationService = null,
         GuidedDesignApplicationService? guidedDesignApplicationService = null,
         SemanticMergeApplicationService? semanticMergeApplicationService = null)
     {
@@ -322,6 +325,15 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 LoadSemanticExploreMovesFresh,
                 LoadSemanticExploreItemsFresh,
                 LoadSemanticExplorePokemonFresh);
+        this.gameModuleApplicationService = gameModuleApplicationService
+            ?? new GameModuleApplicationService(
+                this.semanticExploreApplicationService,
+                LoadGameModuleTeraRaidsFresh,
+                LoadGameModuleScriptedBossTimelineFresh,
+                LoadGameModuleZaCapabilityBatchFresh,
+                LoadGameModuleTrainerArchetypesFresh,
+                LoadGameModuleWildSpawnsFresh,
+                LoadGameModuleMoveVariantsFresh);
         this.guidedDesignApplicationService = guidedDesignApplicationService
             ?? new GuidedDesignApplicationService(
                 this.semanticExploreApplicationService,
@@ -601,6 +613,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.CompareExternalSemantic => DispatchCompareExternalSemantic(requestJson),
                 KmCommandNames.QuerySemanticChanges => DispatchQuerySemanticChanges(requestJson),
                 KmCommandNames.QueryBalanceLab => DispatchQueryBalanceLab(requestJson),
+                KmCommandNames.ReadGameModuleCapabilities => DispatchReadGameModuleCapabilities(requestJson),
+                KmCommandNames.QueryGameModule => DispatchQueryGameModule(requestJson),
                 KmCommandNames.ReadGuidedDesignCapabilities => DispatchReadGuidedDesignCapabilities(requestJson),
                 KmCommandNames.PreviewGuidedDesign => DispatchPreviewGuidedDesign(requestJson),
                 KmCommandNames.ImportGuidedDesignProposal => DispatchImportGuidedDesignProposal(requestJson),
@@ -1062,6 +1076,22 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<QueryBalanceLabRequest>(requestJson);
         return SerializeSuccess(
             balanceLabApplicationService.Query(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadGameModuleCapabilities(string requestJson)
+    {
+        var request = DeserializeRequest<ReadGameModuleCapabilitiesRequest>(requestJson);
+        return SerializeSuccess(
+            gameModuleApplicationService.ReadCapabilities(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchQueryGameModule(string requestJson)
+    {
+        var request = DeserializeRequest<QueryGameModuleRequest>(requestJson);
+        return SerializeSuccess(
+            gameModuleApplicationService.Query(request.Payload),
             request.RequestId);
     }
 
@@ -6007,6 +6037,98 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             SemanticExploreFailureKind.Unsupported);
     }
 
+    private TeraRaidsWorkflowDto LoadGameModuleTeraRaidsFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsScarletViolet(paths))
+        {
+            return SvBridgeMapper.ToDto(svWorkflowService.LoadGameModuleTeraRaids(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Tera Raid module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private (EncountersWorkflowDto Encounters, MovesWorkflowDto Moves)
+        LoadGameModuleScriptedBossTimelineFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var sources = zaWorkflowService.LoadGameModuleScriptedBossTimeline(paths);
+            return (
+                ZaBridgeMapper.ToDto(sources.Encounters).Workflow,
+                ZaBridgeMapper.ToDto(sources.Moves).Workflow);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected scripted boss module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private (
+        EncountersWorkflowDto ScriptedBossEncounters,
+        EncountersWorkflowDto WildEncounters,
+        MovesWorkflowDto Moves,
+        TrainersWorkflowDto Trainers)
+        LoadGameModuleZaCapabilityBatchFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var sources = zaWorkflowService.LoadGameModuleCapabilityBatch(paths);
+            return (
+                ZaBridgeMapper.ToDto(sources.ScriptedBossEncounters).Workflow,
+                ZaBridgeMapper.ToDto(sources.WildEncounters).Workflow,
+                ZaBridgeMapper.ToDto(sources.Moves).Workflow,
+                ZaBridgeMapper.ToDto(sources.Trainers).Workflow);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Z-A game module capability provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private TrainersWorkflowDto LoadGameModuleTrainerArchetypesFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadGameModuleTrainerArchetypes(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected trainer archetype module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private EncountersWorkflowDto LoadGameModuleWildSpawnsFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadGameModuleWildSpawns(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected wild spawn module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private MovesWorkflowDto LoadGameModuleMoveVariantsFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToDto(zaWorkflowService.LoadGameModuleMoveVariants(paths)).Workflow;
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected move variant module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
     private static string GetSemanticExploreErrorCode(SemanticExploreFailureKind failureKind)
     {
         return failureKind switch
@@ -6277,6 +6399,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.CompareExternalSemantic or
             KmCommandNames.QuerySemanticChanges or
             KmCommandNames.QueryBalanceLab or
+            KmCommandNames.ReadGameModuleCapabilities or
+            KmCommandNames.QueryGameModule or
             KmCommandNames.ReadGuidedDesignCapabilities or
             KmCommandNames.PreviewGuidedDesign or
             KmCommandNames.ImportGuidedDesignProposal or

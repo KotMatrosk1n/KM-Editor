@@ -277,6 +277,16 @@ internal sealed class SvTeraRaidsWorkflowService
 
     public SvTeraRaidsWorkflow Load(OpenedProject project)
     {
+        return Load(project, includeEditorMetadata: true);
+    }
+
+    internal SvTeraRaidsWorkflow LoadGameModuleReadOnly(OpenedProject project)
+    {
+        return Load(project, includeEditorMetadata: false);
+    }
+
+    private SvTeraRaidsWorkflow Load(OpenedProject project, bool includeEditorMetadata)
+    {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -286,12 +296,25 @@ internal sealed class SvTeraRaidsWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            var abilityResolver = SvTeraRaidAbilityResolver.Load(project, fileSource, labels, diagnostics);
-            var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
-            dataSet = LoadDataSet(project, diagnostics);
-            return CreateWorkflow(project, labels, abilityResolver, moveResolver, dataSet, diagnostics);
+            var abilityResolver = includeEditorMetadata
+                ? SvTeraRaidAbilityResolver.Load(project, fileSource, labels, diagnostics)
+                : SvTeraRaidAbilityResolver.Empty;
+            var moveResolver = includeEditorMetadata
+                ? SvDefaultMoveResolver.Load(project, fileSource, diagnostics)
+                : SvDefaultMoveResolver.Empty;
+            dataSet = LoadDataSet(project, diagnostics, includeEditorMetadata);
+            return CreateWorkflow(
+                project,
+                labels,
+                abilityResolver,
+                moveResolver,
+                dataSet,
+                diagnostics,
+                includeEditorMetadata);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(SvWorkflowSupport.Error(
                 $"Tera Raids could not be loaded: {exception.Message}",
@@ -310,7 +333,12 @@ internal sealed class SvTeraRaidsWorkflowService
             Array.Empty<SvTeraRaidEntry>(),
             Array.Empty<SvTeraRaidRewardTableRecord>(),
             Array.Empty<SvTeraRaidRewardTableRecord>(),
-            CreateEditableFields(labels, Array.Empty<SvTeraRaidRewardTableRecord>(), Array.Empty<SvTeraRaidRewardTableRecord>()),
+            includeEditorMetadata
+                ? CreateEditableFields(
+                    labels,
+                    Array.Empty<SvTeraRaidRewardTableRecord>(),
+                    Array.Empty<SvTeraRaidRewardTableRecord>())
+                : [],
             new SvTeraRaidsWorkflowStats(0, 0, 0, 0),
             diagnostics);
     }
@@ -418,17 +446,30 @@ internal sealed class SvTeraRaidsWorkflowService
 
     internal RaidDataSet LoadDataSet(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool includeEditorMetadata = true)
     {
         var raidSources = new List<RaidEnemySourceRows>();
+        var cumulativeRowCount = 0;
         foreach (var definition in RaidEnemySources)
         {
             try
             {
                 var source = fileSource.Read(project, definition.VirtualPath);
-                raidSources.Add(new RaidEnemySourceRows(definition, source, ReadRaidRows(source.Bytes)));
+                var rows = ReadRaidRows(
+                    source.Bytes,
+                    fileSource,
+                    cumulativeRowCount,
+                    includeEditorMetadata);
+                cumulativeRowCount = checked(cumulativeRowCount + rows.Count * 32);
+                fileSource.EnsureBoundedNestedCount(
+                    cumulativeRowCount,
+                    "The cumulative S/V Tera Raid enemy rows");
+                raidSources.Add(new RaidEnemySourceRows(definition, source, rows));
             }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            catch (Exception exception) when (
+                (exception is IOException or InvalidDataException or ArgumentException)
+                && !fileSource.IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(SvWorkflowSupport.Warning(
                     $"Tera raid source could not be loaded: {exception.Message}",
@@ -438,12 +479,25 @@ internal sealed class SvTeraRaidsWorkflowService
 
         var fixedRewardSource = ReadRequired(project, SvDataPaths.TeraRaidFixedRewardItemArray, diagnostics, "fixed reward");
         var lotteryRewardSource = ReadRequired(project, SvDataPaths.TeraRaidLotteryRewardItemArray, diagnostics, "lottery reward");
+        var fixedRewards = ReadFixedRewardRows(fixedRewardSource.Bytes, fileSource, cumulativeRowCount);
+        cumulativeRowCount = checked(cumulativeRowCount + fixedRewards.Count * 16);
+        fileSource.EnsureBoundedNestedCount(
+            cumulativeRowCount,
+            "The cumulative S/V Tera Raid and reward rows");
+        var lotteryRewards = ReadLotteryRewardRows(
+            lotteryRewardSource.Bytes,
+            fileSource,
+            cumulativeRowCount);
+        cumulativeRowCount = checked(cumulativeRowCount + lotteryRewards.Count * 31);
+        fileSource.EnsureBoundedNestedCount(
+            cumulativeRowCount,
+            "The cumulative S/V Tera Raid and reward rows");
         return new RaidDataSet(
             raidSources,
             fixedRewardSource,
-            ReadFixedRewardRows(fixedRewardSource.Bytes),
+            fixedRewards,
             lotteryRewardSource,
-            ReadLotteryRewardRows(lotteryRewardSource.Bytes));
+            lotteryRewards);
     }
 
     internal SvTeraRaidsWorkflow CreateWorkflow(
@@ -452,7 +506,8 @@ internal sealed class SvTeraRaidsWorkflowService
         SvTeraRaidAbilityResolver abilityResolver,
         SvDefaultMoveResolver moveResolver,
         RaidDataSet dataSet,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        bool includeEditorMetadata = true)
     {
         var fixedTables = BuildFixedRewardTables(dataSet.FixedRewardSource, dataSet.FixedRewards, labels).ToArray();
         var lotteryTables = BuildLotteryRewardTables(dataSet.LotteryRewardSource, dataSet.LotteryRewards, labels).ToArray();
@@ -466,7 +521,8 @@ internal sealed class SvTeraRaidsWorkflowService
                 moveResolver,
                 fixedByHash,
                 lotteryByHash,
-                project.Paths.SelectedGame))
+                project.Paths.SelectedGame,
+                includeEditorMetadata))
             .ToArray();
 
         var allDiagnostics = diagnostics.ToArray();
@@ -482,7 +538,9 @@ internal sealed class SvTeraRaidsWorkflowService
             raids,
             fixedTables,
             lotteryTables,
-            CreateEditableFields(labels, fixedTables, lotteryTables),
+            includeEditorMetadata
+                ? CreateEditableFields(labels, fixedTables, lotteryTables)
+                : [],
             new SvTeraRaidsWorkflowStats(
                 raids.Length,
                 fixedTables.Length + lotteryTables.Length,
@@ -493,14 +551,25 @@ internal sealed class SvTeraRaidsWorkflowService
 
     internal static IReadOnlyList<RaidEnemySourceDefinition> EnemySourceDefinitions => RaidEnemySources;
 
-    internal static IReadOnlyList<RaidEnemyRow> ReadRaidRows(byte[] bytes)
+    internal static IReadOnlyList<RaidEnemyRow> ReadRaidRows(
+        byte[] bytes,
+        SvWorkflowFileSource? boundedSource = null,
+        int priorNestedCount = 0,
+        bool includeEditorMetadata = true)
     {
         var table = global::RaidEnemyTable01Array.GetRootAsRaidEnemyTable01Array(new ByteBuffer(bytes));
-        var rows = new List<RaidEnemyRow>();
+        boundedSource?.EnsureBoundedTableCount(table.ValuesLength, "An S/V Tera Raid enemy table");
+        boundedSource?.EnsureBoundedNestedCount(
+            checked(priorNestedCount + table.ValuesLength * 32),
+            "An S/V Tera Raid enemy table's nested values");
+        var rows = new List<RaidEnemyRow>(table.ValuesLength);
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var wrapper = table.Values(index);
-            rows.Add(new RaidEnemyRow(wrapper?.RaidEnemyInfo is { } info ? RaidEnemyInfoRow.From(info) : null));
+            rows.Add(new RaidEnemyRow(
+                wrapper?.RaidEnemyInfo is { } info
+                    ? RaidEnemyInfoRow.From(info, includeEditorMetadata)
+                    : null));
         }
 
         return rows;
@@ -516,10 +585,17 @@ internal sealed class SvTeraRaidsWorkflowService
         return builder.SizedByteArray();
     }
 
-    internal static IReadOnlyList<FixedRewardTableRow> ReadFixedRewardRows(byte[] bytes)
+    internal static IReadOnlyList<FixedRewardTableRow> ReadFixedRewardRows(
+        byte[] bytes,
+        SvWorkflowFileSource? boundedSource = null,
+        int priorNestedCount = 0)
     {
         var table = global::RaidFixedRewardItemArray.GetRootAsRaidFixedRewardItemArray(new ByteBuffer(bytes));
-        var rows = new List<FixedRewardTableRow>();
+        boundedSource?.EnsureBoundedTableCount(table.ValuesLength, "The S/V fixed Tera Raid reward table");
+        boundedSource?.EnsureBoundedNestedCount(
+            checked(priorNestedCount + table.ValuesLength * 16),
+            "The S/V fixed Tera Raid reward table's nested values");
+        var rows = new List<FixedRewardTableRow>(table.ValuesLength);
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var row = table.Values(index);
@@ -539,10 +615,17 @@ internal sealed class SvTeraRaidsWorkflowService
         return builder.SizedByteArray();
     }
 
-    internal static IReadOnlyList<LotteryRewardTableRow> ReadLotteryRewardRows(byte[] bytes)
+    internal static IReadOnlyList<LotteryRewardTableRow> ReadLotteryRewardRows(
+        byte[] bytes,
+        SvWorkflowFileSource? boundedSource = null,
+        int priorNestedCount = 0)
     {
         var table = global::RaidLotteryRewardItemArray.GetRootAsRaidLotteryRewardItemArray(new ByteBuffer(bytes));
-        var rows = new List<LotteryRewardTableRow>();
+        boundedSource?.EnsureBoundedTableCount(table.ValuesLength, "The S/V lottery Tera Raid reward table");
+        boundedSource?.EnsureBoundedNestedCount(
+            checked(priorNestedCount + table.ValuesLength * 31),
+            "The S/V lottery Tera Raid reward table's nested values");
+        var rows = new List<LotteryRewardTableRow>(table.ValuesLength);
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var row = table.Values(index);
@@ -672,7 +755,8 @@ internal sealed class SvTeraRaidsWorkflowService
         SvDefaultMoveResolver moveResolver,
         IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> fixedRewardTables,
         IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> lotteryRewardTables,
-        ProjectGame? selectedGame)
+        ProjectGame? selectedGame,
+        bool includeEditorMetadata)
     {
         for (var index = 0; index < sourceRows.Rows.Count; index++)
         {
@@ -691,7 +775,8 @@ internal sealed class SvTeraRaidsWorkflowService
                 abilityResolver,
                 moveResolver,
                 fixedRewardTables,
-                lotteryRewardTables);
+                lotteryRewardTables,
+                includeEditorMetadata);
         }
     }
 
@@ -704,7 +789,8 @@ internal sealed class SvTeraRaidsWorkflowService
         SvTeraRaidAbilityResolver abilityResolver,
         SvDefaultMoveResolver moveResolver,
         IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> fixedRewardTables,
-        IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> lotteryRewardTables)
+        IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> lotteryRewardTables,
+        bool includeEditorMetadata)
     {
         var pokeData = info.BossPokePara ?? PokeDataBattleRow.Empty;
         var sizeData = info.BossPokeSize ?? RaidBossSizeRow.Empty;
@@ -715,7 +801,12 @@ internal sealed class SvTeraRaidsWorkflowService
         var lotteryHash = FormatHash(info.DropTableRandom);
         fixedRewardTables.TryGetValue(fixedHash, out var fixedRewards);
         lotteryRewardTables.TryGetValue(lotteryHash, out var lotteryRewards);
-        var abilitySet = abilityResolver.Resolve(speciesId, pokeData.FormId);
+        var abilitySet = includeEditorMetadata
+            ? abilityResolver.Resolve(speciesId, pokeData.FormId)
+            : SvTeraRaidAbilitySet.Empty;
+        var ivs = includeEditorMetadata
+            ? ReadIvs(pokeData)
+            : new SvTeraRaidIvsRecord(0, 0, 0, 0, 0, 0);
 
         return new SvTeraRaidEntry(
             CreateRaidRecordId(definition.SourceKey, entryIndex),
@@ -751,10 +842,10 @@ internal sealed class SvTeraRaidsWorkflowService
             FormatTeraType(pokeData.GemType),
             (int)pokeData.WazaType,
             FormatMoveMode(pokeData.WazaType),
-            ReadMoves(pokeData, labels, moveResolver),
-            ReadIvs(pokeData),
-            ReadFlawlessIvCount(pokeData),
-            FormatIvSummary(pokeData, ReadIvs(pokeData)),
+            includeEditorMetadata ? ReadMoves(pokeData, labels, moveResolver) : [],
+            ivs,
+            includeEditorMetadata ? ReadFlawlessIvCount(pokeData) : null,
+            includeEditorMetadata ? FormatIvSummary(pokeData, ivs) : string.Empty,
             (int)sizeData.ScaleType,
             FormatScaleMode(sizeData.ScaleType),
             sizeData.ScaleValue,
@@ -776,7 +867,9 @@ internal sealed class SvTeraRaidsWorkflowService
             lotteryRewards?.Preview ?? "No matching lottery rewards",
             new SvTeraRaidProvenance(source.RelativePath, source.SourceLayer, source.FileState))
         {
-            AbilityOptions = CreateAbilityModeOptions(abilitySet),
+            AbilityOptions = includeEditorMetadata
+                ? CreateAbilityModeOptions(abilitySet)
+                : [],
         };
     }
 
@@ -1431,6 +1524,9 @@ internal sealed class SvTeraRaidsWorkflowService
             {
                 var source = fileSource.Read(project, SvDataPaths.PersonalArray);
                 var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
+                fileSource.EnsureBoundedTableCount(
+                    table.EntryLength,
+                    "The S/V Tera Raid ability personal table");
                 var lookup = new Dictionary<string, SvTeraRaidAbilitySet>(StringComparer.Ordinal);
                 for (var index = 0; index < table.EntryLength; index++)
                 {
@@ -1450,7 +1546,9 @@ internal sealed class SvTeraRaidsWorkflowService
 
                 return new SvTeraRaidAbilityResolver(lookup);
             }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            catch (Exception exception) when (
+                (exception is IOException or InvalidDataException or ArgumentException)
+                && !fileSource.IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(SvWorkflowSupport.Warning(
                     $"Tera raid ability names could not be resolved from Pokemon Data: {exception.Message}",
@@ -1515,7 +1613,9 @@ internal sealed class SvTeraRaidsWorkflowService
         public RaidBossDataRow? BossDesc { get; set; }
         public RaidTimeRow? RaidTimeData { get; init; }
 
-        public static RaidEnemyInfoRow From(global::RaidEnemyInfo row)
+        public static RaidEnemyInfoRow From(
+            global::RaidEnemyInfo row,
+            bool includeEditorMetadata = true)
         {
             return new RaidEnemyInfoRow
             {
@@ -1528,10 +1628,14 @@ internal sealed class SvTeraRaidsWorkflowService
                 DropTableRandom = row.DropTableRandom,
                 CaptureRate = row.CaptureRate,
                 CaptureLv = row.CaptureLv,
-                BossPokePara = row.BossPokePara is { } pokeData ? PokeDataBattleRow.From(pokeData) : null,
+                BossPokePara = row.BossPokePara is { } pokeData
+                    ? PokeDataBattleRow.From(pokeData, includeEditorMetadata)
+                    : null,
                 BossPokeSize = row.BossPokeSize is { } sizeData ? RaidBossSizeRow.From(sizeData) : null,
                 BossDesc = row.BossDesc is { } bossData ? RaidBossDataRow.From(bossData) : null,
-                RaidTimeData = row.RaidTimeData is { } timeData ? RaidTimeRow.From(timeData) : null,
+                RaidTimeData = includeEditorMetadata && row.RaidTimeData is { } timeData
+                    ? RaidTimeRow.From(timeData)
+                    : null,
             };
         }
 
@@ -1601,7 +1705,9 @@ internal sealed class SvTeraRaidsWorkflowService
         public global::SizeType ScaleType { get; set; }
         public short ScaleValue { get; set; }
 
-        public static PokeDataBattleRow From(global::PokeDataBattle row)
+        public static PokeDataBattleRow From(
+            global::PokeDataBattle row,
+            bool includeEditorMetadata = true)
         {
             var result = new PokeDataBattleRow
             {
@@ -1616,18 +1722,25 @@ internal sealed class SvTeraRaidsWorkflowService
                 Seikaku = row.Seikaku,
                 Tokusei = row.Tokusei,
                 TalentType = row.TalentType,
-                TalentValue = row.TalentValue is { } talentValue ? ParamSetRow.From(talentValue) : null,
+                TalentValue = includeEditorMetadata && row.TalentValue is { } talentValue
+                    ? ParamSetRow.From(talentValue)
+                    : null,
                 TalentVnum = row.TalentVnum,
-                EffortValue = row.EffortValue is { } effortValue ? ParamSetRow.From(effortValue) : null,
+                EffortValue = includeEditorMetadata && row.EffortValue is { } effortValue
+                    ? ParamSetRow.From(effortValue)
+                    : null,
                 RareType = row.RareType,
                 ScaleType = row.ScaleType,
                 ScaleValue = row.ScaleValue,
             };
 
-            result.Waza[0] = row.Waza1 is { } waza1 ? WazaSetRow.From(waza1) : null;
-            result.Waza[1] = row.Waza2 is { } waza2 ? WazaSetRow.From(waza2) : null;
-            result.Waza[2] = row.Waza3 is { } waza3 ? WazaSetRow.From(waza3) : null;
-            result.Waza[3] = row.Waza4 is { } waza4 ? WazaSetRow.From(waza4) : null;
+            if (includeEditorMetadata)
+            {
+                result.Waza[0] = row.Waza1 is { } waza1 ? WazaSetRow.From(waza1) : null;
+                result.Waza[1] = row.Waza2 is { } waza2 ? WazaSetRow.From(waza2) : null;
+                result.Waza[2] = row.Waza3 is { } waza3 ? WazaSetRow.From(waza3) : null;
+                result.Waza[3] = row.Waza4 is { } waza4 ? WazaSetRow.From(waza4) : null;
+            }
             return result;
         }
 

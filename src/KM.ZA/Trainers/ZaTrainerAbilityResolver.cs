@@ -84,7 +84,7 @@ internal sealed class ZaTrainerAbilityResolver
                 labels);
         }
         catch (Exception exception) when (
-            exception is IOException or InvalidDataException or ArgumentException
+            (exception is IOException or InvalidDataException or ArgumentException)
             && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(

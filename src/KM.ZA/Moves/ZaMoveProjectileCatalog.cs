@@ -111,6 +111,90 @@ internal static class ZaMoveProjectileCatalog
                     .ToArray());
     }
 
+    public static (
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>> Invocations,
+        bool HasMatchingCatalogShape) ReadGameModulePlayerDamageInvocations(
+        byte[] activeBytes,
+        byte[] verifiedBaseBytes,
+        bool includeVerifiedVanillaTimelineLaunches,
+        int? maximumVectorEntries = null,
+        int? maximumAggregateVectorEntries = null)
+    {
+        ArgumentNullException.ThrowIfNull(activeBytes);
+        ArgumentNullException.ThrowIfNull(verifiedBaseBytes);
+
+        int? perCatalogAggregateLimit = maximumAggregateVectorEntries is null
+            ? null
+            : Math.Max(1, maximumAggregateVectorEntries.Value / 2);
+        var activeEntries = ReadEntries(
+                activeBytes,
+                maximumVectorEntries,
+                perCatalogAggregateLimit)
+            .ToArray();
+        var verifiedBaseEntries = ReadEntries(
+                verifiedBaseBytes,
+                maximumVectorEntries,
+                perCatalogAggregateLimit)
+            .ToArray();
+        EnsureUniqueGameModuleBulletIds(activeEntries);
+        EnsureUniqueGameModuleBulletIds(verifiedBaseEntries);
+        var hasMatchingCatalogShape = HaveSameGameModuleInvocationCatalogShape(
+            activeEntries,
+            verifiedBaseEntries);
+        var sourcesByBulletId = activeEntries
+            .SelectMany(CreateInvocationSources)
+            .GroupBy(source => source.BulletId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ZaMovePlayerDamageInvocationSourceRecord>)group
+                    .Select(source => source.Source)
+                    .Distinct()
+                    .OrderBy(source => source.ParentBulletId)
+                    .ThenBy(source => source.Kind, StringComparer.Ordinal)
+                    .ToArray());
+        var invocations = activeEntries
+            .Where(entry => entry.AttackId > 0)
+            .GroupBy(entry => entry.AttackId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ZaMovePlayerDamageInvocationRecord>)group
+                    .OrderBy(entry => entry.Id)
+                    .ThenBy(entry => entry.Resource, StringComparer.Ordinal)
+                    .Select(entry =>
+                    {
+                        var sources = sourcesByBulletId.GetValueOrDefault(entry.Id) ?? [];
+                        return new ZaMovePlayerDamageInvocationRecord(
+                            entry.Id,
+                            FormatResourceName(entry.Resource),
+                            entry.Resource,
+                            FormatDamageRole(sources),
+                            entry.LifetimeSeconds,
+                            entry.IsSelf,
+                            sources,
+                            includeVerifiedVanillaTimelineLaunches && hasMatchingCatalogShape
+                                ? ZaMovePlayerDamageTimelineCatalog.GetLaunches(
+                                    entry.AttackId,
+                                    entry.Id)
+                                : []);
+                    })
+                    .ToArray());
+        return (invocations, hasMatchingCatalogShape);
+    }
+
+    private static void EnsureUniqueGameModuleBulletIds(
+        IReadOnlyList<ProjectileEntry> entries)
+    {
+        var bulletIds = new HashSet<int>();
+        foreach (var entry in entries)
+        {
+            if (!bulletIds.Add(entry.Id))
+            {
+                throw new InvalidDataException(
+                    "The Z-A bullet catalog contains a duplicate bullet identity.");
+            }
+        }
+    }
+
     public static bool HaveSamePlayerDamageInvocationShape(
         IReadOnlyList<ZaMovePlayerDamageInvocationRecord> active,
         IReadOnlyList<ZaMovePlayerDamageInvocationRecord> verifiedBase)
@@ -292,6 +376,70 @@ internal static class ZaMoveProjectileCatalog
             + $"{invocation.IsSelf}:{sources}:{invocation.IncomingAncestryShape}");
     }
 
+    private static bool HaveSameGameModuleInvocationCatalogShape(
+        IReadOnlyList<ProjectileEntry> active,
+        IReadOnlyList<ProjectileEntry> verifiedBase)
+    {
+        var activeAttacks = active
+            .Where(entry => entry.AttackId > 0)
+            .Select(CreateGameModuleAttackShape)
+            .OrderBy(shape => shape.AttackId)
+            .ThenBy(shape => shape.BulletId)
+            .ThenBy(shape => shape.ResourcePath, StringComparer.Ordinal)
+            .ThenBy(shape => shape.LifetimeBits)
+            .ThenBy(shape => shape.IsSelf)
+            .ToArray();
+        var verifiedBaseAttacks = verifiedBase
+            .Where(entry => entry.AttackId > 0)
+            .Select(CreateGameModuleAttackShape)
+            .OrderBy(shape => shape.AttackId)
+            .ThenBy(shape => shape.BulletId)
+            .ThenBy(shape => shape.ResourcePath, StringComparer.Ordinal)
+            .ThenBy(shape => shape.LifetimeBits)
+            .ThenBy(shape => shape.IsSelf)
+            .ToArray();
+        if (!activeAttacks.SequenceEqual(verifiedBaseAttacks))
+        {
+            return false;
+        }
+
+        var activeEdges = active
+            .SelectMany(CreateInvocationSources)
+            .Select(CreateGameModuleEdgeShape)
+            .Distinct()
+            .OrderBy(shape => shape.ChildBulletId)
+            .ThenBy(shape => shape.ParentBulletId)
+            .ThenBy(shape => shape.Kind, StringComparer.Ordinal)
+            .ToArray();
+        var verifiedBaseEdges = verifiedBase
+            .SelectMany(CreateInvocationSources)
+            .Select(CreateGameModuleEdgeShape)
+            .Distinct()
+            .OrderBy(shape => shape.ChildBulletId)
+            .ThenBy(shape => shape.ParentBulletId)
+            .ThenBy(shape => shape.Kind, StringComparer.Ordinal)
+            .ToArray();
+        return activeEdges.SequenceEqual(verifiedBaseEdges);
+    }
+
+    private static GameModuleAttackShape CreateGameModuleAttackShape(ProjectileEntry entry)
+    {
+        return new GameModuleAttackShape(
+            entry.AttackId,
+            entry.Id,
+            entry.Resource,
+            BitConverter.DoubleToInt64Bits(entry.LifetimeSeconds),
+            entry.IsSelf);
+    }
+
+    private static GameModuleEdgeShape CreateGameModuleEdgeShape(InvocationSource source)
+    {
+        return new GameModuleEdgeShape(
+            source.BulletId,
+            source.Source.ParentBulletId,
+            source.Source.Kind);
+    }
+
     private static string CreateIncomingAncestryShape(
         int damageBulletId,
         IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationSourceRecord>>
@@ -340,4 +488,16 @@ internal static class ZaMoveProjectileCatalog
     private sealed record InvocationSource(
         int BulletId,
         ZaMovePlayerDamageInvocationSourceRecord Source);
+
+    private readonly record struct GameModuleAttackShape(
+        int AttackId,
+        int BulletId,
+        string ResourcePath,
+        long LifetimeBits,
+        bool IsSelf);
+
+    private readonly record struct GameModuleEdgeShape(
+        int ChildBulletId,
+        int ParentBulletId,
+        string Kind);
 }

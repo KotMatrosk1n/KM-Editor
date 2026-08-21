@@ -4,6 +4,7 @@ using KM.Api.ChangeSets;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.GameDump;
+using KM.Api.GameModules;
 using KM.Api.GuidedDesign;
 using KM.Api.Output;
 using KM.Api.Projects;
@@ -72,6 +73,8 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<SemanticChangeFormatDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<BalanceLabStudyDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<BalanceLabFindingSeverityDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<GameModuleDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<GameModuleMaturityDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignFeatureDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignProposalKindDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignRoundingDto>(JsonNamingPolicy.CamelCase, false));

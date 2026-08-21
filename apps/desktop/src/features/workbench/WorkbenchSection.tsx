@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   Bookmark,
+  Boxes,
   Clock3,
   Compass,
   FolderClock,
@@ -36,6 +37,7 @@ export type WorkbenchSectionProps = {
   balanceLab: ReactNode;
   bookmarks: readonly WorkspaceTargetViewModel[];
   capabilities: readonly CapabilityDiscoveryViewModel[];
+  gameModules?: ReactNode;
   guidedDesign?: ReactNode;
   semanticMerge?: ReactNode;
   note: WorkspaceNoteViewModel | null;
@@ -62,10 +64,23 @@ export type WorkbenchSectionProps = {
   workflowHome: ReactNode;
 };
 
+type WorkbenchToolId = 'balanceLab' | 'gameModules' | 'guidedDesign' | 'semanticMerge';
+
+type WorkbenchTool = {
+  backKey: string;
+  content: ReactNode;
+  descriptionKey: string;
+  icon: ReactNode;
+  id: WorkbenchToolId;
+  openKey: string;
+  titleKey: string;
+};
+
 export function WorkbenchSection({
   balanceLab,
   bookmarks,
   capabilities,
+  gameModules,
   guidedDesign,
   semanticMerge,
   note,
@@ -92,68 +107,80 @@ export function WorkbenchSection({
   workflowHome
 }: WorkbenchSectionProps) {
   const { t } = useLocalization();
-  const [openLab, setOpenLab] = useState<
-    'balanceLab' | 'guidedDesign' | 'semanticMerge' | null
-  >(null);
+  const [openTool, setOpenTool] = useState<WorkbenchToolId | null>(null);
   const labBackRef = useRef<HTMLButtonElement | null>(null);
-  const balanceLabLauncherRef = useRef<HTMLButtonElement | null>(null);
-  const guidedDesignLauncherRef = useRef<HTMLButtonElement | null>(null);
-  const semanticMergeLauncherRef = useRef<HTMLButtonElement | null>(null);
-  const previouslyOpenLabRef = useRef<
-    'balanceLab' | 'guidedDesign' | 'semanticMerge' | null
-  >(null);
+  const launcherRefs = useRef<Partial<Record<WorkbenchToolId, HTMLButtonElement | null>>>({});
+  const previouslyOpenToolRef = useRef<WorkbenchToolId | null>(null);
   const workbenchHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const openLabContent = openLab === 'balanceLab'
-    ? balanceLab
-    : openLab === 'guidedDesign'
-      ? guidedDesign
-      : openLab === 'semanticMerge'
-        ? semanticMerge
-        : null;
-  useEffect(() => {
-    if (openLab && !openLabContent) {
-      setOpenLab(null);
+  const tools: readonly WorkbenchTool[] = [
+    {
+      backKey: 'balanceLab.back',
+      content: balanceLab,
+      descriptionKey: 'balanceLab.launcher.description',
+      icon: <FlaskConical aria-hidden="true" size={17} />,
+      id: 'balanceLab',
+      openKey: 'balanceLab.open',
+      titleKey: 'balanceLab.title'
+    },
+    {
+      backKey: 'guidedDesign.back',
+      content: guidedDesign,
+      descriptionKey: 'guidedDesign.launcher.description',
+      icon: <Sparkles aria-hidden="true" size={17} />,
+      id: 'guidedDesign',
+      openKey: 'guidedDesign.open',
+      titleKey: 'guidedDesign.title'
+    },
+    {
+      backKey: 'semanticMerge.back',
+      content: semanticMerge,
+      descriptionKey: 'semanticMerge.launcher.description',
+      icon: <GitMerge aria-hidden="true" size={17} />,
+      id: 'semanticMerge',
+      openKey: 'semanticMerge.open',
+      titleKey: 'semanticMerge.title'
+    },
+    {
+      backKey: 'gameModules.back',
+      content: gameModules,
+      descriptionKey: 'gameModules.launcher.description',
+      icon: <Boxes aria-hidden="true" size={17} />,
+      id: 'gameModules',
+      openKey: 'gameModules.open',
+      titleKey: 'gameModules.title'
     }
-  }, [openLab, openLabContent]);
+  ];
+  const selectedTool = tools.find((tool) => tool.id === openTool && tool.content) ?? null;
   useEffect(() => {
-    const previous = previouslyOpenLabRef.current;
-    if (openLab && !openLabContent) return;
-    if (openLab && openLabContent && previous !== openLab) {
+    if (openTool && !selectedTool) {
+      setOpenTool(null);
+    }
+  }, [openTool, selectedTool]);
+  useEffect(() => {
+    const previous = previouslyOpenToolRef.current;
+    if (openTool && !selectedTool) return;
+    if (openTool && selectedTool && previous !== openTool) {
       labBackRef.current?.focus({ preventScroll: true });
-    } else if (!openLab && previous) {
-      const launcher = previous === 'balanceLab'
-        ? balanceLabLauncherRef.current
-        : previous === 'guidedDesign'
-          ? guidedDesignLauncherRef.current
-          : semanticMergeLauncherRef.current;
+    } else if (!openTool && previous) {
+      const launcher = launcherRefs.current[previous];
       if (launcher) launcher.focus({ preventScroll: true });
       else workbenchHeadingRef.current?.focus({ preventScroll: true });
     }
-    previouslyOpenLabRef.current = openLab && openLabContent ? openLab : null;
-  }, [openLab, openLabContent]);
-  if (openLab && openLabContent) {
-    const titleKey = openLab === 'balanceLab'
-      ? 'balanceLab.title'
-      : openLab === 'guidedDesign'
-        ? 'guidedDesign.title'
-        : 'semanticMerge.title';
-    const backKey = openLab === 'balanceLab'
-      ? 'balanceLab.back'
-      : openLab === 'guidedDesign'
-        ? 'guidedDesign.back'
-        : 'semanticMerge.back';
+    previouslyOpenToolRef.current = openTool && selectedTool ? openTool : null;
+  }, [openTool, selectedTool]);
+  if (openTool && selectedTool) {
     return (
-      <section aria-label={t(titleKey)} className="km-workbench-lab-view">
+      <section aria-label={t(selectedTool.titleKey)} className="km-workbench-lab-view">
         <button
           ref={labBackRef}
           className="secondary-button compact-button km-workbench-lab-back"
-          onClick={() => setOpenLab(null)}
+          onClick={() => setOpenTool(null)}
           type="button"
         >
           <ArrowLeft aria-hidden="true" size={15} />
-          <span>{t(backKey)}</span>
+          <span>{t(selectedTool.backKey)}</span>
         </button>
-        {openLabContent}
+        {selectedTool.content}
       </section>
     );
   }
@@ -240,65 +267,25 @@ export function WorkbenchSection({
           </div>
         </section>
 
-        {balanceLab ? (
-          <section className="km-workbench-card km-workbench-span-two">
+        {tools.filter((tool) => tool.content).map((tool) => (
+          <section className="km-workbench-card km-workbench-span-two" key={tool.id}>
             <div className="km-workbench-card-heading">
-              <FlaskConical aria-hidden="true" size={17} />
-              <h3>{t('balanceLab.title')}</h3>
+              {tool.icon}
+              <h3>{t(tool.titleKey)}</h3>
             </div>
-            <p className="km-workbench-card-description">
-              {t('balanceLab.launcher.description')}
-            </p>
+            <p className="km-workbench-card-description">{t(tool.descriptionKey)}</p>
             <button
-              ref={balanceLabLauncherRef}
+              ref={(node) => {
+                launcherRefs.current[tool.id] = node;
+              }}
               className="secondary-button compact-button"
-              onClick={() => setOpenLab('balanceLab')}
+              onClick={() => setOpenTool(tool.id)}
               type="button"
             >
-              {t('balanceLab.open')}
+              {t(tool.openKey)}
             </button>
           </section>
-        ) : null}
-
-        {guidedDesign ? (
-          <section className="km-workbench-card km-workbench-span-two">
-            <div className="km-workbench-card-heading">
-              <Sparkles aria-hidden="true" size={17} />
-              <h3>{t('guidedDesign.title')}</h3>
-            </div>
-            <p className="km-workbench-card-description">
-              {t('guidedDesign.launcher.description')}
-            </p>
-            <button
-              ref={guidedDesignLauncherRef}
-              className="secondary-button compact-button"
-              onClick={() => setOpenLab('guidedDesign')}
-              type="button"
-            >
-              {t('guidedDesign.open')}
-            </button>
-          </section>
-        ) : null}
-
-        {semanticMerge ? (
-          <section className="km-workbench-card km-workbench-span-two">
-            <div className="km-workbench-card-heading">
-              <GitMerge aria-hidden="true" size={17} />
-              <h3>{t('semanticMerge.title')}</h3>
-            </div>
-            <p className="km-workbench-card-description">
-              {t('semanticMerge.launcher.description')}
-            </p>
-            <button
-              ref={semanticMergeLauncherRef}
-              className="secondary-button compact-button"
-              onClick={() => setOpenLab('semanticMerge')}
-              type="button"
-            >
-              {t('semanticMerge.open')}
-            </button>
-          </section>
-        ) : null}
+        ))}
 
         <section className="km-workbench-card">
           <div className="km-workbench-card-heading">

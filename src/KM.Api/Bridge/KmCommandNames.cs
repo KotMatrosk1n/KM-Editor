@@ -177,6 +177,8 @@ public static class KmCommandNames
     public const string CompareExternalSemantic = "semantic.external.compare";
     public const string QuerySemanticChanges = "semantic.changes";
     public const string QueryBalanceLab = "semantic.balance-lab";
+    public const string ReadGameModuleCapabilities = "gameModules.capabilities";
+    public const string QueryGameModule = "gameModules.query";
     public const string ReadGuidedDesignCapabilities = "guidedDesign.capabilities";
     public const string PreviewGuidedDesign = "guidedDesign.preview";
     public const string ImportGuidedDesignProposal = "guidedDesign.import";

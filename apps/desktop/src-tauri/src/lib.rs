@@ -641,6 +641,8 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "semanticMerge.capabilities"
             | "semanticMerge.source.open"
             | "semanticMerge.preview"
+            | "gameModules.capabilities"
+            | "gameModules.query"
             | "recipes.export"
             | "recipes.validate"
             | "recipes.preview"
