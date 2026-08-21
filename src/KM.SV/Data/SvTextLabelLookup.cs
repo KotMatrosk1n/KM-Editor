@@ -184,7 +184,9 @@ internal sealed class SvTextLabelLookup
         {
             return null;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
                 $"Scarlet/Violet {label} could not be loaded: {exception.Message}",
@@ -214,7 +216,9 @@ internal sealed class SvTextLabelLookup
         {
             return null;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
                 $"Scarlet/Violet {label} could not be loaded: {exception.Message}",

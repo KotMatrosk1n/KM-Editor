@@ -74,6 +74,8 @@ import {
   Fragment,
   createContext,
   type ErrorInfo,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -601,6 +603,8 @@ import {
   applyWorkspaceView,
   captureWorkspaceView
 } from './workbench/viewAdapterRegistry';
+
+const GameModulesRuntime = lazy(() => import('./features/game-modules/GameModulesRuntime'));
 
 const appVersion = tauriConfig.version;
 const emptyCommunityLocalePacks: readonly CommunityLocalePack[] = [];
@@ -4529,6 +4533,18 @@ export function App({
       handleNavigateWorkspaceTarget(location);
     },
     [activeProjectId, handleNavigateWorkspaceTarget, selectedGame, setBridgeDiagnostics, t]
+  );
+  const canNavigateGameModuleRecord = useCallback(
+    (record: SemanticExploreRecordRef) => Boolean(
+      activeProjectId &&
+      selectedGame &&
+      createBalanceLabLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        record
+      })
+    ),
+    [activeProjectId, selectedGame]
   );
   const canNavigateGuidedDesignRecord = useCallback(
     (record: SemanticExploreRecordRef) => Boolean(
@@ -15514,6 +15530,30 @@ export function App({
                     revision={balanceLabRevision}
                     scope={semanticExploreScope}
                   />
+                ) : null
+              }
+              gameModules={
+                semanticExploreScope ? (
+                  <Suspense
+                    fallback={(
+                      <div aria-live="polite" className="km-workbench-empty" role="status">
+                        {t('gameModules.loading')}
+                      </div>
+                    )}
+                  >
+                    <GameModulesRuntime
+                      bridge={bridge}
+                      canNavigateRecord={canNavigateGameModuleRecord}
+                      canOpenSection={(section) => availableWorkflowSectionIds.has(section)}
+                      capabilityStatus={semanticExploreController.capabilities.status}
+                      onEnsureCapabilities={semanticExploreController.ensureCapabilities}
+                      onNavigateRecord={handleNavigateBalanceLabFinding}
+                      onOpenSection={handleNavigateSection}
+                      onStaleRevision={handleBalanceLabStaleRevision}
+                      revision={balanceLabRevision}
+                      scope={semanticExploreScope}
+                    />
+                  </Suspense>
                 ) : null
               }
               semanticMerge={

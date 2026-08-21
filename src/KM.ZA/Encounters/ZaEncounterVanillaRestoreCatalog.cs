@@ -86,14 +86,28 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             catalog = new ZaEncounterVanillaRestoreCatalog(
                 baseEncounterSource,
                 baseSpawnerSource,
-                ZaEncounterDataDocument.Parse(currentEncounterSource.Bytes),
-                ZaPokemonSpawnerDataDocument.Parse(currentSpawnerSource.Bytes),
-                ZaEncounterDataDocument.Parse(baseEncounterSource.Bytes),
-                ZaPokemonSpawnerDataDocument.Parse(baseSpawnerSource.Bytes));
+                ZaEncounterDataDocument.Parse(
+                    currentEncounterSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit),
+                ZaPokemonSpawnerDataDocument.Parse(
+                    currentSpawnerSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit),
+                ZaEncounterDataDocument.Parse(
+                    baseEncounterSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit),
+                ZaPokemonSpawnerDataDocument.Parse(
+                    baseSpawnerSource.Bytes,
+                    fileSource.BoundedTableRecordLimit,
+                    fileSource.BoundedNestedRecordLimit));
             blockedReason = string.Empty;
             return true;
         }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
+        catch (Exception exception) when (
+            exception is not OutOfMemoryException
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             catalog = null;
             blockedReason = UnavailableReason;

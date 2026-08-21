@@ -176,6 +176,16 @@ internal sealed class ZaTrainersWorkflowService
 
     public ZaTrainersWorkflow Load(OpenedProject project)
     {
+        return Load(project, includeEditorMetadata: true);
+    }
+
+    internal ZaTrainersWorkflow LoadGameModuleReadOnly(OpenedProject project)
+    {
+        return Load(project, includeEditorMetadata: false);
+    }
+
+    private ZaTrainersWorkflow Load(OpenedProject project, bool includeEditorMetadata)
+    {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -187,20 +197,33 @@ internal sealed class ZaTrainersWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, diagnostics);
-            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
-            var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
-            trainers = LoadRecords(
-                    source,
-                    labels,
-                    spriteLabels,
-                    abilityResolver,
-                    fileSource.BoundedTableRecordLimit)
-                .Select(trainer => WithPokemonFormOptions(trainer, pokemonAvailability))
-                .ToArray();
+            if (includeEditorMetadata)
+            {
+                var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, diagnostics);
+                pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
+                var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
+                trainers = LoadRecords(
+                        source,
+                        labels,
+                        spriteLabels,
+                        abilityResolver,
+                        fileSource.BoundedTableRecordLimit)
+                    .Select(trainer => WithPokemonFormOptions(trainer, pokemonAvailability))
+                    .ToArray();
+            }
+            else
+            {
+                trainers = LoadGameModuleRecords(
+                        source,
+                        labels,
+                        fileSource.BoundedTableRecordLimit ?? int.MaxValue,
+                        fileSource.BoundedNestedRecordLimit ?? int.MaxValue)
+                    .ToArray();
+            }
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
             && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
@@ -218,7 +241,9 @@ internal sealed class ZaTrainersWorkflowService
         return new ZaTrainersWorkflow(
             summary,
             trainers,
-            CreateEditableFields(labels, pokemonAvailability),
+            includeEditorMetadata
+                ? CreateEditableFields(labels, pokemonAvailability)
+                : [],
             new ZaTrainersWorkflowStats(
                 trainers.Length,
                 trainers.Sum(GetOccupiedPokemonCount),
@@ -227,6 +252,147 @@ internal sealed class ZaTrainersWorkflowService
         {
             PokemonAvailability = pokemonAvailability,
         };
+    }
+
+    private static IEnumerable<ZaTrainerRecord> LoadGameModuleRecords(
+        ZaWorkflowFile source,
+        ZaTextLabelLookup labels,
+        int maximumTableRecords,
+        int maximumNestedRecords)
+    {
+        var table = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(source.Bytes));
+        if (table.ValueLength < 0 || table.ValueLength > maximumTableRecords)
+        {
+            throw new InvalidDataException("The Z-A trainer table exceeds the bounded semantic record limit.");
+        }
+
+        if (checked((long)table.ValueLength * 6L) > maximumNestedRecords)
+        {
+            throw new InvalidDataException("The Z-A trainer party data exceeds the bounded semantic record limit.");
+        }
+
+        for (var index = 0; index < table.ValueLength; index++)
+        {
+            var trainer = table.Value(index);
+            if (trainer is not null)
+            {
+                yield return ToGameModuleRecord(index, trainer.Value, source, labels);
+            }
+        }
+    }
+
+    private static ZaTrainerRecord ToGameModuleRecord(
+        int trainerId,
+        ZaTrainerRow trainer,
+        ZaWorkflowFile source,
+        ZaTextLabelLookup labels)
+    {
+        var aiFlags = PackAiFlags(trainer);
+        var team = ReadGameModuleTeam(trainer, labels).ToArray();
+        var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
+        var isHyperspaceTrainer = ZaTrainerNameCatalog.IsHyperspaceTrainer(trainer.TrainerId);
+        var trainerName = isHyperspaceTrainer
+            ? ZaLabels.FormatTrainerIdForLookup(trainer.TrainerId!, className)
+            : labels.TrainerNameFromText(trainer.TrainerId, trainerId)
+                ?? labels.TrainerNameFromKeys(ZaTrainerNameCatalog.ResolveTrainerNameKeys(trainer.TrainerId))
+                ?? ZaLabels.FormatTrainerIdForLookup(
+                    trainer.TrainerId ?? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}",
+                    className);
+        trainerName = ZaTextLabelLookup.NormalizeTrainerName(trainerName, className);
+        if (isHyperspaceTrainer
+            && labels.HyperspaceTrainerClassFromText(trainer.TrainerId) is { } trainerArchetype)
+        {
+            className = trainerArchetype;
+        }
+
+        var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
+            ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"
+            : trainer.TrainerId!;
+        return new ZaTrainerRecord(
+            trainerId,
+            trainerName,
+            classId,
+            className,
+            location,
+            0,
+            trainer.MegaEvolution ? "Mega Evolution" : "Trainer Battle",
+            [],
+            [],
+            aiFlags,
+            [],
+            false,
+            trainer.MoneyRate,
+            0,
+            null,
+            null,
+            false,
+            "none",
+            team,
+            new ZaTrainerProvenance(
+                source.RelativePath,
+                source.RelativePath,
+                ClassSourceFile: null,
+                source.SourceLayer,
+                source.SourceLayer,
+                ClassSourceLayer: null,
+                source.FileState,
+                source.FileState,
+                ClassFileState: null),
+            trainer.Rank,
+            trainer.MegaEvolution,
+            trainer.LastHand);
+    }
+
+    private static IEnumerable<ZaTrainerPokemonRecord> ReadGameModuleTeam(
+        ZaTrainerRow trainer,
+        ZaTextLabelLookup labels)
+    {
+        var slots = new[]
+        {
+            trainer.Pokemon1,
+            trainer.Pokemon2,
+            trainer.Pokemon3,
+            trainer.Pokemon4,
+            trainer.Pokemon5,
+            trainer.Pokemon6,
+        };
+
+        for (var slot = 0; slot < slots.Length; slot++)
+        {
+            var pokemon = slots[slot];
+            if (pokemon is null || pokemon.Value.SpeciesId == 0)
+            {
+                continue;
+            }
+
+            var value = pokemon.Value;
+            var evs = value.Evs;
+            yield return new ZaTrainerPokemonRecord(
+                slot,
+                value.SpeciesId,
+                labels.Pokemon(value.SpeciesId),
+                value.FormId,
+                value.Level,
+                0,
+                null,
+                [],
+                [],
+                0,
+                string.Empty,
+                0,
+                string.Empty,
+                0,
+                string.Empty,
+                new ZaTrainerPokemonStatsRecord(
+                    evs?.Hp ?? 0,
+                    evs?.Atk ?? 0,
+                    evs?.Def ?? 0,
+                    evs?.SpAtk ?? 0,
+                    evs?.SpDef ?? 0,
+                    evs?.Agi ?? 0),
+                new ZaTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+                false);
+        }
     }
 
     internal static IEnumerable<ZaTrainerRecord> LoadRecords(

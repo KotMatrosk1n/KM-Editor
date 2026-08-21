@@ -440,7 +440,9 @@ internal sealed class ZaTextLabelLookup
         {
             return null;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Pokemon Legends Z-A {label} could not be loaded: {exception.Message}",
@@ -489,7 +491,9 @@ internal sealed class ZaTextLabelLookup
         {
             return null;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Pokemon Legends Z-A {label} could not be loaded: {exception.Message}",
@@ -538,7 +542,9 @@ internal sealed class ZaTextLabelLookup
         {
             return null;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Pokemon Legends Z-A {label} could not be loaded: {exception.Message}",

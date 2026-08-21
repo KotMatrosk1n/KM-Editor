@@ -39,9 +39,15 @@ internal sealed class ZaBossBattleContextResolver
         "Rush",
         5);
 
-    private readonly IReadOnlyList<ParsedConsumer> consumers;
-    private readonly IReadOnlyDictionary<string, IReadOnlyList<BossSpawnerIdentity>> supportSpawnersBySpecies;
-    private readonly ISet<string> dimensionRematchLineages;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<ZaBossBattleContext>> mainContextsBySpawnerId;
+    private readonly IReadOnlyDictionary<SupportIdentityKey, IReadOnlyList<ZaBossBattleContext>>
+        directSupportContextsByIdentity;
+    private readonly IReadOnlyDictionary<SpawnerLineageKey, IReadOnlyList<ZaBossBattleContext>>
+        simulationAliasContextsByLineage;
+    private readonly ISet<SpawnerLineageKey> storyWaveReuseLineages;
+    private readonly ISet<SpawnerLineageKey> missingSimulationTwoReuseLineages;
+    private readonly ISet<SpawnerLineageModeKey> missingRematchReuseLineages;
+    private readonly ISet<SpawnerLineageKey> dimensionRematchLineages;
 
     public ZaBossBattleContextResolver(
         IReadOnlyList<ZaBossBattleConsumerRecord>? consumerRecords,
@@ -55,13 +61,38 @@ internal sealed class ZaBossBattleContextResolver
             .Where(identity => identity is not null)
             .Cast<BossSpawnerIdentity>()
             .ToArray();
-        supportSpawnersBySpecies = availableBossSpawners
+        var availableSupportSpawners = availableBossSpawners
             .Where(identity => identity.Role == BossSpawnerRole.Support)
-            .GroupBy(identity => identity.Species, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => (IReadOnlyList<BossSpawnerIdentity>)group.ToArray(),
-                StringComparer.OrdinalIgnoreCase);
+            .ToArray();
+        var availableSupportIdentities = availableSupportSpawners
+            .Select(CreateSupportIdentityKey)
+            .ToHashSet();
+        var availableSimulationOneLineages = availableSupportSpawners
+            .Where(identity => string.Equals(
+                GetTerminalMode(identity.Variant),
+                "sim1",
+                StringComparison.OrdinalIgnoreCase))
+            .Select(CreateLineageKey)
+            .ToHashSet();
+        var preferredRematchModes = availableSupportSpawners
+            .GroupBy(CreateLineageKey)
+            .Select(group => new
+            {
+                Lineage = group.Key,
+                Mode = group.Any(identity => string.Equals(
+                    GetTerminalMode(identity.Variant),
+                    "rus2",
+                    StringComparison.OrdinalIgnoreCase))
+                        ? "rus2"
+                        : group.Any(identity => string.Equals(
+                            GetTerminalMode(identity.Variant),
+                            "rus",
+                            StringComparison.OrdinalIgnoreCase))
+                                ? "rus"
+                                : null,
+            })
+            .Where(candidate => candidate.Mode is not null)
+            .ToDictionary(candidate => candidate.Lineage, candidate => candidate.Mode!);
 
         var parsedRecords = (consumerRecords ?? [])
             .Select(record => new
@@ -76,10 +107,9 @@ internal sealed class ZaBossBattleContextResolver
             .Select(record => record.Main ?? record.Support!)
             .Where(identity => IsDimensionRematchVariant(identity.Variant))
             .Select(CreateLineageKey)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        consumers = parsedRecords
+            .ToHashSet();
+        var consumers = parsedRecords
             .Select(record => new ParsedConsumer(
-                record.Record,
                 record.Main,
                 record.Support,
                 ResolveConsumerContext(
@@ -88,6 +118,74 @@ internal sealed class ZaBossBattleContextResolver
                     record.Support,
                     dimensionRematchLineages.Contains(CreateLineageKey(record.Main ?? record.Support!)))))
             .ToArray();
+
+        var mainContexts = new Dictionary<string, List<ZaBossBattleContext>>(StringComparer.OrdinalIgnoreCase);
+        var directSupportContexts = new Dictionary<SupportIdentityKey, List<ZaBossBattleContext>>();
+        var simulationAliasContexts = new Dictionary<SpawnerLineageKey, List<ZaBossBattleContext>>();
+        storyWaveReuseLineages = new HashSet<SpawnerLineageKey>();
+        missingSimulationTwoReuseLineages = new HashSet<SpawnerLineageKey>();
+        missingRematchReuseLineages = new HashSet<SpawnerLineageModeKey>();
+        foreach (var consumer in consumers)
+        {
+            if (consumer.Main is not null)
+            {
+                AddContext(mainContexts, consumer.Main.RawId, consumer.Context);
+            }
+
+            if (consumer.Support is null)
+            {
+                continue;
+            }
+
+            var supportIdentity = CreateSupportIdentityKey(consumer.Support);
+            var supportLineage = CreateLineageKey(consumer.Support);
+            AddContext(directSupportContexts, supportIdentity, consumer.Context);
+            if (string.Equals(
+                GetTerminalMode(consumer.Support.Variant),
+                "sim",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                AddContext(simulationAliasContexts, supportLineage, consumer.Context);
+            }
+
+            if (consumer.Context.Key == StoryContext.Key
+                && TryGetPositiveIntegerTail(consumer.Support.Variant, out _))
+            {
+                storyWaveReuseLineages.Add(supportLineage);
+            }
+
+            var hasDirectSupportSpawner = availableSupportIdentities.Contains(supportIdentity)
+                || (string.Equals(
+                        GetTerminalMode(consumer.Support.Variant),
+                        "sim",
+                        StringComparison.OrdinalIgnoreCase)
+                    && availableSimulationOneLineages.Contains(supportLineage));
+            if (hasDirectSupportSpawner)
+            {
+                continue;
+            }
+
+            if (consumer.Context.Key == SimulationDlcContext.Key)
+            {
+                missingSimulationTwoReuseLineages.Add(supportLineage);
+            }
+
+            if (consumer.Context.Key == RematchContext.Key
+                && string.Equals(
+                    GetTerminalMode(consumer.Support.Variant),
+                    "re",
+                    StringComparison.OrdinalIgnoreCase)
+                && preferredRematchModes.TryGetValue(supportLineage, out var preferredRematchMode))
+            {
+                missingRematchReuseLineages.Add(new SpawnerLineageModeKey(
+                    supportLineage,
+                    preferredRematchMode));
+            }
+        }
+
+        mainContextsBySpawnerId = FreezeContextIndex(mainContexts, StringComparer.OrdinalIgnoreCase);
+        directSupportContextsByIdentity = FreezeContextIndex(directSupportContexts);
+        simulationAliasContextsByLineage = FreezeContextIndex(simulationAliasContexts);
     }
 
     public ZaBossBattleTableContext? Resolve(
@@ -102,28 +200,46 @@ internal sealed class ZaBossBattleContextResolver
         ArgumentNullException.ThrowIfNull(encounterDataIds);
 
         var candidates = new List<ContextCandidate>();
-        foreach (var consumer in consumers)
+        if (spawner.Role == BossSpawnerRole.Main
+            && mainContextsBySpawnerId.TryGetValue(spawner.RawId, out var mainContexts))
         {
-            if (consumer.Main is not null
-                && string.Equals(
-                    consumer.Record.MainSpawnerId,
-                    spawner.RawId,
-                    StringComparison.OrdinalIgnoreCase))
+            AddCandidates(candidates, mainContexts, 0);
+        }
+
+        if (spawner.Role == BossSpawnerRole.Support)
+        {
+            var supportIdentity = CreateSupportIdentityKey(spawner);
+            var supportLineage = CreateLineageKey(spawner);
+            if (directSupportContextsByIdentity.TryGetValue(supportIdentity, out var directContexts))
             {
-                candidates.Add(new ContextCandidate(consumer.Context, 0));
+                AddCandidates(candidates, directContexts, 1);
             }
 
-            if (consumer.Support is not null
-                && TryGetDirectSupportMatchRank(consumer.Support, spawner, out var matchRank))
+            var terminalMode = GetTerminalMode(spawner.Variant);
+            if (string.Equals(terminalMode, "sim1", StringComparison.OrdinalIgnoreCase)
+                && simulationAliasContextsByLineage.TryGetValue(supportLineage, out var aliasContexts))
             {
-                candidates.Add(new ContextCandidate(consumer.Context, matchRank));
+                AddCandidates(candidates, aliasContexts, 1);
             }
 
-            if (IsStoryWaveReuse(consumer, spawner)
-                || IsMissingSimulationTwoSupportReuse(consumer, spawner)
-                || IsMissingRematchSupportReuse(consumer, spawner))
+            if (TryGetPositiveIntegerTail(spawner.Variant, out _)
+                && storyWaveReuseLineages.Contains(supportLineage))
             {
-                candidates.Add(new ContextCandidate(consumer.Context, 3));
+                candidates.Add(new ContextCandidate(StoryContext, 3));
+            }
+
+            if ((string.Equals(terminalMode, "sim1", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(terminalMode, "sim", StringComparison.OrdinalIgnoreCase))
+                && missingSimulationTwoReuseLineages.Contains(supportLineage))
+            {
+                candidates.Add(new ContextCandidate(SimulationDlcContext, 3));
+            }
+
+            if (missingRematchReuseLineages.Contains(new SpawnerLineageModeKey(
+                supportLineage,
+                terminalMode)))
+            {
+                candidates.Add(new ContextCandidate(RematchContext, 3));
             }
         }
 
@@ -165,119 +281,53 @@ internal sealed class ZaBossBattleContextResolver
             waveRank);
     }
 
-    private bool IsStoryWaveReuse(ParsedConsumer consumer, BossSpawnerIdentity spawner)
+    private static void AddCandidates(
+        ICollection<ContextCandidate> candidates,
+        IEnumerable<ZaBossBattleContext> contexts,
+        int priority)
     {
-        return consumer.Context.Key == StoryContext.Key
-            && consumer.Support is not null
-            && spawner.Role == BossSpawnerRole.Support
-            && string.Equals(consumer.Support.Species, spawner.Species, StringComparison.OrdinalIgnoreCase)
-            && TryGetPositiveIntegerTail(consumer.Support.Variant, out _)
-            && TryGetPositiveIntegerTail(spawner.Variant, out _)
-            && string.Equals(
-                GetVariantStem(consumer.Support.Variant),
-                GetVariantStem(spawner.Variant),
-                StringComparison.OrdinalIgnoreCase);
+        foreach (var context in contexts)
+        {
+            candidates.Add(new ContextCandidate(context, priority));
+        }
     }
 
-    private bool IsMissingSimulationTwoSupportReuse(
-        ParsedConsumer consumer,
-        BossSpawnerIdentity spawner)
+    private static void AddContext<TKey>(
+        IDictionary<TKey, List<ZaBossBattleContext>> contextsByKey,
+        TKey key,
+        ZaBossBattleContext context)
+        where TKey : notnull
     {
-        if (consumer.Context.Key != SimulationDlcContext.Key
-            || consumer.Support is null
-            || spawner.Role != BossSpawnerRole.Support
-            || !string.Equals(consumer.Support.Species, spawner.Species, StringComparison.OrdinalIgnoreCase)
-            || HasDirectSupportSpawner(consumer.Support))
+        if (!contextsByKey.TryGetValue(key, out var contexts))
         {
-            return false;
+            contexts = [];
+            contextsByKey.Add(key, contexts);
         }
 
-        var mode = GetTerminalMode(spawner.Variant);
-        return (string.Equals(mode, "sim1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(mode, "sim", StringComparison.OrdinalIgnoreCase))
-            && string.Equals(
-                GetVariantStem(consumer.Support.Variant),
-                GetVariantStem(spawner.Variant),
-                StringComparison.OrdinalIgnoreCase);
+        contexts.Add(context);
     }
 
-    private bool IsMissingRematchSupportReuse(
-        ParsedConsumer consumer,
-        BossSpawnerIdentity spawner)
+    private static IReadOnlyDictionary<TKey, IReadOnlyList<ZaBossBattleContext>> FreezeContextIndex<TKey>(
+        IReadOnlyDictionary<TKey, List<ZaBossBattleContext>> contextsByKey,
+        IEqualityComparer<TKey>? comparer = null)
+        where TKey : notnull
     {
-        if (consumer.Context.Key != RematchContext.Key
-            || consumer.Support is null
-            || !string.Equals(GetTerminalMode(consumer.Support.Variant), "re", StringComparison.OrdinalIgnoreCase)
-            || spawner.Role != BossSpawnerRole.Support
-            || !string.Equals(consumer.Support.Species, spawner.Species, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(
-                GetVariantStem(consumer.Support.Variant),
-                GetVariantStem(spawner.Variant),
-                StringComparison.OrdinalIgnoreCase)
-            || HasDirectSupportSpawner(consumer.Support)
-            || !supportSpawnersBySpecies.TryGetValue(spawner.Species, out var supportSpawners))
+        var frozen = new Dictionary<TKey, IReadOnlyList<ZaBossBattleContext>>(
+            contextsByKey.Count,
+            comparer ?? EqualityComparer<TKey>.Default);
+        foreach (var pair in contextsByKey)
         {
-            return false;
+            frozen.Add(
+                pair.Key,
+                pair.Value
+                .GroupBy(context => context.Key, StringComparer.Ordinal)
+                .Select(group => group
+                    .OrderBy(context => context.Rank)
+                    .First())
+                .ToArray());
         }
 
-        var matchingLineageSpawners = supportSpawners
-            .Where(candidate => string.Equals(
-                GetVariantStem(consumer.Support.Variant),
-                GetVariantStem(candidate.Variant),
-                StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        var preferredVariant = matchingLineageSpawners.Any(candidate =>
-            string.Equals(GetTerminalMode(candidate.Variant), "rus2", StringComparison.OrdinalIgnoreCase))
-                ? "rus2"
-                : matchingLineageSpawners.Any(candidate =>
-                    string.Equals(GetTerminalMode(candidate.Variant), "rus", StringComparison.OrdinalIgnoreCase))
-                        ? "rus"
-                        : null;
-        return preferredVariant is not null
-            && string.Equals(
-                GetTerminalMode(spawner.Variant),
-                preferredVariant,
-                StringComparison.OrdinalIgnoreCase);
-    }
-
-    private bool HasDirectSupportSpawner(BossSpawnerIdentity supportReference)
-    {
-        return supportSpawnersBySpecies.TryGetValue(supportReference.Species, out var spawners)
-            && spawners.Any(spawner =>
-                TryGetDirectSupportMatchRank(supportReference, spawner, out _));
-    }
-
-    private static bool TryGetDirectSupportMatchRank(
-        BossSpawnerIdentity supportReference,
-        BossSpawnerIdentity spawner,
-        out int rank)
-    {
-        rank = int.MaxValue;
-        if (supportReference.Role != BossSpawnerRole.Support
-            || spawner.Role != BossSpawnerRole.Support
-            || !string.Equals(supportReference.Species, spawner.Species, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (string.Equals(supportReference.Variant, spawner.Variant, StringComparison.OrdinalIgnoreCase))
-        {
-            rank = 1;
-            return true;
-        }
-
-        if (string.Equals(GetTerminalMode(supportReference.Variant), "sim", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(GetTerminalMode(spawner.Variant), "sim1", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(
-                GetVariantStem(supportReference.Variant),
-                GetVariantStem(spawner.Variant),
-                StringComparison.OrdinalIgnoreCase))
-        {
-            rank = 1;
-            return true;
-        }
-
-        return false;
+        return frozen;
     }
 
     private static ZaBossBattleContext ResolveConsumerContext(
@@ -539,9 +589,18 @@ internal sealed class ZaBossBattleContextResolver
         return (null, null);
     }
 
-    private static string CreateLineageKey(BossSpawnerIdentity identity)
+    private static SupportIdentityKey CreateSupportIdentityKey(BossSpawnerIdentity identity)
     {
-        return $"{identity.Species}|{GetVariantStem(identity.Variant)}";
+        return new SupportIdentityKey(
+            identity.Species.ToLowerInvariant(),
+            identity.Variant.ToLowerInvariant());
+    }
+
+    private static SpawnerLineageKey CreateLineageKey(BossSpawnerIdentity identity)
+    {
+        return new SpawnerLineageKey(
+            identity.Species.ToLowerInvariant(),
+            GetVariantStem(identity.Variant));
     }
 
     private static string GetTerminalMode(string variant)
@@ -644,7 +703,6 @@ internal sealed class ZaBossBattleContextResolver
     }
 
     private sealed record ParsedConsumer(
-        ZaBossBattleConsumerRecord Record,
         BossSpawnerIdentity? Main,
         BossSpawnerIdentity? Support,
         ZaBossBattleContext Context);
@@ -658,6 +716,18 @@ internal sealed class ZaBossBattleContextResolver
     private readonly record struct ContextCandidate(
         ZaBossBattleContext Context,
         int Priority);
+
+    private readonly record struct SupportIdentityKey(
+        string Species,
+        string Variant);
+
+    private readonly record struct SpawnerLineageKey(
+        string Species,
+        string VariantStem);
+
+    private readonly record struct SpawnerLineageModeKey(
+        SpawnerLineageKey Lineage,
+        string Mode);
 
     private enum BossSpawnerRole
     {

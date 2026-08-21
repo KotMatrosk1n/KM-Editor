@@ -175,7 +175,7 @@ public sealed class SvWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         var language = SvGameTextLanguage.Resolve(paths);
-        var virtualPaths = new[]
+        var virtualPaths = new List<string>
         {
             SvDataPaths.ItemDataArray,
             SvDataPaths.PersonalArray,
@@ -207,9 +207,13 @@ public sealed class SvWorkflowService
             SvDataPaths.TrainerTypes(SvGameTextLanguage.English),
             SvDataPaths.TrainerTypeKeys(SvGameTextLanguage.English),
         };
+        virtualPaths.AddRange(SvTeraRaidsWorkflowService.EnemySourceDefinitions
+            .Select(definition => definition.VirtualPath));
+        virtualPaths.Add(SvDataPaths.TeraRaidFixedRewardItemArray);
+        virtualPaths.Add(SvDataPaths.TeraRaidLotteryRewardItemArray);
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "sv-semantic-source-v3");
+        AppendSemanticSourceHash(hash, "sv-semantic-source-v4");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
         if (SvCompressionRuntime.TryResolveRequiredFilePath(
                 paths.ScarletVioletSupportFolderPath,
@@ -227,15 +231,22 @@ public sealed class SvWorkflowService
         {
             AppendSemanticSourceHash(hash, "support-runtime-missing");
         }
-        var sourceCount = 0;
+        var boundedVirtualPaths = virtualPaths
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (boundedVirtualPaths.Length > MaximumSemanticSourceFiles)
+        {
+            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
+        }
+
         long sourceBytes = 0;
-        foreach (var virtualPath in virtualPaths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        foreach (var virtualPath in boundedVirtualPaths)
         {
             AppendSemanticSourceHash(hash, virtualPath);
             AppendSemanticSourcePayload(
                 hash,
                 () => (semanticFileSource.ReadBaseBytesFresh(paths, virtualPath), "base"),
-                ref sourceCount,
                 ref sourceBytes);
             AppendSemanticSourcePayload(
                 hash,
@@ -244,7 +255,6 @@ public sealed class SvWorkflowService
                     var source = semanticFileSource.ReadCurrentSourceFresh(paths, virtualPath);
                     return (source.Bytes, source.Layer.ToString());
                 },
-                ref sourceCount,
                 ref sourceBytes);
         }
 
@@ -304,6 +314,19 @@ public sealed class SvWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new SvEncountersWorkflowService(freshFileSource).Load(project);
+    }
+
+    public SvTeraRaidsWorkflow LoadGameModuleTeraRaids(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile,
+            MaximumSemanticSourceFiles,
+            MaximumSemanticSourceBytes);
+        return new SvTeraRaidsWorkflowService(freshFileSource).LoadGameModuleReadOnly(project);
     }
 
     public SvItemsEditResult UpdateItemFieldsFreshBounded(
@@ -420,14 +443,8 @@ public sealed class SvWorkflowService
     private static void AppendSemanticSourcePayload(
         IncrementalHash hash,
         Func<(byte[] Bytes, string Origin)> read,
-        ref int sourceCount,
         ref long sourceBytes)
     {
-        if (++sourceCount > MaximumSemanticSourceFiles)
-        {
-            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
-        }
-
         try
         {
             var payload = read();

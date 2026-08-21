@@ -5,6 +5,7 @@ using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.ScriptedBosses;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Moves;
 
@@ -158,7 +159,8 @@ public sealed record MovePlayerDamageTimelineLaunchRecordDto(
     MovePlayerDamageLocalConditionRecordDto LocalCondition)
 {
     public IReadOnlyList<IReadOnlyList<MovePlayerDamageTimelinePathEdgeRecordDto>>
-        RelationshipPaths { get; init; } = [];
+        RelationshipPaths
+    { get; init; } = [];
 }
 
 public sealed record MovePlayerDamageInvocationRecordDto(
@@ -224,6 +226,10 @@ public sealed record MoveRecordDto(
     public MoveTimingRecordDto? Timing { get; init; }
 
     public IReadOnlyList<MoveTimingRecordDto> TimingRows { get; init; } = [];
+
+    [JsonIgnore]
+    public IReadOnlyDictionary<int, int> GameModuleTimingCounts { get; init; } =
+        new Dictionary<int, int>();
 
     public IReadOnlyList<MovePlayerDamageRecordDto> PlayerDamageRows { get; init; } = [];
 

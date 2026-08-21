@@ -269,15 +269,22 @@ public sealed class ZaWorkflowService
         {
             AppendSemanticSourceHash(hash, "support-runtime-missing");
         }
-        var sourceCount = 0;
+        var boundedVirtualPaths = virtualPaths
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (boundedVirtualPaths.Length > MaximumSemanticSourceFiles)
+        {
+            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
+        }
+
         long sourceBytes = 0;
-        foreach (var virtualPath in virtualPaths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        foreach (var virtualPath in boundedVirtualPaths)
         {
             AppendSemanticSourceHash(hash, virtualPath);
             AppendSemanticSourcePayload(
                 hash,
                 () => (semanticFileSource.ReadBaseBytesFresh(paths, virtualPath), "base"),
-                ref sourceCount,
                 ref sourceBytes);
             AppendSemanticSourcePayload(
                 hash,
@@ -286,7 +293,6 @@ public sealed class ZaWorkflowService
                     var source = semanticFileSource.ReadCurrentSourceFresh(paths, virtualPath);
                     return (source.Bytes, source.Layer.ToString());
                 },
-                ref sourceCount,
                 ref sourceBytes);
         }
 
@@ -346,6 +352,77 @@ public sealed class ZaWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new ZaEncountersWorkflowService(freshFileSource).Load(project);
+    }
+
+    public (ZaEncountersWorkflow Encounters, ZaMovesWorkflow Moves) LoadGameModuleScriptedBossTimeline(
+        ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = CreateGameModuleFileSource();
+        return (
+            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleReadOnly(
+                project,
+                includeScriptedBosses: true,
+                includeEncounterTables: false),
+            new ZaMovesWorkflowService(freshFileSource).LoadGameModuleReadOnly(project));
+    }
+
+    public (
+        ZaEncountersWorkflow ScriptedBossEncounters,
+        ZaEncountersWorkflow WildEncounters,
+        ZaMovesWorkflow Moves,
+        ZaTrainersWorkflow Trainers)
+        LoadGameModuleCapabilityBatch(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var freshFileSource = CreateGameModuleFileSource();
+        return (
+            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleReadOnly(
+                project,
+                includeScriptedBosses: true,
+                includeEncounterTables: false),
+            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleReadOnly(
+                project,
+                includeScriptedBosses: false,
+                includeEncounterTables: true),
+            new ZaMovesWorkflowService(freshFileSource).LoadGameModuleReadOnly(project),
+            new ZaTrainersWorkflowService(freshFileSource).LoadGameModuleReadOnly(project));
+    }
+
+    public ZaTrainersWorkflow LoadGameModuleTrainerArchetypes(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaTrainersWorkflowService(CreateGameModuleFileSource()).LoadGameModuleReadOnly(project);
+    }
+
+    public ZaEncountersWorkflow LoadGameModuleWildSpawns(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaEncountersWorkflowService(CreateGameModuleFileSource()).LoadGameModuleReadOnly(
+            project,
+            includeScriptedBosses: false,
+            includeEncounterTables: true);
+    }
+
+    public ZaMovesWorkflow LoadGameModuleMoveVariants(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaMovesWorkflowService(CreateGameModuleFileSource()).LoadGameModuleReadOnly(project);
+    }
+
+    private ZaWorkflowFileSource CreateGameModuleFileSource()
+    {
+        return new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile,
+            MaximumSemanticSourceFiles,
+            MaximumSemanticSourceBytes);
     }
 
     public ZaItemsEditResult UpdateItemFieldsFreshBounded(
@@ -479,14 +556,8 @@ public sealed class ZaWorkflowService
     private static void AppendSemanticSourcePayload(
         IncrementalHash hash,
         Func<(byte[] Bytes, string Origin)> read,
-        ref int sourceCount,
         ref long sourceBytes)
     {
-        if (++sourceCount > MaximumSemanticSourceFiles)
-        {
-            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
-        }
-
         try
         {
             var payload = read();

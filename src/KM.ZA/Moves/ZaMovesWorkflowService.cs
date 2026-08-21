@@ -18,6 +18,8 @@ internal sealed class ZaMovesWorkflowService
     private const string WorkflowLabel = "Moves";
     private const string WorkflowDescription =
         "Edit Pokemon Legends Z-A runtime battle parameters, variants, accuracy, cooldown, and verified boss player damage data.";
+    private const int MaximumGameModuleRecordCount = 50_000;
+    private const int MaximumGameModuleTimingBucketCount = 100_000;
 
     public const string CanUseMoveField = "canUseMove";
     public const string TypeField = "type";
@@ -491,7 +493,9 @@ internal sealed class ZaMovesWorkflowService
                 playerDamageData = candidateData;
                 basePlayerDamageData = candidateBaseData;
             }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            catch (Exception exception) when (
+                (exception is IOException or InvalidDataException or ArgumentException)
+                && !fileSource.IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(ZaWorkflowSupport.Warning(
                     $"Boss player damage controls are unavailable because the attack parameter data could not be verified: {exception.Message}",
@@ -537,7 +541,9 @@ internal sealed class ZaMovesWorkflowService
                         expected: "The verified base bullet catalog associated with the effect-timeline evidence"));
                 }
             }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            catch (Exception exception) when (
+                (exception is IOException or InvalidDataException or ArgumentException)
+                && !fileSource.IsBoundedSemanticLimit(exception))
             {
                 diagnostics.Add(ZaWorkflowSupport.Warning(
                     $"Projectile override fields and Boss player-damage invocation-backed editing are unavailable because the bullet catalog could not be verified: {exception.Message}",
@@ -614,7 +620,9 @@ internal sealed class ZaMovesWorkflowService
                     spawnLocators))
                 .ToArray();
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
                 $"Moves could not be loaded: {exception.Message}",
@@ -651,6 +659,154 @@ internal sealed class ZaMovesWorkflowService
             ProjectileCatalogSources = projectileCatalogSources,
             SpawnLocators = spawnLocators,
         };
+    }
+
+    internal ZaMovesWorkflow LoadGameModuleReadOnly(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var diagnostics = new List<ValidationDiagnostic>();
+        ZaWorkflowFile? source = null;
+        ZaWorkflowFile? battleSource = null;
+        ZaWorkflowFile? timingSource = null;
+        ZaWorkflowFile? playerDamageSource = null;
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageValues>>
+            playerDamageByRuntimeMove = new Dictionary<int, IReadOnlyList<ZaMovePlayerDamageValues>>();
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
+            playerDamageInvocations = new Dictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>();
+        var playerDamageInvocationShapeMatches = false;
+        var verifiedVanillaTimelineCatalogAvailable = false;
+        var labels = ZaTextLabelLookup.None();
+        var moves = Array.Empty<ZaMoveRecord>();
+
+        try
+        {
+            labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            source = fileSource.Read(project, ZaDataPaths.MoveDataArray);
+            battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+            timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
+
+            var battleTable = ZaRuntimeMoveData.ReadBattle(
+                battleSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
+            var timingTable = ZaRuntimeMoveData.ReadTiming(
+                timingSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
+
+            playerDamageSource = fileSource.Read(project, ZaDataPaths.AiAttackParamArray);
+            var playerDamageData = ZaMovePlayerDamageDataDocument.Parse(
+                playerDamageSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
+            playerDamageByRuntimeMove = IndexPlayerDamageValues(playerDamageData.Values);
+
+            try
+            {
+                var projectileSource = fileSource.Read(project, ZaDataPaths.AiBulletParamArray);
+                var baseProjectileSource = fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray);
+                var hasVerifiedVanillaTimelineCatalog =
+                    ZaMovePlayerDamageTimelineCatalog.MatchesVerifiedBaseBulletCatalog(
+                        baseProjectileSource.Bytes);
+                var invocationProjection =
+                    ZaMoveProjectileCatalog.ReadGameModulePlayerDamageInvocations(
+                        projectileSource.Bytes,
+                        baseProjectileSource.Bytes,
+                        hasVerifiedVanillaTimelineCatalog,
+                        fileSource.BoundedTableRecordLimit,
+                        fileSource.BoundedNestedRecordLimit);
+                playerDamageInvocations = invocationProjection.Invocations;
+                playerDamageInvocationShapeMatches = invocationProjection.HasMatchingCatalogShape;
+                verifiedVanillaTimelineCatalogAvailable = hasVerifiedVanillaTimelineCatalog
+                    && playerDamageInvocationShapeMatches;
+                if (!hasVerifiedVanillaTimelineCatalog)
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        "Verified-vanilla effect-timeline launch descriptions are unavailable because the base bullet catalog does not match the researched timeline build. Active BulletParam invocation descriptors remain available.",
+                        $"romfs/{ZaDataPaths.AiBulletParamArray}",
+                        expected: "The verified base bullet catalog associated with the effect-timeline evidence"));
+                }
+                else if (!playerDamageInvocationShapeMatches)
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        "Verified-vanilla effect-timeline launch counts are unavailable because the active and verified-base bullet invocation shapes differ.",
+                        $"romfs/{ZaDataPaths.AiBulletParamArray}",
+                        expected: "An exact active and verified-base bullet invocation shape match"));
+                }
+            }
+            catch (Exception exception) when (
+                (exception is IOException or InvalidDataException or ArgumentException)
+                && !fileSource.IsBoundedSemanticLimit(exception))
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Boss player-damage invocation analysis is unavailable because the bullet catalog could not be verified: {exception.Message}",
+                    $"romfs/{ZaDataPaths.AiBulletParamArray}",
+                    expected: "A structurally valid active and verified-base bullet parameter catalog"));
+            }
+
+            var battleByMove = IndexGameModuleBattleRows(
+                ZaRuntimeMoveData.BattleRows(battleTable));
+            var projectedRecordCount = checked(
+                battleByMove.Values.Sum(rows => rows.Count) + battleByMove.Count);
+            if (projectedRecordCount > MaximumGameModuleRecordCount)
+            {
+                throw new InvalidDataException(
+                    "The Z-A move variant projection exceeds the bounded game-module record limit.");
+            }
+
+            var timingCountsByMove = IndexGameModuleTimingCounts(
+                ZaRuntimeMoveData.TimingRows(timingTable),
+                battleByMove);
+            var loadedMoves = LoadGameModuleMoveRecords(
+                    source,
+                    labels,
+                    battleByMove.Keys)
+                .ToArray();
+            moves = loadedMoves
+                .Select(move => AddGameModuleRuntimeData(
+                    move,
+                    battleByMove.GetValueOrDefault(move.MoveId) ?? [],
+                    timingCountsByMove.GetValueOrDefault(move.MoveId)
+                        ?? new Dictionary<int, int>(),
+                    battleSource.RelativePath,
+                    battleSource.SourceLayer,
+                    timingSource.RelativePath,
+                    timingSource.SourceLayer,
+                    playerDamageByRuntimeMove,
+                    playerDamageInvocations,
+                    playerDamageInvocationShapeMatches,
+                    verifiedVanillaTimelineCatalogAvailable,
+                    playerDamageSource?.RelativePath,
+                    playerDamageSource?.SourceLayer ?? ProjectFileLayer.Base))
+                .ToArray();
+        }
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
+        {
+            diagnostics.Add(ZaWorkflowSupport.Error(
+                $"Moves could not be loaded: {exception.Message}",
+                $"romfs/{ZaDataPaths.BattleMoveParameterArray}"));
+        }
+
+        var summary = ZaWorkflowSupport.CreateSummary(
+            project,
+            ZaWorkflowIds.Moves,
+            WorkflowLabel,
+            WorkflowDescription,
+            diagnostics.Count == 0 ? null : diagnostics);
+
+        return new ZaMovesWorkflow(
+            summary,
+            moves,
+            [],
+            new ZaMovesWorkflowStats(
+                moves.Length,
+                moves.Count(move => move.CanUseMove),
+                new[] { source, battleSource, timingSource, playerDamageSource }.Count(file => file is not null),
+                moves.Sum(move => move.Flags.Count(flag => flag.Enabled))),
+            diagnostics);
     }
 
     internal static ZaMoveEditableField? GetEditableField(string? field)
@@ -1059,6 +1215,286 @@ internal sealed class ZaMovesWorkflowService
             CanRevertToVanilla = canRevertToVanilla,
             RevertToVanillaBlockedReason = revertBlockedReason,
         };
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageValues>>
+        IndexPlayerDamageValues(IReadOnlyList<ZaMovePlayerDamageValues> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        return values
+            .GroupBy(value => value.RuntimeMoveId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ZaMovePlayerDamageValues>)group
+                    .OrderBy(value => value.AttackId)
+                    .ToArray());
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlyList<ZaBattleMoveParameterT>>
+        IndexGameModuleBattleRows(IEnumerable<ZaBattleMoveParameterT> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var byMove = new Dictionary<int, List<ZaBattleMoveParameterT>>();
+        var identities = new HashSet<(int MoveId, int Variant)>();
+        var rowCount = 0;
+        foreach (var row in rows)
+        {
+            var moveId = checked((int)row.MoveId);
+            var variant = checked((int)row.VariantType);
+            if (!identities.Add((moveId, variant)))
+            {
+                throw new InvalidDataException(
+                    "The Z-A battle-move table contains a duplicate move and variant identity.");
+            }
+
+            if (!byMove.TryGetValue(moveId, out var moveRows))
+            {
+                moveRows = [];
+                byMove.Add(moveId, moveRows);
+            }
+
+            moveRows.Add(row);
+            rowCount = checked(rowCount + 1);
+            if (checked(rowCount + byMove.Count) > MaximumGameModuleRecordCount)
+            {
+                throw new InvalidDataException(
+                    "The Z-A move variant projection exceeds the bounded game-module record limit.");
+            }
+        }
+
+        return byMove.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<ZaBattleMoveParameterT>)entry.Value
+                .OrderBy(row => row.VariantType)
+                .ToArray());
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>>
+        IndexGameModuleTimingCounts(
+            IEnumerable<ZaMoveTimingParameterT> rows,
+            IReadOnlyDictionary<int, IReadOnlyList<ZaBattleMoveParameterT>> battleByMove)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(battleByMove);
+
+        var projectedMoveIds = battleByMove.Keys.ToHashSet();
+        var counts = new Dictionary<int, Dictionary<int, int>>();
+        var bucketCount = 0;
+        foreach (var row in rows)
+        {
+            var moveId = ZaRuntimeMoveData.GetTimingBaseMoveId(row.MoveId);
+            var variant = ZaRuntimeMoveData.GetTimingVariant(row.MoveId);
+            if (!projectedMoveIds.Contains(moveId))
+            {
+                continue;
+            }
+
+            if (!counts.TryGetValue(moveId, out var moveCounts))
+            {
+                moveCounts = [];
+                counts.Add(moveId, moveCounts);
+            }
+
+            if (!moveCounts.ContainsKey(variant))
+            {
+                bucketCount = checked(bucketCount + 1);
+                if (bucketCount > MaximumGameModuleTimingBucketCount)
+                {
+                    throw new InvalidDataException(
+                        "The Z-A move timing projection exceeds the bounded game-module record limit.");
+                }
+            }
+
+            moveCounts[variant] = checked(moveCounts.GetValueOrDefault(variant) + 1);
+        }
+
+        return counts.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyDictionary<int, int>)new Dictionary<int, int>(entry.Value));
+    }
+
+    private IEnumerable<ZaMoveRecord> LoadGameModuleMoveRecords(
+        ZaWorkflowFile source,
+        ZaTextLabelLookup labels,
+        IEnumerable<int> requiredMoveIds)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(labels);
+        ArgumentNullException.ThrowIfNull(requiredMoveIds);
+
+        var required = requiredMoveIds.ToHashSet();
+        var projected = new HashSet<int>();
+        var seen = new HashSet<int>();
+        var table = ZaMoveDataArray.GetRootAsZaMoveDataArray(new ByteBuffer(source.Bytes));
+        fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A move table");
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            var value = table.Values(index);
+            if (value is not { } move)
+            {
+                continue;
+            }
+
+            if (!seen.Add(move.MoveId))
+            {
+                throw new InvalidDataException(
+                    "The Z-A move table contains a duplicate move identity.");
+            }
+
+            if (!required.Contains(move.MoveId))
+            {
+                continue;
+            }
+
+            projected.Add(move.MoveId);
+            yield return ToGameModuleMoveRecord(move, labels, source);
+        }
+
+        if (!projected.SetEquals(required))
+        {
+            throw new InvalidDataException(
+                "The Z-A battle-move table references a missing move identity.");
+        }
+    }
+
+    private static ZaMoveRecord ToGameModuleMoveRecord(
+        ZaMoveData move,
+        ZaTextLabelLookup labels,
+        ZaWorkflowFile source)
+    {
+        var inflict = move.Inflict ?? default;
+        return new ZaMoveRecord(
+            move.MoveId,
+            labels.Move(move.MoveId),
+            Description: null,
+            Version: 0,
+            move.CanUseMove,
+            move.Type,
+            FormatType(move.Type),
+            move.Quality,
+            move.Category,
+            FormatCategory(move.Category),
+            move.Power,
+            move.Accuracy,
+            move.Pp,
+            move.Priority,
+            move.CritStage,
+            MaxMovePower: 0,
+            move.RawTarget,
+            FormatTarget(move.RawTarget),
+            move.HitMin,
+            move.HitMax,
+            inflict.TurnMin,
+            inflict.TurnMax,
+            inflict.Condition,
+            FormatInflict(inflict.Condition),
+            inflict.Chance,
+            inflict.TurnMode,
+            move.Flinch,
+            move.EffectSequence,
+            move.Recoil,
+            move.SelfHeal,
+            StatChanges: [],
+            Flags: [],
+            new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+    }
+
+    private static ZaMoveRecord AddGameModuleRuntimeData(
+        ZaMoveRecord move,
+        IReadOnlyList<ZaBattleMoveParameterT> battleRows,
+        IReadOnlyDictionary<int, int> timingCounts,
+        string battleSourceFile,
+        ProjectFileLayer battleSourceLayer,
+        string timingSourceFile,
+        ProjectFileLayer timingSourceLayer,
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageValues>> playerDamageByRuntimeMove,
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
+            playerDamageInvocations,
+        bool playerDamageInvocationShapeMatches,
+        bool verifiedVanillaTimelineCatalogAvailable,
+        string? playerDamageSourceFile,
+        ProjectFileLayer playerDamageSourceLayer)
+    {
+        var variants = battleRows.Select(ToGameModuleRuntimeVariantRecord).ToArray();
+        var runtimeBossMoveId = move.MoveId is >= 0 and < 1000
+            ? checked(2000 + move.MoveId)
+            : 0;
+        var currentPlayerDamageValues = runtimeBossMoveId == 0
+            ? []
+            : playerDamageByRuntimeMove.GetValueOrDefault(runtimeBossMoveId) ?? [];
+        IReadOnlyList<ZaMovePlayerDamageRecord> playerDamageRows = currentPlayerDamageValues
+            .Select(value =>
+            {
+                var invocations = playerDamageInvocations.GetValueOrDefault(value.AttackId) ?? [];
+                return new ZaMovePlayerDamageRecord(
+                    value.AttackId,
+                    value.RuntimeMoveId,
+                    value.DefaultDamage,
+                    value.PlayerDamage,
+                    value.PlayerDamage,
+                    value.HitInterval,
+                    playerDamageInvocationShapeMatches && invocations.Count > 0,
+                    verifiedVanillaTimelineCatalogAvailable,
+                    invocations);
+            })
+            .ToArray();
+
+        var runtimeSourceFiles = new List<string> { battleSourceFile, timingSourceFile };
+        if (playerDamageRows.Count > 0 && playerDamageSourceFile is not null)
+        {
+            runtimeSourceFiles.Add(playerDamageSourceFile);
+        }
+
+        return move with
+        {
+            RuntimeVariants = variants,
+            GameModuleTimingCounts = new Dictionary<int, int>(timingCounts),
+            PlayerDamageRows = playerDamageRows,
+            RuntimeSourceFiles = runtimeSourceFiles,
+            RuntimeBattleSourceLayer = battleSourceLayer,
+            RuntimeTimingSourceLayer = timingSourceLayer,
+            RuntimePlayerDamageSourceLayer = playerDamageSourceLayer,
+        };
+    }
+
+    private static ZaMoveRuntimeVariantRecord ToGameModuleRuntimeVariantRecord(
+        ZaBattleMoveParameterT row)
+    {
+        return new ZaMoveRuntimeVariantRecord(
+            row.VariantType,
+            row.Type,
+            FormatType(row.Type),
+            row.Category,
+            row.DamageType,
+            FormatCategory(row.DamageType),
+            row.Power,
+            row.CriticalRank,
+            row.HpRecoverRatio,
+            row.ShrinkPercent,
+            row.ConditionId,
+            row.ConditionPercent,
+            row.ConditionCount,
+            row.ConditionTurnMin,
+            row.ConditionTurnMax,
+            StatChanges: [],
+            row.DamageRecoverRatio,
+            row.DamageDrainRatio,
+            row.IsGuard,
+            row.IsAvoidedByFloating,
+            row.MakesContact,
+            row.IsSlicing,
+            row.IsWind,
+            row.BypassesSubstitute,
+            row.ThawsUser,
+            row.RestoresHp,
+            row.AllowedWhileHealBlocked,
+            row.CallableByMetronome,
+            row.AppliesCondition,
+            row.BlockedByProtect,
+            row.CannotKnockOut,
+            row.ValueEffectRatio);
     }
 
     private static (

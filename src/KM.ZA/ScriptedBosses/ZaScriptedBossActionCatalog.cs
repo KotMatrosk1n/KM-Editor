@@ -488,7 +488,8 @@ internal static class ZaScriptedBossActionCatalog
         OpenedProject project,
         ZaWorkflowFileSource fileSource,
         ZaTextLabelLookup labels,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool includeMoveOptions = true)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(fileSource);
@@ -516,11 +517,12 @@ internal static class ZaScriptedBossActionCatalog
             hasSelectorSource = true;
         }
         catch (Exception exception) when (
-            exception is IOException
+            (exception is IOException
                 or UnauthorizedAccessException
                 or InvalidDataException
                 or ArgumentException
                 or OverflowException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Boss action move assignments are read-only because their selector data could not be verified: {exception.Message}",
@@ -538,27 +540,48 @@ internal static class ZaScriptedBossActionCatalog
                 fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray).Bytes,
                 fileSource.BoundedTableRecordLimit,
                 fileSource.BoundedNestedRecordLimit);
-            battleMoveVariants = ZaRuntimeMoveData.BattleRows(battleTable)
-                .GroupBy(row => (
-                    MoveId: checked((int)row.MoveId),
-                    Variant: checked((int)row.VariantType)))
-                .Where(group => group
-                    .Select(row => ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]))
-                    .Distinct(StringComparer.Ordinal)
-                    .Count() == 1)
-                .Select(group => group.Key)
-                .ToHashSet();
+            var battleRows = ZaRuntimeMoveData.BattleRows(battleTable).ToArray();
+            if (includeMoveOptions)
+            {
+                battleMoveVariants = battleRows
+                    .GroupBy(row => (
+                        MoveId: checked((int)row.MoveId),
+                        Variant: checked((int)row.VariantType)))
+                    .Where(group => group
+                        .Select(row => ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]))
+                        .Distinct(StringComparer.Ordinal)
+                        .Count() == 1)
+                    .Select(group => group.Key)
+                    .ToHashSet();
+            }
+            else
+            {
+                var identities = new HashSet<(int MoveId, int Variant)>();
+                foreach (var row in battleRows)
+                {
+                    if (!identities.Add((
+                            checked((int)row.MoveId),
+                            checked((int)row.VariantType))))
+                    {
+                        throw new InvalidDataException(
+                            "The Z-A battle-move table contains a duplicate move and variant identity.");
+                    }
+                }
+
+                battleMoveVariants = identities;
+            }
             timingRuntimeMoveIds = ZaRuntimeMoveData.TimingRows(timingTable)
                 .Select(row => checked((int)row.MoveId))
                 .ToHashSet();
             sourceFileCount += 2;
         }
         catch (Exception exception) when (
-            exception is IOException
+            (exception is IOException
                 or UnauthorizedAccessException
                 or InvalidDataException
                 or ArgumentException
                 or OverflowException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Boss action replacements are unavailable because move runtime data could not be verified: {exception.Message}",
@@ -571,11 +594,23 @@ internal static class ZaScriptedBossActionCatalog
             .Where(action => action.Variant is not null)
             .Select(action => action.Variant!.Value)
             .ToHashSet();
-        var moveOptions = battleMoveVariants is null || timingRuntimeMoveIds is null
-            ? Array.Empty<ZaScriptedBossMoveOptionRecord>()
+        var availableCatalogVariants = battleMoveVariants is null || timingRuntimeMoveIds is null
+            ? new HashSet<int>()
             : battleMoveVariants
                 .Where(key => key.MoveId is >= 0 and <= MaximumBaseMoveId)
                 .Where(key => referencedVariants.Contains(key.Variant))
+                .Where(key => timingRuntimeMoveIds.Contains(ToRuntimeMoveId(
+                    key.MoveId,
+                    key.Variant)))
+                .Select(key => key.Variant)
+                .ToHashSet();
+        var moveOptions = !includeMoveOptions
+            || battleMoveVariants is null
+            || timingRuntimeMoveIds is null
+            ? Array.Empty<ZaScriptedBossMoveOptionRecord>()
+            : battleMoveVariants
+                .Where(key => key.MoveId is >= 0 and <= MaximumBaseMoveId)
+                .Where(key => availableCatalogVariants.Contains(key.Variant))
                 .Where(key => timingRuntimeMoveIds.Contains(ToRuntimeMoveId(
                     key.MoveId,
                     key.Variant)))
@@ -597,9 +632,7 @@ internal static class ZaScriptedBossActionCatalog
                 baseSelectors,
                 battleMoveVariants,
                 timingRuntimeMoveIds,
-                moveOptions
-                    .Select(option => option.Variant)
-                    .ToHashSet()),
+                availableCatalogVariants),
             moveOptions,
             sourceFileCount,
             hasSelectorSource);

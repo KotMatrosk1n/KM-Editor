@@ -413,6 +413,10 @@ import {
   type BalanceLabProjectBridgeApi
 } from './balanceLabProjectBridge';
 import {
+  createGameModuleProjectBridgeApi,
+  type GameModuleProjectBridgeApi
+} from './gameModuleProjectBridge';
+import {
   createGuidedDesignProjectBridgeApi,
   type GuidedDesignProjectBridgeApi
 } from './guidedDesignProjectBridge';
@@ -723,7 +727,8 @@ export type ProjectBridge = {
   GameDumpProjectBridgeApi & SwShPlacementProjectBridgeApi & SwShCacheProjectBridgeApi &
   WorkspaceDraftProjectBridgeApi & WorkspacePersonalStateProjectBridgeApi &
   OutputSafetyProjectBridgeApi & ChangeSetProjectBridgeApi & SemanticExploreProjectBridgeApi &
-  BalanceLabProjectBridgeApi & GuidedDesignProjectBridgeApi & SemanticMergeProjectBridgeApi;
+  BalanceLabProjectBridgeApi & GameModuleProjectBridgeApi & GuidedDesignProjectBridgeApi &
+  SemanticMergeProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -1574,6 +1579,7 @@ export function createProjectBridge(
     ...createChangeSetProjectBridgeApi(transport),
     ...createSemanticExploreProjectBridgeApi(transport),
     ...createBalanceLabProjectBridgeApi(transport),
+    ...createGameModuleProjectBridgeApi(transport),
     ...createGuidedDesignProjectBridgeApi(transport),
     ...createSemanticMergeProjectBridgeApi(transport),
     validateEditSession: (request) =>

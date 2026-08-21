@@ -22,20 +22,32 @@ internal sealed class SvWorkflowFileSource
     private readonly SvCacheManager cacheManager;
     private readonly bool bypassReusableBaseCache;
     private readonly int? maximumReadBytes;
+    private readonly int? maximumReadCount;
+    private readonly long? maximumAggregateReadBytes;
+    private int boundedReadCount;
+    private long boundedReadBytes;
 
     public SvWorkflowFileSource(
         SvCacheManager? cacheManager = null,
         bool bypassReusableBaseCache = false,
-        int? maximumReadBytes = null)
+        int? maximumReadBytes = null,
+        int? maximumReadCount = null,
+        long? maximumAggregateReadBytes = null)
     {
-        if (maximumReadBytes is <= 0)
+        if (maximumReadBytes is <= 0
+            || maximumReadCount is <= 0
+            || maximumAggregateReadBytes is <= 0
+            || (maximumReadCount is null) != (maximumAggregateReadBytes is null)
+            || maximumReadCount is not null && maximumReadBytes is null)
         {
-            throw new ArgumentOutOfRangeException(nameof(maximumReadBytes));
+            throw new ArgumentOutOfRangeException(nameof(maximumReadBytes), "The bounded read budget is invalid.");
         }
 
         this.cacheManager = cacheManager ?? new SvCacheManager();
         this.bypassReusableBaseCache = bypassReusableBaseCache;
         this.maximumReadBytes = maximumReadBytes;
+        this.maximumReadCount = maximumReadCount;
+        this.maximumAggregateReadBytes = maximumAggregateReadBytes;
     }
 
     internal int? BoundedTableRecordLimit => maximumReadBytes is null
@@ -44,9 +56,24 @@ internal sealed class SvWorkflowFileSource
 
     internal bool IsBoundedSemanticLimit(Exception exception)
     {
-        return maximumReadBytes is not null
-            && exception is InvalidDataException
-            && exception.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase);
+        if (maximumReadBytes is null)
+        {
+            return false;
+        }
+
+        Exception? candidate = exception;
+        for (var depth = 0; candidate is not null && depth < 8; depth++)
+        {
+            if (candidate is InvalidDataException
+                && candidate.Message.Contains("bounded", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            candidate = candidate.InnerException;
+        }
+
+        return false;
     }
 
     internal void EnsureBoundedTableCount(int count, string label)
@@ -67,7 +94,81 @@ internal sealed class SvWorkflowFileSource
         }
     }
 
+    private void EnsureBoundedReadAvailable()
+    {
+        if (maximumReadCount is null || maximumAggregateReadBytes is null || maximumReadBytes is null)
+        {
+            return;
+        }
+
+        if (boundedReadCount >= maximumReadCount.Value
+            || boundedReadBytes > maximumAggregateReadBytes.Value - maximumReadBytes.Value)
+        {
+            throw new InvalidDataException("The workflow exceeds its bounded fresh source-read budget.");
+        }
+
+        boundedReadCount = checked(boundedReadCount + 1);
+    }
+
+    private void ObserveBoundedRead(int byteCount)
+    {
+        if (maximumReadCount is null || maximumAggregateReadBytes is null)
+        {
+            return;
+        }
+
+        var nextBytes = checked(boundedReadBytes + byteCount);
+        if (nextBytes > maximumAggregateReadBytes.Value)
+        {
+            throw new InvalidDataException("The workflow exceeds its bounded fresh source-byte budget.");
+        }
+
+        boundedReadBytes = nextBytes;
+    }
+
+    private void ObserveFailedBoundedRead(Exception exception)
+    {
+        if (maximumReadBytes is not null && !IsDefinitelyMissing(exception))
+        {
+            ObserveBoundedRead(maximumReadBytes.Value);
+        }
+    }
+
+    private static bool IsDefinitelyMissing(Exception exception)
+    {
+        Exception? candidate = exception;
+        for (var depth = 0; candidate is not null && depth < 8; depth++)
+        {
+            if (candidate is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return true;
+            }
+
+            candidate = candidate.InnerException;
+        }
+
+        return false;
+    }
+
     public SvWorkflowFile Read(OpenedProject project, string virtualRomFsPath)
+    {
+        EnsureBoundedReadAvailable();
+        SvWorkflowFile result;
+        try
+        {
+            result = ReadCore(project, virtualRomFsPath);
+        }
+        catch (Exception exception)
+        {
+            ObserveFailedBoundedRead(exception);
+            throw;
+        }
+
+        ObserveBoundedRead(result.Bytes.Length);
+        return result;
+    }
+
+    private SvWorkflowFile ReadCore(OpenedProject project, string virtualRomFsPath)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
@@ -182,6 +283,24 @@ internal sealed class SvWorkflowFileSource
     }
 
     public SvWorkflowFile ReadBase(OpenedProject project, string virtualRomFsPath)
+    {
+        EnsureBoundedReadAvailable();
+        SvWorkflowFile result;
+        try
+        {
+            result = ReadBaseCore(project, virtualRomFsPath);
+        }
+        catch (Exception exception)
+        {
+            ObserveFailedBoundedRead(exception);
+            throw;
+        }
+
+        ObserveBoundedRead(result.Bytes.Length);
+        return result;
+    }
+
+    private SvWorkflowFile ReadBaseCore(OpenedProject project, string virtualRomFsPath)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
