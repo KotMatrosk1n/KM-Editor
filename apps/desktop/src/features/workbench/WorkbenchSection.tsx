@@ -10,6 +10,7 @@ import {
   FlaskConical,
   GitMerge,
   LayoutDashboard,
+  Microscope,
   NotebookPen,
   Pin,
   Plus,
@@ -59,12 +60,18 @@ export type WorkbenchSectionProps = {
   pins: readonly WorkspaceTargetViewModel[];
   recentProjects: readonly WorkspaceRecentProjectViewModel[];
   recents: readonly WorkspaceTargetViewModel[];
+  researchLab?: ReactNode;
   savedViews: readonly WorkspaceSavedViewViewModel[];
   semanticExplore: ReactNode;
   workflowHome: ReactNode;
 };
 
-type WorkbenchToolId = 'balanceLab' | 'gameModules' | 'guidedDesign' | 'semanticMerge';
+type WorkbenchToolId =
+  | 'balanceLab'
+  | 'gameModules'
+  | 'guidedDesign'
+  | 'researchLab'
+  | 'semanticMerge';
 
 type WorkbenchTool = {
   backKey: string;
@@ -102,6 +109,7 @@ export function WorkbenchSection({
   pins,
   recentProjects,
   recents,
+  researchLab,
   savedViews,
   semanticExplore,
   workflowHome
@@ -148,6 +156,15 @@ export function WorkbenchSection({
       id: 'gameModules',
       openKey: 'gameModules.open',
       titleKey: 'gameModules.title'
+    },
+    {
+      backKey: 'researchLab.back',
+      content: researchLab,
+      descriptionKey: 'researchLab.launcher.description',
+      icon: <Microscope aria-hidden="true" size={17} />,
+      id: 'researchLab',
+      openKey: 'researchLab.open',
+      titleKey: 'researchLab.title'
     }
   ];
   const selectedTool = tools.find((tool) => tool.id === openTool && tool.content) ?? null;

@@ -190,6 +190,13 @@ public static class KmCommandNames
     public const string ValidateKmRecipe = "recipes.validate";
     public const string PreviewKmRecipe = "recipes.preview";
     public const string ImportKmRecipe = "recipes.import";
+    public const string ReadResearchLabCapabilities = "researchLab.capabilities";
+    public const string OpenResearchSource = "researchLab.source.open";
+    public const string CloseResearchSource = "researchLab.source.close";
+    public const string CompareResearchSources = "researchLab.compare";
+    public const string ReadResearchByteWindow = "researchLab.byteWindow";
+    public const string ReadResearchAnnotations = "researchLab.annotations.read";
+    public const string MutateResearchAnnotations = "researchLab.annotations.mutate";
     public const string ReadWorkspaceDrafts = "workspace.drafts.read";
     public const string WriteWorkspaceDrafts = "workspace.drafts.write";
     public const string DeleteWorkspaceDrafts = "workspace.drafts.delete";

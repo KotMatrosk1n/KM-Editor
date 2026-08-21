@@ -32,6 +32,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.ProfanityFilter;
 using KM.Api.Projects;
+using KM.Api.Research;
 using KM.Api.Raids;
 using KM.Api.Randomizer;
 using KM.Api.Rentals;
@@ -183,7 +184,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly GameModuleApplicationService gameModuleApplicationService;
     private readonly GuidedDesignApplicationService guidedDesignApplicationService;
     private readonly SemanticMergeApplicationService semanticMergeApplicationService;
+    private readonly ResearchAnnotationApplicationService researchAnnotationApplicationService;
+    private readonly ResearchLabApplicationService researchLabApplicationService;
     private readonly bool ownsSemanticMergeApplicationService;
+    private readonly bool ownsResearchLabApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -239,7 +243,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         BalanceLabApplicationService? balanceLabApplicationService = null,
         GameModuleApplicationService? gameModuleApplicationService = null,
         GuidedDesignApplicationService? guidedDesignApplicationService = null,
-        SemanticMergeApplicationService? semanticMergeApplicationService = null)
+        SemanticMergeApplicationService? semanticMergeApplicationService = null,
+        ResearchAnnotationApplicationService? researchAnnotationApplicationService = null,
+        ResearchLabApplicationService? researchLabApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -303,6 +309,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         this.changeSetApplicationService = changeSetApplicationService
             ?? new ChangeSetApplicationService(
                 workspacePersonalStateService: this.workspacePersonalStateApplicationService);
+        this.researchAnnotationApplicationService = researchAnnotationApplicationService
+            ?? new ResearchAnnotationApplicationService();
         this.outputSafetyApplicationService = outputSafetyApplicationService
             ?? new OutputSafetyApplicationService();
         this.projectRelocationApplicationService = projectRelocationApplicationService
@@ -310,6 +318,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 workspaceDraftService: this.workspaceDraftApplicationService,
                 workspacePersonalStateService: this.workspacePersonalStateApplicationService,
                 changeSetService: this.changeSetApplicationService,
+                researchAnnotationService: this.researchAnnotationApplicationService,
                 outputSafetyService: this.outputSafetyApplicationService);
         this.semanticExploreApplicationService = semanticExploreApplicationService
             ?? new SemanticExploreApplicationService(
@@ -364,6 +373,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     ProjectBridgeMapper.ToCore(paths),
                     session,
                     outputMode));
+        ownsResearchLabApplicationService = researchLabApplicationService is null;
+        this.researchLabApplicationService = researchLabApplicationService
+            ?? new ResearchLabApplicationService(
+                this.semanticExploreApplicationService,
+                this.researchAnnotationApplicationService);
     }
 
     public void Dispose()
@@ -371,6 +385,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         if (ownsSemanticMergeApplicationService)
         {
             semanticMergeApplicationService.Dispose();
+        }
+
+        if (ownsResearchLabApplicationService)
+        {
+            researchLabApplicationService.Dispose();
         }
     }
 
@@ -626,6 +645,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.ValidateKmRecipe => DispatchValidateKmRecipe(requestJson),
                 KmCommandNames.PreviewKmRecipe => DispatchPreviewKmRecipe(requestJson),
                 KmCommandNames.ImportKmRecipe => DispatchImportKmRecipe(requestJson),
+                KmCommandNames.ReadResearchLabCapabilities => DispatchReadResearchLabCapabilities(requestJson),
+                KmCommandNames.OpenResearchSource => DispatchOpenResearchSource(requestJson),
+                KmCommandNames.CloseResearchSource => DispatchCloseResearchSource(requestJson),
+                KmCommandNames.CompareResearchSources => DispatchCompareResearchSources(requestJson),
+                KmCommandNames.ReadResearchByteWindow => DispatchReadResearchByteWindow(requestJson),
+                KmCommandNames.ReadResearchAnnotations => DispatchReadResearchAnnotations(requestJson),
+                KmCommandNames.MutateResearchAnnotations => DispatchMutateResearchAnnotations(requestJson),
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
@@ -668,6 +694,16 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             return (
                 SerializeFailure(
                     code,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+
+        catch (ResearchLabValidationException exception)
+        {
+            return (
+                SerializeFailure(
+                    GetResearchLabErrorCode(exception),
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1180,6 +1216,62 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<ImportKmRecipeRequest>(requestJson);
         return SerializeSuccess(
             semanticMergeApplicationService.ImportRecipe(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadResearchLabCapabilities(string requestJson)
+    {
+        var request = DeserializeRequest<ReadResearchLabCapabilitiesRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.ReadCapabilities(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchOpenResearchSource(string requestJson)
+    {
+        var request = DeserializeRequest<OpenResearchSourceRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.OpenSource(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchCloseResearchSource(string requestJson)
+    {
+        var request = DeserializeRequest<CloseResearchSourceRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.CloseSource(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchCompareResearchSources(string requestJson)
+    {
+        var request = DeserializeRequest<CompareResearchSourcesRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.Compare(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadResearchByteWindow(string requestJson)
+    {
+        var request = DeserializeRequest<ReadResearchByteWindowRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.ReadByteWindow(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchReadResearchAnnotations(string requestJson)
+    {
+        var request = DeserializeRequest<ReadResearchAnnotationsRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.ReadAnnotations(request.Payload),
+            request.RequestId);
+    }
+
+    private string DispatchMutateResearchAnnotations(string requestJson)
+    {
+        var request = DeserializeRequest<MutateResearchAnnotationsRequest>(requestJson);
+        return SerializeSuccess(
+            researchLabApplicationService.MutateAnnotations(request.Payload),
             request.RequestId);
     }
 
@@ -6145,6 +6237,21 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         };
     }
 
+    private static string GetResearchLabErrorCode(ResearchLabValidationException exception)
+    {
+        return exception.ResearchFailureKind switch
+        {
+            ResearchLabFailureKind.InvalidData => BridgeErrorCodes.SemanticInvalidQuery,
+            ResearchLabFailureKind.LimitExceeded => BridgeErrorCodes.SemanticLimitExceeded,
+            ResearchLabFailureKind.StaleRevision => BridgeErrorCodes.SemanticStaleRevision,
+            ResearchLabFailureKind.InvalidCursor => BridgeErrorCodes.SemanticInvalidCursor,
+            ResearchLabFailureKind.SourceRejected => BridgeErrorCodes.ResearchSourceRejected,
+            ResearchLabFailureKind.SourceExpired => BridgeErrorCodes.ResearchSourceExpired,
+            ResearchLabFailureKind.ComparisonStale => BridgeErrorCodes.ResearchComparisonStale,
+            _ => BridgeErrorCodes.SemanticInvalidQuery,
+        };
+    }
+
     private void ClearWorkflowMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
@@ -6412,6 +6519,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.ValidateKmRecipe or
             KmCommandNames.PreviewKmRecipe or
             KmCommandNames.ImportKmRecipe or
+            KmCommandNames.ReadResearchLabCapabilities or
+            KmCommandNames.OpenResearchSource or
+            KmCommandNames.CloseResearchSource or
+            KmCommandNames.CompareResearchSources or
+            KmCommandNames.ReadResearchByteWindow or
+            KmCommandNames.ReadResearchAnnotations or
+            KmCommandNames.MutateResearchAnnotations or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge or

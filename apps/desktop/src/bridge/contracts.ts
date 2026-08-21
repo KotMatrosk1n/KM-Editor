@@ -170,7 +170,14 @@ export const kmCommandNameValues = [
   'recipes.export',
   'recipes.validate',
   'recipes.preview',
-  'recipes.import'
+  'recipes.import',
+  'researchLab.capabilities',
+  'researchLab.source.open',
+  'researchLab.source.close',
+  'researchLab.compare',
+  'researchLab.byteWindow',
+  'researchLab.annotations.read',
+  'researchLab.annotations.mutate'
 ] as const;
 
 export const kmCommandNameSchema = z.enum(kmCommandNameValues);
@@ -202,6 +209,13 @@ export const kmCommandNames = {
   validateKmRecipe: 'recipes.validate',
   getGameModuleCapabilities: 'gameModules.capabilities',
   queryGameModule: 'gameModules.query',
+  compareResearchSources: 'researchLab.compare',
+  closeResearchSource: 'researchLab.source.close',
+  getResearchLabCapabilities: 'researchLab.capabilities',
+  mutateResearchAnnotations: 'researchLab.annotations.mutate',
+  openResearchSource: 'researchLab.source.open',
+  readResearchAnnotations: 'researchLab.annotations.read',
+  readResearchByteWindow: 'researchLab.byteWindow',
   queryBalanceLab: 'semantic.balance-lab',
   querySemanticChanges: 'semantic.changes',
   querySemanticImpact: 'semantic.impact',

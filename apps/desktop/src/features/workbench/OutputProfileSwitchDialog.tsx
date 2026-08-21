@@ -135,6 +135,17 @@ export function OutputProfileSwitchDialog({
       if (!isCurrentAction(generation, signature)) {
         return;
       }
+      const expectedMigratedDocumentIds = preview.workspaceDocuments
+        .filter((document) => document.status === 'copy')
+        .map((document) => document.documentId);
+      if (
+        response.migratedDocumentIds.length !== expectedMigratedDocumentIds.length ||
+        response.migratedDocumentIds.some((documentId, index) => (
+          documentId !== expectedMigratedDocumentIds[index]
+        ))
+      ) {
+        throw new Error('The relocation receipt does not match the reviewed private documents.');
+      }
       actionPhaseRef.current = 'activation';
       setDiagnostics(response.diagnostics);
       setPreview(null);
