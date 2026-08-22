@@ -74,18 +74,24 @@ export type OutputSafetyController = {
 };
 
 type UseOutputSafetyControllerOptions = {
+  armCriticalWriteGuard: () => Promise<boolean>;
   bridge: ProjectBridge;
   externalMutationBusy: boolean;
+  onMutationBusyChange: (isBusy: boolean) => void;
   scope: OutputSafetyScope | null;
 };
 
 export function useOutputSafetyController({
+  armCriticalWriteGuard,
   bridge,
   externalMutationBusy,
+  onMutationBusyChange,
   scope
 }: UseOutputSafetyControllerOptions): OutputSafetyController {
   const { t } = useLocalization();
   const scopeKey = useMemo(() => (scope ? JSON.stringify(scope) : null), [scope]);
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const externalMutationBusyRef = useRef(externalMutationBusy);
@@ -107,6 +113,25 @@ export function useOutputSafetyController({
   const [actionDiagnostics, setActionDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [busyAction, setBusyAction] = useState<OutputSafetyAction | null>(null);
   const busyActionRef = useRef<OutputSafetyAction | null>(null);
+  const mutationBusyRef = useRef(false);
+  const armCriticalWriteGuardRef = useRef(armCriticalWriteGuard);
+  armCriticalWriteGuardRef.current = armCriticalWriteGuard;
+  const onMutationBusyChangeRef = useRef(onMutationBusyChange);
+  onMutationBusyChangeRef.current = onMutationBusyChange;
+
+  const setMutationBusy = useCallback((isBusy: boolean) => {
+    if (mutationBusyRef.current === isBusy) return;
+    mutationBusyRef.current = isBusy;
+    onMutationBusyChangeRef.current(isBusy);
+  }, []);
+
+  useEffect(() => () => {
+    generationRef.current += 1;
+    recoveryRequestRef.current += 1;
+    safetyEpochRef.current += 1;
+    busyActionRef.current = null;
+    setMutationBusy(false);
+  }, [setMutationBusy]);
 
   const beginAction = useCallback((action: OutputSafetyAction) => {
     if (busyActionRef.current !== null || (
@@ -116,19 +141,25 @@ export function useOutputSafetyController({
     }
     busyActionRef.current = action;
     setBusyAction(action);
+    if (outputSafetyMutationActions.has(action)) {
+      setMutationBusy(true);
+    }
     return true;
-  }, []);
+  }, [setMutationBusy]);
 
   const endAction = useCallback((action: OutputSafetyAction) => {
     if (busyActionRef.current === action) {
       busyActionRef.current = null;
       setBusyAction(null);
+      if (outputSafetyMutationActions.has(action)) {
+        setMutationBusy(false);
+      }
     }
-  }, []);
+  }, [setMutationBusy]);
 
   const isCurrent = useCallback((generation: number, requestScopeKey: string) => {
-    return generationRef.current === generation && scopeKey === requestScopeKey;
-  }, [scopeKey]);
+    return generationRef.current === generation && scopeKeyRef.current === requestScopeKey;
+  }, []);
 
   const commitRecovery = useCallback((status: OutputRecoveryStatus) => {
     setRecoveryStatus(status);
@@ -202,12 +233,13 @@ export function useOutputSafetyController({
     setSupportReport(null);
     setActionDiagnostics([]);
     busyActionRef.current = null;
+    setMutationBusy(false);
     setBusyAction(null);
     setReadiness(scope ? 'checking' : 'unavailable');
     if (scope) {
       void refreshRecovery();
     }
-  }, [refreshRecovery, scopeKey]);
+  }, [refreshRecovery, scopeKey, setMutationBusy]);
 
   const runScopedAction = useCallback(async <T,>(
     action: OutputSafetyAction,
@@ -221,15 +253,34 @@ export function useOutputSafetyController({
     }
 
     const generation = generationRef.current;
-    const safetyEpoch = outputSafetyMutationActions.has(action)
+    const isMutation = outputSafetyMutationActions.has(action);
+    setActionDiagnostics([]);
+    if (isMutation) {
+      let didArmGuard = false;
+      try {
+        didArmGuard = await armCriticalWriteGuardRef.current();
+      } catch {
+        didArmGuard = false;
+      }
+      if (
+        !didArmGuard ||
+        !isCurrent(generation, scopeKey) ||
+        busyActionRef.current !== action
+      ) {
+        if (isCurrent(generation, scopeKey) && busyActionRef.current === action) {
+          endAction(action);
+        }
+        return;
+      }
+    }
+    const safetyEpoch = isMutation
       ? safetyEpochRef.current + 1
       : safetyEpochRef.current;
     safetyEpochRef.current = safetyEpoch;
-    if (outputSafetyMutationActions.has(action)) {
+    if (isMutation) {
       setReadiness('checking');
       setSupportReport(null);
     }
-    setActionDiagnostics([]);
     let shouldRefreshReadiness = false;
     try {
       const result = await operation(activeScope);

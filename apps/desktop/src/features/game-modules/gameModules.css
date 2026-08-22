@@ -453,11 +453,10 @@
 .km-game-module-record-filters {
   display: grid;
   gap: 0.65rem;
-  grid-template-columns: minmax(12rem, 1.5fr) repeat(2, minmax(10rem, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .km-game-module-record-filters label,
-.km-game-module-comparison-order,
 .km-game-module-chart > header > label {
   display: grid;
   gap: 0.3rem;
@@ -465,7 +464,6 @@
 }
 
 .km-game-module-record-filters label > span:first-child,
-.km-game-module-comparison-order > span,
 .km-game-module-chart > header > label > span {
   color: var(--km-game-module-text-muted);
   font-size: 0.75rem;
@@ -511,13 +509,27 @@
 .km-game-module-record-picker {
   display: grid;
   gap: 0.4rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
-  max-height: 24rem;
+  max-height: 22rem;
   overflow: auto;
   padding-inline-end: 0.25rem;
 }
 
-.km-game-module-record-picker label,
+.km-game-module-record-picker li {
+  align-items: center;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.55rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.5rem 0.55rem;
+}
+
+.km-game-module-record-picker li > button {
+  flex: 0 0 auto;
+}
+
 .km-game-module-field-picker label {
   align-items: flex-start;
   background: var(--color-control);
@@ -530,19 +542,16 @@
   padding: 0.55rem;
 }
 
-.km-game-module-record-picker label:hover,
 .km-game-module-field-picker label:hover,
-.km-game-module-record-picker label[data-selected],
 .km-game-module-field-picker label[data-selected] {
   border-color: rgb(var(--color-accent-bright-rgb) / 68%);
 }
 
-.km-game-module-record-picker label[data-selected],
 .km-game-module-field-picker label[data-selected] {
   background: rgb(var(--color-accent-rgb) / 14%);
 }
 
-.km-game-module-record-picker label > span,
+.km-game-module-record-picker li > span,
 .km-game-module-field-picker label > span,
 .km-game-module-selected-records li > span {
   display: grid;
@@ -559,16 +568,18 @@
   overflow-wrap: anywhere;
 }
 
+.km-game-module-record-picker strong,
+.km-game-module-record-picker small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .km-game-module-record-picker small,
 .km-game-module-field-picker small,
 .km-game-module-selected-records small {
   color: var(--km-game-module-text-muted);
   font-size: 0.72rem;
-}
-
-.km-game-module-comparison-order {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
 }
 
 .km-game-module-selected-records {
@@ -877,7 +888,6 @@
     color: ButtonText;
   }
 
-  .km-game-module-record-picker label[data-selected],
   .km-game-module-field-picker label[data-selected],
   .km-game-module-compare-icon {
     border-color: Highlight;

@@ -70,8 +70,11 @@ export function createWorkspaceShortcutRegistry(
     const chord = override === null
       ? null
       : normalizeWorkspaceShortcut(override ?? definition.chord);
-    if (chord && !seenChords.add(chord)) {
-      throw new Error(`Workspace shortcut ${chord} is assigned more than once.`);
+    if (chord) {
+      if (seenChords.has(chord)) {
+        throw new Error(`Workspace shortcut ${chord} is assigned more than once.`);
+      }
+      seenChords.add(chord);
     }
     return { ...definition, chord };
   });
@@ -87,9 +90,10 @@ export function normalizeWorkspaceShortcut(value: string) {
   for (const part of parts) {
     const normalizedModifier = normalizeModifier(part);
     if (normalizedModifier) {
-      if (!modifiers.add(normalizedModifier)) {
+      if (modifiers.has(normalizedModifier)) {
         throw new Error('A shortcut cannot repeat a modifier.');
       }
+      modifiers.add(normalizedModifier);
       continue;
     }
     if (key !== null) {

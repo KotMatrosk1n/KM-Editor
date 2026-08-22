@@ -183,7 +183,10 @@ public sealed record ZaPokemonWorkflow(
     IReadOnlyList<ZaPokemonEditableFieldOption> LearnsetMoveOptions,
     IReadOnlyList<ZaPokemonEditableField> EditableFields,
     IReadOnlyList<ValidationDiagnostic> Diagnostics,
-    ZaPokemonDexEditor? DexEditor = null);
+    ZaPokemonDexEditor? DexEditor = null)
+{
+    internal bool OwnedTestTechnicalMachineAvailable { get; init; }
+}
 
 public sealed record ZaPokemonEditableField(
     string Field,

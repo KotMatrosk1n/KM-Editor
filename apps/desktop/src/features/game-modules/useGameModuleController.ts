@@ -521,9 +521,10 @@ function assertQueryResponse(
       throw new Error('The game module page contains inconsistent provider truth.');
     }
     for (const fact of record.facts) {
-      if (!factIds.add(fact.factId)) {
+      if (factIds.has(fact.factId)) {
         throw new Error('The game module page contains duplicate facts.');
       }
+      factIds.add(fact.factId);
     }
     if (record.target) records.push(record.target);
     for (const fact of record.facts) records.push(...fact.evidence);
@@ -567,13 +568,15 @@ function mergePages(
     previous.records.flatMap((record) => record.facts.map((fact) => fact.factId))
   );
   for (const record of next.records) {
-    if (!seen.add(record.recordId)) {
+    if (seen.has(record.recordId)) {
       throw new Error('The game module continuation repeated a record.');
     }
+    seen.add(record.recordId);
     for (const fact of record.facts) {
-      if (!seenFactIds.add(fact.factId)) {
+      if (seenFactIds.has(fact.factId)) {
         throw new Error('The game module continuation repeated a fact.');
       }
+      seenFactIds.add(fact.factId);
     }
   }
   const records = [...previous.records, ...next.records];

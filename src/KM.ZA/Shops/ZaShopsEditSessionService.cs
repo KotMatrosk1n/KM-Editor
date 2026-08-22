@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.ZA.Data;
+using KM.ZA.Items;
 using KM.ZA.Workflows;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -205,16 +206,41 @@ internal sealed class ZaShopsEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var shopSource = fileSource.Read(project, ZaDataPaths.ShopItemArray);
             var lineupSource = fileSource.Read(project, ZaDataPaths.ShopItemLineupArray);
+            var effectiveWorkflow = OverlayPendingEdits(
+                shopsWorkflowService.Load(project),
+                session.PendingEdits);
+            var referencesTestTechnicalMachine = ReferencesTestTechnicalMachine(effectiveWorkflow);
+            ZaWorkflowFile? itemSource = null;
+            ZaTestTechnicalMachineProvisioningResult? itemProvisioning = null;
+            if (referencesTestTechnicalMachine)
+            {
+                itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+                itemProvisioning = ZaTestTechnicalMachineProvisioner.Provision(
+                    itemSource.Bytes,
+                    out _);
+                if (!itemProvisioning.IsAvailable)
+                {
+                    throw new InvalidDataException(
+                        itemProvisioning.UnavailableReason
+                            ?? "TM162 Bug Buzz could not be provisioned safely.");
+                }
+            }
+
             var planSources = session.PendingEdits
                 .SelectMany(edit => edit.Sources)
                 .Append(ZaWorkflowFileSource.CreateReference(shopSource))
                 .Append(ZaWorkflowFileSource.CreateReference(lineupSource))
-                .Distinct()
-                .ToArray();
+                .ToList();
+            if (itemSource is not null)
+            {
+                planSources.Add(ZaWorkflowFileSource.CreateReference(itemSource));
+            }
+
+            var distinctPlanSources = planSources.Distinct().ToArray();
             var lineupWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
                 paths,
                 ZaDataPaths.ShopItemLineupArray,
-                planSources,
+                distinctPlanSources,
                 outputMode);
             var lineupReason = session.PendingEdits.Count == 1
                 ? $"Apply pending Shops edit: {session.PendingEdits[0].Summary}"
@@ -229,14 +255,38 @@ internal sealed class ZaShopsEditSessionService
                     outputMode,
                     shopSource,
                     lineupSource,
+                    itemSource,
+                    itemProvisioning?.Added == true,
                     session.PendingEdits)));
+
+            if (itemSource is not null && itemProvisioning?.Added == true)
+            {
+                var itemWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                    paths,
+                    ZaDataPaths.ItemDataArray,
+                    [ZaWorkflowFileSource.CreateReference(itemSource)],
+                    outputMode);
+                writes.Add(new PlannedFileWrite(
+                    itemWriteInfo.TargetRelativePath,
+                    itemWriteInfo.Sources,
+                    itemWriteInfo.ReplacesExistingOutput,
+                    "Provision the owned TM162 Bug Buzz item before the reviewed shop references it.",
+                    CreatePlanSourceFingerprint(
+                        paths,
+                        outputMode,
+                        shopSource,
+                        lineupSource,
+                        itemSource,
+                        provisionsTestTechnicalMachine: true,
+                        session.PendingEdits)));
+            }
 
             if (outputMode == ZaOutputMode.Standalone)
             {
                 var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
                 var descriptorPreview = ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
                     paths,
-                    [ZaDataPaths.ShopItemLineupArray]);
+                    CreatePlannedVirtualPaths(itemProvisioning?.Added == true));
                 writes.Add(new PlannedFileWrite(
                     descriptorWriteInfo.TargetRelativePath,
                     descriptorWriteInfo.Sources,
@@ -292,6 +342,7 @@ internal sealed class ZaShopsEditSessionService
         }
 
         var planBecameStale = false;
+        var wroteItemData = false;
         try
         {
             ZaWorkflowFileSource.ApplyHybridMixedBatch(
@@ -320,12 +371,39 @@ internal sealed class ZaShopsEditSessionService
                     var project = projectWorkspaceService.Open(paths);
                     var shopSource = fileSource.Read(project, ZaDataPaths.ShopItemArray);
                     var lineupSource = fileSource.Read(project, ZaDataPaths.ShopItemLineupArray);
+                    var effectiveWorkflow = OverlayPendingEdits(
+                        shopsWorkflowService.Load(project),
+                        session.PendingEdits);
+                    var referencesTestTechnicalMachine = ReferencesTestTechnicalMachine(effectiveWorkflow);
+                    ZaWorkflowFile? itemSource = null;
+                    ZaTestTechnicalMachineProvisioningResult? itemProvisioning = null;
+                    byte[]? provisionedItemBytes = null;
+                    if (referencesTestTechnicalMachine)
+                    {
+                        itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+                        itemProvisioning = ZaTestTechnicalMachineProvisioner.Provision(
+                            itemSource.Bytes,
+                            out provisionedItemBytes);
+                        if (!itemProvisioning.IsAvailable)
+                        {
+                            diagnostics.Add(CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                itemProvisioning.UnavailableReason
+                                    ?? "TM162 Bug Buzz could not be provisioned safely.",
+                                file: $"romfs/{ZaDataPaths.ItemDataArray}",
+                                expected: "Supported unique 160-TM source with unclaimed item 2222"));
+                            throw new InvalidDataException("TM162 Bug Buzz could not be provisioned safely.");
+                        }
+                    }
+
                     if (!PlanSourcesMatch(
                             paths,
                             lockedPlan,
                             outputMode,
                             shopSource,
                             lineupSource,
+                            itemSource,
+                            itemProvisioning?.Added == true,
                             session.PendingEdits))
                     {
                         diagnostics.Add(CreateDiagnostic(
@@ -349,10 +427,39 @@ internal sealed class ZaShopsEditSessionService
                         throw new InvalidDataException("A staged Shops edit failed final validation under the output lock.");
                     }
 
+                    var outputReferencesTestTechnicalMachine =
+                        effectiveWorkflow.OwnedTestTechnicalMachineAvailable
+                        && lineupRows
+                            .SelectMany(row => row.Inventory)
+                            .Any(row => row.ItemId == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId);
+                    if (outputReferencesTestTechnicalMachine != referencesTestTechnicalMachine)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            "The reviewed TM162 shop reference changed while output was being prepared. Review the change plan again before applying.",
+                            expected: "The exact reviewed shop inventory and item provisioning requirement"));
+                        planBecameStale = true;
+                        throw new InvalidDataException("The reviewed TM162 shop reference changed during output preparation.");
+                    }
+
+                    var dataWrites = new List<ZaWorkflowFileWrite>
+                    {
+                        new(
+                            ZaDataPaths.ShopItemLineupArray,
+                            ZaShopsWorkflowService.WriteLineupRows(lineupRows)),
+                    };
+                    if (itemProvisioning?.Added == true && provisionedItemBytes is not null)
+                    {
+                        dataWrites.Add(new ZaWorkflowFileWrite(
+                            ZaDataPaths.ItemDataArray,
+                            provisionedItemBytes));
+                        wroteItemData = true;
+                    }
+
                     var reviewedDescriptorBytes = outputMode == ZaOutputMode.Standalone
                         ? ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
                             paths,
-                            [ZaDataPaths.ShopItemLineupArray])
+                            dataWrites.Select(write => write.VirtualPath))
                         : null;
                     if (reviewedDescriptorBytes is not null
                         && !DescriptorPlanMatches(paths, lockedPlan, reviewedDescriptorBytes))
@@ -366,9 +473,7 @@ internal sealed class ZaShopsEditSessionService
                     }
 
                     return new ZaStandaloneMixedBatch(
-                        [new ZaWorkflowFileWrite(
-                            ZaDataPaths.ShopItemLineupArray,
-                            ZaShopsWorkflowService.WriteLineupRows(lineupRows))],
+                        dataWrites,
                         Array.Empty<string>(),
                         Array.Empty<ZaStandaloneOutputMutation>(),
                         reviewedDescriptorBytes);
@@ -379,6 +484,13 @@ internal sealed class ZaShopsEditSessionService
                         CreateChangePlan(paths, session, outputMode)));
 
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ShopItemLineupArray, outputMode));
+            if (wroteItemData)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.ItemDataArray,
+                    outputMode));
+            }
+
             if (outputMode == ZaOutputMode.Standalone)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
@@ -1655,6 +1767,8 @@ internal sealed class ZaShopsEditSessionService
         ZaOutputMode outputMode,
         ZaWorkflowFile shopSource,
         ZaWorkflowFile lineupSource,
+        ZaWorkflowFile? itemSource,
+        bool provisionsTestTechnicalMachine,
         IEnumerable<PendingEdit> edits)
     {
         var targetRelativePath = ZaWorkflowFileSource.CreatePlannedWrite(
@@ -1674,6 +1788,8 @@ internal sealed class ZaShopsEditSessionService
                     outputMode,
                     shopSource,
                     lineupSource,
+                    itemSource,
+                    provisionsTestTechnicalMachine,
                     edits),
                 StringComparison.Ordinal);
     }
@@ -1683,14 +1799,26 @@ internal sealed class ZaShopsEditSessionService
         ZaOutputMode outputMode,
         ZaWorkflowFile shopSource,
         ZaWorkflowFile lineupSource,
+        ZaWorkflowFile? itemSource,
+        bool provisionsTestTechnicalMachine,
         IEnumerable<PendingEdit> edits)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendFingerprintValue(hash, "KM.ZA.Shops.Source.v1");
+        AppendFingerprintValue(hash, "KM.ZA.Shops.Source.v2");
         AppendFingerprintValue(hash, outputMode.ToString());
         AppendFingerprintSource(hash, ZaDataPaths.ShopItemArray, shopSource);
         AppendFingerprintSource(hash, ZaDataPaths.ShopItemLineupArray, lineupSource);
+        AppendFingerprintValue(hash, provisionsTestTechnicalMachine ? "ProvisionTM162" : "NoTM162Provision");
+        if (itemSource is not null)
+        {
+            AppendFingerprintSource(hash, ZaDataPaths.ItemDataArray, itemSource);
+        }
+
         AppendFingerprintTarget(hash, paths, ZaDataPaths.ShopItemLineupArray, outputMode);
+        if (provisionsTestTechnicalMachine)
+        {
+            AppendFingerprintTarget(hash, paths, ZaDataPaths.ItemDataArray, outputMode);
+        }
 
         foreach (var (edit, index) in OrderPendingEdits(edits).Select((edit, index) => (edit, index)))
         {
@@ -1710,6 +1838,18 @@ internal sealed class ZaShopsEditSessionService
 
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
+
+    private static bool ReferencesTestTechnicalMachine(ZaShopsWorkflow workflow) =>
+        workflow.OwnedTestTechnicalMachineAvailable
+        && workflow.Shops
+            .SelectMany(shop => shop.Inventory)
+            .Any(item => item.ItemId == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId);
+
+    private static IReadOnlyList<string> CreatePlannedVirtualPaths(
+        bool provisionsTestTechnicalMachine) =>
+        provisionsTestTechnicalMachine
+            ? [ZaDataPaths.ShopItemLineupArray, ZaDataPaths.ItemDataArray]
+            : [ZaDataPaths.ShopItemLineupArray];
 
     private static string CreateDescriptorPlanFingerprint(
         ProjectPaths paths,

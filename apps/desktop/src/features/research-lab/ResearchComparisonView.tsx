@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
+  ArrowDown,
+  ArrowUp,
   Binary,
   FileDiff,
   FolderOpen,
@@ -40,8 +42,8 @@ export function ResearchComparisonView({
   onPickSource: (slot: 0 | 1) => Promise<string | null>;
   revision: SemanticExploreRevision;
 }) {
-  const { t } = useLocalization();
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const { t, translateLiteral } = useLocalization();
+  const [selectedPaths, setSelectedPaths] = useState<readonly string[]>([]);
   const [resultFilter, setResultFilter] = useState('');
   const [differenceFilter, setDifferenceFilter] = useState<
     'all' | ResearchFileFinding['differenceKind']
@@ -65,7 +67,7 @@ export function ResearchComparisonView({
     };
   }, []);
   useEffect(() => {
-    setSelectedPaths(new Set());
+    setSelectedPaths([]);
     controller.clearByteWindow();
     pickerGenerationRef.current[0] += 1;
     pickerGenerationRef.current[1] += 1;
@@ -83,7 +85,8 @@ export function ResearchComparisonView({
   };
   const data = controller.comparison.data;
   const committedPaths = controller.comparison.selectedRelativePaths;
-  const selectionMatchesCommitted = samePathSelection(selectedPaths, committedPaths);
+  const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
+  const selectionMatchesCommitted = samePathSelection(selectedPathSet, committedPaths);
   const canCompare = controller.sources.every((source) => (
     source.status === 'ready' &&
     source.data !== null &&
@@ -119,12 +122,28 @@ export function ResearchComparisonView({
       !data?.items.some((finding) => finding.differenceKind === differenceFilter)
     ) setDifferenceFilter('all');
   }, [data?.items, differenceFilter]);
-  const selectVisible = () => setSelectedPaths((current) => {
-    const next = new Set(current);
-    for (const finding of visibleFindings) {
-      if (next.size >= researchLabMaximumSelectedFiles) break;
-      next.add(finding.relativePath);
-    }
+  const normalizedResultFilter = resultFilter.trim().toLocaleLowerCase();
+  const matchingSuggestions = normalizedResultFilter
+    ? visibleFindings.filter((finding) => !selectedPathSet.has(finding.relativePath)).slice(0, 10)
+    : [];
+  const selectedFindings = selectedPaths.flatMap((path) => {
+    const finding = data?.items.find((candidate) => candidate.relativePath === path);
+    return finding ? [finding] : [];
+  });
+  const addPath = (path: string) => setSelectedPaths((current) => (
+    current.includes(path) || current.length >= researchLabMaximumSelectedFiles
+      ? current
+      : [...current, path]
+  ));
+  const removePath = (path: string) => setSelectedPaths((current) => (
+    current.filter((candidate) => candidate !== path)
+  ));
+  const movePath = (path: string, offset: -1 | 1) => setSelectedPaths((current) => {
+    const index = current.indexOf(path);
+    const nextIndex = index + offset;
+    if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+    const next = [...current];
+    [next[index], next[nextIndex]] = [next[nextIndex]!, next[index]!];
     return next;
   });
 
@@ -178,24 +197,14 @@ export function ResearchComparisonView({
         </button>
         <span role="status">
           {t('researchLab.comparison.selected', {
-            count: selectedPaths.size,
+            count: selectedPaths.length,
             maximum: researchLabMaximumSelectedFiles
           })}
         </span>
         <button
           className="secondary-button compact-button"
-          disabled={controller.isBusy || visibleFindings.length === 0 || (
-            selectedPaths.size >= researchLabMaximumSelectedFiles
-          )}
-          onClick={selectVisible}
-          type="button"
-        >
-          {t('analysisPresentation.controls.selectVisible')}
-        </button>
-        <button
-          className="secondary-button compact-button"
-          disabled={controller.isBusy || selectedPaths.size === 0}
-          onClick={() => setSelectedPaths(new Set())}
+          disabled={controller.isBusy || selectedPaths.length === 0}
+          onClick={() => setSelectedPaths([])}
           type="button"
         >
           {t('researchLab.comparison.clearSelection')}
@@ -231,11 +240,12 @@ export function ResearchComparisonView({
           {data.items.length > 0 ? (
             <div className="km-research-lab-result-controls">
               <label>
-                <span>{t('analysisPresentation.controls.filter')}</span>
+                <span>{t('researchLab.comparison.findFiles')}</span>
                 <span className="km-research-lab-filter-input">
                   <Search aria-hidden="true" size={15} />
                   <input
                     onChange={(event) => setResultFilter(event.currentTarget.value)}
+                    placeholder={t('researchLab.comparison.findFilesPlaceholder')}
                     type="search"
                     value={resultFilter}
                   />
@@ -270,20 +280,47 @@ export function ResearchComparisonView({
               </label>
             </div>
           ) : null}
-          {visibleFindings.length === 0 ? (
+          {normalizedResultFilter ? (
+            matchingSuggestions.length > 0 ? (
+              <ul
+                aria-label={t('researchLab.comparison.matchingFiles')}
+                className="km-research-lab-file-matches"
+              >
+                {matchingSuggestions.map((finding) => (
+                  <li key={finding.findingId}>
+                    <span data-localization-ignore="true">
+                      <strong>{finding.relativePath}</strong>
+                      <small>{t(researchDifferenceKey(finding.differenceKind))}</small>
+                    </span>
+                    <button
+                      aria-label={`${translateLiteral('Add')}: ${finding.relativePath}`}
+                      className="secondary-button compact-button"
+                      disabled={selectedPaths.length >= researchLabMaximumSelectedFiles}
+                      onClick={() => addPath(finding.relativePath)}
+                      type="button"
+                    >
+                      {translateLiteral('Add')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="km-research-lab-empty">{t('analysisPresentation.controls.noMatches')}</p>
+            )
+          ) : (
             <p className="km-research-lab-empty">{t(data.items.length === 0
               ? 'researchLab.comparison.empty'
-              : 'analysisPresentation.controls.noMatches')}</p>
-          ) : (
+              : 'researchLab.comparison.searchToSelect')}</p>
+          )}
+          {selectedFindings.length > 0 ? (
+            <section aria-labelledby="research-selected-files-title">
+              <h4 id="research-selected-files-title">
+                {t('researchLab.comparison.selectedFiles', { count: selectedFindings.length })}
+              </h4>
             <ol aria-label={t('researchLab.comparison.results')} className="km-research-lab-results">
-              {visibleFindings.map((finding) => (
+              {selectedFindings.map((finding, index) => (
                 <FindingCard
-                  checked={selectedPaths.has(finding.relativePath)}
                   controller={controller}
-                  disabled={
-                    !selectedPaths.has(finding.relativePath) &&
-                    selectedPaths.size >= researchLabMaximumSelectedFiles
-                  }
                   finding={finding}
                   key={finding.findingId}
                   onAnnotateFinding={() => onCreateAnnotation({
@@ -311,20 +348,22 @@ export function ResearchComparisonView({
                     semanticRecord: null,
                     semanticSnapshot: null
                   })}
-                  onToggle={(checked) => setSelectedPaths((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(finding.relativePath);
-                    else next.delete(finding.relativePath);
-                    return next;
-                  })}
+                  onMoveDown={() => movePath(finding.relativePath, 1)}
+                  onMoveUp={() => movePath(finding.relativePath, -1)}
+                  onRemove={() => removePath(finding.relativePath)}
+                  position={index}
+                  total={selectedFindings.length}
                 />
               ))}
             </ol>
-          )}
+            </section>
+          ) : data.items.length > 0 ? (
+            <p className="km-research-lab-empty">{t('researchLab.comparison.noSelectedFiles')}</p>
+          ) : null}
           {data.nextCursor && !isWindowCapped ? (
             <button
               className="secondary-button compact-button"
-              disabled={controller.isBusy || !selectionMatchesCommitted}
+              disabled={controller.isBusy}
               onClick={() => void controller.loadMore()}
               type="button"
             >
@@ -409,21 +448,25 @@ function SourceCard({
 }
 
 function FindingCard({
-  checked,
   controller,
-  disabled,
   finding,
   onAnnotateFinding,
   onAnnotateRange,
-  onToggle
+  onMoveDown,
+  onMoveUp,
+  onRemove,
+  position,
+  total
 }: {
-  checked: boolean;
   controller: ResearchLabController;
-  disabled: boolean;
   finding: ResearchFileFinding;
   onAnnotateFinding: () => void;
   onAnnotateRange: (offset: number, length: number) => void;
-  onToggle: (checked: boolean) => void;
+  onMoveDown: () => void;
+  onMoveUp: () => void;
+  onRemove: () => void;
+  position: number;
+  total: number;
 }) {
   const { t } = useLocalization();
   const window = controller.byteWindow.findingId === finding.findingId
@@ -447,17 +490,34 @@ function FindingCard({
               <p>{t(researchDifferenceKey(finding.differenceKind))}</p>
             </div>
           </div>
-          <label>
-            <input
-              aria-label={`${t('researchLab.comparison.includeRanges')}: ${finding.relativePath}`}
-              checked={checked}
-              className="km-choice-control"
-              disabled={disabled}
-              onChange={(event) => onToggle(event.target.checked)}
-              type="checkbox"
-            />
-            <span>{t('researchLab.comparison.includeRanges')}</span>
-          </label>
+          <div className="km-research-lab-selection-actions">
+            <button
+              aria-label={t('researchLab.comparison.moveEarlier', { path: finding.relativePath })}
+              className="secondary-button compact-button icon-button"
+              disabled={position === 0}
+              onClick={onMoveUp}
+              type="button"
+            >
+              <ArrowUp aria-hidden="true" size={14} />
+            </button>
+            <button
+              aria-label={t('researchLab.comparison.moveLater', { path: finding.relativePath })}
+              className="secondary-button compact-button icon-button"
+              disabled={position === total - 1}
+              onClick={onMoveDown}
+              type="button"
+            >
+              <ArrowDown aria-hidden="true" size={14} />
+            </button>
+            <button
+              aria-label={t('researchLab.comparison.removeFile', { path: finding.relativePath })}
+              className="secondary-button compact-button"
+              onClick={onRemove}
+              type="button"
+            >
+              {t('researchLab.comparison.remove')}
+            </button>
+          </div>
         </header>
         <dl className="km-research-lab-facts">
           <div>

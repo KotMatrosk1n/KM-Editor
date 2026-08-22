@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { AlertCircle, CheckCircle, Move, ShieldCheck, X } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ApiDiagnostic, ProjectPathRole } from '../../bridge/contracts';
 import type {
   ApplyProjectRelocationResponse,
@@ -10,6 +10,7 @@ import type {
 } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
 import { useLocalization } from '../../localization';
@@ -19,9 +20,11 @@ import './workbench.css';
 type CandidatePaths = OutputSafetyScope['paths'];
 
 export type OutputProfileSwitchDialogProps = {
+  armCriticalWriteGuard: () => Promise<boolean>;
   bridge: ProjectBridge;
   canApply: boolean;
   candidatePaths: CandidatePaths;
+  onApplyBusyChange: (isBusy: boolean) => void;
   onApplied: (
     response: ApplyProjectRelocationResponse,
     candidatePaths: CandidatePaths
@@ -32,9 +35,11 @@ export type OutputProfileSwitchDialogProps = {
 };
 
 export function OutputProfileSwitchDialog({
+  armCriticalWriteGuard,
   bridge,
   canApply,
   candidatePaths,
+  onApplyBusyChange,
   onApplied,
   onClose,
   profileName,
@@ -47,6 +52,12 @@ export function OutputProfileSwitchDialog({
   const busyRef = useRef(false);
   const actionPhaseRef = useRef<'review' | 'apply' | 'activation' | null>(null);
   const generationRef = useRef(0);
+  const applyGenerationRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
+  const armCriticalWriteGuardRef = useRef(armCriticalWriteGuard);
+  armCriticalWriteGuardRef.current = armCriticalWriteGuard;
+  const onApplyBusyChangeRef = useRef(onApplyBusyChange);
+  onApplyBusyChangeRef.current = onApplyBusyChange;
   const requestSignature = useMemo(
     () => JSON.stringify({ candidatePaths, source }),
     [candidatePaths, source]
@@ -56,6 +67,33 @@ export function OutputProfileSwitchDialog({
   const headingId = useId();
   const dialogRef = useModalDialog<HTMLDivElement>({ canClose: !isBusy, onClose });
 
+  const beginApplyGuard = useCallback(async (generation: number) => {
+    applyGenerationRef.current = generation;
+    onApplyBusyChangeRef.current(true);
+    return armCriticalWriteGuardRef.current();
+  }, []);
+  const endApplyGuard = useCallback((generation?: number) => {
+    if (
+      applyGenerationRef.current === null ||
+      (generation !== undefined && applyGenerationRef.current !== generation)
+    ) {
+      return;
+    }
+    applyGenerationRef.current = null;
+    onApplyBusyChangeRef.current(false);
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      generationRef.current += 1;
+      busyRef.current = false;
+      actionPhaseRef.current = null;
+      endApplyGuard();
+    };
+  }, [endApplyGuard]);
+
   useEffect(() => {
     if (actionPhaseRef.current === 'activation') {
       return;
@@ -63,10 +101,11 @@ export function OutputProfileSwitchDialog({
     generationRef.current += 1;
     busyRef.current = false;
     actionPhaseRef.current = null;
+    endApplyGuard();
     setPreview(null);
     setDiagnostics([]);
     setIsBusy(false);
-  }, [requestSignature]);
+  }, [endApplyGuard, requestSignature]);
 
   const beginAction = (phase: 'review' | 'apply') => {
     if (busyRef.current) {
@@ -79,6 +118,7 @@ export function OutputProfileSwitchDialog({
     return generationRef.current;
   };
   const isCurrentAction = (generation: number, signature: string) =>
+    isMountedRef.current &&
     generationRef.current === generation &&
     (actionPhaseRef.current === 'activation' || requestSignatureRef.current === signature);
   const finishAction = (generation: number) => {
@@ -128,6 +168,13 @@ export function OutputProfileSwitchDialog({
     const signature = requestSignature;
     setDiagnostics([]);
     try {
+      if (
+        !(await beginApplyGuard(generation)) ||
+        applyGenerationRef.current !== generation ||
+        !isCurrentAction(generation, signature)
+      ) {
+        return;
+      }
       const response = await bridge.applyProjectRelocation({
         candidatePaths,
         reviewToken: preview.reviewToken,
@@ -174,6 +221,7 @@ export function OutputProfileSwitchDialog({
         );
       }
     } finally {
+      endApplyGuard(generation);
       finishAction(generation);
     }
   };
@@ -313,6 +361,7 @@ export function OutputProfileSwitchDialog({
               >
                 <AlertCircle aria-hidden="true" size={15} />
                 <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
+                <ReportableDiagnosticIssuesLink messages={[diagnostic.message]} />
               </li>
             ))}
           </ul>

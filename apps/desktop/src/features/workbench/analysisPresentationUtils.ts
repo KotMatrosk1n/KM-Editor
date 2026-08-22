@@ -52,10 +52,31 @@ export function groupDiagnosticsForPresentation<T>(
 type PresentableDiagnostic = {
   code?: string | null;
   domain?: string | null;
+  expected?: string | null;
   field?: string | null;
+  file?: string | null;
   message: string;
   severity: 'error' | 'warning' | 'info';
 };
+
+const maximumDiagnosticIdentityUnits = 2048;
+
+export function diagnosticTechnicalIdentity(diagnostic: PresentableDiagnostic) {
+  return [
+    diagnostic.severity,
+    boundedDiagnosticIdentityValue(diagnostic.code),
+    boundedDiagnosticIdentityValue(diagnostic.domain),
+    boundedDiagnosticIdentityValue(diagnostic.field),
+    boundedDiagnosticIdentityValue(diagnostic.file),
+    boundedDiagnosticIdentityValue(diagnostic.expected)
+  ] as const;
+}
+
+function boundedDiagnosticIdentityValue(value: string | null | undefined) {
+  return typeof value === 'string'
+    ? value.slice(0, maximumDiagnosticIdentityUnits)
+    : value;
+}
 
 const owningWorkflowSummaryMessages = new Set([
   'The owning workflow reported a diagnostic while preparing this read-only analysis.',

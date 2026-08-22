@@ -40,3 +40,23 @@ export type WorkspaceRecentProjectViewModel = {
   name: string;
   unavailableReason: string | null;
 };
+
+export function mergeWorkspaceRecentTargetViewModels(
+  sessionTargets: readonly WorkspaceTargetViewModel[],
+  persistedTargets: readonly WorkspaceTargetViewModel[],
+  maximumTargets: number
+) {
+  if (!Number.isSafeInteger(maximumTargets) || maximumTargets < 0) {
+    throw new Error('The recent workspace target limit must be a non-negative safe integer.');
+  }
+  if (maximumTargets === 0) return [];
+  const merged: WorkspaceTargetViewModel[] = [];
+  const seenIds = new Set<string>();
+  for (const target of [...sessionTargets, ...persistedTargets]) {
+    if (seenIds.has(target.id)) continue;
+    seenIds.add(target.id);
+    merged.push(target);
+    if (merged.length === maximumTargets) break;
+  }
+  return merged;
+}

@@ -349,6 +349,7 @@ internal sealed class ZaPokemonWorkflowService
         var pokemon = Array.Empty<ZaPokemonRecord>();
         ZaPokemonDexEditor? dexEditor = null;
         IReadOnlyList<ZaTechnicalMachineMove> tmCatalog = [];
+        var ownedTestTechnicalMachineAvailable = false;
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
 
         try
@@ -357,6 +358,22 @@ internal sealed class ZaPokemonWorkflowService
             var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
+            if (RequiresItemsTechnicalMachineRecovery(project)
+                && tmCatalog.Any(machine => machine.IsOwnedTestTechnicalMachine))
+            {
+                tmCatalog = tmCatalog
+                    .Where(machine => !machine.IsOwnedTestTechnicalMachine)
+                    .ToArray();
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    "Apply the reported Items TM recovery before editing TM162 Bug Buzz compatibility in Pokemon Data.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    field: $"{CompatibilityFieldPrefix}:{TechnicalMachineCompatibilityGroupId}:{ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId.ToString(CultureInfo.InvariantCulture)}",
+                    expected: "Recovered physical TM table before provisioning the owned item 2222"));
+            }
+
+            ownedTestTechnicalMachineAvailable = tmCatalog.Any(machine =>
+                machine.IsOwnedTestTechnicalMachine);
+
             source = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var requiresLegacyPersonalRecovery = ZaPersonalTable
                 .GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes))
@@ -540,7 +557,33 @@ internal sealed class ZaPokemonWorkflowService
             CreateMoveOptions(pokemon, labels),
             CreateEditableFields(labels),
             diagnostics,
-            dexEditor);
+            dexEditor)
+        {
+            OwnedTestTechnicalMachineAvailable = ownedTestTechnicalMachineAvailable,
+        };
+    }
+
+    private bool RequiresItemsTechnicalMachineRecovery(OpenedProject project)
+    {
+        try
+        {
+            var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+            if (itemSource.SourceLayer != ProjectFileLayer.Layered)
+            {
+                return false;
+            }
+
+            var recovery = ZaTechnicalMachineLegacyRecoveryDetector.Analyze(
+                itemSource.Bytes,
+                fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
+            return !recovery.IsBlocked && recovery.HasChanges;
+        }
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or ArgumentException)
+        {
+            // The catalog load already reports unreadable item inputs and omits TM162.
+            return false;
+        }
     }
 
     private ZaPokemonRecord[] ProjectAlphaMoves(

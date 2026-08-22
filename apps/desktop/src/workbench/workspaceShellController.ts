@@ -60,6 +60,35 @@ export type WorkspaceNavigationCommitResult =
   | { kind: 'stale'; state: WorkspaceShellState }
   | { kind: 'mismatch'; state: WorkspaceShellState };
 
+export type WorkspaceHistoryEntryRemovalResult =
+  | { kind: 'removed'; state: WorkspaceShellState }
+  | { kind: 'stale'; state: WorkspaceShellState }
+  | { kind: 'mismatch'; state: WorkspaceShellState };
+
+export function shouldRestoreWorkspacePreloadSourceSection({
+  activeSection,
+  committedSection,
+  currentShellRevision,
+  destinationSection,
+  sourceSection,
+  sourceShellRevision
+}: {
+  activeSection: WorkbenchLocation['section'];
+  committedSection: WorkbenchLocation['section'];
+  currentShellRevision: number;
+  destinationSection: WorkbenchLocation['section'];
+  sourceSection: WorkbenchLocation['section'];
+  sourceShellRevision: number;
+}) {
+  return (
+    (sourceSection === 'workbench' || sourceSection === 'workflows') &&
+    sourceSection !== destinationSection &&
+    committedSection === sourceSection &&
+    activeSection === destinationSection &&
+    currentShellRevision === sourceShellRevision
+  );
+}
+
 export function createWorkspaceShellState(
   initialLocation: WorkbenchLocation
 ): WorkspaceShellState {
@@ -140,6 +169,40 @@ export function getWorkspaceBackTarget(state: WorkspaceShellState) {
 
 export function getWorkspaceForwardTarget(state: WorkspaceShellState) {
   return state.history[state.historyIndex + 1] ?? null;
+}
+
+export function removeUnavailableWorkspaceHistoryEntry(
+  state: WorkspaceShellState,
+  pending: PendingWorkspaceNavigation
+): WorkspaceHistoryEntryRemovalResult {
+  if (pending.expectedRevision !== state.revision) {
+    return { kind: 'stale', state };
+  }
+  if (
+    (pending.mode !== 'back' && pending.mode !== 'forward') ||
+    !pendingBookkeepingMatchesState(state, pending) ||
+    pending.historyIndex === null
+  ) {
+    return { kind: 'mismatch', state };
+  }
+
+  const historyEntryIndex = pending.historyIndex;
+  const history = state.history.filter((_, index) => index !== historyEntryIndex);
+  if (history.length === 0) {
+    return { kind: 'mismatch', state };
+  }
+  const historyIndex = historyEntryIndex < state.historyIndex
+    ? state.historyIndex - 1
+    : state.historyIndex;
+  return {
+    kind: 'removed',
+    state: {
+      ...state,
+      history,
+      historyIndex,
+      revision: nextRevision(state.revision)
+    }
+  };
 }
 
 // Call this only after the existing guarded navigation controller reports that

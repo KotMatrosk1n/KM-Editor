@@ -112,6 +112,69 @@
   gap: var(--km-space-1);
 }
 
+.km-semantic-record-picker {
+  display: grid;
+  flex: 1 1 28rem;
+  gap: var(--km-space-2);
+  min-width: 0;
+}
+
+.km-semantic-record-picker-search {
+  align-items: end;
+  display: flex;
+  gap: var(--km-space-2);
+  min-width: 0;
+}
+
+.km-semantic-record-picker-search > label {
+  min-width: 12rem;
+}
+
+.km-semantic-record-match-count {
+  color: var(--km-text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.km-semantic-selected-record,
+.km-semantic-record-matches > li {
+  align-items: center;
+  background: var(--km-surface);
+  border: 1px solid var(--km-border-subtle);
+  border-radius: var(--km-radius-md);
+  display: flex;
+  gap: var(--km-space-2);
+  justify-content: space-between;
+  min-width: 0;
+  padding: var(--km-space-2);
+}
+
+.km-semantic-selected-record {
+  border-color: var(--km-accent);
+}
+
+.km-semantic-selected-record > span,
+.km-semantic-record-matches span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-semantic-selected-record small,
+.km-semantic-record-matches small {
+  color: var(--km-text-muted);
+}
+
+.km-semantic-record-matches {
+  display: grid;
+  gap: var(--km-space-1);
+  list-style: none;
+  margin: 0;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0;
+}
+
 .km-semantic-search label:first-child {
   flex-basis: 18rem;
 }
@@ -508,6 +571,13 @@
 @container km-semantic-explore (max-width: 680px) {
   .km-semantic-search,
   .km-semantic-query-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .km-semantic-record-picker-search,
+  .km-semantic-selected-record,
+  .km-semantic-record-matches > li {
     align-items: stretch;
     flex-direction: column;
   }

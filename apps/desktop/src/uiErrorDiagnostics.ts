@@ -23,6 +23,9 @@ import {
   sanitizeReportableErrorText
 } from './errorReporting';
 
+const maximumBackendDiagnosticSourceUnits = 16 * 1024;
+const maximumBackendDiagnosticTextLength = 4_000;
+
 const expectedBridgeErrorCodes = new Set<KmErrorCode>([
   ...Object.values(guidedDesignErrorCodes),
   ...Object.values(kmRecipeErrorCodes),
@@ -169,15 +172,19 @@ function sanitizeOptionalBackendDiagnosticText(
 }
 
 function sanitizeBackendDiagnosticText(value: string, error: ProjectBridgeError) {
-  let sanitized = sanitizeReportableErrorText(value);
-  if (error.requestId) {
+  let sanitized = sanitizeReportableErrorText(
+    value.slice(0, maximumBackendDiagnosticSourceUnits)
+  );
+  if (error.requestId && error.requestId.length <= 4_096) {
     sanitized = sanitized.replaceAll(error.requestId, '[request ID]');
   }
-  if (error.responseRequestId) {
+  if (error.responseRequestId && error.responseRequestId.length <= 4_096) {
     sanitized = sanitized.replaceAll(error.responseRequestId, '[response request ID]');
   }
 
-  return sanitized;
+  return sanitized.length <= maximumBackendDiagnosticTextLength
+    ? sanitized
+    : `${sanitized.slice(0, maximumBackendDiagnosticTextLength - 3).trimEnd()}...`;
 }
 
 export function toDesktopErrorDiagnostics(

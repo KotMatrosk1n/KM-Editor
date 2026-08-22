@@ -21,7 +21,7 @@ export type ReportableError = {
   title: string;
 };
 
-const githubIssuesUrl = 'https://github.com/KotMatrosk1n/KM-Editor/issues';
+export const githubIssuesUrl = 'https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose';
 
 const incidentFingerprintPrefixes = {
   bridge: 'KM-INCIDENT-BRIDGE',
@@ -39,7 +39,36 @@ const defaultSemanticCodes: Partial<Record<ReportableErrorKind, KmErrorCode>> = 
 
 const reportedGlobalIncidentFingerprints = new Set<string>();
 const maximumRememberedGlobalIncidentFingerprints = 100;
+const maximumReportableMessageLength = 4_000;
+const maximumReportableSourceUnits = 16 * 1024;
+const reportableIncidentFingerprintPattern =
+  /(?:^|\n)Incident fingerprint: KM-INCIDENT-(?:BRIDGE|DESKTOP|UI-RENDER)-[0-9A-Z]{7}(?:\n|$)/;
+const globalReportableErrorListeners = new Set<() => void>();
+let globalReportableError: ReportableError | null = null;
 let uninstallGlobalErrorHandlers: (() => void) | null = null;
+
+export function getGlobalReportableErrorSnapshot() {
+  return globalReportableError;
+}
+
+export function clearGlobalReportableError() {
+  if (globalReportableError === null) return;
+  globalReportableError = null;
+  notifyGlobalReportableErrorListeners();
+}
+
+export function subscribeGlobalReportableError(listener: () => void) {
+  globalReportableErrorListeners.add(listener);
+  return () => {
+    globalReportableErrorListeners.delete(listener);
+  };
+}
+
+export function isReportableErrorMessage(value: string) {
+  return reportableIncidentFingerprintPattern.test(
+    value.slice(0, maximumReportableSourceUnits).replaceAll('\r\n', '\n')
+  );
+}
 
 export function createReportableError(
   error: unknown,
@@ -61,24 +90,32 @@ export function createReportableError(
     title?: string;
   }
 ): ReportableError {
-  const resolvedCommand = command ?? readErrorContext(error, 'command');
-  const resolvedRequestId = requestId ?? readErrorContext(error, 'requestId');
-  const resolvedResponseRequestId = readErrorContext(error, 'responseRequestId');
-  const primaryMessage = redactReportableContext(
-    sanitizeReportableErrorText(toUnknownErrorMessage(error, fallbackMessage)),
-    resolvedRequestId,
-    resolvedResponseRequestId
+  const resolvedCommand = normalizedReportableCommand(
+    command ?? readErrorContext(error, 'command')
+  );
+  const rawRequestId = requestId ?? readErrorContext(error, 'requestId');
+  const rawResponseRequestId = readErrorContext(error, 'responseRequestId');
+  const resolvedRequestId = normalizedReportableRequestId(rawRequestId);
+  const resolvedResponseRequestId = normalizedReportableRequestId(rawResponseRequestId);
+  const redactionRequestId = boundedReportableRedactionValue(rawRequestId);
+  const redactionResponseRequestId = boundedReportableRedactionValue(rawResponseRequestId);
+  const primaryMessage = sanitizeReportableSource(
+    toUnknownErrorMessage(error, fallbackMessage),
+    redactionRequestId,
+    redactionResponseRequestId
   );
   const cause = readErrorCause(error);
-  const causeMessage = redactReportableContext(
-    sanitizeReportableErrorText(toUnknownCauseMessage(cause)),
-    resolvedRequestId,
-    resolvedResponseRequestId
+  const causeMessage = sanitizeReportableSource(
+    toUnknownCauseMessage(cause),
+    redactionRequestId,
+    redactionResponseRequestId
   );
-  const message =
+  const message = limitText(
     causeMessage.length > 0 && !primaryMessage.includes(causeMessage)
       ? `${primaryMessage}\n\nDetails: ${limitText(causeMessage, maximumCauseDetailLength)}`
-      : primaryMessage;
+      : primaryMessage,
+    maximumReportableMessageLength
+  );
   const requestedSemanticCode = semanticCode ?? readSemanticCode(error);
   const resolvedSemanticCode = isKmErrorCode(requestedSemanticCode)
     ? requestedSemanticCode
@@ -87,17 +124,17 @@ export function createReportableError(
     kind,
     resolvedSemanticCode ?? '',
     resolvedCommand ?? '',
-    redactReportableContext(seed ?? '', resolvedRequestId, resolvedResponseRequestId),
+    sanitizeReportableSource(seed ?? '', redactionRequestId, redactionResponseRequestId),
     message,
-    redactReportableContext(
-      sanitizeReportableErrorText(error instanceof Error ? error.stack ?? '' : ''),
-      resolvedRequestId,
-      resolvedResponseRequestId
+    sanitizeReportableSource(
+      error instanceof Error ? error.stack ?? '' : '',
+      redactionRequestId,
+      redactionResponseRequestId
     ),
-    redactReportableContext(
-      sanitizeReportableErrorText(toUnknownCauseFingerprint(cause)),
-      resolvedRequestId,
-      resolvedResponseRequestId
+    sanitizeReportableSource(
+      toUnknownCauseFingerprint(cause),
+      redactionRequestId,
+      redactionResponseRequestId
     )
   ].join('|');
   const incidentFingerprint = `${incidentFingerprintPrefixes[kind]}-${createShortHash(
@@ -193,7 +230,18 @@ function showGlobalReportableError(
     report.incidentFingerprint,
     maximumRememberedGlobalIncidentFingerprints
   );
-  window.alert(formatReportableErrorMessage(report));
+  globalReportableError = report;
+  if (globalReportableErrorListeners.size === 0) {
+    window.alert(formatReportableErrorMessage(report));
+    return;
+  }
+  notifyGlobalReportableErrorListeners();
+}
+
+function notifyGlobalReportableErrorListeners() {
+  for (const listener of [...globalReportableErrorListeners]) {
+    listener();
+  }
 }
 
 function rememberBoundedValue(values: Set<string>, value: string, maximumSize: number) {
@@ -277,8 +325,35 @@ function readErrorContext(
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+function normalizedReportableCommand(value: string | undefined) {
+  return value && /^[A-Za-z][A-Za-z0-9.]{0,127}$/.test(value) ? value : undefined;
+}
+
+function normalizedReportableRequestId(value: string | undefined) {
+  return value && /^KM-REQUEST-[A-Z0-9-]{1,240}$/.test(value) ? value : undefined;
+}
+
+function boundedReportableRedactionValue(value: string | undefined) {
+  return value && value.length <= 4_096 ? value : undefined;
+}
+
+function sanitizeReportableSource(
+  value: string,
+  requestId: string | undefined,
+  responseRequestId: string | undefined
+) {
+  return sanitizeReportableErrorText(
+    redactReportableContext(
+      reportableSourcePrefix(value),
+      requestId,
+      responseRequestId
+    )
+  );
+}
+
 export function sanitizeReportableErrorText(value: string) {
   return value
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '')
     .replace(
       /(^|:\s)(?:--->\s*)?(?:[A-Za-z_][A-Za-z0-9_`]*(?:\.[A-Za-z_][A-Za-z0-9_`]*)*Exception):\s*/gi,
       '$1'
@@ -325,7 +400,15 @@ function redactExactValue(value: string, sensitiveValue: string | undefined, rep
 function limitText(value: string, maximumLength: number) {
   return value.length <= maximumLength
     ? value
-    : `${value.slice(0, maximumLength - 1).trimEnd()}…`;
+    : `${value.slice(0, maximumLength - 3).trimEnd()}...`;
+}
+
+function reportableSourcePrefix(value: string) {
+  const prefix = value.slice(0, maximumReportableSourceUnits);
+  const finalCodeUnit = prefix.charCodeAt(prefix.length - 1);
+  return finalCodeUnit >= 0xd800 && finalCodeUnit <= 0xdbff
+    ? prefix.slice(0, -1)
+    : prefix;
 }
 
 function createShortHash(value: string) {

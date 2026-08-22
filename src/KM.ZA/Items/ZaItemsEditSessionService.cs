@@ -636,8 +636,9 @@ internal sealed class ZaItemsEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
+            var loadedWorkflow = itemsWorkflowService.Load(project);
             var effectiveSession = RemoveSourceEquivalentPendingEdits(
-                itemsWorkflowService.Load(project),
+                loadedWorkflow,
                 session);
             var source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             var baseItemSource = source.SourceLayer == ProjectFileLayer.Layered
@@ -678,6 +679,26 @@ internal sealed class ZaItemsEditSessionService
             var machineWazaLayoutRepair = itemSemanticState.MachineWazaLayout;
             RestoreMintNatureSentinels(rows, mintNatureRecovery.ItemIds);
             ApplyTechnicalMachineLegacyRecovery(rows, technicalMachineRecovery, diagnostics);
+            if (TargetsTestTechnicalMachine(loadedWorkflow, effectiveSession))
+            {
+                var provisioning = ZaTestTechnicalMachineProvisioner.Provision(rows);
+                if (!provisioning.IsAvailable)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        provisioning.UnavailableReason
+                            ?? "TM162 Bug Buzz could not be provisioned safely.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        file: $"romfs/{ZaDataPaths.ItemDataArray}",
+                        expected: "Supported unique 160-TM source with unclaimed item 2222"));
+                    return ZaEditSessionSupport.CreateApplyResult(
+                        applyId,
+                        appliedAt,
+                        currentPlan,
+                        writtenFiles,
+                        diagnostics);
+                }
+            }
             ZaWorkflowFile? migratedShopLineupSource = null;
             if (technicalMachineRecovery.HasChanges
                 && PlanContainsVirtualWrite(
@@ -1726,7 +1747,7 @@ internal sealed class ZaItemsEditSessionService
         return bytes;
     }
 
-    private static void ApplyTechnicalMachineLegacyRecovery(
+    internal static void ApplyTechnicalMachineLegacyRecovery(
         List<ItemRow> rows,
         ZaTechnicalMachineLegacyRecovery recovery,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -1936,6 +1957,12 @@ internal sealed class ZaItemsEditSessionService
         }
 
         var editableField = GetEditableField(workflow, normalizedField)!;
+        if (!isVerifiedBaseRestore
+            && !CanEditTestTechnicalMachineIdentity(item, editableField, diagnostics))
+        {
+            return null;
+        }
+
         if (!ZaItemEffectRules.ValidateFieldValue(
                 item,
                 editableField,
@@ -2118,6 +2145,17 @@ internal sealed class ZaItemsEditSessionService
         }
 
         var target = targetOwners[0];
+        if (target.IsOwnedTestTechnicalMachine)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "TM162 is reserved for the Bug Buzz test item and cannot participate in a TM number swap.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.TechnicalMachineNumberField,
+                expected: "Another occupied physical TM number"));
+            return false;
+        }
+
         var reciprocalEdit = ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.ItemsDomain,
             $"Swap {target.Name} TM number to {previousNumber}.",
@@ -2208,6 +2246,12 @@ internal sealed class ZaItemsEditSessionService
 
         var isVerifiedBaseRestore = item.Provenance.SourceLayer != ProjectFileLayer.Base
             && HasVanillaRestoreSourceMarker(edit);
+        if (!isVerifiedBaseRestore
+            && !CanEditTestTechnicalMachineIdentity(item, editableField, diagnostics))
+        {
+            return;
+        }
+
         if (!isVerifiedBaseRestore
             && !CanEditTechnicalMachineField(item, editableField, diagnostics))
         {
@@ -2882,19 +2926,39 @@ internal sealed class ZaItemsEditSessionService
                 item.Metadata.SortIndex,
                 item.Metadata.GroupIndex))
             .ToArray();
+        var hasOwnedTestExtension = effectiveMachines.Any(item =>
+            item.IsOwnedTestTechnicalMachine);
         if (effectiveMachines.Any(item =>
                 item.FieldValues.GetValueOrDefault(
                     ZaItemsWorkflowService.TechnicalMachineNumberField) is null)
-            || !ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments))
+            || !HasValidTechnicalMachineNumbering(assignments, hasOwnedTestExtension))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Items output requires a complete physical TM permutation. Every number from 1 through the loaded TM count must belong to exactly one item.",
+                "Items output requires either the complete physical TM permutation or KM Editor's exact TM162 Bug Buzz test extension.",
                 ZaEditSessionSupport.ItemsDomain,
                 field: ZaItemsWorkflowService.TechnicalMachineNumberField,
-                expected: "Unique one-to-one TM number assignments"));
+                expected: "Unique one-to-one TM number assignments with only the owned TM162 test extension allowed"));
         }
     }
+
+    private static bool HasValidTechnicalMachineNumbering(
+        IReadOnlyList<ZaTechnicalMachineNumberAssignment> assignments,
+        bool allowsTestTechnicalMachineExtension) =>
+        ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments)
+        || allowsTestTechnicalMachineExtension
+        && ZaTechnicalMachineCatalog.HasCompleteNumberingWithTestTechnicalMachineExtension(assignments);
+
+    private static bool TargetsTestTechnicalMachine(
+        ZaItemsWorkflow workflow,
+        EditSession session) =>
+        workflow.Items.Any(item => item.IsOwnedTestTechnicalMachine)
+        && session.PendingEdits.Any(edit =>
+            string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+            && string.Equals(
+                edit.RecordId,
+                ZaTechnicalMachineCatalog.TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal));
 
     private static bool CanEditTechnicalMachineField(
         ZaItemRecord item,
@@ -2945,6 +3009,31 @@ internal sealed class ZaItemsEditSessionService
             ZaEditSessionSupport.ItemsDomain,
             field: field.Field,
             expected: "Item in the Technical Machines pocket"));
+        return false;
+    }
+
+    private static bool CanEditTestTechnicalMachineIdentity(
+        ZaItemRecord item,
+        ZaItemEditableField field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!item.IsOwnedTestTechnicalMachine
+            || field.Field is not (
+                ZaItemsWorkflowService.ItemTypeField
+                or ZaItemsWorkflowService.PocketField
+                or ZaItemsWorkflowService.MachineMoveIdField
+                or ZaItemsWorkflowService.SortOrderField
+                or ZaItemsWorkflowService.TechnicalMachineNumberField))
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "TM162 Bug Buzz identity fields are fixed so the test item remains safe and discoverable across Items, Pokemon, and Shops.",
+            ZaEditSessionSupport.ItemsDomain,
+            field: field.Field,
+            expected: "Edit price, stack, hold, or other non-identity item behavior"));
         return false;
     }
 
@@ -3758,7 +3847,7 @@ internal sealed class ZaItemsEditSessionService
         }
     }
 
-    private static List<ItemRow> ReadRows(byte[] bytes)
+    internal static List<ItemRow> ReadRows(byte[] bytes)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
         var rows = new List<ItemRow>();
@@ -3796,9 +3885,16 @@ internal sealed class ZaItemsEditSessionService
             .ToArray();
         var actualMachineItemIds = machines.Select(row => row.Id).Order().ToArray();
         var expectedMachineItemIds = expectedTechnicalMachines.Keys.Order().ToArray();
+        var hasOwnedTestExtension = rows.Any(
+            ZaTestTechnicalMachineProvisioner.IsOwnedTestTechnicalMachineRow);
         var valid = rows.Select(row => row.Id).Distinct().Count() == rows.Count
             && actualMachineItemIds.SequenceEqual(expectedMachineItemIds)
-            && ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments)
+            && HasValidTechnicalMachineNumbering(assignments, hasOwnedTestExtension)
+            && (!hasOwnedTestExtension
+                || rows.Count(row =>
+                    row.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
+                    && ZaTestTechnicalMachineProvisioner.IsOwnedTestTechnicalMachineRow(row)) == 1
+                && ZaTestTechnicalMachineProvisioner.HasOwnedRowInIdOrder(rows))
             && machines.All(row =>
                 expectedTechnicalMachines.TryGetValue(row.Id, out var expected)
                 && row.MachineWaza == expected.MoveId
@@ -3838,7 +3934,7 @@ internal sealed class ZaItemsEditSessionService
             expected: "Zero-extended 32-bit TM move fields"));
     }
 
-    private static byte[] WriteRows(IReadOnlyList<ItemRow> rows)
+    internal static byte[] WriteRows(IReadOnlyList<ItemRow> rows)
     {
         var builder = new FlatBufferBuilder(1024);
         var offsets = rows.Select(row => row.Write(builder)).ToArray();
@@ -3848,7 +3944,7 @@ internal sealed class ZaItemsEditSessionService
         return builder.SizedByteArray();
     }
 
-    private sealed class ItemRow
+    internal sealed class ItemRow
     {
         public int Id { get; init; }
         public int ItemType { get; set; }
@@ -3900,6 +3996,23 @@ internal sealed class ZaItemsEditSessionService
         public int AutoHealPriority { get; set; }
         public bool CanUseInBattle { get; set; }
         public int SwapIntoId { get; set; }
+
+        public static ItemRow CreateTestTechnicalMachine()
+        {
+            return new ItemRow
+            {
+                Id = ZaTechnicalMachineCatalog.TestTechnicalMachineItemId,
+                ItemType = 5,
+                InternalName = ZaTechnicalMachineCatalog.TestTechnicalMachineInternalName,
+                IconName = ZaTechnicalMachineCatalog.TestTechnicalMachineIconName,
+                Pocket = 6,
+                SlotMaxNum = 1,
+                SortNum = ZaTechnicalMachineCatalog.TestTechnicalMachineSlot,
+                MachineWaza = ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId,
+                MachineIndex = ZaTechnicalMachineCatalog.TestTechnicalMachineIndex,
+                MintNature = -1,
+            };
+        }
 
         public static ItemRow From(ZaItemData row)
         {

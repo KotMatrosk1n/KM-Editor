@@ -20,6 +20,7 @@ import type {
   GameModuleRecord,
   QueryGameModuleResponse
 } from '../../bridge/gameModuleContracts';
+import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import { useLocalization } from '../../localization';
 import {
   humanizeIdentifier,
@@ -27,16 +28,7 @@ import {
   presentationFactLabelKey,
   relativeRecordTitle
 } from '../workbench/analysisPresentationUtils';
-import { ConfidenceBadge } from './GameModuleResults';
-
-type RecordPickerOrder = 'titleAscending' | 'titleDescending' | 'recordKind';
-type ComparisonOrder =
-  | 'custom'
-  | 'titleAscending'
-  | 'titleDescending'
-  | 'recordKind'
-  | 'measureAscending'
-  | 'measureDescending';
+import { ConfidenceBadge, GameModuleResults } from './GameModuleResults';
 
 type ComparisonField = {
   fieldKey: string;
@@ -54,6 +46,7 @@ type NumericFact = {
 };
 
 const numericKinds = new Set(['signedInteger', 'unsignedInteger', 'decimal']);
+const maximumRecordSearchSuggestions = 8;
 const identityFieldKeysByRecordKind: Readonly<Record<string, readonly string[]>> = {
   moveVariant: ['variant'],
   moveVariantSet: ['moveId'],
@@ -64,21 +57,21 @@ const identityFieldKeysByRecordKind: Readonly<Record<string, readonly string[]>>
 };
 
 export function GameModuleComparison({
+  canNavigateRecord,
+  onNavigateRecord,
   response
 }: {
+  canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
+  onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   response: QueryGameModuleResponse;
 }) {
   const { formatLocale, t, translateLiteral } = useLocalization();
-  const [comparisonOrder, setComparisonOrder] = useState<ComparisonOrder>('custom');
   const [fieldIdentities, setFieldIdentities] = useState<string[]>([]);
   const [measureIdentity, setMeasureIdentity] = useState<string>('');
-  const [recordKind, setRecordKind] = useState('');
-  const [recordPickerOrder, setRecordPickerOrder] = useState<RecordPickerOrder>(
-    'titleAscending'
-  );
   const [recordSearch, setRecordSearch] = useState('');
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const initializedFieldsForQuery = useRef<string | null>(null);
+  const recordSearchInputRef = useRef<HTMLInputElement | null>(null);
   const comparisonCollator = useMemo(() => new Intl.Collator(formatLocale, {
     numeric: true,
     sensitivity: 'base'
@@ -91,29 +84,31 @@ export function GameModuleComparison({
     () => buildRecordDisplayLabels(response.records),
     [response.records]
   );
-  const recordKinds = useMemo(() => (
-    Array.from(new Set(response.records.map((record) => record.recordKind)))
-      .sort(comparisonCollator.compare)
-  ), [comparisonCollator, response.records]);
-  const visibleRecords = useMemo(() => {
+  const recordSearchResults = useMemo(() => {
     const normalizedSearch = recordSearch.trim().toLowerCase();
+    if (!normalizedSearch) return [];
+    const selected = new Set(selectedRecordIds);
     return [...response.records]
       .filter((record) => (
-        (!recordKind || record.recordKind === recordKind) &&
-        (!normalizedSearch || searchableRecordText(
+        !selected.has(record.recordId) &&
+        searchableRecordText(
           record,
           recordDisplayLabel(record, recordLabels)
         ).includes(normalizedSearch))
-      ))
-      .sort(recordPickerComparator(recordPickerOrder, recordLabels, comparisonCollator));
+      )
+      .sort(recordTitleComparator(1, recordLabels, comparisonCollator));
   }, [
     comparisonCollator,
-    recordKind,
     recordLabels,
-    recordPickerOrder,
     recordSearch,
-    response.records
+    response.records,
+    selectedRecordIds
   ]);
+  const recordSearchSuggestions = recordSearchResults.slice(
+    0,
+    maximumRecordSearchSuggestions
+  );
+  const hasRecordSearch = recordSearch.trim().length > 0;
   const selectedRecords = useMemo(() => (
     selectedRecordIds.flatMap((recordId) => {
       const record = recordById.get(recordId);
@@ -150,18 +145,6 @@ export function GameModuleComparison({
     [availableFields, t, translateLiteral]
   );
   const measure = fieldByIdentity.get(measureIdentity) ?? null;
-  const orderedRecords = useMemo(() => (
-    orderComparisonRecords(
-      selectedRecords,
-      comparisonOrder,
-      measure,
-      recordLabels,
-      comparisonCollator
-    )
-  ), [comparisonCollator, comparisonOrder, measure, recordLabels, selectedRecords]);
-  const displayedSelectedRecords = comparisonOrder === 'custom'
-    ? selectedRecords
-    : orderedRecords;
 
   useEffect(() => {
     setSelectedRecordIds((current) => current.filter((recordId) => recordById.has(recordId)));
@@ -173,15 +156,6 @@ export function GameModuleComparison({
       current && fieldByIdentity.get(current)?.numeric ? current : numericFields[0]?.identity ?? ''
     ));
   }, [fieldByIdentity, numericFields]);
-
-  useEffect(() => {
-    if (
-      !measure &&
-      (comparisonOrder === 'measureAscending' || comparisonOrder === 'measureDescending')
-    ) {
-      setComparisonOrder('custom');
-    }
-  }, [comparisonOrder, measure]);
 
   useEffect(() => {
     if (selectedRecords.length === 0) {
@@ -202,11 +176,16 @@ export function GameModuleComparison({
     );
   }, [availableFields, numericFields, response.queryFingerprint, selectedRecords.length]);
 
-  const toggleRecord = (recordId: string, checked: boolean) => {
+  const addRecord = (recordId: string) => {
     setSelectedRecordIds((current) => {
-      if (checked) return current.includes(recordId) ? current : [...current, recordId];
-      return current.filter((candidate) => candidate !== recordId);
+      return current.includes(recordId) ? current : [...current, recordId];
     });
+    recordSearchInputRef.current?.focus({ preventScroll: true });
+  };
+  const removeRecord = (recordId: string) => {
+    setSelectedRecordIds((current) => current.filter(
+      (candidate) => candidate !== recordId
+    ));
   };
   const toggleField = (identity: string, checked: boolean) => {
     setFieldIdentities((current) => {
@@ -225,17 +204,6 @@ export function GameModuleComparison({
         reordered[index]!
       ];
       return reordered;
-    });
-  };
-  const selectVisible = () => {
-    setSelectedRecordIds((current) => {
-      const selected = new Set(current);
-      return [
-        ...current,
-        ...visibleRecords
-          .map((record) => record.recordId)
-          .filter((recordId) => !selected.has(recordId))
-      ];
     });
   };
   const selectCommonFields = () => {
@@ -278,11 +246,14 @@ export function GameModuleComparison({
               </h4>
               <p>{t('gameModules.compare.records.description')}</p>
             </div>
-            <strong>
-              {t('gameModules.compare.records.visibleCount', {
-                count: visibleRecords.length
-              })}
-            </strong>
+            {hasRecordSearch ? (
+              <strong aria-live="polite">
+                {t('gameModules.compare.records.visibleCount', {
+                  count: recordSearchResults.length,
+                  shown: recordSearchSuggestions.length
+                })}
+              </strong>
+            ) : null}
           </header>
           <div className="km-game-module-record-filters">
             <label>
@@ -293,93 +264,45 @@ export function GameModuleComparison({
                   className="km-input-control"
                   onChange={(event) => setRecordSearch(event.currentTarget.value)}
                   placeholder={t('gameModules.compare.records.searchPlaceholder')}
+                  ref={recordSearchInputRef}
                   type="search"
                   value={recordSearch}
                 />
               </span>
             </label>
-            <label>
-              <span>{t('gameModules.compare.records.type')}</span>
-              <select
-                className="km-select-control"
-                onChange={(event) => setRecordKind(event.currentTarget.value)}
-                value={recordKind}
-              >
-                <option value="">{t('gameModules.compare.records.allTypes')}</option>
-                {recordKinds.map((kind) => (
-                  <option data-localization-ignore="true" key={kind} value={kind}>
-                    {humanizeIdentifier(kind)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{t('gameModules.compare.records.order')}</span>
-              <select
-                className="km-select-control"
-                onChange={(event) => setRecordPickerOrder(
-                  event.currentTarget.value as RecordPickerOrder
-                )}
-                value={recordPickerOrder}
-              >
-                <option value="titleAscending">
-                  {t('gameModules.compare.order.titleAscending')}
-                </option>
-                <option value="titleDescending">
-                  {t('gameModules.compare.order.titleDescending')}
-                </option>
-                <option value="recordKind">
-                  {t('gameModules.compare.order.recordKind')}
-                </option>
-              </select>
-            </label>
           </div>
-          <div className="km-game-module-selection-actions">
-            <button
-              className="secondary-button compact-button"
-              disabled={visibleRecords.length === 0}
-              onClick={selectVisible}
-              type="button"
-            >
-              {t('gameModules.compare.records.selectVisible')}
-            </button>
-            <button
-              className="secondary-button compact-button"
-              disabled={selectedRecordIds.length === 0}
-              onClick={() => setSelectedRecordIds([])}
-              type="button"
-            >
-              {t('gameModules.compare.records.clear')}
-            </button>
-          </div>
-          <ul
-            aria-label={t('gameModules.compare.records.availableLabel')}
-            className="km-game-module-record-picker"
-          >
-            {visibleRecords.map((record) => {
-              const checked = selectedRecordIds.includes(record.recordId);
-              const displayLabel = recordDisplayLabel(record, recordLabels);
-              return (
-                <li key={record.recordId}>
-                  <label data-selected={checked || undefined}>
-                    <input
-                      checked={checked}
-                      className="km-choice-control"
-                      onChange={(event) => toggleRecord(
-                        record.recordId,
-                        event.currentTarget.checked
-                      )}
-                      type="checkbox"
-                    />
-                    <span data-localization-ignore="true">
-                      <strong>{displayLabel}</strong>
-                      <small>{humanizeIdentifier(record.recordKind)}</small>
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
+          {hasRecordSearch ? (
+            recordSearchSuggestions.length > 0 ? (
+              <ul
+                aria-label={t('gameModules.compare.records.availableLabel')}
+                className="km-game-module-record-picker"
+              >
+                {recordSearchSuggestions.map((record) => {
+                  const displayLabel = recordDisplayLabel(record, recordLabels);
+                  return (
+                    <li key={record.recordId}>
+                      <span data-localization-ignore="true">
+                        <strong>{displayLabel}</strong>
+                        <small>{humanizeIdentifier(record.recordKind)}</small>
+                      </span>
+                      <button
+                        aria-label={`${translateLiteral('Add')}: ${displayLabel}`}
+                        className="secondary-button compact-button"
+                        onClick={() => addRecord(record.recordId)}
+                        type="button"
+                      >
+                        {translateLiteral('Add')}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="km-workbench-empty">
+                {t('analysisPresentation.controls.noMatches')}
+              </p>
+            )
+          ) : null}
         </section>
 
         <section aria-labelledby="game-module-selected-records-title">
@@ -396,88 +319,65 @@ export function GameModuleComparison({
               })}
             </strong>
           </header>
-          <label className="km-game-module-comparison-order">
-            <span>{t('gameModules.compare.selected.order')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setComparisonOrder(
-                event.currentTarget.value as ComparisonOrder
-              )}
-              value={comparisonOrder}
-            >
-              <option value="custom">{t('gameModules.compare.order.custom')}</option>
-              <option value="titleAscending">
-                {t('gameModules.compare.order.titleAscending')}
-              </option>
-              <option value="titleDescending">
-                {t('gameModules.compare.order.titleDescending')}
-              </option>
-              <option value="recordKind">
-                {t('gameModules.compare.order.recordKind')}
-              </option>
-              {measure ? (
-                <>
-                  <option value="measureAscending">
-                    {t('gameModules.compare.order.measureAscending')}
-                  </option>
-                  <option value="measureDescending">
-                    {t('gameModules.compare.order.measureDescending')}
-                  </option>
-                </>
-              ) : null}
-            </select>
-          </label>
           {selectedRecords.length > 0 ? (
-            <ol className="km-game-module-selected-records">
-              {displayedSelectedRecords.map((record, index) => {
-                const displayLabel = recordDisplayLabel(record, recordLabels);
-                return (
-                  <li key={record.recordId}>
-                    <span data-localization-ignore="true">
-                      <strong>{displayLabel}</strong>
-                      <small>{humanizeIdentifier(record.recordKind)}</small>
-                    </span>
-                    <div>
-                      <button
-                        aria-label={t('gameModules.compare.selected.moveUp', {
-                          name: displayLabel
-                        })}
-                        className="secondary-button compact-button icon-only-button"
-                        disabled={comparisonOrder !== 'custom' || index === 0}
-                        onClick={() => moveSelectedRecord(record.recordId, -1)}
-                        type="button"
-                      >
-                        <ArrowUp aria-hidden="true" size={14} />
-                      </button>
-                      <button
-                        aria-label={t('gameModules.compare.selected.moveDown', {
-                          name: displayLabel
-                        })}
-                        className="secondary-button compact-button icon-only-button"
-                        disabled={
-                          comparisonOrder !== 'custom' ||
-                          index === displayedSelectedRecords.length - 1
-                        }
-                        onClick={() => moveSelectedRecord(record.recordId, 1)}
-                        type="button"
-                      >
-                        <ArrowDown aria-hidden="true" size={14} />
-                      </button>
-                      <button
-                        aria-label={t('gameModules.compare.selected.remove', {
-                          name: displayLabel
-                        })}
-                        className="secondary-button compact-button icon-only-button"
-                        onClick={() => toggleRecord(record.recordId, false)}
-                        type="button"
-                      >
-                        <X aria-hidden="true" size={14} />
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
+            <>
+              <div className="km-game-module-selection-actions">
+                <button
+                  className="secondary-button compact-button"
+                  onClick={() => setSelectedRecordIds([])}
+                  type="button"
+                >
+                  {t('gameModules.compare.records.clear')}
+                </button>
+              </div>
+              <ol className="km-game-module-selected-records">
+                {selectedRecords.map((record, index) => {
+                  const displayLabel = recordDisplayLabel(record, recordLabels);
+                  return (
+                    <li key={record.recordId}>
+                      <span data-localization-ignore="true">
+                        <strong>{displayLabel}</strong>
+                        <small>{humanizeIdentifier(record.recordKind)}</small>
+                      </span>
+                      <div>
+                        <button
+                          aria-label={t('gameModules.compare.selected.moveUp', {
+                            name: displayLabel
+                          })}
+                          className="secondary-button compact-button icon-only-button"
+                          disabled={index === 0}
+                          onClick={() => moveSelectedRecord(record.recordId, -1)}
+                          type="button"
+                        >
+                          <ArrowUp aria-hidden="true" size={14} />
+                        </button>
+                        <button
+                          aria-label={t('gameModules.compare.selected.moveDown', {
+                            name: displayLabel
+                          })}
+                          className="secondary-button compact-button icon-only-button"
+                          disabled={index === selectedRecords.length - 1}
+                          onClick={() => moveSelectedRecord(record.recordId, 1)}
+                          type="button"
+                        >
+                          <ArrowDown aria-hidden="true" size={14} />
+                        </button>
+                        <button
+                          aria-label={t('gameModules.compare.selected.remove', {
+                            name: displayLabel
+                          })}
+                          className="secondary-button compact-button icon-only-button"
+                          onClick={() => removeRecord(record.recordId)}
+                          type="button"
+                        >
+                          <X aria-hidden="true" size={14} />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </>
           ) : (
             <p className="km-workbench-empty">
               {t('gameModules.compare.selected.empty')}
@@ -576,7 +476,7 @@ export function GameModuleComparison({
               fields={selectedFields}
               fieldLabels={fieldLabels}
               recordLabels={recordLabels}
-              records={orderedRecords}
+              records={selectedRecords}
             />
           ) : (
             <p className="km-workbench-empty">
@@ -623,12 +523,23 @@ export function GameModuleComparison({
                 <NumericComparisonChart
                   field={measure}
                   recordLabels={recordLabels}
-                  records={orderedRecords}
+                  records={selectedRecords}
                   translateLiteral={translateLiteral}
                 />
               ) : null}
             </section>
           ) : null}
+
+          <details className="km-game-module-full-details">
+            <summary>{t('gameModules.compare.fullDetails')}</summary>
+            <GameModuleResults
+              canNavigateRecord={canNavigateRecord}
+              onNavigateRecord={onNavigateRecord}
+              preserveRecordOrder
+              response={{ ...response, records: selectedRecords }}
+              showResultCount={false}
+            />
+          </details>
         </>
       ) : null}
     </section>
@@ -975,52 +886,6 @@ function compareCodeUnits(left: string, right: string) {
   return left < right ? -1 : 1;
 }
 
-function orderComparisonRecords(
-  records: readonly GameModuleRecord[],
-  order: ComparisonOrder,
-  measure: ComparisonField | null,
-  recordLabels: ReadonlyMap<string, string>,
-  collator: Intl.Collator
-) {
-  if (order === 'custom') return records;
-  const sorted = [...records];
-  switch (order) {
-    case 'titleAscending':
-      return sorted.sort(recordTitleComparator(1, recordLabels, collator));
-    case 'titleDescending':
-      return sorted.sort(recordTitleComparator(-1, recordLabels, collator));
-    case 'recordKind':
-      return sorted.sort((left, right) => (
-        collator.compare(left.recordKind, right.recordKind) ||
-        recordTitleComparator(1, recordLabels, collator)(left, right)
-      ));
-    case 'measureAscending':
-      return sorted.sort(measureComparator(measure, 1, recordLabels, collator));
-    case 'measureDescending':
-      return sorted.sort(measureComparator(measure, -1, recordLabels, collator));
-    default:
-      return records;
-  }
-}
-
-function recordPickerComparator(
-  order: RecordPickerOrder,
-  recordLabels: ReadonlyMap<string, string>,
-  collator: Intl.Collator
-) {
-  switch (order) {
-    case 'titleDescending':
-      return recordTitleComparator(-1, recordLabels, collator);
-    case 'recordKind':
-      return (left: GameModuleRecord, right: GameModuleRecord) => (
-        collator.compare(left.recordKind, right.recordKind) ||
-        recordTitleComparator(1, recordLabels, collator)(left, right)
-      );
-    default:
-      return recordTitleComparator(1, recordLabels, collator);
-  }
-}
-
 function recordTitleComparator(
   direction: 1 | -1,
   recordLabels: ReadonlyMap<string, string>,
@@ -1034,25 +899,6 @@ function recordTitleComparator(
     collator.compare(left.recordKind, right.recordKind) ||
     collator.compare(left.recordId, right.recordId)
   );
-}
-
-function measureComparator(
-  field: ComparisonField | null,
-  direction: 1 | -1,
-  recordLabels: ReadonlyMap<string, string>,
-  collator: Intl.Collator
-) {
-  return (left: GameModuleRecord, right: GameModuleRecord) => {
-    const leftValue = numericFieldFact(left, field)?.value ?? null;
-    const rightValue = numericFieldFact(right, field)?.value ?? null;
-    if (leftValue === null && rightValue === null) {
-      return recordTitleComparator(1, recordLabels, collator)(left, right);
-    }
-    if (leftValue === null) return 1;
-    if (rightValue === null) return -1;
-    return (leftValue - rightValue) * direction ||
-      recordTitleComparator(1, recordLabels, collator)(left, right);
-  };
 }
 
 function buildRecordDisplayLabels(records: readonly GameModuleRecord[]) {
@@ -1224,14 +1070,9 @@ function searchableRecordText(record: GameModuleRecord, displayLabel: string) {
   return [
     displayLabel,
     record.title,
-    record.summary,
-    record.recordKind,
-    ...record.facts.flatMap((fact) => [
-      fact.fieldKey,
-      fact.label,
-      fact.value.displayValue,
-      fact.value.canonicalValue ?? ''
-    ])
+    record.recordId,
+    record.groupId ?? '',
+    record.parentRecordId ?? ''
   ].join('\n').toLowerCase();
 }
 

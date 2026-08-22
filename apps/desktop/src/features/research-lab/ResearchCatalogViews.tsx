@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Blocks, Eye, Network } from 'lucide-react';
+import { Blocks, Eye, Network, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   CompareResearchSourcesResponse,
   ReadResearchLabCapabilitiesResponse,
   ResearchConfidence,
   ResearchCoverageState
 } from '../../bridge/researchLabContracts';
+import { researchLabMaximumAccumulatedFindings } from '../../bridge/researchLabContracts';
 import { useLocalization } from '../../localization';
 import { TechnicalDetails } from '../workbench/AnalysisPresentation';
 import { humanizeIdentifier } from '../workbench/analysisPresentationUtils';
@@ -93,16 +95,38 @@ export function ResearchObservationsView({
 
 export function ResearchOwnershipView({
   capabilities,
-  comparison
+  comparison,
+  isBusy,
+  isLoadingMore,
+  onLoadMore
 }: {
   capabilities: ReadResearchLabCapabilitiesResponse;
   comparison: CompareResearchSourcesResponse | null;
+  isBusy: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   const { t, translateLiteral } = useLocalization();
   const capability = capabilities.capabilities.find(
     (candidate) => candidate.feature === 'ownershipEvidence'
   );
   const capabilityReasonKey = researchReasonKey(capability?.reasonCode ?? null);
+  const [query, setQuery] = useState('');
+  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matches = useMemo(() => normalizedQuery
+    ? (comparison?.items ?? []).filter((item) => (
+      item.relativePath.toLocaleLowerCase().includes(normalizedQuery)
+    )).slice(0, 10)
+    : [], [comparison?.items, normalizedQuery]);
+  const selectedItem = comparison?.items.find((item) => (
+    item.findingId === selectedFindingId
+  )) ?? null;
+  useEffect(() => {
+    if (selectedFindingId && !comparison?.items.some((item) => (
+      item.findingId === selectedFindingId
+    ))) setSelectedFindingId(null);
+  }, [comparison?.items, selectedFindingId]);
   return (
     <section
       aria-labelledby="research-lab-tab-ownership"
@@ -124,8 +148,56 @@ export function ResearchOwnershipView({
       ) : !comparison ? (
         <p className="km-research-lab-empty">{t('researchLab.ownership.empty')}</p>
       ) : (
-        <ul className="km-research-lab-ownership">
-          {comparison.items.map((item) => {
+        <>
+          <label className="km-research-lab-ownership-search">
+            <span>{t('researchLab.ownership.findFile')}</span>
+            <span className="km-research-lab-filter-input">
+              <Search aria-hidden="true" size={15} />
+              <input
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder={t('researchLab.ownership.findFilePlaceholder')}
+                type="search"
+                value={query}
+              />
+            </span>
+          </label>
+          <p aria-live="polite" className="km-research-lab-result-count">
+            {t('researchLab.comparison.loaded', { count: comparison.items.length })}
+          </p>
+          {normalizedQuery ? (
+            matches.length > 0 ? (
+              <ul className="km-research-lab-file-matches">
+                {matches.map((item) => (
+                  <li key={item.findingId}>
+                    <span data-localization-ignore="true">
+                      <strong>{item.relativePath}</strong>
+                      {item.ownership.ownerId ? (
+                        <small>{humanizeIdentifier(item.ownership.ownerId)}</small>
+                      ) : null}
+                    </span>
+                    <button
+                      aria-label={`${translateLiteral('Open')}: ${item.relativePath}`}
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setSelectedFindingId(item.findingId);
+                        setQuery('');
+                      }}
+                      type="button"
+                    >
+                      {translateLiteral('Open')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="km-research-lab-empty">
+                {t('analysisPresentation.controls.noMatches')}
+              </p>
+            )
+          ) : null}
+          {selectedItem ? (
+            <ul className="km-research-lab-ownership">
+              {[selectedItem].map((item) => {
             const reasonKey = researchReasonKey(item.ownership.reasonCode);
             return (
               <li key={item.findingId}>
@@ -158,8 +230,33 @@ export function ResearchOwnershipView({
                 </article>
               </li>
             );
-          })}
-        </ul>
+              })}
+            </ul>
+          ) : (
+            <p className="km-research-lab-empty">{t('researchLab.ownership.searchToView')}</p>
+          )}
+          {comparison.nextCursor ? (
+            comparison.items.length >= researchLabMaximumAccumulatedFindings ? (
+              <p className="km-research-lab-help">
+                {t('researchLab.comparison.windowLimit', {
+                  count: researchLabMaximumAccumulatedFindings
+                })}
+              </p>
+            ) : (
+              <button
+                aria-busy={isLoadingMore || undefined}
+                className="secondary-button compact-button"
+                disabled={isBusy}
+                onClick={onLoadMore}
+                type="button"
+              >
+                {t(isLoadingMore
+                  ? 'researchLab.comparison.loadingMore'
+                  : 'researchLab.comparison.more')}
+              </button>
+            )
+          ) : null}
+        </>
       )}
     </section>
   );

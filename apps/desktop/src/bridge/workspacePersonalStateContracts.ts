@@ -518,7 +518,12 @@ function requireUnique<T>(
   path: PropertyKey[]
 ) {
   const keys = new Set<string>();
-  if (values.some((value) => keys.size === keys.add(key(value)).size)) {
+  if (values.some((value) => {
+    const identity = key(value);
+    if (keys.has(identity)) return true;
+    keys.add(identity);
+    return false;
+  })) {
     context.addIssue({ code: 'custom', message: 'Workspace entries must be unique.', path });
   }
 }

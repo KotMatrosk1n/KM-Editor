@@ -230,18 +230,60 @@ internal sealed class ZaItemsWorkflowService
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             EnsureBoundedItemTable(source.Bytes, "The Z-A item table");
+            var technicalMachineRecovery = DetectTechnicalMachineLegacyRecovery(project, source, diagnostics);
+            var projectedSource = source;
+            var projectedRecovery = technicalMachineRecovery;
+            var projectedRows = ZaItemsEditSessionService.ReadRows(source.Bytes);
+            var projectionDiagnostics = new List<ValidationDiagnostic>();
+            if (!technicalMachineRecovery.IsBlocked && technicalMachineRecovery.HasChanges)
+            {
+                ZaItemsEditSessionService.ApplyTechnicalMachineLegacyRecovery(
+                    projectedRows,
+                    technicalMachineRecovery,
+                    projectionDiagnostics);
+            }
+
+            diagnostics.AddRange(projectionDiagnostics);
+            var canProject = !technicalMachineRecovery.IsBlocked
+                && !projectionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            var provisioning = canProject
+                ? ZaTestTechnicalMachineProvisioner.Provision(projectedRows)
+                : new ZaTestTechnicalMachineProvisioningResult(
+                    IsAvailable: false,
+                    Added: false,
+                    technicalMachineRecovery.BlockingReason
+                        ?? "Legacy TM recovery could not be projected safely before adding TM162 Bug Buzz.");
+            if (provisioning.IsAvailable)
+            {
+                projectedRecovery = ZaTechnicalMachineLegacyRecovery.None;
+                projectedSource = source with
+                {
+                    Bytes = technicalMachineRecovery.HasChanges || provisioning.Added
+                        ? ZaItemsEditSessionService.WriteRows(projectedRows)
+                        : source.Bytes,
+                };
+            }
+            else
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    provisioning.UnavailableReason
+                        ?? "TM162 Bug Buzz is unavailable for the loaded item data.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    TechnicalMachineNumberField,
+                    "Supported unique 160-TM source with unclaimed item 2222"));
+            }
+
             var baseItems = ReadBaseItems(
                 fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
             var compatibilityCounts = ReadTechnicalMachineCompatibilityCounts(
                 fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes);
             DetectMachineWazaLayout(source, diagnostics);
             var mintNatureRecovery = DetectMintNatureRecovery(project, source, diagnostics);
-            var technicalMachineRecovery = DetectTechnicalMachineLegacyRecovery(project, source, diagnostics);
             items = LoadRecords(
-                    source,
+                    projectedSource,
                     labels,
                     mintNatureRecovery.ItemIds,
-                    technicalMachineRecovery,
+                    projectedRecovery,
                     baseItems,
                     compatibilityCounts)
                 .ToArray();
@@ -278,9 +320,18 @@ internal sealed class ZaItemsWorkflowService
                 .Distinct()
                 .Order()
                 .ToArray();
-            if (duplicateNumbers.Length > 0
+            var assignments = machines
+                .Select(item => new ZaTechnicalMachineNumberAssignment(
+                    item.ItemId,
+                    item.Metadata.SortIndex,
+                    item.Metadata.GroupIndex))
+                .ToArray();
+            var hasValidNumbering = ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments)
+                || ZaTechnicalMachineCatalog.HasCompleteNumberingWithTestTechnicalMachineExtension(assignments);
+            if (!hasValidNumbering
+                && (duplicateNumbers.Length > 0
                 || missingNumbers.Length > 0
-                || outOfRangeNumbers.Length > 0)
+                || outOfRangeNumbers.Length > 0))
             {
                 diagnostics.Add(ZaWorkflowSupport.Warning(
                     "TM number assignments need repair. "
@@ -625,7 +676,11 @@ internal sealed class ZaItemsWorkflowService
         int compatiblePokemonCount)
     {
         var machineMoveId = item.MachineWaza;
-        var machineMoveName = machineMoveId > 0 ? labels.Move(machineMoveId) : null;
+        var machineMoveName = machineMoveId > 0
+            ? ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item)
+                ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(labels)
+                : labels.Move(machineMoveId)
+            : null;
         var sourceItemName = labels.Item(item.Id);
         var machineSlot = ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
             && ZaTechnicalMachineCatalog.TryResolveMachineSlot(item, sourceItemName, out var resolvedSlot)
@@ -692,6 +747,7 @@ internal sealed class ZaItemsWorkflowService
             RevertToVanillaBlockedReason = canRevertToVanilla
                 ? null
                 : "This item does not have an exact matching record in the verified vanilla item table.",
+            IsOwnedTestTechnicalMachine = ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item),
         };
     }
 
@@ -903,7 +959,14 @@ internal sealed class ZaItemsWorkflowService
             new ZaItemDetailGroup(
                 "TM Assignment",
                 [
-                    Detail("TM move", item.MachineWaza > 0 ? $"{item.MachineWaza.ToString(CultureInfo.InvariantCulture)} {labels.Move(item.MachineWaza)}" : "None"),
+                    Detail(
+                        "TM move",
+                        item.MachineWaza > 0
+                            ? $"{item.MachineWaza.ToString(CultureInfo.InvariantCulture)} "
+                                + (ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item)
+                                    ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(labels)
+                                    : labels.Move(item.MachineWaza))
+                            : "None"),
                 ]),
             new ZaItemDetailGroup(
                 "Effects",
@@ -935,7 +998,11 @@ internal sealed class ZaItemsWorkflowService
         IReadOnlyList<ZaItemRecord> items)
     {
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
-        var technicalMachineCount = items.Count(IsTechnicalMachineRecord);
+        var technicalMachineMaximum = items
+            .Where(IsTechnicalMachineRecord)
+            .Select(item => item.Metadata.MachineSlot ?? 0)
+            .DefaultIfEmpty(0)
+            .Max();
         return BaseEditableFields
             .Select(field => field.Field switch
             {
@@ -946,7 +1013,7 @@ internal sealed class ZaItemsWorkflowService
                 },
                 TechnicalMachineNumberField => field with
                 {
-                    MaximumValue = Math.Max(technicalMachineCount, 1),
+                    MaximumValue = Math.Max(technicalMachineMaximum, 1),
                 },
                 _ => field,
             })

@@ -270,6 +270,10 @@ import {
   type ReportableError
 } from './errorReporting';
 import {
+  ReportableDiagnosticIssuesLink,
+  ReportableErrorScreen
+} from './components/ReportableErrorScreen';
+import {
   desktopErrorCodes,
   diagnosticErrorCodes,
   swshPlacementErrorCodes,
@@ -291,7 +295,6 @@ import {
 import {
   supportedLanguages,
   useLocalization,
-  type CommunityLocalePack,
   type LanguageCode
 } from './localization';
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
@@ -492,6 +495,7 @@ import { getSectionWikiUrl } from './wikiLinks';
 import {
   getWorkbenchSectionLabelKey
 } from './workbench/capabilityRegistry';
+import { userFacingFeatureVisibility } from './workbench/featureVisibility';
 import {
   createWorkbenchNavigationController,
   type WorkbenchNavigationGuardState
@@ -533,7 +537,10 @@ import {
   closeWorkspaceTab,
   commitWorkspaceNavigation,
   createWorkspaceShellState,
+  maximumWorkspaceRecentEntries,
+  removeUnavailableWorkspaceHistoryEntry,
   resetWorkspaceShellScope,
+  shouldRestoreWorkspacePreloadSourceSection,
   workspaceTabKey,
   type PendingWorkspaceNavigation,
   type WorkspaceNavigationCommitOptions,
@@ -546,7 +553,10 @@ import {
   type WorkspaceEntityCommandSearch
 } from './workbench/commandRegistry';
 import type { SemanticExploreRecordRef } from './bridge/semanticExploreContracts';
-import type { WorkspaceTargetViewModel } from './workbench/workspaceShellViewModels';
+import {
+  mergeWorkspaceRecentTargetViewModels,
+  type WorkspaceTargetViewModel
+} from './workbench/workspaceShellViewModels';
 import {
   createWorkspaceShortcutRegistry,
   resolveWorkspaceShortcut
@@ -606,7 +616,6 @@ const GameModulesRuntime = lazy(() => import('./features/game-modules/GameModule
 const ResearchLabRuntime = lazy(() => import('./features/research-lab/ResearchLabRuntime'));
 
 const appVersion = tauriConfig.version;
-const emptyCommunityLocalePacks: readonly CommunityLocalePack[] = [];
 const legacyWorkspaceProjectIdPlaceholder = `km1_${'0'.repeat(64)}`;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 export type EditorUiFamily = 'swsh' | 'sv' | 'za';
@@ -712,7 +721,7 @@ export class AppErrorBoundary extends Component<
 
   public render() {
     if (this.state.report) {
-      return <CriticalErrorScreen report={this.state.report} />;
+      return <ReportableErrorScreen report={this.state.report} />;
     }
 
     return this.props.children;
@@ -726,36 +735,6 @@ function createRenderErrorReport(error: unknown, componentStack?: string) {
     seed: componentStack,
     title: 'KM Editor hit a critical display error.'
   });
-}
-
-function CriticalErrorScreen({ report }: { report: ReportableError }) {
-  const { translateLiteral } = useLocalization();
-
-  return (
-    <main className="fatal-error-screen">
-      <section className="panel fatal-error-panel" role="alert">
-        <div className="panel-heading">
-          <AlertTriangle aria-hidden="true" size={20} />
-          <h1>{report.title}</h1>
-        </div>
-        <div className="fatal-error-code">
-          {report.semanticCode ? (
-            <>
-              <span>{translateLiteral('Error code')}</span>
-              <code data-localization-ignore="true">{report.semanticCode}</code>
-            </>
-          ) : null}
-          <span>{translateLiteral('Incident fingerprint')}</span>
-          <code data-localization-ignore="true">{report.incidentFingerprint}</code>
-        </div>
-        <p>
-          Take a screenshot of this message and report it in GitHub Issues. Restart KM Editor
-          before trying the same action again.
-        </p>
-        <p>{report.message}</p>
-      </section>
-    </main>
-  );
 }
 
 const gameDefinitions = {
@@ -1915,7 +1894,13 @@ export function App({
     t,
     translateLiteral
   } = useLocalization();
-  const [hasIgnoredPersistedLocalePacks, setHasIgnoredPersistedLocalePacks] = useState(false);
+  const isAppMountedRef = useRef(true);
+  useEffect(() => {
+    isAppMountedRef.current = true;
+    return () => {
+      isAppMountedRef.current = false;
+    };
+  }, []);
   const personalWorkspaceRegistry = useMemo(
     () => createBridgeBackedPersonalWorkspaceRegistry(unscopedBridge, {
       onDiagnostic: (diagnostic) => {
@@ -1925,7 +1910,6 @@ export function App({
         clearIgnoredCommunityLocalePreference(
           diagnostic.localePacks.map((localePack) => localePack.id)
         );
-        setHasIgnoredPersistedLocalePacks(true);
       }
     }),
     [clearIgnoredCommunityLocalePreference, unscopedBridge]
@@ -1950,8 +1934,6 @@ export function App({
   const [unavailableRecentProjectIds, setUnavailableRecentProjectIds] = useState<Set<string>>(
     () => new Set()
   );
-  const communityLocalePacks =
-    applicationWorkspaceSnapshot.document?.localePacks ?? emptyCommunityLocalePacks;
   const workspaceShortcuts = useMemo(
     () => createSafeWorkspaceShortcutRegistry(
       applicationWorkspaceSnapshot.document?.shortcutOverrides ?? []
@@ -1964,7 +1946,6 @@ export function App({
     ),
     [workspaceShortcuts]
   );
-  const [isLocalePackBusy, setIsLocalePackBusy] = useState(false);
   useEffect(() => {
     let isCurrent = true;
     setIsApplicationWorkspaceLoading(true);
@@ -2581,6 +2562,7 @@ export function App({
   const projectWorkspaceLoadRef = useRef(0);
   useEffect(() => {
     const loadId = ++projectWorkspaceLoadRef.current;
+    let isCurrentLoad = true;
     setProjectWorkspaceSnapshot({ document: null, etag: null });
     setProjectWorkspaceOwnerId(null);
     if (!activeProjectId || !selectedGame) {
@@ -2591,7 +2573,7 @@ export function App({
     setIsProjectWorkspaceLoading(true);
     void personalWorkspaceRegistry.readProjectState(activeProjectId).then(
       (snapshot) => {
-        if (projectWorkspaceLoadRef.current !== loadId) return;
+        if (!isCurrentLoad || projectWorkspaceLoadRef.current !== loadId) return;
         if (snapshot.document && snapshot.document.game !== selectedGame) {
           setPersonalWorkspaceError('Saved Workbench state belongs to a different game.');
           setProjectWorkspaceSnapshot({ document: null, etag: null });
@@ -2604,13 +2586,16 @@ export function App({
         setIsProjectWorkspaceLoading(false);
       },
       (error: unknown) => {
-        if (projectWorkspaceLoadRef.current !== loadId) return;
+        if (!isCurrentLoad || projectWorkspaceLoadRef.current !== loadId) return;
         setProjectWorkspaceSnapshot({ document: null, etag: null });
         setProjectWorkspaceOwnerId(null);
         setPersonalWorkspaceError(getErrorMessage(error));
         setIsProjectWorkspaceLoading(false);
       }
     );
+    return () => {
+      isCurrentLoad = false;
+    };
   }, [activeProjectId, personalWorkspaceRegistry, selectedGame]);
   const outputSafetyScope = useMemo(
     () => activeProjectId
@@ -2673,43 +2658,93 @@ export function App({
   );
   const workspaceShellStateRef = useRef(workspaceShellState);
   workspaceShellStateRef.current = workspaceShellState;
+  const workspaceShellProjectScopeGenerationRef = useRef(
+    projectScopeGenerationRef.current
+  );
   const activeNoteDirtyRef = useRef(false);
   const flushActiveNoteRef = useRef<() => Promise<boolean>>(async () => true);
   const workspaceNavigationRequestRevisionRef = useRef(0);
+  const workspaceNavigationScopeRevisionRef = useRef(0);
+  const stableLocationPreparationRevisionRef = useRef(0);
+  const workspaceColdPreloadTransitionsRef = useRef<Array<{
+    destinationSection: WorkbenchSection;
+    sourceSection: WorkbenchSection;
+    sourceShellRevision: number;
+  }>>([]);
   const pendingWorkspaceNavigationRef = useRef<{
     options: WorkspaceNavigationCommitOptions;
     pending: PendingWorkspaceNavigation;
+    projectScopeGeneration: number;
   } | null>(null);
+  const workspaceProjectScopeGeneration = projectScopeGenerationRef.current;
   useEffect(() => {
     const nextLocation = createSectionLocation(activeSection, {
       game: selectedGame,
       projectId: activeProjectId
     });
-    setActiveLocation((currentLocation) => {
-      if (
-        currentLocation.section === activeSection &&
-        currentLocation.game === selectedGame &&
-        currentLocation.projectId === activeProjectId
-      ) {
-        return currentLocation;
-      }
-      return nextLocation;
-    });
     const currentScope = workspaceShellStateRef.current.scope;
-    if (currentScope.game !== selectedGame || currentScope.projectId !== activeProjectId) {
+    const locationMatchesActiveSection =
+      activeLocation.section === activeSection &&
+      activeLocation.game === selectedGame &&
+      activeLocation.projectId === activeProjectId;
+    const isUncommittedColdPreloadSection =
+      !locationMatchesActiveSection &&
+      workspaceColdPreloadTransitionsRef.current.some((transition) =>
+        shouldRestoreWorkspacePreloadSourceSection({
+          activeSection,
+          committedSection: activeLocation.section,
+          currentShellRevision: workspaceShellStateRef.current.revision,
+          destinationSection: transition.destinationSection,
+          sourceSection: transition.sourceSection,
+          sourceShellRevision: transition.sourceShellRevision
+        })
+      );
+    if (
+      currentScope.game !== selectedGame ||
+      currentScope.projectId !== activeProjectId ||
+      workspaceShellProjectScopeGenerationRef.current !== workspaceProjectScopeGeneration ||
+      (!locationMatchesActiveSection && !isUncommittedColdPreloadSection)
+    ) {
+      workspaceNavigationRequestRevisionRef.current += 1;
+      workspaceNavigationScopeRevisionRef.current += 1;
+      stableLocationPreparationRevisionRef.current += 1;
       pendingWorkspaceNavigationRef.current = null;
+      workspaceColdPreloadTransitionsRef.current = [];
+      workspaceShellProjectScopeGenerationRef.current = workspaceProjectScopeGeneration;
       const nextState = resetWorkspaceShellScope(
         workspaceShellStateRef.current,
         nextLocation
       );
       workspaceShellStateRef.current = nextState;
       setWorkspaceShellState(nextState);
+      setActiveLocation(nextLocation);
     }
-  }, [activeProjectId, activeSection, selectedGame]);
+  }, [
+    activeLocation,
+    activeProjectId,
+    activeSection,
+    selectedGame,
+    workspaceProjectScopeGeneration
+  ]);
   const commitWorkbenchLocation = useCallback(
     (location: WorkbenchLocation) => {
+      stableLocationPreparationRevisionRef.current += 1;
       const currentState = workspaceShellStateRef.current;
+      if (
+        currentState.scope.game !== location.game ||
+        currentState.scope.projectId !== location.projectId
+      ) {
+        pendingWorkspaceNavigationRef.current = null;
+        return false;
+      }
       const registeredNavigation = pendingWorkspaceNavigationRef.current;
+      if (
+        registeredNavigation &&
+        registeredNavigation.projectScopeGeneration !== projectScopeGenerationRef.current
+      ) {
+        pendingWorkspaceNavigationRef.current = null;
+        return false;
+      }
       let pending = registeredNavigation?.pending ?? null;
       let options = registeredNavigation?.options ?? {};
       if (!pending || !workbenchLocationsEqual(pending.target, location)) {
@@ -2718,10 +2753,14 @@ export function App({
       }
       pendingWorkspaceNavigationRef.current = null;
       const result = commitWorkspaceNavigation(currentState, pending, location, options);
+      if (result.kind !== 'committed') {
+        return false;
+      }
       workspaceShellStateRef.current = result.state;
       setWorkspaceShellState(result.state);
       setActiveLocation(location);
       setActiveSection(location.section);
+      return true;
     },
     [setActiveSection]
   );
@@ -2908,6 +2947,9 @@ export function App({
   const [isSupportSearchRunning, setIsSupportSearchRunning] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
+  const [isProjectRelocationApplying, setIsProjectRelocationApplying] = useState(false);
+  const [isOutputProfileSwitchApplying, setIsOutputProfileSwitchApplying] = useState(false);
+  const [isOutputSafetyMutationBusy, setIsOutputSafetyMutationBusy] = useState(false);
   const [isEditSessionMutating, setIsEditSessionMutating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
   const [lazyLoadedWorkflowSections, setLazyLoadedWorkflowSections] = useState<
@@ -2950,19 +2992,71 @@ export function App({
     () => new Set()
   );
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
-  const hasCriticalWriteOperation =
+  const isNativeUpdateApplying =
+    updateCheckStatus.kind === 'preparing' ||
+    updateCheckStatus.kind === 'downloading' ||
+    updateCheckStatus.kind === 'installing' ||
+    updateCheckStatus.kind === 'restarting';
+  const hasExternalCriticalWriteOperation =
     isChangePlanApplying ||
     isModMergerApplying ||
     isFpsPatchApplying ||
     isProfanityFilterApplying ||
     isRandomizerApplying ||
     isGameDumpWriting ||
+    isProjectRelocationApplying ||
+    isOutputProfileSwitchApplying ||
+    isNativeUpdateApplying ||
     isSvCacheClearing;
+  const hasCriticalWriteOperation =
+    hasExternalCriticalWriteOperation || isOutputSafetyMutationBusy;
+  const criticalWriteOperationRef = useRef(hasCriticalWriteOperation);
+  criticalWriteOperationRef.current = hasCriticalWriteOperation;
+  const armCriticalWriteGuard = useCallback(async () => {
+    criticalWriteOperationRef.current = true;
+    if (!desktopServices.isAvailable) return true;
+    try {
+      await desktopServices.setCloseGuardEnabled(true);
+      return true;
+    } catch (error) {
+      if (isAppMountedRef.current) {
+        setBridgeDiagnostics(
+          toDesktopDiagnostics(
+            error,
+            'Could not protect this write from an application close.',
+            desktopErrorCodes.closeGuardUpdateFailed
+          )
+        );
+      }
+      return false;
+    }
+  }, [
+    desktopServices.isAvailable,
+    desktopServices.setCloseGuardEnabled,
+    setBridgeDiagnostics
+  ]);
+  const handleProjectRelocationApplyingChange = useCallback((isApplying: boolean) => {
+    if (!isAppMountedRef.current) return;
+    if (isApplying) criticalWriteOperationRef.current = true;
+    setIsProjectRelocationApplying(isApplying);
+  }, []);
+  const handleOutputProfileSwitchApplyingChange = useCallback((isApplying: boolean) => {
+    if (!isAppMountedRef.current) return;
+    if (isApplying) criticalWriteOperationRef.current = true;
+    setIsOutputProfileSwitchApplying(isApplying);
+  }, []);
+  const handleOutputSafetyMutationBusyChange = useCallback((isBusy: boolean) => {
+    if (!isAppMountedRef.current) return;
+    if (isBusy) criticalWriteOperationRef.current = true;
+    setIsOutputSafetyMutationBusy(isBusy);
+  }, []);
   const openCommandPalette = useCallback(() => setIsCommandPaletteOpen(true), []);
   const openShortcutOverlay = useCallback(() => setIsShortcutOverlayOpen(true), []);
   const outputSafety = useOutputSafetyController({
+    armCriticalWriteGuard,
     bridge,
-    externalMutationBusy: hasCriticalWriteOperation,
+    externalMutationBusy: hasExternalCriticalWriteOperation,
+    onMutationBusyChange: handleOutputSafetyMutationBusyChange,
     scope: outputSafetyScope
   });
   const outputRecoveryRevision = outputSafety.recoveryStatus?.revision ?? null;
@@ -3023,12 +3117,18 @@ export function App({
     })),
     [projectWorkspaceDocument]
   );
+  const handleActiveChangeSetTargetChange = useCallback((changeSetId: string | null) => {
+    if (userFacingFeatureVisibility.namedChangeSets) {
+      setActiveChangeSetId(changeSetId);
+    }
+  }, []);
   const changeSetWorkspace = useChangeSetWorkspaceController({
     activeChangeSetId,
     availableOutputModes: availableChangeSetOutputModes,
     availableOutputProfiles: availableChangeSetOutputProfiles,
     bridge: unscopedBridge,
     currentSession: editSession,
+    enabled: userFacingFeatureVisibility.namedChangeSets,
     externalBusy:
       hasCriticalWriteOperation ||
       isEditSessionMutating ||
@@ -3037,7 +3137,7 @@ export function App({
       isChangePlanApplying,
     guidedDesignBridge: bridge,
     semanticMergeBridge: bridge,
-    onActiveStagingTargetChange: setActiveChangeSetId,
+    onActiveStagingTargetChange: handleActiveChangeSetTargetChange,
     onEffectiveState: handleChangeSetEffectiveState,
     onRequestOutputProfileSwitch: setPendingOutputProfileId,
     scope: outputSafetyScope
@@ -3046,6 +3146,7 @@ export function App({
     activeChangeSetId: null as string | null,
     captureStagedSession: changeSetWorkspace.captureStagedSession,
     changeSetCount: 0,
+    enabled: userFacingFeatureVisibility.namedChangeSets,
     etag: null as string | null,
     refresh: changeSetWorkspace.refresh,
     readiness: changeSetWorkspace.controller.readiness
@@ -3054,6 +3155,7 @@ export function App({
     activeChangeSetId,
     captureStagedSession: changeSetWorkspace.captureStagedSession,
     changeSetCount: changeSetWorkspace.snapshot?.document.changeSets.length ?? 0,
+    enabled: userFacingFeatureVisibility.namedChangeSets,
     etag: changeSetWorkspace.snapshot?.etag ?? null,
     refresh: changeSetWorkspace.refresh,
     readiness: changeSetWorkspace.controller.readiness
@@ -3064,9 +3166,13 @@ export function App({
   ]);
   const guidedDesignAuthoringContextRevision = JSON.stringify([
     outputProfileBindingRevision,
-    changeSetWorkspace.effective?.outputProfileId ?? null,
-    changeSetWorkspace.effective?.outputMode ?? null,
-    changeSetWorkspace.effective?.workspaceFingerprint ?? null
+    ...(userFacingFeatureVisibility.namedChangeSets
+      ? [
+          changeSetWorkspace.effective?.outputProfileId ?? null,
+          changeSetWorkspace.effective?.outputMode ?? null,
+          changeSetWorkspace.effective?.workspaceFingerprint ?? null
+        ]
+      : [])
   ]);
   const semanticOutputProfileRevision = projectWorkspaceDocument?.activeOutputProfileId ?? null;
   const observedSemanticOutputProfileRevisionRef = useRef(semanticOutputProfileRevision);
@@ -3084,7 +3190,10 @@ export function App({
     if (observedOutputProfileBindingRevisionRef.current === outputProfileBindingRevision) {
       return;
     }
-    if (changeSetWorkspace.controller.readiness !== 'ready') {
+    if (
+      !userFacingFeatureVisibility.namedChangeSets ||
+      changeSetWorkspace.controller.readiness !== 'ready'
+    ) {
       return;
     }
     observedOutputProfileBindingRevisionRef.current = outputProfileBindingRevision;
@@ -3115,36 +3224,6 @@ export function App({
     setEditorLayout(nextLayout);
     writeEditorLayoutPreference(nextLayout);
   }, []);
-  const handleInstallLocalePack = useCallback(async (pack: CommunityLocalePack) => {
-    setIsLocalePackBusy(true);
-    try {
-      const snapshot = await personalWorkspaceRegistry.installLocalePack(pack);
-      setApplicationWorkspaceSnapshot(snapshot);
-      setRuntimeCommunityLocalePacks(snapshot.document?.localePacks ?? []);
-      setPersonalWorkspaceError(null);
-    } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
-      throw error;
-    } finally {
-      setIsLocalePackBusy(false);
-    }
-  }, [personalWorkspaceRegistry, setRuntimeCommunityLocalePacks]);
-  const handleRemoveLocalePack = useCallback(async (packId: string) => {
-    setIsLocalePackBusy(true);
-    try {
-      const snapshot = await personalWorkspaceRegistry.removeLocalePack(packId);
-      setApplicationWorkspaceSnapshot(snapshot);
-      setRuntimeCommunityLocalePacks(snapshot.document?.localePacks ?? [], {
-        definitivelyRemovedPackIds: [packId]
-      });
-      setPersonalWorkspaceError(null);
-    } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
-      throw error;
-    } finally {
-      setIsLocalePackBusy(false);
-    }
-  }, [personalWorkspaceRegistry, setRuntimeCommunityLocalePacks]);
   const handleRememberGameDumpDestination = useCallback(
     async (game: ProjectGame, destination: string) => {
       try {
@@ -3176,7 +3255,6 @@ export function App({
     sessionId: string;
     valuesByMoveId: MoveBaselineValuesByMoveId;
   } | null>(null);
-  const criticalWriteOperationRef = useRef(hasCriticalWriteOperation);
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
   const swShPlacementCatalogRevisionRef = useRef<string | null>(null);
@@ -3385,7 +3463,10 @@ export function App({
   );
   visibleDynamaxAdventureChangePlanRef.current = visibleDynamaxAdventureChangePlan;
   const isEditSessionOperationBusy =
-    isSessionValidating || isChangePlanCreating || isChangePlanApplying;
+    isEditSessionMutating ||
+    isSessionValidating ||
+    isChangePlanCreating ||
+    isChangePlanApplying;
   const canSaveValidatedChanges =
     pendingEditCount > 0 &&
     isEditSessionValidated &&
@@ -3822,6 +3903,9 @@ export function App({
 
   changeSetEffectiveStateHandlerRef.current = (effective, snapshot) => {
     latestAcceptedChangeSetSnapshotRef.current = snapshot;
+    if (!userFacingFeatureVisibility.namedChangeSets) {
+      return;
+    }
     const currentSession = editSessionRef.current;
     if (snapshot.etag === null && snapshot.document.changeSets.length === 0) {
       return;
@@ -3889,6 +3973,9 @@ export function App({
   const rematerializeSessionLocalChange = useCallback(async (
     candidateSession: EditSession | null
   ) => {
+    if (!userFacingFeatureVisibility.namedChangeSets) {
+      return candidateSession;
+    }
     const currentSnapshot = latestAcceptedChangeSetSnapshotRef.current;
     if (candidateSession?.authoringBinding == null && currentSnapshot?.etag == null) {
       return candidateSession;
@@ -3905,9 +3992,9 @@ export function App({
 
   const discardUnassignedPendingEdits = useCallback(async () => {
     const currentSession = editSessionRef.current;
-    const associatedEdits = currentSession?.pendingEdits.filter(
-      (edit) => edit.association !== null
-    ) ?? [];
+    const associatedEdits = userFacingFeatureVisibility.namedChangeSets
+      ? currentSession?.pendingEdits.filter((edit) => edit.association !== null) ?? []
+      : [];
     const candidateSession = createSessionWithPendingEdits(currentSession, associatedEdits);
     let nextSession: EditSession | null;
     try {
@@ -4104,11 +4191,28 @@ export function App({
       options: WorkspaceNavigationCommitOptions = {},
       preparedNavigation?: PendingWorkspaceNavigation
     ) => {
+      stableLocationPreparationRevisionRef.current += 1;
       const requestRevision = ++workspaceNavigationRequestRevisionRef.current;
+      const requestScopeRevision = workspaceNavigationScopeRevisionRef.current;
+      const requestScopeGeneration = projectScopeGenerationRef.current;
+      const requestScope = workspaceShellStateRef.current.scope;
+      if (
+        destination.game !== requestScope.game ||
+        destination.projectId !== requestScope.projectId
+      ) {
+        return null;
+      }
       if (!(await flushActiveNoteRef.current())) {
         return null;
       }
-      if (workspaceNavigationRequestRevisionRef.current !== requestRevision) {
+      const currentScope = workspaceShellStateRef.current.scope;
+      if (
+        workspaceNavigationRequestRevisionRef.current !== requestRevision ||
+        workspaceNavigationScopeRevisionRef.current !== requestScopeRevision ||
+        projectScopeGenerationRef.current !== requestScopeGeneration ||
+        currentScope.game !== requestScope.game ||
+        currentScope.projectId !== requestScope.projectId
+      ) {
         return null;
       }
       const workspaceNavigation =
@@ -4116,25 +4220,36 @@ export function App({
         beginWorkspaceNavigation(workspaceShellStateRef.current, destination, mode);
       pendingWorkspaceNavigationRef.current = {
         options,
-        pending: workspaceNavigation
+        pending: workspaceNavigation,
+        projectScopeGeneration: requestScopeGeneration
       };
       const decision = navigationControllerRef.current.request(destination);
       if (decision.kind === 'commit') {
         pendingNavigationCommitActionRef.current = null;
-        if (decision.clearPendingState) {
-          clearPendingEditState();
+        if (commitWorkbenchLocation(decision.location)) {
+          if (decision.clearPendingState) {
+            clearPendingEditState();
+          }
+          onCommit?.();
         }
-        commitWorkbenchLocation(decision.location);
-        onCommit?.();
       } else if (decision.kind === 'prompt') {
         pendingNavigationCommitActionRef.current = onCommit
           ? { destination, onCommit }
           : null;
         setExitPrompt(decision.prompt);
       } else if (decision.kind === 'unchanged') {
-        pendingWorkspaceNavigationRef.current = null;
         pendingNavigationCommitActionRef.current = null;
-        onCommit?.();
+        if (
+          workspaceNavigation.mode === 'back' ||
+          workspaceNavigation.mode === 'forward'
+        ) {
+          if (commitWorkbenchLocation(destination)) {
+            onCommit?.();
+          }
+        } else {
+          pendingWorkspaceNavigationRef.current = null;
+          onCommit?.();
+        }
       } else {
         pendingWorkspaceNavigationRef.current = null;
         pendingNavigationCommitActionRef.current = null;
@@ -4379,12 +4494,44 @@ export function App({
   const coldStableLocationCommitResolverRef = useRef<
     (location: WorkbenchLocation) => Promise<(() => void) | null>
   >(async () => null);
-  const stableLocationPreparationRevisionRef = useRef(0);
+  const stableLocationSourceIsLoaded = useCallback((location: WorkbenchLocation) => {
+    const selection = parseStableEntitySelection(location);
+    if (!selection) {
+      return true;
+    }
+    const state = useWorkbenchStore.getState();
+    switch (selection.section) {
+      case 'items': return Boolean(state.itemsWorkflow);
+      case 'pokemon': return Boolean(state.pokemonWorkflow);
+      case 'moves': return Boolean(state.movesWorkflow);
+      case 'trainers': return Boolean(state.trainersWorkflow);
+      case 'shops': return Boolean(state.shopsWorkflow);
+      case 'encounters': return Boolean(state.encountersWorkflow);
+      case 'teraRaids': return Boolean(state.teraRaidsWorkflow);
+      case 'raidBattles': return Boolean(state.raidBattlesWorkflow);
+      case 'raidRewards': return Boolean(state.raidRewardsWorkflow);
+      case 'raidBonusRewards': return Boolean(state.raidBonusRewardsWorkflow);
+      case 'placement': return Boolean(state.placementWorkflow);
+      case 'behavior': return Boolean(state.behaviorWorkflow);
+      case 'flagworkSave': return Boolean(state.flagworkSaveWorkflow);
+      case 'exefsPatches': return Boolean(state.exeFsPatchWorkflow);
+      case 'royalCandy': return Boolean(state.royalCandyWorkflow);
+      case 'startingItems': return Boolean(state.startingItemsWorkflow);
+      default: return true;
+    }
+  }, []);
   const prepareStableLocationCommit = useCallback(
-    async (location: WorkbenchLocation) => {
+    async (location: WorkbenchLocation): Promise<
+      | { kind: 'aborted' }
+      | { kind: 'ready'; onCommit: () => void }
+      | { kind: 'unavailable' }
+    > => {
+      const preparationRevision = ++stableLocationPreparationRevisionRef.current;
       const immediateCommit = resolveStableLocationCommit(location);
       if (immediateCommit || !location.entity) {
-        return immediateCommit;
+        return immediateCommit
+          ? { kind: 'ready', onCommit: immediateCommit }
+          : { kind: 'aborted' };
       }
 
       const guardState = navigationGuardStateRef.current;
@@ -4394,10 +4541,9 @@ export function App({
         guardState.isEditSessionOperationBusy ||
         !guardState.isDestinationAvailable(location)
       ) {
-        return null;
+        return { kind: 'aborted' };
       }
 
-      const preparationRevision = ++stableLocationPreparationRevisionRef.current;
       const scopeGeneration = projectScopeGenerationRef.current;
       const isCurrentRequest = () =>
         stableLocationPreparationRevisionRef.current === preparationRevision &&
@@ -4412,12 +4558,15 @@ export function App({
         if (isCurrentRequest() && !isStaleProjectScopeError(error)) {
           setBridgeDiagnostics(toBridgeDiagnostics(error));
         }
-        return null;
+        return { kind: 'aborted' };
       }
       if (!isCurrentRequest()) {
-        return null;
+        return { kind: 'aborted' };
       }
       if (!preparedCommit) {
+        if (!stableLocationSourceIsLoaded(location)) {
+          return { kind: 'aborted' };
+        }
         setBridgeDiagnostics([
           {
             domain: 'workspace.navigation',
@@ -4425,52 +4574,81 @@ export function App({
             severity: 'warning'
           }
         ]);
+        return { kind: 'unavailable' };
       }
-      return preparedCommit;
+      return { kind: 'ready', onCommit: preparedCommit };
     },
-    [resolveStableLocationCommit, setBridgeDiagnostics, t]
+    [resolveStableLocationCommit, setBridgeDiagnostics, stableLocationSourceIsLoaded, t]
   );
 
   const handleNavigateBack = useCallback(async () => {
-    const pending = beginWorkspaceBackNavigation(workspaceShellStateRef.current);
-    if (!pending) {
-      return;
+    while (true) {
+      const pending = beginWorkspaceBackNavigation(workspaceShellStateRef.current);
+      if (!pending) {
+        return;
+      }
+      const preparation = await prepareStableLocationCommit(pending.target);
+      if (workspaceShellStateRef.current.revision !== pending.expectedRevision) {
+        return;
+      }
+      if (preparation.kind === 'aborted') {
+        return;
+      }
+      if (preparation.kind === 'unavailable') {
+        const removal = removeUnavailableWorkspaceHistoryEntry(
+          workspaceShellStateRef.current,
+          pending
+        );
+        if (removal.kind !== 'removed') {
+          return;
+        }
+        workspaceShellStateRef.current = removal.state;
+        setWorkspaceShellState(removal.state);
+        continue;
+      }
+      return handleNavigateLocation(
+        pending.target,
+        preparation.onCommit,
+        'push',
+        { rememberRecent: false },
+        pending
+      );
     }
-    const onCommit = await prepareStableLocationCommit(pending.target);
-    if (
-      !onCommit ||
-      workspaceShellStateRef.current.revision !== pending.expectedRevision
-    ) {
-      return;
-    }
-    return handleNavigateLocation(
-      pending.target,
-      onCommit,
-      'push',
-      { rememberRecent: false },
-      pending
-    );
   }, [handleNavigateLocation, prepareStableLocationCommit]);
 
   const handleNavigateForward = useCallback(async () => {
-    const pending = beginWorkspaceForwardNavigation(workspaceShellStateRef.current);
-    if (!pending) {
-      return;
+    while (true) {
+      const pending = beginWorkspaceForwardNavigation(workspaceShellStateRef.current);
+      if (!pending) {
+        return;
+      }
+      const preparation = await prepareStableLocationCommit(pending.target);
+      if (workspaceShellStateRef.current.revision !== pending.expectedRevision) {
+        return;
+      }
+      if (preparation.kind === 'aborted') {
+        return;
+      }
+      if (preparation.kind === 'unavailable') {
+        const removal = removeUnavailableWorkspaceHistoryEntry(
+          workspaceShellStateRef.current,
+          pending
+        );
+        if (removal.kind !== 'removed') {
+          return;
+        }
+        workspaceShellStateRef.current = removal.state;
+        setWorkspaceShellState(removal.state);
+        continue;
+      }
+      return handleNavigateLocation(
+        pending.target,
+        preparation.onCommit,
+        'push',
+        { rememberRecent: false },
+        pending
+      );
     }
-    const onCommit = await prepareStableLocationCommit(pending.target);
-    if (
-      !onCommit ||
-      workspaceShellStateRef.current.revision !== pending.expectedRevision
-    ) {
-      return;
-    }
-    return handleNavigateLocation(
-      pending.target,
-      onCommit,
-      'push',
-      { rememberRecent: false },
-      pending
-    );
   }, [handleNavigateLocation, prepareStableLocationCommit]);
   const handleNavigateWorkspaceTarget = useCallback(
     (location: WorkbenchLocation) => {
@@ -4478,9 +4656,9 @@ export function App({
         return handleNavigateLocation(location);
       }
       return void (async () => {
-        const onCommit = await prepareStableLocationCommit(location);
-        if (onCommit) {
-          handleNavigateLocation(location, onCommit);
+        const preparation = await prepareStableLocationCommit(location);
+        if (preparation.kind === 'ready') {
+          handleNavigateLocation(location, preparation.onCommit);
         }
       })();
     },
@@ -4677,6 +4855,13 @@ export function App({
       }
       return selectedPath;
     } catch {
+      if (
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current ||
+        semanticExploreIsQueryingRef.current
+      ) {
+        return null;
+      }
       setBridgeDiagnostics([
         {
           domain: 'desktop',
@@ -4704,6 +4889,10 @@ export function App({
       ) return null;
       return selectedPath;
     } catch {
+      if (
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current
+      ) return null;
       setBridgeDiagnostics([{
         domain: 'desktop',
         message: t('semanticMerge.error.generic'),
@@ -4725,6 +4914,10 @@ export function App({
       ) return null;
       return selectedPath;
     } catch {
+      if (
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current
+      ) return null;
       setBridgeDiagnostics([{
         domain: 'desktop',
         message: t('researchLab.error.generic'),
@@ -4763,7 +4956,10 @@ export function App({
 
   const handleNavigateSection = useCallback(
     (destination: WorkbenchSection) => {
-      if (destination === activeLocation.section) {
+      if (
+        destination === activeLocation.section &&
+        destination === activeSection
+      ) {
         return;
       }
 
@@ -4774,7 +4970,13 @@ export function App({
         })
       );
     },
-    [activeLocation.section, activeProjectId, handleNavigateLocation, selectedGame]
+    [
+      activeLocation.section,
+      activeProjectId,
+      activeSection,
+      handleNavigateLocation,
+      selectedGame
+    ]
   );
   const handleOpenGuidedDesignChanges = useCallback(() => {
     void handleNavigateSection('changes');
@@ -5136,15 +5338,14 @@ export function App({
   );
   const workspaceRecentTargets = useMemo<WorkspaceTargetViewModel[]>(
     () => {
-      const targets = workspaceShellState.recents.map((location) =>
+      const sessionTargets = workspaceShellState.recents.map((location) =>
         createWorkspaceTargetViewModel(location, t)
       );
-      const seen = new Set(targets.map((target) => serializeWorkbenchLocation(target.location)));
-      for (const target of persistedRecentTargets) {
-        const key = serializeWorkbenchLocation(target.location);
-        if (seen.add(key)) targets.push(target);
-      }
-      return targets.slice(0, 64);
+      return mergeWorkspaceRecentTargetViewModels(
+        sessionTargets,
+        persistedRecentTargets,
+        maximumWorkspaceRecentEntries
+      );
     },
     [persistedRecentTargets, t, workspaceShellState.recents]
   );
@@ -5893,20 +6094,34 @@ export function App({
     if (persistedRecentTargetRef.current === key) return;
     persistedRecentTargetRef.current = key;
     const requestedProjectId = personalProjectTarget.projectId;
+    let isCurrentRequest = true;
     void personalWorkspaceRegistry.recordRecentTarget(personalProjectTarget, {
       location: recentLocation,
       visitedAtUtc: new Date().toISOString()
     }).then(
       (snapshot) => {
-        if (activeProjectIdRef.current === requestedProjectId) {
+        if (
+          isCurrentRequest &&
+          activeProjectIdRef.current === requestedProjectId &&
+          persistedRecentTargetRef.current === key
+        ) {
           setProjectWorkspaceSnapshot(snapshot);
         }
       },
       (error: unknown) => {
-        persistedRecentTargetRef.current = null;
-        setPersonalWorkspaceError(getErrorMessage(error));
+        if (
+          isCurrentRequest &&
+          activeProjectIdRef.current === requestedProjectId &&
+          persistedRecentTargetRef.current === key
+        ) {
+          persistedRecentTargetRef.current = null;
+          setPersonalWorkspaceError(getErrorMessage(error));
+        }
       }
     );
+    return () => {
+      isCurrentRequest = false;
+    };
   }, [
     activeScopedLocation,
     isProjectWorkspaceLoading,
@@ -5990,15 +6205,17 @@ export function App({
   const handleActivateWorkspaceTab = useCallback(
     async (location: WorkbenchLocation) => {
       const expectedRevision = workspaceShellStateRef.current.revision;
-      const onCommit = await prepareStableLocationCommit(location);
+      const preparation = await prepareStableLocationCommit(location);
       if (
-        onCommit &&
+        preparation.kind === 'ready' &&
         workspaceShellStateRef.current.revision === expectedRevision &&
         workspaceShellStateRef.current.tabs.some(
           (tab) => tab.key === workspaceTabKey(location)
         )
       ) {
-        handleNavigateLocation(location, onCommit, 'push', { rememberRecent: false });
+        handleNavigateLocation(location, preparation.onCommit, 'push', {
+          rememberRecent: false
+        });
       }
     },
     [handleNavigateLocation, prepareStableLocationCommit]
@@ -6027,11 +6244,11 @@ export function App({
       projectId: activeProjectId
     });
     const expectedRevision = currentState.revision;
-    const applyDestination = destinationTab
+    const destinationPreparation = destinationTab
       ? await prepareStableLocationCommit(destination)
-      : () => undefined;
+      : { kind: 'ready' as const, onCommit: () => undefined };
     if (
-      !applyDestination ||
+      destinationPreparation.kind !== 'ready' ||
       workspaceShellStateRef.current.revision !== expectedRevision ||
       workspaceTabKey(activeLocation) !== tabKey
     ) {
@@ -6040,7 +6257,7 @@ export function App({
     await handleNavigateLocation(
       destination,
       () => {
-        applyDestination();
+        destinationPreparation.onCommit();
         const latestState = workspaceShellStateRef.current;
         const latestProtectedTabKeys = new Set(
           latestState.tabs
@@ -6084,6 +6301,29 @@ export function App({
       return;
     }
 
+    if (prompt.kind === 'editorSwitch') {
+      const currentState = workspaceShellStateRef.current;
+      const registeredNavigation = pendingWorkspaceNavigationRef.current;
+      const destination = prompt.destination;
+      if (
+        !destination ||
+        !registeredNavigation ||
+        registeredNavigation.projectScopeGeneration !== projectScopeGenerationRef.current ||
+        registeredNavigation.pending.expectedRevision !== currentState.revision ||
+        !workbenchLocationsEqual(
+          registeredNavigation.pending.target,
+          destination
+        ) ||
+        currentState.scope.game !== destination.game ||
+        currentState.scope.projectId !== destination.projectId
+      ) {
+        pendingWorkspaceNavigationRef.current = null;
+        pendingNavigationCommitActionRef.current = null;
+        setExitPrompt(null);
+        return;
+      }
+    }
+
     if (prompt.kind === 'cancel') {
       pendingWorkspaceNavigationRef.current = null;
       pendingNavigationCommitActionRef.current = null;
@@ -6099,6 +6339,13 @@ export function App({
     }
 
     if (prompt.kind === 'editorSwitch') {
+      const destination = prompt.destination;
+      if (!destination) {
+        pendingWorkspaceNavigationRef.current = null;
+        pendingNavigationCommitActionRef.current = null;
+        setExitPrompt(null);
+        return;
+      }
       cancelDiscardActionRef.current = null;
       if (prompt.discardPendingSession) {
         if (!(await discardUnassignedPendingEdits())) {
@@ -6114,16 +6361,15 @@ export function App({
       }
       setExitPrompt(null);
 
-      if (prompt.destination) {
-        commitWorkbenchLocation(prompt.destination);
-        const pendingNavigationCommit = pendingNavigationCommitActionRef.current;
-        pendingNavigationCommitActionRef.current = null;
-        if (
-          pendingNavigationCommit &&
-          workbenchLocationsEqual(pendingNavigationCommit.destination, prompt.destination)
-        ) {
-          pendingNavigationCommit.onCommit();
-        }
+      const didCommit = commitWorkbenchLocation(destination);
+      const pendingNavigationCommit = pendingNavigationCommitActionRef.current;
+      pendingNavigationCommitActionRef.current = null;
+      if (
+        didCommit &&
+        pendingNavigationCommit &&
+        workbenchLocationsEqual(pendingNavigationCommit.destination, destination)
+      ) {
+        pendingNavigationCommit.onCommit();
       }
       return;
     }
@@ -6222,10 +6468,6 @@ export function App({
   useEffect(() => {
     editorDraftDirtySectionsRef.current = editorDraftDirtySections;
   }, [editorDraftDirtySections]);
-
-  useEffect(() => {
-    criticalWriteOperationRef.current = hasCriticalWriteOperation;
-  }, [hasCriticalWriteOperation]);
 
   useEffect(() => {
     exitPromptRef.current = exitPrompt;
@@ -6846,9 +7088,14 @@ export function App({
     if (
       hasCriticalWriteOperation ||
       isEditSessionOperationBusy ||
+      isPersonalWorkspaceMutationBusy ||
+      activeNoteSavePromiseRef.current !== null ||
       unassignedPendingEditCount > 0 ||
       editorDraftDirtySections.size > 0
     ) {
+      return;
+    }
+    if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
       return;
     }
     const profile = applicationWorkspaceSnapshot.document?.recentProjects.find(
@@ -6918,10 +7165,16 @@ export function App({
 
     void listen(windowCloseRequestedEvent, () => {
       void (async () => {
+        if (isDisposed) {
+          return;
+        }
         if (criticalWriteOperationRef.current) {
           return;
         }
         if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
+          return;
+        }
+        if (isDisposed) {
           return;
         }
 
@@ -6931,7 +7184,7 @@ export function App({
             await desktopServices.setCloseGuardEnabled(false);
             await desktopServices.exitApp();
           } catch (error) {
-            setBridgeDiagnostics(
+            if (!isDisposed) setBridgeDiagnostics(
               toDesktopDiagnostics(
                 error,
                 'Could not close KM Editor.',
@@ -6961,7 +7214,7 @@ export function App({
         }
       })
       .catch((error) => {
-        setBridgeDiagnostics(
+        if (!isDisposed) setBridgeDiagnostics(
           toDesktopDiagnostics(
             error,
             'Could not listen for desktop close requests.',
@@ -7447,21 +7700,33 @@ export function App({
       kind: 'restarting',
       message: 'Update installed. Restarting KM Editor.'
     });
+    const didArmCloseGuard = await armCriticalWriteGuard();
+    if (!isAppMountedRef.current) return;
+    if (!didArmCloseGuard) {
+      setUpdateCheckStatus({
+        detail: 'Automatic restart was not started because close protection could not be enabled.',
+        kind: 'restartRequired',
+        message: 'Update installed. Restart KM Editor to finish.'
+      });
+      return;
+    }
 
     try {
       await desktopServices.relaunchApp();
     } catch (error) {
-      setUpdateCheckStatus({
-        detail: toErrorMessage(error, {
-          code: desktopErrorCodes.appRelaunchFailed,
-          domain: 'desktop',
-          message: 'Could not restart KM Editor automatically.'
-        }),
-        kind: 'restartRequired',
-        message: 'Update installed. Restart KM Editor to finish.'
-      });
+      if (isAppMountedRef.current) {
+        setUpdateCheckStatus({
+          detail: toErrorMessage(error, {
+            code: desktopErrorCodes.appRelaunchFailed,
+            domain: 'desktop',
+            message: 'Could not restart KM Editor automatically.'
+          }),
+          kind: 'restartRequired',
+          message: 'Update installed. Restart KM Editor to finish.'
+        });
+      }
     }
-  }, [desktopServices.relaunchApp]);
+  }, [armCriticalWriteGuard, desktopServices.relaunchApp]);
 
   const handleDownloadAvailableUpdate = useCallback(async () => {
     if (!availableUpdate) {
@@ -7480,6 +7745,15 @@ export function App({
         kind: 'preparing',
         message: 'Clearing local cache.'
       });
+      const didArmCloseGuard = await armCriticalWriteGuard();
+      if (!isAppMountedRef.current) return;
+      if (!didArmCloseGuard) {
+        setUpdateCheckStatus({
+          kind: 'error',
+          message: 'The update was not started because close protection could not be enabled.'
+        });
+        return;
+      }
 
       try {
         svCacheWarmupRunRef.current += 1;
@@ -7491,6 +7765,7 @@ export function App({
             bridge.clearZaCache({ activePaths: null }),
             bridge.clearSwShCache({ activePaths: null })
           ]);
+          if (!isAppMountedRef.current) return;
 
           if (isSwordShieldGame(selectedGame)) {
             setSvCacheStatus(swShCacheClear.status);
@@ -7507,8 +7782,9 @@ export function App({
           };
           await desktopServices.recycleProjectBridge();
         } finally {
-          setIsSvCacheClearing(false);
+          if (isAppMountedRef.current) setIsSvCacheClearing(false);
         }
+        if (!isAppMountedRef.current) return;
 
         setUpdateCheckStatus({
           contentLength: null,
@@ -7523,6 +7799,7 @@ export function App({
           message: 'Could not install the KM Editor update.'
         };
         await availableUpdate.nativeUpdate.install((event) => {
+          if (!isAppMountedRef.current) return;
           switch (event.event) {
             case 'Started':
               downloadedBytes = 0;
@@ -7575,14 +7852,17 @@ export function App({
           availableNativeUpdateRef.current = null;
         }
         await availableUpdate.nativeUpdate.close().catch(() => undefined);
+        if (!isAppMountedRef.current) return;
         setAvailableUpdate(null);
         setIsUpdatePromptOpen(false);
         await handleRestartAfterUpdate();
       } catch (error) {
-        setUpdateCheckStatus({
-          kind: 'error',
-          message: toErrorMessage(error, diagnosticFallback)
-        });
+        if (isAppMountedRef.current) {
+          setUpdateCheckStatus({
+            kind: 'error',
+            message: toErrorMessage(error, diagnosticFallback)
+          });
+        }
       }
 
       return;
@@ -7617,6 +7897,7 @@ export function App({
     }
   }, [
     availableUpdate,
+    armCriticalWriteGuard,
     bridge,
     desktopServices.isAvailable,
     desktopServices.openExternalUrl,
@@ -9353,59 +9634,99 @@ export function App({
       };
     }
 
-    switch (selection.section) {
-      case 'items':
-        if (!currentState.itemsWorkflow) await handleOpenItemsWorkflow();
-        break;
-      case 'pokemon':
-        if (!currentState.pokemonWorkflow) await handleOpenPokemonWorkflow();
-        break;
-      case 'moves':
-        if (!currentState.movesWorkflow) await handleOpenMovesWorkflow();
-        break;
-      case 'trainers':
-        if (!currentState.trainersWorkflow) await handleOpenTrainersWorkflow();
-        break;
-      case 'shops':
-        if (!currentState.shopsWorkflow) await handleOpenShopsWorkflow();
-        break;
-      case 'encounters':
-        if (!currentState.encountersWorkflow) await handleOpenEncountersWorkflow();
-        break;
-      case 'teraRaids':
-        if (!currentState.teraRaidsWorkflow) await handleOpenTeraRaidsWorkflow();
-        break;
-      case 'raidBattles':
-        if (!currentState.raidBattlesWorkflow) await handleOpenRaidBattlesWorkflow();
-        break;
-      case 'raidRewards':
-        if (!currentState.raidRewardsWorkflow) await handleOpenRaidRewardsWorkflow();
-        break;
-      case 'raidBonusRewards':
-        if (!currentState.raidBonusRewardsWorkflow) {
-          await handleOpenRaidBonusRewardsWorkflow();
+    const preloadTransition =
+      (currentState.activeSection === 'workbench' ||
+        currentState.activeSection === 'workflows') &&
+      currentState.activeSection !== selection.section
+        ? {
+            destinationSection: selection.section,
+            sourceSection: currentState.activeSection,
+            sourceShellRevision: workspaceShellStateRef.current.revision
+          }
+        : null;
+    if (preloadTransition) {
+      workspaceColdPreloadTransitionsRef.current = [
+        ...workspaceColdPreloadTransitionsRef.current,
+        preloadTransition
+      ];
+    }
+    try {
+      switch (selection.section) {
+        case 'items':
+          if (!currentState.itemsWorkflow) await handleOpenItemsWorkflow();
+          break;
+        case 'pokemon':
+          if (!currentState.pokemonWorkflow) await handleOpenPokemonWorkflow();
+          break;
+        case 'moves':
+          if (!currentState.movesWorkflow) await handleOpenMovesWorkflow();
+          break;
+        case 'trainers':
+          if (!currentState.trainersWorkflow) await handleOpenTrainersWorkflow();
+          break;
+        case 'shops':
+          if (!currentState.shopsWorkflow) await handleOpenShopsWorkflow();
+          break;
+        case 'encounters':
+          if (!currentState.encountersWorkflow) await handleOpenEncountersWorkflow();
+          break;
+        case 'teraRaids':
+          if (!currentState.teraRaidsWorkflow) await handleOpenTeraRaidsWorkflow();
+          break;
+        case 'raidBattles':
+          if (!currentState.raidBattlesWorkflow) await handleOpenRaidBattlesWorkflow();
+          break;
+        case 'raidRewards':
+          if (!currentState.raidRewardsWorkflow) await handleOpenRaidRewardsWorkflow();
+          break;
+        case 'raidBonusRewards':
+          if (!currentState.raidBonusRewardsWorkflow) {
+            await handleOpenRaidBonusRewardsWorkflow();
+          }
+          break;
+        case 'placement':
+          if (!currentState.placementWorkflow) await handleOpenPlacementWorkflow();
+          break;
+        case 'behavior':
+          if (!currentState.behaviorWorkflow) await handleOpenBehaviorWorkflow();
+          break;
+        case 'flagworkSave':
+          if (!currentState.flagworkSaveWorkflow) await handleOpenFlagworkSaveWorkflow();
+          break;
+        case 'exefsPatches':
+          if (!currentState.exeFsPatchWorkflow) await handleOpenExeFsPatchWorkflow();
+          break;
+        case 'royalCandy':
+          if (!currentState.royalCandyWorkflow) await handleOpenRoyalCandyWorkflow();
+          break;
+        case 'startingItems':
+          if (!currentState.startingItemsWorkflow) await handleOpenStartingItemsWorkflow();
+          break;
+        default:
+          return null;
+      }
+    } finally {
+      if (preloadTransition) {
+        const stateAfterPreload = useWorkbenchStore.getState();
+        if (
+          shouldRestoreWorkspacePreloadSourceSection({
+            activeSection: stateAfterPreload.activeSection,
+            committedSection: workspaceShellStateRef.current.history[
+              workspaceShellStateRef.current.historyIndex
+            ]?.section ?? activeLocation.section,
+            currentShellRevision: workspaceShellStateRef.current.revision,
+            destinationSection: preloadTransition.destinationSection,
+            sourceSection: preloadTransition.sourceSection,
+            sourceShellRevision: preloadTransition.sourceShellRevision
+          })
+        ) {
+          setActiveSection(preloadTransition.sourceSection);
         }
-        break;
-      case 'placement':
-        if (!currentState.placementWorkflow) await handleOpenPlacementWorkflow();
-        break;
-      case 'behavior':
-        if (!currentState.behaviorWorkflow) await handleOpenBehaviorWorkflow();
-        break;
-      case 'flagworkSave':
-        if (!currentState.flagworkSaveWorkflow) await handleOpenFlagworkSaveWorkflow();
-        break;
-      case 'exefsPatches':
-        if (!currentState.exeFsPatchWorkflow) await handleOpenExeFsPatchWorkflow();
-        break;
-      case 'royalCandy':
-        if (!currentState.royalCandyWorkflow) await handleOpenRoyalCandyWorkflow();
-        break;
-      case 'startingItems':
-        if (!currentState.startingItemsWorkflow) await handleOpenStartingItemsWorkflow();
-        break;
-      default:
-        return null;
+        workspaceColdPreloadTransitionsRef.current =
+          workspaceColdPreloadTransitionsRef.current.filter(
+            (transition) => transition !== preloadTransition
+          );
+      }
     }
     return resolveStableLocationCommit(location);
   };
@@ -10961,7 +11282,7 @@ export function App({
       }
 
       const pendingEdit = editSession.pendingEdits[editIndex];
-      if (pendingEdit?.association) {
+      if (pendingEdit?.association && userFacingFeatureVisibility.namedChangeSets) {
         void changeSetWorkspace.removeOperation(
           pendingEdit.association.changeSetId,
           pendingEdit.association.operationId
@@ -11067,6 +11388,7 @@ export function App({
 
         const stageGate = changeSetStageGateRef.current;
         if (
+          stageGate.enabled &&
           outputSafetyScope !== null &&
           (stageGate.readiness !== 'ready' ||
             (stageGate.changeSetCount > 0 && stageGate.activeChangeSetId === null) ||
@@ -11079,6 +11401,7 @@ export function App({
           );
         }
         if (
+          stageGate.enabled &&
           requiredAuthoringRequest &&
           (stageGate.activeChangeSetId !== requiredAuthoringRequest.activeChangeSetId ||
             !authoringBindingsEqual(
@@ -11109,6 +11432,7 @@ export function App({
         let capturedResponse: CaptureChangeSetSessionResponse | null = null;
         let rematerializedSnapshot: ChangeSetWorkspaceSnapshot | null = null;
         if (
+          stageGate.enabled &&
           stagedSessionForCapture !== null &&
           stageGate.activeChangeSetId !== null &&
           sessionContentChanged
@@ -11164,6 +11488,7 @@ export function App({
           }
           onChangeSetCapture?.(capturedResponse);
         } else if (
+          stageGate.enabled &&
           stagedSessionForCapture !== null &&
           stageGate.etag !== null &&
           sessionContentChanged
@@ -13531,7 +13856,7 @@ export function App({
         setApplyResult(null);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
-        if (wasBoundChangeSetSession) {
+        if (userFacingFeatureVisibility.namedChangeSets && wasBoundChangeSetSession) {
           suppressNextChangeSetWorkflowInvalidationRef.current = true;
           try {
             await changeSetWorkspace.refresh(null);
@@ -14487,7 +14812,11 @@ export function App({
 
       setApplyResult(completedApplyResult);
 
-      if (!hasApplyErrors && wasBoundChangeSetSession) {
+      if (
+        userFacingFeatureVisibility.namedChangeSets &&
+        !hasApplyErrors &&
+        wasBoundChangeSetSession
+      ) {
         suppressNextChangeSetWorkflowInvalidationRef.current = true;
         try {
           await changeSetWorkspace.refresh(null);
@@ -15236,7 +15565,7 @@ export function App({
             changePlanSessionSignature: null
           }
         }));
-        if (wasBoundChangeSetSession) {
+        if (userFacingFeatureVisibility.namedChangeSets && wasBoundChangeSetSession) {
           suppressNextChangeSetWorkflowInvalidationRef.current = true;
           try {
             await changeSetWorkspace.refresh(null);
@@ -15314,9 +15643,22 @@ export function App({
   }
 
   const handleSelectGame = useCallback(
-    (nextGame: ProjectGame) => {
+    async (nextGame: ProjectGame) => {
       if (nextGame === selectedGame) {
         setIsGamePickerOpen(false);
+        return;
+      }
+      if (
+        hasCriticalWriteOperation ||
+        isEditSessionOperationBusy ||
+        isPersonalWorkspaceMutationBusy ||
+        activeNoteSavePromiseRef.current !== null ||
+        unassignedPendingEditCount > 0 ||
+        editorDraftDirtySections.size > 0
+      ) {
+        return;
+      }
+      if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
         return;
       }
 
@@ -15340,10 +15682,15 @@ export function App({
     [
       cancelSupportFileSearch,
       applicationWorkspaceSnapshot.document?.recentProjects,
+      editorDraftDirtySections.size,
+      hasCriticalWriteOperation,
+      isEditSessionOperationBusy,
+      isPersonalWorkspaceMutationBusy,
       resetLoadedProjectState,
       selectedGame,
       setProjectPathDraft,
-      setSelectedGame
+      setSelectedGame,
+      unassignedPendingEditCount
     ]
   );
 
@@ -15473,6 +15820,7 @@ export function App({
               onPickProjectPath={handlePickProjectPath}
               projectRelocationAction={
                 <ProjectRelocationPanel
+                  armCriticalWriteGuard={armCriticalWriteGuard}
                   bridge={bridge}
                   canRelocate={
                     unassignedPendingEditCount === 0 &&
@@ -15482,6 +15830,7 @@ export function App({
                     outputSafety.canApply
                   }
                   desktopServices={desktopServices}
+                  onApplyBusyChange={handleProjectRelocationApplyingChange}
                   onRelocated={handleProjectRelocated}
                   source={outputSafetyScope}
                 />
@@ -15521,20 +15870,28 @@ export function App({
                     capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     canImportChangeSet={
+                      userFacingFeatureVisibility.namedChangeSets &&
                       changeSetWorkspace.controller.readiness === 'ready' &&
                       changeSetWorkspace.snapshot !== null &&
                       changeSetWorkspace.controller.busyAction === null &&
                       !changeSetWorkspace.controller.externalBusy
                     }
                     canNavigateRecord={canNavigateGuidedDesignRecord}
-                    expectedChangeSetETag={changeSetWorkspace.snapshot?.etag ?? null}
+                    expectedChangeSetETag={
+                      userFacingFeatureVisibility.namedChangeSets
+                        ? changeSetWorkspace.snapshot?.etag ?? null
+                        : null
+                    }
                     isChangeSetWorkspaceBusy={
-                      changeSetWorkspace.controller.busyAction !== null ||
-                      changeSetWorkspace.controller.externalBusy
+                      userFacingFeatureVisibility.namedChangeSets &&
+                      (changeSetWorkspace.controller.busyAction !== null ||
+                        changeSetWorkspace.controller.externalBusy)
                     }
                     isChangeSetWorkspaceReady={
-                      changeSetWorkspace.controller.readiness === 'ready' &&
-                      changeSetWorkspace.snapshot !== null
+                      !userFacingFeatureVisibility.namedChangeSets || (
+                        changeSetWorkspace.controller.readiness === 'ready' &&
+                        changeSetWorkspace.snapshot !== null
+                      )
                     }
                     onEnsureCapabilities={semanticExploreController.ensureCapabilities}
                     onImportProposal={changeSetWorkspace.importGuidedDesignProposal}
@@ -15608,31 +15965,41 @@ export function App({
                     capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     canImportChangeSet={
+                      userFacingFeatureVisibility.namedChangeSets &&
                       changeSetWorkspace.controller.readiness === 'ready' &&
                       changeSetWorkspace.snapshot !== null &&
                       changeSetWorkspace.controller.busyAction === null &&
                       !changeSetWorkspace.controller.externalBusy
                     }
                     canNavigateRecord={canNavigateSemanticMergeRecord}
-                    changeSets={(changeSetWorkspace.snapshot?.document.changeSets ?? []).map(
-                      (changeSet) => ({
-                        archived: changeSet.archived,
-                        changeSetId: changeSet.changeSetId,
-                        dependencyIds: changeSet.dependencyIds,
-                        enabled: changeSet.enabled,
-                        name: changeSet.name,
-                        operationCount: changeSet.operations.length,
-                        ...getRecipeExportEligibility(changeSet)
-                      })
-                    )}
-                    expectedChangeSetETag={changeSetWorkspace.snapshot?.etag ?? null}
+                    changeSets={userFacingFeatureVisibility.namedChangeSets
+                      ? (changeSetWorkspace.snapshot?.document.changeSets ?? []).map(
+                          (changeSet) => ({
+                            archived: changeSet.archived,
+                            changeSetId: changeSet.changeSetId,
+                            dependencyIds: changeSet.dependencyIds,
+                            enabled: changeSet.enabled,
+                            name: changeSet.name,
+                            operationCount: changeSet.operations.length,
+                            ...getRecipeExportEligibility(changeSet)
+                          })
+                        )
+                      : []}
+                    expectedChangeSetETag={
+                      userFacingFeatureVisibility.namedChangeSets
+                        ? changeSetWorkspace.snapshot?.etag ?? null
+                        : null
+                    }
                     isChangeSetWorkspaceBusy={
-                      changeSetWorkspace.controller.busyAction !== null ||
-                      changeSetWorkspace.controller.externalBusy
+                      userFacingFeatureVisibility.namedChangeSets &&
+                      (changeSetWorkspace.controller.busyAction !== null ||
+                        changeSetWorkspace.controller.externalBusy)
                     }
                     isChangeSetWorkspaceReady={
-                      changeSetWorkspace.controller.readiness === 'ready' &&
-                      changeSetWorkspace.snapshot !== null
+                      !userFacingFeatureVisibility.namedChangeSets || (
+                        changeSetWorkspace.controller.readiness === 'ready' &&
+                        changeSetWorkspace.snapshot !== null
+                      )
                     }
                     onEnsureCapabilities={semanticExploreController.ensureCapabilities}
                     onImportRecipe={changeSetWorkspace.importKmRecipe}
@@ -16868,7 +17235,7 @@ export function App({
               applyResult={applyResult}
               canSaveValidatedChanges={canSaveValidatedChanges}
               changePlan={visibleChangePlan}
-              changeSetWorkspace={(
+              changeSetWorkspace={userFacingFeatureVisibility.namedChangeSets ? (
                 <ChangeSetWorkspacePanel
                   advancedAuthoring={
                     advancedAuthoringController && !isAdvancedAuthoringDraftPending ? {
@@ -16885,7 +17252,7 @@ export function App({
                   }
                   controller={changeSetWorkspace.controller}
                 />
-              )}
+              ) : null}
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
               pendingEditContext={{
@@ -16944,11 +17311,6 @@ export function App({
               availableUpdateKind={availableUpdate?.kind ?? null}
               personalizationSettings={
                 <PersonalizationSettingsPanel
-                  communityLocalePacks={communityLocalePacks}
-                  hasIgnoredPersistedLocalePacks={hasIgnoredPersistedLocalePacks}
-                  isLocalePackBusy={isLocalePackBusy}
-                  onInstallLocalePack={handleInstallLocalePack}
-                  onRemoveLocalePack={handleRemoveLocalePack}
                   onReplayWhatChanged={() => setIsWhatChangedTourOpen(true)}
                 />
               }
@@ -17073,6 +17435,7 @@ export function App({
       />
       {pendingOutputProfile && outputSafetyScope && personalProjectTarget ? (
         <OutputProfileSwitchDialog
+          armCriticalWriteGuard={armCriticalWriteGuard}
           bridge={bridge}
           canApply={
             outputSafety.canApply &&
@@ -17085,6 +17448,7 @@ export function App({
             ...outputSafetyScope.paths,
             outputRootPath: pendingOutputProfile.outputRootPath
           }}
+          onApplyBusyChange={handleOutputProfileSwitchApplyingChange}
           onApplied={async (response, candidatePaths) => {
             await handleProjectRelocated(response, candidatePaths);
             semanticExploreController.invalidate();
@@ -17100,7 +17464,9 @@ export function App({
             if (activeProjectIdRef.current === response.projectId) {
               setProjectWorkspaceSnapshot(snapshot);
             }
-            await changeSetWorkspace.refresh(null);
+            if (userFacingFeatureVisibility.namedChangeSets) {
+              await changeSetWorkspace.refresh(null);
+            }
             setPendingOutputProfileId(null);
           }}
           onClose={() => setPendingOutputProfileId(null)}
@@ -47601,6 +47967,12 @@ function SettingsSection({
             status.message
           )}
         </p>
+        <ReportableDiagnosticIssuesLink
+          messages={[
+            status.message,
+            ...(status.kind === 'restartRequired' ? [status.detail] : [])
+          ]}
+        />
       </div>
 
       <section aria-labelledby="layout-settings-heading" className="settings-subsection">
@@ -48600,9 +48972,12 @@ function UpdatePromptModal({
             : `KM Editor v${update.version} is available. KM Editor will open ${update.releaseName}.`}
         </p>
         {update.kind === 'releasePage' && update.fallbackReason ? (
-          <p className="modal-copy modal-copy-muted update-fallback-reason">
-            Native update check was not available: {update.fallbackReason}
-          </p>
+          <>
+            <p className="modal-copy modal-copy-muted update-fallback-reason">
+              Native update check was not available: {update.fallbackReason}
+            </p>
+            <ReportableDiagnosticIssuesLink messages={[update.fallbackReason]} />
+          </>
         ) : null}
         {update.kind === 'native' && update.body ? (
           <p className="modal-copy modal-copy-muted">{update.body}</p>
@@ -48635,9 +49010,12 @@ function UpdatePromptModal({
           </div>
         ) : null}
         {status.kind === 'error' ? (
-          <p className="update-status update-status-error" role="alert">
-            {status.message}
-          </p>
+          <>
+            <p className="update-status update-status-error" role="alert">
+              {status.message}
+            </p>
+            <ReportableDiagnosticIssuesLink messages={[status.message]} />
+          </>
         ) : null}
         <div className="modal-actions">
           <button

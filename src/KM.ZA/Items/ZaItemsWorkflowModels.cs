@@ -79,6 +79,8 @@ public sealed record ZaItemRecord(
     public bool CanRevertToVanilla { get; init; }
 
     public string? RevertToVanillaBlockedReason { get; init; }
+
+    internal bool IsOwnedTestTechnicalMachine { get; init; }
 }
 
 public sealed record ZaItemEditableFieldOption(

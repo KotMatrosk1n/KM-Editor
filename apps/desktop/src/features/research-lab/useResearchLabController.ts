@@ -1163,12 +1163,12 @@ function mergeComparisonPages(
   const findingIds = new Set(previous.items.map((item) => item.findingId));
   const relativePaths = new Set(previous.items.map((item) => relativePathIdentity(item.relativePath)));
   for (const item of next.items) {
-    if (
-      !findingIds.add(item.findingId) ||
-      !relativePaths.add(relativePathIdentity(item.relativePath))
-    ) {
+    const pathIdentity = relativePathIdentity(item.relativePath);
+    if (findingIds.has(item.findingId) || relativePaths.has(pathIdentity)) {
       throw new Error('The research comparison continuation repeated a finding.');
     }
+    findingIds.add(item.findingId);
+    relativePaths.add(pathIdentity);
   }
   const items = [...previous.items, ...next.items];
   if (

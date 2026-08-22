@@ -1,30 +1,26 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { BarChart3, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { BarChart3, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type {
-  BalanceLabCapability,
-  BalanceLabConfidence,
-  BalanceLabFinding,
-  BalanceLabPoint,
-  BalanceLabStudy
-} from '../../bridge/balanceLabContracts';
+import type { BalanceLabCapability, BalanceLabStudy } from '../../bridge/balanceLabContracts';
 import type { ApiDiagnostic } from '../../bridge/contracts';
 import {
-  balanceLabMaximumContinuationStartCount,
-  balanceLabMaximumSearchTextLength
+  balanceLabMaximumContinuationStartCount
 } from '../../bridge/balanceLabContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import {
+  DiagnosticSeverityText,
   DiagnosticTechnicalDetails,
   OccurrenceCount,
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
 import {
+  diagnosticTechnicalIdentity,
   diagnosticSeverityPriority,
   groupDiagnosticsForPresentation,
   presentationDiagnosticMessage,
@@ -40,9 +36,6 @@ export type BalanceLabSectionProps = {
   onNavigateFinding: (record: SemanticExploreRecordRef) => void;
 };
 
-type ConfidenceFilter = BalanceLabConfidence | 'all';
-type SeverityFilter = BalanceLabFinding['severity'] | 'all';
-
 export function BalanceLabSection({
   availableLayers = ['base'],
   controller,
@@ -55,9 +48,6 @@ export function BalanceLabSection({
   );
   const [study, setStudy] = useState<BalanceLabStudy>('trainerProgression');
   const [layer, setLayer] = useState<BalanceLabLayer>(layers[0] ?? 'base');
-  const [searchText, setSearchText] = useState('');
-  const [confidence, setConfidence] = useState<ConfidenceFilter>('all');
-  const [severity, setSeverity] = useState<SeverityFilter>('all');
   const resultMatchesSelection = controller.activeQuery?.study === study &&
     controller.activeQuery.layer === layer;
   const resultData = resultMatchesSelection ? controller.result.data : null;
@@ -77,19 +67,6 @@ export function BalanceLabSection({
       void controller.query({ layer, study });
     }
   }, [controller.activeQuery, controller.query, layer, study]);
-
-  const normalizedSearch = searchText.trim().toLocaleLowerCase();
-  const points = filterPoints(
-    resultData?.points ?? [],
-    normalizedSearch,
-    confidence
-  );
-  const findings = filterFindings(
-    resultData?.findings ?? [],
-    normalizedSearch,
-    confidence,
-    severity
-  );
 
   return (
     <section
@@ -154,20 +131,6 @@ export function BalanceLabSection({
           {selectedCapability && selectedCapability.state !== 'unavailable' ? (
             <>
               <div className="km-balance-controls">
-                <label className="km-balance-search">
-                  <span>{t('balanceLab.filters.search')}</span>
-                  <span>
-                    <Search aria-hidden="true" size={16} />
-                    <input
-                      autoComplete="off"
-                      maxLength={balanceLabMaximumSearchTextLength}
-                      onChange={(event) => setSearchText(event.currentTarget.value)}
-                      placeholder={t('balanceLab.filters.searchPlaceholder')}
-                      type="search"
-                      value={searchText}
-                    />
-                  </span>
-                </label>
                 <SelectControl
                   labelKey="balanceLab.filters.layer"
                   onChange={(value) => setLayer(value as BalanceLabLayer)}
@@ -177,38 +140,14 @@ export function BalanceLabSection({
                   }))}
                   value={layer}
                 />
-                <SelectControl
-                  labelKey="balanceLab.filters.confidence"
-                  onChange={(value) => setConfidence(value as ConfidenceFilter)}
-                  options={['all', 'verified', 'derived', 'unknown'].map((value) => ({
-                    labelKey: `balanceLab.confidence.${value}`,
-                    value
-                  }))}
-                  value={confidence}
-                />
-                <SelectControl
-                  labelKey="balanceLab.filters.severity"
-                  onChange={(value) => setSeverity(value as SeverityFilter)}
-                  options={['all', 'warning', 'info'].map((value) => ({
-                    labelKey: `balanceLab.severity.${value}`,
-                    value
-                  }))}
-                  value={severity}
-                />
               </div>
 
               <BalanceLabResults
-                findings={findings}
+                findings={resultData.findings}
                 key={resultData.queryFingerprint}
                 onNavigateFinding={onNavigateFinding}
-                points={points}
+                points={resultData.points}
                 study={study}
-              />
-              <ResultWindowSummary
-                filteredFindings={findings.length}
-                filteredPoints={points.length}
-                totalFindings={resultData.findings.length}
-                totalPoints={resultData.points.length}
               />
               {resultData.nextCursor ? (
                 resultData.points.length + resultData.findings.length >=
@@ -370,12 +309,7 @@ function DiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[]
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
     (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
-    (diagnostic) => [
-      diagnostic.severity,
-      diagnostic.code,
-      diagnostic.domain,
-      diagnostic.field
-    ],
+    diagnosticTechnicalIdentity,
     (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
   const primaryAction = [...diagnostics]
@@ -405,8 +339,14 @@ function DiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[]
           return (
           <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              <span>{presentedMessage(diagnostic)}</span>
+              <span>
+                <DiagnosticSeverityText severity={presentedSeverity(diagnostic)} />
+                {presentedMessage(diagnostic)}
+              </span>
               <OccurrenceCount count={count} />
+              <ReportableDiagnosticIssuesLink
+                messages={identities.map((identity) => identity.diagnostic.message)}
+              />
             </span>
             <DiagnosticTechnicalDetails
               diagnostics={identities}
@@ -418,30 +358,6 @@ function DiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[]
       </ul>
       {grouped.length > 50 ? <p>{t('balanceLab.diagnostics.bounded')}</p> : null}
     </section>
-  );
-}
-
-function ResultWindowSummary({
-  filteredFindings,
-  filteredPoints,
-  totalFindings,
-  totalPoints
-}: {
-  filteredFindings: number;
-  filteredPoints: number;
-  totalFindings: number;
-  totalPoints: number;
-}) {
-  const { t } = useLocalization();
-  return (
-    <p aria-live="polite" className="km-balance-window-summary">
-      {t('balanceLab.results.summary', {
-        filteredFindings,
-        filteredPoints,
-        totalFindings,
-        totalPoints
-      })}
-    </p>
   );
 }
 
@@ -481,43 +397,6 @@ function InlineError({ onRetry }: { onRetry: () => void }) {
       </button>
     </div>
   );
-}
-
-function filterPoints(
-  points: readonly BalanceLabPoint[],
-  searchText: string,
-  confidence: ConfidenceFilter
-) {
-  return points.filter((point) => {
-    const matchesConfidence = confidence === 'all' || point.facts.some(
-      (fact) => fact.confidence === confidence
-    );
-    const haystack = [
-      point.label,
-      point.seriesKey,
-      ...point.facts.flatMap((fact) => [fact.label, fact.value.displayValue])
-    ].join('\n').toLocaleLowerCase();
-    return matchesConfidence && (!searchText || haystack.includes(searchText));
-  });
-}
-
-function filterFindings(
-  findings: readonly BalanceLabFinding[],
-  searchText: string,
-  confidence: ConfidenceFilter,
-  severity: SeverityFilter
-) {
-  return findings.filter((finding) => {
-    const matchesConfidence = confidence === 'all' || finding.confidence === confidence;
-    const matchesSeverity = severity === 'all' || finding.severity === severity;
-    const haystack = [
-      finding.title,
-      finding.summary,
-      finding.ruleId,
-      ...finding.facts.flatMap((fact) => [fact.label, fact.value.displayValue])
-    ].join('\n').toLocaleLowerCase();
-    return matchesConfidence && matchesSeverity && (!searchText || haystack.includes(searchText));
-  });
 }
 
 function safeDiagnosticMessage(message: string) {

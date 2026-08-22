@@ -112,7 +112,25 @@ internal sealed class ZaShopsWorkflowService
                     diagnostic.Field,
                     ZaItemsWorkflowService.TechnicalMachineNumberField,
                     StringComparison.Ordinal)));
-            itemRecords = itemWorkflow.Items.ToArray();
+            var requiresItemsRecovery = itemWorkflow.Diagnostics.Any(diagnostic =>
+                string.Equals(
+                    diagnostic.Code,
+                    ZaItemsDiagnosticCodes.LegacyTechnicalMachineNumbering,
+                    StringComparison.Ordinal));
+            if (requiresItemsRecovery)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    "Apply the reported Items TM recovery before adding TM162 Bug Buzz to a shop.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    ItemIdField,
+                    "Recovered physical TM table with the owned TM162 Bug Buzz item"));
+            }
+
+            itemRecords = itemWorkflow.Items
+                .Where(item =>
+                    !requiresItemsRecovery
+                    || !item.IsOwnedTestTechnicalMachine)
+                .ToArray();
             var itemLookup = itemRecords
                 .GroupBy(item => item.ItemId)
                 .ToDictionary(group => group.Key, group => group.First());
@@ -150,6 +168,8 @@ internal sealed class ZaShopsWorkflowService
             diagnostics)
         {
             KnownItemIds = itemRecords.Select(item => item.ItemId).ToHashSet(),
+            OwnedTestTechnicalMachineAvailable = itemRecords.Any(item =>
+                item.IsOwnedTestTechnicalMachine),
         };
     }
 

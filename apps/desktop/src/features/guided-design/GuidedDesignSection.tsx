@@ -1,13 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
+  ArrowDown,
+  ArrowUp,
   Clipboard,
   Download,
   ExternalLink,
   ListChecks,
+  Plus,
   RefreshCw,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import {
   useEffect,
@@ -35,6 +39,7 @@ import {
   type GuidedDesignPreviewResponse,
   type GuidedDesignProposalKind,
   type GuidedDesignRounding,
+  type GuidedDesignTargetOption,
   type GuidedDesignTrainerArchetype
 } from '../../bridge/guidedDesignContracts';
 import type { ApiDiagnostic } from '../../bridge/contracts';
@@ -44,15 +49,19 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
+import { userFacingFeatureVisibility } from '../../workbench/featureVisibility';
 import {
+  DiagnosticSeverityText,
   DiagnosticTechnicalDetails,
   OccurrenceCount,
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
 import {
+  diagnosticTechnicalIdentity,
   diagnosticSeverityPriority,
   groupDiagnosticsForPresentation,
   presentationDiagnosticMessage,
@@ -73,6 +82,7 @@ const proposalKinds: readonly GuidedDesignProposalKind[] = [
   'trainerEvArchetype',
   'pokemonBaseStatShuffle'
 ];
+const maximumVisibleTargetSuggestions = 8;
 
 export type GuidedDesignSectionProps = {
   canImportChangeSet: boolean;
@@ -124,7 +134,7 @@ export function GuidedDesignSection({
   const [targetSearchText, setTargetSearchText] = useState('');
   const [targetSelection, setTargetSelection] = useState<{
     inputIdentity: string | null;
-    targets: Map<string, SemanticExploreRecordRef>;
+    targets: Map<string, GuidedDesignTargetOption>;
   }>({ inputIdentity: null, targets: new Map() });
   const [submittedDraftIdentity, setSubmittedDraftIdentity] = useState<string | null>(null);
   const [importReceipt, setImportReceipt] = useState<{
@@ -199,6 +209,8 @@ export function GuidedDesignSection({
     controller.preview.data.normalizedInput.kind === kind
     ? controller.preview.data.normalizedInput
     : null;
+  const targetSearchRequired = targetSearchText.trim().length === 0 &&
+    retainedProposalInput === null;
 
   const handlePreview = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -241,7 +253,9 @@ export function GuidedDesignSection({
         <div>
           <p>{t('guidedDesign.eyebrow')}</p>
           <h2 id="guided-design-title">{t('guidedDesign.title')}</h2>
-          <span>{t('guidedDesign.description')}</span>
+          <span>{t(userFacingFeatureVisibility.namedChangeSets
+            ? 'guidedDesign.description'
+            : 'guidedDesign.inputs.description')}</span>
         </div>
         <button
           aria-busy={controller.isQuerying || undefined}
@@ -263,10 +277,12 @@ export function GuidedDesignSection({
         </button>
       </header>
 
-      <aside className="km-guided-safety-note">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <p>{t('guidedDesign.safety')}</p>
-      </aside>
+      {userFacingFeatureVisibility.namedChangeSets ? (
+        <aside className="km-guided-safety-note">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <p>{t('guidedDesign.safety')}</p>
+        </aside>
+      ) : null}
 
       {controller.capabilities.status === 'loading' ? (
         <StatusPanel kind="loading" />
@@ -460,6 +476,11 @@ export function GuidedDesignSection({
                   {t('guidedDesign.preview.workspaceBusy')}
                 </p>
               ) : null}
+              {targetSearchRequired ? (
+                <p className="km-guided-advisory">
+                  {t('guidedDesign.inputs.targetSearchRequired')}
+                </p>
+              ) : null}
               <button
                 aria-busy={
                   controller.preview.status === 'loading' &&
@@ -469,6 +490,7 @@ export function GuidedDesignSection({
                 className="primary-button"
                 disabled={
                   !parsedInput.success ||
+                  targetSearchRequired ||
                   controller.isQuerying ||
                   !isChangeSetWorkspaceReady ||
                   isChangeSetWorkspaceBusy
@@ -527,7 +549,7 @@ export function GuidedDesignSection({
           }))}
         />
       ) : null}
-      {importReceipt ? (
+      {userFacingFeatureVisibility.namedChangeSets && importReceipt ? (
         <ImportReceipt diagnostics={importReceipt.diagnostics} onOpenChanges={onOpenChanges} />
       ) : null}
     </section>
@@ -595,12 +617,12 @@ function GuidedDesignResults({
   }) => void;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onSelectedDiscoveryTargetsChange: (
-    targets: Map<string, SemanticExploreRecordRef>
+    targets: Map<string, GuidedDesignTargetOption>
   ) => void;
   response: GuidedDesignPreviewResponse;
   revision: SemanticExploreRevision | null;
   scope: SemanticExploreScope;
-  selectedDiscoveryTargets: ReadonlyMap<string, SemanticExploreRecordRef>;
+  selectedDiscoveryTargets: ReadonlyMap<string, GuidedDesignTargetOption>;
 }) {
   return props.response.selectionRequired
     ? <GuidedDesignTargetSelection {...props} />
@@ -623,10 +645,10 @@ function GuidedDesignTargetSelection({
   onExactTargetsGenerated: () => void;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onSelectedDiscoveryTargetsChange: (
-    targets: Map<string, SemanticExploreRecordRef>
+    targets: Map<string, GuidedDesignTargetOption>
   ) => void;
   response: GuidedDesignPreviewResponse;
-  selectedDiscoveryTargets: ReadonlyMap<string, SemanticExploreRecordRef>;
+  selectedDiscoveryTargets: ReadonlyMap<string, GuidedDesignTargetOption>;
 }) {
   const { t } = useLocalization();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -634,7 +656,8 @@ function GuidedDesignTargetSelection({
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
   }, [response.proposalId]);
-  const exactTargets = [...selectedDiscoveryTargets.values()];
+  const selectedTargets = [...selectedDiscoveryTargets.values()];
+  const exactTargets = selectedTargets.map((option) => option.record);
   const isBusy = controller.isQuerying || isChangeSetWorkspaceBusy;
   const orderedTargets = useMemo(() => [...response.eligibleTargets].sort((left, right) => (
     targetOrder === 'record'
@@ -643,6 +666,18 @@ function GuidedDesignTargetSelection({
       : left.recordLabel.localeCompare(right.recordLabel) ||
         formatSemanticRecord(left.record).localeCompare(formatSemanticRecord(right.record))
   )), [response.eligibleTargets, targetOrder]);
+  const availableTargets = orderedTargets.filter((option) => (
+    !selectedDiscoveryTargets.has(semanticRecordKey(option.record))
+  ));
+  const visibleTargetSuggestions = availableTargets.slice(0, maximumVisibleTargetSuggestions);
+  const moveSelectedTarget = (key: string, direction: -1 | 1) => {
+    const entries = [...selectedDiscoveryTargets.entries()];
+    const index = entries.findIndex(([candidate]) => candidate === key);
+    const destination = index + direction;
+    if (index < 0 || destination < 0 || destination >= entries.length) return;
+    [entries[index], entries[destination]] = [entries[destination]!, entries[index]!];
+    onSelectedDiscoveryTargetsChange(new Map(entries));
+  };
   return (
     <section
       aria-busy={controller.preview.isAppending}
@@ -682,97 +717,151 @@ function GuidedDesignTargetSelection({
       ) ? (
         <p className="km-guided-advisory">{t('guidedDesign.selection.windowCapped')}</p>
       ) : null}
-      <div className="km-guided-result-controls">
-        <label>
-          <span>{t('analysisPresentation.controls.sort')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setTargetOrder(event.currentTarget.value as typeof targetOrder)}
-            value={targetOrder}
-          >
-            <option value="name">{t('analysisPresentation.controls.record')}</option>
-            <option value="record">{t('analysisPresentation.controls.identifier')}</option>
-          </select>
-        </label>
-        <div className="km-guided-selection-actions">
-          <button
-            className="secondary-button compact-button"
-            disabled={isBusy || orderedTargets.length === 0 || (
-              selectedDiscoveryTargets.size >= guidedDesignMaximumTargets
-            )}
-            onClick={() => {
-              const next = new Map(selectedDiscoveryTargets);
-              for (const option of orderedTargets) {
-                if (next.size >= guidedDesignMaximumTargets) break;
-                next.set(semanticRecordKey(option.record), option.record);
-              }
-              onSelectedDiscoveryTargetsChange(next);
-            }}
-            type="button"
-          >
-            {t('analysisPresentation.controls.selectVisible')}
-          </button>
-          <button
-            className="secondary-button compact-button"
-            disabled={isBusy || selectedDiscoveryTargets.size === 0}
-            onClick={() => onSelectedDiscoveryTargetsChange(new Map())}
-            type="button"
-          >
-            {t('guidedDesign.selection.clear')}
-          </button>
+      <section className="km-guided-selected-targets">
+        <div className="km-guided-selected-targets-heading">
+          <h4>{t('guidedDesign.selection.selectedTitle')}</h4>
+          {selectedTargets.length > 0 ? (
+            <button
+              className="secondary-button compact-button"
+              disabled={isBusy}
+              onClick={() => onSelectedDiscoveryTargetsChange(new Map())}
+              type="button"
+            >
+              {t('guidedDesign.selection.clear')}
+            </button>
+          ) : null}
         </div>
-      </div>
-      <fieldset>
-        <legend>{t('guidedDesign.selection.legend')}</legend>
-        <div className="km-guided-target-option-list">
-          {orderedTargets.map((option) => {
-            const key = semanticRecordKey(option.record);
-            const isSelected = selectedDiscoveryTargets.has(key);
-            return (
-              <div className="km-guided-target-option" key={key}>
-                <label>
-                  <input
-                    checked={isSelected}
-                    className="km-choice-control"
-                    disabled={
-                      isBusy ||
-                      (!isSelected && selectedDiscoveryTargets.size >= guidedDesignMaximumTargets)
-                    }
-                    onChange={(event) => {
-                      const next = new Map(selectedDiscoveryTargets);
-                        if (event.currentTarget.checked) {
-                          if (next.size < guidedDesignMaximumTargets) {
-                            next.set(key, option.record);
-                          }
-                        } else {
-                          next.delete(key);
-                        }
-                      onSelectedDiscoveryTargetsChange(next);
-                    }}
-                    type="checkbox"
-                  />
+        {selectedTargets.length > 0 ? (
+          <ol className="km-guided-selected-target-list">
+            {selectedTargets.map((option, index) => {
+              const key = semanticRecordKey(option.record);
+              const accessibleName = `${option.recordLabel}, ${formatSemanticRecord(option.record)}`;
+              return (
+                <li key={key}>
                   <span>
                     <strong data-localization-ignore="true">{option.recordLabel}</strong>
-                    <code data-localization-ignore="true">
-                      {formatSemanticRecord(option.record)}
-                    </code>
+                    <code data-localization-ignore="true">{formatSemanticRecord(option.record)}</code>
                   </span>
-                </label>
-                <OpenRecordButton
-                  accessibleName={`${option.recordLabel}, ${formatSemanticRecord(option.record)}`}
-                  canNavigate={canNavigateRecord(option.record)}
-                  onNavigate={() => onNavigateRecord(option.record)}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </fieldset>
+                  <div className="km-guided-target-order-actions">
+                    <button
+                      aria-label={t('guidedDesign.selection.moveUpNamed', { name: accessibleName })}
+                      className="secondary-button compact-button"
+                      disabled={isBusy || index === 0}
+                      onClick={() => moveSelectedTarget(key, -1)}
+                      type="button"
+                    >
+                      <ArrowUp aria-hidden="true" size={14} />
+                    </button>
+                    <button
+                      aria-label={t('guidedDesign.selection.moveDownNamed', { name: accessibleName })}
+                      className="secondary-button compact-button"
+                      disabled={isBusy || index === selectedTargets.length - 1}
+                      onClick={() => moveSelectedTarget(key, 1)}
+                      type="button"
+                    >
+                      <ArrowDown aria-hidden="true" size={14} />
+                    </button>
+                    <button
+                      aria-label={t('guidedDesign.selection.removeNamed', { name: accessibleName })}
+                      className="secondary-button compact-button"
+                      disabled={isBusy}
+                      onClick={() => {
+                        const next = new Map(selectedDiscoveryTargets);
+                        next.delete(key);
+                        onSelectedDiscoveryTargetsChange(next);
+                      }}
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={14} />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        ) : (
+          <p className="km-workbench-empty">{t('guidedDesign.selection.none')}</p>
+        )}
+      </section>
+      {response.normalizedTargetSearchText ? (
+        <fieldset>
+          <legend>{t('guidedDesign.selection.legend')}</legend>
+          <div className="km-guided-result-controls">
+            <label>
+              <span>{t('analysisPresentation.controls.sort')}</span>
+              <select
+                className="km-select-control"
+                onChange={(event) => setTargetOrder(event.currentTarget.value as typeof targetOrder)}
+                value={targetOrder}
+              >
+                <option value="name">{t('analysisPresentation.controls.record')}</option>
+                <option value="record">{t('analysisPresentation.controls.identifier')}</option>
+              </select>
+            </label>
+          </div>
+          {visibleTargetSuggestions.length > 0 ? (
+            <div className="km-guided-target-option-list">
+              {visibleTargetSuggestions.map((option) => {
+                const key = semanticRecordKey(option.record);
+                return (
+                  <div className="km-guided-target-option" key={key}>
+                    <span className="km-guided-target-option-copy">
+                      <strong data-localization-ignore="true">{option.recordLabel}</strong>
+                      <code data-localization-ignore="true">
+                        {formatSemanticRecord(option.record)}
+                      </code>
+                    </span>
+                    <div className="km-guided-target-option-actions">
+                      <button
+                        aria-label={`${t('guidedDesign.selection.add')}: ${option.recordLabel}, ${formatSemanticRecord(option.record)}`}
+                        className="secondary-button compact-button"
+                        disabled={
+                          isBusy ||
+                          selectedDiscoveryTargets.size >= guidedDesignMaximumTargets
+                        }
+                        onClick={() => {
+                          const next = new Map(selectedDiscoveryTargets);
+                          if (next.size < guidedDesignMaximumTargets) {
+                            next.set(key, option);
+                          }
+                          onSelectedDiscoveryTargetsChange(next);
+                        }}
+                        type="button"
+                      >
+                        <Plus aria-hidden="true" size={14} />
+                        <span>{t('guidedDesign.selection.add')}</span>
+                      </button>
+                      <OpenRecordButton
+                        accessibleName={
+                          `${option.recordLabel}, ${formatSemanticRecord(option.record)}`
+                        }
+                        canNavigate={canNavigateRecord(option.record)}
+                        onNavigate={() => onNavigateRecord(option.record)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
+          )}
+          {availableTargets.length > maximumVisibleTargetSuggestions ? (
+            <p className="km-guided-advisory">
+              {t('guidedDesign.selection.refineSearch', {
+                count: maximumVisibleTargetSuggestions
+              })}
+            </p>
+          ) : null}
+        </fieldset>
+      ) : (
+        <p className="km-guided-advisory">{t('guidedDesign.inputs.targetSearchRequired')}</p>
+      )}
       {selectedDiscoveryTargets.size >= guidedDesignMaximumTargets ? (
         <p className="km-guided-advisory">{t('guidedDesign.selection.limit')}</p>
       ) : null}
       <div className="km-guided-selection-actions">
-        {response.nextCursor &&
+        {response.normalizedTargetSearchText && response.nextCursor &&
         response.eligibleTargets.length < guidedDesignMaximumEligibleTargetWindow ? (
           <button
             aria-busy={controller.preview.isAppending || undefined}
@@ -846,7 +935,7 @@ function GuidedDesignProposalResults({
   }) => void;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onSelectedDiscoveryTargetsChange: (
-    targets: Map<string, SemanticExploreRecordRef>
+    targets: Map<string, GuidedDesignTargetOption>
   ) => void;
   response: GuidedDesignPreviewResponse;
   revision: SemanticExploreRevision | null;
@@ -947,7 +1036,9 @@ function GuidedDesignProposalResults({
           <h3 id="guided-design-results-title" ref={headingRef} tabIndex={-1}>
             {t('guidedDesign.results.title')}
           </h3>
-          <p>{t('guidedDesign.results.description')}</p>
+          {userFacingFeatureVisibility.namedChangeSets ? (
+            <p>{t('guidedDesign.results.description')}</p>
+          ) : null}
         </div>
       </div>
 
@@ -983,7 +1074,13 @@ function GuidedDesignProposalResults({
         controller={controller}
         isChangeSetWorkspaceBusy={isChangeSetWorkspaceBusy}
         onExactTargetsChange={(targets) => onSelectedDiscoveryTargetsChange(new Map(
-          targets.map((record) => [semanticRecordKey(record), record])
+          targets.map((record) => [
+            semanticRecordKey(record),
+            {
+              record,
+              recordLabel: guidedDesignRecordLabel(response, record)
+            }
+          ])
         ))}
         response={response}
       />
@@ -1028,58 +1125,60 @@ function GuidedDesignProposalResults({
       <DiagnosticList diagnostics={response.diagnostics} />
       <CanonicalExports key={response.proposalFingerprint} exports={response.exports} />
 
-      <form
-        aria-busy={importState.status === 'busy'}
-        className="km-guided-import"
-        onSubmit={handleImport}
-      >
-        <div>
-          <h4>{t('guidedDesign.import.title')}</h4>
-          <p>{t('guidedDesign.import.description')}</p>
-        </div>
-        <label>
-          <span>{t('guidedDesign.import.name')}</span>
-          <input
-            disabled={importState.status === 'busy' || importState.status === 'success'}
-            maxLength={guidedDesignMaximumChangeSetNameLength}
-            onChange={(event) => setChangeSetName(event.currentTarget.value)}
-            type="text"
-            value={changeSetName}
-          />
-        </label>
-        {!response.canImport ? (
-          <p className="km-guided-advisory">{t('guidedDesign.import.blocked')}</p>
-        ) : response.nextCursor ? (
-          <p className="km-guided-advisory">{t('guidedDesign.import.loadAll')}</p>
-        ) : !canImportChangeSet ? (
-          <p className="km-guided-advisory">{t('guidedDesign.import.unavailable')}</p>
-        ) : isChangeSetWorkspaceBusy ? (
-          <p className="km-guided-advisory">{t('guidedDesign.import.workspaceBusy')}</p>
-        ) : null}
-        <button
-          aria-busy={importState.status === 'busy' || undefined}
-          className="primary-button"
-          disabled={!importAllowed}
-          type="submit"
+      {userFacingFeatureVisibility.namedChangeSets ? (
+        <form
+          aria-busy={importState.status === 'busy'}
+          className="km-guided-import"
+          onSubmit={handleImport}
         >
-          {importState.status === 'busy'
-            ? t('guidedDesign.import.loading')
-            : t('guidedDesign.import.action')}
-        </button>
-        {importState.status === 'busy' ? (
-          <LoadingProgress className="is-compact" label={t('guidedDesign.import.loading')} />
-        ) : null}
-        {importState.error ? (
-          <p
-            className="km-guided-form-error"
-            ref={importErrorRef}
-            role="alert"
-            tabIndex={-1}
+          <div>
+            <h4>{t('guidedDesign.import.title')}</h4>
+            <p>{t('guidedDesign.import.description')}</p>
+          </div>
+          <label>
+            <span>{t('guidedDesign.import.name')}</span>
+            <input
+              disabled={importState.status === 'busy' || importState.status === 'success'}
+              maxLength={guidedDesignMaximumChangeSetNameLength}
+              onChange={(event) => setChangeSetName(event.currentTarget.value)}
+              type="text"
+              value={changeSetName}
+            />
+          </label>
+          {!response.canImport ? (
+            <p className="km-guided-advisory">{t('guidedDesign.import.blocked')}</p>
+          ) : response.nextCursor ? (
+            <p className="km-guided-advisory">{t('guidedDesign.import.loadAll')}</p>
+          ) : !canImportChangeSet ? (
+            <p className="km-guided-advisory">{t('guidedDesign.import.unavailable')}</p>
+          ) : isChangeSetWorkspaceBusy ? (
+            <p className="km-guided-advisory">{t('guidedDesign.import.workspaceBusy')}</p>
+          ) : null}
+          <button
+            aria-busy={importState.status === 'busy' || undefined}
+            className="primary-button"
+            disabled={!importAllowed}
+            type="submit"
           >
-            {t('guidedDesign.import.error')}
-          </p>
-        ) : null}
-      </form>
+            {importState.status === 'busy'
+              ? t('guidedDesign.import.loading')
+              : t('guidedDesign.import.action')}
+          </button>
+          {importState.status === 'busy' ? (
+            <LoadingProgress className="is-compact" label={t('guidedDesign.import.loading')} />
+          ) : null}
+          {importState.error ? (
+            <p
+              className="km-guided-form-error"
+              ref={importErrorRef}
+              role="alert"
+              tabIndex={-1}
+            >
+              {t('guidedDesign.import.error')}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
     </section>
   );
 }
@@ -1318,90 +1417,111 @@ function TargetConstraints({
   response: GuidedDesignPreviewResponse;
 }) {
   const { t } = useLocalization();
-  const [selectedRecords, setSelectedRecords] = useState<Set<string>>(() => new Set(
-    response.normalizedInput.targets.map(semanticRecordKey)
-  ));
-  const candidateRecords = useMemo(
+  const currentRecords = useMemo(
     () => distinctRecords(response.normalizedInput.targets),
     [response.normalizedInput.targets]
   );
+  const [selectedRecords, setSelectedRecords] = useState<SemanticExploreRecordRef[]>(
+    () => currentRecords
+  );
   useEffect(() => {
-    setSelectedRecords(new Set(response.normalizedInput.targets.map(semanticRecordKey)));
-  }, [response.proposalId, response.normalizedInput.targets]);
-  const currentRecords = new Set(response.normalizedInput.targets.map(semanticRecordKey));
-  const selectionChanged = candidateRecords.some((record) => (
-    selectedRecords.has(semanticRecordKey(record)) !== currentRecords.has(semanticRecordKey(record))
-  ));
-  const rerun = () => {
-    const targets = candidateRecords.filter((record) => (
-      selectedRecords.has(semanticRecordKey(record))
+    setSelectedRecords(currentRecords);
+  }, [currentRecords, response.proposalId]);
+  const selectionChanged = selectedRecords.length !== currentRecords.length ||
+    selectedRecords.some((record, index) => (
+      semanticRecordKey(record) !== semanticRecordKey(currentRecords[index]!)
     ));
-    const selectedKeys = new Set(targets.map(semanticRecordKey));
-    onExactTargetsChange(targets);
+  const rerun = () => {
+    const selectedKeys = new Set(selectedRecords.map(semanticRecordKey));
+    onExactTargetsChange(selectedRecords);
     void controller.previewDesign({
       ...response.normalizedInput,
-      pins: targets.length === 0
+      pins: selectedRecords.length === 0
         ? []
         : response.normalizedInput.pins.filter((pin) => (
           selectedKeys.has(pinOwningTargetKey(pin.record))
         )),
-      targets
+      targets: selectedRecords
+    });
+  };
+  const moveRecord = (index: number, direction: -1 | 1) => {
+    const destination = index + direction;
+    if (destination < 0 || destination >= selectedRecords.length) return;
+    setSelectedRecords((current) => {
+      const next = [...current];
+      [next[index], next[destination]] = [next[destination]!, next[index]!];
+      return next;
     });
   };
   return (
     <fieldset className="km-guided-targets">
       <legend>{t('guidedDesign.targets.title')}</legend>
       <p>{t('guidedDesign.targets.description')}</p>
-      {candidateRecords.length > 0 ? (
-        <div className="km-guided-target-list">
-          {candidateRecords.map((record) => {
+      {selectedRecords.length > 0 ? (
+        <ol className="km-guided-target-list">
+          {selectedRecords.map((record, index) => {
             const key = semanticRecordKey(record);
+            const accessibleName = `${guidedDesignRecordLabel(response, record)}, ${formatSemanticRecord(record)}`;
             return (
-              <label key={key}>
-                <input
-                  checked={selectedRecords.has(key)}
-                  className="km-choice-control"
-                  disabled={controller.isQuerying || isChangeSetWorkspaceBusy}
-                  onChange={(event) => {
-                    setSelectedRecords((current) => {
-                      const next = new Set(current);
-                      if (event.currentTarget.checked) next.add(key);
-                      else next.delete(key);
-                      return next;
-                    });
-                  }}
-                  type="checkbox"
-                />
-                <code data-localization-ignore="true">{formatSemanticRecord(record)}</code>
-              </label>
+              <li key={key}>
+                <span>
+                  <strong data-localization-ignore="true">
+                    {guidedDesignRecordLabel(response, record)}
+                  </strong>
+                  <code data-localization-ignore="true">{formatSemanticRecord(record)}</code>
+                </span>
+                <div className="km-guided-target-order-actions">
+                  <button
+                    aria-label={t('guidedDesign.selection.moveUpNamed', {
+                      name: accessibleName
+                    })}
+                    className="secondary-button compact-button"
+                    disabled={controller.isQuerying || isChangeSetWorkspaceBusy || index === 0}
+                    onClick={() => moveRecord(index, -1)}
+                    type="button"
+                  >
+                    <ArrowUp aria-hidden="true" size={14} />
+                  </button>
+                  <button
+                    aria-label={t('guidedDesign.selection.moveDownNamed', {
+                      name: accessibleName
+                    })}
+                    className="secondary-button compact-button"
+                    disabled={
+                      controller.isQuerying ||
+                      isChangeSetWorkspaceBusy ||
+                      index === selectedRecords.length - 1
+                    }
+                    onClick={() => moveRecord(index, 1)}
+                    type="button"
+                  >
+                    <ArrowDown aria-hidden="true" size={14} />
+                  </button>
+                  <button
+                    aria-label={t('guidedDesign.selection.removeNamed', {
+                      name: accessibleName
+                    })}
+                    className="secondary-button compact-button"
+                    disabled={controller.isQuerying || isChangeSetWorkspaceBusy}
+                    onClick={() => setSelectedRecords((current) => (
+                      current.filter((candidate) => semanticRecordKey(candidate) !== key)
+                    ))}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                  </button>
+                </div>
+              </li>
             );
           })}
-        </div>
-      ) : null}
-      <small>{selectedRecords.size === 0
+        </ol>
+      ) : (
+        <p className="km-workbench-empty">{t('guidedDesign.selection.none')}</p>
+      )}
+      <small>{selectedRecords.length === 0
         ? t('guidedDesign.targets.returnToSelection')
-        : t('guidedDesign.targets.selected', { count: selectedRecords.size })}</small>
+        : t('guidedDesign.targets.selected', { count: selectedRecords.length })}</small>
       <div className="km-guided-selection-actions">
-        <button
-          className="secondary-button compact-button"
-          disabled={
-            controller.isQuerying ||
-            isChangeSetWorkspaceBusy ||
-            selectedRecords.size === candidateRecords.length
-          }
-          onClick={() => setSelectedRecords(new Set(candidateRecords.map(semanticRecordKey)))}
-          type="button"
-        >
-          {t('analysisPresentation.controls.selectVisible')}
-        </button>
-        <button
-          className="secondary-button compact-button"
-          disabled={controller.isQuerying || isChangeSetWorkspaceBusy || selectedRecords.size === 0}
-          onClick={() => setSelectedRecords(new Set())}
-          type="button"
-        >
-          {t('analysisPresentation.controls.clearSelection')}
-        </button>
         <button
           className="secondary-button compact-button"
           disabled={!selectionChanged || controller.isQuerying || isChangeSetWorkspaceBusy}
@@ -1916,12 +2036,7 @@ function DiagnosticList({
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
     (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
-    (diagnostic) => [
-      diagnostic.severity,
-      diagnostic.code,
-      diagnostic.domain,
-      diagnostic.field
-    ],
+    diagnosticTechnicalIdentity,
     (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
   const primaryAction = [...diagnostics]
@@ -1951,8 +2066,14 @@ function DiagnosticList({
           return (
           <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              <span>{presentedMessage(diagnostic)}</span>
+              <span>
+                <DiagnosticSeverityText severity={presentedSeverity(diagnostic)} />
+                {presentedMessage(diagnostic)}
+              </span>
               <OccurrenceCount count={count} />
+              <ReportableDiagnosticIssuesLink
+                messages={identities.map((identity) => identity.diagnostic.message)}
+              />
             </span>
             <DiagnosticTechnicalDetails
               diagnostics={identities}
@@ -2196,6 +2317,18 @@ function semanticRecordKey(record: SemanticExploreRecordRef) {
     record.recordId,
     record.subrecordId
   ]);
+}
+
+function guidedDesignRecordLabel(
+  response: GuidedDesignPreviewResponse,
+  record: SemanticExploreRecordRef
+) {
+  const key = semanticRecordKey(record);
+  return response.eligibleTargets.find((option) => (
+    semanticRecordKey(option.record) === key
+  ))?.recordLabel ?? response.mutations.find((mutation) => (
+    semanticRecordKey(mutation.record) === key
+  ))?.recordLabel ?? formatSemanticRecord(record);
 }
 
 function groupMutationsByRecord(mutations: GuidedDesignPreviewResponse['mutations']) {

@@ -68,4 +68,6 @@ public sealed record ZaShopsWorkflow(
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
     public IReadOnlySet<int> KnownItemIds { get; init; } = new HashSet<int>();
+
+    internal bool OwnedTestTechnicalMachineAvailable { get; init; }
 }

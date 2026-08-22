@@ -16,7 +16,8 @@ internal sealed record ZaTechnicalMachineMove(
     int MachineIndex,
     int MoveId,
     string MoveName,
-    string Label);
+    string Label,
+    bool IsOwnedTestTechnicalMachine);
 
 internal readonly record struct ZaTechnicalMachineNumberAssignment(
     int ItemId,
@@ -32,6 +33,17 @@ internal static class ZaTechnicalMachineCatalog
 {
     public const int LegacySyntheticTechnicalMachineItemId = 2161;
     public const int LegacyMissingTechnicalMachineSlot = 101;
+    public const int TestTechnicalMachineTemplateItemId = 2221;
+    public const int TestTechnicalMachineItemId = 2222;
+    public const int TestTechnicalMachineSlot = 162;
+    public const int TestTechnicalMachineIndex = TestTechnicalMachineSlot - 1;
+    public const int TestTechnicalMachineMoveId = 405;
+    public const string TestTechnicalMachineInternalName = "WAZAMASIN162";
+    public const string TestTechnicalMachineIconName = "item_0403";
+    public const string TestTechnicalMachineMoveName = "Bug Buzz";
+
+    private const int TestTechnicalMachineBaseCount = 160;
+    private const string TestTechnicalMachineTemplateInternalName = "WAZAMASIN161";
 
     public static IReadOnlyList<ZaTechnicalMachineMove> Load(
         OpenedProject project,
@@ -57,7 +69,7 @@ internal static class ZaTechnicalMachineCatalog
                 return [];
             }
 
-            return Read(source.Bytes, labels, recovery, fileSource);
+            return Read(source.Bytes, labels, recovery, fileSource, diagnostics);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -72,22 +84,35 @@ internal static class ZaTechnicalMachineCatalog
         byte[] itemData,
         ZaTextLabelLookup labels)
     {
-        return Read(itemData, labels, ZaTechnicalMachineLegacyRecovery.None, boundedFileSource: null);
+        return Read(
+            itemData,
+            labels,
+            ZaTechnicalMachineLegacyRecovery.None,
+            boundedFileSource: null,
+            diagnostics: null);
     }
 
     private static IReadOnlyList<ZaTechnicalMachineMove> Read(
         byte[] itemData,
         ZaTextLabelLookup labels,
         ZaTechnicalMachineLegacyRecovery recovery,
-        ZaWorkflowFileSource? boundedFileSource)
+        ZaWorkflowFileSource? boundedFileSource,
+        ICollection<ValidationDiagnostic>? diagnostics)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(itemData));
         boundedFileSource?.EnsureBoundedTableCount(table.ValuesLength, "The Z-A TM item table");
+        var items = new List<ZaItemData>(table.ValuesLength);
         var records = new List<ZaTechnicalMachineMove>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var item = table.Values(index);
-            if (item is null || !IsTechnicalMachine(item.Value))
+            if (item is null)
+            {
+                continue;
+            }
+
+            items.Add(item.Value);
+            if (!IsTechnicalMachine(item.Value))
             {
                 continue;
             }
@@ -114,15 +139,20 @@ internal static class ZaTechnicalMachineCatalog
             }
 
             var moveId = item.Value.MachineWaza;
-            var moveName = labels.Move(moveId);
+            var moveName = IsOwnedTestTechnicalMachineRow(item.Value)
+                ? ResolveTestTechnicalMachineMoveName(labels)
+                : labels.Move(moveId);
             records.Add(new ZaTechnicalMachineMove(
                 resolvedNumber,
                 item.Value.Id,
                 hasRecoveredNumber ? resolvedNumber - 1 : item.Value.MachineIndex,
                 moveId,
                 moveName,
-                $"{FormatMachineLabel(resolvedNumber)} {moveName}"));
+                $"{FormatMachineLabel(resolvedNumber)} {moveName}",
+                IsOwnedTestTechnicalMachineRow(item.Value)));
         }
+
+        ApplyTestTechnicalMachineProjection(items, records, labels, diagnostics);
 
         return records
             .GroupBy(record => record.MoveId)
@@ -192,6 +222,65 @@ internal static class ZaTechnicalMachineCatalog
                 .Select(assignment => assignment.SortNum)
                 .Order()
                 .SequenceEqual(Enumerable.Range(1, assignments.Count));
+    }
+
+    public static bool HasCompleteNumberingWithTestTechnicalMachineExtension(
+        IReadOnlyList<ZaTechnicalMachineNumberAssignment> assignments)
+    {
+        if (assignments.Count != TestTechnicalMachineBaseCount + 1
+            || assignments.Select(assignment => assignment.ItemId).Distinct().Count() != assignments.Count)
+        {
+            return false;
+        }
+
+        var extensionAssignments = assignments
+            .Where(assignment => assignment.ItemId == TestTechnicalMachineItemId)
+            .ToArray();
+        if (extensionAssignments.Length != 1
+            || extensionAssignments[0].SortNum != TestTechnicalMachineSlot
+            || extensionAssignments[0].MachineIndex != TestTechnicalMachineIndex)
+        {
+            return false;
+        }
+
+        var baseAssignments = assignments
+            .Where(assignment => assignment.ItemId != TestTechnicalMachineItemId)
+            .ToArray();
+        return baseAssignments.Length == TestTechnicalMachineBaseCount
+            && HasCompleteNumbering(baseAssignments);
+    }
+
+    public static bool HasTestTechnicalMachineIdentity(
+        int itemId,
+        int itemType,
+        string? internalName,
+        string? iconName,
+        int pocket,
+        int sortNum,
+        int machineIndex,
+        int moveId)
+    {
+        return itemId == TestTechnicalMachineItemId
+            && itemType == 5
+            && string.Equals(internalName, TestTechnicalMachineInternalName, StringComparison.Ordinal)
+            && string.Equals(iconName, TestTechnicalMachineIconName, StringComparison.Ordinal)
+            && pocket == 6
+            && sortNum == TestTechnicalMachineSlot
+            && machineIndex == TestTechnicalMachineIndex
+            && moveId == TestTechnicalMachineMoveId;
+    }
+
+    public static bool IsOwnedTestTechnicalMachineRow(ZaItemData item)
+    {
+        return HasTestTechnicalMachineIdentity(
+            item.Id,
+            item.ItemType,
+            item.InternalName,
+            item.IconName,
+            item.Pocket,
+            item.SortNum,
+            item.MachineIndex,
+            item.MachineWaza);
     }
 
     public static bool IsLegacySyntheticTechnicalMachineTemplate(
@@ -297,5 +386,160 @@ internal static class ZaTechnicalMachineCatalog
     public static string FormatMachineLabel(int slot)
     {
         return string.Create(CultureInfo.InvariantCulture, $"TM{slot:000}");
+    }
+
+    private static void ApplyTestTechnicalMachineProjection(
+        IReadOnlyList<ZaItemData> items,
+        List<ZaTechnicalMachineMove> records,
+        ZaTextLabelLookup labels,
+        ICollection<ValidationDiagnostic>? diagnostics)
+    {
+        var ownedItemRows = items
+            .Where(item => item.Id == TestTechnicalMachineItemId)
+            .ToArray();
+        if (ownedItemRows.Length > 0)
+        {
+            if (ownedItemRows.Length != 1)
+            {
+                records.RemoveAll(record => record.ItemId == TestTechnicalMachineItemId);
+                AddTestTechnicalMachineCollisionDiagnostic(
+                    diagnostics,
+                    $"Item {TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture)} is duplicated, so KM Editor cannot determine a safe TM162 Bug Buzz owner.");
+                return;
+            }
+
+            if (!IsOwnedTestTechnicalMachineRow(ownedItemRows[0]))
+            {
+                AddTestTechnicalMachineCollisionDiagnostic(
+                    diagnostics,
+                    $"Item {TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture)} already exists but does not match KM Editor's TM162 Bug Buzz identity. The existing item remains available and is not modified.");
+                return;
+            }
+
+            var assignments = records
+                .Select(record => new ZaTechnicalMachineNumberAssignment(
+                    record.ItemId,
+                    record.Slot,
+                    record.MachineIndex))
+                .ToArray();
+            var hasMoveCollision = records.Any(record =>
+                record.ItemId != TestTechnicalMachineItemId
+                && record.MoveId == TestTechnicalMachineMoveId);
+            var hasOwnedRecord = records.Count(record =>
+                record.ItemId == TestTechnicalMachineItemId
+                && record.Slot == TestTechnicalMachineSlot
+                && record.MachineIndex == TestTechnicalMachineIndex
+                && record.MoveId == TestTechnicalMachineMoveId) == 1;
+            var existingItemIdsAreUnique = items
+                .Select(item => item.Id)
+                .Distinct()
+                .Count() == items.Count;
+            var existingMoveIdsAreUnique = records
+                .Select(record => record.MoveId)
+                .Distinct()
+                .Count() == records.Count;
+            var ownedInternalNameIsUnique = items.Count(item => string.Equals(
+                item.InternalName,
+                TestTechnicalMachineInternalName,
+                StringComparison.Ordinal)) == 1;
+            if (!hasOwnedRecord
+                || hasMoveCollision
+                || !existingItemIdsAreUnique
+                || !existingMoveIdsAreUnique
+                || !ownedInternalNameIsUnique
+                || !HasCompleteNumberingWithTestTechnicalMachineExtension(assignments))
+            {
+                records.RemoveAll(record => record.ItemId == TestTechnicalMachineItemId);
+                AddTestTechnicalMachineCollisionDiagnostic(
+                    diagnostics,
+                    "The existing TM162 Bug Buzz row collides with another TM item, number, or move assignment.");
+            }
+
+            return;
+        }
+
+        var itemIdsAreUnique = items.Select(item => item.Id).Distinct().Count() == items.Count;
+        var templateRows = items
+            .Where(item =>
+                item.Id == TestTechnicalMachineTemplateItemId
+                && item.ItemType == 5
+                && item.Pocket == 6
+                && item.MachineWaza > 0
+                && string.Equals(
+                    item.InternalName,
+                    TestTechnicalMachineTemplateInternalName,
+                    StringComparison.Ordinal))
+            .ToArray();
+        var assignmentsWithoutExtension = records
+            .Select(record => new ZaTechnicalMachineNumberAssignment(
+                record.ItemId,
+                record.Slot,
+                record.MachineIndex))
+            .ToArray();
+        var hasItemIdCollision = records.Any(record => record.ItemId == TestTechnicalMachineItemId);
+        var hasSlotCollision = records.Any(record => record.Slot == TestTechnicalMachineSlot);
+        var hasMoveCollisionWithoutExtension = records.Any(record => record.MoveId == TestTechnicalMachineMoveId);
+        var hasInternalNameCollision = items.Any(item => string.Equals(
+            item.InternalName,
+            TestTechnicalMachineInternalName,
+            StringComparison.Ordinal));
+        if (hasItemIdCollision
+            || hasSlotCollision
+            || hasMoveCollisionWithoutExtension
+            || hasInternalNameCollision)
+        {
+            AddTestTechnicalMachineCollisionDiagnostic(
+                diagnostics,
+                "TM162 Bug Buzz was not projected because its item ID, internal token, TM number, or move is already owned by the loaded item data.");
+            return;
+        }
+
+        var sourceIsEligible = itemIdsAreUnique
+            && templateRows.Length == 1
+            && records.Count == TestTechnicalMachineBaseCount
+            && records.Select(record => record.ItemId).Distinct().Count() == records.Count
+            && records.Select(record => record.MoveId).Distinct().Count() == records.Count
+            && HasCompleteNumbering(assignmentsWithoutExtension);
+        if (!sourceIsEligible)
+        {
+            diagnostics?.Add(ZaWorkflowSupport.Warning(
+                "TM162 Bug Buzz was not projected because the loaded item data is not the supported complete 160-TM source.",
+                $"romfs/{ZaDataPaths.ItemDataArray}",
+                field: "tmNumber",
+                expected: "Unique physical TM numbers 1 through 160 with an available item 2222"));
+            return;
+        }
+
+        var moveName = ResolveTestTechnicalMachineMoveName(labels);
+        records.Add(new ZaTechnicalMachineMove(
+            TestTechnicalMachineSlot,
+            TestTechnicalMachineItemId,
+            TestTechnicalMachineIndex,
+            TestTechnicalMachineMoveId,
+            moveName,
+            $"{FormatMachineLabel(TestTechnicalMachineSlot)} {moveName}",
+            IsOwnedTestTechnicalMachine: true));
+    }
+
+    internal static string ResolveTestTechnicalMachineMoveName(ZaTextLabelLookup labels)
+    {
+        var resolved = labels.Move(TestTechnicalMachineMoveId);
+        return string.Equals(
+            resolved,
+            $"Move {TestTechnicalMachineMoveId.ToString(CultureInfo.InvariantCulture)}",
+            StringComparison.Ordinal)
+                ? TestTechnicalMachineMoveName
+                : resolved;
+    }
+
+    private static void AddTestTechnicalMachineCollisionDiagnostic(
+        ICollection<ValidationDiagnostic>? diagnostics,
+        string message)
+    {
+        diagnostics?.Add(ZaWorkflowSupport.Warning(
+            message,
+            $"romfs/{ZaDataPaths.ItemDataArray}",
+            field: "tmNumber",
+            expected: "Unclaimed item 2222 and one exact TM162 Bug Buzz assignment"));
     }
 }

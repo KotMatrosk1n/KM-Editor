@@ -5,19 +5,24 @@ import { useLocalization } from '../../localization';
 import {
   clearPerformanceDiagnostics,
   createPerformanceDiagnosticsSummary,
+  formatPerformanceDiagnosticCommand,
   getPerformanceDiagnosticsSnapshot,
   setPerformanceDiagnosticsEnabled,
+  summarizePerformanceDiagnostics,
   subscribeToPerformanceDiagnostics
 } from '../../performanceDiagnostics';
 
 export function PerformanceDiagnosticsPanel() {
-  const { t } = useLocalization();
+  const { formatLocale, t } = useLocalization();
   const snapshot = useSyncExternalStore(
     subscribeToPerformanceDiagnostics,
     getPerformanceDiagnosticsSnapshot,
     getPerformanceDiagnosticsSnapshot
   );
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const commandSummaries = summarizePerformanceDiagnostics(snapshot.samples);
+  const formatDuration = (durationMs: number) =>
+    `${durationMs.toLocaleString(formatLocale)} ms`;
 
   const copySummary = async () => {
     try {
@@ -48,6 +53,61 @@ export function PerformanceDiagnosticsPanel() {
         <p aria-live="polite">
           {t('settings.performance.sampleCount', { count: snapshot.samples.length })}
         </p>
+        <section
+          aria-labelledby="performance-diagnostics-summary-heading"
+          className="km-performance-summary"
+        >
+          <div className="km-performance-summary-heading">
+            <h4 id="performance-diagnostics-summary-heading">
+              {t('settings.performance.summary.title')}
+            </h4>
+            <p>{t('settings.performance.summary.description')}</p>
+          </div>
+          {commandSummaries.length === 0 ? (
+            <p className="km-performance-summary-empty">
+              {t('settings.performance.summary.empty')}
+            </p>
+          ) : (
+            <div
+              aria-label={t('settings.performance.summary.tableLabel')}
+              className="km-performance-summary-table-wrap"
+              role="region"
+              tabIndex={0}
+            >
+              <table aria-label={t('settings.performance.summary.tableLabel')}>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('settings.performance.summary.command')}</th>
+                    <th scope="col">{t('settings.performance.summary.samples')}</th>
+                    <th scope="col">{t('settings.performance.summary.failures')}</th>
+                    <th scope="col">{t('settings.performance.summary.median')}</th>
+                    <th scope="col">{t('settings.performance.summary.p95')}</th>
+                    <th scope="col">{t('settings.performance.summary.maximum')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commandSummaries.map((summary) => (
+                    <tr key={summary.command}>
+                      <th scope="row">
+                        <span data-localization-ignore="true">
+                          {formatPerformanceDiagnosticCommand(summary.command)}
+                        </span>
+                        <code data-localization-ignore="true">{summary.command}</code>
+                      </th>
+                      <td>{summary.sampleCount.toLocaleString(formatLocale)}</td>
+                      <td className={summary.failures > 0 ? 'km-performance-failures' : undefined}>
+                        {summary.failures.toLocaleString(formatLocale)}
+                      </td>
+                      <td>{formatDuration(summary.medianDurationMs)}</td>
+                      <td>{formatDuration(summary.p95DurationMs)}</td>
+                      <td>{formatDuration(summary.maximumDurationMs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
         <div className="km-settings-actions">
           <button
             disabled={snapshot.samples.length === 0}
