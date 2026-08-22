@@ -223,6 +223,9 @@ export function ResearchLabSection({
             <ResearchOwnershipView
               capabilities={capabilities}
               comparison={controller.comparison.data}
+              isBusy={controller.isBusy}
+              isLoadingMore={controller.comparison.isAppending}
+              onLoadMore={() => void controller.loadMore()}
             />
           ) : null}
           {activeView === 'extensions' ? (

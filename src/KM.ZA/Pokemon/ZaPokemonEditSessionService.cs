@@ -14,6 +14,7 @@ using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
 using KM.ZA.ExeFs;
+using KM.ZA.Items;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Pokemon;
@@ -1395,10 +1396,14 @@ internal sealed class ZaPokemonEditSessionService
         var validation = Validate(paths, session);
         if (session.PendingEdits.Any(IsAlphaMoveEdit))
         {
-            return CreateAlphaAwareChangePlan(
+            return AddTestTechnicalMachineProvisioningToPlan(
                 paths,
                 session,
-                validation.Diagnostics,
+                CreateAlphaAwareChangePlan(
+                    paths,
+                    session,
+                    validation.Diagnostics,
+                    outputMode),
                 outputMode);
         }
 
@@ -1472,7 +1477,11 @@ internal sealed class ZaPokemonEditSessionService
             PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
             if (!conversionState.Modified)
             {
-                return plan;
+                return AddTestTechnicalMachineProvisioningToPlan(
+                    paths,
+                    session,
+                    plan,
+                    outputMode);
             }
 
             var isolateTrinityModManagerRomFs =
@@ -1492,10 +1501,14 @@ internal sealed class ZaPokemonEditSessionService
                 writeInfo.Sources,
                 writeInfo.ReplacesExistingOutput,
                 "Assign custom Pokemon evolution items to game conversion parameters.");
-            return new ChangePlan(
-                plan.SessionId,
-                [conversionWrite, .. plan.Writes],
-                plan.Diagnostics);
+            return AddTestTechnicalMachineProvisioningToPlan(
+                paths,
+                session,
+                new ChangePlan(
+                    plan.SessionId,
+                    [conversionWrite, .. plan.Writes],
+                    plan.Diagnostics),
+                outputMode);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
         {
@@ -1507,6 +1520,155 @@ internal sealed class ZaPokemonEditSessionService
                     file: $"romfs/{ZaDataPaths.EvolutionItemConversionArray}",
                     expected: "Readable evolution item conversion table with an unused parameter slot"))
                 .ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+    }
+
+    private ChangePlan AddTestTechnicalMachineProvisioningToPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan plan,
+        ZaOutputMode outputMode)
+    {
+        if (!plan.CanApply || !TargetsTestTechnicalMachineCompatibility(session.PendingEdits))
+        {
+            return plan;
+        }
+
+        var diagnostics = plan.Diagnostics.ToList();
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
+            var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+            var workflowClaimsOwnedTestTechnicalMachine = pokemonWorkflowService
+                .Load(project)
+                .OwnedTestTechnicalMachineAvailable;
+            var provisioning = ZaTestTechnicalMachineProvisioner.Provision(
+                itemSource.Bytes,
+                out _);
+            if (!provisioning.IsAvailable && workflowClaimsOwnedTestTechnicalMachine)
+            {
+                throw new InvalidDataException(
+                    provisioning.UnavailableReason
+                        ?? "TM162 Bug Buzz could not be provisioned safely.");
+            }
+            var provisionsTestTechnicalMachine = provisioning.IsAvailable
+                && provisioning.Added;
+
+            var isolateTrinityModManagerRomFs = ShouldIsolateTrinityModManagerRomFs(
+                plan,
+                outputMode);
+            if (provisionsTestTechnicalMachine
+                && isolateTrinityModManagerRomFs
+                && fileSource.TryFindLegacyBareTrinityModManagerOutput(
+                    project,
+                    [ZaDataPaths.ItemDataArray],
+                    out var legacyBareRelativePath))
+            {
+                throw new InvalidDataException(
+                    $"The Output Root contains legacy bare Trinity Mod Manager item data at '{legacyBareRelativePath}' and cannot safely receive the isolated TM162 item write.");
+            }
+
+            var personalWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.PersonalArray,
+                Array.Empty<ProjectFileReference>(),
+                outputMode,
+                isolateTrinityModManagerRomFs);
+            var personalWriteCount = plan.Writes.Count(write => string.Equals(
+                write.TargetRelativePath,
+                personalWriteInfo.TargetRelativePath,
+                StringComparison.Ordinal));
+            if (personalWriteCount != 1)
+            {
+                throw new InvalidDataException(
+                    "The reviewed Pokemon Data plan does not contain exactly one personal-array write for TM162 compatibility.");
+            }
+
+            var itemReference = ZaWorkflowFileSource.CreateReference(itemSource);
+            var requiresLegacyPersonalRecovery = ZaPersonalTable
+                .GetRootAsZaPersonalTable(new ByteBuffer(personalSource.Bytes))
+                .HasLegacyByteZADexOrderLayout;
+            var basePersonalSource = NeedsBaseRows(session.PendingEdits)
+                || requiresLegacyPersonalRecovery
+                ? fileSource.ReadBase(project, ZaDataPaths.PersonalArray)
+                : null;
+            var sourceFingerprint = CreateTestTechnicalMachinePlanFingerprint(
+                paths,
+                outputMode,
+                isolateTrinityModManagerRomFs,
+                personalSource,
+                basePersonalSource,
+                itemSource,
+                provisionsTestTechnicalMachine,
+                plan.Writes,
+                session.PendingEdits);
+            var descriptorTarget = outputMode == ZaOutputMode.Standalone
+                ? ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths).TargetRelativePath
+                : null;
+            var writes = plan.Writes
+                .Select(write => string.Equals(
+                        write.TargetRelativePath,
+                        personalWriteInfo.TargetRelativePath,
+                        StringComparison.Ordinal)
+                    ? write with
+                    {
+                        Sources = write.Sources
+                            .Append(itemReference)
+                            .Distinct()
+                            .ToArray(),
+                        SourceFingerprint = sourceFingerprint,
+                    }
+                    : descriptorTarget is not null
+                        && string.Equals(
+                            write.TargetRelativePath,
+                            descriptorTarget,
+                            StringComparison.Ordinal)
+                        ? write with { SourceFingerprint = sourceFingerprint }
+                        : write)
+                .ToList();
+            if (provisionsTestTechnicalMachine)
+            {
+                var itemWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                    paths,
+                    ZaDataPaths.ItemDataArray,
+                    [itemReference],
+                    outputMode,
+                    isolateTrinityModManagerRomFs);
+                writes.Add(new PlannedFileWrite(
+                    itemWriteInfo.TargetRelativePath,
+                    itemWriteInfo.Sources,
+                    itemWriteInfo.ReplacesExistingOutput,
+                    "Provision the owned TM162 Bug Buzz item with the reviewed Pokemon compatibility change.",
+                    sourceFingerprint));
+            }
+
+            diagnostics = diagnostics
+                .Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Info
+                    || !diagnostic.Message.StartsWith(
+                        "Change plan preview contains ",
+                        StringComparison.Ordinal))
+                .ToList();
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Change plan preview contains {writes.Count.ToString(CultureInfo.InvariantCulture)} target files.",
+                ZaEditSessionSupport.PokemonDomain));
+            return new ChangePlan(plan.SessionId, writes.ToArray(), diagnostics);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or ArgumentException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"TM162 Bug Buzz item provisioning could not be prepared: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                file: $"romfs/{ZaDataPaths.ItemDataArray}",
+                field: $"{CompatibilityFieldPrefix}:{ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId}:{ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId.ToString(CultureInfo.InvariantCulture)}",
+                expected: "Supported unique 160-TM source with unclaimed item 2222 and reviewed personal and item-data targets"));
             return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
     }
@@ -1729,9 +1891,14 @@ internal sealed class ZaPokemonEditSessionService
         ProjectPaths paths,
         string label,
         string virtualPath,
-        ZaOutputMode outputMode)
+        ZaOutputMode outputMode,
+        bool isolateTrinityModManagerRomFs = false)
     {
-        var outputPath = ZaWorkflowFileSource.ResolveOutputPath(paths, virtualPath, outputMode);
+        var outputPath = ZaWorkflowFileSource.ResolveOutputPath(
+            paths,
+            virtualPath,
+            outputMode,
+            isolateTrinityModManagerRomFs);
         var normalizedPath = Path.GetFullPath(outputPath);
         if (OperatingSystem.IsWindows())
         {
@@ -1817,6 +1984,71 @@ internal sealed class ZaPokemonEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
+            var isolateTrinityModManagerRomFs = ShouldIsolateTrinityModManagerRomFs(
+                currentPlan,
+                outputMode);
+            byte[]? provisionedItemBytes = null;
+            var provisionsTestTechnicalMachine = false;
+            if (TargetsTestTechnicalMachineCompatibility(session.PendingEdits))
+            {
+                var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+                var workflowClaimsOwnedTestTechnicalMachine = pokemonWorkflowService
+                    .Load(project)
+                    .OwnedTestTechnicalMachineAvailable;
+                ZaTestTechnicalMachineProvisioningResult provisioning;
+                try
+                {
+                    provisioning = ZaTestTechnicalMachineProvisioner.Provision(
+                        itemSource.Bytes,
+                        out provisionedItemBytes);
+                }
+                catch (InvalidDataException exception)
+                {
+                    diagnostics.Add(CreateTestTechnicalMachineProvisioningDiagnostic(exception.Message));
+                    return ZaEditSessionSupport.CreateApplyResult(
+                        applyId,
+                        appliedAt,
+                        currentPlan,
+                        writtenFiles,
+                        diagnostics);
+                }
+
+                if (!provisioning.IsAvailable && workflowClaimsOwnedTestTechnicalMachine)
+                {
+                    diagnostics.Add(CreateTestTechnicalMachineProvisioningDiagnostic(
+                        provisioning.UnavailableReason
+                            ?? "TM162 Bug Buzz could not be provisioned safely."));
+                    return ZaEditSessionSupport.CreateApplyResult(
+                        applyId,
+                        appliedAt,
+                        currentPlan,
+                        writtenFiles,
+                        diagnostics);
+                }
+
+                provisionsTestTechnicalMachine = provisioning.IsAvailable
+                    && provisioning.Added;
+                if (provisionsTestTechnicalMachine != PlanProvisionsTestTechnicalMachine(
+                        paths,
+                        currentPlan,
+                        outputMode,
+                        isolateTrinityModManagerRomFs))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "The reviewed TM162 Bug Buzz provisioning requirement changed. Review the Pokemon Data change plan again before applying.",
+                        ZaEditSessionSupport.PokemonDomain,
+                        file: $"romfs/{ZaDataPaths.ItemDataArray}",
+                        expected: "The exact reviewed personal and item-data source state"));
+                    return ZaEditSessionSupport.CreateApplyResult(
+                        applyId,
+                        appliedAt,
+                        currentPlan,
+                        writtenFiles,
+                        diagnostics);
+                }
+            }
+
             var personalArray = ReadRows(
                 project,
                 source,
@@ -1914,6 +2146,13 @@ internal sealed class ZaPokemonEditSessionService
                     conversionBytes));
             }
 
+            if (provisionsTestTechnicalMachine && provisionedItemBytes is not null)
+            {
+                outputWrites.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.ItemDataArray,
+                    provisionedItemBytes));
+            }
+
             outputWrites.Add(new ZaWorkflowFileWrite(ZaDataPaths.PersonalArray, outputBytes));
             if (contentsBytes is not null)
             {
@@ -1931,8 +2170,6 @@ internal sealed class ZaPokemonEditSessionService
 
             if (dexApply.ChangesRegularCount)
             {
-                var isolateTrinityModManagerRomFs =
-                    outputMode == ZaOutputMode.TrinityModManager;
                 var expectedMainFingerprint = currentPlan.Writes
                     .Single(write => string.Equals(
                         write.TargetRelativePath,
@@ -1948,14 +2185,24 @@ internal sealed class ZaPokemonEditSessionService
                     () =>
                     {
                         var currentProject = projectWorkspaceService.Open(paths);
+                        var isolatedRomFsPaths = provisionsTestTechnicalMachine
+                            ? new[]
+                            {
+                                ZaDataPaths.PersonalArray,
+                                ZaDataPaths.PokedexContentsData,
+                                ZaDataPaths.PokedexMegaContentsData,
+                                ZaDataPaths.ItemDataArray,
+                            }
+                            :
+                            [
+                                ZaDataPaths.PersonalArray,
+                                ZaDataPaths.PokedexContentsData,
+                                ZaDataPaths.PokedexMegaContentsData,
+                            ];
                         if (isolateTrinityModManagerRomFs
                             && fileSource.TryFindLegacyBareTrinityModManagerOutput(
                                 currentProject,
-                                [
-                                    ZaDataPaths.PersonalArray,
-                                    ZaDataPaths.PokedexContentsData,
-                                    ZaDataPaths.PokedexMegaContentsData,
-                                ],
+                                isolatedRomFsPaths,
                                 out _))
                         {
                             throw new InvalidDataException(
@@ -2073,6 +2320,14 @@ internal sealed class ZaPokemonEditSessionService
                     isolateTrinityModManagerRomFs:
                         dexApply.ChangesRegularCount
                         && outputMode == ZaOutputMode.TrinityModManager));
+            }
+
+            if (provisionsTestTechnicalMachine)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.ItemDataArray,
+                    outputMode,
+                    isolateTrinityModManagerRomFs));
             }
 
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
@@ -2268,6 +2523,7 @@ internal sealed class ZaPokemonEditSessionService
             .ToArray();
         var wrotePersonal = false;
         var wroteConversion = false;
+        var wroteItemData = false;
         var planBecameStale = false;
         var outputVerificationFailed = false;
         try
@@ -2288,6 +2544,39 @@ internal sealed class ZaPokemonEditSessionService
 
                     currentPlan = lockedPlan;
                     var project = projectWorkspaceService.Open(paths);
+                    byte[]? provisionedItemBytes = null;
+                    var provisionsTestTechnicalMachine = false;
+                    if (TargetsTestTechnicalMachineCompatibility(ordinaryEdits))
+                    {
+                        var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+                        var workflowClaimsOwnedTestTechnicalMachine = pokemonWorkflowService
+                            .Load(project)
+                            .OwnedTestTechnicalMachineAvailable;
+                        var provisioning = ZaTestTechnicalMachineProvisioner.Provision(
+                            itemSource.Bytes,
+                            out provisionedItemBytes);
+                        if (!provisioning.IsAvailable && workflowClaimsOwnedTestTechnicalMachine)
+                        {
+                            outputVerificationFailed = true;
+                            throw new InvalidDataException(
+                                provisioning.UnavailableReason
+                                    ?? "TM162 Bug Buzz could not be provisioned safely.");
+                        }
+
+                        provisionsTestTechnicalMachine = provisioning.IsAvailable
+                            && provisioning.Added;
+                        if (provisionsTestTechnicalMachine != PlanProvisionsTestTechnicalMachine(
+                                paths,
+                                currentPlan,
+                                outputMode,
+                                isolateTrinityModManagerRomFs: false))
+                        {
+                            planBecameStale = true;
+                            throw new InvalidDataException(
+                                "The reviewed TM162 Bug Buzz provisioning requirement changed before the output lock was acquired.");
+                        }
+                    }
+
                     var alphaSource = fileSource.Read(project, ZaDataPaths.AlphaMoveTable);
                     var alphaDocument = ZaAlphaMoveTableDocument.Parse(alphaSource.Bytes);
                     var replacements = new List<ZaAlphaMoveReplacement>(alphaEdits.Length);
@@ -2380,6 +2669,14 @@ internal sealed class ZaPokemonEditSessionService
                         wrotePersonal = true;
                     }
 
+                    if (provisionsTestTechnicalMachine && provisionedItemBytes is not null)
+                    {
+                        outputWrites.Add(new ZaWorkflowFileWrite(
+                            ZaDataPaths.ItemDataArray,
+                            provisionedItemBytes));
+                        wroteItemData = true;
+                    }
+
                     outputWrites.Add(new ZaWorkflowFileWrite(
                         ZaDataPaths.AlphaMoveTable,
                         alphaOutput));
@@ -2404,6 +2701,13 @@ internal sealed class ZaPokemonEditSessionService
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
                     ZaDataPaths.PersonalArray,
+                    outputMode));
+            }
+
+            if (wroteItemData)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.ItemDataArray,
                     outputMode));
             }
 
@@ -3896,6 +4200,58 @@ internal sealed class ZaPokemonEditSessionService
             && string.Equals(edit.Field, ZaPokemonWorkflowService.DexPlacementField, StringComparison.Ordinal);
     }
 
+    private static bool TargetsTestTechnicalMachineCompatibility(IEnumerable<PendingEdit> edits)
+    {
+        return edits.Any(edit =>
+            string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
+            && string.Equals(
+                groupId,
+                ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId,
+                StringComparison.Ordinal)
+            && slot == ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId);
+    }
+
+    private static ValidationDiagnostic CreateTestTechnicalMachineProvisioningDiagnostic(string message)
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.PokemonDomain,
+            file: $"romfs/{ZaDataPaths.ItemDataArray}",
+            field: $"{CompatibilityFieldPrefix}:{ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId}:{ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId.ToString(CultureInfo.InvariantCulture)}",
+            expected: "Supported unique 160-TM source with unclaimed item 2222 and exact TM162 Bug Buzz ownership");
+    }
+
+    private static bool ShouldIsolateTrinityModManagerRomFs(
+        ChangePlan plan,
+        ZaOutputMode outputMode)
+    {
+        return outputMode == ZaOutputMode.TrinityModManager
+            && plan.Writes.Any(write => string.Equals(
+                write.TargetRelativePath,
+                ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool PlanProvisionsTestTechnicalMachine(
+        ProjectPaths paths,
+        ChangePlan plan,
+        ZaOutputMode outputMode,
+        bool isolateTrinityModManagerRomFs)
+    {
+        var itemTarget = ZaWorkflowFileSource.CreatePlannedWrite(
+            paths,
+            ZaDataPaths.ItemDataArray,
+            Array.Empty<ProjectFileReference>(),
+            outputMode,
+            isolateTrinityModManagerRomFs).TargetRelativePath;
+        return plan.Writes.Count(write => string.Equals(
+            write.TargetRelativePath,
+            itemTarget,
+            StringComparison.Ordinal)) == 1;
+    }
+
     internal static bool IsAlphaMoveEdit(PendingEdit edit)
     {
         return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
@@ -4343,6 +4699,97 @@ internal sealed class ZaPokemonEditSessionService
         return internalIndex <= regularCount
             ? ZaPokemonWorkflowService.RegularDexKind
             : ZaPokemonWorkflowService.HyperspaceDexKind;
+    }
+
+    private static string CreateTestTechnicalMachinePlanFingerprint(
+        ProjectPaths paths,
+        ZaOutputMode outputMode,
+        bool isolateTrinityModManagerRomFs,
+        ZaWorkflowFile personalSource,
+        ZaWorkflowFile? basePersonalSource,
+        ZaWorkflowFile itemSource,
+        bool provisionsTestTechnicalMachine,
+        IEnumerable<PlannedFileWrite> existingWrites,
+        IEnumerable<PendingEdit> edits)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendFingerprintText(hash, "KM.ZA.Pokemon.TM162.v3");
+        AppendFingerprintText(hash, outputMode.ToString());
+        AppendFingerprintText(hash, isolateTrinityModManagerRomFs ? "IsolatedTMM" : "StandardRomFS");
+        AppendFingerprintText(hash, personalSource.SourceLayer.ToString());
+        AppendFingerprintText(hash, personalSource.RelativePath);
+        AppendFingerprintBytes(hash, "active-personal", personalSource.Bytes);
+        if (basePersonalSource is not null)
+        {
+            AppendFingerprintText(hash, basePersonalSource.SourceLayer.ToString());
+            AppendFingerprintText(hash, basePersonalSource.RelativePath);
+            AppendFingerprintBytes(hash, "base-personal", basePersonalSource.Bytes);
+        }
+
+        AppendFingerprintText(hash, itemSource.SourceLayer.ToString());
+        AppendFingerprintText(hash, itemSource.RelativePath);
+        AppendFingerprintBytes(hash, "active-items", itemSource.Bytes);
+        AppendFingerprintTarget(
+            hash,
+            paths,
+            "target-personal",
+            ZaDataPaths.PersonalArray,
+            outputMode,
+            isolateTrinityModManagerRomFs);
+        if (provisionsTestTechnicalMachine)
+        {
+            AppendFingerprintTarget(
+                hash,
+                paths,
+                "target-items",
+                ZaDataPaths.ItemDataArray,
+                outputMode,
+                isolateTrinityModManagerRomFs);
+        }
+        if (outputMode == ZaOutputMode.Standalone)
+        {
+            AppendFingerprintTarget(
+                hash,
+                paths,
+                "target-descriptor",
+                ZaWorkflowFileSource.DescriptorVirtualPath,
+                ZaOutputMode.Standalone);
+        }
+
+        foreach (var write in existingWrites
+                     .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal))
+        {
+            AppendFingerprintText(hash, write.TargetRelativePath);
+            AppendFingerprintText(hash, write.SourceFingerprint ?? string.Empty);
+            foreach (var source in write.Sources
+                         .OrderBy(source => source.Layer)
+                         .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+            {
+                AppendFingerprintText(hash, source.Layer.ToString());
+                AppendFingerprintText(hash, source.RelativePath);
+            }
+        }
+
+        foreach (var edit in edits
+                     .OrderBy(edit => edit.Domain, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.NewValue, StringComparer.Ordinal))
+        {
+            AppendFingerprintText(hash, edit.Domain);
+            AppendFingerprintText(hash, edit.RecordId ?? string.Empty);
+            AppendFingerprintText(hash, edit.Field ?? string.Empty);
+            AppendFingerprintText(hash, edit.NewValue ?? string.Empty);
+            foreach (var source in edit.Sources
+                         .OrderBy(source => source.Layer)
+                         .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+            {
+                AppendFingerprintText(hash, source.Layer.ToString());
+                AppendFingerprintText(hash, source.RelativePath);
+            }
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     private static string CreateSourceFingerprint(byte[] bytes)

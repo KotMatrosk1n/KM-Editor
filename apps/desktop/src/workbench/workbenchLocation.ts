@@ -6,6 +6,7 @@ import {
   getWorkbenchCapabilityRegistration,
   isRegisteredWorkbenchSection
 } from './capabilityRegistry';
+import { isUserFacingFeatureVisible } from './featureVisibility';
 import {
   projectGameToFamily,
   validateSemanticRecordRef,
@@ -54,42 +55,57 @@ const inspectorTabs = new Set<WorkbenchInspectorTab>([
 ]);
 
 export function createWorkbenchLocation(target: WorkbenchLocationTarget): WorkbenchLocation {
-  if (!isRegisteredWorkbenchSection(target.section)) {
+  const canonicalTarget = {
+    ...target,
+    changeSetId: isUserFacingFeatureVisible('namedChangeSets')
+      ? target.changeSetId
+      : undefined
+  };
+  if (!isRegisteredWorkbenchSection(canonicalTarget.section)) {
     throw new Error('Workbench location section is not registered.');
   }
-  const capability = getWorkbenchCapabilityRegistration(target.section);
-  if (target.game !== null && !projectGames.has(target.game)) {
+  const capability = getWorkbenchCapabilityRegistration(canonicalTarget.section);
+  if (canonicalTarget.game !== null && !projectGames.has(canonicalTarget.game)) {
     throw new Error('Workbench location game is invalid.');
   }
-  if (target.inspectorTab !== undefined && !inspectorTabs.has(target.inspectorTab)) {
+  if (
+    canonicalTarget.inspectorTab !== undefined &&
+    !inspectorTabs.has(canonicalTarget.inspectorTab)
+  ) {
     throw new Error('Workbench location inspector tab is invalid.');
   }
-  validateStableIdOrNull(target.projectId, 'project id');
-  validateStableIdOrUndefined(target.changeSetId, 'change-set id');
-  if (target.projectId && !target.game) {
+  validateStableIdOrNull(canonicalTarget.projectId, 'project id');
+  validateStableIdOrUndefined(canonicalTarget.changeSetId, 'change-set id');
+  if (canonicalTarget.projectId && !canonicalTarget.game) {
     throw new Error('A project-scoped workbench location requires a game.');
   }
-  if (target.changeSetId && (!target.projectId || !target.game)) {
+  if (
+    canonicalTarget.changeSetId &&
+    (!canonicalTarget.projectId || !canonicalTarget.game)
+  ) {
     throw new Error('A change-set workbench location requires a project and game.');
   }
-  if (target.entity) {
-    if (!target.projectId) {
+  if (canonicalTarget.entity) {
+    if (!canonicalTarget.projectId) {
       throw new Error('A workbench location entity requires a project id.');
     }
-    validateSemanticRecordRef(target.entity);
-    if (target.entity.domain !== capability.domain) {
+    validateSemanticRecordRef(canonicalTarget.entity);
+    if (canonicalTarget.entity.domain !== capability.domain) {
       throw new Error('A workbench location entity must belong to the destination domain.');
     }
-    if (!target.game || projectGameToFamily(target.game) !== target.entity.gameFamily) {
+    if (
+      !canonicalTarget.game ||
+      projectGameToFamily(canonicalTarget.game) !== canonicalTarget.entity.gameFamily
+    ) {
       throw new Error('A workbench location entity must belong to the location game family.');
     }
   }
 
-  const subcontext = target.subcontext
-    ? canonicalizeSubcontext(target.subcontext)
+  const subcontext = canonicalTarget.subcontext
+    ? canonicalizeSubcontext(canonicalTarget.subcontext)
     : undefined;
   return {
-    ...target,
+    ...canonicalTarget,
     ...(subcontext ? { subcontext } : {}),
     version: workbenchLocationVersion
   };

@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronDown,
   Clipboard,
@@ -8,6 +10,7 @@ import {
   FileJson,
   FolderOpen,
   GitMerge,
+  Plus,
   Search,
   ShieldAlert,
   Trash2
@@ -46,15 +49,19 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
+import { userFacingFeatureVisibility } from '../../workbench/featureVisibility';
 import {
+  DiagnosticSeverityText,
   DiagnosticTechnicalDetails,
   OccurrenceCount,
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
 import {
+  diagnosticTechnicalIdentity,
   diagnosticSeverityPriority,
   groupDiagnosticsForPresentation,
   humanizeIdentifier,
@@ -107,6 +114,7 @@ const featureOrder = [
   'seededReproducibility',
   'headlessAutomation'
 ] as const;
+const maximumVisibleTargetSuggestions = 8;
 
 export function SemanticMergeSection({
   authoringContextRevision,
@@ -156,8 +164,14 @@ export function SemanticMergeSection({
         <GitMerge aria-hidden="true" size={22} />
         <div>
           <p>{t('semanticMerge.eyebrow')}</p>
-          <h2 id="semantic-merge-title">{t('semanticMerge.title')}</h2>
-          <span>{t('semanticMerge.description')}</span>
+          <h2 id="semantic-merge-title">
+            {t(userFacingFeatureVisibility.namedChangeSets
+              ? 'semanticMerge.title'
+              : 'semanticMerge.merge.title')}
+          </h2>
+          <span>{t(userFacingFeatureVisibility.namedChangeSets
+            ? 'semanticMerge.description'
+            : 'semanticMerge.merge.description')}</span>
         </div>
       </header>
 
@@ -177,38 +191,50 @@ export function SemanticMergeSection({
           <QueryError error={controller.capabilities.error} onRetry={controller.ensureCapabilities} />
         ) : null}
         <div className="km-semantic-merge-capabilities">
-          {featureOrder.map((feature) => (
+          {featureOrder
+            .filter((feature) => userFacingFeatureVisibility.namedChangeSets || (
+              feature !== 'recipeImport' &&
+              feature !== 'recipeExport' &&
+              feature !== 'compatibilityReport' &&
+              feature !== 'seededReproducibility' &&
+              feature !== 'headlessAutomation'
+            ))
+            .map((feature) => (
             <CapabilityCard
               capability={capabilityMap.get(feature) ?? null}
               feature={feature}
               key={feature}
             />
-          ))}
+            ))}
         </div>
-        <p className="km-semantic-merge-boundary">
-          <ShieldAlert aria-hidden="true" size={16} />
-          <span>{t('semanticMerge.boundary')}</span>
-        </p>
+        {userFacingFeatureVisibility.namedChangeSets ? (
+          <p className="km-semantic-merge-boundary">
+            <ShieldAlert aria-hidden="true" size={16} />
+            <span>{t('semanticMerge.boundary')}</span>
+          </p>
+        ) : null}
       </section>
 
-      <div aria-label={t('semanticMerge.surface.label')} className="km-semantic-merge-tabs">
-        <button
-          aria-pressed={activeSurface === 'merge'}
-          onClick={() => setActiveSurface('merge')}
-          type="button"
-        >
-          {t('semanticMerge.merge.tab')}
-        </button>
-        <button
-          aria-pressed={activeSurface === 'recipes'}
-          onClick={() => setActiveSurface('recipes')}
-          type="button"
-        >
-          {t('semanticMerge.recipes.tab')}
-        </button>
-      </div>
+      {userFacingFeatureVisibility.namedChangeSets ? (
+        <div aria-label={t('semanticMerge.surface.label')} className="km-semantic-merge-tabs">
+          <button
+            aria-pressed={activeSurface === 'merge'}
+            onClick={() => setActiveSurface('merge')}
+            type="button"
+          >
+            {t('semanticMerge.merge.tab')}
+          </button>
+          <button
+            aria-pressed={activeSurface === 'recipes'}
+            onClick={() => setActiveSurface('recipes')}
+            type="button"
+          >
+            {t('semanticMerge.recipes.tab')}
+          </button>
+        </div>
+      ) : null}
 
-      {receipt ? (
+      {userFacingFeatureVisibility.namedChangeSets && receipt ? (
         <div
           className="km-semantic-merge-receipt"
           ref={receiptRef}
@@ -226,7 +252,7 @@ export function SemanticMergeSection({
         </div>
       ) : null}
 
-      {activeSurface === 'merge' ? (
+      {!userFacingFeatureVisibility.namedChangeSets || activeSurface === 'merge' ? (
         <MergeSurface
           authoringContextRevision={authoringContextRevision}
           canImportChangeSet={canImportChangeSet}
@@ -432,7 +458,9 @@ function MergeSurface({
   );
   const normalizedSearch = normalizeSearch(searchDraft);
   const searchMatchesPreview = Boolean(
-    preview?.selectionRequired && preview.normalizedTargetSearchText === normalizedSearch
+    normalizedSearch !== null &&
+    preview?.selectionRequired &&
+    preview.normalizedTargetSearchText === normalizedSearch
   );
 
   const pickSource = async (slot: 'a' | 'b') => {
@@ -449,6 +477,7 @@ function MergeSurface({
   };
   const discover = async (event: FormEvent) => {
     event.preventDefault();
+    if (normalizedSearch === null) return;
     setResolutionDraft(new Map());
     await controller.previewMerge([], [], normalizedSearch);
   };
@@ -590,15 +619,30 @@ function MergeSurface({
                     onChange={(event) => setSearchDraft(event.target.value)}
                     value={searchDraft}
                   />
-                  <button disabled={isBlocked} type="submit">
+                  <button disabled={isBlocked || normalizedSearch === null} type="submit">
                     {t('semanticMerge.targets.find')}
                   </button>
                 </div>
               </form>
               <SelectedTargets
+                disabled={isBlocked}
                 rows={[...selectedRows.values()]}
                 onClear={() => setSelectedRows(new Map())}
                 onRemove={(row) => toggleTarget(row, false)}
+                onMove={(row, direction) => setSelectedRows((current) => {
+                  const entries = [...current.entries()];
+                  const key = semanticMergeContractKeys.fieldRefKey(row.target);
+                  const index = entries.findIndex(([candidate]) => candidate === key);
+                  const destination = index + direction;
+                  if (index < 0 || destination < 0 || destination >= entries.length) {
+                    return current;
+                  }
+                  [entries[index], entries[destination]] = [
+                    entries[destination]!,
+                    entries[index]!
+                  ];
+                  return new Map(entries);
+                })}
               />
               {selectedTargets.length > 0 ? (
                 <button disabled={isBlocked} onClick={() => void generate()} type="button">
@@ -616,7 +660,9 @@ function MergeSurface({
           {controller.mergePreview.error ? (
             <QueryError
               error={controller.mergePreview.error}
-              onRetry={preview?.selectionRequired ? () => controller.previewMerge([], [], normalizedSearch) : undefined}
+              onRetry={preview?.selectionRequired && normalizedSearch !== null
+                ? () => controller.previewMerge([], [], normalizedSearch)
+                : undefined}
             />
           ) : null}
 
@@ -624,19 +670,8 @@ function MergeSurface({
             <TargetDiscovery
               disabled={isBlocked}
               loading={controller.mergePreview.isAppending}
-              onClear={() => setSelectedRows(new Map())}
+              onAdd={(row) => toggleTarget(row, true)}
               onLoadMore={controller.loadMoreMerge}
-              onSelectVisible={(rows) => setSelectedRows((current) => {
-                const next = new Map(current);
-                const domain = selectedDomain ?? rows[0]?.target.record.domain ?? null;
-                for (const row of rows) {
-                  if (next.size >= semanticMergeMaximumTargets) break;
-                  if (domain === null || row.target.record.domain !== domain) continue;
-                  next.set(semanticMergeContractKeys.fieldRefKey(row.target), row);
-                }
-                return next;
-              })}
-              onToggle={toggleTarget}
               preview={preview}
               selectedDomain={selectedDomain}
               selectedKeys={new Set(selectedRows.keys())}
@@ -699,42 +734,44 @@ function MergeSurface({
                 </div>
               ) : null}
               <Diagnostics diagnostics={preview.diagnostics} />
-              <fieldset className="km-semantic-merge-fieldset">
-                <legend>{t('semanticMerge.import.legend')}</legend>
-                <p>{t('semanticMerge.import.disabledSet')}</p>
-                <label htmlFor="semantic-merge-change-set-name">
-                  {t('semanticMerge.import.name')}
-                </label>
-                <input
-                  id="semantic-merge-change-set-name"
-                  maxLength={semanticMergeMaximumChangeSetNameLength}
-                  onChange={(event) => setChangeSetName(event.target.value)}
-                  value={changeSetName}
-                />
-                {!completeReview ? <p>{t('semanticMerge.import.loadAll')}</p> : null}
-                {!preview.canImport ? <p>{t('semanticMerge.import.blocked')}</p> : null}
-                <button
-                  aria-busy={isImporting || undefined}
-                  disabled={!canImport}
-                  onClick={() => void importProposal()}
-                  type="button"
-                >
-                  {isImporting
-                    ? t('semanticMerge.import.importing')
-                    : t('semanticMerge.import.merge.action')}
-                </button>
-                {isImporting ? (
-                  <LoadingProgress
-                    className="is-compact"
-                    label={t('semanticMerge.import.importing')}
+              {userFacingFeatureVisibility.namedChangeSets ? (
+                <fieldset className="km-semantic-merge-fieldset">
+                  <legend>{t('semanticMerge.import.legend')}</legend>
+                  <p>{t('semanticMerge.import.disabledSet')}</p>
+                  <label htmlFor="semantic-merge-change-set-name">
+                    {t('semanticMerge.import.name')}
+                  </label>
+                  <input
+                    id="semantic-merge-change-set-name"
+                    maxLength={semanticMergeMaximumChangeSetNameLength}
+                    onChange={(event) => setChangeSetName(event.target.value)}
+                    value={changeSetName}
                   />
-                ) : null}
-                {importError ? (
-                  <div ref={importStatusRef} role="alert" tabIndex={-1}>
-                    {t('semanticMerge.import.error')}
-                  </div>
-                ) : null}
-              </fieldset>
+                  {!completeReview ? <p>{t('semanticMerge.import.loadAll')}</p> : null}
+                  {!preview.canImport ? <p>{t('semanticMerge.import.blocked')}</p> : null}
+                  <button
+                    aria-busy={isImporting || undefined}
+                    disabled={!canImport}
+                    onClick={() => void importProposal()}
+                    type="button"
+                  >
+                    {isImporting
+                      ? t('semanticMerge.import.importing')
+                      : t('semanticMerge.import.merge.action')}
+                  </button>
+                  {isImporting ? (
+                    <LoadingProgress
+                      className="is-compact"
+                      label={t('semanticMerge.import.importing')}
+                    />
+                  ) : null}
+                  {importError ? (
+                    <div ref={importStatusRef} role="alert" tabIndex={-1}>
+                      {t('semanticMerge.import.error')}
+                    </div>
+                  ) : null}
+                </fieldset>
+              ) : null}
             </section>
           ) : null}
         </>
@@ -800,11 +837,15 @@ function SourcePicker({
 }
 
 function SelectedTargets({
+  disabled,
   onClear,
+  onMove,
   onRemove,
   rows
 }: {
+  disabled: boolean;
   onClear: () => void;
+  onMove: (row: SemanticMergeRow, direction: -1 | 1) => void;
   onRemove: (row: SemanticMergeRow) => void;
   rows: readonly SemanticMergeRow[];
 }) {
@@ -814,25 +855,55 @@ function SelectedTargets({
     <div className="km-semantic-merge-selected">
       <div>
         <strong>{t('semanticMerge.targets.selected').replace('{count}', String(rows.length))}</strong>
-        <button className="text-button" onClick={onClear} type="button">
+        <button className="text-button" disabled={disabled} onClick={onClear} type="button">
           {t('semanticMerge.targets.clear')}
         </button>
       </div>
       <ul>
-        {rows.map((row) => (
+        {rows.map((row, index) => {
+          const accessibleName = `${row.recordLabel}, ${row.fieldLabel}, ${formatRecordRef(row.target.record)}, ${row.target.fieldKey}`;
+          return (
           <li key={semanticMergeContractKeys.fieldRefKey(row.target)}>
             <span data-localization-ignore="true">
-              {row.recordLabel} · {row.fieldLabel} · {formatRecordRef(row.target.record)}
+              <strong>{row.recordLabel}</strong>
+              <small>{row.fieldLabel}</small>
             </span>
-            <button
-              aria-label={`${t('semanticMerge.targets.remove')}: ${row.recordLabel}, ${row.fieldLabel} (${row.target.fieldKey}), ${formatRecordRef(row.target.record)}`}
-              onClick={() => onRemove(row)}
-              type="button"
-            >
-              <Trash2 aria-hidden="true" size={14} />
-            </button>
+            <div className="km-semantic-merge-target-order-actions">
+              <button
+                aria-label={t('semanticMerge.targets.moveUpNamed', {
+                  name: accessibleName
+                })}
+                className="secondary-button compact-button"
+                disabled={disabled || index === 0}
+                onClick={() => onMove(row, -1)}
+                type="button"
+              >
+                <ArrowUp aria-hidden="true" size={14} />
+              </button>
+              <button
+                aria-label={t('semanticMerge.targets.moveDownNamed', {
+                  name: accessibleName
+                })}
+                className="secondary-button compact-button"
+                disabled={disabled || index === rows.length - 1}
+                onClick={() => onMove(row, 1)}
+                type="button"
+              >
+                <ArrowDown aria-hidden="true" size={14} />
+              </button>
+              <button
+                aria-label={`${t('semanticMerge.targets.remove')}: ${accessibleName}`}
+                className="secondary-button compact-button"
+                disabled={disabled}
+                onClick={() => onRemove(row)}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={14} />
+              </button>
+            </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
@@ -841,20 +912,16 @@ function SelectedTargets({
 function TargetDiscovery({
   disabled,
   loading,
-  onClear,
+  onAdd,
   onLoadMore,
-  onSelectVisible,
-  onToggle,
   preview,
   selectedDomain,
   selectedKeys
 }: {
   disabled: boolean;
   loading: boolean;
-  onClear: () => void;
+  onAdd: (row: SemanticMergeRow) => void;
   onLoadMore: () => Promise<void>;
-  onSelectVisible: (rows: readonly SemanticMergeRow[]) => void;
-  onToggle: (row: SemanticMergeRow, checked: boolean) => void;
   preview: NonNullable<SemanticMergeController['mergePreview']['data']>;
   selectedDomain: string | null;
   selectedKeys: ReadonlySet<string>;
@@ -883,6 +950,10 @@ function TargetDiscovery({
       return left.recordLabel.localeCompare(right.recordLabel) ||
         left.fieldLabel.localeCompare(right.fieldLabel);
     }), [fieldFilter, preview.rows, resultOrder]);
+  const availableRows = visibleRows.filter((row) => (
+    !selectedKeys.has(semanticMergeContractKeys.fieldRefKey(row.target))
+  ));
+  const visibleSuggestions = availableRows.slice(0, maximumVisibleTargetSuggestions);
   return (
     <section aria-labelledby="semantic-merge-target-results" className="km-semantic-merge-discovery">
       <div className="km-semantic-merge-section-heading">
@@ -922,50 +993,49 @@ function TargetDiscovery({
             <option value="state">{t('analysisPresentation.controls.status')}</option>
           </select>
         </label>
-        <div className="km-semantic-merge-selection-actions">
-          <button
-            className="secondary-button compact-button"
-            disabled={disabled || visibleRows.length === 0 || selectedKeys.size >= semanticMergeMaximumTargets}
-            onClick={() => onSelectVisible(visibleRows)}
-            type="button"
-          >
-            {t('analysisPresentation.controls.selectVisible')}
-          </button>
-          <button
-            className="secondary-button compact-button"
-            disabled={disabled || selectedKeys.size === 0}
-            onClick={onClear}
-            type="button"
-          >
-            {t('semanticMerge.targets.clear')}
-          </button>
-        </div>
       </div>
-      <ul className="km-semantic-merge-target-list">
-        {visibleRows.map((row) => {
-          const key = semanticMergeContractKeys.fieldRefKey(row.target);
-          const checked = selectedKeys.has(key);
-          const wrongDomain = selectedDomain !== null && selectedDomain !== row.target.record.domain;
-          return (
-            <li key={row.rowId}>
-              <label>
-                <input
-                  checked={checked}
-                  className="km-choice-control"
-                  disabled={disabled || (!checked && (wrongDomain || selectedKeys.size >= semanticMergeMaximumTargets))}
-                  onChange={(event) => onToggle(row, event.target.checked)}
-                  type="checkbox"
-                />
+      {visibleSuggestions.length > 0 ? (
+        <ul className="km-semantic-merge-target-list">
+          {visibleSuggestions.map((row) => {
+            const wrongDomain = selectedDomain !== null &&
+              selectedDomain !== row.target.record.domain;
+            return (
+              <li key={row.rowId}>
                 <span data-localization-ignore="true">
                   <strong>{row.recordLabel}</strong>
-                  {row.fieldLabel} · {formatRecordRef(row.target.record)}
+                  <small>{row.fieldLabel}</small>
                 </span>
-              </label>
-              {wrongDomain ? <small>{t('semanticMerge.targets.otherDomain')}</small> : null}
-            </li>
-          );
-        })}
-      </ul>
+                <div className="km-semantic-merge-target-suggestion-actions">
+                  {wrongDomain ? <small>{t('semanticMerge.targets.otherDomain')}</small> : null}
+                  <button
+                    aria-label={`${t('semanticMerge.targets.add')}: ${row.recordLabel}, ${row.fieldLabel}, ${formatRecordRef(row.target.record)}, ${row.target.fieldKey}`}
+                    className="secondary-button compact-button"
+                    disabled={
+                      disabled ||
+                      wrongDomain ||
+                      selectedKeys.size >= semanticMergeMaximumTargets
+                    }
+                    onClick={() => onAdd(row)}
+                    type="button"
+                  >
+                    <Plus aria-hidden="true" size={14} />
+                    <span>{t('semanticMerge.targets.add')}</span>
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
+      )}
+      {availableRows.length > maximumVisibleTargetSuggestions ? (
+        <p className="km-semantic-merge-advisory">
+          {t('semanticMerge.targets.refineSearch', {
+            count: maximumVisibleTargetSuggestions
+          })}
+        </p>
+      ) : null}
       {preview.nextCursor ? (
         <button
           aria-busy={loading || undefined}
@@ -1826,12 +1896,7 @@ function Diagnostics({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] })
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
     (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
-    (diagnostic) => [
-      diagnostic.severity,
-      diagnostic.code,
-      diagnostic.domain,
-      diagnostic.field
-    ],
+    diagnosticTechnicalIdentity,
     (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
   const primaryAction = [...diagnostics]
@@ -1862,8 +1927,14 @@ function Diagnostics({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] })
           return (
           <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              <span>{presentedMessage(diagnostic)}</span>
+              <span>
+                <DiagnosticSeverityText severity={presentedSeverity(diagnostic)} />
+                {presentedMessage(diagnostic)}
+              </span>
               <OccurrenceCount count={count} />
+              <ReportableDiagnosticIssuesLink
+                messages={identities.map((identity) => identity.diagnostic.message)}
+              />
             </span>
             <DiagnosticTechnicalDetails
               diagnostics={identities}

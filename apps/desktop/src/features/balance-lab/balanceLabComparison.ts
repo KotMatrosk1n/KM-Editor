@@ -5,6 +5,7 @@ import type {
   BalanceLabPoint,
   BalanceLabStudy
 } from '../../bridge/balanceLabContracts';
+import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 
 export type BalanceComparisonMetric = {
   identity: string;
@@ -13,24 +14,6 @@ export type BalanceComparisonMetric = {
   providerId: string;
   supportCount: number;
   unit: string | null;
-};
-
-export type BalanceComparisonOrder =
-  | 'custom'
-  | 'label'
-  | `metric:${string}`;
-
-export type BalanceComparisonSeries = {
-  key: string;
-  pointCount: number;
-};
-
-const preferredSeriesByStudy: Record<BalanceLabStudy, readonly string[]> = {
-  trainerProgression: ['trainer-rank-band', 'trainer-roster', 'trainer-party'],
-  encounterDistribution: ['encounter-slot', 'encounter-table'],
-  moveBalance: ['move'],
-  economy: ['item-price'],
-  pokedexEvolution: ['pokedex']
 };
 
 const preferredMetricsByStudy: Record<BalanceLabStudy, readonly string[]> = {
@@ -68,22 +51,8 @@ const preferredMetricsByStudy: Record<BalanceLabStudy, readonly string[]> = {
   ]
 };
 
-export function balanceComparisonSeries(
-  points: readonly BalanceLabPoint[]
-): readonly BalanceComparisonSeries[] {
-  const counts = new Map<string, number>();
-  for (const point of points) {
-    if (!point.facts.some((fact) => numericFactValue(fact) !== null)) continue;
-    counts.set(point.seriesKey, (counts.get(point.seriesKey) ?? 0) + 1);
-  }
-  return [...counts]
-    .map(([key, pointCount]) => ({ key, pointCount }))
-    .sort((left, right) => left.key.localeCompare(right.key));
-}
-
 export function balanceComparisonMetrics(
-  points: readonly BalanceLabPoint[],
-  seriesKey: string
+  points: readonly BalanceLabPoint[]
 ): readonly BalanceComparisonMetric[] {
   const metrics = new Map<
     string,
@@ -96,7 +65,6 @@ export function balanceComparisonMetrics(
     }
   >();
   for (const point of points) {
-    if (point.seriesKey !== seriesKey) continue;
     const seen = new Set<string>();
     for (const fact of point.facts) {
       if (numericFactValue(fact) === null) continue;
@@ -134,16 +102,6 @@ export function balanceComparisonMetrics(
     ));
 }
 
-export function defaultBalanceComparisonSeries(
-  points: readonly BalanceLabPoint[],
-  study: BalanceLabStudy
-) {
-  const series = balanceComparisonSeries(points);
-  return preferredSeriesByStudy[study].find((key) => (
-    series.some((candidate) => candidate.key === key)
-  )) ?? series[0]?.key ?? '';
-}
-
 export function defaultBalanceComparisonMetric(
   metrics: readonly BalanceComparisonMetric[],
   study: BalanceLabStudy
@@ -155,27 +113,12 @@ export function defaultBalanceComparisonMetric(
   return metrics[0]?.identity ?? '';
 }
 
-export function defaultBalanceComparisonOrder(
-  metrics: readonly BalanceComparisonMetric[],
-  study: BalanceLabStudy
-): BalanceComparisonOrder {
-  if (
-    study === 'trainerProgression' &&
-    metrics.some((metric) => metric.key === 'royaleRank')
-  ) {
-    const royaleRank = metrics.find((metric) => metric.key === 'royaleRank');
-    if (royaleRank) return `metric:${royaleRank.identity}`;
-  }
-  return 'label';
-}
-
 export function comparableBalancePoints(
   points: readonly BalanceLabPoint[],
-  seriesKey: string,
   metricIdentity: string
 ) {
   return points.filter((point) => (
-    point.seriesKey === seriesKey && balancePointMetric(point, metricIdentity) !== null
+    balancePointMetric(point, metricIdentity) !== null
   ));
 }
 
@@ -187,40 +130,28 @@ export function balancePointMetric(point: BalanceLabPoint, metricIdentity: strin
   return fact && value !== null ? { fact, value } : null;
 }
 
-export function orderBalanceComparisonPoints(
-  points: readonly BalanceLabPoint[],
-  order: BalanceComparisonOrder,
-  direction: 'ascending' | 'descending',
-  selectedOrder: readonly string[]
-) {
-  const directionMultiplier = direction === 'ascending' ? 1 : -1;
-  const customPositions = new Map(selectedOrder.map((pointId, index) => [pointId, index]));
-  return [...points].sort((left, right) => {
-    if (order === 'custom') {
-      return (customPositions.get(left.pointId) ?? Number.MAX_SAFE_INTEGER) -
-        (customPositions.get(right.pointId) ?? Number.MAX_SAFE_INTEGER);
-    }
-    if (order === 'label') {
-      return directionMultiplier * compareText(left.label, right.label) || compareIdentity(left, right);
-    }
-    const metricIdentity = order.slice('metric:'.length);
-    const leftValue = balancePointMetric(left, metricIdentity)?.value ?? null;
-    const rightValue = balancePointMetric(right, metricIdentity)?.value ?? null;
-    if (leftValue === null && rightValue === null) return compareIdentity(left, right);
-    if (leftValue === null) return 1;
-    if (rightValue === null) return -1;
-    return directionMultiplier * (leftValue - rightValue) || compareIdentity(left, right);
-  });
+export function balanceRecordIdentity(point: BalanceLabPoint) {
+  return balanceRecordReferenceIdentity(point.record);
 }
 
-export function balanceRecordIdentity(point: BalanceLabPoint) {
+export function balanceRecordReferenceIdentity(record: SemanticExploreRecordRef) {
   return [
-    point.record.gameFamily,
-    point.record.domain,
-    `${point.record.recordKind.key}@${point.record.recordKind.schemaVersion}`,
-    point.record.recordId,
-    point.record.subrecordId
+    record.gameFamily,
+    record.domain,
+    `${record.recordKind.key}@${record.recordKind.schemaVersion}`,
+    record.recordId,
+    record.subrecordId
   ].filter(Boolean).join(' / ');
+}
+
+export function balanceRecordGroupIdentity(record: SemanticExploreRecordRef) {
+  return JSON.stringify([
+    record.gameFamily,
+    record.domain,
+    record.recordKind.key,
+    record.recordKind.schemaVersion,
+    record.recordId
+  ]);
 }
 
 function numericFactValue(fact: BalanceLabFact) {
@@ -258,8 +189,4 @@ function mostFrequent(values: ReadonlyMap<string, number>) {
 
 function compareText(left: string, right: string) {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function compareIdentity(left: BalanceLabPoint, right: BalanceLabPoint) {
-  return compareText(balanceRecordIdentity(left), balanceRecordIdentity(right));
 }

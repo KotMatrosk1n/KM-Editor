@@ -401,8 +401,7 @@ function CompareModulePanel({
   const recordOptions = availableRecordOptions(controller);
   const [left, setLeft] = useState<QueryableLayer>('base');
   const [right, setRight] = useState<QueryableLayer>(() => preferredLayer(controller));
-  const [recordKey, setRecordKey] = useState('all');
-  const [recordSearch, setRecordSearch] = useState('');
+  const [recordKey, setRecordKey] = useState('');
   const [externalPickFailed, setExternalPickFailed] = useState(false);
   const initializedRevisionRef = useRef<string | null>(null);
   const pickerGenerationRef = useRef(0);
@@ -440,10 +439,20 @@ function CompareModulePanel({
     ? controller.externalComparison
     : controller.comparison;
   const selectedRecord = recordOptions.find((option) => option.key === recordKey)?.record ?? null;
+  const comparisonMatchesInputs = Boolean(
+    comparison &&
+    submittedComparisonSpec &&
+    selectedRecord &&
+    submittedComparisonSpec.record &&
+    semanticRecordRefKey(submittedComparisonSpec.record) === semanticRecordRefKey(selectedRecord) &&
+    submittedComparisonSpec.left === left &&
+    (submittedComparisonSpec.kind === 'external' || submittedComparisonSpec.right === right)
+  );
+  const visibleComparison = comparisonMatchesInputs ? comparison : null;
 
   useEffect(() => {
-    if (recordKey !== 'all' && !recordOptions.some((option) => option.key === recordKey)) {
-      setRecordKey('all');
+    if (recordKey && !recordOptions.some((option) => option.key === recordKey)) {
+      setRecordKey('');
     }
   }, [recordKey, recordOptions]);
 
@@ -480,51 +489,19 @@ function CompareModulePanel({
       <div className="km-semantic-query-bar">
         <LayerSelect labelKey="semanticExplore.compare.left" layers={layers} onChange={setLeft} value={left} />
         <LayerSelect labelKey="semanticExplore.compare.right" layers={layers} onChange={setRight} value={right} />
-        <label>
-          <span>{t('semanticExplore.search.label')}</span>
-          <input
-            maxLength={256}
-            onChange={(event) => setRecordSearch(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' || !recordSearch.trim()) return;
-              event.preventDefault();
-              void controller.searchEntities({ layer: right, searchText: recordSearch });
-            }}
-            placeholder={t('semanticExplore.search.placeholder')}
-            type="search"
-            value={recordSearch}
-          />
-        </label>
+        <RecordSearchPicker
+          controller={controller}
+          layer={right}
+          onRecordKeyChange={setRecordKey}
+          recordKey={recordKey}
+          recordOptions={recordOptions}
+        />
         <button
-          className="secondary-button"
-          disabled={controller.isQuerying || recordSearch.trim().length === 0}
-          onClick={() => void controller.searchEntities({ layer: right, searchText: recordSearch })}
-          type="button"
-        >
-          <Search aria-hidden="true" size={16} />
-          {t('semanticExplore.search.action')}
-        </button>
-        <label>
-          <span>{t('analysisPresentation.controls.record')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setRecordKey(event.currentTarget.value)}
-            value={recordKey}
-          >
-            <option value="all">{t('analysisPresentation.controls.allRecords')}</option>
-            {recordOptions.map((option) => (
-              <option data-localization-ignore="true" key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          disabled={controller.isQuerying || left === right}
+          disabled={controller.isQuerying || left === right || !selectedRecord}
           onClick={() => void controller.compare({
             left,
             right,
-            ...(selectedRecord ? { record: selectedRecord } : {})
+            record: selectedRecord!
           })}
           type="button"
         >
@@ -533,7 +510,7 @@ function CompareModulePanel({
         {canExternal ? (
           <button
             className="secondary-button"
-            disabled={externalComparisonDisabled || controller.isQuerying}
+            disabled={externalComparisonDisabled || controller.isQuerying || !selectedRecord}
             onClick={() => void runExternalComparison()}
             type="button"
           >
@@ -551,7 +528,10 @@ function CompareModulePanel({
         </p>
       ) : null}
       <QueryBoundary state={state} idleKey="semanticExplore.compare.empty">
-        {comparison && submittedComparisonSpec ? (
+        {!visibleComparison && state.status === 'ready' ? (
+          <p className="km-workbench-empty">{t('semanticExplore.compare.empty')}</p>
+        ) : null}
+        {visibleComparison && submittedComparisonSpec ? (
           <p className="km-semantic-query-summary">
             <strong>{t('semanticExplore.compare.left')}:</strong>{' '}
             {t(`semanticExplore.layer.${submittedComparisonSpec.left}`)}{' '}
@@ -566,19 +546,19 @@ function CompareModulePanel({
             ) : null}
           </p>
         ) : null}
-        {comparison ? (
+        {visibleComparison ? (
           <DifferenceList
-            differences={comparison.items}
-            key={comparison.queryFingerprint}
+            differences={visibleComparison.items}
+            key={visibleComparison.queryFingerprint}
             onNavigateEntity={onNavigateEntity}
           />
         ) : null}
-        {comparison ? <CoverageSummary coverage={comparison.coverage} /> : null}
-        {comparison ? (
+        {visibleComparison ? <CoverageSummary coverage={visibleComparison.coverage} /> : null}
+        {visibleComparison ? (
           <LoadMoreButton
-            count={comparison.items.length}
+            count={visibleComparison.items.length}
             isBusy={state.isAppending}
-            nextCursor={comparison.nextCursor}
+            nextCursor={visibleComparison.nextCursor}
             onLoad={() => void (
               controller.externalComparison.data
                 ? controller.loadMoreExternalComparison()
@@ -587,6 +567,139 @@ function CompareModulePanel({
           />
         ) : null}
       </QueryBoundary>
+    </div>
+  );
+}
+
+function RecordSearchPicker({
+  controller,
+  layer,
+  onRecordKeyChange,
+  recordKey,
+  recordOptions
+}: {
+  controller: SemanticExploreController;
+  layer: QueryableLayer;
+  onRecordKeyChange: (recordKey: string) => void;
+  recordKey: string;
+  recordOptions: readonly {
+    key: string;
+    label: string;
+    record: SemanticExploreRecordRef;
+  }[];
+}) {
+  const { t, translateLiteral } = useLocalization();
+  const [query, setQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const selected = recordOptions.find((option) => option.key === recordKey) ?? null;
+  const allMatches = normalizedQuery
+    ? recordOptions.filter((option) => [
+      option.label,
+      semanticRecordDiscriminator(option.record)
+    ].join('\n').toLocaleLowerCase().includes(normalizedQuery) && option.key !== recordKey)
+    : [];
+  const matches = allMatches.slice(0, 8);
+  const search = () => {
+    if (!query.trim()) return;
+    setSubmittedQuery(normalizedQuery);
+    void controller.searchEntities({ layer, searchText: query });
+  };
+  const searchData = submittedQuery === normalizedQuery ? controller.search.data : null;
+
+  useEffect(() => {
+    setSubmittedQuery('');
+  }, [layer]);
+
+  return (
+    <div className="km-semantic-record-picker">
+      <div className="km-semantic-record-picker-search">
+        <label>
+          <span>{t('semanticExplore.search.label')}</span>
+          <input
+            maxLength={256}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || !query.trim()) return;
+              event.preventDefault();
+              search();
+            }}
+            placeholder={t('semanticExplore.search.placeholder')}
+            type="search"
+            value={query}
+          />
+        </label>
+        <button
+          className="secondary-button"
+          disabled={controller.isQuerying || !query.trim()}
+          onClick={search}
+          type="button"
+        >
+          <Search aria-hidden="true" size={16} />
+          {t('semanticExplore.search.action')}
+        </button>
+      </div>
+      {selected ? (
+        <div className="km-semantic-selected-record" role="status">
+          <span data-localization-ignore="true">
+            <strong>{selected.label}</strong>
+            <small>{semanticRecordDiscriminator(selected.record)}</small>
+          </span>
+          <button
+            className="secondary-button compact-button"
+            onClick={() => onRecordKeyChange('')}
+            type="button"
+          >
+            {t('analysisPresentation.controls.clearSelection')}
+          </button>
+        </div>
+      ) : null}
+      {normalizedQuery ? (
+        <>
+          <p aria-live="polite" className="km-semantic-record-match-count">
+            {t('semanticExplore.search.matches', {
+              count: allMatches.length,
+              shown: matches.length
+            })}
+          </p>
+          {matches.length > 0 ? (
+            <ul aria-label={t('analysisPresentation.controls.record')} className="km-semantic-record-matches">
+              {matches.map((option) => {
+                const exactName = `${option.label}, ${semanticRecordDiscriminator(option.record)}`;
+                return (
+                  <li key={option.key}>
+                    <span data-localization-ignore="true">
+                      <strong>{option.label}</strong>
+                      <small>{semanticRecordDiscriminator(option.record)}</small>
+                    </span>
+                    <button
+                      aria-label={`${translateLiteral('Add')}: ${exactName}`}
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        onRecordKeyChange(option.key);
+                        setQuery('');
+                      }}
+                      type="button"
+                    >
+                      {translateLiteral('Add')}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
+          )}
+          {searchData ? (
+            <LoadMoreButton
+              count={searchData.items.length}
+              isBusy={controller.search.isAppending}
+              nextCursor={searchData.nextCursor}
+              onLoad={() => void controller.loadMoreSearch()}
+            />
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -603,8 +716,6 @@ function DifferenceList({
   const [fieldFilter, setFieldFilter] = useState('all');
   const [recordFilter, setRecordFilter] = useState('all');
   const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'kind'>('record');
-  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
-  const [selectionTouched, setSelectionTouched] = useState(false);
   const differenceEntries = useMemo(() => {
     const occurrences = new Map<string, number>();
     return differences.map((difference) => {
@@ -617,15 +728,6 @@ function DifferenceList({
       };
     });
   }, [differences]);
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set(
-    differenceEntries.map((entry) => entry.key)
-  ));
-  useEffect(() => {
-    const availableKeys = new Set(differenceEntries.map((entry) => entry.key));
-    setSelectedKeys((current) => selectionTouched
-      ? new Set([...current].filter((key) => availableKeys.has(key)))
-      : availableKeys);
-  }, [differenceEntries, selectionTouched]);
   const fields = useMemo(() => [...new Map(differences.map((difference) => [
     difference.fieldKey,
     difference.label
@@ -679,10 +781,6 @@ function DifferenceList({
           left.label.localeCompare(right.label);
       });
   }, [differenceEntries, fieldFilter, recordFilter, resultFilter, resultOrder]);
-  const visibleDifferences = showSelectedOnly
-    ? matchingDifferences.filter((entry) => selectedKeys.has(entry.key))
-    : matchingDifferences;
-  const selectableVisibleKeys = matchingDifferences.map((entry) => entry.key);
   if (differences.length === 0) {
     return <p className="km-workbench-empty">{t('semanticExplore.compare.noDifferences')}</p>;
   }
@@ -736,73 +834,13 @@ function DifferenceList({
           </select>
         </label>
       </div>
-      <div className="km-semantic-selection-bar">
-        <span role="status">{t('analysisPresentation.controls.selectedCount', {
-          selected: selectedKeys.size,
-          total: differences.length
-        })}</span>
-        <button
-          className="secondary-button compact-button"
-          disabled={selectableVisibleKeys.every((key) => selectedKeys.has(key))}
-          onClick={() => {
-            setSelectionTouched(true);
-            setSelectedKeys((current) => new Set([
-              ...current,
-              ...selectableVisibleKeys
-            ]));
-          }}
-          type="button"
-        >
-          {t('analysisPresentation.controls.selectVisible')}
-        </button>
-        <button
-          className="secondary-button compact-button"
-          disabled={selectedKeys.size === 0}
-          onClick={() => {
-            setSelectionTouched(true);
-            setSelectedKeys(new Set());
-          }}
-          type="button"
-        >
-          {t('analysisPresentation.controls.clearSelection')}
-        </button>
-        <label>
-          <input
-            checked={showSelectedOnly}
-            className="km-choice-control"
-            onChange={(event) => setShowSelectedOnly(event.currentTarget.checked)}
-            type="checkbox"
-          />
-          <span>{t('analysisPresentation.controls.showSelectedOnly')}</span>
-        </label>
-      </div>
-      {visibleDifferences.length === 0 ? (
+      {matchingDifferences.length === 0 ? (
         <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
       ) : null}
       <ul className="km-semantic-difference-list">
-      {visibleDifferences.map(({ difference, key }) => {
+      {matchingDifferences.map(({ difference, key }) => {
         return (
-        <li className={selectedKeys.has(key) ? 'is-selected' : 'is-unselected'} key={key}>
-          <label className="km-semantic-result-choice">
-            <input
-              checked={selectedKeys.has(key)}
-              className="km-choice-control"
-              onChange={(event) => {
-                const checked = event.currentTarget.checked;
-                setSelectionTouched(true);
-                setSelectedKeys((current) => {
-                  const next = new Set(current);
-                  if (checked) next.add(key);
-                  else next.delete(key);
-                  return next;
-                });
-              }}
-              type="checkbox"
-            />
-            <span className="km-workbench-visually-hidden">
-              {`${difference.label}: ${semanticRecordDiscriminator(difference.record)}`}
-            </span>
-          </label>
+        <li key={key}>
           <button
             aria-label={`${t('semanticExplore.entity.openEditor')}: ${semanticRecordDiscriminator(difference.record)}`}
             className="km-semantic-record-link"
@@ -839,35 +877,36 @@ function OwnershipModulePanel({
   const ownership = controller.ownership.data;
   const submittedOwnershipSpec = controller.submittedOwnershipSpec;
   const recordOptions = availableRecordOptions(controller);
-  const [recordKey, setRecordKey] = useState('all');
+  const [recordKey, setRecordKey] = useState('');
   const selectedRecord = recordOptions.find((option) => option.key === recordKey)?.record ?? null;
-  const nodeLabels = new Map(ownership?.nodes.map((node) => [node.nodeId, node.label]) ?? []);
+  const ownershipMatchesInput = Boolean(
+    ownership &&
+    submittedOwnershipSpec?.record &&
+    selectedRecord &&
+    semanticRecordRefKey(submittedOwnershipSpec.record) === semanticRecordRefKey(selectedRecord)
+  );
+  const visibleOwnership = ownershipMatchesInput ? ownership : null;
+  const nodeLabels = new Map(
+    visibleOwnership?.nodes.map((node) => [node.nodeId, node.label]) ?? []
+  );
   useEffect(() => {
-    if (recordKey !== 'all' && !recordOptions.some((option) => option.key === recordKey)) {
-      setRecordKey('all');
+    if (recordKey && !recordOptions.some((option) => option.key === recordKey)) {
+      setRecordKey('');
     }
   }, [recordKey, recordOptions]);
   return (
     <div>
       <div className="km-semantic-query-bar">
-        <label>
-          <span>{t('analysisPresentation.controls.record')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setRecordKey(event.currentTarget.value)}
-            value={recordKey}
-          >
-            <option value="all">{t('analysisPresentation.controls.allRecords')}</option>
-            {recordOptions.map((option) => (
-              <option data-localization-ignore="true" key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <RecordSearchPicker
+          controller={controller}
+          layer={preferredLayer(controller)}
+          onRecordKeyChange={setRecordKey}
+          recordKey={recordKey}
+          recordOptions={recordOptions}
+        />
         <button
-          disabled={controller.ownership.status === 'loading'}
-          onClick={() => void controller.getOwnership(selectedRecord ?? undefined)}
+          disabled={controller.ownership.status === 'loading' || !selectedRecord}
+          onClick={() => void controller.getOwnership(selectedRecord!)}
           type="button"
         >
           <Network aria-hidden="true" size={16} />
@@ -875,7 +914,10 @@ function OwnershipModulePanel({
         </button>
       </div>
       <QueryBoundary state={controller.ownership} idleKey="semanticExplore.ownership.empty">
-        {ownership ? (
+        {!visibleOwnership && controller.ownership.status === 'ready' ? (
+          <p className="km-workbench-empty">{t('semanticExplore.ownership.empty')}</p>
+        ) : null}
+        {visibleOwnership ? (
           <>
             {submittedOwnershipSpec ? (
               <p className="km-semantic-query-summary">
@@ -887,12 +929,12 @@ function OwnershipModulePanel({
                 ) : t('analysisPresentation.controls.allRecords')}
               </p>
             ) : null}
-            <CoverageSummary coverage={ownership.coverage} />
-            {ownership.conflicts.length > 0 ? (
+            <CoverageSummary coverage={visibleOwnership.coverage} />
+            {visibleOwnership.conflicts.length > 0 ? (
               <section className="km-semantic-conflicts">
                 <h3>{t('semanticExplore.ownership.conflicts')}</h3>
                 <ul>
-                  {ownership.conflicts.map((conflict) => (
+                  {visibleOwnership.conflicts.map((conflict) => (
                     <li key={conflict.conflictId} data-severity={conflict.severity}>
                       <span data-localization-ignore="true">{conflict.label}</span>
                       <small>{t(`semanticExplore.severity.${conflict.severity}`)}</small>
@@ -902,7 +944,7 @@ function OwnershipModulePanel({
               </section>
             ) : null}
             <div className="km-semantic-graph" role="list">
-              {ownership.nodes.map((node) => (
+              {visibleOwnership.nodes.map((node) => (
                 <article key={node.nodeId} role="listitem">
                   <Boxes aria-hidden="true" size={16} />
                   <span data-localization-ignore="true">
@@ -921,7 +963,7 @@ function OwnershipModulePanel({
                   ) : null}
                 </article>
               ))}
-              {ownership.edges.map((edge, index) => (
+              {visibleOwnership.edges.map((edge, index) => (
                 <p
                   className="km-semantic-edge"
                   key={`${edge.sourceNodeId}:${edge.targetNodeId}:${index}`}
@@ -939,12 +981,12 @@ function OwnershipModulePanel({
             </div>
             <LoadMoreButton
               count={Math.max(
-                ownership.nodes.length,
-                ownership.edges.length,
-                ownership.conflicts.length
+                visibleOwnership.nodes.length,
+                visibleOwnership.edges.length,
+                visibleOwnership.conflicts.length
               )}
               isBusy={controller.ownership.isAppending}
-              nextCursor={ownership.nextCursor}
+              nextCursor={visibleOwnership.nextCursor}
               onLoad={() => void controller.loadMoreOwnership()}
             />
           </>

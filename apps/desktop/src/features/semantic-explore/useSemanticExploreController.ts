@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -1150,6 +1151,7 @@ export function useSemanticExploreController(options: {
 
   useLayoutEffect(() => store.setBridge(options.bridge), [options.bridge, store]);
   useLayoutEffect(() => store.setScope(options.scope), [options.scope, store]);
+  useEffect(() => () => store.invalidate(), [store]);
 
   const invalidate = useCallback(() => store.invalidate(), [store]);
   const actions = useMemo<SemanticExploreControllerActions>(() => ({

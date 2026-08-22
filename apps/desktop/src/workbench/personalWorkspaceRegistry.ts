@@ -48,6 +48,7 @@ import {
   type LocalePackValidationFailureCode
 } from '../localization/localePackContracts';
 import { PrivateWorkspaceConflictError } from './privateWorkspaceStorage';
+import { isUserFacingFeatureVisible } from './featureVisibility';
 import { createWorkspaceShortcutRegistry } from './shortcutRegistry';
 
 export type PersonalWorkspaceSnapshot<TDocument> = {
@@ -327,7 +328,7 @@ export class PersonalWorkspaceRegistry {
     bookmark: WorkspaceBookmark
   ): Promise<PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>> {
     const validatedBookmark = workspaceBookmarkSchema.parse(bookmark);
-    const canonicalBookmark = canonicalizePinBookmark(validatedBookmark);
+    const canonicalBookmark = canonicalizeBookmark(validatedBookmark);
     const targetKey = bookmarkTargetKey(canonicalBookmark);
     return this.mutateProjectState(
       target,
@@ -394,18 +395,22 @@ export class PersonalWorkspaceRegistry {
     note: WorkspaceProjectNote
   ): Promise<PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>> {
     const validatedNote = workspaceProjectNoteSchema.parse(note);
-    const locationKey = scopedLocationKey(validatedNote.location);
+    const canonicalNote = {
+      ...validatedNote,
+      location: canonicalizeScopedLocationForVisibleFeatures(validatedNote.location)
+    };
+    const locationKey = scopedLocationKey(canonicalNote.location);
     return this.mutateProjectState(
       target,
       (document) => document.notes.filter(
         (candidate) =>
-          candidate.noteId === validatedNote.noteId ||
+          candidate.noteId === canonicalNote.noteId ||
           scopedLocationKey(candidate.location) === locationKey
       ),
       (document) => {
         const remaining = document.notes.filter(
           (candidate) =>
-            candidate.noteId !== validatedNote.noteId &&
+            candidate.noteId !== canonicalNote.noteId &&
             scopedLocationKey(candidate.location) !== locationKey
         );
         assertReplacementCapacity(remaining.length, workspaceMaximumNotes, 'project notes');
@@ -413,7 +418,7 @@ export class PersonalWorkspaceRegistry {
           changed: true,
           document: {
             ...document,
-            notes: [...remaining, validatedNote],
+            notes: [...remaining, canonicalNote],
             updatedAtUtc: this.timestamp()
           }
         };
@@ -434,10 +439,14 @@ export class PersonalWorkspaceRegistry {
     view: WorkspaceSavedView
   ): Promise<PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>> {
     const validatedView = workspaceSavedViewSchema.parse(view);
+    const canonicalView = {
+      ...validatedView,
+      location: canonicalizeScopedLocationForVisibleFeatures(validatedView.location)
+    };
     return this.upsertProjectEntry(
       target,
       'savedViews',
-      validatedView,
+      canonicalView,
       (entry) => entry.viewId,
       workspaceMaximumSavedViews,
       'saved views'
@@ -459,7 +468,9 @@ export class PersonalWorkspaceRegistry {
     const validatedRecentTarget = workspaceRecentTargetSchema.parse(recentTarget);
     const canonicalRecentTarget = workspaceRecentTargetSchema.parse({
       ...validatedRecentTarget,
-      location: withoutScopedLocationInspector(validatedRecentTarget.location)
+      location: withoutScopedLocationInspector(
+        canonicalizeScopedLocationForVisibleFeatures(validatedRecentTarget.location)
+      )
     });
     const targetKey = recentTargetLocationKey(canonicalRecentTarget.location);
     return this.mutateProjectState(
@@ -488,7 +499,9 @@ export class PersonalWorkspaceRegistry {
     location: WorkspaceScopedLocation
   ): Promise<PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>> {
     const validatedLocation = workspaceScopedLocationSchema.parse(location);
-    const targetKey = recentTargetLocationKey(validatedLocation);
+    const targetKey = recentTargetLocationKey(
+      canonicalizeScopedLocationForVisibleFeatures(validatedLocation)
+    );
     return this.removeProjectEntry(
       target,
       'recentTargets',
@@ -1025,36 +1038,106 @@ function withoutScopedLocationInspector(
   };
 }
 
-function canonicalizePinBookmark(bookmark: WorkspaceBookmark): WorkspaceBookmark {
-  return bookmark.kind === 'pin'
-    ? { ...bookmark, location: withoutScopedLocationInspector(bookmark.location) }
-    : bookmark;
+function canonicalizeBookmark(bookmark: WorkspaceBookmark): WorkspaceBookmark {
+  const location = canonicalizeScopedLocationForVisibleFeatures(bookmark.location);
+  return {
+    ...bookmark,
+    location: bookmark.kind === 'pin'
+      ? withoutScopedLocationInspector(location)
+      : location
+  };
 }
 
 function bookmarkTargetKey(bookmark: WorkspaceBookmark) {
-  return workspaceBookmarkTargetKey(canonicalizePinBookmark(bookmark));
+  return workspaceBookmarkTargetKey(canonicalizeBookmark(bookmark));
 }
 
 function normalizeProjectDocumentForRead(
   document: WorkspaceProjectPersonalStateDocument
 ): WorkspaceProjectPersonalStateDocument {
-  const seenBookmarks = new Set<string>();
-  const bookmarks = document.bookmarks.flatMap((entry) => {
-    const canonicalEntry = canonicalizePinBookmark(entry);
-    const key = bookmarkTargetKey(canonicalEntry);
-    if (seenBookmarks.has(key)) return [];
-    seenBookmarks.add(key);
-    return [canonicalEntry];
+  const bookmarks = selectNewestEntriesByKey(
+    document.bookmarks.map(canonicalizeBookmark),
+    bookmarkTargetKey,
+    (entry) => entry.updatedAtUtc
+  );
+  const notes = selectNewestEntriesByKey(
+    document.notes.map((entry) => ({
+      ...entry,
+      location: canonicalizeScopedLocationForVisibleFeatures(entry.location)
+    })),
+    (entry) => workspaceScopedLocationKey(entry.location),
+    (entry) => entry.updatedAtUtc
+  );
+  const recentTargets = selectNewestEntriesByKey(
+    document.recentTargets.map((entry) => ({
+      ...entry,
+      location: withoutScopedLocationInspector(
+        canonicalizeScopedLocationForVisibleFeatures(entry.location)
+      )
+    })),
+    (entry) => workspaceScopedLocationKey(entry.location),
+    (entry) => entry.visitedAtUtc
+  );
+  const savedViews = selectNewestEntriesByKey(
+    document.savedViews.map((entry) => ({
+      ...entry,
+      location: canonicalizeScopedLocationForVisibleFeatures(entry.location)
+    })),
+    savedViewTargetKey,
+    (entry) => entry.updatedAtUtc
+  );
+  return workspaceProjectPersonalStateDocumentSchema.parse({
+    ...document,
+    bookmarks,
+    notes,
+    recentTargets,
+    savedViews
   });
-  const seenLocations = new Set<string>();
-  const recentTargets = document.recentTargets.flatMap((entry) => {
-    const location = withoutScopedLocationInspector(entry.location);
-    const key = workspaceScopedLocationKey(location);
-    if (seenLocations.has(key)) return [];
-    seenLocations.add(key);
-    return [{ ...entry, location }];
+}
+
+function canonicalizeScopedLocationForVisibleFeatures(
+  location: WorkspaceScopedLocation
+): WorkspaceScopedLocation {
+  if (isUserFacingFeatureVisible('namedChangeSets')) {
+    return location;
+  }
+  const canonicalLocation = { ...location };
+  delete canonicalLocation.changeSetId;
+  return canonicalLocation;
+}
+
+function savedViewTargetKey(view: WorkspaceSavedView) {
+  return stableJson({
+    adapterId: view.adapterId,
+    adapterSchemaVersion: view.adapterSchemaVersion,
+    location: workspaceScopedLocationKey(view.location),
+    payload: view.payload
   });
-  return { ...document, bookmarks, recentTargets };
+}
+
+function selectNewestEntriesByKey<T>(
+  entries: readonly T[],
+  key: (entry: T) => string,
+  timestamp: (entry: T) => string
+) {
+  const winners = new Map<string, { entry: T; firstIndex: number; timestamp: number }>();
+  entries.forEach((entry, index) => {
+    const identity = key(entry);
+    const candidateTimestamp = Date.parse(timestamp(entry));
+    const existing = winners.get(identity);
+    if (!existing) {
+      winners.set(identity, { entry, firstIndex: index, timestamp: candidateTimestamp });
+    } else if (candidateTimestamp > existing.timestamp) {
+      winners.set(identity, {
+        entry,
+        firstIndex: existing.firstIndex,
+        timestamp: candidateTimestamp
+      });
+    }
+  });
+  return [...winners.values()]
+    .sort((left, right) => left.firstIndex - right.firstIndex)
+    .map((winner) => winner.entry);
 }
 
 function mutationTargetFingerprint(target: unknown) {

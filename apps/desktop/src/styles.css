@@ -1390,6 +1390,39 @@ h2 {
   font-weight: 800;
 }
 
+.reportable-error-link {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+  width: fit-content;
+}
+
+.fatal-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.reportable-error-message {
+  max-height: min(18rem, 40vh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.reportable-error-dialog {
+  width: min(720px, 100%);
+}
+
+.reportable-error-backdrop {
+  z-index: 10001;
+}
+
+.reportable-error-dialog h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
 .empty-copy {
   margin: 16px 0 0;
   color: var(--color-text-muted);
@@ -13209,63 +13242,6 @@ select.km-select-control:dir(rtl) {
   opacity: 0.58;
 }
 
-:where(.km-file-control) {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  min-height: var(--km-control-min-height);
-  padding: 0.3rem;
-  overflow: hidden;
-  color: var(--color-text-soft);
-  background: var(--color-control);
-  border: 1px solid var(--color-control-border);
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font: inherit;
-  text-overflow: ellipsis;
-  transition:
-    background-color 140ms ease,
-    border-color 140ms ease;
-}
-
-:where(.km-file-control):hover:not(:disabled) {
-  background-color: var(--color-control-hover);
-  border-color: var(--color-accent-bright);
-}
-
-:where(.km-file-control):disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
-:where(.km-file-control)::file-selector-button {
-  min-height: calc(var(--km-control-min-height) - 0.6rem);
-  margin: 0;
-  margin-inline-end: 0.65rem;
-  padding: 0.35rem 0.7rem;
-  color: var(--color-text-soft);
-  background: var(--color-surface-strong);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 0.35rem;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 750;
-}
-
-:where(.km-file-control)::file-selector-button:hover {
-  color: var(--color-text);
-  background: var(--color-accent-dark);
-  border-color: var(--color-accent-bright);
-}
-
-:where(.km-file-control)::file-selector-button:active {
-  background: var(--color-accent-hover);
-}
-
-:where(.km-file-control):disabled::file-selector-button {
-  cursor: not-allowed;
-}
-
 :where(
   .personalization-settings,
   .what-changed-tour,
@@ -13402,9 +13378,7 @@ select.km-select-control:dir(rtl) {
   gap: 0.75rem;
 }
 
-.km-settings-grid label,
-.km-settings-field,
-.km-file-input {
+.km-settings-grid label {
   display: grid;
   gap: 0.35rem;
   min-width: 0;
@@ -13414,8 +13388,6 @@ select.km-select-control:dir(rtl) {
 }
 
 .km-settings-grid select,
-.km-settings-field select,
-.km-file-input input,
 .km-settings-group button {
   min-height: var(--km-control-min-height);
 }
@@ -13438,15 +13410,6 @@ select.km-select-control:dir(rtl) {
   font-size: 0.78rem;
 }
 
-.km-settings-warning {
-  padding: 0.65rem;
-  color: var(--color-warning-soft);
-  background: var(--color-warning-surface);
-  border: 1px dashed var(--color-warning);
-  border-left-width: 4px;
-  border-radius: 0.4rem;
-}
-
 .km-settings-actions,
 .km-modal-actions {
   display: flex;
@@ -13461,32 +13424,115 @@ select.km-select-control:dir(rtl) {
   font-weight: 750;
 }
 
-.locale-pack-list {
+.km-performance-summary {
   display: grid;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.8rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
 }
 
-.locale-pack-list li {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: space-between;
+.km-performance-summary-heading {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.km-performance-summary-heading h4 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.km-performance-summary-heading p,
+.km-performance-summary-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.km-performance-summary-empty {
+  padding: 0.85rem;
+  text-align: center;
+  background: var(--color-surface-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 0.4rem;
+}
+
+.km-performance-summary-table-wrap {
   min-width: 0;
-  padding: 0.65rem;
+  max-height: min(26rem, 55vh);
+  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: 0.4rem;
 }
 
-.locale-pack-list li > span {
-  min-width: 0;
+.km-performance-summary-table-wrap:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.km-performance-summary table {
+  width: 100%;
+  min-width: 46rem;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.km-performance-summary :is(th, td) {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: right;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.km-performance-summary thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--color-text-soft);
+  background: var(--color-surface-strong);
+  font-weight: 800;
+}
+
+.km-performance-summary :is(th, td):first-child {
+  text-align: left;
+}
+
+.km-performance-summary tbody th {
+  min-width: 18rem;
+  color: var(--color-text);
+  font-weight: 750;
+  white-space: normal;
+}
+
+.km-performance-summary tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.km-performance-summary tbody tr:hover {
+  background: var(--color-control-hover);
+}
+
+.km-performance-summary tbody th span,
+.km-performance-summary tbody th code {
+  display: block;
+}
+
+.km-performance-summary tbody th code {
+  margin-top: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
-.locale-pack-list small {
-  color: var(--color-text-muted);
+.km-performance-summary .km-performance-failures {
+  color: var(--color-warning-soft);
+  font-weight: 800;
 }
 
 .km-modal-backdrop {
@@ -13579,7 +13625,7 @@ select.km-select-control:dir(rtl) {
     box-shadow: none !important;
   }
 
-  :is(.panel, .modal-panel, .km-modal, .km-settings-group, .km-settings-warning, .diagnostic, .locale-pack-list li) {
+  :is(.panel, .modal-panel, .km-modal, .km-settings-group, .diagnostic) {
     color: CanvasText;
     background: Canvas;
     border-color: CanvasText;
@@ -13607,12 +13653,6 @@ select.km-select-control:dir(rtl) {
     content: none;
   }
 
-  input.km-file-control::file-selector-button {
-    color: ButtonText;
-    background: ButtonFace;
-    border-color: ButtonText;
-  }
-
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline-color: Highlight !important;
   }
@@ -13634,8 +13674,4 @@ select.km-select-control:dir(rtl) {
     max-height: calc(100dvh - 1.5rem);
   }
 
-  .locale-pack-list li {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }

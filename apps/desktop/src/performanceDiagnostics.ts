@@ -19,6 +19,15 @@ export type PerformanceDiagnosticsSnapshot = Readonly<{
   samples: readonly PerformanceDiagnosticSample[];
 }>;
 
+export type PerformanceDiagnosticCommandSummary = Readonly<{
+  command: KmCommandName;
+  failures: number;
+  maximumDurationMs: number;
+  medianDurationMs: number;
+  p95DurationMs: number;
+  sampleCount: number;
+}>;
+
 const listeners = new Set<() => void>();
 let enabled = readPerformanceDiagnosticsEnabledPreference();
 let samples: readonly PerformanceDiagnosticSample[] = [];
@@ -75,12 +84,7 @@ export function subscribeToPerformanceDiagnostics(listener: () => void) {
 }
 
 export function createPerformanceDiagnosticsSummary() {
-  const grouped = new Map<KmCommandName, PerformanceDiagnosticSample[]>();
-  for (const sample of samples) {
-    const group = grouped.get(sample.command) ?? [];
-    group.push(sample);
-    grouped.set(sample.command, group);
-  }
+  const commands = summarizePerformanceDiagnostics(samples);
 
   return JSON.stringify(
     {
@@ -88,23 +92,66 @@ export function createPerformanceDiagnosticsSummary() {
       sessionOnly: true,
       contentBlind: true,
       sampleCount: samples.length,
-      commands: [...grouped.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([command, commandSamples]) => {
-          const durations = commandSamples.map((sample) => sample.durationMs).sort((a, b) => a - b);
-          return {
-            command,
-            sampleCount: commandSamples.length,
-            failures: commandSamples.filter((sample) => sample.outcome === 'failure').length,
-            medianDurationMs: percentile(durations, 0.5),
-            p95DurationMs: percentile(durations, 0.95),
-            maximumDurationMs: durations.at(-1) ?? 0
-          };
-        })
+      commands
     },
     null,
     2
   );
+}
+
+export function summarizePerformanceDiagnostics(
+  sourceSamples: readonly PerformanceDiagnosticSample[]
+): readonly PerformanceDiagnosticCommandSummary[] {
+  const grouped = new Map<KmCommandName, PerformanceDiagnosticSample[]>();
+  for (const sample of sourceSamples) {
+    const group = grouped.get(sample.command) ?? [];
+    group.push(sample);
+    grouped.set(sample.command, group);
+  }
+
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([command, commandSamples]) => {
+      const durations = commandSamples.map((sample) => sample.durationMs).sort((a, b) => a - b);
+      return Object.freeze({
+        command,
+        sampleCount: commandSamples.length,
+        failures: commandSamples.filter((sample) => sample.outcome === 'failure').length,
+        medianDurationMs: percentile(durations, 0.5),
+        p95DurationMs: percentile(durations, 0.95),
+        maximumDurationMs: durations.at(-1) ?? 0
+      });
+    });
+}
+
+export function formatPerformanceDiagnosticCommand(command: KmCommandName) {
+  return command
+    .split('.')
+    .map((segment) => humanizeCommandSegment(segment))
+    .join(' › ');
+}
+
+function humanizeCommandSegment(segment: string) {
+  return segment
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(' ')
+    .map((word) => commandTermLabels.get(word.toLowerCase()) ?? toTitleCase(word))
+    .join(' ');
+}
+
+const commandTermLabels = new Map<string, string>([
+  ['exefs', 'ExeFS'],
+  ['fps', 'FPS'],
+  ['iv', 'IV'],
+  ['npc', 'NPC'],
+  ['sv', 'Scarlet and Violet'],
+  ['swsh', 'Sword and Shield'],
+  ['za', 'Z-A']
+]);
+
+function toTitleCase(value: string) {
+  return value.length === 0 ? value : `${value[0]!.toUpperCase()}${value.slice(1).toLowerCase()}`;
 }
 
 function percentile(values: readonly number[], fraction: number) {

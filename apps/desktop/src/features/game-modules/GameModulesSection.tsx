@@ -295,7 +295,12 @@ function GameModuleDetail({
           ) : null}
           <GameModuleDiagnostics diagnostics={result.diagnostics} />
           {result.records.length > 0 ? (
-            <GameModuleComparison key={result.queryFingerprint} response={result} />
+            <GameModuleComparison
+              canNavigateRecord={canNavigateRecord}
+              key={result.queryFingerprint}
+              onNavigateRecord={onNavigateRecord}
+              response={result}
+            />
           ) : null}
           {result.nextCursor ? (
             result.records.length >= gameModuleMaximumAccumulatedRecords ? (
@@ -329,51 +334,16 @@ function GameModuleDetail({
               </>
             )
           ) : null}
-          {result.records.length > 0 ? (
-            <GameModuleFullDetails
-              canNavigateRecord={canNavigateRecord}
-              onNavigateRecord={onNavigateRecord}
-              response={result}
-            />
-          ) : (
+          {result.records.length === 0 ? (
             <GameModuleResults
               canNavigateRecord={canNavigateRecord}
               onNavigateRecord={onNavigateRecord}
               response={result}
             />
-          )}
+          ) : null}
         </>
       ) : null}
     </section>
-  );
-}
-
-function GameModuleFullDetails({
-  canNavigateRecord,
-  onNavigateRecord,
-  response
-}: {
-  canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
-  onNavigateRecord: (record: SemanticExploreRecordRef) => void;
-  response: NonNullable<GameModuleController['result']['data']>;
-}) {
-  const { t } = useLocalization();
-  const [open, setOpen] = useState(false);
-  return (
-    <details
-      className="km-game-module-full-details"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      open={open}
-    >
-      <summary>{t('gameModules.compare.fullDetails')}</summary>
-      {open ? (
-        <GameModuleResults
-          canNavigateRecord={canNavigateRecord}
-          onNavigateRecord={onNavigateRecord}
-          response={response}
-        />
-      ) : null}
-    </details>
   );
 }
 

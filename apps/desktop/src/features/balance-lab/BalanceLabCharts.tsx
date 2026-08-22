@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { ArrowDown, ArrowUp, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, Search, X } from 'lucide-react';
 import { useMemo, useState, type CSSProperties } from 'react';
-import type {
-  BalanceLabPoint,
-  BalanceLabStudy
+import {
+  balanceLabMaximumSearchTextLength,
+  type BalanceLabPoint,
+  type BalanceLabStudy
 } from '../../bridge/balanceLabContracts';
 import { useLocalization } from '../../localization';
 import {
@@ -13,137 +14,93 @@ import {
 } from '../workbench/analysisPresentationUtils';
 import {
   balanceComparisonMetrics,
-  balanceComparisonSeries,
   balancePointMetric,
+  balanceRecordGroupIdentity,
   balanceRecordIdentity,
   comparableBalancePoints,
   defaultBalanceComparisonMetric,
-  defaultBalanceComparisonOrder,
-  defaultBalanceComparisonSeries,
-  orderBalanceComparisonPoints,
-  type BalanceComparisonMetric,
-  type BalanceComparisonOrder
+  type BalanceComparisonMetric
 } from './balanceLabComparison';
 
-type ComparisonDirection = 'ascending' | 'descending';
+const maximumVisibleSearchResults = 8;
 
 export function BalanceLabChart({
+  onSelectedPointIdsChange,
   points,
+  selectedPointIds,
   study
 }: {
+  onSelectedPointIdsChange: (pointIds: readonly string[]) => void;
   points: readonly BalanceLabPoint[];
+  selectedPointIds: readonly string[];
   study: BalanceLabStudy;
 }) {
-  const { t } = useLocalization();
-  const initialSeries = defaultBalanceComparisonSeries(points, study);
-  const initialMetrics = balanceComparisonMetrics(points, initialSeries);
+  const { t, translateLiteral } = useLocalization();
+  const initialMetrics = balanceComparisonMetrics(points);
   const initialMetricIdentity = defaultBalanceComparisonMetric(initialMetrics, study);
-  const initialCandidates = comparableBalancePoints(
-    points,
-    initialSeries,
-    initialMetricIdentity
-  );
-  const [seriesKey, setSeriesKey] = useState(initialSeries);
   const [metricIdentity, setMetricIdentity] = useState(initialMetricIdentity);
-  const [order, setOrder] = useState<BalanceComparisonOrder>(() => (
-    defaultBalanceComparisonOrder(initialMetrics, study)
-  ));
-  const [direction, setDirection] = useState<ComparisonDirection>('ascending');
   const [recordSearch, setRecordSearch] = useState('');
-  const [selectedOrder, setSelectedOrder] = useState<readonly string[]>(() => (
-    initialSelection(initialCandidates)
-  ));
 
-  const series = useMemo(() => balanceComparisonSeries(points), [points]);
-  const activeSeries = series.some((candidate) => candidate.key === seriesKey)
-    ? seriesKey
-    : defaultBalanceComparisonSeries(points, study);
-  const metrics = useMemo(
-    () => balanceComparisonMetrics(points, activeSeries),
-    [activeSeries, points]
-  );
+  const metrics = useMemo(() => balanceComparisonMetrics(points), [points]);
   const activeMetricIdentity = metrics.some((metric) => metric.identity === metricIdentity)
     ? metricIdentity
     : defaultBalanceComparisonMetric(metrics, study);
   const candidates = useMemo(
-    () => comparableBalancePoints(points, activeSeries, activeMetricIdentity),
-    [activeMetricIdentity, activeSeries, points]
+    () => comparableBalancePoints(points, activeMetricIdentity),
+    [activeMetricIdentity, points]
   );
-  const activeOrder = isAvailableOrder(order, metrics)
-    ? order
-    : defaultBalanceComparisonOrder(metrics, study);
-  const selectedIds = useMemo(() => new Set(selectedOrder), [selectedOrder]);
-  const selectedPoints = candidates.filter((point) => selectedIds.has(point.pointId));
-  const orderedPoints = orderBalanceComparisonPoints(
-    selectedPoints,
-    activeOrder,
-    direction,
-    selectedOrder
+  const candidateById = useMemo(
+    () => new Map(candidates.map((point) => [point.pointId, point])),
+    [candidates]
   );
+  const recordSearchIndex = useMemo(
+    () => buildRecordSearchIndex(points, t, translateLiteral),
+    [points, t, translateLiteral]
+  );
+  const activeSelectedOrder = selectedPointIds.filter((pointId) => candidateById.has(pointId));
+  const selectedPoints = activeSelectedOrder.flatMap((pointId) => {
+    const point = candidateById.get(pointId);
+    return point ? [point] : [];
+  });
+  const selectedIds = new Set(activeSelectedOrder);
   const normalizedRecordSearch = recordSearch.trim().toLocaleLowerCase();
-  const visibleCandidates = candidates.filter((point) => (
-    !normalizedRecordSearch || [
-      point.label,
-      balanceRecordIdentity(point),
-      balancePointMetric(point, activeMetricIdentity)?.fact.value.displayValue ?? ''
-    ].join('\n').toLocaleLowerCase().includes(normalizedRecordSearch)
-  ));
-  const selectedVisibleCount = visibleCandidates.filter((point) => (
-    selectedIds.has(point.pointId)
-  )).length;
+  const matchingCandidates = normalizedRecordSearch.length === 0 ? [] : candidates
+    .filter((point) => (
+      recordSearchIndex.get(balanceRecordGroupIdentity(point.record)) ?? ''
+    ).includes(normalizedRecordSearch))
+    .sort((left, right) => compareSearchMatches(left, right, normalizedRecordSearch));
+  const visibleCandidates = matchingCandidates.slice(0, maximumVisibleSearchResults);
   const metric = metrics.find((candidate) => (
     candidate.identity === activeMetricIdentity
   )) ?? null;
   const duplicateCandidateLabels = duplicatePointLabels(candidates);
 
-  if (series.length === 0 || !metric) {
+  if (!metric) {
     return <ChartUnavailable messageKey={unavailableMessageKey(study)} />;
   }
 
-  const changeSeries = (nextSeries: string) => {
-    const nextMetrics = balanceComparisonMetrics(points, nextSeries);
-    const nextMetric = defaultBalanceComparisonMetric(nextMetrics, study);
-    const nextCandidates = comparableBalancePoints(points, nextSeries, nextMetric);
-    setSeriesKey(nextSeries);
-    setMetricIdentity(nextMetric);
-    setOrder(defaultBalanceComparisonOrder(nextMetrics, study));
-    setDirection('ascending');
-    setRecordSearch('');
-    setSelectedOrder(initialSelection(nextCandidates));
-  };
   const changeMetric = (nextMetricIdentity: string) => {
-    const nextCandidates = comparableBalancePoints(points, activeSeries, nextMetricIdentity);
+    const nextCandidates = comparableBalancePoints(points, nextMetricIdentity);
     const nextCandidateIds = new Set(nextCandidates.map((point) => point.pointId));
     setMetricIdentity(nextMetricIdentity);
-    setSelectedOrder((current) => current.filter((pointId) => nextCandidateIds.has(pointId)));
+    onSelectedPointIdsChange(
+      activeSelectedOrder.filter((pointId) => nextCandidateIds.has(pointId))
+    );
   };
-  const togglePoint = (pointId: string, checked: boolean) => {
-    setSelectedOrder((current) => {
-      if (checked) return current.includes(pointId) ? current : [...current, pointId];
-      return current.filter((candidate) => candidate !== pointId);
-    });
+  const addPoint = (pointId: string) => {
+    if (selectedIds.has(pointId) || !candidateById.has(pointId)) return;
+    onSelectedPointIdsChange([...activeSelectedOrder, pointId]);
   };
-  const selectVisible = () => {
-    setSelectedOrder((current) => {
-      const next = [...current];
-      const included = new Set(current);
-      for (const point of visibleCandidates) {
-        if (included.has(point.pointId)) continue;
-        included.add(point.pointId);
-        next.push(point.pointId);
-      }
-      return next;
-    });
+  const removePoint = (pointId: string) => {
+    onSelectedPointIdsChange(activeSelectedOrder.filter((candidate) => candidate !== pointId));
   };
   const moveSelected = (pointId: string, offset: -1 | 1) => {
-    setSelectedOrder((current) => {
-      const currentIndex = current.indexOf(pointId);
-      const nextIndex = currentIndex + offset;
-      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
-      const next = [...current];
-      [next[currentIndex], next[nextIndex]] = [next[nextIndex]!, next[currentIndex]!];
-      return next;
-    });
+    const currentIndex = activeSelectedOrder.indexOf(pointId);
+    const nextIndex = currentIndex + offset;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= activeSelectedOrder.length) return;
+    const next = [...activeSelectedOrder];
+    [next[currentIndex], next[nextIndex]] = [next[nextIndex]!, next[currentIndex]!];
+    onSelectedPointIdsChange(next);
   };
 
   return (
@@ -153,20 +110,6 @@ export function BalanceLabChart({
         {t('balanceLab.comparison.description')}
       </p>
       <div className="km-balance-comparison-controls">
-        <label>
-          <span>{t('balanceLab.comparison.series')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => changeSeries(event.currentTarget.value)}
-            value={activeSeries}
-          >
-            {series.map((candidate) => (
-              <option data-localization-ignore="true" key={candidate.key} value={candidate.key}>
-                {humanizeIdentifier(candidate.key)} ({candidate.pointCount.toLocaleString()})
-              </option>
-            ))}
-          </select>
-        </label>
         <label>
           <span>{t('balanceLab.comparison.metric')}</span>
           <select
@@ -185,41 +128,6 @@ export function BalanceLabChart({
             ))}
           </select>
         </label>
-        <label>
-          <span>{t('balanceLab.comparison.order')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setOrder(event.currentTarget.value as BalanceComparisonOrder)}
-            value={activeOrder}
-          >
-            <option value="custom">{t('balanceLab.comparison.order.custom')}</option>
-            <option value="label">{t('balanceLab.comparison.order.label')}</option>
-            {metrics.map((candidate) => (
-              <option
-                data-localization-ignore="true"
-                key={candidate.identity}
-                value={`metric:${candidate.identity}`}
-              >
-                {t('balanceLab.comparison.order.metric', {
-                  metric: metricOptionLabel(candidate, metrics, t)
-                })}
-              </option>
-            ))}
-          </select>
-        </label>
-        {activeOrder !== 'custom' ? (
-          <label>
-            <span>{t('balanceLab.comparison.direction')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setDirection(event.currentTarget.value as ComparisonDirection)}
-              value={direction}
-            >
-              <option value="ascending">{t('balanceLab.comparison.direction.ascending')}</option>
-              <option value="descending">{t('balanceLab.comparison.direction.descending')}</option>
-            </select>
-          </label>
-        ) : null}
       </div>
 
       <fieldset className="km-balance-record-picker">
@@ -232,8 +140,21 @@ export function BalanceLabChart({
             <span>
               <Search aria-hidden="true" size={15} />
               <input
+                aria-controls={visibleCandidates.length > 0
+                  ? 'balance-lab-record-search-results'
+                  : undefined}
                 autoComplete="off"
+                maxLength={balanceLabMaximumSearchTextLength}
                 onChange={(event) => setRecordSearch(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  const firstAvailable = visibleCandidates.find((point) => (
+                    !selectedIds.has(point.pointId)
+                  ));
+                  if (!firstAvailable) return;
+                  event.preventDefault();
+                  addPoint(firstAvailable.pointId);
+                }}
                 placeholder={t('balanceLab.comparison.searchPlaceholder')}
                 type="search"
                 value={recordSearch}
@@ -243,50 +164,92 @@ export function BalanceLabChart({
           <span aria-live="polite" className="km-balance-selection-count">
             {t('balanceLab.comparison.selected', { count: selectedPoints.length })}
           </span>
-          <button
-            className="secondary-button compact-button"
-            disabled={visibleCandidates.length === 0 || selectedVisibleCount === visibleCandidates.length}
-            onClick={selectVisible}
-            type="button"
-          >
-            {t('balanceLab.comparison.selectVisible')}
-          </button>
-          <button
-            className="secondary-button compact-button"
-            disabled={selectedPoints.length === 0}
-            onClick={() => setSelectedOrder([])}
-            type="button"
-          >
-            {t('balanceLab.comparison.clear')}
-          </button>
         </div>
-        <p className="km-balance-record-picker-summary">
-          {t('balanceLab.comparison.loaded', { count: candidates.length })}
-        </p>
-        {visibleCandidates.length > 0 ? (
-          <div className="km-balance-record-options">
-            {visibleCandidates.map((point) => {
-              const selectedIndex = selectedOrder.indexOf(point.pointId);
-              const isSelected = selectedIndex >= 0;
-              return (
-                <div className={isSelected ? 'is-selected' : undefined} key={point.pointId}>
-                  <label>
-                    <input
-                      checked={isSelected}
-                      className="km-choice-control"
-                      onChange={(event) => togglePoint(point.pointId, event.currentTarget.checked)}
-                      type="checkbox"
-                    />
+        {normalizedRecordSearch.length === 0 ? (
+          <p className="km-balance-record-picker-summary">
+            {t('balanceLab.comparison.searchHint')}
+          </p>
+        ) : (
+          <div className="km-balance-search-results">
+            <p aria-live="polite" className="km-balance-record-picker-summary">
+              {matchingCandidates.length > visibleCandidates.length
+                ? t('balanceLab.comparison.searchResultsLimited', {
+                    count: matchingCandidates.length,
+                    shown: visibleCandidates.length
+                  })
+                : t('balanceLab.comparison.searchResults', {
+                    count: matchingCandidates.length
+                  })}
+            </p>
+            {visibleCandidates.length > 0 ? (
+              <ul id="balance-lab-record-search-results">
+                {visibleCandidates.map((point) => {
+                  const isSelected = selectedIds.has(point.pointId);
+                  const accessibleLabel = comparisonPointLabel(point, duplicateCandidateLabels);
+                  return (
+                    <li key={point.pointId}>
+                      <span>
+                        <strong data-localization-ignore="true">{point.label}</strong>
+                        <small data-localization-ignore="true">{conciseRecordIdentity(point)}</small>
+                      </span>
+                      <button
+                        aria-label={isSelected
+                          ? `${accessibleLabel}: ${t('balanceLab.comparison.alreadySelected')}`
+                          : t('balanceLab.comparison.addLabel', { label: accessibleLabel })}
+                        className="secondary-button compact-button"
+                        disabled={isSelected}
+                        onClick={() => addPoint(point.pointId)}
+                        type="button"
+                      >
+                        {isSelected ? (
+                          t('balanceLab.comparison.alreadySelected')
+                        ) : (
+                          <>
+                            <Plus aria-hidden="true" size={14} />
+                            <span>{t('balanceLab.comparison.add')}</span>
+                          </>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="km-balance-chart-empty">{t('balanceLab.comparison.noSearchResults')}</p>
+            )}
+          </div>
+        )}
+
+        {selectedPoints.length > 0 ? (
+          <div className="km-balance-selected-records">
+            <header>
+              <div>
+                <strong>{t('balanceLab.comparison.selectedRecords')}</strong>
+                <small>{t('balanceLab.comparison.selectionOrderHint')}</small>
+              </div>
+              <button
+                className="secondary-button compact-button"
+                onClick={() => onSelectedPointIdsChange([])}
+                type="button"
+              >
+                {t('balanceLab.comparison.clear')}
+              </button>
+            </header>
+            <ol>
+              {selectedPoints.map((point, selectedIndex) => {
+                const accessibleLabel = comparisonPointLabel(point, duplicateCandidateLabels);
+                return (
+                  <li key={point.pointId}>
                     <span>
                       <strong data-localization-ignore="true">{point.label}</strong>
-                      <small data-localization-ignore="true">{balanceRecordIdentity(point)}</small>
+                      {duplicateCandidateLabels.has(point.label) ? (
+                        <small data-localization-ignore="true">{balanceRecordIdentity(point)}</small>
+                      ) : null}
                     </span>
-                  </label>
-                  {isSelected && activeOrder === 'custom' ? (
                     <span className="km-balance-record-order-actions">
                       <button
                         aria-label={t('balanceLab.comparison.moveEarlier', {
-                          label: comparisonPointLabel(point, duplicateCandidateLabels)
+                          label: accessibleLabel
                         })}
                         className="secondary-button compact-button icon-button"
                         disabled={selectedIndex === 0}
@@ -297,30 +260,38 @@ export function BalanceLabChart({
                       </button>
                       <button
                         aria-label={t('balanceLab.comparison.moveLater', {
-                          label: comparisonPointLabel(point, duplicateCandidateLabels)
+                          label: accessibleLabel
                         })}
                         className="secondary-button compact-button icon-button"
-                        disabled={selectedIndex === selectedOrder.length - 1}
+                        disabled={selectedIndex === selectedPoints.length - 1}
                         onClick={() => moveSelected(point.pointId, 1)}
                         type="button"
                       >
                         <ArrowDown aria-hidden="true" size={14} />
                       </button>
+                      <button
+                        aria-label={t('balanceLab.comparison.removeLabel', {
+                          label: accessibleLabel
+                        })}
+                        className="secondary-button compact-button icon-button"
+                        onClick={() => removePoint(point.pointId)}
+                        type="button"
+                      >
+                        <X aria-hidden="true" size={14} />
+                      </button>
                     </span>
-                  ) : null}
-                </div>
-              );
-            })}
+                  </li>
+                );
+              })}
+            </ol>
           </div>
-        ) : (
-          <p className="km-balance-chart-empty">{t('balanceLab.comparison.noSearchResults')}</p>
-        )}
+        ) : null}
       </fieldset>
 
-      {orderedPoints.length > 0 ? (
+      {selectedPoints.length > 0 ? (
         <ComparisonPlot
           metric={metric}
-          points={orderedPoints}
+          points={selectedPoints}
           study={study}
         />
       ) : (
@@ -471,15 +442,6 @@ function ChartUnavailable({ messageKey }: { messageKey: string }) {
   return <p className="km-balance-chart-empty">{t(messageKey)}</p>;
 }
 
-function initialSelection(points: readonly BalanceLabPoint[]) {
-  return [...points]
-    .sort((left, right) => left.label.localeCompare(right.label, undefined, {
-      numeric: true,
-      sensitivity: 'base'
-    }))
-    .map((point) => point.pointId);
-}
-
 function duplicatePointLabels(points: readonly BalanceLabPoint[]) {
   const counts = new Map<string, number>();
   for (const point of points) counts.set(point.label, (counts.get(point.label) ?? 0) + 1);
@@ -492,14 +454,56 @@ function comparisonPointLabel(point: BalanceLabPoint, duplicates: ReadonlySet<st
     : point.label;
 }
 
-function isAvailableOrder(
-  order: BalanceComparisonOrder,
-  metrics: readonly BalanceComparisonMetric[]
+function conciseRecordIdentity(point: BalanceLabPoint) {
+  return [point.record.recordId, point.record.subrecordId].filter(Boolean).join(' / ');
+}
+
+function compareSearchMatches(
+  left: BalanceLabPoint,
+  right: BalanceLabPoint,
+  normalizedSearch: string
 ) {
-  return order === 'custom' || order === 'label' || (
-    order.startsWith('metric:') &&
-    metrics.some((metric) => `metric:${metric.identity}` === order)
-  );
+  const leftRank = searchMatchRank(left, normalizedSearch);
+  const rightRank = searchMatchRank(right, normalizedSearch);
+  return leftRank - rightRank ||
+    left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' }) ||
+    balanceRecordIdentity(left).localeCompare(balanceRecordIdentity(right));
+}
+
+function buildRecordSearchIndex(
+  points: readonly BalanceLabPoint[],
+  t: (key: string) => string,
+  translateLiteral: (value: string) => string
+) {
+  const termsByGroup = new Map<string, Set<string>>();
+  for (const point of points) {
+    const identity = balanceRecordGroupIdentity(point.record);
+    const terms = termsByGroup.get(identity) ?? new Set<string>();
+    terms.add(point.label);
+    terms.add(balanceRecordIdentity(point));
+    terms.add(point.record.recordId);
+    if (point.record.subrecordId) terms.add(point.record.subrecordId);
+    for (const fact of point.facts) {
+      terms.add(fact.label);
+      const labelKey = presentationFactLabelKey(fact.label);
+      if (labelKey) terms.add(t(labelKey));
+      terms.add(fact.value.displayValue);
+      terms.add(translateLiteral(fact.value.displayValue));
+    }
+    termsByGroup.set(identity, terms);
+  }
+  return new Map([...termsByGroup].map(([identity, terms]) => [
+    identity,
+    [...terms].join('\n').toLocaleLowerCase()
+  ]));
+}
+
+function searchMatchRank(point: BalanceLabPoint, normalizedSearch: string) {
+  const label = point.label.toLocaleLowerCase();
+  const recordId = point.record.recordId.toLocaleLowerCase();
+  if (label === normalizedSearch || recordId === normalizedSearch) return 0;
+  if (label.startsWith(normalizedSearch) || recordId.startsWith(normalizedSearch)) return 1;
+  return 2;
 }
 
 function metricLabel(

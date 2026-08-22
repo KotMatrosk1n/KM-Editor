@@ -35,13 +35,6 @@
   justify-content: space-between;
 }
 
-.km-analysis-diagnostic-identity {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
 .km-analysis-technical-details {
   color: var(--color-text-secondary);
   font-size: 0.78rem;
@@ -64,6 +57,74 @@
 .km-analysis-technical-details code {
   font-size: 0.74rem;
   white-space: normal;
+}
+
+.km-analysis-visually-hidden {
+  block-size: 1px;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.km-analysis-diagnostic-identities {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  max-inline-size: 48rem;
+  padding: 0;
+}
+
+.km-analysis-diagnostic-identities > li {
+  align-items: start;
+  display: flex;
+  gap: 0.55rem;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.km-analysis-diagnostic-identities > li + li {
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: 0.4rem;
+}
+
+.km-analysis-diagnostic-details {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.km-analysis-diagnostic-details > div {
+  align-items: start;
+  display: grid;
+  gap: 0.15rem 0.55rem;
+  grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr);
+}
+
+.km-analysis-diagnostic-details dt {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.km-analysis-diagnostic-details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-analysis-additional-identities {
+  color: var(--color-text-secondary);
+  margin: 0.4rem 0 0;
+}
+
+@media (max-width: 32rem) {
+  .km-analysis-diagnostic-details > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .km-analysis-confidence-group {

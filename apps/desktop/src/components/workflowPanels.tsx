@@ -11,12 +11,14 @@ import {
   OccurrenceCount,
 } from '../features/workbench/AnalysisPresentation';
 import {
+  diagnosticTechnicalIdentity,
   diagnosticSeverityPriority,
   groupDiagnosticsForPresentation,
   presentationDiagnosticMessage,
   presentationDiagnosticSeverity
 } from '../features/workbench/analysisPresentationUtils';
 import { ContextHelp } from './ContextHelp';
+import { ReportableDiagnosticIssuesLink } from './ReportableErrorScreen';
 
 export type WorkflowPanelOutput = {
   actionDiagnostics: ApiDiagnostic[];
@@ -263,12 +265,7 @@ export function DiagnosticsSection({
   const groupedDiagnostics = groupDiagnosticsForPresentation(
     diagnostics,
     (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
-    (diagnostic) => [
-      diagnostic.severity,
-      diagnostic.code,
-      diagnostic.domain,
-      diagnostic.field
-    ],
+    diagnosticTechnicalIdentity,
     (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
   const isScrollable = scrollAfterEntries !== undefined &&
@@ -354,9 +351,12 @@ export function DiagnosticsSection({
                     {translateLiteral(formatDiagnosticSeverity(severity))}
                   </strong>
                   <div className="km-analysis-diagnostic-copy">
-                    {presentedMessage(diagnostic)}
-                    <OccurrenceCount count={count} />
-                    <DiagnosticTechnicalDetails
+                     {presentedMessage(diagnostic)}
+                     <OccurrenceCount count={count} />
+                     <ReportableDiagnosticIssuesLink
+                       messages={identities.map((identity) => identity.diagnostic.message)}
+                     />
+                     <DiagnosticTechnicalDetails
                       diagnostics={identities}
                       summary={translateLiteral('Technical details')}
                     />

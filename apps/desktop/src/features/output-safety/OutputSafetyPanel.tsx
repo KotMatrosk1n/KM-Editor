@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { type OutputCheckpoint } from '../../bridge/outputSafetyContracts';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { formatDiagnosticMessage } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import { type OutputSafetyController } from './useOutputSafetyController';
@@ -455,6 +456,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                 <li className={`diagnostic-${diagnostic.severity}`} key={`${diagnostic.code ?? 'diagnostic'}-${index}`}>
                   {diagnostic.severity === 'error' ? <AlertCircle aria-hidden="true" size={15} /> : <AlertTriangle aria-hidden="true" size={15} />}
                   <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
+                  <ReportableDiagnosticIssuesLink messages={[diagnostic.message]} />
                 </li>
               ))}
             </ul>

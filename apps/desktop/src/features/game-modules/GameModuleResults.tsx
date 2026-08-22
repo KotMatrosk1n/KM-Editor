@@ -10,6 +10,7 @@ import type {
 import { containsGameModuleLocalPathSignature } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import type { ApiDiagnostic } from '../../bridge/contracts';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
@@ -18,12 +19,14 @@ import {
   presentationFactLabelKey,
   relativeRecordTitle,
   humanizeIdentifier,
+  diagnosticTechnicalIdentity,
   diagnosticSeverityPriority,
   groupDiagnosticsForPresentation,
   presentationDiagnosticMessage,
   presentationDiagnosticSeverity
 } from '../workbench/analysisPresentationUtils';
 import {
+  DiagnosticSeverityText,
   DiagnosticTechnicalDetails,
   OccurrenceCount,
   TechnicalDetails
@@ -32,22 +35,35 @@ import {
 export function GameModuleResults({
   canNavigateRecord,
   onNavigateRecord,
+  preserveRecordOrder = false,
+  showResultCount = true,
   response
 }: {
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
+  preserveRecordOrder?: boolean;
   response: QueryGameModuleResponse;
+  showResultCount?: boolean;
 }) {
   const { t } = useLocalization();
-  const groups = groupRecords(response.records);
+  const groups = preserveRecordOrder
+    ? response.records.map((root) => ({
+        hierarchyBoundary: null,
+        parentRecordId: root.parentRecordId,
+        related: [],
+        root
+      }))
+    : groupRecords(response.records);
   return (
     <div className="km-game-module-results">
-      <p aria-live="polite" className="km-game-module-result-count">
-        {t('gameModules.results.count', {
-          loaded: response.records.length,
-          total: response.totalRecordCount
-        })}
-      </p>
+      {showResultCount ? (
+        <p aria-live="polite" className="km-game-module-result-count">
+          {t('gameModules.results.count', {
+            loaded: response.records.length,
+            total: response.totalRecordCount
+          })}
+        </p>
+      ) : null}
       {response.records.length > 0 ? (
         <ol aria-label={t('gameModules.results.label')}>
           {groups.map(({ hierarchyBoundary, parentRecordId, related, root }) => (
@@ -337,12 +353,7 @@ export function GameModuleDiagnostics({
   const grouped = groupDiagnosticsForPresentation(
     diagnostics,
     (diagnostic) => [presentedSeverity(diagnostic), presentedMessage(diagnostic)],
-    (diagnostic) => [
-      diagnostic.severity,
-      diagnostic.code,
-      diagnostic.domain,
-      diagnostic.field
-    ],
+    diagnosticTechnicalIdentity,
     (diagnostic) => diagnosticSeverityPriority(presentedSeverity(diagnostic))
   );
   const primaryAction = [...diagnostics]
@@ -373,8 +384,14 @@ export function GameModuleDiagnostics({
           return (
           <li data-severity={presentedSeverity(diagnostic)} key={key}>
             <span>
-              <span>{presentedMessage(diagnostic)}</span>
+              <span>
+                <DiagnosticSeverityText severity={presentedSeverity(diagnostic)} />
+                {presentedMessage(diagnostic)}
+              </span>
               <OccurrenceCount count={count} />
+              <ReportableDiagnosticIssuesLink
+                messages={identities.map((identity) => identity.diagnostic.message)}
+              />
             </span>
             <DiagnosticTechnicalDetails
               diagnostics={identities}

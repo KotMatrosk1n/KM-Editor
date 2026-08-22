@@ -308,6 +308,56 @@
   width: 100%;
 }
 
+.km-research-lab-file-matches {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0;
+}
+
+.km-research-lab-file-matches > li {
+  align-items: center;
+  background: var(--km-research-surface);
+  border: 1px solid var(--km-research-border);
+  border-radius: 0.55rem;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+}
+
+.km-research-lab-file-matches span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.km-research-lab-file-matches small {
+  color: var(--km-research-text-muted);
+}
+
+.km-research-lab-selection-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.km-research-lab-ownership-search {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 42rem;
+}
+
+.km-research-lab-ownership-search input {
+  min-width: 0;
+  width: 100%;
+}
+
 .km-research-lab-filter label,
 .km-research-lab-annotation-form label {
   display: grid;
@@ -433,6 +483,11 @@
 
   .km-research-lab-facts dd {
     text-align: start;
+  }
+
+  .km-research-lab-file-matches > li {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

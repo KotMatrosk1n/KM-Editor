@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ArrowRight, Info, TriangleAlert } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type {
   BalanceLabConfidence,
   BalanceLabFact,
@@ -18,6 +19,12 @@ import {
 } from '../workbench/analysisPresentationUtils';
 import { TechnicalDetails } from '../workbench/AnalysisPresentation';
 import { BalanceLabChart } from './BalanceLabCharts';
+import {
+  balanceRecordGroupIdentity,
+  balanceRecordReferenceIdentity
+} from './balanceLabComparison';
+
+const maximumStudyWideFindingTitles = 5;
 
 export function BalanceLabResults({
   findings,
@@ -30,55 +37,128 @@ export function BalanceLabResults({
   points: readonly BalanceLabPoint[];
   study: BalanceLabStudy;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const [selectedPointIds, setSelectedPointIds] = useState<readonly string[]>([]);
+  const selectedPoints = useMemo(
+    () => resolveSelectedPoints(points, selectedPointIds),
+    [points, selectedPointIds]
+  );
+  const selectedDetailPoints = useMemo(
+    () => pointsForSelectedGroups(points, selectedPoints),
+    [points, selectedPoints]
+  );
+  const allGroupIdentities = useMemo(
+    () => new Set(points.map((point) => balanceRecordGroupIdentity(point.record))),
+    [points]
+  );
+  const selectedGroupOrder = useMemo(
+    () => selectedRecordGroupOrder(selectedPoints),
+    [selectedPoints]
+  );
+  const selectedFindings = orderedFindingsForSelectedGroups(findings, selectedGroupOrder);
+  const studyWideFindings = findings.filter((finding) => (
+    findingGroupIdentities(finding).every((identity) => !allGroupIdentities.has(identity))
+  ));
   return (
     <div className="km-balance-results">
-      <BalanceLabChart points={points} study={study} />
-      <PointCards points={points} />
-      <section aria-labelledby="balance-lab-findings-heading" className="km-balance-findings">
-        <header>
-          <h3 id="balance-lab-findings-heading">{t('balanceLab.findings.title')}</h3>
-          <span>{t('balanceLab.findings.count', { count: findings.length })}</span>
-        </header>
-        {findings.length > 0 ? (
+      <BalanceLabChart
+        onSelectedPointIdsChange={setSelectedPointIds}
+        points={points}
+        selectedPointIds={selectedPointIds}
+        study={study}
+      />
+      {selectedPoints.length > 0 ? (
+        <>
+          <PointCards points={selectedDetailPoints} />
+          <FindingSection
+            findings={selectedFindings}
+            onNavigateFinding={onNavigateFinding}
+            studyWideFindings={studyWideFindings}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function FindingSection({
+  findings,
+  onNavigateFinding,
+  studyWideFindings
+}: {
+  findings: readonly BalanceLabFinding[];
+  onNavigateFinding: (record: SemanticExploreRecordRef) => void;
+  studyWideFindings: readonly BalanceLabFinding[];
+}) {
+  const { t, translateLiteral } = useLocalization();
+  const visibleStudyWideFindings = studyWideFindings.slice(0, maximumStudyWideFindingTitles);
+  const hiddenStudyWideFindingCount = studyWideFindings.length - visibleStudyWideFindings.length;
+  return (
+    <section aria-labelledby="balance-lab-findings-heading" className="km-balance-findings">
+      <header>
+        <h3 id="balance-lab-findings-heading">{t('balanceLab.findings.title')}</h3>
+        <span>{t('balanceLab.findings.count', { count: findings.length })}</span>
+      </header>
+      {findings.length > 0 ? (
+        <ul>
+          {findings.map((finding) => (
+            <li data-severity={finding.severity} key={finding.findingId}>
+              <div className="km-balance-finding-icon">
+                {finding.severity === 'warning'
+                  ? <TriangleAlert aria-hidden="true" size={18} />
+                  : <Info aria-hidden="true" size={18} />}
+              </div>
+              <div>
+                <header>
+                  <strong data-localization-ignore="true">{finding.title}</strong>
+                  <ConfidenceBadge confidence={finding.confidence} />
+                </header>
+                <p data-localization-ignore="true">{finding.summary}</p>
+                {finding.facts.length > 0 ? <FactList facts={finding.facts} /> : null}
+                <TechnicalDetails summary={translateLiteral('Technical details')}>
+                  <code>{balanceRecordReferenceIdentity(finding.record)}</code>
+                  <code>{finding.ruleId}</code>
+                </TechnicalDetails>
+              </div>
+              <button
+                aria-label={`${t('balanceLab.findings.openLabel', { title: finding.title })}: ${balanceRecordReferenceIdentity(finding.record)}, ${finding.ruleId}`}
+                className="secondary-button compact-button"
+                data-localization-ignore="true"
+                onClick={() => onNavigateFinding(finding.record)}
+                type="button"
+              >
+                <span>{t('balanceLab.findings.open')}</span>
+                <ArrowRight aria-hidden="true" size={15} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="km-workbench-empty">{t('balanceLab.findings.empty')}</p>
+      )}
+      {studyWideFindings.length > 0 ? (
+        <details className="km-balance-study-wide-findings">
+          <summary>
+            {t('balanceLab.findings.additionalStudyWide', {
+              count: studyWideFindings.length
+            })}
+          </summary>
           <ul>
-            {findings.map((finding) => (
-              <li data-severity={finding.severity} key={finding.findingId}>
-                <div className="km-balance-finding-icon">
-                  {finding.severity === 'warning'
-                    ? <TriangleAlert aria-hidden="true" size={18} />
-                    : <Info aria-hidden="true" size={18} />}
-                </div>
-                <div>
-                  <header>
-                    <strong data-localization-ignore="true">{finding.title}</strong>
-                    <ConfidenceBadge confidence={finding.confidence} />
-                  </header>
-                  <p data-localization-ignore="true">{finding.summary}</p>
-                  {finding.facts.length > 0 ? <FactList facts={finding.facts} /> : null}
-                  <TechnicalDetails summary={translateLiteral('Technical details')}>
-                    <code>{recordIdentity(finding.record)}</code>
-                    <code>{finding.ruleId}</code>
-                  </TechnicalDetails>
-                </div>
-                <button
-                  aria-label={`${t('balanceLab.findings.openLabel', { title: finding.title })}: ${recordIdentity(finding.record)}, ${finding.ruleId}`}
-                  className="secondary-button compact-button"
-                  data-localization-ignore="true"
-                  onClick={() => onNavigateFinding(finding.record)}
-                  type="button"
-                >
-                  <span>{t('balanceLab.findings.open')}</span>
-                  <ArrowRight aria-hidden="true" size={15} />
-                </button>
+            {visibleStudyWideFindings.map((finding) => (
+              <li key={finding.findingId}>
+                <strong data-localization-ignore="true">{finding.title}</strong>
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="km-workbench-empty">{t('balanceLab.findings.empty')}</p>
-        )}
-      </section>
-    </div>
+          {hiddenStudyWideFindingCount > 0 ? (
+            <p>
+              {t('balanceLab.findings.additionalStudyWideOverflow', {
+                count: hiddenStudyWideFindingCount
+              })}
+            </p>
+          ) : null}
+        </details>
+      ) : null}
+    </section>
   );
 }
 
@@ -107,7 +187,7 @@ function PointCards({ points }: { points: readonly BalanceLabPoint[] }) {
                       </header>
                       <FactList facts={point.facts} />
                       <TechnicalDetails summary={translateLiteral('Technical details')}>
-                        <code>{recordIdentity(point.record)}</code>
+                        <code>{balanceRecordReferenceIdentity(point.record)}</code>
                         <code>{point.seriesKey}</code>
                       </TechnicalDetails>
                     </div>
@@ -116,7 +196,7 @@ function PointCards({ points }: { points: readonly BalanceLabPoint[] }) {
               ) : null}
               {group.overview ? (
                 <TechnicalDetails summary={translateLiteral('Technical details')}>
-                  <code>{recordIdentity(group.overview.record)}</code>
+                  <code>{balanceRecordReferenceIdentity(group.overview.record)}</code>
                   <code>{group.overview.seriesKey}</code>
                 </TechnicalDetails>
               ) : null}
@@ -186,14 +266,61 @@ export function ConfidenceBadge({ confidence }: { confidence: BalanceLabConfiden
   );
 }
 
-function recordIdentity(record: SemanticExploreRecordRef) {
-  return [
-    record.gameFamily,
-    record.domain,
-    `${record.recordKind.key}@${record.recordKind.schemaVersion}`,
-    record.recordId,
-    record.subrecordId
-  ].filter(Boolean).join(' / ');
+function resolveSelectedPoints(
+  points: readonly BalanceLabPoint[],
+  selectedPointIds: readonly string[]
+) {
+  const pointById = new Map(points.map((point) => [point.pointId, point]));
+  return selectedPointIds.flatMap((pointId) => {
+    const point = pointById.get(pointId);
+    return point ? [point] : [];
+  });
+}
+
+function findingGroupIdentities(finding: BalanceLabFinding) {
+  return [finding.record, ...finding.relatedRecords].map(balanceRecordGroupIdentity);
+}
+
+function selectedRecordGroupOrder(points: readonly BalanceLabPoint[]) {
+  const order = new Map<string, number>();
+  for (const point of points) {
+    const identity = balanceRecordGroupIdentity(point.record);
+    if (!order.has(identity)) order.set(identity, order.size);
+  }
+  return order;
+}
+
+function orderedFindingsForSelectedGroups(
+  findings: readonly BalanceLabFinding[],
+  selectedGroupOrder: ReadonlyMap<string, number>
+) {
+  return findings
+    .map((finding, sourceIndex) => ({
+      finding,
+      order: Math.min(...findingGroupIdentities(finding).map((identity) => (
+        selectedGroupOrder.get(identity) ?? Number.MAX_SAFE_INTEGER
+      ))),
+      sourceIndex
+    }))
+    .filter(({ order }) => order !== Number.MAX_SAFE_INTEGER)
+    .sort((left, right) => left.order - right.order || left.sourceIndex - right.sourceIndex)
+    .map(({ finding }) => finding);
+}
+
+function pointsForSelectedGroups(
+  points: readonly BalanceLabPoint[],
+  selectedPoints: readonly BalanceLabPoint[]
+) {
+  const groupOrder = selectedRecordGroupOrder(selectedPoints);
+  return points
+    .map((point, sourceIndex) => ({ point, sourceIndex }))
+    .filter(({ point }) => groupOrder.has(balanceRecordGroupIdentity(point.record)))
+    .sort((left, right) => {
+      const leftGroup = groupOrder.get(balanceRecordGroupIdentity(left.point.record)) ?? 0;
+      const rightGroup = groupOrder.get(balanceRecordGroupIdentity(right.point.record)) ?? 0;
+      return leftGroup - rightGroup || left.sourceIndex - right.sourceIndex;
+    })
+    .map(({ point }) => point);
 }
 
 function groupPoints(points: readonly BalanceLabPoint[]) {
@@ -239,7 +366,7 @@ function groupPoints(points: readonly BalanceLabPoint[]) {
   return grouped.map((group) => ({
     ...group,
     displayTitle: (titleCounts.get(group.title.toLocaleLowerCase()) ?? 0) > 1
-      ? `${group.title} - ${recordIdentity(group.record)}`
+      ? `${group.title} - ${balanceRecordReferenceIdentity(group.record)}`
       : group.title
   }));
 }

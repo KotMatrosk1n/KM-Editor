@@ -222,20 +222,28 @@
   padding-top: 0.45rem;
 }
 
-.km-semantic-merge-selected li span,
-.km-semantic-merge-target-list label span {
+.km-semantic-merge-selected li > span,
+.km-semantic-merge-target-list li > span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.km-semantic-merge-target-list label {
-  align-items: flex-start;
+.km-semantic-merge-target-order-actions,
+.km-semantic-merge-target-suggestion-actions {
+  align-items: center;
   display: flex;
   gap: 0.5rem;
 }
 
-.km-semantic-merge-target-list label span {
-  display: grid;
-  gap: 0.15rem;
+.km-semantic-merge-target-suggestion-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.km-semantic-merge-advisory {
+  color: var(--km-merge-muted);
 }
 
 .km-semantic-merge-section-heading dl {

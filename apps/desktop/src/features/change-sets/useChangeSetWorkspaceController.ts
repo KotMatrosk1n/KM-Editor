@@ -49,6 +49,7 @@ export type UseChangeSetWorkspaceControllerOptions = {
   availableOutputProfiles?: readonly ChangeSetOutputProfileViewModel[];
   bridge: ChangeSetProjectBridgeApi;
   currentSession: EditSession | null;
+  enabled?: boolean;
   externalBusy?: boolean;
   guidedDesignBridge?: GuidedDesignProjectBridgeApi;
   semanticMergeBridge?: SemanticMergeProjectBridgeApi;
@@ -113,6 +114,7 @@ export function useChangeSetWorkspaceController({
   availableOutputProfiles = [],
   bridge,
   currentSession,
+  enabled = true,
   externalBusy = false,
   guidedDesignBridge,
   semanticMergeBridge,
@@ -123,8 +125,9 @@ export function useChangeSetWorkspaceController({
 }: UseChangeSetWorkspaceControllerOptions): ChangeSetWorkspaceControllerResult {
   const { t } = useLocalization();
   const [snapshot, setSnapshot] = useState<ChangeSetWorkspaceSnapshot | null>(null);
+  const activeScope = enabled ? scope : null;
   const [readiness, setReadiness] = useState<ChangeSetWorkspaceReadiness>(
-    scope ? 'loading' : 'unavailable'
+    activeScope ? 'loading' : 'unavailable'
   );
   const [busyAction, setBusyAction] = useState<ChangeSetWorkspaceBusyAction | null>(null);
   const [actionDiagnostics, setActionDiagnostics] = useState<
@@ -132,8 +135,8 @@ export function useChangeSetWorkspaceController({
   >([]);
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | null>(null);
   const [comparisonChangeSetId, setComparisonChangeSetId] = useState<string | null>(null);
-  const scopeKey = scope ? JSON.stringify(scope) : null;
-  const scopeRef = useRef(scope);
+  const scopeKey = activeScope ? JSON.stringify(activeScope) : null;
+  const scopeRef = useRef(activeScope);
   const scopeKeyRef = useRef(scopeKey);
   const currentSessionRef = useRef(currentSession);
   const activeChangeSetIdRef = useRef(activeChangeSetId);
@@ -142,7 +145,7 @@ export function useChangeSetWorkspaceController({
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const effectiveCallbackRef = useRef(onEffectiveState);
   const activeCallbackRef = useRef(onActiveStagingTargetChange);
-  scopeRef.current = scope;
+  scopeRef.current = activeScope;
   scopeKeyRef.current = scopeKey;
   currentSessionRef.current = currentSession;
   activeChangeSetIdRef.current = activeChangeSetId;
@@ -188,7 +191,7 @@ export function useChangeSetWorkspaceController({
       try {
         return await operation(requestedScopeKey);
       } catch (error) {
-        reportError(error);
+        if (requestedScopeKey === scopeKeyRef.current) reportError(error);
         throw error;
       } finally {
         if (requestedScopeKey === scopeKeyRef.current) setBusyAction(null);
@@ -198,24 +201,29 @@ export function useChangeSetWorkspaceController({
     return task;
   }, [reportError]);
 
-  const readWorkspace = useCallback((sessionOverride?: EditSession | null) => enqueue(
-    'load',
-    async (requestedScopeKey) => {
-    const currentScope = scopeRef.current;
-    if (!currentScope) return null;
-    const nextSnapshot = await bridge.readChangeSets({
-      scope: currentScope,
-      session: sessionOverride === undefined ? currentSessionRef.current : sessionOverride
-    });
-    acceptSnapshot(nextSnapshot, requestedScopeKey);
-    return nextSnapshot;
-  }), [acceptSnapshot, bridge, enqueue]);
+  const readWorkspace = useCallback((sessionOverride?: EditSession | null) => {
+    if (scopeKeyRef.current === null) return Promise.resolve(null);
+    return enqueue(
+      'load',
+      async (requestedScopeKey) => {
+        const currentScope = scopeRef.current;
+        if (!currentScope) return null;
+        const nextSnapshot = await bridge.readChangeSets({
+          scope: currentScope,
+          session: sessionOverride === undefined ? currentSessionRef.current : sessionOverride
+        });
+        acceptSnapshot(nextSnapshot, requestedScopeKey);
+        return nextSnapshot;
+      }
+    );
+  }, [acceptSnapshot, bridge, enqueue]);
 
   useEffect(() => {
     if (scopeKey === null) {
       snapshotRef.current = null;
       setSnapshot(null);
       setReadiness('unavailable');
+      setBusyAction(null);
       setActionDiagnostics([]);
       setSelectedChangeSetId(null);
       setComparisonChangeSetId(null);

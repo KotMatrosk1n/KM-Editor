@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { AlertCircle, CheckCircle, FolderOpen, Move, ShieldCheck, X } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiDiagnostic, type ProjectPathRole } from '../../bridge/contracts';
 import {
   type ApplyProjectRelocationResponse,
@@ -10,6 +10,7 @@ import {
 } from '../../bridge/outputSafetyContracts';
 import { type ProjectBridge } from '../../bridge/projectBridge';
 import { type DesktopServices } from '../../desktopServices';
+import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { formatDiagnosticMessage } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import { useModalDialog } from '../../components/useModalDialog';
@@ -43,15 +44,19 @@ const relocationFields: ReadonlyArray<{
 ];
 
 export function ProjectRelocationPanel({
+  armCriticalWriteGuard,
   bridge,
   canRelocate,
   desktopServices,
+  onApplyBusyChange,
   onRelocated,
   source
 }: {
+  armCriticalWriteGuard: () => Promise<boolean>;
   bridge: ProjectBridge;
   canRelocate: boolean;
   desktopServices: DesktopServices;
+  onApplyBusyChange: (isBusy: boolean) => void;
   onRelocated: (
     response: ApplyProjectRelocationResponse,
     candidatePaths: CandidatePaths
@@ -67,6 +72,12 @@ export function ProjectRelocationPanel({
   const [isBusy, setIsBusy] = useState(false);
   const busyRef = useRef(false);
   const actionGenerationRef = useRef(0);
+  const applyGenerationRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
+  const armCriticalWriteGuardRef = useRef(armCriticalWriteGuard);
+  armCriticalWriteGuardRef.current = armCriticalWriteGuard;
+  const onApplyBusyChangeRef = useRef(onApplyBusyChange);
+  onApplyBusyChangeRef.current = onApplyBusyChange;
   const sourceSignature = useMemo(() => source ? JSON.stringify(source) : null, [source]);
   const sourceSignatureRef = useRef(sourceSignature);
   sourceSignatureRef.current = sourceSignature;
@@ -75,15 +86,42 @@ export function ProjectRelocationPanel({
     [candidatePaths]
   );
 
+  const beginApplyGuard = useCallback(async (generation: number) => {
+    applyGenerationRef.current = generation;
+    onApplyBusyChangeRef.current(true);
+    return armCriticalWriteGuardRef.current();
+  }, []);
+  const endApplyGuard = useCallback((generation?: number) => {
+    if (
+      applyGenerationRef.current === null ||
+      (generation !== undefined && applyGenerationRef.current !== generation)
+    ) {
+      return;
+    }
+    applyGenerationRef.current = null;
+    onApplyBusyChangeRef.current(false);
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      actionGenerationRef.current += 1;
+      busyRef.current = false;
+      endApplyGuard();
+    };
+  }, [endApplyGuard]);
+
   useEffect(() => {
     actionGenerationRef.current += 1;
     busyRef.current = false;
+    endApplyGuard();
     setCandidatePaths(source?.paths ?? null);
     setPreview(null);
     setReviewedCandidateSignature(null);
     setDiagnostics([]);
     setIsBusy(false);
-  }, [sourceSignature]);
+  }, [endApplyGuard, sourceSignature]);
 
   const beginAction = () => {
     if (busyRef.current) {
@@ -96,6 +134,7 @@ export function ProjectRelocationPanel({
   };
 
   const isCurrentAction = (generation: number, requestSourceSignature: string | null) =>
+    isMountedRef.current &&
     actionGenerationRef.current === generation &&
     sourceSignatureRef.current === requestSourceSignature;
 
@@ -198,6 +237,13 @@ export function ProjectRelocationPanel({
     const requestSourceSignature = sourceSignature;
     setDiagnostics([]);
     try {
+      if (
+        !(await beginApplyGuard(generation)) ||
+        applyGenerationRef.current !== generation ||
+        !isCurrentAction(generation, requestSourceSignature)
+      ) {
+        return;
+      }
       const response = await bridge.applyProjectRelocation({
         candidatePaths,
         reviewToken: preview.reviewToken,
@@ -227,6 +273,7 @@ export function ProjectRelocationPanel({
         setDiagnostics(toProjectBridgeDiagnostics(error, t('outputSafety.error.relocationApply')));
       }
     } finally {
+      endApplyGuard(generation);
       endAction(generation, requestSourceSignature);
     }
   };
@@ -338,6 +385,7 @@ export function ProjectRelocationPanel({
                 <li className={`diagnostic-${diagnostic.severity}`} key={`${diagnostic.code ?? 'diagnostic'}-${index}`}>
                   <AlertCircle aria-hidden="true" size={15} />
                   <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
+                  <ReportableDiagnosticIssuesLink messages={[diagnostic.message]} />
                 </li>
               ))}
             </ul>
