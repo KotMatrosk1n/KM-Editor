@@ -23,11 +23,17 @@ Depending on the selected game, the editor can work with Pokémon, moves, traine
 
 Useful names, sprites, selectors, filters, and game-aware controls make it easier to find the record you intended to edit without keeping a spreadsheet of internal IDs open on another monitor.
 
+Workbench adds project navigation, recents, pins, bookmarks, saved views, notes, output profiles, and capability discovery. Its read-only tools can search supported Items, Pokémon, and Moves records, compare project layers, study balance data, inspect supported game systems, and compare user-selected dumps without changing game output.
+
+Guided Design builds bounded proposals from exact targets, constraints, pins, and deterministic seeds. Semantic Merge can compare supported Sword and Shield item, Pokémon personal, and move fields from two user-owned mods, resolve field-level choices, and create portable recipes without writing output directly.
+
 Not every game supports the same features because the games themselves do not work the same way. Each family has its own editor coverage, requirements, and output options. The wiki provides the complete breakdown for the latest public release.
 
 ## Your Changes Stay Under Your Control
 
 Normal editor changes are staged before they are applied. You can work across multiple editors, open **Changes**, inspect the pending targets, and remove anything you do not want before files are written. Dedicated advanced workflows expose their own preview and apply plans when they cannot safely share the normal edit session.
+
+The Output Safety panel tracks KM-managed output separately from foreign or uncertain files. It provides recovery status, integrity scans, reviewed cleanup, apply history, checkpoints, and safe project relocation while refusing destructive actions when ownership or source state cannot be proven.
 
 Your clean Base RomFS and Base ExeFS remain untouched. Generated files are written to a separate Output Root, and supported existing output can be layered over the clean base when you continue an established project.
 
@@ -75,6 +81,7 @@ Update checks contact GitHub. If a bundled Pokémon sprite is unavailable, the i
 | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Set up a project                | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup)                              |
 | Learn the editing workflow      | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow)                       |
+| Explore Workbench tools         | [Workbench](https://github.com/KotMatrosk1n/KM-Editor/wiki/Workbench)                                    |
 | Browse every supported feature  | [Wiki Home](https://github.com/KotMatrosk1n/KM-Editor/wiki)                                               |
 | Install or update the editor    | [Installing and Updating](https://github.com/KotMatrosk1n/KM-Editor/wiki/Installing-and-Updating)         |
 | Diagnose a problem              | [Error Codes and Diagnostics](https://github.com/KotMatrosk1n/KM-Editor/wiki/Error-Codes-And-Diagnostics) |
