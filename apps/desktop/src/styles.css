@@ -2407,6 +2407,52 @@ h2 {
   margin-top: 16px;
 }
 
+.za-items-section .items-toolbar {
+  grid-template-columns:
+    minmax(220px, 1fr) minmax(190px, 230px)
+    repeat(2, minmax(130px, 170px));
+}
+
+.items-unused-toggle {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-height: 50px;
+  padding: 8px 10px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.items-unused-toggle:has(input:disabled) {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.items-unused-toggle > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.items-unused-toggle strong {
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.items-unused-toggle small {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .items-repair-action {
   justify-content: flex-end;
   margin-top: 12px;
@@ -5703,6 +5749,7 @@ h2 {
 }
 
 .trainer-party-card {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: 5px;
@@ -5746,6 +5793,95 @@ h2 {
 
 .trainer-party-card[aria-pressed="true"] span {
   color: rgb(244 247 251 / 82%);
+}
+
+.item-inspector > .za-tm-compatibility-block {
+  grid-column: 1 / -1;
+}
+
+.za-tm-compatibility-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.za-tm-compatibility-heading h4 {
+  margin: 0;
+}
+
+.za-tm-compatibility-heading small {
+  color: var(--color-text-muted);
+  font-weight: 800;
+}
+
+.za-tm-compatibility-boundary {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  color: var(--color-text);
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+}
+
+.za-tm-compatibility-boundary svg {
+  color: var(--color-warning);
+}
+
+.za-tm-compatibility-boundary p {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+}
+
+.za-tm-compatibility-editor {
+  margin-top: 10px;
+}
+
+.za-tm-compatibility-list {
+  max-height: min(430px, var(--editor-list-max-height));
+}
+
+.za-tm-compatibility-toggle {
+  grid-template-columns: 18px minmax(180px, 1fr) auto;
+}
+
+.trainer-party-card .trainer-party-held-item-bag {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 58%));
+}
+
+.trainer-party-card .trainer-party-held-item-bag img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.trainer-party-card .trainer-party-held-item-bag img.trainer-party-held-item-pixel-art {
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.trainer-party-card .trainer-party-held-item-accessibility {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .trainer-party-card-copy-source {
@@ -12174,6 +12310,10 @@ input {
 }
 
 @container workspace (max-width: 760px) {
+  .za-items-section .items-toolbar {
+    grid-template-columns: 1fr;
+  }
+
   .dynamax-adventure-status-summary,
   .dynamax-adventure-field-groups {
     grid-template-columns: 1fr;

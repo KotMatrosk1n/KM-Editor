@@ -76,7 +76,10 @@ internal sealed class ZaTrainersEditSessionService
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingTrainerEdit(
+            currentSession,
+            pendingEdit,
+            IsSourcePokemonSlotOccupied(loadedWorkflow, pendingEdit));
         var projectedWorkflow = OverlayPendingEdits(
             project,
             loadedWorkflow,
@@ -156,7 +159,10 @@ internal sealed class ZaTrainersEditSessionService
                 continue;
             }
 
-            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            updatedSession = ReplacePendingTrainerEdit(
+                updatedSession,
+                pendingEdit,
+                IsSourcePokemonSlotOccupied(loadedWorkflow, pendingEdit));
             effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
@@ -421,6 +427,77 @@ internal sealed class ZaTrainersEditSessionService
             trainer.TrainerId.ToString(CultureInfo.InvariantCulture),
             normalizedField,
             parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static EditSession ReplacePendingTrainerEdit(
+        EditSession session,
+        PendingEdit pendingEdit,
+        bool sourcePokemonSlotOccupied)
+    {
+        if (!string.Equals(
+                pendingEdit.Field,
+                ZaTrainersWorkflowService.SpeciesIdField,
+                StringComparison.Ordinal)
+            || !int.TryParse(
+                pendingEdit.NewValue,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out var speciesId))
+        {
+            return ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+        }
+
+        var pendingEdits = new List<PendingEdit>(session.PendingEdits.Count + 1);
+        var speciesInsertionIndex = -1;
+        foreach (var edit in session.PendingEdits)
+        {
+            if (!TargetsSameTrainerPokemonSlot(edit, pendingEdit))
+            {
+                pendingEdits.Add(edit);
+                continue;
+            }
+
+            if (speciesInsertionIndex < 0)
+            {
+                speciesInsertionIndex = pendingEdits.Count;
+            }
+
+            if (speciesId != 0 && !string.Equals(
+                    edit.Field,
+                    ZaTrainersWorkflowService.SpeciesIdField,
+                    StringComparison.Ordinal))
+            {
+                pendingEdits.Add(edit);
+            }
+        }
+
+        if (speciesId != 0 || sourcePokemonSlotOccupied)
+        {
+            pendingEdits.Insert(
+                speciesInsertionIndex < 0 ? pendingEdits.Count : speciesInsertionIndex,
+                pendingEdit);
+        }
+
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool IsSourcePokemonSlotOccupied(
+        ZaTrainersWorkflow sourceWorkflow,
+        PendingEdit pendingEdit)
+    {
+        return TryParseTeamRecordId(pendingEdit.RecordId, out var trainerId, out var slot)
+            && sourceWorkflow.Trainers
+                .FirstOrDefault(candidate => candidate.TrainerId == trainerId)?
+                .Team.FirstOrDefault(candidate => candidate.Slot == slot)?
+                .SpeciesId > 0;
+    }
+
+    private static bool TargetsSameTrainerPokemonSlot(PendingEdit edit, PendingEdit candidate)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
+            && string.Equals(candidate.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, candidate.RecordId, StringComparison.Ordinal)
+            && IsPokemonField(edit.Field);
     }
 
     private static void ValidatePendingEdit(

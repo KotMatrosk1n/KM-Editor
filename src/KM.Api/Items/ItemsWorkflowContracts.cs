@@ -95,6 +95,16 @@ public sealed record ItemMetadataDto(
     public bool MachineAssignmentDiffersFromBase { get; init; }
 
     public int CompatiblePokemonCount { get; init; }
+
+    public bool IsOwnedTechnicalMachineSlot { get; init; }
+
+    public bool IsProjectedTechnicalMachineSlot { get; init; }
+
+    public bool IsTechnicalMachineProvisioned { get; init; }
+
+    public bool CanMaterializeTechnicalMachine { get; init; }
+
+    public bool TechnicalMachineCompatibilityRequiresReload { get; init; }
 }
 
 public sealed record ItemRecordDto(

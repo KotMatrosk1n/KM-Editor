@@ -1527,6 +1527,11 @@ public static class ZaBridgeMapper
             BaseMachineMoveName = metadata.BaseMachineMoveName,
             MachineAssignmentDiffersFromBase = metadata.MachineAssignmentDiffersFromBase,
             CompatiblePokemonCount = metadata.CompatiblePokemonCount,
+            IsOwnedTechnicalMachineSlot = metadata.IsOwnedTechnicalMachineSlot,
+            IsProjectedTechnicalMachineSlot = metadata.IsProjectedTechnicalMachineSlot,
+            IsTechnicalMachineProvisioned = metadata.IsTechnicalMachineProvisioned,
+            CanMaterializeTechnicalMachine = metadata.CanMaterializeTechnicalMachine,
+            TechnicalMachineCompatibilityRequiresReload = metadata.TechnicalMachineCompatibilityRequiresReload,
         };
     }
 

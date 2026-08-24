@@ -29,6 +29,7 @@ export type WorkspaceHeaderProps = {
   inspectorAvailable?: boolean;
   isEditSessionOperationBusy: boolean;
   isCurrentViewSaved?: boolean;
+  isInspectorOpen?: boolean;
   isSavedViewMutationBusy?: boolean;
   onBack?: () => void;
   onCloseEditor: () => void;
@@ -54,6 +55,7 @@ export function WorkspaceHeader({
   inspectorAvailable = false,
   isEditSessionOperationBusy,
   isCurrentViewSaved = false,
+  isInspectorOpen = false,
   isSavedViewMutationBusy = false,
   onBack,
   onCloseEditor,
@@ -105,20 +107,6 @@ export function WorkspaceHeader({
       </div>
 
       <div className="toolbar-actions">
-        {onOpenCommandPalette ? (
-          <button
-            aria-label={t('workbench.header.commandPalette')}
-            className="secondary-button workspace-command-button"
-            onClick={onOpenCommandPalette}
-            title={t('workbench.header.commandPalette')}
-            type="button"
-          >
-            <Command aria-hidden="true" size={17} />
-            <span>{t('workbench.header.commandPalette')}</span>
-            <kbd>Ctrl/Cmd K</kbd>
-          </button>
-        ) : null}
-
         {canSaveView && onToggleSavedView ? (
           <button
             aria-busy={isSavedViewMutationBusy}
@@ -165,13 +153,30 @@ export function WorkspaceHeader({
 
         {onToggleInspector && inspectorAvailable ? (
           <button
-            aria-label={t('workbench.header.inspector')}
-            className="secondary-button icon-button"
+            aria-label={t('workbench.notes.title')}
+            aria-pressed={isInspectorOpen}
+            className="secondary-button icon-button workspace-header-toggle"
             onClick={onToggleInspector}
-            title={t('workbench.header.inspector')}
+            title={t('workbench.notes.title')}
             type="button"
           >
             <PanelRightOpen aria-hidden="true" size={17} />
+          </button>
+        ) : null}
+
+        {activeSectionIsEditor ? <TooltipIconVisibilityControl /> : null}
+
+        {onOpenCommandPalette ? (
+          <button
+            aria-label={t('workbench.header.commandPalette')}
+            className="secondary-button workspace-command-button"
+            onClick={onOpenCommandPalette}
+            title={t('workbench.header.commandPalette')}
+            type="button"
+          >
+            <Command aria-hidden="true" size={17} />
+            <span>{t('workbench.header.commandPalette')}</span>
+            <kbd>Ctrl/Cmd K</kbd>
           </button>
         ) : null}
 
@@ -199,7 +204,6 @@ export function WorkspaceHeader({
             <span>Go to Wiki</span>
           </button>
         ) : null}
-        {activeSectionIsEditor ? <TooltipIconVisibilityControl /> : null}
 
         {activeSectionIsEditor ? (
           <button

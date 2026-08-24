@@ -1375,6 +1375,7 @@ const zaRankFieldName = 'rank';
 const zaMegaEvolutionFieldName = 'megaEvolution';
 const zaLastHandFieldName = 'lastHand';
 const zaCoreTrainerAiMask = (1 << 0) | (1 << 1) | (1 << 2);
+const zaChangeTrainerAiMask = 1 << 7;
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const supportSearchProgressEvent = 'km-editor://support-file-search-progress';
 const trainerDataFieldNames = [
@@ -1983,6 +1984,7 @@ export function App({
   const [isShortcutOverlayOpen, setIsShortcutOverlayOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteStatusKey, setNoteStatusKey] = useState<string | null>(null);
+  const [bookmarkStatusKey, setBookmarkStatusKey] = useState<string | null>(null);
   const [isPersonalWorkspaceMutationBusy, setIsPersonalWorkspaceMutationBusy] = useState(false);
   const [isSavedViewMutationBusy, setIsSavedViewMutationBusy] = useState(false);
   const [pendingOutputProfileId, setPendingOutputProfileId] = useState<string | null>(null);
@@ -5478,15 +5480,20 @@ export function App({
   const noteDraftRef = useRef(noteDraft);
   noteDraftRef.current = noteDraft;
   const hydratedNoteLocationRef = useRef<string | null>(null);
+  const bookmarkStatusRevisionRef = useRef(0);
   useEffect(() => {
     if (isProjectWorkspaceLoading) {
       hydratedNoteLocationRef.current = null;
+      bookmarkStatusRevisionRef.current += 1;
+      setBookmarkStatusKey(null);
       return;
     }
     if (hydratedNoteLocationRef.current === activeScopedLocationKey) return;
     hydratedNoteLocationRef.current = activeScopedLocationKey;
+    bookmarkStatusRevisionRef.current += 1;
     setNoteDraft(activeStoredNote?.body ?? '');
     setNoteStatusKey(null);
+    setBookmarkStatusKey(null);
   }, [activeScopedLocationKey, activeStoredNote?.body, isProjectWorkspaceLoading]);
 
   const activeNoteIsDirty = noteDraft !== (activeStoredNote?.body ?? '');
@@ -5497,7 +5504,10 @@ export function App({
     if (activeNoteSavePromiseRef.current) {
       return activeNoteSavePromiseRef.current;
     }
-    if (!activeNoteIsDirty) return true;
+    if (!activeNoteIsDirty) {
+      setNoteStatusKey('workbench.notes.saved');
+      return true;
+    }
     if (
       isPersonalWorkspaceMutationBusy ||
       !personalProjectTarget ||
@@ -5671,8 +5681,24 @@ export function App({
     personalWorkspaceRegistry,
     projectWorkspaceDocument?.bookmarks
   ]);
-  const handleCreateBookmark = useCallback(async (label: string) => {
-    if (!personalProjectTarget || !activeScopedLocation || !activeRecordLocation) return;
+  const handleCreateBookmark = useCallback(async (label: string): Promise<boolean> => {
+    if (
+      !personalProjectTarget ||
+      !activeScopedLocation ||
+      !activeRecordLocation ||
+      !activeScopedLocationKey
+    ) {
+      setBookmarkStatusKey('workbench.bookmarks.saveError');
+      return false;
+    }
+    const requestedProjectId = personalProjectTarget.projectId;
+    const requestedLocationKey = activeScopedLocationKey;
+    const requestedStatusRevision = ++bookmarkStatusRevisionRef.current;
+    const isFeedbackCurrent = () =>
+      activeProjectIdRef.current === requestedProjectId &&
+      activeScopedLocationKeyRef.current === requestedLocationKey &&
+      bookmarkStatusRevisionRef.current === requestedStatusRevision;
+    setBookmarkStatusKey('workbench.bookmarks.saving');
     setIsPersonalWorkspaceMutationBusy(true);
     try {
       const timestamp = new Date().toISOString();
@@ -5695,18 +5721,31 @@ export function App({
           updatedAtUtc: timestamp
         }
       );
-      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+      if (activeProjectIdRef.current === requestedProjectId) {
         setProjectWorkspaceSnapshot(snapshot);
         setPersonalWorkspaceError(null);
       }
+      if (isFeedbackCurrent()) {
+        setBookmarkStatusKey(
+          existing
+            ? 'workbench.bookmarks.alreadySaved'
+            : 'workbench.bookmarks.saved'
+        );
+      }
+      return true;
     } catch (error) {
       setPersonalWorkspaceError(getErrorMessage(error));
+      if (isFeedbackCurrent()) {
+        setBookmarkStatusKey('workbench.bookmarks.saveError');
+      }
+      return false;
     } finally {
       setIsPersonalWorkspaceMutationBusy(false);
     }
   }, [
     activeRecordLocation,
     activeScopedLocation,
+    activeScopedLocationKey,
     openProject?.projectId,
     personalProjectTarget,
     personalWorkspaceRegistry,
@@ -5994,22 +6033,48 @@ export function App({
         content: (
           <div className="km-workbench-note">
             <textarea
+              aria-label={t('workbench.notes.title')}
               disabled={activeNoteViewModel.isBusy}
               maxLength={workspaceMaximumNoteBytes / 4}
               onBlur={() => void saveActiveNote()}
-              onChange={(event) => setNoteDraft(event.currentTarget.value)}
+              onChange={(event) => {
+                bookmarkStatusRevisionRef.current += 1;
+                setBookmarkStatusKey(null);
+                setNoteDraft(event.currentTarget.value);
+              }}
               placeholder={t('workbench.notes.placeholder')}
               value={noteDraft}
             />
             <div className="km-workbench-note-actions">
-              <small>
-                {noteStatusKey
-                  ? t(noteStatusKey)
-                  : activeNoteViewModel.updatedAtLabel ?? t('workbench.notes.notSaved')}
+              <small
+                aria-atomic="true"
+                aria-live={
+                  bookmarkStatusKey === 'workbench.bookmarks.saveError' ||
+                  noteStatusKey === 'workbench.notes.saveError'
+                    ? 'assertive'
+                    : 'polite'
+                }
+                role={
+                  bookmarkStatusKey === 'workbench.bookmarks.saveError' ||
+                  noteStatusKey === 'workbench.notes.saveError'
+                    ? 'alert'
+                    : 'status'
+                }
+              >
+                {bookmarkStatusKey
+                  ? t(bookmarkStatusKey)
+                  : noteStatusKey
+                    ? t(noteStatusKey)
+                    : activeNoteViewModel.updatedAtLabel ?? t('workbench.notes.notSaved')}
               </small>
               <button
                 className="secondary-button compact-button"
-                disabled={activeNoteViewModel.isBusy}
+                disabled={
+                  activeNoteViewModel.isBusy ||
+                  !activeNoteIsDirty ||
+                  isProjectWorkspaceLoading ||
+                  !personalProjectTarget
+                }
                 onClick={() => void saveActiveNote()}
                 type="button"
               >
@@ -6017,13 +6082,21 @@ export function App({
               </button>
               <button
                 className="secondary-button compact-button"
-                disabled={activeNoteViewModel.isBusy}
+                disabled={
+                  activeNoteViewModel.isBusy ||
+                  isProjectWorkspaceLoading ||
+                  !personalProjectTarget
+                }
                 onClick={() => void handleCreateBookmark(
                   activeLocation.entity?.recordId ?? activeNoteViewModel.entityLabel
                 )}
                 type="button"
               >
-                {t('workbench.bookmarks.create')}
+                {t(
+                  bookmarkStatusKey === 'workbench.bookmarks.saving'
+                    ? 'workbench.bookmarks.saving'
+                    : 'workbench.bookmarks.create'
+                )}
               </button>
             </div>
           </div>
@@ -9653,7 +9726,12 @@ export function App({
     try {
       switch (selection.section) {
         case 'items':
-          if (!currentState.itemsWorkflow) await handleOpenItemsWorkflow();
+          await Promise.all([
+            !currentState.itemsWorkflow ? handleOpenItemsWorkflow() : Promise.resolve(),
+            isPokemonLegendsZAGame(location.game) && !currentState.pokemonWorkflow
+              ? handleOpenPokemonWorkflow()
+              : Promise.resolve()
+          ]);
           break;
         case 'pokemon':
           if (!currentState.pokemonWorkflow) await handleOpenPokemonWorkflow();
@@ -9888,9 +9966,21 @@ export function App({
 
     switch (activeSection) {
       case 'items':
-        if (!itemsWorkflow && !isItemsLoading) {
+        if (
+          (!itemsWorkflow && !isItemsLoading) ||
+          (isPokemonLegendsZAGame(selectedGame) && !pokemonWorkflow && !isPokemonLoading)
+        ) {
           markLazyLoadStarted();
-          void handleOpenItemsWorkflow();
+          if (!itemsWorkflow && !isItemsLoading) {
+            void handleOpenItemsWorkflow();
+          }
+          if (
+            isPokemonLegendsZAGame(selectedGame) &&
+            !pokemonWorkflow &&
+            !isPokemonLoading
+          ) {
+            void handleOpenPokemonWorkflow();
+          }
         }
         break;
       case 'dexLayout':
@@ -15779,6 +15869,7 @@ export function App({
           inspectorAvailable={inspectorAvailable}
           isCurrentViewSaved={currentSavedWorkspaceView !== null}
           isEditSessionOperationBusy={isEditSessionOperationBusy}
+          isInspectorOpen={isInspectorOpen}
           isSavedViewMutationBusy={isSavedViewMutationBusy}
           activeTargetIsPinned={activeTargetIsPinned}
           onBack={handleNavigateBack}
@@ -16164,6 +16255,10 @@ export function App({
                 editSession={getEditSessionForSection('items')}
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
+                isPokemonLoading={isPokemonLoading}
+                isPokemonUpdating={isPokemonUpdating}
+                onUpdatePokemonField={handleUpdatePokemonField}
+                pokemonWorkflow={pokemonWorkflow}
                 workflow={itemsWorkflow}
               />
             ) : isScarletVioletProject ? (
@@ -18165,6 +18260,8 @@ type ItemsSectionProps = {
   editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isItemUpdating: boolean;
+  isPokemonLoading?: boolean;
+  isPokemonUpdating?: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectItem: (itemId: number | null) => void;
   onStartEditSession: () => void;
@@ -18173,6 +18270,8 @@ type ItemsSectionProps = {
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<void>;
+  pokemonWorkflow?: PokemonWorkflow | null;
   searchText: string;
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
@@ -18197,18 +18296,39 @@ function ItemsSection({
   editorFamily,
   isEditStarting,
   isItemUpdating,
+  isPokemonLoading = false,
+  isPokemonUpdating = false,
   onSearchChange,
   onSelectItem,
   onStartEditSession,
   onStageItemVanilla,
   onUpdateItemFields,
+  onUpdatePokemonField,
+  pokemonWorkflow = null,
   searchText,
   selectedItemId,
   workflow
 }: ItemsSectionProps) {
-  const items = useMemo(
+  const { t } = useLocalization();
+  const [showUnusedItems, setShowUnusedItems] = useState(false);
+  const loadedItems = useMemo(
     () => (workflow?.items ?? []).filter((item) => item.itemId !== 0),
     [workflow?.items]
+  );
+  const unusedProjectedTechnicalMachineCount = useMemo(
+    () => loadedItems.filter(isUnusedProjectedTechnicalMachineSlot).length,
+    [loadedItems]
+  );
+  const ownedTechnicalMachineSlotCount = useMemo(
+    () => loadedItems.filter((item) => item.metadata.isOwnedTechnicalMachineSlot).length,
+    [loadedItems]
+  );
+  const items = useMemo(
+    () =>
+      editorFamily === 'za' && !showUnusedItems
+        ? loadedItems.filter((item) => !isUnusedProjectedTechnicalMachineSlot(item))
+        : loadedItems,
+    [editorFamily, loadedItems, showUnusedItems]
   );
   const filteredItems = useMemo(() => filterItems(items, searchText), [items, searchText]);
   const canEditItems = workflow?.summary.availability === 'available';
@@ -18278,6 +18398,29 @@ function ItemsSection({
               value={searchText}
             />
           </label>
+          {editorFamily === 'za' ? (
+            <label className="items-unused-toggle">
+              <input
+                checked={showUnusedItems}
+                className="km-choice-control"
+                disabled={
+                  !workflow ||
+                  (unusedProjectedTechnicalMachineCount === 0 && !showUnusedItems)
+                }
+                onChange={(event) => setShowUnusedItems(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{t('za.items.showUnusedItems')}</strong>
+                <small>
+                  {t('za.items.unusedItemCount', {
+                    count: unusedProjectedTechnicalMachineCount,
+                    total: ownedTechnicalMachineSlotCount
+                  })}
+                </small>
+              </span>
+            </label>
+          ) : null}
           <Metric
             label="Loaded records"
             value={workflow ? workflow.stats.totalItemCount.toString() : '0'}
@@ -18384,10 +18527,14 @@ function ItemsSection({
               editorFamily={editorFamily}
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
+              isPokemonLoading={isPokemonLoading}
+              isPokemonUpdating={isPokemonUpdating}
               item={selectedItem}
               editableFields={workflow.editableFields}
               onStageItemVanilla={onStageItemVanilla}
               onUpdateItemFields={onUpdateItemFields}
+              onUpdatePokemonField={onUpdatePokemonField}
+              pokemonWorkflow={pokemonWorkflow}
             />
           </div>
         ) : (
@@ -18418,9 +18565,13 @@ function SelectedItemPanel({
   editableFields,
   isEditStarting,
   isItemUpdating,
+  isPokemonLoading,
+  isPokemonUpdating,
   item,
   onStageItemVanilla,
-  onUpdateItemFields
+  onUpdateItemFields,
+  onUpdatePokemonField,
+  pokemonWorkflow
 }: {
   canEditItems: boolean;
   editSession: EditSession | null;
@@ -18428,17 +18579,22 @@ function SelectedItemPanel({
   editableFields: ItemEditableField[];
   isEditStarting: boolean;
   isItemUpdating: boolean;
+  isPokemonLoading: boolean;
+  isPokemonUpdating: boolean;
   item: ItemRecord | null;
   onStageItemVanilla?: (itemId: number) => Promise<boolean>;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<void>;
+  pokemonWorkflow: PokemonWorkflow | null;
 }) {
   const { t } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
   const cancelActiveEditSession = useCancelActiveEditSession();
   const contextualEditableFields = useMemo(
     () => getContextualItemEditableFields(editableFields, editorFamily, item),
@@ -18509,6 +18665,72 @@ function SelectedItemPanel({
     !hasSelectedItemLocalDrafts &&
     !isEditStarting &&
     !isItemUpdating;
+  const hasPendingTechnicalMachineMoveChange =
+    item !== null &&
+    (editSession?.pendingEdits.some(
+      (edit) =>
+        edit.domain === 'workflow.items' &&
+        edit.field === itemMachineMoveIdFieldName &&
+        Number.parseInt(edit.recordId ?? '', 10) === item.itemId
+    ) ??
+      false);
+  const hasPendingSelectedItemChange =
+    item !== null &&
+    (editSession?.pendingEdits.some(
+      (edit) =>
+        edit.domain === 'workflow.items' &&
+        Number.parseInt(edit.recordId ?? '', 10) === item.itemId
+    ) ??
+      false);
+  const hasLocalTechnicalMachineMoveDraft = itemDraftSummary.changedFields.some(
+    (change) => change.field === itemMachineMoveIdFieldName
+  );
+  const hasPendingSelectedMachineCompatibilityChange =
+    item?.metadata.machineMoveId !== null &&
+    item?.metadata.machineMoveId !== undefined &&
+    (editSession?.pendingEdits.some(
+      (edit) =>
+        edit.domain === 'workflow.pokemon' &&
+        edit.field ===
+          createPokemonCompatibilityFieldName('tm', item.metadata.machineMoveId!)
+    ) ??
+      false);
+  const technicalMachineCompatibilityRequiresReload =
+    item?.metadata.technicalMachineCompatibilityRequiresReload === true ||
+    hasPendingTechnicalMachineMoveChange ||
+    hasLocalTechnicalMachineMoveDraft;
+  const technicalMachineCompatibilityRows = useMemo(
+    () => getZaTechnicalMachinePokemonCompatibilityRows(item, pokemonWorkflow),
+    [item, pokemonWorkflow]
+  );
+  const filteredTechnicalMachineCompatibilityRows = useMemo(
+    () =>
+      filterZaTechnicalMachinePokemonCompatibilityRows(
+        technicalMachineCompatibilityRows,
+        compatibilitySearchText
+      ),
+    [compatibilitySearchText, technicalMachineCompatibilityRows]
+  );
+  const enabledTechnicalMachineCompatibilityCount = technicalMachineCompatibilityRows.filter(
+    (row) => row.entry.canLearn
+  ).length;
+  const showTechnicalMachineCompatibility =
+    editorFamily === 'za' &&
+    item !== null &&
+    (item.metadata.isOwnedTechnicalMachineSlot ||
+      (item.metadata.machineSlot !== null && item.metadata.machineMoveId !== null));
+  const canEditTechnicalMachineCompatibility =
+    item !== null &&
+    item.metadata.machineMoveId !== null &&
+    !technicalMachineCompatibilityRequiresReload &&
+    technicalMachineCompatibilityRows.length > 0 &&
+    pokemonWorkflow?.summary.availability === 'available' &&
+    onUpdatePokemonField !== undefined &&
+    editSession !== null &&
+    canEditItems &&
+    !isEditStarting &&
+    !isItemUpdating &&
+    !isPokemonUpdating;
 
   useEffect(() => {
     if (!item) {
@@ -18524,6 +18746,10 @@ function SelectedItemPanel({
       )
     );
   }, [item, itemDraftDefaults, writableItemFields]);
+
+  useEffect(() => {
+    setCompatibilitySearchText('');
+  }, [item?.itemId]);
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -18578,7 +18804,35 @@ function SelectedItemPanel({
                 </div>
                 <div>
                   <dt>Compatible Pokemon rows</dt>
-                  <dd>{item.metadata.compatiblePokemonCount}</dd>
+                  <dd>
+                    {technicalMachineCompatibilityRows.length > 0
+                      ? enabledTechnicalMachineCompatibilityCount
+                      : item.metadata.compatiblePokemonCount}
+                  </dd>
+                </div>
+              </>
+            ) : null}
+            {editorFamily === 'za' && item.metadata.isOwnedTechnicalMachineSlot ? (
+              <>
+                <div>
+                  <dt>{t('za.items.tmStatus.ownership')}</dt>
+                  <dd>{t('za.items.tmStatus.owned')}</dd>
+                </div>
+                <div>
+                  <dt>{t('za.items.tmStatus.projection')}</dt>
+                  <dd>
+                    {item.metadata.isProjectedTechnicalMachineSlot
+                      ? t('za.items.tmStatus.projected')
+                      : t('za.items.tmStatus.loaded')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('za.items.tmStatus.provisioning')}</dt>
+                  <dd>
+                    {item.metadata.isTechnicalMachineProvisioned
+                      ? t('za.items.tmStatus.provisioned')
+                      : t('za.items.tmStatus.notProvisioned')}
+                  </dd>
                 </div>
               </>
             ) : null}
@@ -18640,6 +18894,11 @@ function SelectedItemPanel({
                   Changing a TM move migrates compatible Pokemon rows and synchronizes the disc icon in the same
                   reviewed output.
                 </p>
+              ) : null}
+              {editorFamily === 'za' &&
+              item.metadata.isProjectedTechnicalMachineSlot &&
+              item.metadata.baseMachineMoveId === null ? (
+                <p className="field-note">{t('za.items.tmProjected.assignmentHelp')}</p>
               ) : null}
               {itemFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -18735,6 +18994,120 @@ function SelectedItemPanel({
               </div>
             ) : null}
           </div>
+
+          {showTechnicalMachineCompatibility ? (
+            <section className="inspector-block za-tm-compatibility-block">
+              <div className="za-tm-compatibility-heading">
+                <h4>{t('za.items.compatibility.heading')}</h4>
+                {item.metadata.machineMoveId !== null ? (
+                  <small data-localization-ignore="true">
+                    {item.metadata.machineMoveName ?? item.metadata.machineMoveId}
+                  </small>
+                ) : null}
+              </div>
+
+              {item.metadata.isProjectedTechnicalMachineSlot ? (
+                <div className="za-tm-compatibility-boundary" role="status">
+                  <AlertTriangle aria-hidden="true" size={18} />
+                  <div>
+                    <strong>{t('za.items.compatibility.reloadRequired')}</strong>
+                    <p>
+                      {hasLocalTechnicalMachineMoveDraft
+                        ? t('za.items.compatibility.draftMoveHelp')
+                        : hasPendingSelectedItemChange ||
+                            hasPendingSelectedMachineCompatibilityChange
+                          ? t('za.items.compatibility.projectedStagedHelp')
+                        : item.metadata.canMaterializeTechnicalMachine
+                          ? t('za.items.compatibility.assignedProjectedHelp')
+                          : t('za.items.compatibility.projectedHelp')}
+                    </p>
+                  </div>
+                </div>
+              ) : hasLocalTechnicalMachineMoveDraft ? (
+                <div className="za-tm-compatibility-boundary" role="status">
+                  <AlertTriangle aria-hidden="true" size={18} />
+                  <div>
+                    <strong>{t('za.items.compatibility.reloadRequired')}</strong>
+                    <p>{t('za.items.compatibility.draftMoveHelp')}</p>
+                  </div>
+                </div>
+              ) : technicalMachineCompatibilityRequiresReload ? (
+                <div className="za-tm-compatibility-boundary" role="status">
+                  <AlertTriangle aria-hidden="true" size={18} />
+                  <div>
+                    <strong>{t('za.items.compatibility.reloadRequired')}</strong>
+                    <p>{t('za.items.compatibility.stagedMoveHelp')}</p>
+                  </div>
+                </div>
+              ) : item.metadata.machineMoveId === null ? (
+                <p className="empty-copy">{t('za.items.compatibility.chooseMove')}</p>
+              ) : isPokemonLoading && !pokemonWorkflow ? (
+                <p className="empty-copy">{t('za.items.compatibility.loading')}</p>
+              ) : !pokemonWorkflow ? (
+                <p className="empty-copy">{t('za.items.compatibility.loadUnavailable')}</p>
+              ) : technicalMachineCompatibilityRows.length === 0 ? (
+                <p className="empty-copy">{t('za.items.compatibility.mappingUnavailable')}</p>
+              ) : (
+                <div className="compatibility-editor za-tm-compatibility-editor">
+                  <p className="field-note">
+                    {t('za.items.compatibility.summary', {
+                      enabled: enabledTechnicalMachineCompatibilityCount,
+                      total: technicalMachineCompatibilityRows.length
+                    })}
+                  </p>
+                  <label className="search-box compatibility-search">
+                    <Search aria-hidden="true" size={16} />
+                    <input
+                      aria-label={t('za.items.compatibility.search')}
+                      onChange={(event) => setCompatibilitySearchText(event.target.value)}
+                      placeholder={t('za.items.compatibility.search')}
+                      type="search"
+                      value={compatibilitySearchText}
+                    />
+                  </label>
+                  <ul className="compatibility-list za-tm-compatibility-list">
+                    {filteredTechnicalMachineCompatibilityRows.map(({ entry, pokemon }) => (
+                      <li key={pokemon.personalId}>
+                        <label className="compatibility-toggle za-tm-compatibility-toggle">
+                          <input
+                            checked={entry.canLearn}
+                            className="km-choice-control"
+                            disabled={!canEditTechnicalMachineCompatibility}
+                            onChange={(event) => {
+                              if (onUpdatePokemonField) {
+                                void onUpdatePokemonField(
+                                  pokemon.personalId,
+                                  createPokemonCompatibilityFieldName('tm', entry.slot),
+                                  event.target.checked ? '1' : '0'
+                                );
+                              }
+                            }}
+                            type="checkbox"
+                          />
+                          <span data-localization-ignore="true">
+                            {formatPokemonRecordName(pokemon, 'za')}
+                          </span>
+                          <small>
+                            {t('za.items.compatibility.personalId', {
+                              id: pokemon.personalId
+                            })}
+                          </small>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  {filteredTechnicalMachineCompatibilityRows.length === 0 ? (
+                    <p className="empty-copy">{t('za.items.compatibility.noMatches')}</p>
+                  ) : null}
+                  {editSession === null ? (
+                    <small className="editable-field-status">
+                      {t('za.items.compatibility.startSession')}
+                    </small>
+                  ) : null}
+                </div>
+              )}
+            </section>
+          ) : null}
 
           {item.detailGroups.map((group) => (
             <section className="inspector-block" key={group.label}>
@@ -24341,7 +24714,7 @@ type TrainerPartySlotContextMenuState = {
   triggerElement: HTMLButtonElement;
 };
 
-type ZaTrainerBulkAction = 'enableCoreAi' | 'enableLastHand';
+type ZaTrainerBulkAction = 'enableChangeAi' | 'enableCoreAi' | 'enableLastHand';
 
 type TrainersSectionProps = {
   editSession: EditSession | null;
@@ -24492,6 +24865,25 @@ function TrainersSection({
         : [],
     [editorFamily, trainers]
   );
+  const zaChangeAiBulkUpdates = useMemo<TrainerFieldUpdate[]>(
+    () =>
+      editorFamily === 'za'
+        ? trainers.flatMap((trainer) => {
+            const nextFlags = trainer.aiFlags | zaChangeTrainerAiMask;
+            return nextFlags === trainer.aiFlags
+              ? []
+              : [
+                  {
+                    field: aiFlagsFieldName,
+                    slot: null,
+                    trainerId: trainer.trainerId,
+                    value: nextFlags.toString()
+                  }
+                ];
+          })
+        : [],
+    [editorFamily, trainers]
+  );
   const canRunZaTrainerBulkAction =
     editorFamily === 'za' &&
     editSession !== null &&
@@ -24506,7 +24898,9 @@ function TrainersSection({
     const updates =
       zaBulkConfirmation === 'enableLastHand'
         ? zaLastHandBulkUpdates
-        : zaCoreAiBulkUpdates;
+        : zaBulkConfirmation === 'enableCoreAi'
+          ? zaCoreAiBulkUpdates
+          : zaChangeAiBulkUpdates;
     setZaBulkConfirmation(null);
     if (updates.length > 0) {
       await onUpdateTrainerFields(updates);
@@ -24641,6 +25035,24 @@ function TrainersSection({
                 <ShieldCheck aria-hidden="true" size={14} />
                 <span>{t('za.trainers.bulk.coreAction')}</span>
               </button>
+              <button
+                className="primary-button compact-button"
+                disabled={!canRunZaTrainerBulkAction || zaChangeAiBulkUpdates.length === 0}
+                onClick={() => setZaBulkConfirmation('enableChangeAi')}
+                title={
+                  editSession === null
+                    ? t('za.trainers.bulk.startSessionHelp')
+                    : zaChangeAiBulkUpdates.length === 0
+                      ? t('za.trainers.bulk.changeAlreadyEnabled')
+                      : t('za.trainers.bulk.changeEnableCount', {
+                          count: zaChangeAiBulkUpdates.length
+                        })
+                }
+                type="button"
+              >
+                <ArrowLeftRight aria-hidden="true" size={14} />
+                <span>{t('za.trainers.bulk.changeAction')}</span>
+              </button>
             </div>
           </div>
         ) : null}
@@ -24755,7 +25167,9 @@ function TrainersSection({
           affectedCount={
             zaBulkConfirmation === 'enableLastHand'
               ? zaLastHandBulkUpdates.length
-              : zaCoreAiBulkUpdates.length
+              : zaBulkConfirmation === 'enableCoreAi'
+                ? zaCoreAiBulkUpdates.length
+                : zaChangeAiBulkUpdates.length
           }
           isUpdating={isTrainerUpdating}
           onCancel={() => setZaBulkConfirmation(null)}
@@ -24785,13 +25199,18 @@ function ZaTrainerBulkConfirmationModal({
   const dialogRef = useModalDialog({ onClose: onCancel });
   const { t, translateLiteral } = useLocalization();
   const enablesLastHand = action === 'enableLastHand';
+  const enablesCoreAi = action === 'enableCoreAi';
   const headingId = `za-trainer-bulk-${action}-heading`;
   const title = enablesLastHand
     ? t('za.trainers.bulk.lastHandConfirmTitle')
-    : t('za.trainers.bulk.coreConfirmTitle');
+    : enablesCoreAi
+      ? t('za.trainers.bulk.coreConfirmTitle')
+      : t('za.trainers.bulk.changeConfirmTitle');
   const description = enablesLastHand
     ? t('za.trainers.bulk.lastHandConfirmDescription', { affectedCount, totalCount })
-    : t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount });
+    : enablesCoreAi
+      ? t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount })
+      : t('za.trainers.bulk.changeConfirmDescription', { affectedCount, totalCount });
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -24806,8 +25225,10 @@ function ZaTrainerBulkConfirmationModal({
         <div className="panel-heading">
           {enablesLastHand ? (
             <ListChecks aria-hidden="true" size={18} />
-          ) : (
+          ) : enablesCoreAi ? (
             <ShieldCheck aria-hidden="true" size={18} />
+          ) : (
+            <ArrowLeftRight aria-hidden="true" size={18} />
           )}
           <h2 id={headingId}>{title}</h2>
         </div>
@@ -24826,8 +25247,10 @@ function ZaTrainerBulkConfirmationModal({
               icon={
                 enablesLastHand ? (
                   <ListChecks aria-hidden="true" size={16} />
-                ) : (
+                ) : enablesCoreAi ? (
                   <ShieldCheck aria-hidden="true" size={16} />
+                ) : (
+                  <ArrowLeftRight aria-hidden="true" size={16} />
                 )
               }
               isBusy={isUpdating}
@@ -25836,6 +26259,13 @@ function SelectedTrainerPanel({
                     editorFamily
                   );
                   const isEmptySlot = projectedPokemon.speciesId === 0;
+                  const projectedHeldItemId = isEmptySlot ? 0 : projectedPokemon.heldItemId;
+                  const projectedHeldItemLabel =
+                    projectedHeldItemId === 0
+                      ? t('trainers.partyCard.noHeldItem')
+                      : t('trainers.partyCard.heldItem', {
+                          item: projectedPokemon.heldItem ?? projectedHeldItemId.toString()
+                        });
                   const isDynamicZaTrainerMeowstic =
                     editorFamily === 'za' &&
                     projectedPokemon.speciesId === zaMeowsticSpeciesId &&
@@ -25924,6 +26354,21 @@ function SelectedTrainerPanel({
                       <span>
                         {isEmptySlot ? 'None' : `Lv. ${projectedPokemon.level}`}
                         {hasCardDrafts ? ` (${translateLiteral('Draft')})` : ''}
+                      </span>
+                      {projectedHeldItemId > 0 ? (
+                        <span
+                          aria-hidden="true"
+                          className="trainer-party-held-item-bag"
+                          title={projectedHeldItemLabel}
+                        >
+                          <HeldItemSprite
+                            editorFamily={editorFamily}
+                            itemId={projectedHeldItemId}
+                          />
+                        </span>
+                      ) : null}
+                      <span className="trainer-party-held-item-accessibility">
+                        {projectedHeldItemLabel}
                       </span>
                     </button>
                   );
@@ -27055,6 +27500,12 @@ function getProjectedTrainerPokemonCardIdentity(
     pokemon.gender;
   const level =
     getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, levelFieldName) ?? pokemon.level;
+  const heldItemId =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, heldItemIdFieldName) ??
+    pokemon.heldItemId;
+  const heldItemOption = fields
+    .find((field) => field.field === heldItemIdFieldName)
+    ?.options.find((option) => option.value === heldItemId);
   const referencePokemon =
     pokemonWorkflow?.pokemon.find(
       (candidate) => candidate.speciesId === speciesId && candidate.form === form
@@ -27078,6 +27529,13 @@ function getProjectedTrainerPokemonCardIdentity(
   return {
     form,
     gender,
+    heldItem:
+      heldItemId === 0
+        ? null
+        : heldItemOption?.label ??
+          (heldItemId === pokemon.heldItemId ? pokemon.heldItem : null) ??
+          `Item ${heldItemId}`,
+    heldItemId,
     level,
     species:
       referencePokemon?.name ??
@@ -29646,8 +30104,33 @@ function getItemFieldDisabledReason(
     item?.metadata.pouch === 6 &&
     item.metadata.itemType === 5 &&
     item.metadata.machineMoveId !== null;
+  const isZaProjectedOwnedTechnicalMachine =
+    editorFamily === 'za' &&
+    item?.metadata.isOwnedTechnicalMachineSlot === true &&
+    item.metadata.isProjectedTechnicalMachineSlot;
   if (field.isReadOnly) {
     return field.readOnlyReason ?? 'This field is read-only.';
+  }
+
+  if (
+    editorFamily === 'za' &&
+    item?.metadata.isOwnedTechnicalMachineSlot === true &&
+    [
+      itemTypeFieldName,
+      itemPocketFieldName,
+      itemSortOrderFieldName,
+      itemTechnicalMachineNumberFieldName
+    ].includes(fieldName)
+  ) {
+    return 'KM Editor owned TM item, pocket, sort order, and number fields are fixed so the slot stays safe across Items, Pokemon, and Shops.';
+  }
+
+  if (
+    isZaProjectedOwnedTechnicalMachine &&
+    item?.metadata.baseMachineMoveId === null &&
+    fieldName !== itemMachineMoveIdFieldName
+  ) {
+    return 'Assign the TM move here, then Stage, Apply, and reload before editing the materialized item row.';
   }
 
   if (editorFamily === 'za' && fieldName === itemCanUseOnPokemonFieldName) {
@@ -29693,7 +30176,7 @@ function getItemFieldDisabledReason(
   }
 
   if (fieldName === itemMachineMoveIdFieldName) {
-    if (isZaPhysicalTechnicalMachine) {
+    if (isZaPhysicalTechnicalMachine || isZaProjectedOwnedTechnicalMachine) {
       return null;
     }
 
@@ -49309,6 +49792,68 @@ function getFileName(path: string) {
   return normalized.split('/').pop() || path;
 }
 
+function isUnusedProjectedTechnicalMachineSlot(item: ItemRecord) {
+  return (
+    item.metadata.isOwnedTechnicalMachineSlot &&
+    item.metadata.isProjectedTechnicalMachineSlot &&
+    item.metadata.machineMoveId === null
+  );
+}
+
+type ZaTechnicalMachinePokemonCompatibilityRow = {
+  entry: PokemonCompatibilityGroup['entries'][number];
+  pokemon: PokemonRecord;
+};
+
+function getZaTechnicalMachinePokemonCompatibilityRows(
+  item: ItemRecord | null,
+  workflow: PokemonWorkflow | null
+): ZaTechnicalMachinePokemonCompatibilityRow[] {
+  const moveId = item?.metadata.machineMoveId;
+  if (moveId === null || moveId === undefined || !workflow) {
+    return [];
+  }
+
+  return workflow.pokemon
+    .filter((pokemon) => !isPlaceholderPokemonRecord(pokemon))
+    .flatMap((pokemon) => {
+      const entry = pokemon.compatibility
+        .find((group) => group.groupId === 'tm')
+        ?.entries.find((candidate) => candidate.moveId === moveId);
+      return entry ? [{ entry, pokemon }] : [];
+    })
+    .sort(
+      (left, right) =>
+        left.pokemon.speciesId - right.pokemon.speciesId ||
+        left.pokemon.form - right.pokemon.form ||
+        left.pokemon.personalId - right.pokemon.personalId
+    );
+}
+
+function filterZaTechnicalMachinePokemonCompatibilityRows(
+  rows: ZaTechnicalMachinePokemonCompatibilityRow[],
+  searchText: string
+) {
+  const normalizedSearch = normalizeItemSearchValue(searchText);
+  if (normalizedSearch.length === 0) {
+    return rows;
+  }
+
+  return rows.filter(({ entry, pokemon }) =>
+    [
+      pokemon.personalId.toString(),
+      pokemon.speciesId.toString(),
+      pokemon.name,
+      pokemon.formLabel,
+      formatPokemonRecordName(pokemon, 'za'),
+      pokemon.type1,
+      pokemon.type2,
+      pokemon.personal.isPresentInGame ? 'present' : 'not present',
+      entry.canLearn ? 'enabled' : 'disabled'
+    ].some((value) => normalizeItemSearchValue(value).includes(normalizedSearch))
+  );
+}
+
 function filterItems(items: ItemRecord[], searchText: string) {
   const normalizedSearch = normalizeItemSearchValue(searchText);
 
@@ -55212,6 +55757,76 @@ function PokemonSprite({
       onError={() => setUrlIndex((currentIndex) => currentIndex + 1)}
       src={urls[urlIndex]}
     />
+  );
+}
+
+function HeldItemSprite({
+  editorFamily,
+  itemId
+}: {
+  editorFamily: EditorUiFamily;
+  itemId: number;
+}) {
+  const urls = useMemo(
+    () => getHeldItemSpriteUrls(itemId, editorFamily),
+    [editorFamily, itemId]
+  );
+  const [urlIndex, setUrlIndex] = useState(0);
+
+  useEffect(() => {
+    setUrlIndex(0);
+  }, [urls]);
+
+  const url = urls[urlIndex];
+  if (!url) {
+    return null;
+  }
+
+  const usesPixelArt = url.includes('/items/big/') || url.includes('/overlays/');
+
+  return (
+    <img
+      alt=""
+      className={usesPixelArt ? 'trainer-party-held-item-pixel-art' : ''}
+      draggable={false}
+      onError={() => setUrlIndex((currentIndex) => currentIndex + 1)}
+      src={url}
+    />
+  );
+}
+
+function getHeldItemSpriteUrls(itemId: number, editorFamily: EditorUiFamily) {
+  const artworkItem = getPublicAssetUrl(`sprites/items/artwork/aitem_${itemId}.png`);
+  const classicItem = getPublicAssetUrl(`sprites/items/big/bitem_${itemId}.png`);
+  const fallbackBag = getPublicAssetUrl('sprites/overlays/helditem.png');
+
+  if (isTechnicalMachineItemId(itemId)) {
+    const artworkMachine = getPublicAssetUrl('sprites/items/artwork/aitem_tm.png');
+    const classicMachine = getPublicAssetUrl('sprites/items/big/bitem_tm.png');
+    return editorFamily === 'swsh'
+      ? [classicMachine, artworkMachine, fallbackBag]
+      : [artworkMachine, classicMachine, fallbackBag];
+  }
+
+  if (editorFamily === 'swsh' && itemId >= 1130 && itemId <= 1229) {
+    return [getPublicAssetUrl('sprites/items/big/bitem_tr.png'), fallbackBag];
+  }
+
+  return editorFamily === 'swsh'
+    ? [classicItem, artworkItem, fallbackBag]
+    : [artworkItem, classicItem, fallbackBag];
+}
+
+function isTechnicalMachineItemId(itemId: number) {
+  // PKHeX uses shared TM artwork for these global item-ID ranges. TM00 is included
+  // here as a safe fallback even though it is not a normally obtainable held item.
+  return (
+    (itemId >= 328 && itemId <= 425) ||
+    (itemId >= 618 && itemId <= 620) ||
+    (itemId >= 690 && itemId <= 694) ||
+    itemId === 737 ||
+    itemId === 1230 ||
+    (itemId >= 2160 && itemId <= 2289)
   );
 }
 

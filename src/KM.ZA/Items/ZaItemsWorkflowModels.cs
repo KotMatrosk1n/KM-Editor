@@ -60,6 +60,16 @@ public sealed record ZaItemMetadata(
     public bool MachineAssignmentDiffersFromBase { get; init; }
 
     public int CompatiblePokemonCount { get; init; }
+
+    public bool IsOwnedTechnicalMachineSlot { get; init; }
+
+    public bool IsProjectedTechnicalMachineSlot { get; init; }
+
+    public bool IsTechnicalMachineProvisioned { get; init; }
+
+    public bool CanMaterializeTechnicalMachine { get; init; }
+
+    public bool TechnicalMachineCompatibilityRequiresReload { get; init; }
 }
 
 public sealed record ZaItemRecord(
@@ -81,6 +91,8 @@ public sealed record ZaItemRecord(
     public string? RevertToVanillaBlockedReason { get; init; }
 
     internal bool IsOwnedTestTechnicalMachine { get; init; }
+
+    internal bool IsOwnedTechnicalMachineExtension { get; init; }
 }
 
 public sealed record ZaItemEditableFieldOption(
