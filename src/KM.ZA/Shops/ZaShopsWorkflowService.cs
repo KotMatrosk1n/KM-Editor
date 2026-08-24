@@ -128,8 +128,10 @@ internal sealed class ZaShopsWorkflowService
 
             itemRecords = itemWorkflow.Items
                 .Where(item =>
-                    !requiresItemsRecovery
-                    || !item.IsOwnedTestTechnicalMachine)
+                    !(item.Metadata.IsProjectedTechnicalMachineSlot
+                        && !item.Metadata.CanMaterializeTechnicalMachine)
+                    && (!requiresItemsRecovery
+                        || !item.IsOwnedTestTechnicalMachine))
                 .ToArray();
             var itemLookup = itemRecords
                 .GroupBy(item => item.ItemId)

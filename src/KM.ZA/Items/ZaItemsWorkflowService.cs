@@ -234,6 +234,7 @@ internal sealed class ZaItemsWorkflowService
             var projectedSource = source;
             var projectedRecovery = technicalMachineRecovery;
             var projectedRows = ZaItemsEditSessionService.ReadRows(source.Bytes);
+            var physicalItemIds = projectedRows.Select(row => row.Id).ToHashSet();
             var projectionDiagnostics = new List<ValidationDiagnostic>();
             if (!technicalMachineRecovery.IsBlocked && technicalMachineRecovery.HasChanges)
             {
@@ -247,12 +248,12 @@ internal sealed class ZaItemsWorkflowService
             var canProject = !technicalMachineRecovery.IsBlocked
                 && !projectionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             var provisioning = canProject
-                ? ZaTestTechnicalMachineProvisioner.Provision(projectedRows)
+                ? ZaTestTechnicalMachineProvisioner.ProjectAvailableSlots(projectedRows)
                 : new ZaTestTechnicalMachineProvisioningResult(
                     IsAvailable: false,
                     Added: false,
                     technicalMachineRecovery.BlockingReason
-                        ?? "Legacy TM recovery could not be projected safely before adding TM162 Bug Buzz.");
+                        ?? "Legacy TM recovery could not be projected safely before exposing unused TM slots.");
             if (provisioning.IsAvailable)
             {
                 projectedRecovery = ZaTechnicalMachineLegacyRecovery.None;
@@ -267,10 +268,10 @@ internal sealed class ZaItemsWorkflowService
             {
                 diagnostics.Add(ZaWorkflowSupport.Warning(
                     provisioning.UnavailableReason
-                        ?? "TM162 Bug Buzz is unavailable for the loaded item data.",
+                        ?? "Unused TM slots are unavailable for the loaded item data.",
                     $"romfs/{ZaDataPaths.ItemDataArray}",
                     TechnicalMachineNumberField,
-                    "Supported unique 160-TM source with unclaimed item 2222"));
+                    "Supported unique 160-TM source or valid KM-owned TM162 through TM201 extension"));
             }
 
             var baseItems = ReadBaseItems(
@@ -285,7 +286,8 @@ internal sealed class ZaItemsWorkflowService
                     mintNatureRecovery.ItemIds,
                     projectedRecovery,
                     baseItems,
-                    compatibilityCounts)
+                    compatibilityCounts,
+                    physicalItemIds)
                 .ToArray();
             var inconsistentMachineCount = items.Count(item =>
                 IsTechnicalMachineRecord(item)
@@ -327,7 +329,7 @@ internal sealed class ZaItemsWorkflowService
                     item.Metadata.GroupIndex))
                 .ToArray();
             var hasValidNumbering = ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments)
-                || ZaTechnicalMachineCatalog.HasCompleteNumberingWithTestTechnicalMachineExtension(assignments);
+                || ZaTechnicalMachineCatalog.HasCompleteNumberingWithOwnedExtensions(assignments);
             if (!hasValidNumbering
                 && (duplicateNumbers.Length > 0
                 || missingNumbers.Length > 0
@@ -397,7 +399,8 @@ internal sealed class ZaItemsWorkflowService
             item.MintNature,
             iconNameOverride: null,
             baseItems.GetValueOrDefault(itemId),
-            compatibilityCounts.GetValueOrDefault(item.MachineWaza));
+            compatibilityCounts.GetValueOrDefault(item.MachineWaza),
+            isPhysical: true);
     }
 
     internal static string FormatItemType(int value) => FormatIndexed(value, ItemTypeNames, "Item type");
@@ -633,7 +636,8 @@ internal sealed class ZaItemsWorkflowService
         IReadOnlySet<int> recoveredMintNatureItemIds,
         ZaTechnicalMachineLegacyRecovery technicalMachineRecovery,
         IReadOnlyDictionary<int, BaseItemRecord> baseItems,
-        IReadOnlyDictionary<int, int> compatibilityCounts)
+        IReadOnlyDictionary<int, int> compatibilityCounts,
+        IReadOnlySet<int> physicalItemIds)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A item table");
@@ -657,7 +661,10 @@ internal sealed class ZaItemsWorkflowService
                 recoveredMintNatureItemIds.Contains(item.Value.Id) ? -1 : item.Value.MintNature,
                 iconRepairs.GetValueOrDefault(item.Value.Id),
                 baseItems.GetValueOrDefault(item.Value.Id),
-                compatibilityCounts.GetValueOrDefault(item.Value.MachineWaza));
+                item.Value.MachineWaza > 0
+                    ? compatibilityCounts.GetValueOrDefault(item.Value.MachineWaza)
+                    : 0,
+                physicalItemIds.Contains(item.Value.Id));
             yield return technicalMachineRecovery.RepairItemId == item.Value.Id
                 ? WithTechnicalMachineNumber(
                     record,
@@ -673,16 +680,26 @@ internal sealed class ZaItemsWorkflowService
         int mintNature,
         string? iconNameOverride,
         BaseItemRecord? baseItem,
-        int compatiblePokemonCount)
+        int compatiblePokemonCount,
+        bool isPhysical)
     {
+        var isOwnedExtension = ZaTechnicalMachineCatalog.HasOwnedExtensionIdentity(
+            item.Id,
+            item.ItemType,
+            item.InternalName,
+            item.Pocket,
+            item.SortNum,
+            item.MachineIndex);
         var machineMoveId = item.MachineWaza;
         var machineMoveName = machineMoveId > 0
             ? ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item)
-                ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(labels)
+                ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(
+                    labels,
+                    machineMoveId)
                 : labels.Move(machineMoveId)
             : null;
         var sourceItemName = labels.Item(item.Id);
-        var machineSlot = ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+        var machineSlot = (ZaTechnicalMachineCatalog.IsTechnicalMachine(item) || isOwnedExtension)
             && ZaTechnicalMachineCatalog.TryResolveMachineSlot(item, sourceItemName, out var resolvedSlot)
                 ? resolvedSlot
                 : (int?)null;
@@ -721,11 +738,36 @@ internal sealed class ZaItemsWorkflowService
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
             MachineMoveName: machineMoveName)
         {
-            BaseMachineMoveId = baseItem?.IsTechnicalMachine == true ? baseItem.MoveId : null,
-            BaseMachineMoveName = baseItem?.IsTechnicalMachine == true ? labels.Move(baseItem.MoveId) : null,
+            BaseMachineMoveId = baseItem?.IsTechnicalMachine == true
+                ? baseItem.MoveId
+                : isOwnedExtension
+                    && item.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
+                    && machineMoveId > 0
+                    ? ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId
+                    : isOwnedExtension && machineMoveId > 0
+                        ? machineMoveId
+                        : null,
+            BaseMachineMoveName = baseItem?.IsTechnicalMachine == true
+                ? labels.Move(baseItem.MoveId)
+                : isOwnedExtension
+                    && item.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
+                    && machineMoveId > 0
+                    ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(labels)
+                    : isOwnedExtension && machineMoveId > 0
+                        ? machineMoveName
+                        : null,
             MachineAssignmentDiffersFromBase = baseItem?.IsTechnicalMachine == true
-                && machineMoveId != baseItem.MoveId,
+                ? machineMoveId != baseItem.MoveId
+                : isOwnedExtension
+                    && item.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
+                    && machineMoveId > 0
+                    && machineMoveId != ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId,
             CompatiblePokemonCount = compatiblePokemonCount,
+            IsOwnedTechnicalMachineSlot = isOwnedExtension,
+            IsProjectedTechnicalMachineSlot = isOwnedExtension && !isPhysical,
+            IsTechnicalMachineProvisioned = isOwnedExtension && isPhysical,
+            CanMaterializeTechnicalMachine = isOwnedExtension && !isPhysical && machineMoveId > 0,
+            TechnicalMachineCompatibilityRequiresReload = isOwnedExtension && !isPhysical,
         };
 
         var canRevertToVanilla = baseItem is not null;
@@ -748,6 +790,7 @@ internal sealed class ZaItemsWorkflowService
                 ? null
                 : "This item does not have an exact matching record in the verified vanilla item table.",
             IsOwnedTestTechnicalMachine = ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item),
+            IsOwnedTechnicalMachineExtension = isOwnedExtension,
         };
     }
 
@@ -847,6 +890,20 @@ internal sealed class ZaItemsWorkflowService
         int? machineSlot,
         string? machineMoveName)
     {
+        if (machineSlot is not null
+            && ZaTechnicalMachineCatalog.HasOwnedExtensionIdentity(
+                item.Id,
+                item.ItemType,
+                item.InternalName,
+                item.Pocket,
+                item.SortNum,
+                item.MachineIndex))
+        {
+            return FormatTechnicalMachineName(
+                machineSlot.Value,
+                machineMoveName ?? "Unassigned");
+        }
+
         if (ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
             && machineSlot is not null
             && machineMoveName is not null)
@@ -943,7 +1000,16 @@ internal sealed class ZaItemsWorkflowService
                     Detail("Bag pocket", $"{item.Pocket.ToString(CultureInfo.InvariantCulture)} {FormatPocket(item.Pocket)}"),
                     Detail("Stack cap", item.SlotMaxNum),
                     Detail(
-                        ZaTechnicalMachineCatalog.IsTechnicalMachine(item) ? "TM number" : "Sort order",
+                        ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+                            || ZaTechnicalMachineCatalog.HasOwnedExtensionIdentity(
+                                item.Id,
+                                item.ItemType,
+                                item.InternalName,
+                                item.Pocket,
+                                item.SortNum,
+                                item.MachineIndex)
+                                ? "TM number"
+                                : "Sort order",
                         item.SortNum),
                     Detail("Cannot be held", ZaLabels.Bool(item.CanNotHold)),
                     Detail("Can use in battle", ZaLabels.Bool(item.CanUseInBattle)),
@@ -964,7 +1030,9 @@ internal sealed class ZaItemsWorkflowService
                         item.MachineWaza > 0
                             ? $"{item.MachineWaza.ToString(CultureInfo.InvariantCulture)} "
                                 + (ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item)
-                                    ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(labels)
+                                    ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(
+                                        labels,
+                                        item.MachineWaza)
                                     : labels.Move(item.MachineWaza))
                             : "None"),
                 ]),
@@ -999,7 +1067,8 @@ internal sealed class ZaItemsWorkflowService
     {
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
         var technicalMachineMaximum = items
-            .Where(IsTechnicalMachineRecord)
+            .Where(item => IsTechnicalMachineRecord(item)
+                || item.Metadata.IsOwnedTechnicalMachineSlot)
             .Select(item => item.Metadata.MachineSlot ?? 0)
             .DefaultIfEmpty(0)
             .Max();
@@ -1049,7 +1118,14 @@ internal sealed class ZaItemsWorkflowService
 
     private static int? GetTechnicalMachineNumber(ZaItemData item)
     {
-        return ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+        return (ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+                || ZaTechnicalMachineCatalog.HasOwnedExtensionIdentity(
+                    item.Id,
+                    item.ItemType,
+                    item.InternalName,
+                    item.Pocket,
+                    item.SortNum,
+                    item.MachineIndex))
             && item.SortNum > 0
             && item.MachineIndex == item.SortNum - 1
                 ? item.SortNum

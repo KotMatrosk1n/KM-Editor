@@ -27,6 +27,17 @@ export function getContextualItemEditableFields(
   }
 
   return fields.map((field) => {
+    if (
+      field.field === 'machineMoveId' &&
+      item?.metadata.isOwnedTechnicalMachineSlot
+    ) {
+      return {
+        ...field,
+        minimumValue: 1,
+        options: field.options.filter((option) => option.value > 0)
+      };
+    }
+
     if (field.field !== itemEquipPowerFieldName) {
       return field;
     }

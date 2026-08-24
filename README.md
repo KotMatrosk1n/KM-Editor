@@ -148,6 +148,8 @@ Found a bug or have a feature request? [Open an issue](https://github.com/KotMat
 
 KM Editor includes Pokémon sprite files downloaded from Pokémon Showdown's public `gen5` and `ani` sprite directories and may use that service as a missing-sprite fallback. The [Pokémon Showdown credits](https://pokemonshowdown.com/credits) document contributing artists and upstream sources. These files are excluded from KM Editor's GPL license, and this repository does not grant additional rights to them.
 
+Trainer party cards use item artwork, classic item sprites, and the `helditem.png` fallback from the [PKHeX](https://github.com/kwsch/PKHeX) `PKHeX.Drawing.PokeSprite` resources. Those assets are redistributed under PKHeX's GPL-3.0 license.
+
 KM Editor is an unofficial fan-made project and is not affiliated with or endorsed by the games' publishers or developers. All related names, trademarks, and artwork belong to their respective owners.
 
 KM Editor source code is distributed under the [GPL 3.0 only license](LICENSE). Third-party assets remain subject to their own applicable rights and terms.

@@ -952,6 +952,46 @@ public sealed class SwShTrainersEditSessionService
 
     private static EditSession ReplacePendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
     {
+        if (string.Equals(
+                pendingEdit.Field,
+                SwShTrainersWorkflowService.SpeciesIdField,
+                StringComparison.Ordinal)
+            && int.TryParse(
+                pendingEdit.NewValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var speciesId))
+        {
+            var speciesPendingEdits = new List<PendingEdit>(session.PendingEdits.Count + 1);
+            var speciesInsertionIndex = -1;
+            foreach (var edit in session.PendingEdits)
+            {
+                if (!TargetsSameTrainerPokemonSlot(edit, pendingEdit))
+                {
+                    speciesPendingEdits.Add(edit);
+                    continue;
+                }
+
+                if (speciesInsertionIndex < 0)
+                {
+                    speciesInsertionIndex = speciesPendingEdits.Count;
+                }
+
+                if (speciesId != 0 && !string.Equals(
+                        edit.Field,
+                        SwShTrainersWorkflowService.SpeciesIdField,
+                        StringComparison.Ordinal))
+                {
+                    speciesPendingEdits.Add(edit);
+                }
+            }
+
+            speciesPendingEdits.Insert(
+                speciesInsertionIndex < 0 ? speciesPendingEdits.Count : speciesInsertionIndex,
+                pendingEdit);
+            return session with { PendingEdits = speciesPendingEdits };
+        }
+
         var pendingEdits = session.PendingEdits
             .Where(edit => !IsSameTrainerEdit(edit, pendingEdit))
             .Append(pendingEdit)
@@ -962,12 +1002,28 @@ public sealed class SwShTrainersEditSessionService
 
     private static EditSession RemovePendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
     {
+        var clearsOriginallyEmptyPokemonSlot = string.Equals(
+                pendingEdit.Field,
+                SwShTrainersWorkflowService.SpeciesIdField,
+                StringComparison.Ordinal)
+            && string.Equals(pendingEdit.NewValue, "0", StringComparison.Ordinal);
+
         return session with
         {
             PendingEdits = session.PendingEdits
-                .Where(edit => !IsSameTrainerEdit(edit, pendingEdit))
+                .Where(edit => clearsOriginallyEmptyPokemonSlot
+                    ? !TargetsSameTrainerPokemonSlot(edit, pendingEdit)
+                    : !IsSameTrainerEdit(edit, pendingEdit))
                 .ToArray(),
         };
+    }
+
+    private static bool TargetsSameTrainerPokemonSlot(PendingEdit edit, PendingEdit candidate)
+    {
+        return string.Equals(edit.Domain, TrainersEditDomain, StringComparison.Ordinal)
+            && string.Equals(candidate.Domain, TrainersEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, candidate.RecordId, StringComparison.Ordinal)
+            && SwShTrainersWorkflowService.IsTrainerPokemonField(edit.Field);
     }
 
     private static int? GetTrainerFieldValue(SwShTrainerRecord trainer, int? slot, string? field)
