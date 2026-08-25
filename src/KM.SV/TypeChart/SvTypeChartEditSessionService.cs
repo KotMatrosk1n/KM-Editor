@@ -245,7 +245,11 @@ public sealed class SvTypeChartEditSessionService
             DiagnosticSeverity.Info,
             "Type Chart change plan preview contains 1 target file."));
 
-        return new ChangePlan(session.Id, [write], diagnostics);
+        return SvChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            new ChangePlan(session.Id, [write], diagnostics),
+            outputMode);
     }
 
     public ApplyResult ApplyChangePlan(
@@ -676,23 +680,7 @@ public sealed class SvTypeChartEditSessionService
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        return ChangePlanReview.Matches(reviewedPlan, currentPlan);
     }
 
     private static ApplyResult CreateApplyResult(

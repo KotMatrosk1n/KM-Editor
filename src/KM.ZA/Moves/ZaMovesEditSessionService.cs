@@ -388,6 +388,18 @@ internal sealed class ZaMovesEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            () => CreateChangePlanCore(paths, session, outputMode),
+            outputMode);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -1581,8 +1593,11 @@ internal sealed class ZaMovesEditSessionService
             targetRelativePath,
             StringComparison.Ordinal));
         return write is not null
-            && string.Equals(
-                write.SourceFingerprint,
+            && ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
+                paths,
+                plan,
+                write,
+                outputMode,
                 CreateRuntimePlanFingerprint(
                     paths,
                     virtualPath,
@@ -1590,8 +1605,7 @@ internal sealed class ZaMovesEditSessionService
                     baseSource,
                     dependencySources,
                     edits,
-                    outputMode),
-                StringComparison.Ordinal);
+                    outputMode));
     }
 
     private static string? TryNormalizeEditableValue(

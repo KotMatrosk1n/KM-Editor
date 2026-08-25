@@ -19,8 +19,37 @@ public static class SvTrinityDescriptorPatcher
 
     public static byte[] CreateLayeredDescriptor(string baseRomFsRoot, string outputRoot)
     {
+        return CreateLayeredDescriptorIncludingVirtualPaths(
+            baseRomFsRoot,
+            outputRoot,
+            Array.Empty<string>());
+    }
+
+    public static byte[] CreateLayeredDescriptorIncludingVirtualPaths(
+        string baseRomFsRoot,
+        string outputRoot,
+        IEnumerable<string> additionalLayeredVirtualPaths)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
+        ArgumentNullException.ThrowIfNull(additionalLayeredVirtualPaths);
+
+        var layeredFileHashes = EnumerateLayeredVirtualPaths(outputRoot)
+            .Concat(MaterializeVirtualPaths(additionalLayeredVirtualPaths))
+            .Where(path => !string.Equals(
+                path,
+                DescriptorVirtualPath,
+                StringComparison.OrdinalIgnoreCase))
+            .Select(SvTrinityPathHasher.HashPath)
+            .ToHashSet();
+
+        var descriptorBytes = ReadBaseDescriptor(baseRomFsRoot);
+        return RemoveFileHashes(descriptorBytes, layeredFileHashes);
+    }
+
+    public static byte[] ReadBaseDescriptor(string baseRomFsRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
 
         var descriptorPath = Path.Combine(ResolveRomFsRoot(baseRomFsRoot), "arc", "data.trpfd");
         if (!File.Exists(descriptorPath))
@@ -28,11 +57,7 @@ public static class SvTrinityDescriptorPatcher
             throw new FileNotFoundException("Scarlet/Violet Trinity descriptor was not found.", descriptorPath);
         }
 
-        var layeredFileHashes = EnumerateLayeredVirtualPaths(outputRoot)
-            .Select(SvTrinityPathHasher.HashPath)
-            .ToHashSet();
-
-        return RemoveFileHashes(ReadBoundedFile(descriptorPath), layeredFileHashes);
+        return ReadBoundedFile(descriptorPath);
     }
 
     public static byte[] RemoveFileHashes(byte[] descriptorBytes, IReadOnlySet<ulong> removedHashes)
@@ -267,6 +292,22 @@ public static class SvTrinityDescriptorPatcher
         }
 
         return normalized;
+    }
+
+    private static string[] MaterializeVirtualPaths(IEnumerable<string> paths)
+    {
+        var result = new List<string>();
+        foreach (var path in paths)
+        {
+            if (result.Count == MaximumLayeredEntries)
+            {
+                throw new InvalidDataException("The layered virtual path list exceeds its bounded limit.");
+            }
+
+            result.Add(NormalizeVirtualPath(path));
+        }
+
+        return result.ToArray();
     }
 
     private static byte[] ReadBoundedFile(string path)

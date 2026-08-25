@@ -30,6 +30,8 @@ internal sealed class ZaWorkflowFileSource
             : StringComparer.Ordinal);
     [ThreadStatic]
     private static DeferredOutputBatch? activeDeferredOutputBatch;
+    [ThreadStatic]
+    private static int freshReadScopeDepth;
     // All top-level RomFS roots emitted by current Z-A workflows, plus the Trinity descriptor root.
     private static readonly string[] KnownBareTrinityModManagerRootDirectories =
     [
@@ -324,7 +326,7 @@ internal sealed class ZaWorkflowFileSource
 
             try
             {
-                var archiveBytes = bypassReusableBaseCache
+                var archiveBytes = bypassReusableBaseCache || freshReadScopeDepth > 0
                     ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
                     : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new ZaWorkflowFile(
@@ -457,7 +459,7 @@ internal sealed class ZaWorkflowFileSource
 
             try
             {
-                var archiveBytes = bypassReusableBaseCache
+                var archiveBytes = bypassReusableBaseCache || freshReadScopeDepth > 0
                     ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
                     : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new ZaWorkflowFile(
@@ -633,6 +635,14 @@ internal sealed class ZaWorkflowFileSource
 
         try
         {
+            if (bypassReusableBaseCache || freshReadScopeDepth > 0)
+            {
+                using var archive = OpenArchive(
+                    project.Paths.BaseRomFsPath,
+                    project.Paths.PokemonLegendsZASupportFolderPath);
+                return archive.ContainsFile(normalizedVirtualPath);
+            }
+
             return cacheManager.ContainsBaseTrinityFile(project.Paths, normalizedVirtualPath);
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
@@ -656,6 +666,16 @@ internal sealed class ZaWorkflowFileSource
 
         try
         {
+            if (bypassReusableBaseCache || freshReadScopeDepth > 0)
+            {
+                return ZaTrinityArchive.BuildIndex(project.Paths.BaseRomFsPath!)
+                    .Files
+                    .Select(file => file.PackName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+
             return cacheManager.ListBaseTrinityPackNames(project.Paths);
         }
         catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
@@ -750,6 +770,42 @@ internal sealed class ZaWorkflowFileSource
         if (PathContainment.IsOutsideRoot(pathFromOutputRoot))
         {
             throw new InvalidOperationException($"Pokemon Legends Z-A target path '{targetRelativePath}' escapes the output root.");
+        }
+
+        EnsureNoLinkTraversal(outputRoot, targetPath);
+        return targetPath;
+    }
+
+    internal static IDisposable BeginFreshReadScope()
+    {
+        // Safety-critical plan/apply paths must consume the same current archive
+        // bytes that their source-binding guard records, even when cache stamps
+        // (length and last-write time) are unchanged.
+        freshReadScopeDepth = checked(freshReadScopeDepth + 1);
+        return new FreshReadScope();
+    }
+
+    internal static string ResolveReviewedOutputPath(
+        ProjectPaths paths,
+        string targetRelativePath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetRelativePath);
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Set an output root before reviewing Pokemon Legends Z-A edits.");
+        }
+
+        var relativePath = new RelativeOutputPath(targetRelativePath).Value;
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(outputRoot, targetPath)))
+        {
+            throw new InvalidOperationException(
+                "Pokemon Legends Z-A reviewed output path escapes its configured root.");
         }
 
         EnsureNoLinkTraversal(outputRoot, targetPath);
@@ -2527,6 +2583,27 @@ internal sealed class ZaWorkflowFileSource
         private sealed record DeferredMutation(
             byte[]? Bytes,
             ZaOutputApplyContext? ApplyContext);
+    }
+
+    private sealed class FreshReadScope : IDisposable
+    {
+        private bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            if (freshReadScopeDepth <= 0)
+            {
+                throw new InvalidOperationException("The Z-A fresh-read scope is unbalanced.");
+            }
+
+            freshReadScopeDepth--;
+        }
     }
 
     private sealed record LooseOutputCandidate(

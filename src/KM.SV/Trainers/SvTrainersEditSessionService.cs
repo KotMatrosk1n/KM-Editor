@@ -28,7 +28,7 @@ internal sealed class SvTrainersEditSessionService
         SvTrainersWorkflowService? trainersWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.trainersWorkflowService = trainersWorkflowService ?? new SvTrainersWorkflowService(this.fileSource);
     }
 
@@ -228,13 +228,25 @@ internal sealed class SvTrainersEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return SvEditSessionSupport.CreateSingleFileChangePlan(
+        var plan = validation.IsValid
+            && session.PendingEdits.Count > 0
+            && validation.Session.PendingEdits.Count == 0
+            ? new ChangePlan(
+                session.Id,
+                Array.Empty<PlannedFileWrite>(),
+                validation.Diagnostics)
+            : SvEditSessionSupport.CreateSingleFileChangePlan(
+                paths,
+                validation.Session,
+                SvEditSessionSupport.TrainersDomain,
+                SvDataPaths.TrainerDataArray,
+                "Trainers",
+                validation.Diagnostics,
+                outputMode);
+        return SvChangePlanSourceGuard.Capture(
             paths,
             validation.Session,
-            SvEditSessionSupport.TrainersDomain,
-            SvDataPaths.TrainerDataArray,
-            "Trainers",
-            validation.Diagnostics,
+            plan,
             outputMode);
     }
 
@@ -250,8 +262,10 @@ internal sealed class SvTrainersEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var effectiveSession = Validate(paths, session).Session;
-        var currentPlan = CreateChangePlan(paths, effectiveSession, outputMode);
+        var currentPlan = CreateChangePlan(paths, session, outputMode);
+        var effectiveSession = currentPlan.EffectivePendingEdits is { } effectivePendingEdits
+            ? session with { PendingEdits = effectivePendingEdits }
+            : session;
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -267,6 +281,20 @@ internal sealed class SvTrainersEditSessionService
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        if (currentPlan.Writes.Count == 0 && effectiveSession.PendingEdits.Count == 0)
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "The reviewed Trainers changes already match the current source.",
+                SvEditSessionSupport.TrainersDomain));
+            return SvEditSessionSupport.CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                diagnostics);
         }
 
         try
@@ -476,27 +504,19 @@ internal sealed class SvTrainersEditSessionService
                     out var value)
                 && GetSourceTrainerFieldValue(sourceWorkflow, edit) == value)
             {
-                normalizedSession = RemovePendingTrainerEdit(normalizedSession, edit);
+                normalizedSession = RemoveExactPendingTrainerEdit(normalizedSession, edit);
             }
         }
 
         return normalizedSession;
     }
 
-    private static EditSession RemovePendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
+    private static EditSession RemoveExactPendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
     {
-        var clearsOriginallyEmptyPokemonSlot = string.Equals(
-                pendingEdit.Field,
-                SvTrainersWorkflowService.SpeciesIdField,
-                StringComparison.Ordinal)
-            && string.Equals(pendingEdit.NewValue, "0", StringComparison.Ordinal);
-
         return session with
         {
             PendingEdits = session.PendingEdits
-                .Where(edit => clearsOriginallyEmptyPokemonSlot
-                    ? !TargetsSameTrainerPokemonSlot(edit, pendingEdit)
-                    : !IsSameTrainerEdit(edit, pendingEdit))
+                .Where(edit => !IsSameTrainerEdit(edit, pendingEdit))
                 .ToArray(),
         };
     }

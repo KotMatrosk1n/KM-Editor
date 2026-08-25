@@ -25,7 +25,7 @@ internal sealed class SvShopsEditSessionService
         SvShopsWorkflowService? shopsWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.shopsWorkflowService = shopsWorkflowService ?? new SvShopsWorkflowService(this.fileSource);
     }
 
@@ -195,7 +195,11 @@ internal sealed class SvShopsEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target files."));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SvChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            new ChangePlan(session.Id, writes, diagnostics),
+            outputMode);
     }
 
     public ApplyResult ApplyChangePlan(

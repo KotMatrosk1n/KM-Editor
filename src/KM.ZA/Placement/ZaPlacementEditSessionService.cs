@@ -189,6 +189,18 @@ internal sealed class ZaPlacementEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            () => CreateChangePlanCore(paths, session, outputMode),
+            outputMode);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 

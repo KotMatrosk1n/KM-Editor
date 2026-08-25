@@ -38,27 +38,44 @@ export type WorkbenchNavigationGuardState = {
   pendingEditCount: number;
 };
 
+export type WorkbenchNavigationRequestOptions = {
+  preserveSameSectionDraftScope?: boolean;
+};
+
 export type WorkbenchNavigationController = {
-  request: (location: WorkbenchLocation) => WorkbenchNavigationDecision;
+  request: (
+    location: WorkbenchLocation,
+    options?: WorkbenchNavigationRequestOptions
+  ) => WorkbenchNavigationDecision;
 };
 
 export function createWorkbenchNavigationController(
   getGuardState: () => WorkbenchNavigationGuardState
 ): WorkbenchNavigationController {
   return {
-    request: (location) => evaluateWorkbenchNavigation(getGuardState(), location)
+    request: (location, options) =>
+      evaluateWorkbenchNavigation(getGuardState(), location, options)
   };
 }
 
 export function evaluateWorkbenchNavigation(
   state: WorkbenchNavigationGuardState,
-  destination: WorkbenchLocation
+  destination: WorkbenchLocation,
+  options: WorkbenchNavigationRequestOptions = {}
 ): WorkbenchNavigationDecision {
   if (workbenchLocationsEqual(destination, state.activeLocation)) {
     return { kind: 'unchanged' };
   }
 
-  if (state.isEditSessionOperationBusy || state.hasCriticalWriteOperation) {
+  const sharesDraftScope = locationsShareDraftScope(state.activeLocation, destination);
+  const preservesDraftScope =
+    sharesDraftScope ||
+    (options.preserveSameSectionDraftScope === true &&
+      locationsShareSectionDraftScope(state.activeLocation, destination));
+  if (
+    state.hasCriticalWriteOperation ||
+    (state.isEditSessionOperationBusy && !preservesDraftScope)
+  ) {
     return { kind: 'blocked', reason: 'busy' };
   }
 
@@ -68,7 +85,7 @@ export function evaluateWorkbenchNavigation(
 
   const activeSection = state.activeLocation.section;
   const destinationSection = destination.section;
-  if (locationsShareDraftScope(state.activeLocation, destination)) {
+  if (preservesDraftScope) {
     return { clearPendingState: false, kind: 'commit', location: destination };
   }
 
@@ -165,11 +182,17 @@ export function evaluateWorkbenchNavigation(
 
 function locationsShareDraftScope(left: WorkbenchLocation, right: WorkbenchLocation) {
   return (
+    locationsShareSectionDraftScope(left, right) &&
+    semanticEntityKeysEqual(left, right, left.section)
+  );
+}
+
+function locationsShareSectionDraftScope(left: WorkbenchLocation, right: WorkbenchLocation) {
+  return (
     left.projectId === right.projectId &&
     left.game === right.game &&
     left.changeSetId === right.changeSetId &&
-    left.section === right.section &&
-    semanticEntityKeysEqual(left, right, left.section)
+    left.section === right.section
   );
 }
 

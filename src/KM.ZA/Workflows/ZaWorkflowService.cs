@@ -1142,6 +1142,13 @@ public sealed class ZaWorkflowService
 
     public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session, ZaOutputMode outputMode)
     {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
+        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope();
+        projectWorkspaceService.ClearMemoryCache();
+        pokemonWorkflowService.ClearMemoryCache();
+
         if (IsMixedAlphaMoveSession(session))
         {
             return CreateAlphaMoveMixedChangePlan(session);
@@ -1160,6 +1167,13 @@ public sealed class ZaWorkflowService
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan, ZaOutputMode outputMode)
     {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(reviewedPlan);
+        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope();
+        projectWorkspaceService.ClearMemoryCache();
+        pokemonWorkflowService.ClearMemoryCache();
+
         if (IsMixedAlphaMoveSession(session))
         {
             return CreateAlphaMoveMixedApplyResult(session);
@@ -1297,7 +1311,8 @@ public sealed class ZaWorkflowService
     {
         var validation = ValidateNormalDomains(paths, session, domains);
         var diagnostics = validation.Diagnostics.ToList();
-        var effectiveSession = validation.Session;
+        var effectiveSession = ZaChangePlanSourceGuard.WithoutPendingEditAssociations(
+            validation.Session);
         var effectiveDomains = domains
             .Where(domain => SliceSession(effectiveSession, domain).PendingEdits.Count > 0)
             .ToArray();
@@ -1318,7 +1333,10 @@ public sealed class ZaWorkflowService
                 "za.editor",
                 expected: "Pending Pokemon Legends Z-A edit"));
             return new NormalDomainChangePlanSnapshot(
-                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics)
+                {
+                    EffectivePendingEdits = effectiveSession.PendingEdits,
+                },
                 new Dictionary<ZaEditSessionDomain, ChangePlan>(),
                 effectiveSession,
                 effectiveDomains);
@@ -1353,7 +1371,10 @@ public sealed class ZaWorkflowService
                 CombinePlannedWrites(
                     writes,
                     CreatePendingEditFingerprint(effectiveSession.PendingEdits)),
-                diagnostics),
+                diagnostics)
+            {
+                EffectivePendingEdits = effectiveSession.PendingEdits,
+            },
             domainPlans,
             effectiveSession,
             effectiveDomains);
@@ -1678,14 +1699,20 @@ public sealed class ZaWorkflowService
         string pendingEditFingerprint)
     {
         return writes
-            .GroupBy(write => write.TargetRelativePath, StringComparer.Ordinal)
+            .GroupBy(
+                write => new RelativeOutputPath(write.TargetRelativePath).CanonicalKey,
+                StringComparer.Ordinal)
             .Select(group =>
             {
-                var groupedWrites = group.ToArray();
+                var groupedWrites = group
+                    .OrderBy(write => new RelativeOutputPath(write.TargetRelativePath).Value, StringComparer.Ordinal)
+                    .ToArray();
+                var targetRelativePath = new RelativeOutputPath(
+                    groupedWrites[0].TargetRelativePath).Value;
                 var combined = groupedWrites.Length == 1
                     ? groupedWrites[0]
                     : new PlannedFileWrite(
-                        group.Key,
+                        targetRelativePath,
                         groupedWrites
                             .SelectMany(write => write.Sources)
                             .Distinct()
@@ -1697,7 +1724,10 @@ public sealed class ZaWorkflowService
                                 .Select(write => write.Reason)
                                 .Where(reason => !string.IsNullOrWhiteSpace(reason))
                                 .Distinct(StringComparer.Ordinal)),
-                        CombineSourceFingerprints(groupedWrites));
+                        CombineSourceFingerprints(groupedWrites))
+                    {
+                        SourceBindingFingerprint = CombineSourceBindingFingerprints(groupedWrites),
+                    };
                 return combined with
                 {
                     SourceFingerprint = CombineFingerprintValues(
@@ -1782,6 +1812,22 @@ public sealed class ZaWorkflowService
             .Order(StringComparer.Ordinal);
         var payload = Encoding.UTF8.GetBytes(string.Join('\n', components));
         return Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+    }
+
+    private static string? CombineSourceBindingFingerprints(
+        IReadOnlyList<PlannedFileWrite> writes)
+    {
+        if (writes.All(write => string.IsNullOrWhiteSpace(write.SourceBindingFingerprint)))
+        {
+            return null;
+        }
+
+        var components = writes
+            .Select(write => write.SourceBindingFingerprint ?? "<none>")
+            .Order(StringComparer.Ordinal);
+        var payload = Encoding.UTF8.GetBytes(
+            "KM.ZA.CombinedSourceBinding.v1\n" + string.Join('\n', components));
+        return Convert.ToHexStringLower(SHA256.HashData(payload));
     }
 
     private sealed record NormalDomainChangePlanSnapshot(

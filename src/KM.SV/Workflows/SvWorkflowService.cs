@@ -97,22 +97,71 @@ public sealed class SvWorkflowService
         hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
         dumpImportWorkflowService = new SvDumpImportWorkflowService(itemsWorkflowService);
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService, this.cacheManager);
-        itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
-        movesEditSessionService = new SvMovesEditSessionService(this.projectWorkspaceService, fileSource, movesWorkflowService);
-        textEditSessionService = new SvTextEditSessionService(this.projectWorkspaceService, fileSource, textWorkflowService);
-        pokemonEditSessionService = new SvPokemonEditSessionService(this.projectWorkspaceService, fileSource, pokemonWorkflowService);
-        trainersEditSessionService = new SvTrainersEditSessionService(this.projectWorkspaceService, fileSource, trainersWorkflowService);
-        encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
-        teraRaidsEditSessionService = new SvTeraRaidsEditSessionService(this.projectWorkspaceService, fileSource, teraRaidsWorkflowService);
+        var editFileSource = new SvWorkflowFileSource(
+            this.cacheManager,
+            bypassReusableBaseCache: true);
+        var editItemsWorkflowService = new SvItemsWorkflowService(editFileSource);
+        var editMovesWorkflowService = new SvMovesWorkflowService(editFileSource);
+        var editTextWorkflowService = new SvTextWorkflowService(editFileSource);
+        var editPokemonWorkflowService = new SvPokemonWorkflowService(editFileSource);
+        var editTrainersWorkflowService = new SvTrainersWorkflowService(editFileSource);
+        var editEncountersWorkflowService = new SvEncountersWorkflowService(editFileSource);
+        var editTeraRaidsWorkflowService = new SvTeraRaidsWorkflowService(editFileSource);
+        var editPlacementWorkflowService = new SvPlacementWorkflowService(editFileSource);
+        var editStaticEncountersWorkflowService = new SvStaticEncountersWorkflowService(
+            editPlacementWorkflowService);
+        var editShopsWorkflowService = new SvShopsWorkflowService(editFileSource);
+        var editGiftPokemonWorkflowService = new SvGiftPokemonWorkflowService(editFileSource);
+        var editTradePokemonWorkflowService = new SvTradePokemonWorkflowService(editFileSource);
+        itemsEditSessionService = new SvItemsEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editItemsWorkflowService);
+        movesEditSessionService = new SvMovesEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editMovesWorkflowService);
+        textEditSessionService = new SvTextEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editTextWorkflowService);
+        pokemonEditSessionService = new SvPokemonEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editPokemonWorkflowService);
+        trainersEditSessionService = new SvTrainersEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editTrainersWorkflowService);
+        encountersEditSessionService = new SvEncountersEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editEncountersWorkflowService);
+        teraRaidsEditSessionService = new SvTeraRaidsEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editTeraRaidsWorkflowService);
         staticEncountersEditSessionService = new SvStaticEncountersEditSessionService(
             this.projectWorkspaceService,
-            fileSource,
-            staticEncountersWorkflowService,
-            placementWorkflowService);
-        shopsEditSessionService = new SvShopsEditSessionService(this.projectWorkspaceService, fileSource, shopsWorkflowService);
-        giftPokemonEditSessionService = new SvGiftPokemonEditSessionService(this.projectWorkspaceService, fileSource, giftPokemonWorkflowService);
-        tradePokemonEditSessionService = new SvTradePokemonEditSessionService(this.projectWorkspaceService, fileSource, tradePokemonWorkflowService);
-        placementEditSessionService = new SvPlacementEditSessionService(this.projectWorkspaceService, fileSource, placementWorkflowService);
+            editFileSource,
+            editStaticEncountersWorkflowService,
+            editPlacementWorkflowService);
+        shopsEditSessionService = new SvShopsEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editShopsWorkflowService);
+        giftPokemonEditSessionService = new SvGiftPokemonEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editGiftPokemonWorkflowService);
+        tradePokemonEditSessionService = new SvTradePokemonEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editTradePokemonWorkflowService);
+        placementEditSessionService = new SvPlacementEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editPlacementWorkflowService);
         typeChartEditSessionService = new SvTypeChartEditSessionService(
             this.projectWorkspaceService,
             typeChartWorkflowService);
@@ -974,10 +1023,14 @@ public sealed class SvWorkflowService
         EditSession session,
         SvOutputMode outputMode = SvOutputMode.Standalone)
     {
-        var domain = GetDomain(session);
-        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
-            ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
-            : CreateSingleDomainChangePlan(paths, session, domain, outputMode);
+        lock (SvWorkflowFileSource.OutputWriteSyncRoot)
+        {
+            projectWorkspaceService.ClearMemoryCache();
+            var domain = GetDomain(session);
+            return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+                ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
+                : CreateSingleDomainChangePlan(paths, session, domain, outputMode);
+        }
     }
 
     public ApplyResult ApplyChangePlan(
@@ -986,10 +1039,23 @@ public sealed class SvWorkflowService
         ChangePlan changePlan,
         SvOutputMode outputMode = SvOutputMode.Standalone)
     {
-        var domain = GetDomain(session);
-        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
-            ? ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode)
-            : ApplySingleDomainChangePlan(paths, session, changePlan, domain, outputMode);
+        try
+        {
+            lock (SvWorkflowFileSource.OutputWriteSyncRoot)
+            {
+                projectWorkspaceService.ClearMemoryCache();
+                var domain = GetDomain(session);
+                return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+                    ? ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode)
+                    : ApplySingleDomainChangePlan(paths, session, changePlan, domain, outputMode);
+            }
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+            pokemonWorkflowService.ClearMemoryCache();
+            textWorkflowService.ClearMemoryCache();
+        }
     }
 
     private SvEditSessionValidation ValidateSingleDomain(
@@ -1169,13 +1235,30 @@ public sealed class SvWorkflowService
                 effectiveDomains);
         }
 
+        if (domainPlans.Values.Any(plan => plan.EffectivePendingEdits is null))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Scarlet/Violet mixed change-plan source authentication did not complete.",
+                "sv.editor",
+                expected: "Fresh authenticated domain plans"));
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                domainPlans,
+                effectiveSession,
+                effectiveDomains);
+        }
+
         return new NormalDomainChangePlanSnapshot(
             new ChangePlan(
                 session.Id,
                 CombinePlannedWrites(
                     writes,
                     CreatePendingEditFingerprint(effectiveSession.PendingEdits)),
-                diagnostics),
+                diagnostics)
+            {
+                EffectivePendingEdits = CreateEffectivePendingEditEvidence(effectiveSession),
+            },
             domainPlans,
             effectiveSession,
             effectiveDomains);
@@ -1245,7 +1328,15 @@ public sealed class SvWorkflowService
             foreach (var domain in currentSnapshot.EffectiveDomains)
             {
                 var domainSession = SliceSession(currentSnapshot.EffectiveSession, domain);
-                var domainPlan = currentSnapshot.DomainPlans[domain];
+                // Earlier domains in this verified atomic batch may have created an
+                // output preimage (especially the shared standalone descriptor).
+                // Review the domain against that intentional in-batch state while
+                // the outer combined plan remains the user-reviewed boundary.
+                var domainPlan = CreateSingleDomainChangePlan(
+                    paths,
+                    domainSession,
+                    domain,
+                    outputMode);
                 var result = ApplySingleDomainChangePlan(paths, domainSession, domainPlan, domain, outputMode);
                 diagnostics.AddRange(result.Diagnostics);
                 writtenFiles.AddRange(result.WrittenFiles);
@@ -1500,6 +1591,8 @@ public sealed class SvWorkflowService
                         CombineFingerprintValues(groupedWrites.Select(write => write.SourceFingerprint)));
                 return combined with
                 {
+                    SourceBindingFingerprint = CombineFingerprintValues(
+                        groupedWrites.Select(write => write.SourceBindingFingerprint)),
                     SourceFingerprint = CombineFingerprintValues(
                         [combined.SourceFingerprint, pendingEditFingerprint]),
                 };
@@ -1557,6 +1650,16 @@ public sealed class SvWorkflowService
         }
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static IReadOnlyList<PendingEdit> CreateEffectivePendingEditEvidence(
+        EditSession session)
+    {
+        return session.PendingEdits
+            .Select(edit => edit.Association is null
+                ? edit
+                : edit with { Association = null })
+            .ToArray();
     }
 
     private static void AppendFingerprintComponent(StringBuilder destination, string? value)

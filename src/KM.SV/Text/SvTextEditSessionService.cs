@@ -36,7 +36,7 @@ public sealed class SvTextEditSessionService
         SvTextWorkflowService? textWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.textWorkflowService = textWorkflowService ?? new SvTextWorkflowService(this.fileSource);
     }
 
@@ -109,6 +109,7 @@ public sealed class SvTextEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        textWorkflowService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var diagnostics = new List<ValidationDiagnostic>();
         var summary = textWorkflowService.CreateSummary(project);
@@ -200,10 +201,14 @@ public sealed class SvTextEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file{(writes.Count == 1 ? string.Empty : "s")}."));
 
-        return new ChangePlan(
-            session.Id,
-            writes.OrderBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase).ToArray(),
-            diagnostics);
+        return SvChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            new ChangePlan(
+                session.Id,
+                writes.OrderBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase).ToArray(),
+                diagnostics),
+            outputMode);
     }
 
     public ApplyResult ApplyChangePlan(

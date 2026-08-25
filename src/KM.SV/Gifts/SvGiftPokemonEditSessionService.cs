@@ -23,7 +23,7 @@ internal sealed class SvGiftPokemonEditSessionService
         SvGiftPokemonWorkflowService? giftPokemonWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.giftPokemonWorkflowService = giftPokemonWorkflowService ?? new SvGiftPokemonWorkflowService(this.fileSource);
     }
 
@@ -188,13 +188,17 @@ internal sealed class SvGiftPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return SvEditSessionSupport.CreateSingleFileChangePlan(
+        return SvChangePlanSourceGuard.Capture(
             paths,
             session,
-            SvEditSessionSupport.GiftPokemonDomain,
-            SvDataPaths.EventAddPokemonArray,
-            "Gift Pokemon",
-            validation.Diagnostics,
+            SvEditSessionSupport.CreateSingleFileChangePlan(
+                paths,
+                session,
+                SvEditSessionSupport.GiftPokemonDomain,
+                SvDataPaths.EventAddPokemonArray,
+                "Gift Pokemon",
+                validation.Diagnostics,
+                outputMode),
             outputMode);
     }
 

@@ -23,7 +23,7 @@ internal sealed class SvMovesEditSessionService
         SvMovesWorkflowService? movesWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.movesWorkflowService = movesWorkflowService ?? new SvMovesWorkflowService(this.fileSource);
     }
 
@@ -194,13 +194,17 @@ internal sealed class SvMovesEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return SvEditSessionSupport.CreateSingleFileChangePlan(
+        return SvChangePlanSourceGuard.Capture(
             paths,
             session,
-            SvEditSessionSupport.MovesDomain,
-            SvDataPaths.MoveDataArray,
-            "Moves",
-            validation.Diagnostics,
+            SvEditSessionSupport.CreateSingleFileChangePlan(
+                paths,
+                session,
+                SvEditSessionSupport.MovesDomain,
+                SvDataPaths.MoveDataArray,
+                "Moves",
+                validation.Diagnostics,
+                outputMode),
             outputMode);
     }
 

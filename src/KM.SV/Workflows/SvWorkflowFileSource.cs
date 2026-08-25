@@ -494,6 +494,14 @@ internal sealed class SvWorkflowFileSource
 
         try
         {
+            if (bypassReusableBaseCache)
+            {
+                using var archive = OpenArchive(
+                    project.Paths.BaseRomFsPath,
+                    project.Paths.ScarletVioletSupportFolderPath);
+                return archive.ContainsFile(normalizedVirtualPath);
+            }
+
             return cacheManager.ContainsBaseTrinityFile(project.Paths, normalizedVirtualPath);
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
@@ -517,6 +525,16 @@ internal sealed class SvWorkflowFileSource
 
         try
         {
+            if (bypassReusableBaseCache)
+            {
+                return SvTrinityArchive.BuildIndex(project.Paths.BaseRomFsPath!)
+                    .Files
+                    .Select(file => file.PackName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+
             return cacheManager.ListBaseTrinityPackNames(project.Paths);
         }
         catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException)
@@ -636,6 +654,30 @@ internal sealed class SvWorkflowFileSource
             new ProjectFileReference(ProjectFileLayer.Base, ToRelativePath(DescriptorVirtualPath)),
         };
         return CreatePlannedWrite(paths, DescriptorVirtualPath, sources, SvOutputMode.Standalone);
+    }
+
+    internal static byte[] CreateStandaloneDescriptorPreview(
+        ProjectPaths paths,
+        IEnumerable<string> plannedVirtualPaths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(plannedVirtualPaths);
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+        {
+            throw new InvalidOperationException(
+                "Scarlet/Violet descriptor preview requires a base RomFS path.");
+        }
+
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Scarlet/Violet descriptor preview requires an output root.");
+        }
+
+        return SvTrinityDescriptorPatcher.CreateLayeredDescriptorIncludingVirtualPaths(
+            paths.BaseRomFsPath,
+            paths.OutputRootPath,
+            plannedVirtualPaths);
     }
 
     private static void WritePatchedDescriptor(ProjectPaths paths)
