@@ -14,7 +14,7 @@ import {
   projectPathsSchema,
   rentalPokemonWorkflowSchema,
   tradePokemonWorkflowSchema,
-  trainersWorkflowSchema
+  trainersWorkflowDeltaSchema
 } from './contracts';
 
 export const pokemonFieldUpdateSchema = z.strictObject({
@@ -111,7 +111,7 @@ export const updateTrainerFieldsRequestSchema = z.strictObject({
 export const updateTrainerFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: trainersWorkflowSchema
+  workflowDelta: trainersWorkflowDeltaSchema
 });
 
 export const giftPokemonFieldUpdateSchema = z.strictObject({

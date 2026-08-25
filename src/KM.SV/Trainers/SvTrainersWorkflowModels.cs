@@ -67,6 +67,7 @@ public sealed record SvTrainerRecord(
     IReadOnlyList<string> Items,
     int AiFlags,
     IReadOnlyList<SvTrainerAiFlagState> AiFlagStates,
+    bool IsStrong,
     bool CanTerastallize,
     string TeraTarget,
     bool Heal,

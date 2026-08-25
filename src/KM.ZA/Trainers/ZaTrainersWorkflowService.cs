@@ -654,7 +654,7 @@ internal sealed class ZaTrainersWorkflowService
             | (trainer.AiChange ? 1 << 7 : 0);
     }
 
-    private static int GetOccupiedPokemonCount(ZaTrainerRecord trainer)
+    internal static int GetOccupiedPokemonCount(ZaTrainerRecord trainer)
     {
         return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
     }

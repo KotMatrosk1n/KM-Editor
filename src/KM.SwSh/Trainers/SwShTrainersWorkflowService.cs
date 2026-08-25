@@ -1292,7 +1292,7 @@ public sealed class SwShTrainersWorkflowService
         };
     }
 
-    private static int GetOccupiedPokemonCount(SwShTrainerRecord trainer)
+    internal static int GetOccupiedPokemonCount(SwShTrainerRecord trainer)
     {
         return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
     }

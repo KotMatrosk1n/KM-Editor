@@ -76,10 +76,12 @@ internal sealed class ZaTrainersEditSessionService
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ReplacePendingTrainerEdit(
-            currentSession,
-            pendingEdit,
-            IsSourcePokemonSlotOccupied(loadedWorkflow, pendingEdit));
+        var updatedSession = NormalizeSourceEquivalentTrainerEdits(
+            loadedWorkflow,
+            ReplacePendingTrainerEdit(
+                currentSession,
+                pendingEdit,
+                IsSourcePokemonSlotOccupied(loadedWorkflow, pendingEdit)));
         var projectedWorkflow = OverlayPendingEdits(
             project,
             loadedWorkflow,
@@ -92,6 +94,8 @@ internal sealed class ZaTrainersEditSessionService
         {
             return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
         }
+
+        updatedSession = NormalizeSourceEquivalentTrainerEdits(loadedWorkflow, updatedSession);
 
         return new ZaTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
@@ -122,7 +126,11 @@ internal sealed class ZaTrainersEditSessionService
 
         var updatedSession = currentSession;
         var effectiveWorkflow = workflow;
-        foreach (var update in updates)
+        foreach (var update in TrainerFieldUpdateOrdering.IdentityFirst(
+                     updates,
+                     static update => update.Field,
+                     ZaTrainersWorkflowService.SpeciesIdField,
+                     ZaTrainersWorkflowService.FormField))
         {
             if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
             {
@@ -166,6 +174,7 @@ internal sealed class ZaTrainersEditSessionService
             effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
+        updatedSession = NormalizeSourceEquivalentTrainerEdits(loadedWorkflow, updatedSession);
         var projectedWorkflow = OverlayPendingEdits(
             project,
             loadedWorkflow,
@@ -198,9 +207,10 @@ internal sealed class ZaTrainersEditSessionService
             ZaEditSessionSupport.TrainersDomain,
             diagnostics);
 
+        var effectiveSession = NormalizeSourceEquivalentTrainerEdits(workflow, session);
         var effectiveWorkflow = workflow;
         var validEdits = new List<PendingEdit>();
-        foreach (var edit in session.PendingEdits)
+        foreach (var edit in effectiveSession.PendingEdits)
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
@@ -216,7 +226,7 @@ internal sealed class ZaTrainersEditSessionService
         ValidateTrainerMeowsticSexForms(workflow, projectedWorkflow, diagnostics);
         ValidateFinalPokemonStatLimits(projectedWorkflow, validEdits, diagnostics);
 
-        if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        if (effectiveSession.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -225,7 +235,7 @@ internal sealed class ZaTrainersEditSessionService
         }
 
         return new ZaEditSessionValidation(
-            session,
+            effectiveSession,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
     }
@@ -241,7 +251,7 @@ internal sealed class ZaTrainersEditSessionService
         var validation = Validate(paths, session);
         return ZaEditSessionSupport.CreateSingleFileChangePlan(
             paths,
-            session,
+            validation.Session,
             ZaEditSessionSupport.TrainersDomain,
             ZaDataPaths.TrainerDataArray,
             "Trainers",
@@ -261,7 +271,8 @@ internal sealed class ZaTrainersEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session, outputMode);
+        var effectiveSession = Validate(paths, session).Session;
+        var currentPlan = CreateChangePlan(paths, effectiveSession, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -284,7 +295,7 @@ internal sealed class ZaTrainersEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
             var rows = ReadRows(source.Bytes);
-            foreach (var edit in session.PendingEdits)
+            foreach (var edit in effectiveSession.PendingEdits)
             {
                 ApplyEdit(rows, edit, diagnostics);
             }
@@ -481,6 +492,120 @@ internal sealed class ZaTrainersEditSessionService
         return session with { PendingEdits = pendingEdits };
     }
 
+    private static EditSession NormalizeSourceEquivalentTrainerEdits(
+        ZaTrainersWorkflow sourceWorkflow,
+        EditSession session)
+    {
+        var normalizedSession = session;
+        foreach (var edit in session.PendingEdits.Where(edit => string.Equals(
+                     edit.Domain,
+                     ZaEditSessionSupport.TrainersDomain,
+                     StringComparison.Ordinal)))
+        {
+            if (int.TryParse(
+                    edit.NewValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out var value)
+                && GetSourceTrainerFieldValue(sourceWorkflow, edit) == value)
+            {
+                normalizedSession = RemovePendingTrainerEdit(normalizedSession, edit);
+            }
+        }
+
+        return normalizedSession;
+    }
+
+    private static EditSession RemovePendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
+    {
+        var clearsOriginallyEmptyPokemonSlot = string.Equals(
+                pendingEdit.Field,
+                ZaTrainersWorkflowService.SpeciesIdField,
+                StringComparison.Ordinal)
+            && string.Equals(pendingEdit.NewValue, "0", StringComparison.Ordinal);
+
+        return session with
+        {
+            PendingEdits = session.PendingEdits
+                .Where(edit => clearsOriginallyEmptyPokemonSlot
+                    ? !TargetsSameTrainerPokemonSlot(edit, pendingEdit)
+                    : !IsSameTrainerEdit(edit, pendingEdit))
+                .ToArray(),
+        };
+    }
+
+    private static int? GetSourceTrainerFieldValue(
+        ZaTrainersWorkflow sourceWorkflow,
+        PendingEdit edit)
+    {
+        ZaTrainerRecord? trainer;
+        ZaTrainerPokemonRecord? pokemon = null;
+        if (TryParseTeamRecordId(edit.RecordId, out var trainerId, out var slot))
+        {
+            trainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+            pokemon = trainer?.Team.FirstOrDefault(candidate => candidate.Slot == slot);
+        }
+        else if (int.TryParse(
+                     edit.RecordId,
+                     NumberStyles.None,
+                     CultureInfo.InvariantCulture,
+                     out trainerId))
+        {
+            trainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+        }
+        else
+        {
+            return null;
+        }
+
+        if (trainer is null)
+        {
+            return null;
+        }
+
+        if (pokemon is null)
+        {
+            return edit.Field switch
+            {
+                ZaTrainersWorkflowService.RankField => trainer.Rank,
+                ZaTrainersWorkflowService.MoneyField => trainer.Money,
+                ZaTrainersWorkflowService.MegaEvolutionField => trainer.MegaEvolution ? 1 : 0,
+                ZaTrainersWorkflowService.LastHandField => trainer.LastHand ? 1 : 0,
+                ZaTrainersWorkflowService.AiFlagsField => trainer.AiFlags,
+                _ => null,
+            };
+        }
+
+        return edit.Field switch
+        {
+            ZaTrainersWorkflowService.SpeciesIdField => pokemon.SpeciesId,
+            ZaTrainersWorkflowService.FormField => pokemon.Form,
+            ZaTrainersWorkflowService.LevelField => pokemon.Level,
+            ZaTrainersWorkflowService.HeldItemIdField => pokemon.HeldItemId,
+            ZaTrainersWorkflowService.Move1IdField => pokemon.MoveIds.ElementAtOrDefault(0),
+            ZaTrainersWorkflowService.Move2IdField => pokemon.MoveIds.ElementAtOrDefault(1),
+            ZaTrainersWorkflowService.Move3IdField => pokemon.MoveIds.ElementAtOrDefault(2),
+            ZaTrainersWorkflowService.Move4IdField => pokemon.MoveIds.ElementAtOrDefault(3),
+            ZaTrainersWorkflowService.GenderField => pokemon.Gender,
+            ZaTrainersWorkflowService.AbilityField => pokemon.Ability,
+            ZaTrainersWorkflowService.NatureField => pokemon.Nature,
+            ZaTrainersWorkflowService.EvHpField => pokemon.Evs.HP,
+            ZaTrainersWorkflowService.EvAttackField => pokemon.Evs.Attack,
+            ZaTrainersWorkflowService.EvDefenseField => pokemon.Evs.Defense,
+            ZaTrainersWorkflowService.EvSpecialAttackField => pokemon.Evs.SpecialAttack,
+            ZaTrainersWorkflowService.EvSpecialDefenseField => pokemon.Evs.SpecialDefense,
+            ZaTrainersWorkflowService.EvSpeedField => pokemon.Evs.Speed,
+            ZaTrainersWorkflowService.IvHpField => pokemon.Ivs.HP,
+            ZaTrainersWorkflowService.IvAttackField => pokemon.Ivs.Attack,
+            ZaTrainersWorkflowService.IvDefenseField => pokemon.Ivs.Defense,
+            ZaTrainersWorkflowService.IvSpecialAttackField => pokemon.Ivs.SpecialAttack,
+            ZaTrainersWorkflowService.IvSpecialDefenseField => pokemon.Ivs.SpecialDefense,
+            ZaTrainersWorkflowService.IvSpeedField => pokemon.Ivs.Speed,
+            ZaTrainersWorkflowService.ShinyField => pokemon.Shiny ? 1 : 0,
+            _ => null,
+        };
+    }
+
     private static bool IsSourcePokemonSlotOccupied(
         ZaTrainersWorkflow sourceWorkflow,
         PendingEdit pendingEdit)
@@ -498,6 +623,13 @@ internal sealed class ZaTrainersEditSessionService
             && string.Equals(candidate.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
             && string.Equals(edit.RecordId, candidate.RecordId, StringComparison.Ordinal)
             && IsPokemonField(edit.Field);
+    }
+
+    private static bool IsSameTrainerEdit(PendingEdit candidate, PendingEdit pendingEdit)
+    {
+        return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+            && string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
     }
 
     private static void ValidatePendingEdit(
@@ -858,11 +990,17 @@ internal sealed class ZaTrainersEditSessionService
                     workflow.PokemonAvailability))
                 .ToDictionary(trainer => trainer.TrainerId);
 
+            var trainers = workflow.Trainers
+                .Select(trainer => trainersById.TryGetValue(trainer.TrainerId, out var updatedTrainer) ? updatedTrainer : trainer)
+                .ToArray();
+
             return workflow with
             {
-                Trainers = workflow.Trainers
-                    .Select(trainer => trainersById.TryGetValue(trainer.TrainerId, out var updatedTrainer) ? updatedTrainer : trainer)
-                    .ToArray(),
+                Trainers = trainers,
+                Stats = workflow.Stats with
+                {
+                    TotalPokemonCount = trainers.Sum(ZaTrainersWorkflowService.GetOccupiedPokemonCount),
+                },
             };
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException or OverflowException)

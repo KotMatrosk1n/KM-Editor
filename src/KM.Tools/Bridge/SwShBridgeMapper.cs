@@ -694,12 +694,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
-    public static UpdateTrainerFieldResponse ToDto(SwShTrainersEditResult result)
+    public static UpdateTrainerFieldResponse ToDto(
+        SwShTrainersEditResult result,
+        int changedTrainerId,
+        string changedField)
     {
         ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(changedField);
 
         return new UpdateTrainerFieldResponse(
-            ToTrainersWorkflowDto(result.Workflow),
+            ToTrainersWorkflowDeltaDto(result.Workflow, changedTrainerId, changedField),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1573,6 +1577,36 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.Trainers.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TrainersWorkflowDeltaDto ToTrainersWorkflowDeltaDto(
+        SwShTrainersWorkflow workflow,
+        int changedTrainerId,
+        string changedField)
+    {
+        var changedTrainer = workflow.Trainers.FirstOrDefault(
+            trainer => trainer.TrainerId == changedTrainerId);
+        var changedTrainerIds = string.Equals(
+                changedField.Trim(),
+                SwShTrainersWorkflowService.ClassBallIdField,
+                StringComparison.Ordinal)
+            && changedTrainer is not null
+            ? workflow.Trainers
+                .Where(trainer => trainer.TrainerClassId == changedTrainer.TrainerClassId)
+                .Select(trainer => trainer.TrainerId)
+                .ToHashSet()
+            : new HashSet<int> { changedTrainerId };
+
+        return new TrainersWorkflowDeltaDto(
+            workflow.Trainers
+                .Where(trainer => changedTrainerIds.Contains(trainer.TrainerId))
+                .Select(ToDto)
+                .ToArray(),
             new TrainersWorkflowStatsDto(
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,

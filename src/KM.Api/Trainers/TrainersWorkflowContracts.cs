@@ -99,6 +99,8 @@ public sealed record TrainerRecordDto(
     TrainerProvenanceDto Provenance)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? SvIsStrong { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ZaRank { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ZaMegaEvolution { get; init; }
@@ -145,6 +147,11 @@ public sealed record TrainersWorkflowDto(
     TrainersWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
+public sealed record TrainersWorkflowDeltaDto(
+    IReadOnlyList<TrainerRecordDto> Trainers,
+    TrainersWorkflowStatsDto Stats,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
 public sealed record LoadTrainersWorkflowResponse(TrainersWorkflowDto Workflow);
 
 public sealed record UpdateTrainerFieldRequest(
@@ -167,11 +174,11 @@ public sealed record UpdateTrainerFieldsRequest(
     IReadOnlyList<TrainerFieldUpdateDto> Updates);
 
 public sealed record UpdateTrainerFieldResponse(
-    TrainersWorkflowDto Workflow,
+    TrainersWorkflowDeltaDto WorkflowDelta,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateTrainerFieldsResponse(
-    TrainersWorkflowDto Workflow,
+    TrainersWorkflowDeltaDto WorkflowDelta,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

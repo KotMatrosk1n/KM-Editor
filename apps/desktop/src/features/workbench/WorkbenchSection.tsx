@@ -519,7 +519,7 @@ function WorkspaceCollection({
         <h3>{t(titleKey)}</h3>
       </div>
       {items.length > 0 ? (
-        <ul className="km-workbench-list">
+        <ul className="km-workbench-list km-workbench-collection-list">
           {items.map((item) => (
             <li key={item.id}>
               <button

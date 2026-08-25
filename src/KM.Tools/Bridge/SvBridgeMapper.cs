@@ -227,22 +227,28 @@ public static class SvBridgeMapper
         return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
     }
 
-    public static UpdateTrainerFieldResponse ToDto(SvTrainersEditResult result)
+    public static UpdateTrainerFieldResponse ToDto(
+        SvTrainersEditResult result,
+        IEnumerable<int> changedTrainerIds)
     {
         ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(changedTrainerIds);
 
         return new UpdateTrainerFieldResponse(
-            ToTrainersWorkflowDto(result.Workflow),
+            ToTrainersWorkflowDeltaDto(result.Workflow, changedTrainerIds),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
-    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(SvTrainersEditResult result)
+    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(
+        SvTrainersEditResult result,
+        IEnumerable<int> changedTrainerIds)
     {
         ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(changedTrainerIds);
 
         return new UpdateTrainerFieldsResponse(
-            ToTrainersWorkflowDto(result.Workflow),
+            ToTrainersWorkflowDeltaDto(result.Workflow, changedTrainerIds),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -642,6 +648,23 @@ public static class SvBridgeMapper
             ToDto(workflow.Summary),
             workflow.Trainers.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TrainersWorkflowDeltaDto ToTrainersWorkflowDeltaDto(
+        SvTrainersWorkflow workflow,
+        IEnumerable<int> changedTrainerIds)
+    {
+        var changedTrainerIdSet = changedTrainerIds.ToHashSet();
+        return new TrainersWorkflowDeltaDto(
+            workflow.Trainers
+                .Where(trainer => changedTrainerIdSet.Contains(trainer.TrainerId))
+                .Select(ToDto)
+                .ToArray(),
             new TrainersWorkflowStatsDto(
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
@@ -1284,7 +1307,10 @@ public static class SvBridgeMapper
             trainer.CanEditClassBall,
             trainer.ClassBallScope,
             trainer.Team.Select(ToDto).ToArray(),
-            ToDto(trainer.Provenance));
+            ToDto(trainer.Provenance))
+        {
+            SvIsStrong = trainer.IsStrong,
+        };
     }
 
     private static TrainerPokemonRecordDto ToDto(SvTrainerPokemonRecord pokemon)

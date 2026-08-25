@@ -1082,14 +1082,22 @@ public sealed class SvWorkflowService
         IReadOnlyList<SvEditSessionDomain> domains)
     {
         var diagnostics = new List<ValidationDiagnostic>();
+        var effectiveSession = session;
         foreach (var domain in domains)
         {
-            var validation = ValidateSingleDomain(paths, SliceSession(session, domain), domain);
+            var validation = ValidateSingleDomain(
+                paths,
+                SliceSession(effectiveSession, domain),
+                domain);
             diagnostics.AddRange(validation.Diagnostics);
+            effectiveSession = MergeValidatedDomainSession(
+                effectiveSession,
+                domain,
+                validation.Session);
         }
 
         return new SvEditSessionValidation(
-            session,
+            effectiveSession,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
     }
@@ -1111,18 +1119,42 @@ public sealed class SvWorkflowService
     {
         var validation = ValidateNormalDomains(paths, session, domains);
         var diagnostics = validation.Diagnostics.ToList();
+        var effectiveSession = validation.Session;
+        var effectiveDomains = domains
+            .Where(domain => SliceSession(effectiveSession, domain).PendingEdits.Count > 0)
+            .ToArray();
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new NormalDomainChangePlanSnapshot(
                 new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
-                new Dictionary<SvEditSessionDomain, ChangePlan>());
+                new Dictionary<SvEditSessionDomain, ChangePlan>(),
+                effectiveSession,
+                effectiveDomains);
+        }
+
+        if (effectiveDomains.Length == 0)
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Scarlet/Violet edit before reviewing a change plan.",
+                "sv.editor",
+                expected: "Pending Scarlet/Violet edit"));
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                new Dictionary<SvEditSessionDomain, ChangePlan>(),
+                effectiveSession,
+                effectiveDomains);
         }
 
         var writes = new List<PlannedFileWrite>();
         var domainPlans = new Dictionary<SvEditSessionDomain, ChangePlan>();
-        foreach (var domain in domains)
+        foreach (var domain in effectiveDomains)
         {
-            var domainPlan = CreateSingleDomainChangePlan(paths, SliceSession(session, domain), domain, outputMode);
+            var domainPlan = CreateSingleDomainChangePlan(
+                paths,
+                SliceSession(effectiveSession, domain),
+                domain,
+                outputMode);
             domainPlans.Add(domain, domainPlan);
             diagnostics.AddRange(domainPlan.Diagnostics);
             writes.AddRange(domainPlan.Writes);
@@ -1132,15 +1164,21 @@ public sealed class SvWorkflowService
         {
             return new NormalDomainChangePlanSnapshot(
                 new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
-                domainPlans);
+                domainPlans,
+                effectiveSession,
+                effectiveDomains);
         }
 
         return new NormalDomainChangePlanSnapshot(
             new ChangePlan(
                 session.Id,
-                CombinePlannedWrites(writes, CreatePendingEditFingerprint(session.PendingEdits)),
+                CombinePlannedWrites(
+                    writes,
+                    CreatePendingEditFingerprint(effectiveSession.PendingEdits)),
                 diagnostics),
-            domainPlans);
+            domainPlans,
+            effectiveSession,
+            effectiveDomains);
     }
 
     private ApplyResult ApplyNormalDomainChangePlan(
@@ -1204,9 +1242,9 @@ public sealed class SvWorkflowService
 
         try
         {
-            foreach (var domain in domains)
+            foreach (var domain in currentSnapshot.EffectiveDomains)
             {
-                var domainSession = SliceSession(session, domain);
+                var domainSession = SliceSession(currentSnapshot.EffectiveSession, domain);
                 var domainPlan = currentSnapshot.DomainPlans[domain];
                 var result = ApplySingleDomainChangePlan(paths, domainSession, domainPlan, domain, outputMode);
                 diagnostics.AddRange(result.Diagnostics);
@@ -1353,6 +1391,64 @@ public sealed class SvWorkflowService
                 .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
                 .ToArray(),
         };
+    }
+
+    private static EditSession MergeValidatedDomainSession(
+        EditSession session,
+        SvEditSessionDomain domain,
+        EditSession validatedDomainSession)
+    {
+        var domainName = GetDomainName(domain);
+        var remainingValidatedEdits = validatedDomainSession.PendingEdits
+            .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+            .ToList();
+        var mergedEdits = new List<PendingEdit>(session.PendingEdits.Count);
+        var insertionIndex = -1;
+
+        foreach (var edit in session.PendingEdits)
+        {
+            if (!string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+            {
+                mergedEdits.Add(edit);
+                continue;
+            }
+
+            insertionIndex = mergedEdits.Count;
+            var validatedIndex = remainingValidatedEdits.FindIndex(candidate =>
+                ReferenceEquals(candidate, edit) || candidate == edit);
+            if (validatedIndex < 0)
+            {
+                validatedIndex = remainingValidatedEdits.FindIndex(candidate =>
+                    HasSamePendingEditIdentity(candidate, edit));
+            }
+
+            if (validatedIndex < 0)
+            {
+                continue;
+            }
+
+            mergedEdits.Add(remainingValidatedEdits[validatedIndex]);
+            remainingValidatedEdits.RemoveAt(validatedIndex);
+            insertionIndex = mergedEdits.Count;
+        }
+
+        if (remainingValidatedEdits.Count > 0)
+        {
+            mergedEdits.InsertRange(
+                insertionIndex < 0 ? mergedEdits.Count : insertionIndex,
+                remainingValidatedEdits);
+        }
+
+        return session with { PendingEdits = mergedEdits.ToArray() };
+    }
+
+    private static bool HasSamePendingEditIdentity(PendingEdit left, PendingEdit right)
+    {
+        return string.Equals(left.Domain, right.Domain, StringComparison.Ordinal)
+            && string.Equals(left.RecordId, right.RecordId, StringComparison.Ordinal)
+            && string.Equals(left.Field, right.Field, StringComparison.Ordinal)
+            && string.Equals(left.Owner, right.Owner, StringComparison.Ordinal)
+            && left.Association == right.Association;
     }
 
     private static string GetDomainName(SvEditSessionDomain domain)
@@ -1571,7 +1667,9 @@ public sealed class SvWorkflowService
 
     private sealed record NormalDomainChangePlanSnapshot(
         ChangePlan CombinedPlan,
-        IReadOnlyDictionary<SvEditSessionDomain, ChangePlan> DomainPlans);
+        IReadOnlyDictionary<SvEditSessionDomain, ChangePlan> DomainPlans,
+        EditSession EffectiveSession,
+        IReadOnlyList<SvEditSessionDomain> EffectiveDomains);
 
     private static SvEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {

@@ -112,14 +112,18 @@ public sealed class SwShTrainersEditSessionService
                 sourceValue.ToString(CultureInfo.InvariantCulture),
                 StringComparison.Ordinal))
         {
-            var revertedSession = RemovePendingTrainerEdit(currentSession, pendingEdit);
+            var revertedSession = NormalizeSourceEquivalentTrainerEdits(
+                workflow,
+                RemovePendingTrainerEdit(currentSession, pendingEdit));
             return new SwShTrainersEditResult(
                 OverlayPendingEdits(workflow, revertedSession.PendingEdits, abilityResolver),
                 revertedSession,
                 diagnostics);
         }
 
-        var updatedSession = ReplacePendingTrainerEdit(currentSession, pendingEdit);
+        var updatedSession = NormalizeSourceEquivalentTrainerEdits(
+            workflow,
+            ReplacePendingTrainerEdit(currentSession, pendingEdit));
 
         return new SwShTrainersEditResult(
             OverlayPendingEdits(workflow, updatedSession.PendingEdits, abilityResolver),
@@ -142,7 +146,8 @@ public sealed class SwShTrainersEditSessionService
         var workflow = trainersWorkflowService.Load(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-        var trainerEdits = session.PendingEdits.Where(IsTrainerEdit).ToArray();
+        var effectiveSession = NormalizeSourceEquivalentTrainerEdits(workflow, session);
+        var trainerEdits = effectiveSession.PendingEdits.Where(IsTrainerEdit).ToArray();
 
         CanEditTrainers(project, workflow, diagnostics);
 
@@ -232,7 +237,7 @@ public sealed class SwShTrainersEditSessionService
         }
 
         return new SwShEditSessionValidation(
-            session,
+            effectiveSession,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
     }
@@ -246,7 +251,8 @@ public sealed class SwShTrainersEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var validation = Validate(project, session);
         var diagnostics = validation.Diagnostics.ToList();
-        var trainerEdits = session.PendingEdits.Where(IsTrainerEdit).ToArray();
+        var effectiveSession = validation.Session;
+        var trainerEdits = effectiveSession.PendingEdits.Where(IsTrainerEdit).ToArray();
 
         if (trainerEdits.Length == 0)
         {
@@ -258,14 +264,14 @@ public sealed class SwShTrainersEditSessionService
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            return new ChangePlan(effectiveSession.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
         var workflow = trainersWorkflowService.Load(project);
         var writes = CreatePlannedWrites(workflow, paths, trainerEdits, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            return new ChangePlan(effectiveSession.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
         diagnostics.Add(CreateDiagnostic(
@@ -274,7 +280,7 @@ public sealed class SwShTrainersEditSessionService
 
         return SwShChangePlanSourceGuard.Capture(
             paths,
-            new ChangePlan(session.Id, writes, diagnostics));
+            new ChangePlan(effectiveSession.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -297,7 +303,8 @@ public sealed class SwShTrainersEditSessionService
     {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session);
+        var effectiveSession = Validate(paths, session).Session;
+        var currentPlan = CreateChangePlan(paths, effectiveSession);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -318,7 +325,7 @@ public sealed class SwShTrainersEditSessionService
 
         var project = projectWorkspaceService.Open(paths);
         var workflow = trainersWorkflowService.Load(project);
-        var trainerEdits = session.PendingEdits.Where(IsTrainerEdit).ToArray();
+        var trainerEdits = effectiveSession.PendingEdits.Where(IsTrainerEdit).ToArray();
         var applyEdits = trainerEdits
             .Concat(CreateImpliedPokemonCountEdits(workflow, trainerEdits))
             .ToArray();
@@ -733,8 +740,15 @@ public sealed class SwShTrainersEditSessionService
 
     private static bool ConflictsWithPendingTrainerClassEdit(EditSession session, string field)
     {
-        var isClassChange = string.Equals(field, SwShTrainersWorkflowService.TrainerClassIdField, StringComparison.Ordinal);
-        var isClassBallChange = string.Equals(field, SwShTrainersWorkflowService.ClassBallIdField, StringComparison.Ordinal);
+        var normalizedField = field.Trim();
+        var isClassChange = string.Equals(
+            normalizedField,
+            SwShTrainersWorkflowService.TrainerClassIdField,
+            StringComparison.Ordinal);
+        var isClassBallChange = string.Equals(
+            normalizedField,
+            SwShTrainersWorkflowService.ClassBallIdField,
+            StringComparison.Ordinal);
         return (isClassChange && session.PendingEdits.Any(edit =>
                     IsTrainerEdit(edit)
                     && edit.Field == SwShTrainersWorkflowService.ClassBallIdField))
@@ -1018,6 +1032,67 @@ public sealed class SwShTrainersEditSessionService
         };
     }
 
+    private static EditSession NormalizeSourceEquivalentTrainerEdits(
+        SwShTrainersWorkflow sourceWorkflow,
+        EditSession session)
+    {
+        var normalizedSession = session;
+        foreach (var edit in session.PendingEdits.Where(IsTrainerEdit))
+        {
+            if (int.TryParse(
+                    edit.NewValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out var value)
+                && GetSourceTrainerEditValue(sourceWorkflow, edit) == value)
+            {
+                normalizedSession = RemovePendingTrainerEdit(normalizedSession, edit);
+            }
+        }
+
+        return normalizedSession;
+    }
+
+    private static int? GetSourceTrainerEditValue(
+        SwShTrainersWorkflow sourceWorkflow,
+        PendingEdit edit)
+    {
+        SwShTrainerRecord? trainer;
+        int? slot = null;
+        if (SwShTrainersWorkflowService.IsTrainerPokemonField(edit.Field)
+            && SwShTrainersWorkflowService.TryParseTeamRecordId(
+                edit.RecordId,
+                out var trainerId,
+                out var parsedSlot))
+        {
+            trainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+            slot = parsedSlot;
+        }
+        else if (SwShTrainersWorkflowService.IsTrainerClassField(edit.Field)
+                 && int.TryParse(
+                     edit.RecordId,
+                     NumberStyles.None,
+                     CultureInfo.InvariantCulture,
+                     out var classId))
+        {
+            trainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerClassId == classId);
+        }
+        else if (int.TryParse(
+                     edit.RecordId,
+                     NumberStyles.None,
+                     CultureInfo.InvariantCulture,
+                     out trainerId))
+        {
+            trainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+        }
+        else
+        {
+            return null;
+        }
+
+        return trainer is null ? null : GetTrainerFieldValue(trainer, slot, edit.Field);
+    }
+
     private static bool TargetsSameTrainerPokemonSlot(PendingEdit edit, PendingEdit candidate)
     {
         return string.Equals(edit.Domain, TrainersEditDomain, StringComparison.Ordinal)
@@ -1110,7 +1185,13 @@ public sealed class SwShTrainersEditSessionService
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit, abilityResolver);
         }
 
-        return updatedWorkflow;
+        return updatedWorkflow with
+        {
+            Stats = updatedWorkflow.Stats with
+            {
+                TotalPokemonCount = updatedWorkflow.Trainers.Sum(SwShTrainersWorkflowService.GetOccupiedPokemonCount),
+            },
+        };
     }
 
     private static SwShTrainersWorkflow OverlayPendingEdit(

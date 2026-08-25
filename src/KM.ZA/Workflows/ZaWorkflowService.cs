@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Security.Cryptography;
+using System.Security;
 using System.Text;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.Core.Semantics;
 using KM.Formats.ZA;
@@ -1258,14 +1260,22 @@ public sealed class ZaWorkflowService
         IReadOnlyList<ZaEditSessionDomain> domains)
     {
         var diagnostics = new List<ValidationDiagnostic>();
+        var effectiveSession = session;
         foreach (var domain in domains)
         {
-            var validation = ValidateSingleDomain(paths, SliceSession(session, domain), domain);
+            var validation = ValidateSingleDomain(
+                paths,
+                SliceSession(effectiveSession, domain),
+                domain);
             diagnostics.AddRange(validation.Diagnostics);
+            effectiveSession = MergeValidatedDomainSession(
+                effectiveSession,
+                domain,
+                validation.Session);
         }
 
         return new ZaEditSessionValidation(
-            session,
+            effectiveSession,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
     }
@@ -1276,27 +1286,77 @@ public sealed class ZaWorkflowService
         IReadOnlyList<ZaEditSessionDomain> domains,
         ZaOutputMode outputMode)
     {
+        return CreateNormalDomainChangePlanSnapshot(paths, session, domains, outputMode).CombinedPlan;
+    }
+
+    private NormalDomainChangePlanSnapshot CreateNormalDomainChangePlanSnapshot(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<ZaEditSessionDomain> domains,
+        ZaOutputMode outputMode)
+    {
         var validation = ValidateNormalDomains(paths, session, domains);
         var diagnostics = validation.Diagnostics.ToList();
+        var effectiveSession = validation.Session;
+        var effectiveDomains = domains
+            .Where(domain => SliceSession(effectiveSession, domain).PendingEdits.Count > 0)
+            .ToArray();
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                new Dictionary<ZaEditSessionDomain, ChangePlan>(),
+                effectiveSession,
+                effectiveDomains);
+        }
+
+        if (effectiveDomains.Length == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Pokemon Legends Z-A edit before reviewing a change plan.",
+                "za.editor",
+                expected: "Pending Pokemon Legends Z-A edit"));
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                new Dictionary<ZaEditSessionDomain, ChangePlan>(),
+                effectiveSession,
+                effectiveDomains);
         }
 
         var writes = new List<PlannedFileWrite>();
-        foreach (var domain in domains)
+        var domainPlans = new Dictionary<ZaEditSessionDomain, ChangePlan>();
+        foreach (var domain in effectiveDomains)
         {
-            var domainPlan = CreateSingleDomainChangePlan(paths, SliceSession(session, domain), domain, outputMode);
+            var domainPlan = CreateSingleDomainChangePlan(
+                paths,
+                SliceSession(effectiveSession, domain),
+                domain,
+                outputMode);
+            domainPlans.Add(domain, domainPlan);
             diagnostics.AddRange(domainPlan.Diagnostics);
             writes.AddRange(domainPlan.Writes);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            return new NormalDomainChangePlanSnapshot(
+                new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics),
+                domainPlans,
+                effectiveSession,
+                effectiveDomains);
         }
 
-        return new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics);
+        return new NormalDomainChangePlanSnapshot(
+            new ChangePlan(
+                session.Id,
+                CombinePlannedWrites(
+                    writes,
+                    CreatePendingEditFingerprint(effectiveSession.PendingEdits)),
+                diagnostics),
+            domainPlans,
+            effectiveSession,
+            effectiveDomains);
     }
 
     private ApplyResult ApplyNormalDomainChangePlan(
@@ -1306,11 +1366,36 @@ public sealed class ZaWorkflowService
         IReadOnlyList<ZaEditSessionDomain> domains,
         ZaOutputMode outputMode)
     {
+        try
+        {
+            using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
+            return ApplyNormalDomainChangePlanCore(
+                paths,
+                session,
+                reviewedPlan,
+                domains,
+                outputMode);
+        }
+        finally
+        {
+            ClearMemoryCaches(clearReusableDataCaches: false);
+        }
+    }
+
+    private ApplyResult ApplyNormalDomainChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        IReadOnlyList<ZaEditSessionDomain> domains,
+        ZaOutputMode outputMode)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateNormalDomainChangePlan(paths, session, domains, outputMode);
+        var currentSnapshot = CreateNormalDomainChangePlanSnapshot(paths, session, domains, outputMode);
+        var currentPlan = currentSnapshot.CombinedPlan;
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -1326,18 +1411,80 @@ public sealed class ZaWorkflowService
             return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        foreach (var domain in domains)
+        try
         {
-            var domainSession = SliceSession(session, domain);
-            var domainPlan = CreateSingleDomainChangePlan(paths, domainSession, domain, outputMode);
-            var result = ApplySingleDomainChangePlan(paths, domainSession, domainPlan, domain, outputMode);
-            diagnostics.AddRange(result.Diagnostics);
-            writtenFiles.AddRange(result.WrittenFiles);
-
-            if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            using var deferredOutput = ZaWorkflowFileSource.BeginDeferredOutputBatch(
+                paths,
+                outputMode,
+                currentPlan,
+                new ZaOutputApplyContext(
+                    OutputReviewFingerprint.FromChangePlan(currentPlan),
+                    new OwnershipOwnerId("workflow.za.output"),
+                    currentSnapshot.EffectiveDomains
+                        .Select(domain => new OutputApplyOrigin(
+                            OutputApplyOriginKind.Workflow,
+                            GetDomainName(domain)))
+                        .Distinct()
+                        .ToArray()));
+            foreach (var domain in currentSnapshot.EffectiveDomains)
             {
-                break;
+                var domainSession = SliceSession(currentSnapshot.EffectiveSession, domain);
+                var domainPlan = CreateSingleDomainChangePlan(
+                    paths,
+                    domainSession,
+                    domain,
+                    outputMode);
+                if (domainPlan.Diagnostics.Any(diagnostic =>
+                        diagnostic.Severity == DiagnosticSeverity.Error))
+                {
+                    diagnostics.AddRange(domainPlan.Diagnostics);
+                    writtenFiles.Clear();
+                    break;
+                }
+
+                var result = ApplySingleDomainChangePlan(
+                    paths,
+                    domainSession,
+                    domainPlan,
+                    domain,
+                    outputMode);
+                diagnostics.AddRange(result.Diagnostics);
+                writtenFiles.AddRange(result.WrittenFiles);
+
+                if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                {
+                    writtenFiles.Clear();
+                    break;
+                }
+
+                ClearMemoryCaches(clearReusableDataCaches: false);
             }
+
+            if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                outputTransaction = deferredOutput.Commit();
+            }
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or SecurityException
+            or InvalidDataException
+            or InvalidOperationException
+            or ArgumentException
+            or NotSupportedException
+            or OutputCoordinatorException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon Legends Z-A mixed change plan could not be applied: {exception.Message}",
+                "za.editor",
+                expected: "Readable sources and writable output targets"));
+            if (exception is ZaOutputApplyNotCommittedException notCommitted)
+            {
+                outputTransaction = notCommitted.Result;
+            }
+
+            writtenFiles.Clear();
         }
 
         return ZaEditSessionSupport.CreateApplyResult(
@@ -1345,7 +1492,8 @@ public sealed class ZaWorkflowService
             appliedAt,
             currentPlan,
             writtenFiles.Distinct().ToArray(),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private static ZaEditSessionDomain GetDomain(EditSession session)
@@ -1446,6 +1594,64 @@ public sealed class ZaWorkflowService
         };
     }
 
+    private static EditSession MergeValidatedDomainSession(
+        EditSession session,
+        ZaEditSessionDomain domain,
+        EditSession validatedDomainSession)
+    {
+        var domainName = GetDomainName(domain);
+        var remainingValidatedEdits = validatedDomainSession.PendingEdits
+            .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+            .ToList();
+        var mergedEdits = new List<PendingEdit>(session.PendingEdits.Count);
+        var insertionIndex = -1;
+
+        foreach (var edit in session.PendingEdits)
+        {
+            if (!string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+            {
+                mergedEdits.Add(edit);
+                continue;
+            }
+
+            insertionIndex = mergedEdits.Count;
+            var validatedIndex = remainingValidatedEdits.FindIndex(candidate =>
+                ReferenceEquals(candidate, edit) || candidate == edit);
+            if (validatedIndex < 0)
+            {
+                validatedIndex = remainingValidatedEdits.FindIndex(candidate =>
+                    HasSamePendingEditIdentity(candidate, edit));
+            }
+
+            if (validatedIndex < 0)
+            {
+                continue;
+            }
+
+            mergedEdits.Add(remainingValidatedEdits[validatedIndex]);
+            remainingValidatedEdits.RemoveAt(validatedIndex);
+            insertionIndex = mergedEdits.Count;
+        }
+
+        if (remainingValidatedEdits.Count > 0)
+        {
+            mergedEdits.InsertRange(
+                insertionIndex < 0 ? mergedEdits.Count : insertionIndex,
+                remainingValidatedEdits);
+        }
+
+        return session with { PendingEdits = mergedEdits.ToArray() };
+    }
+
+    private static bool HasSamePendingEditIdentity(PendingEdit left, PendingEdit right)
+    {
+        return string.Equals(left.Domain, right.Domain, StringComparison.Ordinal)
+            && string.Equals(left.RecordId, right.RecordId, StringComparison.Ordinal)
+            && string.Equals(left.Field, right.Field, StringComparison.Ordinal)
+            && string.Equals(left.Owner, right.Owner, StringComparison.Ordinal)
+            && left.Association == right.Association;
+    }
+
     private static string GetDomainName(ZaEditSessionDomain domain)
     {
         return domain switch
@@ -1467,35 +1673,100 @@ public sealed class ZaWorkflowService
         };
     }
 
-    private static IReadOnlyList<PlannedFileWrite> CombinePlannedWrites(IEnumerable<PlannedFileWrite> writes)
+    private static IReadOnlyList<PlannedFileWrite> CombinePlannedWrites(
+        IEnumerable<PlannedFileWrite> writes,
+        string pendingEditFingerprint)
     {
         return writes
             .GroupBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .Select(group =>
             {
                 var groupedWrites = group.ToArray();
-                if (groupedWrites.Length == 1)
-                {
-                    return groupedWrites[0];
-                }
-
-                return new PlannedFileWrite(
-                    group.Key,
-                    groupedWrites
-                        .SelectMany(write => write.Sources)
-                        .Distinct()
-                        .ToArray(),
-                    groupedWrites.Any(write => write.ReplacesExistingOutput),
-                    string.Join(
-                        " ",
+                var combined = groupedWrites.Length == 1
+                    ? groupedWrites[0]
+                    : new PlannedFileWrite(
+                        group.Key,
                         groupedWrites
-                            .Select(write => write.Reason)
-                            .Where(reason => !string.IsNullOrWhiteSpace(reason))
-                            .Distinct(StringComparer.Ordinal)),
-                    CombineSourceFingerprints(groupedWrites));
+                            .SelectMany(write => write.Sources)
+                            .Distinct()
+                            .ToArray(),
+                        groupedWrites.Any(write => write.ReplacesExistingOutput),
+                        string.Join(
+                            " ",
+                            groupedWrites
+                                .Select(write => write.Reason)
+                                .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                                .Distinct(StringComparer.Ordinal)),
+                        CombineSourceFingerprints(groupedWrites));
+                return combined with
+                {
+                    SourceFingerprint = CombineFingerprintValues(
+                        [combined.SourceFingerprint, pendingEditFingerprint]),
+                };
             })
             .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static string? CombineFingerprintValues(IEnumerable<string?> values)
+    {
+        var fingerprints = values
+            .Where(fingerprint => !string.IsNullOrWhiteSpace(fingerprint))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return fingerprints.Length switch
+        {
+            0 => null,
+            1 => fingerprints[0],
+            _ => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                    "KM.ZA.CombinedChangePlan.v1\n" + string.Join('\n', fingerprints))))
+                .ToLowerInvariant(),
+        };
+    }
+
+    private static string CreatePendingEditFingerprint(IReadOnlyList<PendingEdit> edits)
+    {
+        var canonical = new StringBuilder("KM.ZA.PendingEdits.v1|");
+        AppendFingerprintComponent(canonical, edits.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        foreach (var edit in edits
+                     .OrderBy(edit => edit.Domain, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Owner, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.NewValue, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Summary, StringComparer.Ordinal))
+        {
+            AppendFingerprintComponent(canonical, edit.Domain);
+            AppendFingerprintComponent(canonical, edit.Summary);
+            AppendFingerprintComponent(canonical, edit.RecordId);
+            AppendFingerprintComponent(canonical, edit.Field);
+            AppendFingerprintComponent(canonical, edit.NewValue);
+            AppendFingerprintComponent(canonical, edit.Owner);
+            AppendFingerprintComponent(
+                canonical,
+                edit.Sources.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            foreach (var source in edit.Sources
+                         .OrderBy(source => source.Layer)
+                         .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+            {
+                AppendFingerprintComponent(
+                    canonical,
+                    ((int)source.Layer).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                AppendFingerprintComponent(canonical, source.RelativePath);
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())))
+            .ToLowerInvariant();
+    }
+
+    private static void AppendFingerprintComponent(StringBuilder destination, string? value)
+    {
+        destination.Append(value?.Length ?? -1)
+            .Append(':')
+            .Append(value)
+            .Append('|');
     }
 
     private static string? CombineSourceFingerprints(
@@ -1512,6 +1783,12 @@ public sealed class ZaWorkflowService
         var payload = Encoding.UTF8.GetBytes(string.Join('\n', components));
         return Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
     }
+
+    private sealed record NormalDomainChangePlanSnapshot(
+        ChangePlan CombinedPlan,
+        IReadOnlyDictionary<ZaEditSessionDomain, ChangePlan> DomainPlans,
+        EditSession EffectiveSession,
+        IReadOnlyList<ZaEditSessionDomain> EffectiveDomains);
 
     private static ZaEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {
