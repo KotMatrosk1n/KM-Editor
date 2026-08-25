@@ -30,14 +30,16 @@ public sealed class SvModMergerWorkflowService
     };
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
-    private readonly SvCacheManager cacheManager;
 
     public SvModMergerWorkflowService(
         ProjectWorkspaceService? projectWorkspaceService = null,
         SvCacheManager? cacheManager = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.cacheManager = cacheManager ?? new SvCacheManager();
+        // Keep the optional parameter for API compatibility. Safety-critical smart
+        // merge comparisons open the current archive directly instead of consuming
+        // reusable payloads keyed only by archive length and timestamp.
+        _ = cacheManager;
     }
 
     public SvWorkflowSummary CreateSummary(OpenedProject project)
@@ -80,7 +82,7 @@ public sealed class SvModMergerWorkflowService
         var project = projectWorkspaceService.Open(paths);
         var diagnostics = new List<ValidationDiagnostic>();
         var analysis = Analyze(project, modSources, diagnostics);
-        var plan = CreatePlan(project.Paths, analysis.OutputFiles, includeOutputs: false, diagnostics, cacheManager);
+        var plan = CreatePlan(project.Paths, analysis.OutputFiles, includeOutputs: false, diagnostics);
         var workflow = CreateWorkflow(project, analysis.Sources, analysis.OutputFiles, diagnostics);
         var preview = CreatePreview(project, plan.Files, diagnostics);
 
@@ -107,7 +109,7 @@ public sealed class SvModMergerWorkflowService
         var project = projectWorkspaceService.Open(paths);
         var diagnostics = new List<ValidationDiagnostic>();
         var analysis = Analyze(project, modSources, diagnostics);
-        var plan = CreatePlan(project.Paths, analysis.OutputFiles, includeOutputs: true, diagnostics, cacheManager);
+        var plan = CreatePlan(project.Paths, analysis.OutputFiles, includeOutputs: true, diagnostics);
         var workflow = CreateWorkflow(project, analysis.Sources, analysis.OutputFiles, diagnostics);
         var preview = CreatePreview(project, plan.Files, diagnostics);
         var writtenFiles = new List<string>();
@@ -302,12 +304,11 @@ public sealed class SvModMergerWorkflowService
         ProjectPaths paths,
         IReadOnlyList<OutputFileState> outputFiles,
         bool includeOutputs,
-        ICollection<ValidationDiagnostic> diagnostics,
-        SvCacheManager cacheManager)
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         var files = new List<SvModMergerFilePreviewRecord>();
         var outputs = new List<MergeOutput>();
-        using var baseReader = BaseFileReader.TryCreate(paths, diagnostics, cacheManager);
+        using var baseReader = BaseFileReader.TryCreate(paths, diagnostics);
 
         foreach (var file in outputFiles)
         {
@@ -1192,21 +1193,26 @@ public sealed class SvModMergerWorkflowService
 
     private sealed class BaseFileReader : IDisposable
     {
-        private readonly ProjectPaths paths;
+        private readonly string baseRomFsPath;
+        private readonly string? supportFolderPath;
         private readonly string looseBaseRoot;
-        private readonly SvCacheManager cacheManager;
+        private readonly ICollection<ValidationDiagnostic> diagnostics;
+        private SvTrinityArchive? archive;
+        private bool archiveOpenAttempted;
 
-        private BaseFileReader(ProjectPaths paths, SvCacheManager cacheManager)
+        private BaseFileReader(
+            ProjectPaths paths,
+            ICollection<ValidationDiagnostic> diagnostics)
         {
-            this.paths = paths;
-            this.cacheManager = cacheManager;
-            looseBaseRoot = ResolveBaseRomFsRoot(paths.BaseRomFsPath!);
+            baseRomFsPath = paths.BaseRomFsPath!;
+            supportFolderPath = paths.ScarletVioletSupportFolderPath;
+            this.diagnostics = diagnostics;
+            looseBaseRoot = ResolveBaseRomFsRoot(baseRomFsPath);
         }
 
         public static BaseFileReader? TryCreate(
             ProjectPaths paths,
-            ICollection<ValidationDiagnostic> diagnostics,
-            SvCacheManager cacheManager)
+            ICollection<ValidationDiagnostic> diagnostics)
         {
             if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
             {
@@ -1227,7 +1233,7 @@ public sealed class SvModMergerWorkflowService
                     expected: "Configured oo2core_8_win64.dll folder for packed vanilla comparisons"));
             }
 
-            return new BaseFileReader(paths, cacheManager);
+            return new BaseFileReader(paths, diagnostics);
         }
 
         public bool TryRead(string relativePath, out byte[] bytes)
@@ -1242,10 +1248,16 @@ public sealed class SvModMergerWorkflowService
                 return true;
             }
 
+            var currentArchive = GetOrOpenArchive();
+            if (currentArchive is null)
+            {
+                bytes = [];
+                return false;
+            }
+
             try
             {
-                bytes = cacheManager.ReadBaseTrinityFile(paths, virtualPath);
-                return true;
+                return currentArchive.TryReadFile(virtualPath, out bytes);
             }
             catch (Exception)
             {
@@ -1254,8 +1266,41 @@ public sealed class SvModMergerWorkflowService
             }
         }
 
+        private SvTrinityArchive? GetOrOpenArchive()
+        {
+            if (archiveOpenAttempted)
+            {
+                return archive;
+            }
+
+            archiveOpenAttempted = true;
+            try
+            {
+                archive = SvTrinityArchive.Open(baseRomFsPath, supportFolderPath);
+            }
+            catch (Exception exception) when (exception is IOException
+                or InvalidDataException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException
+                or System.Security.SecurityException
+                or DllNotFoundException
+                or EntryPointNotFoundException
+                or BadImageFormatException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "S/V smart merge could not open the current vanilla archive. Loose base files remain available, but packed comparisons may fall back to source priority.",
+                    field: "baseRomFsPath",
+                    expected: "Readable current Scarlet/Violet Trinity archive"));
+            }
+
+            return archive;
+        }
+
         public void Dispose()
         {
+            archive?.Dispose();
         }
 
         private static string ResolveBaseRomFsRoot(string path)

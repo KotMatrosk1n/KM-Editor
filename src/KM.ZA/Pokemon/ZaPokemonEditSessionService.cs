@@ -1390,6 +1390,18 @@ internal sealed class ZaPokemonEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            () => CreateChangePlanCore(paths, session, outputMode),
+            outputMode);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -2170,14 +2182,11 @@ internal sealed class ZaPokemonEditSessionService
 
             if (dexApply.ChangesRegularCount)
             {
-                var expectedMainFingerprint = currentPlan.Writes
+                var mainWrite = currentPlan.Writes
                     .Single(write => string.Equals(
                         write.TargetRelativePath,
                         ZaExeFsReservedRegionLedger.ExeFsMainPath,
-                        StringComparison.OrdinalIgnoreCase))
-                    .SourceFingerprint
-                    ?? throw new InvalidDataException(
-                        "The reviewed exefs/main write is missing its source fingerprint.");
+                        StringComparison.OrdinalIgnoreCase));
                 ZaWorkflowFileSource.ApplyHybridMixedBatch(
                     paths,
                     outputMode,
@@ -2237,10 +2246,12 @@ internal sealed class ZaPokemonEditSessionService
                         }
 
                         var effectiveMainBytes = File.ReadAllBytes(effectiveMain.AbsolutePath);
-                        if (!string.Equals(
-                                CreateSourceFingerprint(effectiveMainBytes),
-                                expectedMainFingerprint,
-                                StringComparison.Ordinal))
+                        if (!ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
+                                paths,
+                                currentPlan,
+                                mainWrite,
+                                outputMode,
+                                CreateSourceFingerprint(effectiveMainBytes)))
                         {
                             throw new InvalidDataException(
                                 "Pokemon Legends Z-A exefs/main changed after change-plan review.");

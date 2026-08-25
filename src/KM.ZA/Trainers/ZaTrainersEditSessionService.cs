@@ -245,6 +245,19 @@ internal sealed class ZaTrainersEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            effectiveSession => CreateChangePlanCore(paths, effectiveSession, outputMode),
+            outputMode,
+            candidate => Validate(paths, candidate).Session);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -509,27 +522,23 @@ internal sealed class ZaTrainersEditSessionService
                     out var value)
                 && GetSourceTrainerFieldValue(sourceWorkflow, edit) == value)
             {
-                normalizedSession = RemovePendingTrainerEdit(normalizedSession, edit);
+                normalizedSession = RemoveExactPendingTrainerEdit(normalizedSession, edit);
             }
         }
 
         return normalizedSession;
     }
 
-    private static EditSession RemovePendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
+    private static EditSession RemoveExactPendingTrainerEdit(
+        EditSession session,
+        PendingEdit pendingEdit)
     {
-        var clearsOriginallyEmptyPokemonSlot = string.Equals(
-                pendingEdit.Field,
-                ZaTrainersWorkflowService.SpeciesIdField,
-                StringComparison.Ordinal)
-            && string.Equals(pendingEdit.NewValue, "0", StringComparison.Ordinal);
-
+        // Source equivalence authenticates only this field. The intentional
+        // species-clear cascade remains confined to ReplacePendingTrainerEdit.
         return session with
         {
             PendingEdits = session.PendingEdits
-                .Where(edit => clearsOriginallyEmptyPokemonSlot
-                    ? !TargetsSameTrainerPokemonSlot(edit, pendingEdit)
-                    : !IsSameTrainerEdit(edit, pendingEdit))
+                .Where(edit => !IsSameTrainerEdit(edit, pendingEdit))
                 .ToArray(),
         };
     }

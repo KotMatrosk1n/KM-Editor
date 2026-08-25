@@ -28,7 +28,7 @@ internal sealed class SvPlacementEditSessionService
         bool includeStaticEncounterObjects = false)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.placementWorkflowService = placementWorkflowService ?? new SvPlacementWorkflowService(this.fileSource);
         this.includeStaticEncounterObjects = includeStaticEncounterObjects;
     }
@@ -259,7 +259,11 @@ internal sealed class SvPlacementEditSessionService
                 DiagnosticSeverity.Info,
                 $"Change plan preview contains {writes.Count} target files."));
 
-            return new ChangePlan(session.Id, writes, diagnostics);
+            return SvChangePlanSourceGuard.Capture(
+                paths,
+                session,
+                new ChangePlan(session.Id, writes, diagnostics),
+                outputMode);
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         {

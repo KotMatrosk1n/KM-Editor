@@ -774,6 +774,18 @@ internal sealed class ZaEncountersEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            () => CreateChangePlanCore(paths, session, outputMode),
+            outputMode);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -1393,14 +1405,16 @@ internal sealed class ZaEncountersEditSessionService
                 targetRelativePath,
                 StringComparison.Ordinal));
         return plannedWrite is not null
-            && string.Equals(
-                plannedWrite.SourceFingerprint,
+            && ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
+                paths,
+                plan,
+                plannedWrite,
+                outputMode,
                 CreatePlanSourceFingerprint(
                     paths,
                     virtualPath,
                     outputMode,
-                    sources),
-                StringComparison.Ordinal);
+                    sources));
     }
 
     private PreparedSpecialSpawnNormalization PrepareSpecialSpawnNormalization(

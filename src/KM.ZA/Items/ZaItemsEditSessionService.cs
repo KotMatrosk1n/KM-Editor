@@ -504,6 +504,19 @@ internal sealed class ZaItemsEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            effectiveSession => CreateChangePlanCore(paths, effectiveSession, outputMode),
+            outputMode,
+            candidate => Validate(paths, candidate).Session);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -1606,15 +1619,17 @@ internal sealed class ZaItemsEditSessionService
             virtualPath,
             outputMode);
         return writeIndex >= 0
-            && string.Equals(
-                plan.Writes[writeIndex].SourceFingerprint,
+            && ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
+                paths,
+                plan,
+                plan.Writes[writeIndex],
+                outputMode,
                 CreatePlanSourceFingerprint(
                     paths,
                     virtualPath,
                     outputMode,
                     sources,
-                    changeSetFingerprint),
-                StringComparison.Ordinal);
+                    changeSetFingerprint));
     }
 
     private static string CreatePlanChangeSetFingerprint(

@@ -22,7 +22,7 @@ internal sealed class SvTeraRaidsEditSessionService
         SvTeraRaidsWorkflowService? teraRaidsWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.teraRaidsWorkflowService = teraRaidsWorkflowService ?? new SvTeraRaidsWorkflowService(this.fileSource);
     }
 
@@ -221,7 +221,11 @@ internal sealed class SvTeraRaidsEditSessionService
             $"Change plan preview contains {writes.Count} target files.",
             SvEditSessionSupport.TeraRaidsDomain));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SvChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            new ChangePlan(session.Id, writes, diagnostics),
+            outputMode);
     }
 
     public ApplyResult ApplyChangePlan(

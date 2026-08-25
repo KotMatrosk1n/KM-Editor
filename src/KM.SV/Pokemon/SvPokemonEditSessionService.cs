@@ -50,7 +50,7 @@ internal sealed class SvPokemonEditSessionService
         SvPokemonWorkflowService? pokemonWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SvPokemonWorkflowService(this.fileSource);
     }
 
@@ -336,6 +336,7 @@ internal sealed class SvPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        pokemonWorkflowService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = pokemonWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -391,7 +392,7 @@ internal sealed class SvPokemonEditSessionService
             outputMode);
         if (!plan.CanApply)
         {
-            return plan;
+            return SvChangePlanSourceGuard.Capture(paths, session, plan, outputMode);
         }
 
         try
@@ -403,7 +404,7 @@ internal sealed class SvPokemonEditSessionService
             PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
             if (!conversionState.Modified)
             {
-                return plan;
+                return SvChangePlanSourceGuard.Capture(paths, session, plan, outputMode);
             }
 
             var writeInfo = SvWorkflowFileSource.CreatePlannedWrite(
@@ -416,10 +417,14 @@ internal sealed class SvPokemonEditSessionService
                 writeInfo.Sources,
                 writeInfo.ReplacesExistingOutput,
                 "Assign custom Pokemon evolution items to game conversion parameters.");
-            return new ChangePlan(
-                plan.SessionId,
-                [conversionWrite, .. plan.Writes],
-                plan.Diagnostics);
+            return SvChangePlanSourceGuard.Capture(
+                paths,
+                session,
+                new ChangePlan(
+                    plan.SessionId,
+                    [conversionWrite, .. plan.Writes],
+                    plan.Diagnostics),
+                outputMode);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
         {

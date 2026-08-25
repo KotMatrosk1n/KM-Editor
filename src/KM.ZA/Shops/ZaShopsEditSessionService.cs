@@ -182,6 +182,18 @@ internal sealed class ZaShopsEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            () => CreateChangePlanCore(paths, session, outputMode),
+            outputMode);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -1755,10 +1767,12 @@ internal sealed class ZaShopsEditSessionService
             targetRelativePath,
             StringComparison.Ordinal));
         return write is not null
-            && string.Equals(
-                write.SourceFingerprint,
-                CreateDescriptorPlanFingerprint(paths, descriptorPreview),
-                StringComparison.Ordinal);
+            && ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
+                paths,
+                plan,
+                write,
+                ZaOutputMode.Standalone,
+                CreateDescriptorPlanFingerprint(paths, descriptorPreview));
     }
 
     private static bool PlanSourcesMatch(
@@ -1781,8 +1795,11 @@ internal sealed class ZaShopsEditSessionService
             targetRelativePath,
             StringComparison.Ordinal));
         return write is not null
-            && string.Equals(
-                write.SourceFingerprint,
+            && ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
+                paths,
+                plan,
+                write,
+                outputMode,
                 CreatePlanSourceFingerprint(
                     paths,
                     outputMode,
@@ -1790,8 +1807,7 @@ internal sealed class ZaShopsEditSessionService
                     lineupSource,
                     itemSource,
                     provisionsTestTechnicalMachine,
-                    edits),
-                StringComparison.Ordinal);
+                    edits));
     }
 
     private static string CreatePlanSourceFingerprint(

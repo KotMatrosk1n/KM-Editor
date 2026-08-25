@@ -25,7 +25,7 @@ internal sealed class SvEncountersEditSessionService
         SvEncountersWorkflowService? encountersWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.encountersWorkflowService = encountersWorkflowService ?? new SvEncountersWorkflowService(this.fileSource);
     }
 
@@ -204,13 +204,17 @@ internal sealed class SvEncountersEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return SvEditSessionSupport.CreateSingleFileChangePlan(
+        return SvChangePlanSourceGuard.Capture(
             paths,
             session,
-            SvEditSessionSupport.EncountersDomain,
-            SvDataPaths.WildEncounterArray,
-            "Wild Encounters",
-            validation.Diagnostics,
+            SvEditSessionSupport.CreateSingleFileChangePlan(
+                paths,
+                session,
+                SvEditSessionSupport.EncountersDomain,
+                SvDataPaths.WildEncounterArray,
+                "Wild Encounters",
+                validation.Diagnostics,
+                outputMode),
             outputMode);
     }
 

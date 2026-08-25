@@ -366,6 +366,19 @@ internal sealed class ZaGiftPokemonEditSessionService
         EditSession session,
         ZaOutputMode outputMode = ZaOutputMode.Standalone)
     {
+        return ZaChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            effectiveSession => CreateChangePlanCore(paths, effectiveSession, outputMode),
+            outputMode,
+            candidate => Validate(paths, candidate).Session);
+    }
+
+    private ChangePlan CreateChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 

@@ -206,23 +206,7 @@ internal static class SvEditSessionSupport
 
     public static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        return ChangePlanReview.Matches(reviewedPlan, currentPlan);
     }
 
     public static ApplyResult CreateApplyResult(

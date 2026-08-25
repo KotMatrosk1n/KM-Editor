@@ -505,7 +505,8 @@ import {
 import { userFacingFeatureVisibility } from './workbench/featureVisibility';
 import {
   createWorkbenchNavigationController,
-  type WorkbenchNavigationGuardState
+  type WorkbenchNavigationGuardState,
+  type WorkbenchNavigationRequestOptions
 } from './workbench/navigationController';
 import {
   createWorkbenchLocation,
@@ -4255,7 +4256,8 @@ export function App({
       onCommit?: () => void,
       mode: Extract<WorkspaceNavigationMode, 'push' | 'replace' | 'inspector'> = 'push',
       options: WorkspaceNavigationCommitOptions = {},
-      preparedNavigation?: PendingWorkspaceNavigation
+      preparedNavigation?: PendingWorkspaceNavigation,
+      requestOptions?: WorkbenchNavigationRequestOptions
     ) => {
       stableLocationPreparationRevisionRef.current += 1;
       const requestRevision = ++workspaceNavigationRequestRevisionRef.current;
@@ -4289,7 +4291,7 @@ export function App({
         pending: workspaceNavigation,
         projectScopeGeneration: requestScopeGeneration
       };
-      const decision = navigationControllerRef.current.request(destination);
+      const decision = navigationControllerRef.current.request(destination, requestOptions);
       if (decision.kind === 'commit') {
         pendingNavigationCommitActionRef.current = null;
         if (commitWorkbenchLocation(decision.location)) {
@@ -5159,7 +5161,9 @@ export function App({
         destination,
         () => setSelectedTrainerPartySlot(slot),
         'replace',
-        { rememberRecent: false }
+        { rememberRecent: false },
+        undefined,
+        { preserveSameSectionDraftScope: true }
       );
     },
     [
@@ -56163,15 +56167,16 @@ function getPokemonSpriteUrls(identity: PokemonSpriteIdentity, preferStatic: boo
     return [];
   }
 
-  return spriteIds.flatMap((spriteId) => {
+  const localUrls = spriteIds.flatMap((spriteId) => {
     const localStatic = getPublicAssetUrl(`sprites/gen5/${spriteId}.png`);
-    const localAnimated = getPublicAssetUrl(`sprites/ani/${spriteId}.gif`);
-    const remoteStatic = `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`;
-
     return preferStatic
-      ? [localStatic, remoteStatic]
-      : [localAnimated, localStatic, remoteStatic];
+      ? [localStatic]
+      : [getPublicAssetUrl(`sprites/ani/${spriteId}.gif`), localStatic];
   });
+  const remoteUrls = spriteIds.map(
+    (spriteId) => `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`
+  );
+  return [...localUrls, ...remoteUrls];
 }
 
 function getPublicAssetUrl(path: string) {
@@ -56182,7 +56187,43 @@ function getPublicAssetUrl(path: string) {
 
 export function getPokemonSpriteIdsForIdentity(identity: PokemonSpriteIdentity) {
   const candidateLabels = getPokemonSpriteCandidateLabels(identity);
-  return uniqueStrings(candidateLabels.flatMap((label) => getPokemonSpriteIds(label)));
+  return uniqueStrings([
+    ...getPokemonIdentityFormSpriteIds(identity),
+    ...candidateLabels.flatMap((label) => getPokemonSpriteIds(label))
+  ]);
+}
+
+function getPokemonIdentityFormSpriteIds({
+  editorFamily,
+  form,
+  speciesId,
+  spriteName
+}: PokemonSpriteIdentity) {
+  const normalizedSpriteName = spriteName?.trim();
+  if (!normalizedSpriteName || form === undefined) {
+    return [];
+  }
+
+  const baseSpriteId = getPokemonSpriteId(normalizedSpriteName);
+  const formSpriteId = getPokemonSpriteId(
+    formatSpeciesFormLabel(normalizedSpriteName, form, speciesId, editorFamily)
+  );
+  if (!baseSpriteId || !formSpriteId.startsWith(`${baseSpriteId}-`)) {
+    return [];
+  }
+
+  const formParts = formSpriteId.slice(baseSpriteId.length + 1).split('-').filter(Boolean);
+  const candidates: string[] = [];
+  for (let length = formParts.length; length > 0; length -= 1) {
+    const prefixParts = formParts.slice(0, length);
+    const hyphenatedSuffix = prefixParts.join('-');
+    candidates.push(`${baseSpriteId}-${hyphenatedSuffix}`);
+    if (prefixParts.length > 1) {
+      candidates.push(`${baseSpriteId}-${prefixParts.join('')}`);
+    }
+  }
+  candidates.push(baseSpriteId);
+  return uniqueStrings(candidates);
 }
 
 function getPokemonSpriteCandidateLabels({
@@ -56228,6 +56269,8 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['jellicent-male', 'jellicent'],
   ['meowstic-female', 'meowstic-f'],
   ['meowstic-male', 'meowstic'],
+  ['meowstic-mega-female', 'meowstic-fmega'],
+  ['meowstic-mega-male', 'meowstic-mmega'],
   ['unfezant-female', 'unfezant-f'],
   ['unfezant-male', 'unfezant'],
   ['ho-oh', 'hooh'],

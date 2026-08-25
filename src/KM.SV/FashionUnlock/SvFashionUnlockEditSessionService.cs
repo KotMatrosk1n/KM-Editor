@@ -242,7 +242,11 @@ public sealed class SvFashionUnlockEditSessionService
             DiagnosticSeverity.Info,
             string.Create(CultureInfo.InvariantCulture, $"Fashion Unlock change plan preview contains {writes.Length:N0} target file(s).")));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SvChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            new ChangePlan(session.Id, writes, diagnostics),
+            outputMode);
     }
 
     public ApplyResult ApplyChangePlan(
@@ -603,24 +607,7 @@ public sealed class SvFashionUnlockEditSessionService
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedWrites = reviewedPlan.Writes
-            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
-            .ToArray();
-        var currentWrites = currentPlan.Writes
-            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedWrites
-            .Zip(currentWrites)
-            .All(pair => string.Equals(pair.First.TargetRelativePath, pair.Second.TargetRelativePath, StringComparison.Ordinal)
-                && pair.First.Sources.SequenceEqual(pair.Second.Sources));
+        return ChangePlanReview.Matches(reviewedPlan, currentPlan);
     }
 
     private static ApplyResult CreateApplyResult(

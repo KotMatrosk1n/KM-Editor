@@ -23,7 +23,7 @@ internal sealed class SvTradePokemonEditSessionService
         SvTradePokemonWorkflowService? tradePokemonWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.fileSource = fileSource ?? new SvWorkflowFileSource();
+        this.fileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         this.tradePokemonWorkflowService = tradePokemonWorkflowService ?? new SvTradePokemonWorkflowService(this.fileSource);
     }
 
@@ -248,7 +248,11 @@ internal sealed class SvTradePokemonEditSessionService
             $"Change plan preview contains {writes.Count} target files.",
             SvEditSessionSupport.TradePokemonDomain));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SvChangePlanSourceGuard.Capture(
+            paths,
+            session,
+            new ChangePlan(session.Id, writes, diagnostics),
+            outputMode);
     }
 
     public ApplyResult ApplyChangePlan(

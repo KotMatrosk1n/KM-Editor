@@ -25,7 +25,7 @@ internal sealed class SvStaticEncountersEditSessionService
         SvPlacementWorkflowService? placementWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        var sharedFileSource = fileSource ?? new SvWorkflowFileSource();
+        var sharedFileSource = fileSource ?? new SvWorkflowFileSource(bypassReusableBaseCache: true);
         var sharedPlacementWorkflowService = placementWorkflowService ?? new SvPlacementWorkflowService(sharedFileSource);
         this.staticEncountersWorkflowService = staticEncountersWorkflowService
             ?? new SvStaticEncountersWorkflowService(sharedPlacementWorkflowService);
@@ -151,7 +151,17 @@ internal sealed class SvStaticEncountersEditSessionService
         }
 
         var plan = placementEditSessionService.CreateChangePlan(paths, placementSession, outputMode);
-        return plan with { Diagnostics = RemapDiagnostics(plan.Diagnostics) };
+        var remapped = plan with { Diagnostics = RemapDiagnostics(plan.Diagnostics) };
+        return remapped.CanApply && remapped.EffectivePendingEdits is not null
+            ? remapped with
+            {
+                EffectivePendingEdits = session.PendingEdits
+                    .Select(edit => edit.Association is null
+                        ? edit
+                        : edit with { Association = null })
+                    .ToArray(),
+            }
+            : remapped with { EffectivePendingEdits = null };
     }
 
     public ApplyResult ApplyChangePlan(

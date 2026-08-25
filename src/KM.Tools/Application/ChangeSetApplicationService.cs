@@ -334,6 +334,33 @@ public sealed class ChangeSetApplicationService
         }
 
         var now = DateTimeOffset.UtcNow;
+        var touchedActiveEdits = finalActiveEdits
+            .Where(pair => touchedTargets.Contains(pair.Key))
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .ToArray();
+        var touchedBindings = CreateOperationBindings(
+            touchedActiveEdits
+                .Select(pair =>
+                {
+                    var edit = pair.Value;
+                    if (edit.Association is { } association
+                        && allStoredOperations.TryGetValue(
+                            association.OperationId,
+                            out var stored))
+                    {
+                        return new OperationBindingRequest(
+                            edit,
+                            SatisfiedOwnedTargets: stored.Operation.OwnedTargets,
+                            ExpectedSourceFingerprint: stored.Operation.SourceFingerprint);
+                    }
+
+                    return new OperationBindingRequest(edit);
+                })
+                .ToArray(),
+            planner);
+        var touchedBindingsByTarget = touchedActiveEdits
+            .Select((pair, index) => (pair.Key, Binding: touchedBindings[index]))
+            .ToDictionary(pair => pair.Key, pair => pair.Binding, StringComparer.Ordinal);
         var operations = new List<ChangeSetOperationDto>(targetSet.Operations.Count + finalActiveEdits.Count);
         var removedOperationIds = new List<string>();
         foreach (var storedOperation in targetSet.Operations)
@@ -356,7 +383,7 @@ public sealed class ChangeSetApplicationService
 
             var association = edit.Association
                 ?? throw Invalid("An active staged edit is missing its authoring association.");
-            var binding = CreateOperationBinding(edit, planner);
+            var binding = touchedBindingsByTarget[storedTarget];
             operations.Add(new ChangeSetOperationDto(
                 association.OperationId,
                 ChangeSetOperationStorageKindDto.LegacyPendingEdit,
@@ -380,7 +407,7 @@ public sealed class ChangeSetApplicationService
             }
 
             existingOperations.TryGetValue(association.OperationId, out var existing);
-            var binding = CreateOperationBinding(edit, planner);
+            var binding = touchedBindingsByTarget[CreateEditTargetKey(edit)];
             operations.Add(new ChangeSetOperationDto(
                 association.OperationId,
                 ChangeSetOperationStorageKindDto.LegacyPendingEdit,
@@ -711,6 +738,32 @@ public sealed class ChangeSetApplicationService
 
             var selectedIds = session.AuthoringBinding!.SelectedChangeSetIds
                 .ToHashSet(StringComparer.Ordinal);
+            var selectedOperations = context.Document.ChangeSets
+                .Where(set => selectedIds.Contains(set.ChangeSetId))
+                .SelectMany(set => set.Operations)
+                .ToArray();
+            var refreshedBindings = CreateOperationBindings(
+                selectedOperations.Select(operation =>
+                {
+                    if (!editsByOperationId.TryGetValue(operation.OperationId, out var edit))
+                    {
+                        throw Invalid("The applied session is missing a selected change-set operation.");
+                    }
+
+                    return new OperationBindingRequest(
+                        edit,
+                        GeneratedChangeSetOwners.IsSupported(edit.Owner)
+                            ? FromBindingOutputMode(session.AuthoringBinding!.OutputMode)
+                            : null,
+                        operation.OwnedTargets,
+                        operation.SourceFingerprint);
+                }).ToArray(),
+                planner);
+            var refreshedBindingsByOperationId = selectedOperations
+                .Select((operation, index) => (
+                    operation.OperationId,
+                    Binding: refreshedBindings[index]))
+                .ToDictionary(pair => pair.OperationId, pair => pair.Binding, StringComparer.Ordinal);
             var now = DateTimeOffset.UtcNow;
             var refreshedSets = context.Document.ChangeSets.Select(set =>
             {
@@ -721,18 +774,7 @@ public sealed class ChangeSetApplicationService
 
                 var operations = set.Operations.Select(operation =>
                 {
-                    if (!editsByOperationId.TryGetValue(operation.OperationId, out var edit))
-                    {
-                        throw Invalid("The applied session is missing a selected change-set operation.");
-                    }
-
-                    var refreshed = CreateOperationBinding(
-                        edit,
-                        planner,
-                        outputMode: GeneratedChangeSetOwners.IsSupported(edit.Owner)
-                            ? FromBindingOutputMode(session.AuthoringBinding!.OutputMode)
-                            : null,
-                        satisfiedOwnedTargets: operation.OwnedTargets);
+                    var refreshed = refreshedBindingsByOperationId[operation.OperationId];
                     if (refreshed.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
                         || refreshed.Fingerprint is null)
                     {
@@ -982,11 +1024,9 @@ public sealed class ChangeSetApplicationService
         return true;
     }
 
-    private static ChangeSetOperationDto ImportPortablePendingEditOperation(
+    private static PortablePendingEditImportCandidate ParsePortablePendingEditOperation(
         PortableChangeSetOperationDto portableOperation,
-        string changeSetId,
-        DateTimeOffset now,
-        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner)
+        string changeSetId)
     {
         if (portableOperation is null
             || !string.Equals(
@@ -1032,24 +1072,32 @@ public sealed class ChangeSetApplicationService
                 changeSetId,
                 operationId));
         var edit = EditSessionBridgeMapper.ToPendingEditCore(pendingEdit);
-        var currentBinding = CreateOperationBinding(
+        return new PortablePendingEditImportCandidate(
+            operationId,
+            portableOperation,
+            pendingEdit,
             edit,
-            planner,
-            outputMode: null,
-            satisfiedOwnedTargets: payload.OwnedTargets);
+            payload.OwnedTargets);
+    }
+
+    private static ChangeSetOperationDto CreateImportedPendingEditOperation(
+        PortablePendingEditImportCandidate candidate,
+        OperationBinding currentBinding,
+        DateTimeOffset now)
+    {
         if (currentBinding.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
-            || !OwnedTargetsMatch(currentBinding.OwnedTargets, payload.OwnedTargets))
+            || !OwnedTargetsMatch(currentBinding.OwnedTargets, candidate.OwnedTargets))
         {
             throw Invalid(
                 "A portable pending edit is not supported by the current game workflow or targets different output files.");
         }
 
         return new ChangeSetOperationDto(
-            operationId,
+            candidate.OperationId,
             ChangeSetOperationStorageKindDto.LegacyPendingEdit,
-            pendingEdit,
+            candidate.PendingEdit,
             ChangeSetSourceBindingKindDto.ReviewedPlan,
-            portableOperation.SourceFingerprint.ToLowerInvariant(),
+            candidate.PortableOperation.SourceFingerprint.ToLowerInvariant(),
             currentBinding.OwnedTargets,
             now,
             now);
@@ -1217,15 +1265,40 @@ public sealed class ChangeSetApplicationService
             set => set.PortableId,
             _ => CreateId(),
             StringComparer.Ordinal);
+        var importCandidatesByPortableSetId = package.ChangeSets.ToDictionary(
+            set => set.PortableId,
+            set => set.Operations
+                .Select(operation => ParsePortablePendingEditOperation(
+                    operation,
+                    importedIdMap[set.PortableId]))
+                .ToArray(),
+            StringComparer.Ordinal);
+        var importCandidates = package.ChangeSets
+            .SelectMany(set => importCandidatesByPortableSetId[set.PortableId])
+            .ToArray();
+        var importedBindings = CreateOperationBindings(
+            importCandidates
+                .Select(candidate => new OperationBindingRequest(
+                    candidate.Edit,
+                    OutputMode: null,
+                    SatisfiedOwnedTargets: candidate.OwnedTargets,
+                    ExpectedSourceFingerprint:
+                        candidate.PortableOperation.SourceFingerprint.ToLowerInvariant()))
+                .ToArray(),
+            planner);
+        var importedBindingsByOperationId = importCandidates
+            .Select((candidate, index) => (
+                candidate.OperationId,
+                Binding: importedBindings[index]))
+            .ToDictionary(pair => pair.OperationId, pair => pair.Binding, StringComparer.Ordinal);
         var imported = package.ChangeSets.Select(set =>
         {
             var importedSetId = importedIdMap[set.PortableId];
-            var importedOperations = set.Operations
-                .Select(operation => ImportPortablePendingEditOperation(
-                    operation,
-                    importedSetId,
-                    now,
-                    planner))
+            var importedOperations = importCandidatesByPortableSetId[set.PortableId]
+                .Select(candidate => CreateImportedPendingEditOperation(
+                    candidate,
+                    importedBindingsByOperationId[candidate.OperationId],
+                    now))
                 .ToArray();
             return new NamedChangeSetDto(
                 importedSetId,
@@ -1405,16 +1478,26 @@ public sealed class ChangeSetApplicationService
             var generated = GeneratedChangeSetOwners.IsSupported(edits[0].Owner);
             var session = new EditSession(EditSessionId.New(), DateTimeOffset.UtcNow, edits);
             var plan = planner(session, generated ? outputMode : null);
-            return operations.Zip(edits).All(pair =>
+            if (plan.SessionId != session.Id
+                || !TryCreatePlanEditDispositions(edits, plan, out var dispositions))
             {
-                var current = CreateOperationBindingFromPlan(pair.Second, plan);
-                return current.Kind == pair.First.SourceBindingKind
+                return false;
+            }
+
+            return operations.Zip(edits).Select((pair, index) => (pair, index)).All(entry =>
+            {
+                var current = CreateOperationBindingFromPlan(
+                    entry.pair.Second,
+                    plan,
+                    entry.pair.First.OwnedTargets,
+                    dispositions[entry.index]);
+                return current.Kind == entry.pair.First.SourceBindingKind
                     && string.Equals(
                         current.Fingerprint,
-                        pair.First.SourceFingerprint,
+                        entry.pair.First.SourceFingerprint,
                         StringComparison.Ordinal)
                     && current.OwnedTargets.SequenceEqual(
-                        pair.First.OwnedTargets,
+                        entry.pair.First.OwnedTargets,
                         StringComparer.Ordinal);
             });
         }
@@ -2342,6 +2425,28 @@ public sealed class ChangeSetApplicationService
             StringComparer.Ordinal);
         var currentOwnedTargets = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         var currentBindingFingerprints = new List<string>();
+        var bindableSelectedOperations = selectedOperations
+            .Where(pair =>
+                pair.Operation.SourceBindingKind != ChangeSetSourceBindingKindDto.LegacyUnsupported
+                && pair.Operation.SourceFingerprint is not null)
+            .ToArray();
+        var currentBindings = CreateOperationBindings(
+            bindableSelectedOperations
+                .Select(pair =>
+                {
+                    var edit = EditSessionBridgeMapper.ToPendingEditCore(pair.Operation.PendingEdit);
+                    return new OperationBindingRequest(
+                        edit,
+                        GeneratedChangeSetOwners.IsSupported(edit.Owner) ? outputMode : null,
+                        pair.Operation.OwnedTargets,
+                        pair.Operation.SourceFingerprint);
+                })
+                .ToArray(),
+            planner);
+        var currentBindingsByOperation = bindableSelectedOperations
+            .Select((pair, index) => (pair.Operation.OperationId, Binding: currentBindings[index]))
+            .ToDictionary(pair => pair.OperationId, pair => pair.Binding, StringComparer.Ordinal);
+        var selectedModeOperationIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (set, operation) in selectedOperations)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -2361,11 +2466,7 @@ public sealed class ChangeSetApplicationService
                 var bindingOutputMode = GeneratedChangeSetOwners.IsSupported(pendingEdit.Owner)
                     ? outputMode
                     : null;
-                var current = CreateOperationBinding(
-                    pendingEdit,
-                    planner,
-                    bindingOutputMode,
-                    satisfiedOwnedTargets: operation.OwnedTargets);
+                var current = currentBindingsByOperation[operation.OperationId];
                 if (current.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan
                     || !string.Equals(
                         current.Fingerprint,
@@ -2380,29 +2481,51 @@ public sealed class ChangeSetApplicationService
                 else
                 {
                     currentBindingFingerprints.Add(current.Fingerprint!);
-                    var selectedModeBinding = outputMode is null
-                        || bindingOutputMode == outputMode
-                        ? current
-                        : CreateOperationBinding(
-                            pendingEdit,
-                            planner,
-                            outputMode,
-                            operation.OwnedTargets);
-                    if (selectedModeBinding.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan)
+                    if (outputMode is null || bindingOutputMode == outputMode)
                     {
-                        state = ChangeSetOperationMaterializationStateDto.LegacyUnsupported;
-                        diagnostics.Add(CreateDiagnostic(
-                            ApiDiagnosticSeverity.Error,
-                            $"{set.Name}: {operation.PendingEdit.Summary} is not supported by the selected output mode."));
+                        currentOwnedTargets[operation.OperationId] = current.OwnedTargets;
                     }
                     else
                     {
-                        currentOwnedTargets[operation.OperationId] = selectedModeBinding.OwnedTargets;
+                        selectedModeOperationIds.Add(operation.OperationId);
                     }
                 }
             }
 
             operationStates[operation.OperationId] = state;
+        }
+
+        if (selectedModeOperationIds.Count > 0)
+        {
+            var selectedModeOperations = selectedOperations
+                .Where(pair => selectedModeOperationIds.Contains(pair.Operation.OperationId))
+                .ToArray();
+            var selectedModeBindings = CreateOperationBindings(
+                selectedModeOperations
+                    .Select(pair => new OperationBindingRequest(
+                        EditSessionBridgeMapper.ToPendingEditCore(pair.Operation.PendingEdit),
+                        outputMode,
+                        pair.Operation.OwnedTargets,
+                        pair.Operation.SourceFingerprint))
+                    .ToArray(),
+                planner);
+            for (var index = 0; index < selectedModeOperations.Length; index++)
+            {
+                var (set, operation) = selectedModeOperations[index];
+                var selectedModeBinding = selectedModeBindings[index];
+                if (selectedModeBinding.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan)
+                {
+                    operationStates[operation.OperationId] =
+                        ChangeSetOperationMaterializationStateDto.LegacyUnsupported;
+                    diagnostics.Add(CreateDiagnostic(
+                        ApiDiagnosticSeverity.Error,
+                        $"{set.Name}: {operation.PendingEdit.Summary} is not supported by the selected output mode."));
+                }
+                else
+                {
+                    currentOwnedTargets[operation.OperationId] = selectedModeBinding.OwnedTargets;
+                }
+            }
         }
 
         var sessionLocalEdits = inputSession?.PendingEdits
@@ -2416,9 +2539,11 @@ public sealed class ChangeSetApplicationService
                 "Named and session-local edits together exceed the effective operation limit."));
         }
 
-        var sessionLocalBindings = sessionLocalEdits
-            .Select(edit => CreateOperationBinding(edit, planner, outputMode))
-            .ToArray();
+        var sessionLocalBindings = CreateOperationBindings(
+            sessionLocalEdits
+                .Select(edit => new OperationBindingRequest(edit, outputMode))
+                .ToArray(),
+            planner);
         var compositionTargets = selectedOperations.Select(pair => new ChangeSetCompositionTarget(
                 pair.Set.ChangeSetId,
                 pair.Operation.OperationId,
@@ -2586,9 +2711,27 @@ public sealed class ChangeSetApplicationService
                     _ => throw Invalid("The selected output mode is invalid."),
                 }));
         var plan = planner(effectiveSession, outputMode);
-        diagnostics.AddRange(plan.Diagnostics.Select(ProjectBridgeMapper.ToDto));
+        var isAuthenticatedSourceSatisfied =
+            IsAuthenticatedSourceSatisfiedMaterialization(
+                plan,
+                effectiveSession,
+                selectedOperations.Length,
+                sessionLocalEdits.Length);
+        diagnostics.AddRange(plan.Diagnostics
+            .Where(diagnostic =>
+                !isAuthenticatedSourceSatisfied
+                || diagnostic.Severity != DiagnosticSeverity.Error)
+            .Select(ProjectBridgeMapper.ToDto));
+        if (isAuthenticatedSourceSatisfied)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                ApiDiagnosticSeverity.Info,
+                "All selected named changes are already present in the current project sources."));
+        }
+
         sourceRevisionFingerprint = CreatePlanSourceRevisionFingerprint(plan, sourceRevisionFingerprint);
-        var canMaterialize = plan.CanApply;
+        var canMaterialize = plan.SessionId == effectiveSession.Id
+            && (plan.CanApply || isAuthenticatedSourceSatisfied);
         return new ChangeSetMaterializationDto(
             canMaterialize,
             workspaceFingerprint,
@@ -2601,6 +2744,20 @@ public sealed class ChangeSetApplicationService
             summaries,
             conflicts,
             diagnostics);
+    }
+
+    private static bool IsAuthenticatedSourceSatisfiedMaterialization(
+        ChangePlan plan,
+        EditSession effectiveSession,
+        int selectedOperationCount,
+        int sessionLocalEditCount)
+    {
+        return selectedOperationCount > 0
+            && sessionLocalEditCount == 0
+            && effectiveSession.PendingEdits.Count == selectedOperationCount
+            && plan.SessionId == effectiveSession.Id
+            && plan.Writes.Count == 0
+            && plan.EffectivePendingEdits is { Count: 0 };
     }
 
     private static ChangeSetWorkspaceState ResolveStateForMutation(
@@ -3193,6 +3350,241 @@ public sealed class ChangeSetApplicationService
         }
     }
 
+    private static IReadOnlyList<OperationBinding> CreateOperationBindings(
+        IReadOnlyList<OperationBindingRequest> requests,
+        Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner)
+    {
+        if (requests.Count == 0)
+        {
+            return Array.Empty<OperationBinding>();
+        }
+
+        var bindings = new OperationBinding?[requests.Count];
+        var batchGroups = requests
+            .Select((request, index) => (Request: request, Index: index))
+            .Select(pair => (
+                Entry: pair,
+                Key: TryCreateOperationBindingBatchKey(pair.Request, out var key)
+                    ? key
+                    : null))
+            .Where(pair => pair.Key is not null)
+            .GroupBy(pair => pair.Key!);
+        foreach (var group in batchGroups)
+        {
+            var entries = group.Select(pair => pair.Entry).ToArray();
+            if (entries.Length == 1)
+            {
+                continue;
+            }
+
+            try
+            {
+                var session = new EditSession(
+                    EditSessionId.New(),
+                    DateTimeOffset.UtcNow,
+                    entries
+                        .Select(pair => pair.Request.Edit with { Association = null })
+                        .ToArray());
+                var plan = planner(session, group.Key.OutputMode);
+                if (plan.SessionId != session.Id
+                    || !TryClassifyEffectivePendingEdits(
+                        entries.Select(pair => pair.Request.Edit).ToArray(),
+                        plan.EffectivePendingEdits,
+                        out var effectiveRequests))
+                {
+                    continue;
+                }
+
+                var hasEffectiveRequests = effectiveRequests.Any(isEffective => isEffective);
+                if (hasEffectiveRequests
+                    ? !plan.CanApply
+                        || plan.Writes.Count == 0
+                        || plan.Writes.Any(write => !IsSha256(write.SourceBindingFingerprint))
+                    : plan.Writes.Count != 0)
+                {
+                    continue;
+                }
+
+                var groupedBindings = entries
+                    .Select((pair, index) => CreateOperationBindingFromPlan(
+                        pair.Request.Edit,
+                        plan,
+                        pair.Request.SatisfiedOwnedTargets,
+                        effectiveRequests[index]
+                            ? PlanEditDisposition.Effective
+                            : PlanEditDisposition.SourceSatisfied))
+                    .ToArray();
+                for (var index = 0; index < entries.Length; index++)
+                {
+                    if (CanAdoptBatchedOperationBinding(
+                            entries[index].Request,
+                            groupedBindings[index],
+                            effectiveRequests[index],
+                            group.Key.IsFixedTrainerDomain))
+                    {
+                        bindings[entries[index].Index] = groupedBindings[index];
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or
+                InvalidOperationException or
+                IOException or
+                UnauthorizedAccessException)
+            {
+                // Fall through to the exact single-edit planner below.
+            }
+        }
+
+        for (var index = 0; index < requests.Count; index++)
+        {
+            var request = requests[index];
+            bindings[index] ??= CreateOperationBinding(
+                request.Edit,
+                planner,
+                request.OutputMode,
+                request.SatisfiedOwnedTargets);
+        }
+
+        return bindings.Select(binding => binding!).ToArray();
+    }
+
+    private static bool TryCreateOperationBindingBatchKey(
+        OperationBindingRequest request,
+        out OperationBindingBatchKey? key)
+    {
+        key = null;
+        if (request.Edit.Owner is not null)
+        {
+            return false;
+        }
+
+        var isFixedTrainerDomain = string.Equals(
+            request.Edit.Domain,
+            "workflow.trainers",
+            StringComparison.Ordinal);
+        if (!isFixedTrainerDomain && request.SatisfiedOwnedTargets is null)
+        {
+            // A grouped plan only exposes its union of output targets. Existing
+            // reviewed ownership is required before an arbitrary workflow may
+            // be batched; Trainers are the fixed-target exception.
+            return false;
+        }
+
+        try
+        {
+            key = new OperationBindingBatchKey(
+                request.Edit.Domain,
+                request.OutputMode,
+                CreateSourceSetKey(request.Edit),
+                request.SatisfiedOwnedTargets is null
+                    ? null
+                    : CreateOwnedTargetsKey(request.SatisfiedOwnedTargets),
+                isFixedTrainerDomain);
+            return true;
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static string CreateOwnedTargetsKey(IReadOnlyList<string> ownedTargets)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHash(hash, "named-operation-owned-targets-v1");
+        foreach (var target in NormalizeOwnedTargets(ownedTargets, requireNonEmpty: true)
+                     .Select(target => new RelativeOutputPath(target))
+                     .OrderBy(target => target.CanonicalKey, StringComparer.Ordinal))
+        {
+            AppendHash(hash, target.CanonicalKey);
+        }
+
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    private static bool CanAdoptBatchedOperationBinding(
+        OperationBindingRequest request,
+        OperationBinding binding,
+        bool isEffective,
+        bool isFixedTrainerDomain)
+    {
+        if (binding.Kind != ChangeSetSourceBindingKindDto.ReviewedPlan)
+        {
+            return false;
+        }
+
+        if (!isEffective)
+        {
+            return request.SatisfiedOwnedTargets is not null
+                && OwnedTargetsMatch(binding.OwnedTargets, request.SatisfiedOwnedTargets);
+        }
+
+        if (request.SatisfiedOwnedTargets is not null
+            && !OwnedTargetsMatch(binding.OwnedTargets, request.SatisfiedOwnedTargets))
+        {
+            return false;
+        }
+
+        if (isFixedTrainerDomain)
+        {
+            return true;
+        }
+
+        // For arbitrary ownerless workflows, equality with the operation's
+        // prior reviewed binding proves the grouped plan did not broaden its
+        // source boundary. A changed or unavailable boundary falls back to the
+        // exact single-edit planner.
+        return IsSha256(request.ExpectedSourceFingerprint)
+            && string.Equals(
+                binding.Fingerprint,
+                request.ExpectedSourceFingerprint,
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryClassifyEffectivePendingEdits(
+        IReadOnlyList<PendingEdit> requestedEdits,
+        IReadOnlyList<PendingEdit>? effectiveEdits,
+        out bool[] effectiveRequests)
+    {
+        effectiveRequests = new bool[requestedEdits.Count];
+        if (effectiveEdits is null || effectiveEdits.Count > requestedEdits.Count)
+        {
+            return false;
+        }
+
+        var unmatchedRequestedIndices = requestedEdits
+            .Select((edit, index) => (Content: CreatePendingEditContentKey(edit), Index: index))
+            .GroupBy(pair => pair.Content, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => new Queue<int>(group.Select(pair => pair.Index)),
+                StringComparer.Ordinal);
+        foreach (var effectiveEdit in effectiveEdits)
+        {
+            var content = CreatePendingEditContentKey(effectiveEdit);
+            if (!unmatchedRequestedIndices.TryGetValue(content, out var matchingIndices)
+                || !matchingIndices.TryDequeue(out var matchedIndex))
+            {
+                effectiveRequests = Array.Empty<bool>();
+                return false;
+            }
+
+            effectiveRequests[matchedIndex] = true;
+        }
+
+        return true;
+    }
+
+    private static string CreatePendingEditContentKey(PendingEdit edit)
+    {
+        return JsonSerializer.Serialize(
+            EditSessionBridgeMapper.ToPendingEditDto(edit) with { Association = null },
+            SerializerOptions);
+    }
+
     private static IReadOnlyList<GeneratedChangeSetOperationBinding> CreateGeneratedOperationBindings(
         IReadOnlyList<PendingEdit> edits,
         Func<EditSession, ChangePlanOutputModeDto?, ChangePlan> planner,
@@ -3214,9 +3606,18 @@ public sealed class ChangeSetApplicationService
                 DateTimeOffset.UtcNow,
                 edits.Select(edit => edit with { Association = null }).ToArray());
             var plan = planner(session, outputMode);
-            return edits.Select(edit =>
+            if (plan.SessionId != session.Id
+                || !TryCreatePlanEditDispositions(edits, plan, out var dispositions))
             {
-                var binding = CreateOperationBindingFromPlan(edit, plan);
+                return Array.Empty<GeneratedChangeSetOperationBinding>();
+            }
+
+            return edits.Select((edit, index) =>
+            {
+                var binding = CreateOperationBindingFromPlan(
+                    edit,
+                    plan,
+                    authenticatedDisposition: dispositions[index]);
                 return new GeneratedChangeSetOperationBinding(
                     binding.Kind,
                     binding.Fingerprint,
@@ -3231,6 +3632,46 @@ public sealed class ChangeSetApplicationService
         {
             return Array.Empty<GeneratedChangeSetOperationBinding>();
         }
+    }
+
+    private static bool TryCreatePlanEditDispositions(
+        IReadOnlyList<PendingEdit> requestedEdits,
+        ChangePlan plan,
+        out PlanEditDisposition[] dispositions)
+    {
+        if (plan.EffectivePendingEdits is null)
+        {
+            dispositions = Enumerable.Repeat(
+                    PlanEditDisposition.Legacy,
+                    requestedEdits.Count)
+                .ToArray();
+            return true;
+        }
+
+        if (!TryClassifyEffectivePendingEdits(
+                requestedEdits,
+                plan.EffectivePendingEdits,
+                out var effectiveRequests))
+        {
+            dispositions = Array.Empty<PlanEditDisposition>();
+            return false;
+        }
+
+        var hasEffectiveRequests = effectiveRequests.Any(isEffective => isEffective);
+        if (hasEffectiveRequests
+            ? !plan.CanApply || plan.Writes.Count == 0
+            : plan.Writes.Count != 0)
+        {
+            dispositions = Array.Empty<PlanEditDisposition>();
+            return false;
+        }
+
+        dispositions = effectiveRequests
+            .Select(isEffective => isEffective
+                ? PlanEditDisposition.Effective
+                : PlanEditDisposition.SourceSatisfied)
+            .ToArray();
+        return true;
     }
 
     private static string CreateSourceSetKey(PendingEdit edit)
@@ -3257,51 +3698,46 @@ public sealed class ChangeSetApplicationService
     private static OperationBinding CreateOperationBindingFromPlan(
         PendingEdit edit,
         ChangePlan plan,
-        IReadOnlyList<string>? satisfiedOwnedTargets = null)
+        IReadOnlyList<string>? satisfiedOwnedTargets = null,
+        PlanEditDisposition? authenticatedDisposition = null)
     {
         try
         {
+            var disposition = authenticatedDisposition ?? ClassifySinglePlanEdit(plan, edit);
+            if (disposition == PlanEditDisposition.Invalid)
+            {
+                return OperationBinding.Unsupported;
+            }
+
+            if (disposition == PlanEditDisposition.SourceSatisfied)
+            {
+                return satisfiedOwnedTargets is null
+                    ? OperationBinding.Unsupported
+                    : CreateSourceSatisfiedOperationBinding(edit, satisfiedOwnedTargets);
+            }
+
+            if (plan.Writes.Count == 0)
+            {
+                if (satisfiedOwnedTargets is null
+                    || disposition != PlanEditDisposition.Legacy
+                    || !plan.CanApply && !IsLegacySourceSatisfiedNoOpPlan(plan, edit.Domain))
+                {
+                    return OperationBinding.Unsupported;
+                }
+
+                return CreateSourceSatisfiedOperationBinding(edit, satisfiedOwnedTargets);
+            }
+
             if (!plan.CanApply)
             {
                 return OperationBinding.Unsupported;
             }
 
-            if (plan.Writes.Count == 0)
-            {
-                if (satisfiedOwnedTargets is null)
-                {
-                    return OperationBinding.Unsupported;
-                }
-
-                var normalizedSatisfiedTargets = NormalizeOwnedTargets(
-                        satisfiedOwnedTargets,
-                        requireNonEmpty: true)
-                    .Select(target => new RelativeOutputPath(target))
-                    .OrderBy(target => target.CanonicalKey, StringComparer.Ordinal)
-                    .Select(target => target.Value)
-                    .ToArray();
-                using var satisfiedHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                AppendHash(satisfiedHash, "change-set-satisfied-binding-v2");
-                AppendHash(satisfiedHash, JsonSerializer.Serialize(
-                    EditSessionBridgeMapper.ToPendingEditDto(edit) with { Association = null },
-                    SerializerOptions));
-                foreach (var target in normalizedSatisfiedTargets
-                             .Select(target => new RelativeOutputPath(target))
-                             .OrderBy(target => target.CanonicalKey, StringComparer.Ordinal))
-                {
-                    AppendHash(satisfiedHash, target.CanonicalKey);
-                }
-
-                return new OperationBinding(
-                    ChangeSetSourceBindingKindDto.ReviewedPlan,
-                    Convert.ToHexStringLower(satisfiedHash.GetHashAndReset()),
-                    normalizedSatisfiedTargets);
-            }
-
             var isGenerated = GeneratedChangeSetOwners.IsSupported(edit.Owner);
             if (isGenerated
                     ? !IsSha256(plan.GeneratedSourceBindingFingerprint)
-                    : plan.Writes.Any(write => !IsSha256(write.SourceFingerprint)))
+                    : plan.Writes.Any(write => !IsSha256(
+                        GetOperationSourceBindingFingerprint(write, disposition))))
             {
                 return OperationBinding.Unsupported;
             }
@@ -3340,7 +3776,7 @@ public sealed class ChangeSetApplicationService
                     hash,
                     isGenerated
                         ? plan.GeneratedSourceBindingFingerprint
-                        : write.Write.SourceFingerprint);
+                        : GetOperationSourceBindingFingerprint(write.Write, disposition));
                 AppendHash(hash, write.Write.ReplacesExistingOutput ? "replace" : "create");
                 foreach (var source in write.Sources
                              .OrderBy(source => source.Layer)
@@ -3364,6 +3800,76 @@ public sealed class ChangeSetApplicationService
         {
             return OperationBinding.Unsupported;
         }
+    }
+
+    private static PlanEditDisposition ClassifySinglePlanEdit(ChangePlan plan, PendingEdit edit)
+    {
+        if (plan.EffectivePendingEdits is null)
+        {
+            return PlanEditDisposition.Legacy;
+        }
+
+        if (plan.EffectivePendingEdits.Count == 0)
+        {
+            return PlanEditDisposition.SourceSatisfied;
+        }
+
+        return plan.EffectivePendingEdits.Count == 1
+            && PendingEditContentEquals(plan.EffectivePendingEdits[0], edit)
+                ? PlanEditDisposition.Effective
+                : PlanEditDisposition.Invalid;
+    }
+
+    private static OperationBinding CreateSourceSatisfiedOperationBinding(
+        PendingEdit edit,
+        IReadOnlyList<string> satisfiedOwnedTargets)
+    {
+        var normalizedSatisfiedTargets = NormalizeOwnedTargets(
+                satisfiedOwnedTargets,
+                requireNonEmpty: true)
+            .Select(target => new RelativeOutputPath(target))
+            .OrderBy(target => target.CanonicalKey, StringComparer.Ordinal)
+            .Select(target => target.Value)
+            .ToArray();
+        using var satisfiedHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHash(satisfiedHash, "change-set-satisfied-binding-v2");
+        AppendHash(satisfiedHash, JsonSerializer.Serialize(
+            EditSessionBridgeMapper.ToPendingEditDto(edit) with { Association = null },
+            SerializerOptions));
+        foreach (var target in normalizedSatisfiedTargets
+                     .Select(target => new RelativeOutputPath(target))
+                     .OrderBy(target => target.CanonicalKey, StringComparer.Ordinal))
+        {
+            AppendHash(satisfiedHash, target.CanonicalKey);
+        }
+
+        return new OperationBinding(
+            ChangeSetSourceBindingKindDto.ReviewedPlan,
+            Convert.ToHexStringLower(satisfiedHash.GetHashAndReset()),
+            normalizedSatisfiedTargets);
+    }
+
+    private static bool IsLegacySourceSatisfiedNoOpPlan(ChangePlan plan, string domain)
+    {
+        var errors = plan.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        return errors.Length == 1
+            && string.Equals(errors[0].Domain, domain, StringComparison.Ordinal)
+            && errors[0].Message.StartsWith("Create a pending ", StringComparison.Ordinal)
+            && errors[0].Message.EndsWith(
+                " edit before reviewing a change plan.",
+                StringComparison.Ordinal)
+            && errors[0].Expected?.StartsWith("Pending ", StringComparison.Ordinal) == true;
+    }
+
+    private static string? GetOperationSourceBindingFingerprint(
+        PlannedFileWrite write,
+        PlanEditDisposition disposition)
+    {
+        return disposition == PlanEditDisposition.Legacy
+            ? write.SourceBindingFingerprint ?? write.SourceFingerprint
+            : write.SourceBindingFingerprint;
     }
 
     private static string CreateWorkspaceFingerprint(
@@ -4409,6 +4915,34 @@ public sealed class ChangeSetApplicationService
             ChangeSetSourceBindingKindDto.LegacyUnsupported,
             Fingerprint: null,
             OwnedTargets: Array.Empty<string>());
+    }
+
+    private sealed record OperationBindingRequest(
+        PendingEdit Edit,
+        ChangePlanOutputModeDto? OutputMode = null,
+        IReadOnlyList<string>? SatisfiedOwnedTargets = null,
+        string? ExpectedSourceFingerprint = null);
+
+    private sealed record OperationBindingBatchKey(
+        string Domain,
+        ChangePlanOutputModeDto? OutputMode,
+        string SourceSetKey,
+        string? OwnedTargetsKey,
+        bool IsFixedTrainerDomain);
+
+    private sealed record PortablePendingEditImportCandidate(
+        string OperationId,
+        PortableChangeSetOperationDto PortableOperation,
+        PendingEditDto PendingEdit,
+        PendingEdit Edit,
+        IReadOnlyList<string> OwnedTargets);
+
+    private enum PlanEditDisposition
+    {
+        Legacy,
+        Effective,
+        SourceSatisfied,
+        Invalid,
     }
 
     private sealed class ProjectLeaseGroup : IDisposable
