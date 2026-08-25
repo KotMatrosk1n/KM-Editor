@@ -2392,6 +2392,7 @@ export const trainerRecordSchema = z.strictObject({
   money: z.number().int().default(0),
   name: z.string(),
   provenance: trainerProvenanceSchema,
+  svIsStrong: z.boolean().nullable().default(null),
   team: z.array(trainerPokemonRecordSchema),
   teraTarget: z.string().nullable().default(null),
   trainerClass: z.string(),
@@ -2424,6 +2425,12 @@ export const trainersWorkflowSchema = z.strictObject({
   editableFields: z.array(trainerEditableFieldSchema),
   stats: trainersWorkflowStatsSchema,
   summary: workflowSummarySchema,
+  trainers: z.array(trainerRecordSchema)
+});
+
+export const trainersWorkflowDeltaSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  stats: trainersWorkflowStatsSchema,
   trainers: z.array(trainerRecordSchema)
 });
 
@@ -5518,7 +5525,7 @@ export const updateTrainerFieldRequestSchema = z.strictObject({
 export const updateTrainerFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: trainersWorkflowSchema
+  workflowDelta: trainersWorkflowDeltaSchema
 });
 
 export const updateGiftPokemonFieldRequestSchema = z.strictObject({
@@ -6198,6 +6205,7 @@ export type TrainerEditableField = z.infer<typeof trainerEditableFieldSchema>;
 export type TrainerPokemonRecord = z.infer<typeof trainerPokemonRecordSchema>;
 export type TrainerRecord = z.infer<typeof trainerRecordSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
+export type TrainersWorkflowDelta = z.infer<typeof trainersWorkflowDeltaSchema>;
 export type GiftPokemonEditableField = z.infer<typeof giftPokemonEditableFieldSchema>;
 export type GiftPokemonEditableFieldOption = z.infer<
   typeof giftPokemonEditableFieldOptionSchema

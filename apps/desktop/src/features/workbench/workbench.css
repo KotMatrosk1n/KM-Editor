@@ -443,6 +443,18 @@
   gap: 6px;
 }
 
+.km-workbench-collection-list {
+  max-height: 352px;
+  padding-inline-end: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.km-workbench-collection-list > li {
+  min-height: 64px;
+}
+
 .km-workbench-target {
   display: grid;
   gap: 2px;

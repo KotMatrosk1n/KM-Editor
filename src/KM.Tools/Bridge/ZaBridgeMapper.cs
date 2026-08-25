@@ -292,22 +292,28 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
-    public static UpdateTrainerFieldResponse ToDto(ZaTrainersEditResult result)
+    public static UpdateTrainerFieldResponse ToDto(
+        ZaTrainersEditResult result,
+        IEnumerable<int> changedTrainerIds)
     {
         ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(changedTrainerIds);
 
         return new UpdateTrainerFieldResponse(
-            ToTrainersWorkflowDto(result.Workflow),
+            ToTrainersWorkflowDeltaDto(result.Workflow, changedTrainerIds),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
-    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(ZaTrainersEditResult result)
+    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(
+        ZaTrainersEditResult result,
+        IEnumerable<int> changedTrainerIds)
     {
         ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(changedTrainerIds);
 
         return new UpdateTrainerFieldsResponse(
-            ToTrainersWorkflowDto(result.Workflow),
+            ToTrainersWorkflowDeltaDto(result.Workflow, changedTrainerIds),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -798,6 +804,23 @@ public static class ZaBridgeMapper
             ToDto(workflow.Summary),
             workflow.Trainers.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TrainersWorkflowDeltaDto ToTrainersWorkflowDeltaDto(
+        ZaTrainersWorkflow workflow,
+        IEnumerable<int> changedTrainerIds)
+    {
+        var changedTrainerIdSet = changedTrainerIds.ToHashSet();
+        return new TrainersWorkflowDeltaDto(
+            workflow.Trainers
+                .Where(trainer => changedTrainerIdSet.Contains(trainer.TrainerId))
+                .Select(ToDto)
+                .ToArray(),
             new TrainersWorkflowStatsDto(
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,

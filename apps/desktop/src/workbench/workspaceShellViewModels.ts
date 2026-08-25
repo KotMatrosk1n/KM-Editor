@@ -60,3 +60,20 @@ export function mergeWorkspaceRecentTargetViewModels(
   }
   return merged;
 }
+
+export function sortWorkspaceEntriesNewestFirst<T>(
+  entries: readonly T[],
+  timestamp: (entry: T) => string
+) {
+  return entries
+    .map((entry, index) => {
+      const parsedTimestamp = Date.parse(timestamp(entry));
+      return {
+        entry,
+        index,
+        timestamp: Number.isNaN(parsedTimestamp) ? Number.NEGATIVE_INFINITY : parsedTimestamp
+      };
+    })
+    .sort((left, right) => right.timestamp - left.timestamp || left.index - right.index)
+    .map(({ entry }) => entry);
+}

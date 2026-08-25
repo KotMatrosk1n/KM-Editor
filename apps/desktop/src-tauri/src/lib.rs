@@ -50,18 +50,20 @@ const PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT: Duration = Duration::from_secs(45);
 const PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS: u64 = 75;
 const PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER: u64 = 4;
 const PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER: u64 = 2;
-const PROJECT_BRIDGE_QUEUE_WAIT_PROVISION_TIMEOUT: Duration = Duration::from_secs(
+const PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT: Duration = Duration::from_secs(
     PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER,
 );
-const PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(
-    PROJECT_BRIDGE_QUEUE_WAIT_PROVISION_TIMEOUT.as_secs()
-        * PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER,
-);
+const PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
+const PROJECT_BRIDGE_TERMINATION_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
+const PROJECT_BRIDGE_OUTER_TIMEOUT_MARGIN: Duration = Duration::from_secs(5);
 const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(
     PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS
         * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER
         * PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER,
 );
+// New commands must never become unbounded by omission. They receive this generous
+// ceiling without replay until their retry semantics are explicitly reviewed.
+const PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT: Duration = PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT;
 const PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const PROJECT_BRIDGE_REQUEST_RUNNING: usize = 0;
 const PROJECT_BRIDGE_REQUEST_COMPLETED: usize = 1;
@@ -181,7 +183,13 @@ enum ProjectBridgeIoLockFailure {
     TimedOut,
 }
 
-struct ProjectBridgeReadOnlyWatchdog {
+#[derive(Clone, Copy)]
+struct ProjectBridgeRequestPolicy {
+    execution_timeout: Duration,
+    retry_after_transport_failure: bool,
+}
+
+struct ProjectBridgeRequestWatchdog {
     cancellation_sender: mpsc::Sender<()>,
     request_state: Arc<AtomicUsize>,
     thread: Option<JoinHandle<()>>,
@@ -198,7 +206,7 @@ impl Drop for ProjectBridgeProcess {
             Ok(child) => child,
             Err(poisoned) => poisoned.into_inner(),
         };
-        terminate_project_bridge_child(child);
+        let _ = terminate_project_bridge_child(child);
     }
 }
 
@@ -224,12 +232,33 @@ async fn project_bridge(
     let bridge_state = bridge_state.inner().clone();
     let request_permit = bridge_state.try_acquire_request_permit()?;
     let request_generation = bridge_state.generation.load(Ordering::Acquire);
-    tauri::async_runtime::spawn_blocking(move || {
+    let outer_timeout = project_bridge_outer_timeout(&request_json);
+    let request_bridge_state = bridge_state.clone();
+    let mut request_task = tauri::async_runtime::spawn_blocking(move || {
         let _request_permit = request_permit;
-        run_project_bridge_request(&app_handle, &bridge_state, request_generation, request_json)
-    })
-    .await
-    .map_err(|error| format!("Project bridge request task failed: {error}"))?
+        run_project_bridge_request(
+            &app_handle,
+            &request_bridge_state,
+            request_generation,
+            request_json,
+        )
+    });
+
+    match tokio::time::timeout(outer_timeout, &mut request_task).await {
+        Ok(request_result) => request_result
+            .map_err(|error| format!("Project bridge request task failed: {error}"))?,
+        Err(_) => {
+            request_task.abort();
+            let recovery_bridge_state = bridge_state.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = recycle_project_bridge_request_if_current(
+                    &recovery_bridge_state,
+                    request_generation,
+                );
+            });
+            Err(create_project_bridge_outer_timeout_error(outer_timeout))
+        }
+    }
 }
 
 #[tauri::command]
@@ -262,8 +291,8 @@ fn run_project_bridge_request_with<F>(
 where
     F: FnMut() -> Result<ProjectBridgeProcess, String>,
 {
-    let read_only_timeout = project_bridge_read_only_timeout(request_json);
-    let may_retry = read_only_timeout.is_some();
+    let request_policy = project_bridge_request_policy(request_json);
+    let may_retry = request_policy.is_some_and(|policy| policy.retry_after_transport_failure);
 
     for attempt in 0..2 {
         let process = get_or_start_project_bridge_process(
@@ -275,7 +304,7 @@ where
             bridge_state,
             request_generation,
             request_json,
-            read_only_timeout,
+            request_policy.map(|policy| policy.execution_timeout),
         );
         match request_result {
             Ok(response) => return Ok(response),
@@ -360,29 +389,30 @@ impl ProjectBridgeProcess {
         bridge_state: &ProjectBridgeState,
         request_generation: usize,
         request_json: &str,
-        read_only_timeout: Option<Duration>,
+        execution_timeout: Option<Duration>,
     ) -> Result<String, ProjectBridgeRequestFailure> {
         let request_token = self.allocate_request_token();
-        let mut io = match lock_project_bridge_request_io(
-            &self.io,
-            read_only_timeout.map(|_| PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT),
-        ) {
-            Ok(io) => io,
-            Err(ProjectBridgeIoLockFailure::TimedOut) => {
-                return Err(ProjectBridgeRequestFailure::TimedOut(
-                    create_project_bridge_timeout_error(PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT),
-                ));
-            }
-            Err(ProjectBridgeIoLockFailure::Poisoned) => {
-                return Err(ProjectBridgeRequestFailure::Retryable(
-                    "Project bridge I/O lock was poisoned.".to_owned(),
-                ));
-            }
-        };
+        let mut io =
+            match lock_project_bridge_request_io(&self.io, Some(PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT))
+            {
+                Ok(io) => io,
+                Err(ProjectBridgeIoLockFailure::TimedOut) => {
+                    return Err(ProjectBridgeRequestFailure::TimedOut(
+                        create_project_bridge_queue_timeout_error(
+                            PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT,
+                        ),
+                    ));
+                }
+                Err(ProjectBridgeIoLockFailure::Poisoned) => {
+                    return Err(ProjectBridgeRequestFailure::Retryable(
+                        "Project bridge I/O lock was poisoned.".to_owned(),
+                    ));
+                }
+            };
         let _active_request =
             ProjectBridgeActiveRequest::begin(&self.active_request_token, request_token);
-        let watchdog = read_only_timeout.map(|timeout| {
-            ProjectBridgeReadOnlyWatchdog::start(
+        let watchdog = execution_timeout.map(|timeout| {
+            ProjectBridgeRequestWatchdog::start(
                 bridge_state.clone(),
                 request_generation,
                 self.clone(),
@@ -420,11 +450,11 @@ impl ProjectBridgeProcess {
                 .map_err(ProjectBridgeRequestFailure::Retryable)?;
             Ok(response)
         })();
-        let timed_out = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
+        let timed_out = watchdog.is_some_and(ProjectBridgeRequestWatchdog::finish);
         if timed_out {
             return Err(ProjectBridgeRequestFailure::TimedOut(
                 create_project_bridge_timeout_error(
-                    read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
+                    execution_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
                 ),
             ));
         }
@@ -446,8 +476,7 @@ impl ProjectBridgeProcess {
             .child
             .lock()
             .map_err(|_| "Project bridge child lock was poisoned.".to_owned())?;
-        terminate_project_bridge_child(&mut child);
-        Ok(())
+        terminate_project_bridge_child(&mut child)
     }
 }
 
@@ -534,7 +563,7 @@ impl Drop for ProjectBridgeActiveRequest<'_> {
     }
 }
 
-impl ProjectBridgeReadOnlyWatchdog {
+impl ProjectBridgeRequestWatchdog {
     fn start(
         bridge_state: ProjectBridgeState,
         request_generation: usize,
@@ -621,32 +650,70 @@ fn lock_project_bridge_request_io<'a, T>(
     }
 }
 
-fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
+fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequestPolicy> {
     let request: serde_json::Value = serde_json::from_str(request_json).ok()?;
     let command = request.get("command")?.as_str()?;
+
+    if is_replay_safe_edit_session_command(command) {
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
+            retry_after_transport_failure: true,
+        });
+    }
+
+    if command == "changeSets.captureSession" {
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
+            retry_after_transport_failure: false,
+        });
+    }
+
+    if command == "changePlan.apply" {
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
+            retry_after_transport_failure: false,
+        });
+    }
 
     if matches!(
         command,
         "project.open"
             | "project.validate"
             | "project.fileGraph.refresh"
+            | "randomizer.seed.import"
             | "workflow.list"
             | "workspace.drafts.read"
             | "workspace.applicationState.read"
             | "workspace.projectState.read"
     ) {
-        return Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT);
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_PROJECT_READ_TIMEOUT,
+            retry_after_transport_failure: true,
+        });
     }
 
     if matches!(command, "output.cleanup.preview" | "output.history.list") {
-        return Some(PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT);
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT,
+            retry_after_transport_failure: true,
+        });
     }
 
     if matches!(
         command,
         "placement.catalog.open"
             | "placement.catalog.query"
+            | "svCache.status"
+            | "svCache.settings.update"
+            | "svCache.clear"
+            | "svCache.warmup.step"
+            | "zaCache.status"
+            | "zaCache.settings.update"
+            | "zaCache.clear"
+            | "zaCache.warmup.step"
             | "swshCache.status"
+            | "swshCache.settings.update"
+            | "swshCache.clear"
             | "swshCache.warmup.step"
             | "output.recovery.status"
             | "output.integrity.scan"
@@ -673,6 +740,9 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "semanticMerge.preview"
             | "gameModules.capabilities"
             | "gameModules.query"
+            | "modMerger.stage"
+            | "svModMerger.stage"
+            | "zaModMerger.stage"
             | "researchLab.capabilities"
             | "researchLab.source.open"
             | "researchLab.source.close"
@@ -684,12 +754,124 @@ fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
             | "recipes.preview"
             | "support.report.build"
     ) {
-        return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT,
+            retry_after_transport_failure: true,
+        });
     }
 
-    command
-        .ends_with(".load")
-        .then_some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT)
+    if command.ends_with(".load") {
+        return Some(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT,
+            retry_after_transport_failure: true,
+        });
+    }
+
+    // Fail closed for replay safety while still guaranteeing shared-bridge recovery.
+    Some(ProjectBridgeRequestPolicy {
+        execution_timeout: PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT,
+        retry_after_transport_failure: false,
+    })
+}
+
+fn project_bridge_outer_timeout(request_json: &str) -> Duration {
+    let policy =
+        project_bridge_request_policy(request_json).unwrap_or(ProjectBridgeRequestPolicy {
+            execution_timeout: PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT,
+            retry_after_transport_failure: false,
+        });
+    let attempt_budget = PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT
+        .saturating_add(policy.execution_timeout)
+        .saturating_add(PROJECT_BRIDGE_TERMINATION_WAIT_TIMEOUT);
+    let maximum_attempts = if policy.retry_after_transport_failure {
+        2
+    } else {
+        1
+    };
+
+    attempt_budget
+        .saturating_mul(maximum_attempts)
+        .saturating_add(PROJECT_BRIDGE_OUTER_TIMEOUT_MARGIN)
+}
+
+fn is_replay_safe_edit_session_command(command: &str) -> bool {
+    matches!(
+        command,
+        "angeFight.stage"
+            | "angeFight.uninstall.stage"
+            | "bagHook.install.stage"
+            | "bagHook.uninstall.stage"
+            | "behavior.entry.update"
+            | "behavior.fields.update"
+            | "catchCap.stage"
+            | "catchCap.uninstall.stage"
+            | "changePlan.create"
+            | "dynamaxAdventures.defaults.preview"
+            | "dynamaxAdventures.field.update"
+            | "dynamaxAdventures.repair.stage"
+            | "dynamaxAdventures.restore.stage"
+            | "editSession.start"
+            | "editSession.validate"
+            | "encounters.slot.update"
+            | "encounters.slot.vanilla.stage"
+            | "encounters.slots.update"
+            | "exefsPatches.patch.stage"
+            | "fairyGymBoosts.stage"
+            | "fashionUnlock.install.stage"
+            | "fashionUnlock.uninstall.stage"
+            | "giftPokemon.field.update"
+            | "giftPokemon.fields.update"
+            | "giftPokemon.gift.vanilla.stage"
+            | "gymUniformRemoval.install.stage"
+            | "gymUniformRemoval.uninstall.stage"
+            | "hyperTraining.stage"
+            | "hyperspaceBypass.install.stage"
+            | "hyperspaceBypass.uninstall.stage"
+            | "items.field.update"
+            | "items.fields.update"
+            | "items.item.vanilla.stage"
+            | "ivScreen.install.stage"
+            | "ivScreen.uninstall.stage"
+            | "moves.field.update"
+            | "moves.fields.update"
+            | "moves.move.vanilla.stage"
+            | "npcItemGift.stage"
+            | "placement.object.update"
+            | "placement.objects.update"
+            | "pokemon.dex.megas.sync.stage"
+            | "pokemon.dex.move"
+            | "pokemon.dex.resize"
+            | "pokemon.dex.swap"
+            | "pokemon.dex.vanilla.stage"
+            | "pokemon.evolution.update"
+            | "pokemon.field.update"
+            | "pokemon.fields.update"
+            | "pokemon.learnset.update"
+            | "raidBattles.slot.update"
+            | "raidBattles.slots.update"
+            | "raidBonusRewards.reward.update"
+            | "raidBonusRewards.rewards.update"
+            | "raidRewards.reward.update"
+            | "raidRewards.rewards.update"
+            | "rentalPokemon.field.update"
+            | "rentalPokemon.fields.update"
+            | "royalCandy.workflow.stage"
+            | "shinyRate.stage"
+            | "shops.inventory.update"
+            | "spreadsheetImport.preview"
+            | "startingItems.stage"
+            | "staticEncounters.field.update"
+            | "staticEncounters.fields.update"
+            | "teraRaids.field.update"
+            | "teraRaids.fields.update"
+            | "text.entry.update"
+            | "tradePokemon.field.update"
+            | "tradePokemon.fields.update"
+            | "trainers.field.update"
+            | "trainers.fields.update"
+            | "typeChart.stage"
+            | "typeChart.uninstall.stage"
+    )
 }
 
 fn timeout_project_bridge_process(
@@ -720,9 +902,46 @@ fn timeout_project_bridge_process(
     Ok(())
 }
 
+fn recycle_project_bridge_request_if_current(
+    bridge_state: &ProjectBridgeState,
+    request_generation: usize,
+) -> Result<(), String> {
+    let removed = {
+        let mut current = bridge_state
+            .process
+            .lock()
+            .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
+        if bridge_state.generation.load(Ordering::Acquire) == request_generation {
+            bridge_state.generation.fetch_add(1, Ordering::AcqRel);
+            current.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some(process) = removed {
+        process.terminate()?;
+    }
+    Ok(())
+}
+
 fn create_project_bridge_timeout_error(timeout: Duration) -> String {
     format!(
-        "The read-only project request did not finish within {} seconds. KM Editor stopped waiting so the interface can recover. Check that the selected project folders are available, then retry.",
+        "The project request did not return within {} seconds. KM Editor stopped the stalled bridge so the interface can recover. No response was accepted. Refresh the current editor state before retrying because a durable request may have finished before the connection stopped.",
+        timeout.as_secs()
+    )
+}
+
+fn create_project_bridge_outer_timeout_error(timeout: Duration) -> String {
+    format!(
+        "The project request did not return after {} seconds, including bridge recovery time. KM Editor released the interface and discarded any late response. Refresh the current editor state before retrying because a durable request may have finished before the connection stopped.",
+        timeout.as_secs()
+    )
+}
+
+fn create_project_bridge_queue_timeout_error(timeout: Duration) -> String {
+    format!(
+        "The project bridge remained busy for {} seconds. This request was not sent. Wait for the current operation to finish, then retry.",
         timeout.as_secs()
     )
 }
@@ -738,11 +957,59 @@ fn ensure_project_bridge_request_is_current(
     }
 }
 
-fn terminate_project_bridge_child(child: &mut Option<Child>) {
-    if let Some(mut child) = child.take() {
-        let _ = child.kill();
-        let _ = child.wait();
+fn terminate_project_bridge_child(child: &mut Option<Child>) -> Result<(), String> {
+    let Some(mut child) = child.take() else {
+        return Ok(());
+    };
+
+    match child.try_wait() {
+        Ok(Some(_)) => return Ok(()),
+        Ok(None) | Err(_) => {}
     }
+
+    if let Err(kill_error) = child.kill() {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {
+                reap_project_bridge_child_in_background(child, true);
+                return Err(format!(
+                    "Could not terminate the project bridge runner: {kill_error}"
+                ));
+            }
+            Err(wait_error) => {
+                reap_project_bridge_child_in_background(child, true);
+                return Err(format!(
+                    "Could not terminate or inspect the project bridge runner: {kill_error}; {wait_error}"
+                ));
+            }
+        }
+    }
+
+    let deadline = Instant::now() + PROJECT_BRIDGE_TERMINATION_WAIT_TIMEOUT;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => std::thread::sleep(PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL),
+            Err(error) => {
+                reap_project_bridge_child_in_background(child, false);
+                return Err(format!(
+                    "Could not confirm that the project bridge runner stopped: {error}"
+                ));
+            }
+        }
+    }
+
+    reap_project_bridge_child_in_background(child, false);
+    Ok(())
+}
+
+fn reap_project_bridge_child_in_background(mut child: Child, retry_termination: bool) {
+    std::thread::spawn(move || {
+        if retry_termination {
+            let _ = child.kill();
+        }
+        let _ = child.wait();
+    });
 }
 
 fn start_project_bridge_process(

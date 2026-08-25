@@ -277,6 +277,7 @@ internal sealed class SvTrainersWorkflowService
             Items: [],
             aiFlags,
             aiStates,
+            trainer.IsStrong,
             trainer.ChangeGem,
             FormatTeraTarget(trainer.ChangeGem, team),
             Heal: false,
@@ -642,7 +643,7 @@ internal sealed class SvTrainersWorkflowService
             $"Slot {(pokemon.Slot + 1).ToString(CultureInfo.InvariantCulture)}: {pokemon.Species} ({pokemon.TeraTypeLabel ?? "Tera type set"}).";
     }
 
-    private static int GetOccupiedPokemonCount(SvTrainerRecord trainer)
+    internal static int GetOccupiedPokemonCount(SvTrainerRecord trainer)
     {
         return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
     }

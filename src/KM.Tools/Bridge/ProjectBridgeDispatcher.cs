@@ -2250,28 +2250,35 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateTrainerField(
-                paths,
-                session,
-                request.Payload.TrainerId,
-                request.Payload.Slot,
-                request.Payload.Field,
-                request.Payload.Value))
+            ? ZaBridgeMapper.ToDto(
+                zaWorkflowService.UpdateTrainerField(
+                    paths,
+                    session,
+                    request.Payload.TrainerId,
+                    request.Payload.Slot,
+                    request.Payload.Field,
+                    request.Payload.Value),
+                [request.Payload.TrainerId])
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTrainerField(
-                paths,
-                session,
+            ? SvBridgeMapper.ToDto(
+                svWorkflowService.UpdateTrainerField(
+                    paths,
+                    session,
+                    request.Payload.TrainerId,
+                    request.Payload.Slot,
+                    request.Payload.Field,
+                    request.Payload.Value),
+                [request.Payload.TrainerId])
+            : SwShBridgeMapper.ToDto(
+                trainersEditSessionService.UpdateField(
+                    paths,
+                    session,
+                    request.Payload.TrainerId,
+                    request.Payload.Slot,
+                    request.Payload.Field,
+                    request.Payload.Value),
                 request.Payload.TrainerId,
-                request.Payload.Slot,
-                request.Payload.Field,
-                request.Payload.Value))
-            : SwShBridgeMapper.ToDto(trainersEditSessionService.UpdateField(
-                paths,
-                session,
-                request.Payload.TrainerId,
-                request.Payload.Slot,
-                request.Payload.Field,
-                request.Payload.Value));
+                request.Payload.Field);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2289,7 +2296,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 .Select(update => new KM.ZA.Trainers.ZaTrainerFieldUpdate(update.TrainerId, update.Slot, update.Field, update.Value))
                 .ToArray();
             var zaResponse = ZaBridgeMapper.ToTrainerFieldsDto(
-                zaWorkflowService.UpdateTrainerFields(paths, session, zaUpdates));
+                zaWorkflowService.UpdateTrainerFields(paths, session, zaUpdates),
+                zaUpdates.Select(update => update.TrainerId));
 
             return SerializeSuccess(zaResponse, request.RequestId);
         }
@@ -2306,7 +2314,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             .Select(update => new SvTrainerFieldUpdate(update.TrainerId, update.Slot, update.Field, update.Value))
             .ToArray();
         var response = SvBridgeMapper.ToTrainerFieldsDto(
-            svWorkflowService.UpdateTrainerFields(paths, session, updates));
+            svWorkflowService.UpdateTrainerFields(paths, session, updates),
+            updates.Select(update => update.TrainerId));
 
         return SerializeSuccess(response, request.RequestId);
     }

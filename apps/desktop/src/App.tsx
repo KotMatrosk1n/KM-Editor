@@ -66,6 +66,13 @@ import {
   parseSvEncounterFacets
 } from './svEncounterTables';
 import {
+  applyTrainerWorkflowDelta,
+  isTrainerSlotOccupiedForMaxIvs,
+  orderTrainerFieldUpdates,
+  reconcileTrainerSlotMaxIvDrafts,
+  trainerSlotNeedsMaxIvDraft
+} from './features/trainers/trainerBatchUpdates';
+import {
   type Dispatch,
   type ReactNode,
   type RefObject,
@@ -555,6 +562,7 @@ import {
 import type { SemanticExploreRecordRef } from './bridge/semanticExploreContracts';
 import {
   mergeWorkspaceRecentTargetViewModels,
+  sortWorkspaceEntriesNewestFirst,
   type WorkspaceTargetViewModel
 } from './workbench/workspaceShellViewModels';
 import {
@@ -1300,6 +1308,7 @@ const trainerItemFieldNames = [
   'trainerItem4Id'
 ] as const;
 const aiFlagsFieldName = 'aiFlags';
+const trainerIsStrongFieldName = 'isStrong';
 const trainerCanTerastallizeFieldName = 'changeGem';
 const healFieldName = 'heal';
 const moneyFieldName = 'money';
@@ -1386,6 +1395,7 @@ const trainerDataFieldNames = [
   zaMegaEvolutionFieldName,
   zaLastHandFieldName,
   ...trainerItemFieldNames,
+  trainerIsStrongFieldName,
   trainerCanTerastallizeFieldName,
   healFieldName,
   moneyFieldName,
@@ -2773,8 +2783,6 @@ export function App({
   const supportsTextQuery = isSwordShieldProject || supportsTrinityOutput;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
-  const trainersWorkflowRef = useRef(trainersWorkflow);
-  trainersWorkflowRef.current = trainersWorkflow;
   const giftPokemonWorkflowRef = useRef(giftPokemonWorkflow);
   giftPokemonWorkflowRef.current = giftPokemonWorkflow;
   const tradePokemonWorkflowRef = useRef(tradePokemonWorkflow);
@@ -3264,7 +3272,14 @@ export function App({
   const swShPlacementDetailRunRef = useRef(0);
   const swShPlacementRecoveryAttemptedRef = useRef(false);
   const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
-  const editSessionOperationRunRef = useRef(0);
+  const editSessionReviewRunRef = useRef(0);
+  const editSessionApplyRunRef = useRef(0);
+  const editSessionApplyInFlightRef = useRef(false);
+  const invalidateEditSessionReview = useCallback(() => {
+    editSessionReviewRunRef.current += 1;
+    setIsSessionValidating(false);
+    setIsChangePlanCreating(false);
+  }, []);
   const dynamaxAdventurePreviewRunRef = useRef(0);
   const editSessionMutationGenerationRef = useRef(0);
   const editSessionMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -3427,6 +3442,7 @@ export function App({
   const {
     clearScopedEditorPanelState,
     getScopedEditorPanelOutput,
+    scopedEditorPanelStates,
     setScopedEditorPanelDiagnostics,
     setScopedEditorPanelStates
   } = useScopedEditorPanelOutput(currentEditSessionSignature);
@@ -3453,6 +3469,8 @@ export function App({
     currentEditSessionSignature !== null &&
     currentEditSessionSignature === changePlanSessionSignature;
   const visibleChangePlan = isChangePlanCurrent ? changePlan : null;
+  const visibleChangePlanRef = useRef<ChangePlan | null>(visibleChangePlan);
+  visibleChangePlanRef.current = visibleChangePlan;
   const isDynamaxAdventureChangePlanCurrent =
     dynamaxAdventureChangePlan !== null &&
     currentEditSessionSignature !== null &&
@@ -3464,6 +3482,13 @@ export function App({
     visibleDynamaxAdventureChangePlan
   );
   visibleDynamaxAdventureChangePlanRef.current = visibleDynamaxAdventureChangePlan;
+  const scopedEditorPanelStatesRef = useRef(scopedEditorPanelStates);
+  scopedEditorPanelStatesRef.current = scopedEditorPanelStates;
+  const clearVisibleChangePlanRefs = useCallback(() => {
+    visibleChangePlanRef.current = null;
+    visibleDynamaxAdventureChangePlanRef.current = null;
+    scopedEditorPanelStatesRef.current = {};
+  }, []);
   const isEditSessionOperationBusy =
     isEditSessionMutating ||
     isSessionValidating ||
@@ -3937,7 +3962,8 @@ export function App({
       clearLoadedWorkflowData();
     }
     if (currentSessionSignature !== nextSessionSignature) {
-      editSessionOperationRunRef.current += 1;
+      invalidateEditSessionReview();
+      clearVisibleChangePlanRefs();
       editSessionRef.current = nextSession;
       setEditSession(nextSession);
       setEditSessionSection(null);
@@ -3952,14 +3978,17 @@ export function App({
   const clearPendingEditState = useCallback(() => {
     spreadsheetImportPreviewRunRef.current += 1;
     setIsSpreadsheetImportPreviewing(false);
-    editSessionOperationRunRef.current += 1;
+    invalidateEditSessionReview();
+    editSessionApplyRunRef.current += 1;
+    editSessionApplyInFlightRef.current = false;
+    setIsChangePlanApplying(false);
+    setWorkProgress(null);
     editSessionMutationGenerationRef.current += 1;
     editSessionMutationQueueRef.current = Promise.resolve();
     pendingEditSessionMutationTokensRef.current.clear();
     setIsEditSessionMutating(false);
-    setIsSessionValidating(false);
-    setIsChangePlanCreating(false);
     editSessionRef.current = null;
+    clearVisibleChangePlanRefs();
     setEditSession(null);
     setEditSessionSection(null);
     setChangePlan(null);
@@ -3970,7 +3999,16 @@ export function App({
     clearScopedEditorPanelState();
     clearDynamaxAdventurePanelState();
     setEditorDraftDirtySections(new Set());
-  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
+  }, [
+    clearDynamaxAdventurePanelState,
+    clearScopedEditorPanelState,
+    clearVisibleChangePlanRefs,
+    invalidateEditSessionReview,
+    setApplyResult,
+    setChangePlan,
+    setEditSession,
+    setEditValidationDiagnostics
+  ]);
 
   const rematerializeSessionLocalChange = useCallback(async (
     candidateSession: EditSession | null
@@ -3993,38 +4031,63 @@ export function App({
   }, [changeSetWorkspace]);
 
   const discardUnassignedPendingEdits = useCallback(async () => {
+    if (
+      editSessionApplyInFlightRef.current ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
+      return false;
+    }
+
+    const mutationToken = editSessionMutationTokenRef.current + 1;
+    editSessionMutationTokenRef.current = mutationToken;
+    pendingEditSessionMutationTokensRef.current.add(mutationToken);
+    setIsEditSessionMutating(true);
+    const generation = editSessionMutationGenerationRef.current;
     const currentSession = editSessionRef.current;
     const associatedEdits = userFacingFeatureVisibility.namedChangeSets
       ? currentSession?.pendingEdits.filter((edit) => edit.association !== null) ?? []
       : [];
     const candidateSession = createSessionWithPendingEdits(currentSession, associatedEdits);
-    let nextSession: EditSession | null;
     try {
-      nextSession = await rematerializeSessionLocalChange(candidateSession);
+      const nextSession = await rematerializeSessionLocalChange(candidateSession);
+      if (
+        editSessionMutationGenerationRef.current !== generation ||
+        editSessionApplyInFlightRef.current
+      ) {
+        return false;
+      }
+      invalidateEditSessionReview();
+      clearVisibleChangePlanRefs();
+      editSessionMutationGenerationRef.current += 1;
+      editSessionMutationQueueRef.current = Promise.resolve();
+      editSessionRef.current = nextSession;
+      setEditSession(nextSession);
+      setEditSessionSection(null);
+      setChangePlan(null);
+      setApplyResult(null);
+      setEditValidationDiagnostics([]);
+      setValidatedEditSessionSignature(null);
+      setChangePlanSessionSignature(null);
+      clearScopedEditorPanelState();
+      clearDynamaxAdventurePanelState();
+      setEditorDraftDirtySections(new Set());
+      return true;
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (editSessionMutationGenerationRef.current === generation) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
       return false;
+    } finally {
+      pendingEditSessionMutationTokensRef.current.delete(mutationToken);
+      setIsEditSessionMutating(
+        pendingEditSessionMutationTokensRef.current.size > 0
+      );
     }
-    editSessionOperationRunRef.current += 1;
-    editSessionMutationGenerationRef.current += 1;
-    editSessionMutationQueueRef.current = Promise.resolve();
-    pendingEditSessionMutationTokensRef.current.clear();
-    setIsEditSessionMutating(false);
-    editSessionRef.current = nextSession;
-    setEditSession(nextSession);
-    setEditSessionSection(null);
-    setChangePlan(null);
-    setApplyResult(null);
-    setEditValidationDiagnostics([]);
-    setValidatedEditSessionSignature(null);
-    setChangePlanSessionSignature(null);
-    clearScopedEditorPanelState();
-    clearDynamaxAdventurePanelState();
-    setEditorDraftDirtySections(new Set());
-    return true;
   }, [
     clearDynamaxAdventurePanelState,
     clearScopedEditorPanelState,
+    clearVisibleChangePlanRefs,
+    invalidateEditSessionReview,
     rematerializeSessionLocalChange,
     setApplyResult,
     setBridgeDiagnostics,
@@ -4085,6 +4148,7 @@ export function App({
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
       if (
+        editSessionApplyInFlightRef.current ||
         isSessionValidating ||
         isChangePlanCreating ||
         isChangePlanApplying ||
@@ -5285,8 +5349,11 @@ export function App({
   );
   const activePinLocation = activeRecordLocation;
   const workspaceBookmarks = useMemo<WorkspaceTargetViewModel[]>(
-    () => (projectWorkspaceDocument?.bookmarks ?? [])
-      .filter((bookmark) => bookmark.kind === 'bookmark')
+    () => sortWorkspaceEntriesNewestFirst(
+      (projectWorkspaceDocument?.bookmarks ?? [])
+        .filter((bookmark) => bookmark.kind === 'bookmark'),
+      (bookmark) => bookmark.updatedAtUtc
+    )
       .flatMap((bookmark) => {
         const location = fromScopedWorkspaceLocation(
           bookmark.location,
@@ -5307,8 +5374,11 @@ export function App({
     [activeProjectId, projectWorkspaceDocument?.bookmarks, t]
   );
   const workspacePins = useMemo<WorkspaceTargetViewModel[]>(
-    () => (projectWorkspaceDocument?.bookmarks ?? [])
-      .filter((bookmark) => bookmark.kind === 'pin')
+    () => sortWorkspaceEntriesNewestFirst(
+      (projectWorkspaceDocument?.bookmarks ?? [])
+        .filter((bookmark) => bookmark.kind === 'pin'),
+      (bookmark) => bookmark.updatedAtUtc
+    )
       .flatMap((bookmark) => {
         const location = fromScopedWorkspaceLocation(
           withoutScopedLocationInspector(bookmark.location),
@@ -5329,7 +5399,10 @@ export function App({
     [activeProjectId, projectWorkspaceDocument?.bookmarks, t]
   );
   const persistedRecentTargets = useMemo<WorkspaceTargetViewModel[]>(
-    () => (projectWorkspaceDocument?.recentTargets ?? []).flatMap((recent) => {
+    () => sortWorkspaceEntriesNewestFirst(
+      projectWorkspaceDocument?.recentTargets ?? [],
+      (recent) => recent.visitedAtUtc
+    ).flatMap((recent) => {
       const location = fromScopedWorkspaceLocation(
         withoutScopedLocationInspector(recent.location),
         activeProjectId
@@ -11363,6 +11436,7 @@ export function App({
   const handleRemovePendingEdit = useCallback(
     (editIndex: number) => {
       if (
+        editSessionApplyInFlightRef.current ||
         pendingEditSessionMutationTokensRef.current.size > 0 ||
         !editSession ||
         editIndex < 0 ||
@@ -11373,11 +11447,23 @@ export function App({
 
       const pendingEdit = editSession.pendingEdits[editIndex];
       if (pendingEdit?.association && userFacingFeatureVisibility.namedChangeSets) {
+        const mutationToken = editSessionMutationTokenRef.current + 1;
+        editSessionMutationTokenRef.current = mutationToken;
+        pendingEditSessionMutationTokensRef.current.add(mutationToken);
+        setIsEditSessionMutating(true);
+        const generation = editSessionMutationGenerationRef.current;
         void changeSetWorkspace.removeOperation(
           pendingEdit.association.changeSetId,
           pendingEdit.association.operationId
         ).catch((error: unknown) => {
-          setBridgeDiagnostics(toBridgeDiagnostics(error));
+          if (editSessionMutationGenerationRef.current === generation) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          }
+        }).finally(() => {
+          pendingEditSessionMutationTokensRef.current.delete(mutationToken);
+          setIsEditSessionMutating(
+            pendingEditSessionMutationTokensRef.current.size > 0
+          );
         });
         return;
       }
@@ -11406,7 +11492,8 @@ export function App({
           if (editSessionMutationGenerationRef.current !== generation) {
             return;
           }
-          editSessionOperationRunRef.current += 1;
+          invalidateEditSessionReview();
+          clearVisibleChangePlanRefs();
           editSessionRef.current = nextSession;
           setEditSession(nextSession);
           setEditSessionSection(null);
@@ -11434,8 +11521,10 @@ export function App({
     },
     [
       clearLoadedWorkflowData,
+      clearVisibleChangePlanRefs,
       changeSetWorkspace,
       editSession,
+      invalidateEditSessionReview,
       rematerializeSessionLocalChange,
       setBridgeDiagnostics,
       setApplyResult,
@@ -11452,7 +11541,11 @@ export function App({
     onChangeSetCapture?: (response: CaptureChangeSetSessionResponse) => void,
     requiredAuthoringRequest?: AuthoringStageRequest
   ) => {
-    if (isEditSessionOperationBusy || requiredSession === null) {
+    if (
+      isEditSessionOperationBusy ||
+      editSessionApplyInFlightRef.current ||
+      requiredSession === null
+    ) {
       return null;
     }
 
@@ -11555,14 +11648,32 @@ export function App({
             suppressNextChangeSetWorkflowInvalidationRef.current = true;
           }
           try {
-            capturedResponse = await stageGate.captureStagedSession(
-              currentSession,
-              stagedSessionForCapture,
-              {
-                activeChangeSetId: stageGate.activeChangeSetId,
-                workspaceETag: stageGate.etag
+            try {
+              capturedResponse = await stageGate.captureStagedSession(
+                currentSession,
+                stagedSessionForCapture,
+                {
+                  activeChangeSetId: stageGate.activeChangeSetId,
+                  workspaceETag: stageGate.etag
+                }
+              );
+            } catch (captureError) {
+              if (editSessionMutationGenerationRef.current === generation) {
+                try {
+                  const recoveredSnapshot = await stageGate.refresh(currentSession);
+                  if (
+                    editSessionMutationGenerationRef.current === generation &&
+                    suppressWorkflowInvalidation &&
+                    recoveredSnapshot
+                  ) {
+                    clearLoadedWorkflowData();
+                  }
+                } catch {
+                  // Preserve the original capture failure. The next explicit refresh can retry recovery.
+                }
               }
-            );
+              throw captureError;
+            }
           } finally {
             suppressNextChangeSetWorkflowInvalidationRef.current =
               previousSuppression;
@@ -12121,6 +12232,10 @@ export function App({
       case 'trainerParty':
         return runEditSessionMutation(
           async (session) => {
+            const incomingWorkflow = useWorkbenchStore.getState().trainersWorkflow;
+            if (!incomingWorkflow) {
+              throw new Error('The Trainers workflow must be loaded before staging edits.');
+            }
             const response = await bridge.updateTrainerFields({
               paths,
               session,
@@ -12129,11 +12244,18 @@ export function App({
             const didSucceed = !response.diagnostics.some(
               (diagnostic) => diagnostic.severity === 'error'
             );
+            const nextWorkflow = didSucceed
+              ? applyTrainerWorkflowDelta(
+                  incomingWorkflow,
+                  response.workflowDelta,
+                  batch.updates.map((update) => update.trainerId)
+                )
+              : incomingWorkflow;
             return {
               ...response,
               didSucceed,
               session: didSucceed ? response.session : (session ?? response.session),
-              workflow: didSucceed ? response.workflow : trainersWorkflow
+              workflow: nextWorkflow
             };
           },
           (response) => {
@@ -12985,7 +13107,10 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          const incomingWorkflow = trainersWorkflowRef.current;
+          const incomingWorkflow = useWorkbenchStore.getState().trainersWorkflow;
+          if (!incomingWorkflow) {
+            throw new Error('The Trainers workflow must be loaded before staging edits.');
+          }
           const updateResponse = await bridge.updateTrainerField({
             field,
             paths: createProjectPaths(draftPaths),
@@ -12997,12 +13122,19 @@ export function App({
           const didSucceed = !updateResponse.diagnostics.some(
             (diagnostic) => diagnostic.severity === 'error'
           );
+          const nextWorkflow = didSucceed
+            ? applyTrainerWorkflowDelta(
+                incomingWorkflow,
+                updateResponse.workflowDelta,
+                [trainerId]
+              )
+            : incomingWorkflow;
 
           return {
             ...updateResponse,
             didSucceed,
             session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
-            workflow: didSucceed ? updateResponse.workflow : incomingWorkflow
+            workflow: nextWorkflow
           };
         },
         (updateResponse) => {
@@ -13027,6 +13159,7 @@ export function App({
       return false;
     }
 
+    const orderedUpdates = orderTrainerFieldUpdates(updates);
     setIsTrainerUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -13034,7 +13167,10 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          const incomingWorkflow = trainersWorkflowRef.current;
+          const incomingWorkflow = useWorkbenchStore.getState().trainersWorkflow;
+          if (!incomingWorkflow) {
+            throw new Error('The Trainers workflow must be loaded before staging edits.');
+          }
           let nextSession = session;
           let nextWorkflow = incomingWorkflow;
           let nextDiagnostics: ApiDiagnostic[] = [];
@@ -13044,7 +13180,7 @@ export function App({
             const updateResponse = await bridge.updateTrainerFields({
               paths: createProjectPaths(draftPaths),
               session,
-              updates
+              updates: orderedUpdates
             });
             nextDiagnostics = updateResponse.diagnostics;
             didSucceed = !updateResponse.diagnostics.some(
@@ -13052,10 +13188,14 @@ export function App({
             );
             if (didSucceed) {
               nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
+              nextWorkflow = applyTrainerWorkflowDelta(
+                nextWorkflow,
+                updateResponse.workflowDelta,
+                orderedUpdates.map((update) => update.trainerId)
+              );
             }
           } else {
-            for (const update of updates) {
+            for (const update of orderedUpdates) {
               const updateResponse = await bridge.updateTrainerField({
                 field: update.field,
                 paths: createProjectPaths(draftPaths),
@@ -13074,14 +13214,18 @@ export function App({
                 break;
               }
               nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
+              nextWorkflow = applyTrainerWorkflowDelta(
+                nextWorkflow,
+                updateResponse.workflowDelta,
+                [update.trainerId]
+              );
             }
           }
 
           return {
             diagnostics: nextDiagnostics,
             didSucceed,
-            session: didSucceed ? nextSession! : (session ?? nextSession!),
+            session: didSucceed ? nextSession! : session,
             workflow: didSucceed ? nextWorkflow : incomingWorkflow
           };
         },
@@ -13803,11 +13947,11 @@ export function App({
       return;
     }
 
-    const runId = editSessionOperationRunRef.current + 1;
-    editSessionOperationRunRef.current = runId;
+    const runId = editSessionReviewRunRef.current + 1;
+    editSessionReviewRunRef.current = runId;
     const initialSessionSignature = getEditSessionSignature(editSession);
     const isCurrentOperation = () =>
-      editSessionOperationRunRef.current === runId &&
+      editSessionReviewRunRef.current === runId &&
       getEditSessionSignature(editSessionRef.current) === initialSessionSignature;
 
     setIsSessionValidating(true);
@@ -13860,7 +14004,7 @@ export function App({
       }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      if (editSessionOperationRunRef.current === runId) {
+      if (editSessionReviewRunRef.current === runId) {
         setIsSessionValidating(false);
         setIsChangePlanCreating(false);
       }
@@ -13871,12 +14015,21 @@ export function App({
     if (!outputSafety.canApply) {
       return;
     }
-    if (!editSession || !visibleDynamaxAdventureChangePlan) {
+    if (
+      !editSession ||
+      !visibleDynamaxAdventureChangePlan ||
+      visibleDynamaxAdventureChangePlanRef.current === null ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
+      return;
+    }
+    if (editSessionApplyInFlightRef.current) {
       return;
     }
 
-    const runId = editSessionOperationRunRef.current + 1;
-    editSessionOperationRunRef.current = runId;
+    editSessionApplyInFlightRef.current = true;
+    const runId = editSessionApplyRunRef.current + 1;
+    editSessionApplyRunRef.current = runId;
     const reviewedSession = editSession;
     const reviewedPlan = visibleDynamaxAdventureChangePlan;
     const reviewedSessionSignature = getEditSessionSignature(reviewedSession);
@@ -13887,7 +14040,7 @@ export function App({
     const pathsSignature = JSON.stringify(paths);
     const projectScopeGeneration = projectScopeGenerationRef.current;
     const isCurrentProjectOperation = () =>
-      editSessionOperationRunRef.current === runId &&
+      editSessionApplyRunRef.current === runId &&
       projectScopeGenerationRef.current === projectScopeGeneration &&
       JSON.stringify(createProjectPaths(draftPathsRef.current)) === pathsSignature;
     const isCurrentReviewedOperation = () => {
@@ -13922,6 +14075,12 @@ export function App({
         session: reviewedSession
       });
       if (!isCurrentReviewedOperation()) {
+        if (
+          response.applyResult.outputTransaction !== null ||
+          response.applyResult.writtenFiles.length > 0
+        ) {
+          await notifySemanticOutputMutation();
+        }
         return;
       }
       const hasApplyErrors = response.applyResult.diagnostics.some(
@@ -13939,6 +14098,7 @@ export function App({
         editSessionRef.current = null;
         setEditSession(null);
         setEditSessionSection(null);
+        visibleDynamaxAdventureChangePlanRef.current = null;
         setDynamaxAdventureChangePlan(null);
         setDynamaxAdventureChangePlanSessionSignature(null);
         setDynamaxAdventurePanelDiagnostics([]);
@@ -13951,13 +14111,18 @@ export function App({
           try {
             await changeSetWorkspace.refresh(null);
           } catch (error) {
-            setBridgeDiagnostics(toBridgeDiagnostics(error));
+            if (isCurrentProjectOperation()) {
+              setBridgeDiagnostics(toBridgeDiagnostics(error));
+            }
           } finally {
             suppressNextChangeSetWorkflowInvalidationRef.current = false;
           }
         }
       }
 
+      if (!isCurrentProjectOperation()) {
+        return;
+      }
       setDynamaxAdventureApplyResult(completedApplyResult);
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
@@ -13983,13 +14148,13 @@ export function App({
         await notifySemanticOutputMutation();
       }
     } catch (error) {
-      if (!isCurrentReviewedOperation()) {
-        return;
-      }
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
       await notifySemanticOutputFailure(error);
+      if (isCurrentProjectOperation()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      if (editSessionOperationRunRef.current === runId) {
+      if (editSessionApplyRunRef.current === runId) {
+        editSessionApplyInFlightRef.current = false;
         setIsChangePlanApplying(false);
         setWorkProgress(null);
       }
@@ -14685,12 +14850,12 @@ export function App({
       return;
     }
 
-    const runId = editSessionOperationRunRef.current + 1;
-    editSessionOperationRunRef.current = runId;
+    const runId = editSessionReviewRunRef.current + 1;
+    editSessionReviewRunRef.current = runId;
     const initialSessionSignature = getEditSessionSignature(editSession);
     let operationSessionSignature = initialSessionSignature;
     const isCurrentOperation = () =>
-      editSessionOperationRunRef.current === runId &&
+      editSessionReviewRunRef.current === runId &&
       getEditSessionSignature(editSessionRef.current) === operationSessionSignature;
 
     setIsSessionValidating(true);
@@ -14741,7 +14906,7 @@ export function App({
       }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      if (editSessionOperationRunRef.current === runId) {
+      if (editSessionReviewRunRef.current === runId) {
         setIsSessionValidating(false);
         setIsChangePlanCreating(false);
       }
@@ -14757,13 +14922,14 @@ export function App({
       return;
     }
 
-    const runId = editSessionOperationRunRef.current + 1;
-    editSessionOperationRunRef.current = runId;
+    const runId = editSessionReviewRunRef.current + 1;
+    editSessionReviewRunRef.current = runId;
     const sessionSignature = getEditSessionSignature(editSession);
     const isCurrentOperation = () =>
-      editSessionOperationRunRef.current === runId &&
+      editSessionReviewRunRef.current === runId &&
       getEditSessionSignature(editSessionRef.current) === sessionSignature;
 
+    setIsSessionValidating(false);
     setIsChangePlanCreating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -14807,7 +14973,7 @@ export function App({
       }
       setScopedEditorPanelDiagnostics(section, toBridgeDiagnostics(error));
     } finally {
-      if (editSessionOperationRunRef.current === runId) {
+      if (editSessionReviewRunRef.current === runId) {
         setIsChangePlanCreating(false);
       }
     }
@@ -14817,22 +14983,50 @@ export function App({
     if (
       !editSession ||
       !visibleChangePlan ||
+      visibleChangePlanRef.current === null ||
       !canSaveValidatedChanges ||
       pendingEditSessionMutationTokensRef.current.size > 0
     ) {
       return;
     }
+    if (editSessionApplyInFlightRef.current) {
+      return;
+    }
+
+    editSessionApplyInFlightRef.current = true;
+    const runId = editSessionApplyRunRef.current + 1;
+    editSessionApplyRunRef.current = runId;
+    const reviewedSession = editSession;
+    const reviewedSessionSignature = getEditSessionSignature(reviewedSession);
+    let reviewedPlanFingerprint = calculatePendingPayloadSha256(
+      JSON.stringify(visibleChangePlan)
+    );
+    const paths = createProjectPaths(draftPathsRef.current);
+    const pathsSignature = JSON.stringify(paths);
+    const projectScopeGeneration = projectScopeGenerationRef.current;
+    const isCurrentProjectOperation = () =>
+      editSessionApplyRunRef.current === runId &&
+      projectScopeGenerationRef.current === projectScopeGeneration &&
+      JSON.stringify(createProjectPaths(draftPathsRef.current)) === pathsSignature;
+    const isCurrentReviewedOperation = () => {
+      const currentPlan = visibleChangePlanRef.current;
+      return (
+        isCurrentProjectOperation() &&
+        getEditSessionSignature(editSessionRef.current) === reviewedSessionSignature &&
+        currentPlan !== null &&
+        calculatePendingPayloadSha256(JSON.stringify(currentPlan)) === reviewedPlanFingerprint
+      );
+    };
 
     setIsChangePlanApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
 
     try {
-      const paths = createProjectPaths(draftPaths);
-      const wasBoundChangeSetSession = editSession.authoringBinding !== null;
+      const wasBoundChangeSetSession = reviewedSession.authoringBinding !== null;
       let planToApply = visibleChangePlan;
       const effectiveOutputMode =
-        outputMode ?? editSession.authoringBinding?.outputMode ?? undefined;
+        outputMode ?? reviewedSession.authoringBinding?.outputMode ?? undefined;
 
       if (effectiveOutputMode) {
         setWorkProgress(
@@ -14846,11 +15040,16 @@ export function App({
         const planResponse = await bridge.createChangePlan({
           outputMode: effectiveOutputMode,
           paths,
-          session: editSession
+          session: reviewedSession
         });
+        if (!isCurrentReviewedOperation()) {
+          return;
+        }
         planToApply = planResponse.changePlan;
+        reviewedPlanFingerprint = calculatePendingPayloadSha256(JSON.stringify(planToApply));
+        visibleChangePlanRef.current = planToApply;
         setChangePlan(planToApply);
-        setChangePlanSessionSignature(getEditSessionSignature(editSession));
+        setChangePlanSessionSignature(reviewedSessionSignature);
 
         if (!planToApply.canApply || planToApply.writes.length === 0) {
           return;
@@ -14872,8 +15071,17 @@ export function App({
         changePlan: planToApply,
         outputMode: effectiveOutputMode,
         paths,
-        session: editSession
+        session: reviewedSession
       });
+      if (!isCurrentReviewedOperation()) {
+        if (
+          response.applyResult.outputTransaction !== null ||
+          response.applyResult.writtenFiles.length > 0
+        ) {
+          await notifySemanticOutputMutation();
+        }
+        return;
+      }
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
@@ -14898,6 +15106,7 @@ export function App({
         setEditValidationDiagnostics([]);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
+        visibleChangePlanRef.current = null;
       }
 
       setApplyResult(completedApplyResult);
@@ -14911,10 +15120,19 @@ export function App({
         try {
           await changeSetWorkspace.refresh(null);
         } catch (error) {
-          setBridgeDiagnostics(toBridgeDiagnostics(error));
+          if (isCurrentProjectOperation()) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          }
         } finally {
           suppressNextChangeSetWorkflowInvalidationRef.current = false;
         }
+      }
+
+      if (!isCurrentProjectOperation()) {
+        if (didWriteFiles || completedApplyResult.outputTransaction !== null) {
+          await notifySemanticOutputMutation();
+        }
+        return;
       }
 
       if (didWriteFiles) {
@@ -14926,7 +15144,7 @@ export function App({
             2
           )
         );
-        await refreshLoadedWorkflowsAfterApply(paths);
+        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
       }
 
       if (didWriteFiles || completedApplyResult.outputTransaction !== null) {
@@ -14938,10 +15156,15 @@ export function App({
       }
     } catch (error) {
       await notifySemanticOutputFailure(error);
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (isCurrentProjectOperation()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsChangePlanApplying(false);
-      setWorkProgress(null);
+      if (editSessionApplyRunRef.current === runId) {
+        editSessionApplyInFlightRef.current = false;
+        setIsChangePlanApplying(false);
+        setWorkProgress(null);
+      }
     }
   };
 
@@ -15591,11 +15814,43 @@ export function App({
       !outputSafety.canApply ||
       !editSession ||
       !panelOutput.changePlan ||
+      !scopedEditorPanelStatesRef.current[section]?.changePlan ||
+      pendingEditSessionMutationTokensRef.current.size > 0 ||
       !scopedEditorPanelSectionIds.has(section)
     ) {
       return;
     }
+    if (editSessionApplyInFlightRef.current) {
+      return;
+    }
 
+    editSessionApplyInFlightRef.current = true;
+    const runId = editSessionApplyRunRef.current + 1;
+    editSessionApplyRunRef.current = runId;
+    const reviewedSession = editSession;
+    const reviewedPlan = panelOutput.changePlan;
+    const reviewedSessionSignature = getEditSessionSignature(reviewedSession);
+    const reviewedPlanFingerprint = calculatePendingPayloadSha256(
+      JSON.stringify(reviewedPlan)
+    );
+    const paths = createProjectPaths(draftPathsRef.current);
+    const pathsSignature = JSON.stringify(paths);
+    const projectScopeGeneration = projectScopeGenerationRef.current;
+    const isCurrentProjectOperation = () =>
+      editSessionApplyRunRef.current === runId &&
+      projectScopeGenerationRef.current === projectScopeGeneration &&
+      JSON.stringify(createProjectPaths(draftPathsRef.current)) === pathsSignature;
+    const isCurrentReviewedOperation = () => {
+      const currentPanelState = scopedEditorPanelStatesRef.current[section];
+      const currentPlan = currentPanelState?.changePlan ?? null;
+      return (
+        isCurrentProjectOperation() &&
+        getEditSessionSignature(editSessionRef.current) === reviewedSessionSignature &&
+        currentPanelState?.changePlanSessionSignature === reviewedSessionSignature &&
+        currentPlan !== null &&
+        calculatePendingPayloadSha256(JSON.stringify(currentPlan)) === reviewedPlanFingerprint
+      );
+    };
     let completedApplyResult: ApplyResult | null = null;
     setIsChangePlanApplying(true);
     setBridgeDiagnostics([]);
@@ -15618,17 +15873,25 @@ export function App({
     }));
 
     try {
-      const paths = createProjectPaths(draftPaths);
-      const wasBoundChangeSetSession = editSession.authoringBinding !== null;
+      const wasBoundChangeSetSession = reviewedSession.authoringBinding !== null;
       const response = await bridge.applyChangePlan({
-        changePlan: panelOutput.changePlan,
+        changePlan: reviewedPlan,
         outputMode:
-          editSession.authoringBinding == null
+          reviewedSession.authoringBinding == null
             ? getScopedEditorOutputMode(section)
-            : (editSession.authoringBinding.outputMode ?? undefined),
+            : (reviewedSession.authoringBinding.outputMode ?? undefined),
         paths,
-        session: editSession
+        session: reviewedSession
       });
+      if (!isCurrentReviewedOperation()) {
+        if (
+          response.applyResult.outputTransaction !== null ||
+          response.applyResult.writtenFiles.length > 0
+        ) {
+          await notifySemanticOutputMutation();
+        }
+        return;
+      }
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
@@ -15636,7 +15899,7 @@ export function App({
       if (!hasApplyErrors) {
         completedApplyResult = completeSuccessfulApplyResult(
           response.applyResult,
-          panelOutput.changePlan
+          reviewedPlan
         );
         editSessionMutationGenerationRef.current += 1;
         editSessionMutationQueueRef.current = Promise.resolve();
@@ -15646,6 +15909,15 @@ export function App({
         setChangePlan(null);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
+        scopedEditorPanelStatesRef.current = {
+          ...scopedEditorPanelStatesRef.current,
+          [section]: {
+            actionDiagnostics: [],
+            applyResult: completedApplyResult,
+            changePlan: null,
+            changePlanSessionSignature: null
+          }
+        };
         setScopedEditorPanelStates((currentStates) => ({
           ...currentStates,
           [section]: {
@@ -15660,7 +15932,9 @@ export function App({
           try {
             await changeSetWorkspace.refresh(null);
           } catch (error) {
-            setBridgeDiagnostics(toBridgeDiagnostics(error));
+            if (isCurrentProjectOperation()) {
+              setBridgeDiagnostics(toBridgeDiagnostics(error));
+            }
           } finally {
             suppressNextChangeSetWorkflowInvalidationRef.current = false;
           }
@@ -15677,6 +15951,16 @@ export function App({
         }));
       }
 
+      if (!isCurrentProjectOperation()) {
+        if (
+          response.applyResult.outputTransaction !== null ||
+          response.applyResult.writtenFiles.length > 0
+        ) {
+          await notifySemanticOutputMutation();
+        }
+        return;
+      }
+
       if (!hasApplyErrors) {
         setWorkProgress(createIndeterminateWorkProgress(
           'Applying Editor Changes',
@@ -15684,7 +15968,7 @@ export function App({
           applyProgressSteps,
           2
         ));
-        await refreshLoadedWorkflowsAfterApply(paths);
+        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
       }
       if (
         response.applyResult.outputTransaction !== null ||
@@ -15695,6 +15979,9 @@ export function App({
     } catch (error) {
       const refreshDiagnostics = toBridgeDiagnostics(error);
       await notifySemanticOutputFailure(error);
+      if (!isCurrentProjectOperation()) {
+        return;
+      }
       if (completedApplyResult) {
         setScopedEditorPanelStates((currentStates) => ({
           ...currentStates,
@@ -15709,8 +15996,11 @@ export function App({
         setScopedEditorPanelDiagnostics(section, refreshDiagnostics);
       }
     } finally {
-      setIsChangePlanApplying(false);
-      setWorkProgress(null);
+      if (editSessionApplyRunRef.current === runId) {
+        editSessionApplyInFlightRef.current = false;
+        setIsChangePlanApplying(false);
+        setWorkProgress(null);
+      }
     }
   };
 
@@ -25720,8 +26010,13 @@ function SelectedTrainerPanel({
     pokemonDraftSummary.invalidFields.length === 0 &&
     !pokemonHasInvalidEvTotal;
   const trainerMaxIvUpdates = useMemo(
-    () => createTrainerMaxIvUpdates(trainer, contextualPokemonFields),
-    [contextualPokemonFields, trainer]
+    () =>
+      createTrainerMaxIvUpdates(
+        trainer,
+        contextualPokemonFields,
+        pokemonDraftsByTrainerSlot
+      ),
+    [contextualPokemonFields, pokemonDraftsByTrainerSlot, trainer]
   );
   const hasTrainerMaxIvDraftChanges = useMemo(
     () =>
@@ -27227,7 +27522,8 @@ function getOccupiedTrainerPokemonCount(trainer: TrainerRecord) {
 
 function createTrainerMaxIvUpdates(
   trainer: TrainerRecord | null,
-  fields: TrainerEditableField[]
+  fields: TrainerEditableField[],
+  draftsByTrainerSlot: Record<string, Record<string, string>>
 ): TrainerFieldUpdate[] {
   if (!trainer) {
     return [];
@@ -27236,7 +27532,13 @@ function createTrainerMaxIvUpdates(
   const editableIvFields = getEditableTrainerIvFields(fields);
 
   return trainer.team
-    .filter((pokemon) => pokemon.speciesId > 0)
+    .filter((pokemon) => {
+      const drafts = draftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {};
+      return (
+        pokemon.speciesId > 0 &&
+        isProjectedTrainerPokemonSlotOccupied(pokemon, fields, drafts)
+      );
+    })
     .flatMap((pokemon) =>
       editableIvFields
         .filter(
@@ -27260,24 +27562,26 @@ function reconcileTrainerMaxIvDrafts(
   let nextRecords = records;
 
   for (const pokemon of trainer.team) {
-    if (pokemon.speciesId <= 0) {
-      continue;
-    }
-
     const recordKey = `${trainer.trainerId}:${pokemon.slot}`;
     const currentDrafts = nextRecords[recordKey];
-    if (!currentDrafts) {
+    if (
+      !currentDrafts ||
+      !isProjectedTrainerPokemonSlotOccupied(pokemon, fields, currentDrafts)
+    ) {
       continue;
     }
 
-    const nextDrafts = { ...currentDrafts };
-    const nextDefaults = createTrainerDrafts(fields, (field) =>
+    const currentDefaults = createTrainerDrafts(fields, (field) =>
       getEditablePokemonFieldValue(pokemon, field)
     );
-    for (const field of editableIvFields) {
-      nextDrafts[field] = maximumPokemonIvValue.toString();
-      nextDefaults[field] = maximumPokemonIvValue.toString();
-    }
+    const { defaults: nextDefaults, drafts: nextDrafts } =
+      reconcileTrainerSlotMaxIvDrafts(
+        currentDrafts,
+        currentDefaults,
+        editableIvFields,
+        maximumPokemonIvValue,
+        pokemon.speciesId > 0
+      );
 
     nextRecords = setFieldDraftRecord(nextRecords, recordKey, nextDrafts, nextDefaults);
   }
@@ -27297,18 +27601,31 @@ function hasTrainerNonMaxIvDrafts(
   const editableIvFields = getEditableTrainerIvFields(fields);
 
   return trainer.team
-    .filter((pokemon) => pokemon.speciesId > 0)
     .some((pokemon) => {
       const drafts = records[`${trainer.trainerId}:${pokemon.slot}`];
-      return (
-        drafts !== undefined &&
-        editableIvFields.some(
-          (field) =>
-            drafts[field] !== undefined &&
-            drafts[field].trim() !== maximumPokemonIvValue.toString()
-        )
+      if (drafts === undefined) {
+        return false;
+      }
+
+      return trainerSlotNeedsMaxIvDraft(
+        pokemon.speciesId,
+        getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName),
+        drafts,
+        editableIvFields,
+        maximumPokemonIvValue
       );
     });
+}
+
+function isProjectedTrainerPokemonSlotOccupied(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts: Record<string, string>
+) {
+  return isTrainerSlotOccupiedForMaxIvs(
+    pokemon.speciesId,
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName)
+  );
 }
 
 function getEditableTrainerIvFields(fields: TrainerEditableField[]) {
@@ -53898,6 +54215,8 @@ function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
       return trainer.itemIds[3] ?? null;
     case aiFlagsFieldName:
       return trainer.aiFlags;
+    case trainerIsStrongFieldName:
+      return trainer.svIsStrong === true ? 1 : 0;
     case trainerCanTerastallizeFieldName:
       return trainer.canTerastallize === true ? 1 : 0;
     case zaRankFieldName:
