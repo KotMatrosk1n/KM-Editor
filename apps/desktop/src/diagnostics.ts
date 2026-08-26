@@ -28,6 +28,9 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-BRIDGE-TRANSPORT-FAILED': 'outputSafety.diagnostic.requestFailed',
   'KM-BRIDGE-UNEXPECTED': 'outputSafety.diagnostic.requestFailed',
   'KM-BRIDGE-UNSUPPORTED-COMMAND': 'outputSafety.diagnostic.requestFailed',
+  'KM-GAMEPLAY-SETTINGS-REVIEW-EXPIRED': 'gameplaySettings.diagnostic.reviewExpired',
+  'KM-GAMEPLAY-SETTINGS-STATE-STALE': 'gameplaySettings.diagnostic.stateStale',
+  'KM-GAMEPLAY-SETTINGS-UNAVAILABLE': 'gameplaySettings.diagnostic.unavailable',
   'KM-SEMANTIC-EXTERNAL-OVERLAY-REJECTED': 'semanticExplore.query.error.externalRejected',
   'KM-SEMANTIC-EXTERNAL-SNAPSHOT-UNAVAILABLE': 'semanticExplore.query.error.externalRejected',
   'KM-SEMANTIC-INVALID-CURSOR': 'semanticExplore.query.error.cursor',
@@ -71,7 +74,68 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-PROJECT-OUTPUT-NOT-CONFIGURED': 'outputSafety.diagnostic.outputRootNotConfigured',
   'KM-PROJECT-RELOCATION-CONFLICT': 'outputSafety.diagnostic.relocationConflict',
   'KM-PROJECT-RELOCATION-MISMATCH': 'outputSafety.diagnostic.relocationMismatch',
-  'KM-PROJECT-RELOCATION-REVIEWED': 'outputSafety.diagnostic.relocationReviewed'
+  'KM-PROJECT-RELOCATION-REVIEWED': 'outputSafety.diagnostic.relocationReviewed',
+  'KM-SWSH-DYNAMAX-ADVENTURES-IO-FAILED': 'routePlanner.diagnostic.ioFailed',
+  'KM-SWSH-DYNAMAX-ADVENTURES-LAYOUT-UNSUPPORTED': 'routePlanner.diagnostic.layoutUnsupported',
+  'KM-SWSH-DYNAMAX-ADVENTURES-PROJECT-UNSUPPORTED': 'routePlanner.diagnostic.projectUnsupported',
+  'KM-SWSH-DYNAMAX-ADVENTURES-RECOVERY-REQUIRED': 'routePlanner.diagnostic.recoveryRequired',
+  'KM-SWSH-DYNAMAX-ADVENTURES-SAVE-PREIMAGE-STALE': 'routePlanner.diagnostic.savePreimageStale',
+  'KM-SWSH-DYNAMAX-ADVENTURES-SEED-BOUNDS-INVALID': 'routePlanner.diagnostic.seedBoundsInvalid',
+  'KM-SWSH-DYNAMAX-ADVENTURES-SEED-INVALID': 'routePlanner.diagnostic.seedBoundsInvalid',
+  'KM-SWSH-DYNAMAX-ADVENTURES-SEED-LIMIT-INVALID': 'routePlanner.diagnostic.seedBoundsInvalid',
+  'KM-SWSH-DYNAMAX-ADVENTURES-SOURCE-UNAVAILABLE': 'routePlanner.diagnostic.sourceUnavailable',
+  'KM-SWSH-DYNAMAX-ADVENTURES-SOURCE-UNSUPPORTED': 'routePlanner.diagnostic.sourceUnsupported',
+  'KM-SWSH-DYNAMAX-ADVENTURES-START-SEED-INVALID': 'routePlanner.diagnostic.seedBoundsInvalid',
+  'KM-SWSH-DYNAMAX-ADVENTURES-VERIFICATION-FAILED': 'routePlanner.diagnostic.verificationFailed',
+  'KM-SWSH-BATTLE-CAFE-APPLIED': 'battleCafeRewards.diagnostic.applied',
+  'KM-SWSH-BATTLE-CAFE-DRAFT-STAGED': 'battleCafeRewards.diagnostic.draftStaged',
+  'KM-SWSH-BATTLE-CAFE-ITEM-CATALOG-UNAVAILABLE': 'battleCafeRewards.diagnostic.itemCatalogUnavailable',
+  'KM-SWSH-BATTLE-CAFE-NO-CHANGES': 'battleCafeRewards.diagnostic.noChanges',
+  'KM-SWSH-BATTLE-CAFE-OUTPUT-PREPARATION-FAILED': 'battleCafeRewards.diagnostic.outputPreparationFailed',
+  'KM-SWSH-BATTLE-CAFE-OUTPUT-WRITE-FAILED': 'battleCafeRewards.diagnostic.outputWriteFailed',
+  'KM-SWSH-BATTLE-CAFE-PROJECT-UNSUPPORTED': 'battleCafeRewards.diagnostic.projectUnsupported',
+  'KM-SWSH-BATTLE-CAFE-REVIEWED-PLAN-STALE': 'battleCafeRewards.diagnostic.reviewedPlanStale',
+  'KM-SWSH-BATTLE-CAFE-ROW-INVALID': 'battleCafeRewards.diagnostic.rowInvalid',
+  'KM-SWSH-BATTLE-CAFE-SESSION-INVALID': 'battleCafeRewards.diagnostic.sessionInvalid',
+  'KM-SWSH-BATTLE-CAFE-SOURCE-UNAVAILABLE': 'battleCafeRewards.diagnostic.sourceUnavailable',
+  'KM-SWSH-BATTLE-CAFE-SOURCE-UNSUPPORTED': 'battleCafeRewards.diagnostic.sourceUnsupported',
+  'KM-SWSH-BATTLE-CAFE-TARGET-RESOLUTION-FAILED': 'battleCafeRewards.diagnostic.targetResolutionFailed',
+  'KM-SWSH-BATTLE-CAFE-TOTALS-INVALID': 'battleCafeRewards.diagnostic.totalsInvalid',
+  'KM-ZA-FASHION-CATALOG-EDIT-SAFETY': 'fashionCatalog.diagnostics.editSafety',
+  'KM-ZA-FASHION-CATALOG-REVIEWED-STATE': 'fashionCatalog.diagnostics.reviewedState',
+  'KM-ZA-FASHION-CATALOG-SAFETY': 'fashionCatalog.diagnostics.safety',
+  'KM-ZA-TRAINER-POOLS-APPLY-FAILED': 'trainerPools.diagnostic.applyFailed',
+  'KM-ZA-TRAINER-POOLS-EDIT-SAFETY': 'trainerPools.diagnostic.editSafety',
+  'KM-ZA-TRAINER-POOLS-INCOMPATIBLE': 'trainerPools.diagnostic.poolsIncompatible',
+  'KM-ZA-TRAINER-POOLS-MIRROR-SHAPE-UNSUPPORTED':
+    'trainerPools.diagnostic.unsupportedMirrorShape',
+  'KM-ZA-TRAINER-POOLS-PLAN-STALE': 'trainerPools.diagnostic.planStale',
+  'KM-ZA-TRAINER-POOLS-REVIEWED-STATE': 'trainerPools.diagnostic.reviewedState',
+  'KM-ZA-TRAINER-POOLS-SAFETY': 'trainerPools.diagnostic.safety',
+  'KM-ZA-TRAINER-POOLS-SELECTION-INVALID': 'trainerPools.diagnostic.selectionInvalid',
+  'KM-ZA-TRAINER-POOLS-SESSION-CONFLICT': 'trainerPools.diagnostic.sessionConflict',
+  'KM-ZA-TRAINER-POOLS-SOURCE-CHANGED': 'trainerPools.diagnostic.sourceChanged',
+  'KM-ZA-TRAINER-POOLS-SWAP-ALREADY-STAGED':
+    'trainerPools.diagnostic.swapAlreadyStaged',
+  'KM-ZA-TRAINER-POOLS-VERIFICATION-FAILED':
+    'trainerPools.diagnostic.verificationFailed',
+  'KM-SV-HABITAT-PROJECT-UNSUPPORTED': 'habitatCoordinates.diagnostic.projectUnsupported',
+  'KM-SV-HABITAT-BUILD-UNSUPPORTED': 'habitatCoordinates.diagnostic.buildUnsupported',
+  'KM-SV-HABITAT-REGION-SOURCE-UNAVAILABLE': 'habitatCoordinates.diagnostic.regionSourceUnavailable',
+  'KM-SV-HABITAT-REGION-SOURCE-UNSUPPORTED': 'habitatCoordinates.diagnostic.regionSourceUnsupported',
+  'KM-SV-HABITAT-QUERY-INVALID': 'habitatCoordinates.diagnostic.queryInvalid',
+  'KM-SV-HABITAT-EDIT-SESSION-INVALID': 'habitatCoordinates.diagnostic.editSessionInvalid',
+  'KM-SV-HABITAT-ROW-BINDING-STALE': 'habitatCoordinates.diagnostic.rowBindingStale',
+  'KM-SV-HABITAT-COORDINATE-UNOBSERVED': 'habitatCoordinates.diagnostic.coordinateUnobserved',
+  'KM-SV-HABITAT-REVIEWED-PLAN-STALE': 'habitatCoordinates.diagnostic.reviewedPlanStale',
+  'KM-SV-HABITAT-TARGET-RESOLUTION-FAILED': 'habitatCoordinates.diagnostic.targetResolutionFailed',
+  'KM-SV-HABITAT-OUTPUT-PREPARATION-FAILED': 'habitatCoordinates.diagnostic.outputPreparationFailed',
+  'KM-SV-SOURCE-COMPARISON-DUAL-LOOSE-DIVERGENT': 'gameModules.diagnostic.svSourceComparisonDualLooseDivergent',
+  'KM-SV-HABITAT-OUTPUT-PREIMAGE-CAPTURE-FAILED': 'habitatCoordinates.diagnostic.outputPreimageCaptureFailed',
+  'KM-SV-HABITAT-OUTPUT-COMMIT-FAILED': 'habitatCoordinates.diagnostic.outputCommitFailed',
+  'KM-SV-HABITAT-OUTPUT-VERIFICATION-FAILED': 'habitatCoordinates.diagnostic.outputVerificationFailed',
+  'KM-SV-HABITAT-OUTPUT-ROLLBACK-RESTORED': 'habitatCoordinates.diagnostic.outputRollbackRestored',
+  'KM-SV-HABITAT-OUTPUT-ROLLBACK-FAILED': 'habitatCoordinates.diagnostic.outputRollbackFailed'
 };
 
 export function formatDiagnosticMessage(
@@ -131,18 +195,21 @@ function localizedDiagnosticCodeMessage(
 }
 
 function translateDiagnosticCode(code: string, translateKey: DiagnosticKeyTranslator) {
+  const key = getDiagnosticLocalizationKey(code);
+  return key ? translateKey(key) : null;
+}
+
+export function getDiagnosticLocalizationKey(code: string) {
   const exactKey = diagnosticLocalizationKeys[code];
-  if (exactKey) {
-    return translateKey(exactKey);
-  }
+  if (exactKey) return exactKey;
   if (code.startsWith('KM-OUTPUT-')) {
-    return translateKey('outputSafety.diagnostic.genericOutput');
+    return 'outputSafety.diagnostic.genericOutput';
   }
   if (code.startsWith('KM-PROJECT-RELOCATION-')) {
-    return translateKey('outputSafety.diagnostic.genericRelocation');
+    return 'outputSafety.diagnostic.genericRelocation';
   }
   if (code.startsWith('KM-BRIDGE-') || code.startsWith('KM-DESKTOP-')) {
-    return translateKey('outputSafety.diagnostic.requestFailed');
+    return 'outputSafety.diagnostic.requestFailed';
   }
   return null;
 }

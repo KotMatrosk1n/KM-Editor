@@ -17,6 +17,8 @@ internal static class ZaEditSessionSupport
     public const string TextDomain = "workflow.text";
     public const string ShopsDomain = "workflow.shops";
     public const string TrainersDomain = "workflow.trainers";
+    public const string TrainerPoolsDomain = "workflow.trainerPools";
+    public const string FashionCatalogDomain = "workflow.fashionCatalog";
     public const string PlacementDomain = "workflow.placement";
     public const string EncountersDomain = "workflow.encounters";
     public const string StaticEncountersDomain = "workflow.staticEncounters";

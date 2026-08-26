@@ -22,6 +22,10 @@ import type {
 import type { ExpectedImportedScalarEdit } from '../change-sets/useChangeSetWorkspaceController';
 import { SemanticMergeSection } from './SemanticMergeSection';
 import { useSemanticMergeController } from './useSemanticMergeController';
+import {
+  preparationStateFromQueryStatus,
+  type AnalysisPreparationState
+} from '../workbench/analysisPreparation';
 
 export type SemanticMergeChangeSetOption = {
   archived: boolean;
@@ -59,6 +63,7 @@ export type SemanticMergeRuntimeProps = {
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenChanges: () => void;
   onPickSource: (slot: 'a' | 'b') => Promise<string | null>;
+  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -82,6 +87,7 @@ export function SemanticMergeRuntime({
   onNavigateRecord,
   onOpenChanges,
   onPickSource,
+  onPreparationStateChange,
   onRefreshCapabilities,
   onStaleRevision,
   revision,
@@ -91,6 +97,13 @@ export function SemanticMergeRuntime({
   useEffect(() => {
     if (!revision && capabilityStatus === 'idle') void onEnsureCapabilities();
   }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
+  useEffect(() => {
+    if (!revision) {
+      onPreparationStateChange?.(
+        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+      );
+    }
+  }, [capabilityStatus, onPreparationStateChange, revision]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -136,6 +149,7 @@ export function SemanticMergeRuntime({
       onNavigateRecord={onNavigateRecord}
       onOpenChanges={onOpenChanges}
       onPickSource={onPickSource}
+      onPreparationStateChange={onPreparationStateChange}
       onStaleRevision={onStaleRevision}
       revision={revision}
       scope={scope}
@@ -157,6 +171,7 @@ function SemanticMergeReadyRuntime({
   onNavigateRecord,
   onOpenChanges,
   onPickSource,
+  onPreparationStateChange,
   onStaleRevision,
   revision,
   scope
@@ -191,6 +206,11 @@ function SemanticMergeReadyRuntime({
     revision,
     scope
   ]);
+  useEffect(() => {
+    onPreparationStateChange?.(
+      preparationStateFromQueryStatus(controller.capabilities.status)
+    );
+  }, [controller.capabilities.status, onPreparationStateChange]);
 
   return (
     <SemanticMergeSection

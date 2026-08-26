@@ -16,6 +16,10 @@ internal sealed class ZaOutzoneEncounterAvailability
 
     public bool HasKnownAvailability => supportedPairs is not null;
 
+    public IReadOnlyList<(int SpeciesId, int Form)> ObservedPairs => supportedPairs is null
+        ? []
+        : supportedPairs.OrderBy(pair => pair.SpeciesId).ThenBy(pair => pair.Form).ToArray();
+
     public static ZaOutzoneEncounterAvailability Create(
         IEnumerable<(int SpeciesId, int Form)> supportedPairs)
     {

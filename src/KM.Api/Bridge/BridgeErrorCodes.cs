@@ -16,6 +16,9 @@ public static class BridgeErrorCodes
     public const string OutputLimitExceeded = "KM-OUTPUT-LIMIT-EXCEEDED";
     public const string OutputCheckpointNotFound = "KM-OUTPUT-CHECKPOINT-NOT-FOUND";
     public const string OutputCheckpointConflict = "KM-OUTPUT-CHECKPOINT-CONFLICT";
+    public const string GameplaySettingsUnavailable = "KM-GAMEPLAY-SETTINGS-UNAVAILABLE";
+    public const string GameplaySettingsStateStale = "KM-GAMEPLAY-SETTINGS-STATE-STALE";
+    public const string GameplaySettingsReviewExpired = "KM-GAMEPLAY-SETTINGS-REVIEW-EXPIRED";
     public const string ProjectRelocationMismatch = "KM-PROJECT-RELOCATION-MISMATCH";
     public const string ProjectRelocationConflict = "KM-PROJECT-RELOCATION-CONFLICT";
     public const string MissingCommand = "KM-BRIDGE-MISSING-COMMAND";

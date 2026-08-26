@@ -72,8 +72,8 @@ export type GameModuleController = GameModuleControllerSnapshot & {
 
 type RequestToken = { epoch: number; generation: number; id: number };
 
-const maximumCachedQueries = 4;
-const maximumCacheBytes = 256 * 1_024;
+const maximumCachedQueries = 10;
+const maximumCacheBytes = 16 * 1_024 * 1_024;
 const textEncoder = new TextEncoder();
 
 const idleCapabilities = (): GameModuleCapabilitiesState => ({

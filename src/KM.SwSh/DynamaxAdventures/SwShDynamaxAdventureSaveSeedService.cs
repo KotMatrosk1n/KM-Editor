@@ -12,6 +12,7 @@ public sealed class SwShDynamaxAdventureSaveSeedService
 {
     public const uint MaxLairRentalChoiceSeedKey = 0x0D74AA40;
     private const int MaximumSaveByteLength = 64 * 1024 * 1024;
+    private static readonly object SaveWriteSyncRoot = new();
 
     private readonly Action<string, string>? afterReplacement;
     private readonly Action<string>? beforeRollbackReplacement;
@@ -44,13 +45,22 @@ public sealed class SwShDynamaxAdventureSaveSeedService
     {
         ArgumentNullException.ThrowIfNull(paths);
 
+        lock (SaveWriteSyncRoot)
+        {
+            return SetSeedLocked(paths, seed);
+        }
+    }
+
+    private SwShDynamaxAdventureSaveSeedResult SetSeedLocked(ProjectPaths paths, ulong seed)
+    {
         var diagnostics = new List<ValidationDiagnostic>();
         if (!SwShDynamaxAdventuresWorkflowService.IsSupportedGame(paths.SelectedGame))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Writing a Max Lair seed requires Pokemon Sword or Pokemon Shield to be selected explicitly.",
-                expected: "Selected Pokemon Sword or Pokemon Shield project"));
+                expected: "Selected Pokemon Sword or Pokemon Shield project",
+                code: SwShDynamaxAdventuresDiagnosticCodes.ProjectUnsupported));
             return SwShDynamaxAdventureSaveSeedResult.NotWritten(seed, diagnostics);
         }
 
@@ -74,7 +84,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                     DiagnosticSeverity.Error,
                     "The configured save belongs to the other Sword/Shield version. The Max Lair seed was not changed.",
                     file: savePath,
-                    expected: $"A {paths.SelectedGame.Value} save file"));
+                    expected: $"A {paths.SelectedGame.Value} save file",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnsupported));
                 return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
             }
 
@@ -84,7 +95,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                     DiagnosticSeverity.Error,
                     "Save checksums are invalid. The Max Lair seed was not changed.",
                     file: savePath,
-                    expected: "A valid Sword/Shield save file"));
+                    expected: "A valid Sword/Shield save file",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnsupported));
                 return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
             }
 
@@ -95,6 +107,9 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 return new SwShDynamaxAdventureSaveSeedResult(
                     savePath,
                     BackupFilePath: null,
+                    RecoveryFilePath: null,
+                    RecoveryArtifactStatus: SwShDynamaxAdventureRecoveryArtifactStatus.None,
+                    Outcome: SwShDynamaxAdventureSaveSeedOutcome.Unchanged,
                     FormatSeed(oldSeed),
                     FormatSeed(seed),
                     WasChanged: false,
@@ -117,7 +132,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                     DiagnosticSeverity.Error,
                     "Rewritten save verification failed. The original save was not changed.",
                     file: savePath,
-                    expected: "Verified checksum, selected game, and requested Max Lair seed"));
+                    expected: "Verified checksum, selected game, and requested Max Lair seed",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.VerificationFailed));
                 return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
             }
 
@@ -127,7 +143,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                     DiagnosticSeverity.Error,
                     "The save changed after it was read. The Max Lair seed was not written.",
                     file: savePath,
-                    expected: "Unchanged source save during verified replacement"));
+                    expected: "Unchanged source save during verified replacement",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.SavePreimageStale));
                 return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
             }
 
@@ -153,19 +170,24 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                     DiagnosticSeverity.Error,
                     CreateReplacementFailureMessage(replacement),
                     file: savePath,
-                    expected: "Atomic verified save replacement"));
+                    expected: "Atomic verified save replacement",
+                    code: ReplacementFailureCode(replacement)));
                 if (replacement.Exception is not null)
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
                         $"Post-replacement verification failed: {replacement.Exception.Message}",
                         file: savePath,
-                        expected: "Readable verified replacement"));
+                        expected: "Readable verified replacement",
+                        code: PostReplacementExceptionCode(replacement.Exception)));
                 }
 
                 return new SwShDynamaxAdventureSaveSeedResult(
                     savePath,
-                    replacement.RecoveryFilePath,
+                    BackupFilePath: null,
+                    RecoveryFilePath: replacement.RecoveryFilePath,
+                    RecoveryArtifactStatus: ReplacementRecoveryArtifactStatus(replacement),
+                    Outcome: ReplacementFailureOutcome(replacement),
                     FormatSeed(oldSeed),
                     FormatSeed(seed),
                     WasChanged: false,
@@ -178,6 +200,9 @@ public sealed class SwShDynamaxAdventureSaveSeedService
             return new SwShDynamaxAdventureSaveSeedResult(
                 savePath,
                 replacement.BackupFilePath,
+                RecoveryFilePath: null,
+                RecoveryArtifactStatus: SwShDynamaxAdventureRecoveryArtifactStatus.None,
+                Outcome: SwShDynamaxAdventureSaveSeedOutcome.Updated,
                 FormatSeed(oldSeed),
                 FormatSeed(seed),
                 WasChanged: true,
@@ -194,7 +219,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 DiagnosticSeverity.Error,
                 $"Max Lair seed could not be written: {exception.Message}",
                 file: savePath,
-                expected: "Writable Sword/Shield save file"));
+                expected: "Writable Sword/Shield save file",
+                code: SaveExceptionCode(exception)));
             return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
         }
         finally
@@ -216,7 +242,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Reading a Max Lair seed requires Pokemon Sword or Pokemon Shield to be selected explicitly.",
-                expected: "Selected Pokemon Sword or Pokemon Shield project"));
+                expected: "Selected Pokemon Sword or Pokemon Shield project",
+                code: SwShDynamaxAdventuresDiagnosticCodes.ProjectUnsupported));
             return new SwShDynamaxAdventureSaveSeedInspectResult(null, null, false, diagnostics);
         }
 
@@ -234,8 +261,19 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                     DiagnosticSeverity.Error,
                     "The configured save belongs to the other Sword/Shield version.",
                     file: savePath,
-                    expected: $"A {paths.SelectedGame.Value} save file"));
+                    expected: $"A {paths.SelectedGame.Value} save file",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnsupported));
                 return new SwShDynamaxAdventureSaveSeedInspectResult(savePath, null, false, diagnostics);
+            }
+
+            if (!save.ChecksumsValid)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Save checksums are invalid.",
+                    file: savePath,
+                    expected: "A valid Sword/Shield save file",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnsupported));
             }
 
             var seed = (ulong)save.Accessor.GetBlockSafe(MaxLairRentalChoiceSeedKey).GetValue();
@@ -255,7 +293,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 DiagnosticSeverity.Error,
                 $"Max Lair seed could not be read: {exception.Message}",
                 file: savePath,
-                expected: "Readable Sword/Shield save file"));
+                expected: "Readable Sword/Shield save file",
+                code: SaveExceptionCode(exception)));
             return new SwShDynamaxAdventureSaveSeedInspectResult(savePath, null, false, diagnostics);
         }
     }
@@ -271,7 +310,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "A configured Sword/Shield save file is required before writing a Max Lair seed.",
-                expected: "Project Save File path"));
+                expected: "Project Save File path",
+                code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnavailable));
             return false;
         }
 
@@ -281,7 +321,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 DiagnosticSeverity.Error,
                 "Save file path points to a directory.",
                 file: savePath,
-                expected: "Writable Sword/Shield save file"));
+                expected: "Writable Sword/Shield save file",
+                code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnavailable));
             return false;
         }
 
@@ -291,7 +332,8 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 DiagnosticSeverity.Error,
                 "Save file could not be found.",
                 file: savePath,
-                expected: "Writable Sword/Shield save file"));
+                expected: "Writable Sword/Shield save file",
+                code: SwShDynamaxAdventuresDiagnosticCodes.SourceUnavailable));
             return false;
         }
 
@@ -341,6 +383,49 @@ public sealed class SwShDynamaxAdventureSaveSeedService
         return replacement.RecoveryFilePath is null
             ? "Save write verification failed. KM verified the prior save during recovery. Verify the live save before continuing."
             : $"Save write verification failed. KM verified the prior save during recovery. A recovery copy was retained at '{replacement.RecoveryFilePath}'.";
+    }
+
+    internal static string ReplacementFailureCode(ReplacementResult replacement)
+    {
+        if (replacement.TargetDiverged || !replacement.RollbackVerified)
+        {
+            return SwShDynamaxAdventuresDiagnosticCodes.RecoveryRequired;
+        }
+
+        return replacement.SourceChanged
+            ? SwShDynamaxAdventuresDiagnosticCodes.SavePreimageStale
+            : SwShDynamaxAdventuresDiagnosticCodes.VerificationFailed;
+    }
+
+    private static SwShDynamaxAdventureSaveSeedOutcome ReplacementFailureOutcome(
+        ReplacementResult replacement)
+    {
+        return replacement.RecoveryFilePath is null
+            || ReplacementFailureCode(replacement) == SwShDynamaxAdventuresDiagnosticCodes.RecoveryRequired
+            ? SwShDynamaxAdventureSaveSeedOutcome.RecoveryRequired
+            : SwShDynamaxAdventureSaveSeedOutcome.Recovered;
+    }
+
+    private static SwShDynamaxAdventureRecoveryArtifactStatus ReplacementRecoveryArtifactStatus(
+        ReplacementResult replacement)
+    {
+        return replacement.RecoveryFilePath is null
+            ? SwShDynamaxAdventureRecoveryArtifactStatus.Unavailable
+            : SwShDynamaxAdventureRecoveryArtifactStatus.Retained;
+    }
+
+    private static string SaveExceptionCode(Exception exception)
+    {
+        return exception is IOException or UnauthorizedAccessException
+            ? SwShDynamaxAdventuresDiagnosticCodes.IoFailed
+            : SwShDynamaxAdventuresDiagnosticCodes.SourceUnsupported;
+    }
+
+    private static string PostReplacementExceptionCode(Exception exception)
+    {
+        return exception is IOException or UnauthorizedAccessException
+            ? SwShDynamaxAdventuresDiagnosticCodes.IoFailed
+            : SwShDynamaxAdventuresDiagnosticCodes.VerificationFailed;
     }
 
     private ReplacementResult ReplaceWithVerifiedRollback(
@@ -701,14 +786,18 @@ public sealed class SwShDynamaxAdventureSaveSeedService
         DiagnosticSeverity severity,
         string message,
         string? file = null,
-        string? expected = null)
+        string? expected = null,
+        string? code = null)
     {
         return new ValidationDiagnostic(
             severity,
             message,
             File: file,
             Domain: "workflow.dynamaxAdventures.seed",
-            Expected: expected);
+            Expected: expected)
+        {
+            Code = code,
+        };
     }
 
     private readonly record struct FileSnapshot(long Length, string Sha256);
@@ -734,9 +823,28 @@ public sealed record SwShDynamaxAdventureSaveSeedInspectResult(
     bool ChecksumsValid,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
+public enum SwShDynamaxAdventureSaveSeedOutcome
+{
+    Rejected,
+    Unchanged,
+    Updated,
+    Recovered,
+    RecoveryRequired,
+}
+
+public enum SwShDynamaxAdventureRecoveryArtifactStatus
+{
+    None,
+    Retained,
+    Unavailable,
+}
+
 public sealed record SwShDynamaxAdventureSaveSeedResult(
     string? SaveFilePath,
     string? BackupFilePath,
+    string? RecoveryFilePath,
+    SwShDynamaxAdventureRecoveryArtifactStatus RecoveryArtifactStatus,
+    SwShDynamaxAdventureSaveSeedOutcome Outcome,
     string? OldSeed,
     string NewSeed,
     bool WasChanged,
@@ -758,6 +866,9 @@ public sealed record SwShDynamaxAdventureSaveSeedResult(
         return new SwShDynamaxAdventureSaveSeedResult(
             saveFilePath,
             BackupFilePath: null,
+            RecoveryFilePath: null,
+            RecoveryArtifactStatus: SwShDynamaxAdventureRecoveryArtifactStatus.None,
+            Outcome: SwShDynamaxAdventureSaveSeedOutcome.Rejected,
             OldSeed: null,
             string.Create(CultureInfo.InvariantCulture, $"0x{seed:X16}"),
             WasChanged: false,

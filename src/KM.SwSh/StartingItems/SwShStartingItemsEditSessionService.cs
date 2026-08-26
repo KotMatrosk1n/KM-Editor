@@ -210,6 +210,17 @@ public sealed class SwShStartingItemsEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var grants = ParsePendingGrants(session.PendingEdits[0].NewValue, diagnostics)
             .Where(grant => grant.ItemId is not null)
             .ToDictionary(grant => grant.Slot);
@@ -277,7 +288,8 @@ public sealed class SwShStartingItemsEditSessionService
                 expected: "Writable output root"));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static IReadOnlyList<SwShStartingItemGrantSelection> NormalizeGrants(

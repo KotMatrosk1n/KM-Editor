@@ -53,6 +53,20 @@ public sealed class SwShPokemonEditSessionService
         return EditSession.Start();
     }
 
+    public SwShPokemonEditResult ReadEffective(ProjectPaths paths, EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        ClearMemoryCaches();
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+        CanEditPokemon(project, workflow, diagnostics);
+        return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+    }
+
     public SwShPokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -557,6 +571,17 @@ public sealed class SwShPokemonEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         if (!SwShOutputRollbackScope.TryCapture(
             paths,
             currentPlan.Writes.Select(write => write.TargetRelativePath),
@@ -568,7 +593,8 @@ public sealed class SwShPokemonEditSessionService
                 $"Pokemon Data could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
                 file: captureFailure?.RelativePath,
                 expected: "Readable existing outputs and writable temporary storage"));
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return verifiedApply.Commit(
+                CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
         }
 
         var outputRollback = rollbackScope!;
@@ -612,7 +638,8 @@ public sealed class SwShPokemonEditSessionService
                     "Applied Pokemon Data change plan to the configured LayeredFS output root."));
             }
 
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return verifiedApply.Commit(
+                CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
         }
         finally
         {

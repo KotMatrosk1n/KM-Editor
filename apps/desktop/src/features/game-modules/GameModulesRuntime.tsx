@@ -16,6 +16,10 @@ import type {
 } from '../semantic-explore/useSemanticExploreController';
 import { GameModulesSection } from './GameModulesSection';
 import { useGameModuleController } from './useGameModuleController';
+import {
+  preparationStateFromQueryStatus,
+  type AnalysisPreparationState
+} from '../workbench/analysisPreparation';
 import './gameModules.css';
 
 export type GameModulesRuntimeProps = {
@@ -27,6 +31,7 @@ export type GameModulesRuntimeProps = {
   onEnsureCapabilities: () => Promise<void>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenSection: (section: WorkbenchSection) => void;
+  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -42,6 +47,7 @@ export default function GameModulesRuntime({
   onEnsureCapabilities,
   onNavigateRecord,
   onOpenSection,
+  onPreparationStateChange,
   onRefreshCapabilities,
   onStaleRevision,
   revision,
@@ -53,6 +59,13 @@ export default function GameModulesRuntime({
       void onEnsureCapabilities();
     }
   }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
+  useEffect(() => {
+    if (!revision) {
+      onPreparationStateChange?.(
+        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+      );
+    }
+  }, [capabilityStatus, onPreparationStateChange, revision]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -90,6 +103,7 @@ export default function GameModulesRuntime({
       canOpenSection={canOpenSection}
       onNavigateRecord={onNavigateRecord}
       onOpenSection={onOpenSection}
+      onPreparationStateChange={onPreparationStateChange}
       onStaleRevision={onStaleRevision}
       revision={revision}
       scope={scope}
@@ -103,6 +117,7 @@ function GameModulesReadyRuntime({
   canOpenSection,
   onNavigateRecord,
   onOpenSection,
+  onPreparationStateChange,
   onStaleRevision,
   revision,
   scope
@@ -120,6 +135,11 @@ function GameModulesReadyRuntime({
     revision,
     scope
   });
+  useEffect(() => {
+    onPreparationStateChange?.(
+      preparationStateFromQueryStatus(controller.capabilities.status)
+    );
+  }, [controller.capabilities.status, onPreparationStateChange]);
   return (
     <GameModulesSection
       canNavigateRecord={canNavigateRecord}

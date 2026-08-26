@@ -255,6 +255,17 @@ public sealed class SwShStaticEncountersEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
         var source = SwShStaticEncountersWorkflowService.ResolveStaticEncounterDataSource(project);
         if (source is null)
@@ -326,7 +337,8 @@ public sealed class SwShStaticEncountersEditSessionService
                 expected: "Supported Sword/Shield static encounter field values"));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static PendingEdit? CreatePendingEdit(

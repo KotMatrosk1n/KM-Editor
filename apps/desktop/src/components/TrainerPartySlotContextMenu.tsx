@@ -18,27 +18,37 @@ type MenuPosition = {
 };
 
 export type TrainerPartySlotContextMenuProps = {
+  copyActionLabel?: string;
   copyDisabledReason?: string;
+  id?: string;
   left: number;
+  menuLabel?: string;
+  noSourceSummaryLabel?: string;
   onClose: () => void;
   onCopy: () => void;
   onPaste: () => void;
+  pasteActionLabel?: string;
   pasteDisabledReason?: string;
   sourceLabel?: string;
   targetLabel: string;
   top: number;
-  triggerElement: HTMLButtonElement | null;
+  triggerElement: HTMLElement | null;
 };
 
 const contextMenuEdgeGap = 10;
 export const trainerPartySlotContextMenuId = 'trainer-party-slot-context-menu';
 
 export function TrainerPartySlotContextMenu({
+  copyActionLabel,
   copyDisabledReason,
+  id = trainerPartySlotContextMenuId,
   left,
+  menuLabel,
+  noSourceSummaryLabel,
   onClose,
   onCopy,
   onPaste,
+  pasteActionLabel,
   pasteDisabledReason,
   sourceLabel,
   targetLabel,
@@ -157,10 +167,10 @@ export function TrainerPartySlotContextMenu({
 
   return createPortal(
     <div
-      aria-label={t('trainers.partyClipboard.menuLabel', { target: targetLabel })}
+      aria-label={menuLabel ?? t('trainers.partyClipboard.menuLabel', { target: targetLabel })}
       className="trainer-party-context-menu"
       data-positioned={isPositioned}
-      id={trainerPartySlotContextMenuId}
+      id={id}
       onContextMenu={(event) => event.preventDefault()}
       onKeyDown={handleKeyDown}
       ref={menuRef}
@@ -176,7 +186,7 @@ export function TrainerPartySlotContextMenu({
       <div className="trainer-party-context-menu-heading" role="presentation">
         <strong>{targetLabel}</strong>
         <small>
-          {sourceLabel ?? t('trainers.partyClipboard.noSourceSummary')}
+          {sourceLabel ?? noSourceSummaryLabel ?? t('trainers.partyClipboard.noSourceSummary')}
         </small>
       </div>
       <button
@@ -194,7 +204,7 @@ export function TrainerPartySlotContextMenu({
       >
         <Copy aria-hidden="true" size={16} />
         <span>
-          <strong>{t('trainers.partyClipboard.copyAction')}</strong>
+          <strong>{copyActionLabel ?? t('trainers.partyClipboard.copyAction')}</strong>
           {copyDisabledReason ? <small>{copyDisabledReason}</small> : null}
         </span>
       </button>
@@ -213,7 +223,7 @@ export function TrainerPartySlotContextMenu({
       >
         <ClipboardPaste aria-hidden="true" size={16} />
         <span>
-          <strong>{t('trainers.partyClipboard.pasteAction')}</strong>
+          <strong>{pasteActionLabel ?? t('trainers.partyClipboard.pasteAction')}</strong>
           {pasteDisabledReason ? <small>{pasteDisabledReason}</small> : null}
         </span>
       </button>
@@ -223,7 +233,7 @@ export function TrainerPartySlotContextMenu({
 }
 
 function focusAdjacentToTrigger(
-  triggerElement: HTMLButtonElement | null,
+  triggerElement: HTMLElement | null,
   direction: -1 | 1
 ) {
   if (!triggerElement?.isConnected) {

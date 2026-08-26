@@ -3,7 +3,9 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
 using System.Globalization;
 
@@ -41,12 +43,32 @@ public sealed class SwShProfanityFilterService
         var diagnostics = new List<ValidationDiagnostic>();
         ValidateEditableProject(project, diagnostics);
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
+
+        if (!SwShOutputTransactionWriter.TryCapturePreimage(
+                paths,
+                ExeFsMainPath,
+                out var reviewedPreimage,
+                out var captureFailure))
+        {
+            diagnostics.Add(CreateOutputTransactionDiagnostic(
+                "Profanity Filter could not review its output target before apply",
+                captureFailure));
+            return CreateApplyResult(paths, writtenFiles, diagnostics, outputTransaction);
+        }
 
         var preparedMain = PrepareMainApply(paths, diagnostics);
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             && preparedMain is not null)
         {
-            WriteOutputFile(paths, ExeFsMainPath, preparedMain, diagnostics, writtenFiles);
+            WriteOutputFile(
+                paths,
+                ExeFsMainPath,
+                preparedMain,
+                reviewedPreimage!,
+                diagnostics,
+                writtenFiles,
+                out outputTransaction);
         }
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -58,7 +80,7 @@ public sealed class SwShProfanityFilterService
                     : string.Create(CultureInfo.InvariantCulture, $"Profanity Filter installed {writtenFiles.Count:N0} output file(s).")));
         }
 
-        return CreateApplyResult(paths, writtenFiles, diagnostics);
+        return CreateApplyResult(paths, writtenFiles, diagnostics, outputTransaction);
     }
 
     public SwShProfanityFilterApplyResult Restore(ProjectPaths paths)
@@ -69,6 +91,7 @@ public sealed class SwShProfanityFilterService
         var diagnostics = new List<ValidationDiagnostic>();
         ValidateEditableProject(project, diagnostics);
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
@@ -80,7 +103,25 @@ public sealed class SwShProfanityFilterService
             return CreateApplyResult(paths, writtenFiles, diagnostics);
         }
 
-        RestoreMain(paths, diagnostics, writtenFiles);
+        if (!SwShOutputTransactionWriter.TryCapturePreimage(
+                paths,
+                ExeFsMainPath,
+                out var reviewedPreimage,
+                out var captureFailure))
+        {
+            diagnostics.Add(CreateOutputTransactionDiagnostic(
+                "Profanity Filter could not review its output target before uninstall",
+                captureFailure));
+        }
+        else
+        {
+            RestoreMain(
+                paths,
+                reviewedPreimage!,
+                diagnostics,
+                writtenFiles,
+                out outputTransaction);
+        }
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -91,7 +132,7 @@ public sealed class SwShProfanityFilterService
                     : string.Create(CultureInfo.InvariantCulture, $"Profanity Filter uninstalled {writtenFiles.Count:N0} output file(s).")));
         }
 
-        return CreateApplyResult(paths, writtenFiles, diagnostics);
+        return CreateApplyResult(paths, writtenFiles, diagnostics, outputTransaction);
     }
 
     private byte[]? PrepareMainApply(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
@@ -157,9 +198,12 @@ public sealed class SwShProfanityFilterService
 
     private void RestoreMain(
         ProjectPaths paths,
+        OutputFileState reviewedPreimage,
         ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
+        ICollection<ProjectFileReference> writtenFiles,
+        out OutputApplyResult? outputTransaction)
     {
+        outputTransaction = null;
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -202,16 +246,24 @@ public sealed class SwShProfanityFilterService
                 return;
             }
 
-            if (restored.SequenceEqual(baseBytes))
+            var mutation = restored.SequenceEqual(baseBytes)
+                ? SwShOutputFileMutation.DeleteLegacyAdoption(ExeFsMainPath, reviewedPreimage)
+                : SwShOutputFileMutation.Write(ExeFsMainPath, restored, reviewedPreimage);
+            if (SwShOutputTransactionWriter.TryApply(
+                    paths,
+                    [mutation],
+                    "tool.sword-shield.profanity-filter-uninstall",
+                    out outputTransaction,
+                    out var transactionFailure))
             {
-                File.Delete(outputMainPath);
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
             }
             else
             {
-                WriteBytesAtomic(outputMainPath, restored);
+                diagnostics.Add(CreateOutputTransactionDiagnostic(
+                    "Profanity Filter could not restore exefs/main",
+                    transactionFailure));
             }
-
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
         }
         catch (IOException exception)
         {
@@ -353,7 +405,8 @@ public sealed class SwShProfanityFilterService
     private SwShProfanityFilterApplyResult CreateApplyResult(
         ProjectPaths paths,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        OutputApplyResult? outputTransaction = null)
     {
         var statusDiagnostics = diagnostics.ToList();
         var status = Load(paths);
@@ -369,7 +422,8 @@ public sealed class SwShProfanityFilterService
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, Array.Empty<PlannedFileWrite>()),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
 
         return new SwShProfanityFilterApplyResult(status, applyResult);
     }
@@ -391,61 +445,39 @@ public sealed class SwShProfanityFilterService
         ProjectPaths paths,
         string relativePath,
         byte[] contents,
+        OutputFileState reviewedPreimage,
         ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
+        ICollection<ProjectFileReference> writtenFiles,
+        out OutputApplyResult? outputTransaction)
     {
-        var targetPath = SwShExeFsPatchWorkflowService.ResolveOutputPath(paths, relativePath);
-        if (targetPath is null)
+        if (SwShOutputTransactionWriter.TryApply(
+                paths,
+                [SwShOutputFileMutation.Write(relativePath, contents, reviewedPreimage)],
+                "tool.sword-shield.profanity-filter-install",
+                out outputTransaction,
+                out var failure))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Profanity Filter target must stay inside Output Root.",
-                file: relativePath,
-                expected: "Output-root-contained target"));
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, relativePath));
             return;
         }
 
-        try
-        {
-            WriteBytesAtomic(targetPath, contents);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, relativePath));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Profanity Filter could not write output: {exception.Message}",
-                file: relativePath,
-                expected: "Writable Output Root file"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Profanity Filter could not write output: {exception.Message}",
-                file: relativePath,
-                expected: "Writable Output Root file"));
-        }
+        diagnostics.Add(CreateOutputTransactionDiagnostic(
+            "Profanity Filter could not write output",
+            failure));
     }
 
-    private static void WriteBytesAtomic(string path, byte[] contents)
+    private static ValidationDiagnostic CreateOutputTransactionDiagnostic(
+        string message,
+        SwShOutputTransactionFailure? failure)
     {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory))
+        return CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"{message}: {failure?.Message ?? "Unknown output transaction error."}",
+            file: string.IsNullOrWhiteSpace(failure?.RelativePath) ? ExeFsMainPath : failure.RelativePath,
+            expected: "Coordinator-owned writable Output Root file") with
         {
-            Directory.CreateDirectory(directory);
-        }
-
-        var tempPath = path + ".tmp";
-        File.WriteAllBytes(tempPath, contents);
-        if (File.Exists(path))
-        {
-            File.Replace(tempPath, path, destinationBackupFileName: null);
-        }
-        else
-        {
-            File.Move(tempPath, path);
-        }
+            Code = failure?.Code,
+        };
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

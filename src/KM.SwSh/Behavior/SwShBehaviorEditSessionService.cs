@@ -346,7 +346,23 @@ public sealed class SwShBehaviorEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var project = projectWorkspaceService.Open(paths);
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        var applyPaths = verifiedApply.ApplyPaths;
+        var project = projectWorkspaceService.Open(applyPaths);
         var dataSource = SwShBehaviorWorkflowService.ResolveBehaviorDataSource(project);
         if (dataSource is null)
         {
@@ -357,7 +373,7 @@ public sealed class SwShBehaviorEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var targetPath = ResolveOutputPath(paths, dataSource.GraphEntry.RelativePath, diagnostics);
+        var targetPath = ResolveOutputPath(applyPaths, dataSource.GraphEntry.RelativePath, diagnostics);
         if (targetPath is null)
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -397,37 +413,19 @@ public sealed class SwShBehaviorEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        if (!SwShOutputRollbackScope.TryCapture(
-                paths,
-                currentPlan.Writes.Select(write => write.TargetRelativePath),
-                out var rollbackScope,
-                out var captureFailure))
+        try
+        {
+            WriteOutputAtomically(targetPath, output);
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, dataSource.GraphEntry.RelativePath));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Behavior could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
-                file: captureFailure?.RelativePath,
-                expected: "Readable existing outputs and writable temporary storage"));
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-        }
-
-        using (var outputRollback = rollbackScope!)
-        {
-            try
-            {
-                WriteOutputAtomically(targetPath, output);
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, dataSource.GraphEntry.RelativePath));
-                outputRollback.Commit();
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Behavior output file could not be written: {exception.Message}",
-                    file: dataSource.GraphEntry.RelativePath,
-                    expected: "Writable output root"));
-                RollbackFailedApply(outputRollback, writtenFiles, diagnostics);
-            }
+                $"Behavior output file could not be written: {exception.Message}",
+                file: dataSource.GraphEntry.RelativePath,
+                expected: "Writable output root"));
+            writtenFiles.Clear();
         }
 
         if (writtenFiles.Count > 0
@@ -438,7 +436,8 @@ public sealed class SwShBehaviorEditSessionService
                 "Applied Behavior change plan to the configured LayeredFS output root."));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static void ValidateLoadedSession(

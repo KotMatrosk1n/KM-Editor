@@ -44,7 +44,7 @@ internal static class SvChangePlanSourceGuard
             return plan with { EffectivePendingEdits = effectivePendingEdits };
         }
 
-        lock (SvWorkflowFileSource.OutputWriteSyncRoot)
+        using (SvWorkflowFileSource.AcquireOutputLock(paths))
         {
             var diagnostics = plan.Diagnostics.ToList();
             try

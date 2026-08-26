@@ -4,11 +4,14 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Formats.ZA;
 using KM.ZA.Workflows;
 using SharpCompress.Common;
 using SharpCompress.Readers;
+using System.Buffers.Binary;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace KM.ZA.ModMerger;
@@ -90,6 +93,8 @@ public sealed class ZaModMergerWorkflowService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(modSources);
 
+        using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
+
         var project = projectWorkspaceService.Open(paths);
         var diagnostics = new List<ValidationDiagnostic>();
         var analysis = Analyze(project, modSources, diagnostics);
@@ -120,70 +125,72 @@ public sealed class ZaModMergerWorkflowService
             return new ZaModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
         }
 
-        CleanPreviousOutputs(outputRoot, diagnostics);
-        foreach (var output in plan.Outputs)
-        {
-            var targetPath = ResolveOutputPath(outputRoot, output.RelativePath, diagnostics);
-            if (targetPath is null)
-            {
-                continue;
-            }
-
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                File.WriteAllBytes(targetPath, output.Contents);
-                writtenFiles.Add(output.RelativePath);
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Merged file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable Output Root file"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Merged file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable Output Root file"));
-            }
-        }
-
+        var ownerId = new OwnershipOwnerId("workflow.za.mod-merger");
+        var desiredVirtualPaths = plan.Outputs
+            .Select(output => StripRomFsPrefix(output.RelativePath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ownedVirtualPaths = ZaWorkflowFileSource.GetOwnedStandaloneRomFsVirtualPaths(
+            project.Paths,
+            ownerId);
+        ValidateLegacyCleanupBoundary(
+            outputRoot,
+            desiredVirtualPaths,
+            ownedVirtualPaths,
+            diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             preview = CreatePreview(project, plan.Files, diagnostics);
-            return new ZaModMergerApplyResult(workflow, preview, writtenFiles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), diagnostics);
+            return new ZaModMergerApplyResult(workflow, preview, [], diagnostics);
         }
 
+        var deletes = ownedVirtualPaths
+            .Where(path => !desiredVirtualPaths.Contains(path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var context = new ZaOutputApplyContext(
+            CreateOutputReviewHash(project.Paths, plan.Outputs, deletes),
+            ownerId,
+            [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, WorkflowDomain)]);
         try
         {
-            WritePatchedDescriptor(project.Paths, writtenFiles);
+            ZaWorkflowFileSource.ApplyBatch(
+                project.Paths,
+                plan.Outputs
+                    .OrderBy(output => output.RelativePath, StringComparer.Ordinal)
+                    .Select(output => new ZaWorkflowFileWrite(
+                        StripRomFsPrefix(output.RelativePath),
+                        output.Contents,
+                        context))
+                    .ToArray(),
+                deletes,
+                ZaOutputMode.Standalone,
+                applyContext: context);
+            writtenFiles.AddRange(plan.Outputs.Select(output => output.RelativePath));
+            writtenFiles.Add(DescriptorRelativePath);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Applied {writtenFiles.Count} Pokemon Legends Z-A LayeredFS file{(writtenFiles.Count == 1 ? string.Empty : "s")} from {analysis.EnabledSourceCount} enabled mod source{(analysis.EnabledSourceCount == 1 ? string.Empty : "s")}."));
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception exception) when (exception is OutputCoordinatorException
+            or IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or ArgumentException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"ZA Mod Merger could not write the patched Trinity descriptor: {exception.Message}",
-                file: DescriptorRelativePath,
-                expected: "Writable descriptor output"));
-        }
-
-        var manifest = CreateManifest(outputRoot, writtenFiles.Distinct(StringComparer.OrdinalIgnoreCase));
-        SaveManifest(outputRoot, manifest, diagnostics);
-
-        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                $"Applied {manifest.Entries.Count} Pokemon Legends ZA LayeredFS file{(manifest.Entries.Count == 1 ? string.Empty : "s")} from {analysis.EnabledSourceCount} enabled mod source{(analysis.EnabledSourceCount == 1 ? string.Empty : "s")}."));
+                $"Z-A Mod Merger output could not be committed atomically: {exception.Message}",
+                expected: "Current reviewed output targets and recoverable transaction state"));
+            writtenFiles.Clear();
         }
 
         preview = CreatePreview(project, plan.Files, diagnostics);
-        return new ZaModMergerApplyResult(workflow, preview, manifest.Entries.Select(entry => entry.RelativePath).ToArray(), diagnostics);
+        return new ZaModMergerApplyResult(
+            workflow,
+            preview,
+            writtenFiles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            diagnostics);
     }
 
     private static MergeAnalysis Analyze(
@@ -846,8 +853,10 @@ public sealed class ZaModMergerWorkflowService
             diagnostics.ToArray());
     }
 
-    private static void CleanPreviousOutputs(
+    private static void ValidateLegacyCleanupBoundary(
         string outputRoot,
+        IReadOnlySet<string> desiredVirtualPaths,
+        IReadOnlyList<string> ownedVirtualPaths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var manifest = LoadManifest(outputRoot, diagnostics);
@@ -856,10 +865,22 @@ public sealed class ZaModMergerWorkflowService
             return;
         }
 
+        var owned = ownedVirtualPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in manifest.Entries)
         {
+            if (string.Equals(entry.RelativePath, DescriptorRelativePath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var targetPath = ResolveOutputPath(outputRoot, entry.RelativePath, diagnostics);
             if (targetPath is null || !File.Exists(targetPath))
+            {
+                continue;
+            }
+
+            var virtualPath = StripRomFsPrefix(entry.RelativePath);
+            if (desiredVirtualPaths.Contains(virtualPath) || owned.Contains(virtualPath))
             {
                 continue;
             }
@@ -875,63 +896,43 @@ public sealed class ZaModMergerWorkflowService
                 continue;
             }
 
-            File.Delete(targetPath);
-            DeleteEmptyParentDirectories(outputRoot, targetPath);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "A previous Z-A Mod Merger output predates transactional ownership and cannot be removed automatically.",
+                file: entry.RelativePath,
+                expected: "A coordinator-owned output or an empty legacy output set"));
         }
     }
 
-    private static void DeleteEmptyParentDirectories(string outputRoot, string deletedFilePath)
+    private static string CreateOutputReviewHash(
+        ProjectPaths paths,
+        IReadOnlyList<MergeOutput> outputs,
+        IReadOnlyList<string> deletes)
     {
-        var root = Path.GetFullPath(outputRoot);
-        var directory = Path.GetDirectoryName(deletedFilePath);
-        while (!string.IsNullOrWhiteSpace(directory))
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendReviewText(hash, "km-za-mod-merger-output-v1");
+        AppendReviewText(hash, paths.SelectedGame?.ToString() ?? string.Empty);
+        foreach (var output in outputs.OrderBy(output => output.RelativePath, StringComparer.Ordinal))
         {
-            var fullDirectory = Path.GetFullPath(directory);
-            if (string.Equals(fullDirectory, root, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            var relativeToRoot = Path.GetRelativePath(root, fullDirectory);
-            if (PathContainment.IsOutsideRoot(relativeToRoot))
-            {
-                return;
-            }
-
-            if (Directory.EnumerateFileSystemEntries(fullDirectory).Any())
-            {
-                return;
-            }
-
-            Directory.Delete(fullDirectory);
-            directory = Path.GetDirectoryName(fullDirectory);
+            AppendReviewText(hash, output.RelativePath);
+            AppendReviewText(hash, Convert.ToHexStringLower(SHA256.HashData(output.Contents)));
         }
+
+        foreach (var delete in deletes.Order(StringComparer.Ordinal))
+        {
+            AppendReviewText(hash, $"delete:{delete}");
+        }
+
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
-    private static void WritePatchedDescriptor(ProjectPaths paths, ICollection<string> writtenFiles)
+    private static void AppendReviewText(IncrementalHash hash, string value)
     {
-        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
-        {
-            throw new InvalidOperationException("ZA descriptor patching requires a base RomFS path.");
-        }
-
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            throw new InvalidOperationException("ZA descriptor patching requires an Output Root.");
-        }
-
-        var descriptorBytes = ZaTrinityDescriptorPatcher.CreateLayeredDescriptor(
-            paths.BaseRomFsPath,
-            paths.OutputRootPath);
-        var descriptorPath = ResolveOutputPath(paths.OutputRootPath, DescriptorRelativePath, []);
-        if (descriptorPath is null)
-        {
-            throw new IOException("ZA descriptor output path could not be resolved.");
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(descriptorPath)!);
-        File.WriteAllBytes(descriptorPath, descriptorBytes);
-        writtenFiles.Add(DescriptorRelativePath);
+        var bytes = Encoding.UTF8.GetBytes(value);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(length, bytes.Length);
+        hash.AppendData(length);
+        hash.AppendData(bytes);
     }
 
     private static string? ResolveOutputPath(
@@ -1000,54 +1001,6 @@ public sealed class ZaModMergerWorkflowService
                 $"Previous ZA Mod Merger manifest could not be read: {exception.Message}",
                 file: ManifestRelativePath));
             return null;
-        }
-    }
-
-    private static ZaModMergerManifest CreateManifest(
-        string outputRoot,
-        IEnumerable<string> writtenFiles)
-    {
-        var entries = new List<ZaModMergerManifestEntry>();
-        foreach (var relativePath in writtenFiles.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
-        {
-            var targetPath = ResolveOutputPath(outputRoot, relativePath, []);
-            if (targetPath is null || !File.Exists(targetPath))
-            {
-                continue;
-            }
-
-            entries.Add(new ZaModMergerManifestEntry(relativePath, ComputeFileSha256(targetPath)));
-        }
-
-        return new ZaModMergerManifest(entries);
-    }
-
-    private static void SaveManifest(
-        string outputRoot,
-        ZaModMergerManifest manifest,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        try
-        {
-            var manifestPath = Path.Combine(outputRoot, ManifestRelativePath);
-            Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
-            File.WriteAllText(
-                manifestPath,
-                JsonSerializer.Serialize(manifest, ManifestJsonOptions));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"ZA Mod Merger manifest could not be written: {exception.Message}",
-                file: ManifestRelativePath));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"ZA Mod Merger manifest could not be written: {exception.Message}",
-                file: ManifestRelativePath));
         }
     }
 

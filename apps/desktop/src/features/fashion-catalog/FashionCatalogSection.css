@@ -1,0 +1,248 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.fashion-catalog-workspace {
+  display: grid;
+  gap: var(--km-panel-gap);
+}
+
+.fashion-catalog-workspace .metrics-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin-top: 1rem;
+}
+
+.fashion-catalog-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.fashion-catalog-tabs button {
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.55rem;
+  color: var(--color-text-soft);
+  min-height: var(--km-control-min-height);
+  padding: 0.5rem 0.85rem;
+}
+
+.fashion-catalog-tabs button.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent-bright);
+  color: var(--color-text);
+}
+
+.fashion-catalog-editor-grid {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(20rem, 0.85fr) minmax(22rem, 1.15fr);
+  margin-top: 1rem;
+}
+
+.fashion-catalog-browser,
+.fashion-catalog-field-editor {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.9rem;
+}
+
+.fashion-catalog-workspace .field-label {
+  color: var(--color-text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+}
+
+.fashion-catalog-workspace .field-hint {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.fashion-catalog-workspace .search-field {
+  align-items: center;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.55rem;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 0.7rem;
+}
+
+.fashion-catalog-workspace .search-field:focus-within {
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 2px rgb(255 209 102 / 22%);
+}
+
+.fashion-catalog-workspace .search-field input,
+.fashion-catalog-field-editor input,
+.fashion-catalog-field-editor select {
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.55rem;
+  color: var(--color-text);
+  min-height: var(--km-control-min-height);
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  width: 100%;
+}
+
+.fashion-catalog-workspace .search-field input {
+  border: 0;
+  padding-inline: 0;
+}
+
+.fashion-catalog-workspace .search-field input:focus {
+  outline: 0;
+}
+
+.fashion-catalog-row-list {
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  display: grid;
+  max-height: 32rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.fashion-catalog-row-list > .empty-copy {
+  padding: 0.75rem;
+}
+
+.fashion-catalog-row-list button {
+  background: var(--color-surface-muted);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+}
+
+.fashion-catalog-row-list button:last-child {
+  border-bottom: 0;
+}
+
+.fashion-catalog-row-list button:hover,
+.fashion-catalog-row-list button.selected {
+  background: var(--color-accent);
+}
+
+.fashion-catalog-row-list strong,
+.fashion-catalog-row-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fashion-catalog-row-list span {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.fashion-catalog-row-list button:hover span,
+.fashion-catalog-row-list button.selected span {
+  color: var(--color-text-soft);
+}
+
+.fashion-catalog-pagination,
+.fashion-catalog-actions,
+.fashion-catalog-selection-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.fashion-catalog-pagination {
+  justify-content: space-between;
+}
+
+.fashion-catalog-pagination button,
+.fashion-catalog-actions button {
+  align-items: center;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.55rem;
+  color: var(--color-text);
+  display: inline-flex;
+  justify-content: center;
+  min-height: var(--km-control-min-height);
+  padding: 0.5rem 0.75rem;
+}
+
+.fashion-catalog-actions button.primary-button {
+  background: var(--color-accent);
+  border-color: var(--color-accent-bright);
+}
+
+.fashion-catalog-pagination button:disabled,
+.fashion-catalog-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.fashion-catalog-selection-heading {
+  border-bottom: 1px solid var(--color-border);
+  justify-content: space-between;
+  padding-bottom: 0.7rem;
+}
+
+.fashion-catalog-selection-heading span {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.fashion-catalog-workspace .action-feedback {
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  margin-top: 1rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.fashion-catalog-workspace .action-feedback.success {
+  border-color: var(--color-success);
+  color: var(--color-success-soft);
+}
+
+.fashion-catalog-workspace .action-feedback.error {
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+}
+
+@media (max-width: 900px) {
+  .fashion-catalog-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fashion-catalog-row-list {
+    max-height: 22rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .fashion-catalog-tabs button.active,
+  .fashion-catalog-row-list button:hover,
+  .fashion-catalog-row-list button.selected,
+  .fashion-catalog-actions button.primary-button {
+    background: Highlight;
+    border-color: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .fashion-catalog-workspace .action-feedback.error,
+  .fashion-catalog-workspace .action-feedback.success {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+}

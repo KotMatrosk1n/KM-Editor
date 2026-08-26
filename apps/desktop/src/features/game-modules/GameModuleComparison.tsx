@@ -29,6 +29,11 @@ import {
   relativeRecordTitle
 } from '../workbench/analysisPresentationUtils';
 import { ConfidenceBadge, GameModuleResults } from './GameModuleResults';
+import {
+  presentGameModuleFactLabel,
+  presentGameModuleFactValue,
+  presentGameModuleRecordTitle
+} from './gameModulePresentation';
 
 type ComparisonField = {
   fieldKey: string;
@@ -81,8 +86,8 @@ export function GameModuleComparison({
     [response.records]
   );
   const recordLabels = useMemo(
-    () => buildRecordDisplayLabels(response.records),
-    [response.records]
+    () => buildRecordDisplayLabels(response.records, t),
+    [response.records, t]
   );
   const recordSearchResults = useMemo(() => {
     const normalizedSearch = recordSearch.trim().toLowerCase();
@@ -137,8 +142,9 @@ export function GameModuleComparison({
     () => buildFieldDisplayLabels(
       availableFields,
       (field) => {
+        const localizedLabel = presentGameModuleFactLabel(field, t);
         const labelKey = presentationFactLabelKey(field.label);
-        const label = labelKey ? t(labelKey) : field.label;
+        const label = localizedLabel ?? (labelKey ? t(labelKey) : field.label);
         return field.unit ? `${label} (${translateLiteral(field.unit)})` : label;
       }
     ),
@@ -438,6 +444,7 @@ export function GameModuleComparison({
               className="km-game-module-field-picker"
             >
               {availableFields.map((field) => {
+                const localizedLabel = presentGameModuleFactLabel(field, t);
                 const labelKey = presentationFactLabelKey(field.label);
                 const displayLabel = fieldDisplayLabel(field, fieldLabels);
                 return (
@@ -454,7 +461,7 @@ export function GameModuleComparison({
                         type="checkbox"
                       />
                       <span>
-                        <strong data-localization-ignore={!labelKey || undefined}>
+                        <strong data-localization-ignore={!localizedLabel && !labelKey || undefined}>
                           {displayLabel}
                         </strong>
                         <small>
@@ -505,10 +512,11 @@ export function GameModuleComparison({
                     value={measureIdentity}
                   >
                     {numericFields.map((field) => {
+                      const localizedLabel = presentGameModuleFactLabel(field, t);
                       const labelKey = presentationFactLabelKey(field.label);
                       return (
                         <option
-                          data-localization-ignore={!labelKey || undefined}
+                          data-localization-ignore={!localizedLabel && !labelKey || undefined}
                           key={field.identity}
                           value={field.identity}
                         >
@@ -574,10 +582,11 @@ function ComparisonTable({
             <tr>
               <th scope="col">{t('gameModules.compare.table.record')}</th>
               {fields.map((field) => {
+                const localizedLabel = presentGameModuleFactLabel(field, t);
                 const labelKey = presentationFactLabelKey(field.label);
                 return (
                   <th
-                    data-localization-ignore={!labelKey || undefined}
+                    data-localization-ignore={!localizedLabel && !labelKey || undefined}
                     key={field.identity}
                     scope="col"
                   >
@@ -603,9 +612,10 @@ function ComparisonTable({
                       </td>
                     );
                   }
+                  const localizedFactValue = presentGameModuleFactValue(fact, t);
                   const value = presentFactValue(
                     fact.label,
-                    fact.value.displayValue,
+                    localizedFactValue ?? fact.value.displayValue,
                     fact.unit,
                     translateLiteral
                   );
@@ -901,25 +911,33 @@ function recordTitleComparator(
   );
 }
 
-function buildRecordDisplayLabels(records: readonly GameModuleRecord[]) {
+function buildRecordDisplayLabels(
+  records: readonly GameModuleRecord[],
+  t: (key: string, values?: Readonly<Record<string, number | string>>) => string
+) {
   const recordsById = new Map(records.map((record) => [record.recordId, record]));
   const candidates = records.map((record) => {
     const parent = record.parentRecordId
       ? recordsById.get(record.parentRecordId) ?? null
       : null;
-    const relativeTitle = parent
-      ? relativeRecordTitle(record.title, parent.title)
-      : record.title;
+    const recordTitle = presentGameModuleRecordTitle(record, t) ?? record.title;
+    const parentTitle = parent
+      ? presentGameModuleRecordTitle(parent, t) ?? parent.title
+      : null;
+    const relativeTitle = parentTitle
+      ? relativeRecordTitle(recordTitle, parentTitle)
+      : recordTitle;
     const childTitle = parent &&
-      relativeTitle.trim().toLowerCase() === parent.title.trim().toLowerCase()
+      parentTitle !== null &&
+      relativeTitle.trim().toLowerCase() === parentTitle.trim().toLowerCase()
         ? humanizeIdentifier(record.recordKind)
         : relativeTitle;
-    const contextualTitle = parent
-      ? `${boundedLabelPart(parent.title, 88)} - ${boundedLabelPart(
+    const contextualTitle = parentTitle
+      ? `${boundedLabelPart(parentTitle, 88)} - ${boundedLabelPart(
           childTitle,
           104
         )}`
-      : boundedLabelPart(record.title, 176);
+      : boundedLabelPart(recordTitle, 176);
     const identityFacts = (identityFieldKeysByRecordKind[record.recordKind] ?? [])
       .flatMap((fieldKey) => {
         const fact = record.facts.find((candidate) => (
@@ -930,7 +948,7 @@ function buildRecordDisplayLabels(records: readonly GameModuleRecord[]) {
       .slice(0, 3);
     const qualifier = identityFacts
       .map((fact) => (
-        `${boundedLabelPart(fact.label, 36)}: ${boundedLabelPart(
+        `${boundedLabelPart(presentGameModuleFactLabel(fact, t) ?? fact.label, 36)}: ${boundedLabelPart(
           fact.value.displayValue,
           44
         )}`

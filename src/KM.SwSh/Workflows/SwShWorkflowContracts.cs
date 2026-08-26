@@ -37,6 +37,7 @@ public static class SwShWorkflowIds
     public const string RoyalCandy = "royalCandy";
     public const string StartingItems = "startingItems";
     public const string NpcItemGift = "npcItemGift";
+    public const string BattleCafeRewards = "battleCafeRewards";
     public const string SpreadsheetImport = "spreadsheetImport";
 }
 

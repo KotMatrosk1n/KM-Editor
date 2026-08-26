@@ -146,10 +146,19 @@ public sealed class SwShShopsWorkflowService
     };
 
     private readonly SwShItemsWorkflowService itemsWorkflowService;
+    private readonly Func<string, byte[]> readAllBytes;
 
     public SwShShopsWorkflowService(SwShItemsWorkflowService? itemsWorkflowService = null)
+        : this(itemsWorkflowService, File.ReadAllBytes)
+    {
+    }
+
+    internal SwShShopsWorkflowService(
+        SwShItemsWorkflowService? itemsWorkflowService,
+        Func<string, byte[]> readAllBytes)
     {
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+        this.readAllBytes = readAllBytes ?? throw new ArgumentNullException(nameof(readAllBytes));
     }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -208,7 +217,7 @@ public sealed class SwShShopsWorkflowService
 
         try
         {
-            var shopData = SwShShopDataFile.Parse(File.ReadAllBytes(shopDataSource.AbsolutePath));
+            var shopData = SwShShopDataFile.Parse(readAllBytes(shopDataSource.AbsolutePath));
             var provenance = CreateProvenance(shopDataSource.GraphEntry);
             var shops = FlattenShops(shopData, itemLookup, provenance, diagnostics);
 

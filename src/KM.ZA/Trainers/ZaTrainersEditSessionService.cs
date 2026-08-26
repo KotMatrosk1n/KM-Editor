@@ -285,6 +285,10 @@ internal sealed class ZaTrainersEditSessionService
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var effectiveSession = Validate(paths, session).Session;
+        var containsClassPairEdit = effectiveSession.PendingEdits.Any(edit => string.Equals(
+            edit.Field,
+            ZaTrainersWorkflowService.ClassPairField,
+            StringComparison.Ordinal));
         var currentPlan = CreateChangePlan(paths, effectiveSession, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -295,7 +299,8 @@ internal sealed class ZaTrainersEditSessionService
                 DiagnosticSeverity.Error,
                 "Reviewed change plan is stale. Review the change plan again before applying.",
                 ZaEditSessionSupport.TrainersDomain,
-                expected: "Current reviewed Trainers change plan"));
+                expected: "Current reviewed Trainers change plan",
+                code: containsClassPairEdit ? ZaTrainerIdentityDiagnosticCodes.PlanStale : null));
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -306,11 +311,12 @@ internal sealed class ZaTrainersEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
+            var workflow = trainersWorkflowService.Load(project);
             var source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
             var rows = ReadRows(source.Bytes);
             foreach (var edit in effectiveSession.PendingEdits)
             {
-                ApplyEdit(rows, edit, diagnostics);
+                ApplyEdit(rows, workflow, edit, diagnostics);
             }
 
             foreach (var row in rows)
@@ -365,6 +371,56 @@ internal sealed class ZaTrainersEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
+        if (string.Equals(normalizedField, ZaTrainersWorkflowService.ClassPairField, StringComparison.Ordinal))
+        {
+            if (slot is not null || !trainer.CanReassignClass)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    DescribeClassReassignmentBlockReason(trainer.ClassReassignmentBlockedReason),
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.ClassPairField,
+                    expected: "A normal trainer with a verified existing class pair",
+                    code: ZaTrainerIdentityDiagnosticCodes.ReassignmentBlocked));
+                return null;
+            }
+
+            var option = workflow.ClassPairOptions.FirstOrDefault(candidate => string.Equals(
+                candidate.PairId,
+                value,
+                StringComparison.Ordinal));
+            if (option is null || !workflow.ClassPairValues.ContainsKey(option.PairId))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The requested trainer class pair is not a verified pair from the current source.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.ClassPairField,
+                    expected: "An existing verified TrainerType and TrainerType2 pair",
+                    code: ZaTrainerIdentityDiagnosticCodes.ClassPairUnverified));
+                return null;
+            }
+
+            if (string.Equals(trainer.ClassPairId, option.PairId, StringComparison.Ordinal))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"{trainer.Name} already uses {option.Label}.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.ClassPairField,
+                    code: ZaTrainerIdentityDiagnosticCodes.ClassPairUnchanged));
+                return null;
+            }
+
+            return ZaEditSessionSupport.CreatePendingEdit(
+                ZaEditSessionSupport.TrainersDomain,
+                $"Reassign {trainer.Name} to the verified class pair {option.Label}. Presentation requires an in-game canary.",
+                new ProjectFileReference(trainer.Provenance.SourceLayer, trainer.Provenance.SourceFile),
+                trainer.TrainerId.ToString(CultureInfo.InvariantCulture),
+                normalizedField,
+                option.PairId);
+        }
+
         var editableField = workflow.EditableFields.FirstOrDefault(candidate =>
             string.Equals(candidate.Field, normalizedField, StringComparison.Ordinal));
         if (editableField is null)
@@ -653,6 +709,52 @@ internal sealed class ZaTrainersEditSessionService
                 $"Pending edit domain '{edit.Domain}' is not supported by Pokemon Legends Z-A Trainers.",
                 ZaEditSessionSupport.TrainersDomain,
                 expected: ZaEditSessionSupport.TrainersDomain));
+            return;
+        }
+
+
+        if (string.Equals(edit.Field, ZaTrainersWorkflowService.ClassPairField, StringComparison.Ordinal))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var trainerId))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending trainer class reassignment targets an invalid trainer record.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: "trainerId",
+                    expected: "Existing trainer record",
+                    code: ZaTrainerIdentityDiagnosticCodes.PendingEditInvalid));
+                return;
+            }
+
+            var trainer = workflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+            if (trainer is null || !trainer.CanReassignClass)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    DescribeClassReassignmentBlockReason(trainer?.ClassReassignmentBlockedReason),
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.ClassPairField,
+                    expected: "A normal trainer with a verified class mapping",
+                    code: ZaTrainerIdentityDiagnosticCodes.ReassignmentBlocked));
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(edit.NewValue)
+                || !workflow.ClassPairValues.ContainsKey(edit.NewValue)
+                || workflow.ClassPairOptions.All(option => !string.Equals(
+                    option.PairId,
+                    edit.NewValue,
+                    StringComparison.Ordinal)))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending trainer class reassignment does not name a verified current class pair.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.ClassPairField,
+                    expected: "An existing verified TrainerType and TrainerType2 pair",
+                    code: ZaTrainerIdentityDiagnosticCodes.ClassPairUnverified));
+            }
             return;
         }
 
@@ -953,11 +1055,12 @@ internal sealed class ZaTrainersEditSessionService
         var pendingEdits = edits
             .Where(edit =>
                 string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
-                && int.TryParse(
-                    edit.NewValue,
-                    NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture,
-                    out _))
+                && (string.Equals(edit.Field, ZaTrainersWorkflowService.ClassPairField, StringComparison.Ordinal)
+                    || int.TryParse(
+                        edit.NewValue,
+                        NumberStyles.AllowLeadingSign,
+                        CultureInfo.InvariantCulture,
+                        out _)))
             .ToArray();
 
         if (pendingEdits.Length == 0)
@@ -975,7 +1078,7 @@ internal sealed class ZaTrainersEditSessionService
             var rows = ReadRows(source.Bytes);
             foreach (var edit in pendingEdits)
             {
-                ApplyEdit(rows, edit, overlayDiagnostics);
+                ApplyEdit(rows, workflow, edit, overlayDiagnostics);
             }
 
             if (overlayDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -1026,8 +1129,41 @@ internal sealed class ZaTrainersEditSessionService
 
     private static ZaTrainersWorkflow OverlayPendingEdit(ZaTrainersWorkflow workflow, PendingEdit edit)
     {
-        if (!string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
-            || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
+        if (!string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal))
+        {
+            return workflow;
+        }
+
+        if (string.Equals(edit.Field, ZaTrainersWorkflowService.ClassPairField, StringComparison.Ordinal))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var trainerId)
+                || string.IsNullOrWhiteSpace(edit.NewValue))
+            {
+                return workflow;
+            }
+            var reference = workflow.Trainers.FirstOrDefault(candidate => string.Equals(
+                candidate.ClassPairId,
+                edit.NewValue,
+                StringComparison.Ordinal));
+            if (reference is null)
+            {
+                return workflow;
+            }
+            return workflow with
+            {
+                Trainers = workflow.Trainers.Select(trainer => trainer.TrainerId == trainerId
+                    ? trainer with
+                    {
+                        ClassPairId = reference.ClassPairId,
+                        TrainerClass = reference.TrainerClass,
+                        TrainerClassId = reference.TrainerClassId,
+                        ClassTextTarget = reference.ClassTextTarget,
+                    }
+                    : trainer).ToArray(),
+            };
+        }
+
+        if (!int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
         {
             return workflow;
         }
@@ -1240,17 +1376,48 @@ internal sealed class ZaTrainersEditSessionService
 
     private static void ApplyEdit(
         IReadOnlyList<TrainerRow> rows,
+        ZaTrainersWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
-            || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
+        if (!string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Pending trainer edit is not valid for apply.",
                 ZaEditSessionSupport.TrainersDomain,
                 expected: "Valid trainer edit"));
+            return;
+        }
+
+        if (string.Equals(edit.Field, ZaTrainersWorkflowService.ClassPairField, StringComparison.Ordinal))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var trainerId)
+                || string.IsNullOrWhiteSpace(edit.NewValue)
+                || !workflow.ClassPairValues.TryGetValue(edit.NewValue, out var pair)
+                || rows.ElementAtOrDefault(trainerId) is not { } classRow)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending trainer class reassignment is not valid for apply.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.ClassPairField,
+                    expected: "A current trainer and verified existing class pair",
+                    code: ZaTrainerIdentityDiagnosticCodes.PendingEditInvalid));
+                return;
+            }
+            classRow.TrainerType = pair.Primary;
+            classRow.TrainerType2 = pair.Secondary;
+            return;
+        }
+
+        if (!int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending trainer edit value is invalid for apply.",
+                ZaEditSessionSupport.TrainersDomain,
+                expected: "Valid trainer edit value"));
             return;
         }
 
@@ -1529,13 +1696,25 @@ internal sealed class ZaTrainersEditSessionService
             expected: "Supported Pokemon Legends Z-A trainer or trainer Pokemon field");
     }
 
+    private static string DescribeClassReassignmentBlockReason(string? reason)
+    {
+        return reason switch
+        {
+            ZaTrainerClassReassignmentBlockReasons.HyperspaceArchetype =>
+                "Hyperspace trainer class presentation is generated through a separate archetype path.",
+            ZaTrainerClassReassignmentBlockReasons.UnresolvedClassPair =>
+                "The current trainer class pair does not resolve to a verified localized class entry.",
+            _ => "This trainer cannot use class-pair reassignment.",
+        };
+    }
+
     private sealed class TrainerRow
     {
         public const int MaximumPartySize = 6;
 
         public string? TrainerId { get; init; }
-        public ulong TrainerType { get; init; }
-        public ulong TrainerType2 { get; init; }
+        public ulong TrainerType { get; set; }
+        public ulong TrainerType2 { get; set; }
         public sbyte Rank { get; set; }
         public byte MoneyRate { get; set; }
         public bool MegaEvolution { get; set; }

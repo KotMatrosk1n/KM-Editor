@@ -16,6 +16,10 @@ import type {
 import { ResearchLabSection } from './ResearchLabSection';
 import { useResearchLabController } from './useResearchLabController';
 import './researchLab.css';
+import {
+  preparationStateFromQueryStatus,
+  type AnalysisPreparationState
+} from '../workbench/analysisPreparation';
 
 export type ResearchLabRuntimeProps = {
   bridge: ResearchLabProjectBridgeApi;
@@ -25,6 +29,7 @@ export type ResearchLabRuntimeProps = {
   onEnsureCapabilities: () => Promise<void>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onPickSource: (slot: 0 | 1) => Promise<string | null>;
+  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -39,6 +44,7 @@ export default function ResearchLabRuntime({
   onEnsureCapabilities,
   onNavigateRecord,
   onPickSource,
+  onPreparationStateChange,
   onRefreshCapabilities,
   onStaleRevision,
   revision,
@@ -48,6 +54,13 @@ export default function ResearchLabRuntime({
   useEffect(() => {
     if (!revision && capabilityStatus === 'idle') void onEnsureCapabilities();
   }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
+  useEffect(() => {
+    if (!revision) {
+      onPreparationStateChange?.(
+        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+      );
+    }
+  }, [capabilityStatus, onPreparationStateChange, revision]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -84,6 +97,7 @@ export default function ResearchLabRuntime({
       canNavigateRecord={canNavigateRecord}
       onNavigateRecord={onNavigateRecord}
       onPickSource={onPickSource}
+      onPreparationStateChange={onPreparationStateChange}
       onStaleRevision={onStaleRevision}
       revision={revision}
       scope={scope}
@@ -96,6 +110,7 @@ function ResearchLabReadyRuntime({
   canNavigateRecord,
   onNavigateRecord,
   onPickSource,
+  onPreparationStateChange,
   onStaleRevision,
   revision,
   scope
@@ -128,6 +143,21 @@ function ResearchLabReadyRuntime({
     controller.annotations.status,
     controller.capabilities.status,
     controller.loadAnnotations
+  ]);
+  useEffect(() => {
+    const capabilityState = preparationStateFromQueryStatus(controller.capabilities.status);
+    const annotationState = preparationStateFromQueryStatus(controller.annotations.status);
+    onPreparationStateChange?.(
+      capabilityState === 'error' || annotationState === 'error'
+        ? 'error'
+        : capabilityState === 'ready' && annotationState === 'ready'
+          ? 'ready'
+          : 'loading'
+    );
+  }, [
+    controller.annotations.status,
+    controller.capabilities.status,
+    onPreparationStateChange
   ]);
 
   return (

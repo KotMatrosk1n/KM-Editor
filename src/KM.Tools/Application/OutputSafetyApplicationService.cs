@@ -12,6 +12,7 @@ using KM.Api.Output;
 using KM.Core.Files;
 using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
 using KM.Tools.Bridge;
 
@@ -841,7 +842,7 @@ public sealed class OutputSafetyApplicationService
             && !receipt.Origins.All(origin => origin.Kind == OutputApplyOriginKind.Cleanup);
     }
 
-    private static OutputScopeContext ResolveScope(OutputScopeDto? scope)
+    internal static OutputScopeContext ResolveScope(OutputScopeDto? scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(scope.Paths);
@@ -1116,6 +1117,10 @@ public sealed class OutputSafetyApplicationService
         OutputOwnershipRecord? ownership)
     {
         if (ownership is null
+            || string.Equals(
+                ownership.OutputMode,
+                GameplayBundleDeploymentPlanner.OutputMode,
+                StringComparison.Ordinal)
             || string.Equals(ownership.OutputMode, "za.standalone", StringComparison.Ordinal)
             && ownership.Path.CanonicalKey.StartsWith("ROMFS/", StringComparison.Ordinal))
         {
@@ -1483,13 +1488,6 @@ public sealed class OutputSafetyApplicationService
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, null),
     };
 
-    private sealed record OutputScopeContext(
-        string ScopeKey,
-        ProjectId ProjectId,
-        GameFamily GameFamily,
-        ProjectPaths Paths,
-        OutputTransactionCoordinator Coordinator);
-
     private sealed record OutputBaselineSnapshot(
         IReadOnlyList<OutputBaselineEntry> Entries,
         IReadOnlySet<string> UnknownPathKeys)
@@ -1535,6 +1533,13 @@ public sealed class OutputSafetyApplicationService
         OutputStateRevision OutputRevision,
         DateTimeOffset ExpiresAtUtc);
 }
+
+internal sealed record OutputScopeContext(
+    string ScopeKey,
+    ProjectId ProjectId,
+    GameFamily GameFamily,
+    ProjectPaths Paths,
+    OutputTransactionCoordinator Coordinator);
 
 public sealed class OutputScopeMismatchException : Exception
 {

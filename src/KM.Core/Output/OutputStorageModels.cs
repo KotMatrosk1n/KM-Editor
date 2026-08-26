@@ -13,9 +13,11 @@ internal sealed record OutputJournalEntry(
     OutputFileState Postimage,
     ImmutableArray<OwnedTarget> OwnershipClaims,
     string OwnershipOutputMode,
+    OutputRuntimeMutableDescriptor? RuntimeMutableDescriptor,
     bool? RestoredFileDeleteEligibility,
     string? StageFileName,
-    string? BackupFileName);
+    string? BackupFileName,
+    OutputLegacyAdoptionDeleteAuthority? LegacyAdoptionDeleteAuthority = null);
 
 internal sealed record OutputTransactionJournal(
     int SchemaVersion,

@@ -13,6 +13,9 @@ use std::os::windows::process::CommandExt;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 
+#[cfg(windows)]
+mod windows_app_identity;
+
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 const MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS: usize = 8;
 const PROJECT_BRIDGE_LIMIT_PROVISION_MULTIPLIER: usize = 4;
@@ -668,7 +671,13 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
         });
     }
 
-    if command == "changePlan.apply" {
+    if matches!(
+        command,
+        "changePlan.apply"
+            | "dynamaxAdventures.seed.save.set"
+            | "gameplaySettings.update.preview"
+            | "gameplaySettings.update.apply"
+    ) {
         return Some(ProjectBridgeRequestPolicy {
             execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
             retry_after_transport_failure: false,
@@ -735,6 +744,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
             | "semantic.balance-lab"
             | "guidedDesign.capabilities"
             | "guidedDesign.preview"
+            | "gameplaySettings.get"
             | "semanticMerge.capabilities"
             | "semanticMerge.source.open"
             | "semanticMerge.preview"
@@ -801,6 +811,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "angeFight.uninstall.stage"
             | "bagHook.install.stage"
             | "bagHook.uninstall.stage"
+            | "battleCafeRewards.rows.stage"
             | "behavior.entry.update"
             | "behavior.fields.update"
             | "catchCap.stage"
@@ -817,6 +828,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "encounters.slots.update"
             | "exefsPatches.patch.stage"
             | "fairyGymBoosts.stage"
+            | "fashionCatalog.field.stage"
             | "fashionUnlock.install.stage"
             | "fashionUnlock.uninstall.stage"
             | "giftPokemon.field.update"
@@ -824,6 +836,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "giftPokemon.gift.vanilla.stage"
             | "gymUniformRemoval.install.stage"
             | "gymUniformRemoval.uninstall.stage"
+            | "habitatCoordinates.coordinate.stage"
             | "hyperTraining.stage"
             | "hyperspaceBypass.install.stage"
             | "hyperspaceBypass.uninstall.stage"
@@ -855,6 +868,8 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "raidRewards.rewards.update"
             | "rentalPokemon.field.update"
             | "rentalPokemon.fields.update"
+            | "rowClipboard.paste.preview"
+            | "rowClipboard.paste.stage"
             | "royalCandy.workflow.stage"
             | "shinyRate.stage"
             | "shops.inventory.update"
@@ -865,8 +880,11 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "teraRaids.field.update"
             | "teraRaids.fields.update"
             | "text.entry.update"
+            | "tmMachineControls.materialVisibility.stage"
+            | "tmMachineControls.recipeAvailability.stage"
             | "tradePokemon.field.update"
             | "tradePokemon.fields.update"
+            | "trainerPools.fixedCountSwap.stage"
             | "trainers.field.update"
             | "trainers.fields.update"
             | "typeChart.stage"
@@ -1384,6 +1402,11 @@ fn create_open_path_command(path: &Path) -> Command {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(windows)]
+    windows_app_identity::set_current_process(&context.config().identifier)
+        .expect("KM Editor could not establish its stable Windows taskbar identity");
+
     tauri::Builder::default()
         .manage(CloseGuardState {
             is_guarded: AtomicBool::new(false),
@@ -1427,7 +1450,7 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 

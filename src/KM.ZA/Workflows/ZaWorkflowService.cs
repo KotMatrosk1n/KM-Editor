@@ -14,6 +14,9 @@ using KM.ZA.Data;
 using KM.ZA.AngeFight;
 using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
+using KM.ZA.ExeFs;
+using KM.ZA.FashionCatalog;
+using KM.ZA.GameModules;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
 using KM.ZA.ModMerger;
@@ -25,6 +28,7 @@ using KM.ZA.StaticEncounters;
 using KM.ZA.Text;
 using KM.ZA.TypeChart;
 using KM.ZA.Trainers;
+using KM.ZA.TrainerPools;
 using KM.ZA.Trades;
 
 namespace KM.ZA.Workflows;
@@ -44,6 +48,8 @@ public sealed class ZaWorkflowService
     private readonly ZaTextWorkflowService textWorkflowService;
     private readonly ZaShopsWorkflowService shopsWorkflowService;
     private readonly ZaTrainersWorkflowService trainersWorkflowService;
+    private readonly ZaTrainerPoolsWorkflowService trainerPoolsWorkflowService;
+    private readonly ZaFashionCatalogWorkflowService fashionCatalogWorkflowService;
     private readonly ZaPlacementWorkflowService placementWorkflowService;
     private readonly ZaEncountersWorkflowService encountersWorkflowService;
     private readonly ZaStaticEncountersWorkflowService staticEncountersWorkflowService;
@@ -60,6 +66,8 @@ public sealed class ZaWorkflowService
     private readonly ZaTextEditSessionService textEditSessionService;
     private readonly ZaShopsEditSessionService shopsEditSessionService;
     private readonly ZaTrainersEditSessionService trainersEditSessionService;
+    private readonly ZaTrainerPoolsEditSessionService trainerPoolsEditSessionService;
+    private readonly ZaFashionCatalogEditSessionService fashionCatalogEditSessionService;
     private readonly ZaPlacementEditSessionService placementEditSessionService;
     private readonly ZaEncountersEditSessionService encountersEditSessionService;
     private readonly ZaStaticEncountersEditSessionService staticEncountersEditSessionService;
@@ -81,6 +89,8 @@ public sealed class ZaWorkflowService
         textWorkflowService = new ZaTextWorkflowService(fileSource);
         shopsWorkflowService = new ZaShopsWorkflowService(fileSource, itemsWorkflowService);
         trainersWorkflowService = new ZaTrainersWorkflowService(fileSource);
+        trainerPoolsWorkflowService = new ZaTrainerPoolsWorkflowService(fileSource);
+        fashionCatalogWorkflowService = new ZaFashionCatalogWorkflowService(fileSource);
         placementWorkflowService = new ZaPlacementWorkflowService(fileSource);
         encountersWorkflowService = new ZaEncountersWorkflowService(fileSource);
         staticEncountersWorkflowService = new ZaStaticEncountersWorkflowService(fileSource);
@@ -114,6 +124,12 @@ public sealed class ZaWorkflowService
             this.projectWorkspaceService,
             fileSource,
             trainersWorkflowService);
+        trainerPoolsEditSessionService = new ZaTrainerPoolsEditSessionService(
+            this.projectWorkspaceService,
+            trainerPoolsWorkflowService);
+        fashionCatalogEditSessionService = new ZaFashionCatalogEditSessionService(
+            this.projectWorkspaceService,
+            fashionCatalogWorkflowService);
         placementEditSessionService = new ZaPlacementEditSessionService(
             this.projectWorkspaceService,
             fileSource,
@@ -185,6 +201,7 @@ public sealed class ZaWorkflowService
     public string CaptureSemanticExploreSourceFingerprint(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
         var semanticFileSource = new ZaWorkflowFileSource(
             cacheManager,
             bypassReusableBaseCache: true,
@@ -206,6 +223,9 @@ public sealed class ZaWorkflowService
             ZaDataPaths.AiAttackParamArray,
             ZaDataPaths.AiBulletParamArray,
             ZaDataPaths.TrainerDataArray,
+            ZaDataPaths.TrainerPoolTableDataArray,
+            ZaDataPaths.TrainerPoolIdentityDataArray,
+            ZaDataPaths.BattleTrainerSpawnerDataArray,
             ZaDataPaths.EncountDataArray,
             ZaDataPaths.PokemonSpawnerDataArray,
             ZaDataPaths.BossBattleDataGlobal,
@@ -253,8 +273,16 @@ public sealed class ZaWorkflowService
         }
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "za-semantic-source-v3");
+        AppendSemanticSourceHash(hash, "za-semantic-source-v4");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
+        AppendSemanticExecutableSourceHash(
+            hash,
+            "dex-layout-base-main",
+            ZaExeFsMainFileResolver.ResolveBasePath(paths));
+        AppendSemanticExecutableSourceHash(
+            hash,
+            "dex-layout-layered-main",
+            ZaExeFsMainFileResolver.ResolveOutputPath(paths));
         if (ZaCompressionRuntime.TryResolveRequiredFilePath(
                 paths.PokemonLegendsZASupportFolderPath,
                 out var supportRuntimePath))
@@ -374,12 +402,17 @@ public sealed class ZaWorkflowService
         ZaEncountersWorkflow ScriptedBossEncounters,
         ZaEncountersWorkflow WildEncounters,
         ZaMovesWorkflow Moves,
-        ZaTrainersWorkflow Trainers)
+        ZaTrainersWorkflow Trainers,
+        ZaEncounterCompatibilityWorkflow EncounterCompatibility,
+        ZaPokemonWorkflow Pokemon,
+        ZaTrainerPoolsWorkflow TrainerPools,
+        ZaTypeEffectivenessState TypeEffectivenessState)
         LoadGameModuleCapabilityBatch(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
         var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
         var freshFileSource = CreateGameModuleFileSource();
+        var executableReader = new BoundedGameModuleExecutableReader(paths);
         return (
             new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleReadOnly(
                 project,
@@ -390,7 +423,12 @@ public sealed class ZaWorkflowService
                 includeScriptedBosses: false,
                 includeEncounterTables: true),
             new ZaMovesWorkflowService(freshFileSource).LoadGameModuleReadOnly(project),
-            new ZaTrainersWorkflowService(freshFileSource).LoadGameModuleReadOnly(project));
+            new ZaTrainersWorkflowService(freshFileSource).LoadGameModuleReadOnly(project),
+            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleCompatibility(project),
+            new ZaPokemonWorkflowService(freshFileSource, executableReader.ReadAllBytes)
+                .LoadGameModuleReadOnly(project, includeDexEditor: true),
+            new ZaTrainerPoolsWorkflowService(freshFileSource).Load(project),
+            new ZaTypeEffectivenessStateService(executableReader.ReadAllBytes).Load(project));
     }
 
     public ZaTrainersWorkflow LoadGameModuleTrainerArchetypes(ProjectPaths paths)
@@ -415,6 +453,40 @@ public sealed class ZaWorkflowService
         ArgumentNullException.ThrowIfNull(paths);
         var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
         return new ZaMovesWorkflowService(CreateGameModuleFileSource()).LoadGameModuleReadOnly(project);
+    }
+
+    public ZaEncounterCompatibilityWorkflow LoadGameModuleEncounterCompatibility(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaEncountersWorkflowService(CreateGameModuleFileSource())
+            .LoadGameModuleCompatibility(project);
+    }
+
+    public ZaPokemonWorkflow LoadGameModuleAlphaMoves(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var executableReader = new BoundedGameModuleExecutableReader(paths);
+        return new ZaPokemonWorkflowService(
+                CreateGameModuleFileSource(),
+                executableReader.ReadAllBytes)
+            .LoadGameModuleReadOnly(project, includeDexEditor: true);
+    }
+
+    public ZaTrainerPoolsWorkflow LoadGameModuleTrainerPools(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaTrainerPoolsWorkflowService(CreateGameModuleFileSource()).Load(project);
+    }
+
+    public ZaTypeEffectivenessState LoadGameModuleTypeEffectivenessState(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var executableReader = new BoundedGameModuleExecutableReader(paths);
+        return new ZaTypeEffectivenessStateService(executableReader.ReadAllBytes).Load(project);
     }
 
     private ZaWorkflowFileSource CreateGameModuleFileSource()
@@ -493,6 +565,41 @@ public sealed class ZaWorkflowService
         var workflow = new ZaTrainersWorkflowService(source);
         return new ZaTrainersEditSessionService(workspace, source, workflow)
             .UpdateFields(paths, session, updates);
+    }
+
+    public ZaPokemonEditResult ReadPokemonEffectiveFreshBounded(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaPokemonWorkflowService(source);
+        return new ZaPokemonEditSessionService(workspace, source, workflow)
+            .ReadEffective(paths, session);
+    }
+
+    public ZaPokemonEditResult UpdatePokemonLearnsetFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        int personalId,
+        string action,
+        int? slot,
+        int? moveId,
+        int? level)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var source = new ZaWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new ZaPokemonWorkflowService(source);
+        return new ZaPokemonEditSessionService(workspace, source, workflow)
+            .UpdateLearnset(paths, session, personalId, action, slot, moveId, level);
     }
 
     public ZaEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
@@ -581,6 +688,26 @@ public sealed class ZaWorkflowService
         }
     }
 
+    private static void AppendSemanticExecutableSourceHash(
+        IncrementalHash hash,
+        string role,
+        string? path)
+    {
+        AppendSemanticSourceHash(hash, role);
+        if (path is null || !File.Exists(path))
+        {
+            AppendSemanticSourceHash(hash, "missing");
+            return;
+        }
+
+        AppendSemanticSourceHash(
+            hash,
+            SemanticProjectBuildIdentity.CaptureBoundedFile(
+                path,
+                role,
+                MaximumSemanticSourceBytesPerFile));
+    }
+
     private static bool IsMissingSource(Exception exception)
     {
         for (Exception? current = exception; current is not null; current = current.InnerException)
@@ -618,6 +745,8 @@ public sealed class ZaWorkflowService
         [
             pokemonWorkflowService.CreateSummary(project),
             trainersWorkflowService.CreateSummary(project),
+            trainerPoolsWorkflowService.CreateSummary(project),
+            fashionCatalogWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
             encountersWorkflowService.CreateSummary(project),
             staticEncountersWorkflowService.CreateSummary(project),
@@ -706,6 +835,22 @@ public sealed class ZaWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return trainersWorkflowService.Load(project);
+    }
+
+    public ZaTrainerPoolsWorkflow LoadTrainerPools(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return trainerPoolsWorkflowService.Load(project);
+    }
+
+    public ZaFashionCatalogWorkflow LoadFashionCatalog(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return fashionCatalogWorkflowService.Load(project);
     }
 
     public ZaPlacementWorkflow LoadPlacement(ProjectPaths paths)
@@ -980,6 +1125,22 @@ public sealed class ZaWorkflowService
         return trainersEditSessionService.UpdateFields(paths, session, updates);
     }
 
+    public ZaTrainerPoolsEditResult StageTrainerPoolFixedCountSwap(
+        ProjectPaths paths,
+        EditSession? session,
+        ZaTrainerPoolFixedCountSwap operation)
+    {
+        return trainerPoolsEditSessionService.StageFixedCountSwap(paths, session, operation);
+    }
+
+    public ZaFashionCatalogStageResult StageFashionCatalogFieldEdit(
+        ProjectPaths paths,
+        EditSession? session,
+        ZaFashionCatalogFieldEdit operation)
+    {
+        return fashionCatalogEditSessionService.StageFieldEdit(paths, session, operation);
+    }
+
     public ZaPlacementEditResult UpdatePlacementObjectField(
         ProjectPaths paths,
         EditSession? session,
@@ -1203,6 +1364,8 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
+            ZaEditSessionDomain.TrainerPools => trainerPoolsEditSessionService.Validate(paths, session),
+            ZaEditSessionDomain.FashionCatalog => fashionCatalogEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
@@ -1229,6 +1392,8 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.TrainerPools => trainerPoolsEditSessionService.CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.FashionCatalog => fashionCatalogEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1256,6 +1421,8 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.TrainerPools => trainerPoolsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.FashionCatalog => fashionCatalogEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
@@ -1534,6 +1701,8 @@ public sealed class ZaWorkflowService
             [ZaEditSessionSupport.TextDomain] => ZaEditSessionDomain.Text,
             [ZaEditSessionSupport.ShopsDomain] => ZaEditSessionDomain.Shops,
             [ZaEditSessionSupport.TrainersDomain] => ZaEditSessionDomain.Trainers,
+            [ZaEditSessionSupport.TrainerPoolsDomain] => ZaEditSessionDomain.TrainerPools,
+            [ZaEditSessionSupport.FashionCatalogDomain] => ZaEditSessionDomain.FashionCatalog,
             [ZaEditSessionSupport.PlacementDomain] => ZaEditSessionDomain.Placement,
             [ZaEditSessionSupport.EncountersDomain] => ZaEditSessionDomain.Encounters,
             [ZaEditSessionSupport.StaticEncountersDomain] => ZaEditSessionDomain.StaticEncounters,
@@ -1577,6 +1746,8 @@ public sealed class ZaWorkflowService
             ZaEditSessionSupport.TextDomain => ZaEditSessionDomain.Text,
             ZaEditSessionSupport.ShopsDomain => ZaEditSessionDomain.Shops,
             ZaEditSessionSupport.TrainersDomain => ZaEditSessionDomain.Trainers,
+            ZaEditSessionSupport.TrainerPoolsDomain => ZaEditSessionDomain.TrainerPools,
+            ZaEditSessionSupport.FashionCatalogDomain => ZaEditSessionDomain.FashionCatalog,
             ZaEditSessionSupport.PlacementDomain => ZaEditSessionDomain.Placement,
             ZaEditSessionSupport.EncountersDomain => ZaEditSessionDomain.Encounters,
             ZaEditSessionSupport.StaticEncountersDomain => ZaEditSessionDomain.StaticEncounters,
@@ -1683,6 +1854,8 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.Text => ZaEditSessionSupport.TextDomain,
             ZaEditSessionDomain.Shops => ZaEditSessionSupport.ShopsDomain,
             ZaEditSessionDomain.Trainers => ZaEditSessionSupport.TrainersDomain,
+            ZaEditSessionDomain.TrainerPools => ZaEditSessionSupport.TrainerPoolsDomain,
+            ZaEditSessionDomain.FashionCatalog => ZaEditSessionSupport.FashionCatalogDomain,
             ZaEditSessionDomain.Placement => ZaEditSessionSupport.PlacementDomain,
             ZaEditSessionDomain.Encounters => ZaEditSessionSupport.EncountersDomain,
             ZaEditSessionDomain.StaticEncounters => ZaEditSessionSupport.StaticEncountersDomain,
@@ -1836,6 +2009,162 @@ public sealed class ZaWorkflowService
         EditSession EffectiveSession,
         IReadOnlyList<ZaEditSessionDomain> EffectiveDomains);
 
+    private sealed class BoundedGameModuleExecutableReader
+    {
+        private const int MaximumExecutableCount = 2;
+        private const long MaximumAggregateExecutableBytes =
+            (long)MaximumExecutableCount * MaximumSemanticSourceBytesPerFile;
+
+        private readonly IReadOnlyDictionary<string, string> allowedRootsByPath;
+        private readonly Dictionary<string, byte[]> memo;
+        private long observedBytes;
+
+        public BoundedGameModuleExecutableReader(ProjectPaths paths)
+        {
+            ArgumentNullException.ThrowIfNull(paths);
+            var comparer = OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+            var candidates = new[]
+            {
+                (Path: ZaExeFsMainFileResolver.ResolveBasePath(paths), Root: paths.BaseExeFsPath),
+                (Path: ZaExeFsMainFileResolver.ResolveOutputPath(paths), Root: paths.OutputRootPath),
+            };
+            var allowed = new Dictionary<string, string>(comparer);
+            foreach (var candidate in candidates)
+            {
+                if (candidate.Path is null || string.IsNullOrWhiteSpace(candidate.Root))
+                {
+                    continue;
+                }
+
+                allowed[Path.GetFullPath(candidate.Path)] =
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate.Root));
+            }
+
+            allowedRootsByPath = allowed;
+            memo = new Dictionary<string, byte[]>(comparer);
+        }
+
+        public byte[] ReadAllBytes(string path)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            var fullPath = Path.GetFullPath(path);
+            if (!allowedRootsByPath.TryGetValue(fullPath, out var root)
+                || PathContainment.IsOutsideRoot(Path.GetRelativePath(root, fullPath))
+                || TraversesReparsePoint(root, fullPath))
+            {
+                throw new InvalidDataException(
+                    "The Dex Layout executable source is outside its verified project roots or traverses a linked path.");
+            }
+
+            if (memo.TryGetValue(fullPath, out var cached))
+            {
+                return cached.ToArray();
+            }
+
+            if (memo.Count >= MaximumExecutableCount)
+            {
+                throw new InvalidDataException(
+                    "The Dex Layout executable source count exceeds its bounded limit.");
+            }
+
+            var file = new FileInfo(fullPath);
+            file.Refresh();
+            if (!file.Exists
+                || file.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                || !string.IsNullOrEmpty(file.LinkTarget)
+                || file.Length < 0
+                || file.Length > MaximumSemanticSourceBytesPerFile
+                || file.Length > MaximumAggregateExecutableBytes - observedBytes)
+            {
+                throw new InvalidDataException(
+                    "The Dex Layout executable source is missing, linked, or exceeds its bounded size.");
+            }
+
+            using var stream = new FileStream(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                128 * 1024,
+                FileOptions.SequentialScan);
+            var length = stream.Length;
+            if (length != file.Length)
+            {
+                throw new InvalidDataException(
+                    "The Dex Layout executable source changed before it could be read.");
+            }
+
+            var bytes = new byte[checked((int)length)];
+            stream.ReadExactly(bytes);
+            if (stream.ReadByte() != -1 || stream.Length != length)
+            {
+                throw new InvalidDataException(
+                    "The Dex Layout executable source changed while it was read.");
+            }
+
+            observedBytes = checked(observedBytes + length);
+            memo.Add(fullPath, bytes);
+            return bytes.ToArray();
+        }
+
+        private static bool TraversesReparsePoint(string root, string fullPath)
+        {
+            var volumeRoot = Path.GetPathRoot(root);
+            if (string.IsNullOrWhiteSpace(volumeRoot))
+            {
+                return true;
+            }
+
+            var currentRootSegment = volumeRoot;
+            foreach (var segment in root[volumeRoot.Length..].Split(
+                         [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                         StringSplitOptions.RemoveEmptyEntries))
+            {
+                currentRootSegment = Path.Combine(currentRootSegment, segment);
+                var ancestor = new DirectoryInfo(currentRootSegment);
+                ancestor.Refresh();
+                if (!ancestor.Exists
+                    || ancestor.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                    || !string.IsNullOrEmpty(ancestor.LinkTarget))
+                {
+                    return true;
+                }
+            }
+
+            var rootEntry = new DirectoryInfo(root);
+            rootEntry.Refresh();
+            if (!rootEntry.Exists
+                || rootEntry.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                || !string.IsNullOrEmpty(rootEntry.LinkTarget))
+            {
+                return true;
+            }
+
+            var relative = Path.GetRelativePath(root, fullPath);
+            var current = root;
+            foreach (var segment in relative.Split(
+                         [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                         StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, segment);
+                FileSystemInfo entry = Directory.Exists(current)
+                    ? new DirectoryInfo(current)
+                    : new FileInfo(current);
+                entry.Refresh();
+                if (entry.Exists
+                    && (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                        || !string.IsNullOrEmpty(entry.LinkTarget)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
     private static ZaEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {
         return new ZaEditSessionValidation(session, IsValid: false, [CreateMixedDiagnostic()]);
@@ -1971,6 +2300,8 @@ public sealed class ZaWorkflowService
         Text,
         Shops,
         Trainers,
+        TrainerPools,
+        FashionCatalog,
         Placement,
         Encounters,
         StaticEncounters,

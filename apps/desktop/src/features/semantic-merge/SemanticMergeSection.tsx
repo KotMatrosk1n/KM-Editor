@@ -252,7 +252,7 @@ export function SemanticMergeSection({
         </div>
       ) : null}
 
-      {!userFacingFeatureVisibility.namedChangeSets || activeSurface === 'merge' ? (
+      <div hidden={userFacingFeatureVisibility.namedChangeSets && activeSurface !== 'merge'}>
         <MergeSurface
           authoringContextRevision={authoringContextRevision}
           canImportChangeSet={canImportChangeSet}
@@ -269,25 +269,28 @@ export function SemanticMergeSection({
           revision={revision}
           scope={scope}
         />
-      ) : (
-        <RecipeSurface
-          authoringContextRevision={authoringContextRevision}
-          canImportChangeSet={canImportChangeSet}
-          canNavigateRecord={canNavigateRecord}
-          changeSets={changeSets}
-          controller={controller}
-          expectedChangeSetETag={expectedChangeSetETag}
-          importCapability={capabilityMap.get('recipeImport') ?? null}
-          exportCapability={capabilityMap.get('recipeExport') ?? null}
-          isChangeSetWorkspaceBusy={isChangeSetWorkspaceBusy}
-          isChangeSetWorkspaceReady={isChangeSetWorkspaceReady}
-          onImported={() => setReceipt({ kind: 'recipe' })}
-          onImportRecipe={onImportRecipe}
-          onNavigateRecord={onNavigateRecord}
-          revision={revision}
-          scope={scope}
-        />
-      )}
+      </div>
+      {userFacingFeatureVisibility.namedChangeSets ? (
+        <div hidden={activeSurface !== 'recipes'}>
+          <RecipeSurface
+            authoringContextRevision={authoringContextRevision}
+            canImportChangeSet={canImportChangeSet}
+            canNavigateRecord={canNavigateRecord}
+            changeSets={changeSets}
+            controller={controller}
+            expectedChangeSetETag={expectedChangeSetETag}
+            importCapability={capabilityMap.get('recipeImport') ?? null}
+            exportCapability={capabilityMap.get('recipeExport') ?? null}
+            isChangeSetWorkspaceBusy={isChangeSetWorkspaceBusy}
+            isChangeSetWorkspaceReady={isChangeSetWorkspaceReady}
+            onImported={() => setReceipt({ kind: 'recipe' })}
+            onImportRecipe={onImportRecipe}
+            onNavigateRecord={onNavigateRecord}
+            revision={revision}
+            scope={scope}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

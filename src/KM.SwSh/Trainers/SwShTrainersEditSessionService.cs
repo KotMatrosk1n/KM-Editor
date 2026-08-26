@@ -51,6 +51,23 @@ public sealed class SwShTrainersEditSessionService
         return EditSession.Start();
     }
 
+    public SwShTrainersEditResult ReadEffective(ProjectPaths paths, EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        projectWorkspaceService.ClearMemoryCache();
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var workflow = trainersWorkflowService.Load(project);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
+        var diagnostics = new List<ValidationDiagnostic>();
+        CanEditTrainers(project, workflow, diagnostics);
+        return new SwShTrainersEditResult(
+            OverlayPendingEdits(workflow, currentSession.PendingEdits, abilityResolver),
+            currentSession,
+            diagnostics);
+    }
+
     public SwShTrainersEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -323,6 +340,17 @@ public sealed class SwShTrainersEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
         var workflow = trainersWorkflowService.Load(project);
         var trainerEdits = effectiveSession.PendingEdits.Where(IsTrainerEdit).ToArray();
@@ -467,7 +495,8 @@ public sealed class SwShTrainersEditSessionService
                 "Applied Trainers change plan to the configured LayeredFS output root."));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static bool CanEditTrainers(

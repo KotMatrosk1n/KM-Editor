@@ -7,6 +7,8 @@ using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.ZA.Trainers;
 
@@ -19,6 +21,7 @@ internal sealed class ZaTrainersWorkflowService
     public const string MegaEvolutionField = "megaEvolution";
     public const string LastHandField = "lastHand";
     public const string AiFlagsField = "aiFlags";
+    public const string ClassPairField = "classPair";
     public const string SpeciesIdField = "speciesId";
     public const string FormField = "form";
     public const string LevelField = "level";
@@ -238,18 +241,26 @@ internal sealed class ZaTrainersWorkflowService
             WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
+        var annotatedTrainers = AnnotateSharedTextTargets(trainers);
+        var (classPairOptions, classPairValues) = includeEditorMetadata && source is not null
+            ? CreateClassPairCatalog(source.Bytes, annotatedTrainers)
+            : (Array.Empty<ZaTrainerClassPairOption>(),
+                (IReadOnlyDictionary<string, (ulong Primary, ulong Secondary)>)new Dictionary<string, (ulong, ulong)>(StringComparer.Ordinal));
+
         return new ZaTrainersWorkflow(
             summary,
-            trainers,
+            annotatedTrainers,
             includeEditorMetadata
                 ? CreateEditableFields(labels, pokemonAvailability)
                 : [],
             new ZaTrainersWorkflowStats(
-                trainers.Length,
-                trainers.Sum(GetOccupiedPokemonCount),
+                annotatedTrainers.Length,
+                annotatedTrainers.Sum(GetOccupiedPokemonCount),
                 source is null ? 0 : 1),
             diagnostics)
         {
+            ClassPairOptions = classPairOptions,
+            ClassPairValues = classPairValues,
             PokemonAvailability = pokemonAvailability,
         };
     }
@@ -510,9 +521,123 @@ internal sealed class ZaTrainersWorkflowService
             trainer.MegaEvolution,
             trainer.LastHand)
         {
+            NameTextTarget = !isHyperspaceTrainer
+                ? CreateTextTarget(labels.TrainerNameTarget(trainer.TrainerId, trainerId), "name")
+                : null,
+            ClassTextTarget = isHyperspaceTrainer
+                ? CreateTextTarget(labels.TrainerNameTarget(trainer.TrainerId, trainerId), "hyperspaceArchetype")
+                : CreateTextTarget(labels.TrainerTypeTarget(trainer.TrainerType, trainer.TrainerType2), "class"),
+            ClassPairId = CreateClassPairId(trainer.TrainerType, trainer.TrainerType2),
+            CanReassignClass = !isHyperspaceTrainer && classId >= 0,
+            ClassReassignmentBlockedReason = isHyperspaceTrainer
+                ? ZaTrainerClassReassignmentBlockReasons.HyperspaceArchetype
+                : classId < 0
+                    ? ZaTrainerClassReassignmentBlockReasons.UnresolvedClassPair
+                    : null,
             IsSharedRivalRoster = ZaTrainerNameCatalog.IsSharedRivalRoster(trainer.TrainerId),
             RivalStarterBranch = ZaTrainerNameCatalog.ResolveRivalStarterBranch(trainer.TrainerId),
         };
+    }
+
+    internal static string CreateClassPairId(ulong primary, ulong secondary)
+    {
+        var bytes = Encoding.UTF8.GetBytes(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{primary:X16}:{secondary:X16}"));
+        return "class-pair-" + Convert.ToHexStringLower(SHA256.HashData(bytes))[..16];
+    }
+
+    private static ZaTrainerTextTarget? CreateTextTarget(
+        (string MessageKey, int LineIndex)? target,
+        string kind)
+    {
+        return target is { } value
+            ? new ZaTrainerTextTarget(value.MessageKey, value.LineIndex, kind, 1)
+            : null;
+    }
+
+    private static ZaTrainerRecord[] AnnotateSharedTextTargets(IReadOnlyList<ZaTrainerRecord> trainers)
+    {
+        var nameCounts = trainers
+            .Where(trainer => trainer.NameTextTarget is not null)
+            .GroupBy(trainer => $"{trainer.NameTextTarget!.Kind}:{trainer.NameTextTarget.MessageKey}", StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var classCounts = trainers
+            .Where(trainer => trainer.ClassTextTarget is not null)
+            .GroupBy(trainer => $"{trainer.ClassTextTarget!.Kind}:{trainer.ClassTextTarget.MessageKey}", StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        return trainers.Select(trainer => trainer with
+        {
+            NameTextTarget = trainer.NameTextTarget is { } nameTarget
+                ? nameTarget with
+                {
+                    SharedTrainerCount = nameCounts[$"{nameTarget.Kind}:{nameTarget.MessageKey}"],
+                }
+                : null,
+            ClassTextTarget = trainer.ClassTextTarget is { } classTarget
+                ? classTarget with
+                {
+                    SharedTrainerCount = classCounts[$"{classTarget.Kind}:{classTarget.MessageKey}"],
+                }
+                : null,
+        }).ToArray();
+    }
+
+    private static (
+        ZaTrainerClassPairOption[] Options,
+        IReadOnlyDictionary<string, (ulong Primary, ulong Secondary)> Values)
+        CreateClassPairCatalog(byte[] bytes, IReadOnlyList<ZaTrainerRecord> trainers)
+    {
+        var table = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(bytes));
+        var values = new Dictionary<string, (ulong Primary, ulong Secondary)>(StringComparer.Ordinal);
+        var usage = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var index = 0; index < table.ValueLength; index++)
+        {
+            var row = table.Value(index);
+            if (row is null || ZaTrainerNameCatalog.IsHyperspaceTrainer(row.Value.TrainerId))
+            {
+                continue;
+            }
+
+            var pairId = CreateClassPairId(row.Value.TrainerType, row.Value.TrainerType2);
+            if (values.TryGetValue(pairId, out var existing)
+                && existing != (row.Value.TrainerType, row.Value.TrainerType2))
+            {
+                throw new InvalidDataException("A Trainer class-pair identity collision was detected.");
+            }
+            values[pairId] = (row.Value.TrainerType, row.Value.TrainerType2);
+            usage[pairId] = usage.GetValueOrDefault(pairId) + 1;
+        }
+
+        var labels = trainers
+            .Where(trainer => trainer.ClassPairId is not null)
+            .GroupBy(trainer => trainer.ClassPairId!, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(trainer => trainer.TrainerClass)
+                    .FirstOrDefault(label => !string.IsNullOrWhiteSpace(label)) ?? "Trainer class",
+                StringComparer.Ordinal);
+        var safePairIds = trainers
+            .Where(trainer => trainer.CanReassignClass && trainer.ClassTextTarget is not null)
+            .Select(trainer => trainer.ClassPairId)
+            .Where(pairId => pairId is not null)
+            .Cast<string>()
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var pairId in values.Keys.Where(pairId => !safePairIds.Contains(pairId)).ToArray())
+        {
+            values.Remove(pairId);
+        }
+
+        var options = values.Keys
+            .Select(pairId => new ZaTrainerClassPairOption(
+                pairId,
+                labels.GetValueOrDefault(pairId, "Trainer class"),
+                usage.GetValueOrDefault(pairId),
+                PresentationCanaryRequired: true))
+            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(option => option.PairId, StringComparer.Ordinal)
+            .ToArray();
+        return (options, values);
     }
 
     private static IEnumerable<ZaTrainerPokemonRecord> ReadTeam(

@@ -8,6 +8,7 @@ import {
   Cable,
   Candy,
   ClipboardCheck,
+  Coffee,
   Dna,
   Download,
   Dumbbell,
@@ -24,6 +25,7 @@ import {
   MessageSquareOff,
   Package,
   PackagePlus,
+  Palette,
   Save,
   ScanLine,
   Settings,
@@ -184,6 +186,22 @@ export const workbenchCapabilityRegistry = [
     label: 'Trainers'
   }),
   workflow({
+    description:
+      'Swap exact trainer identities across synchronized Story and Infinity pool mirrors without changing pool sizes.',
+    games: ['za'],
+    icon: Shuffle,
+    id: 'trainerPools',
+    label: 'Trainer Pools'
+  }),
+  workflow({
+    description:
+      'Edit dress-up items, dress-up groups, hair and makeup catalogs, and their exact shop lineups.',
+    games: ['za'],
+    icon: Palette,
+    id: 'fashionCatalog',
+    label: 'Fashion Catalog'
+  }),
+  workflow({
     description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
     games: allGames,
     icon: Gift,
@@ -225,6 +243,22 @@ export const workbenchCapabilityRegistry = [
     icon: Store,
     id: 'shops',
     label: 'Shops'
+  }),
+  workflow({
+    description:
+      'Control TM recipe availability and tracking-window material visibility independently.',
+    games: scarletVioletGames,
+    icon: ListChecks,
+    id: 'tmMachineControls',
+    label: 'TM Machine Controls'
+  }),
+  workflow({
+    description:
+      'Edit existing Pokedex distribution cells using coordinates observed in each exact region source.',
+    games: scarletVioletGames,
+    icon: MapPinned,
+    id: 'habitatCoordinates',
+    label: 'Habitat Coordinates'
   }),
   workflow({
     description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
@@ -316,6 +350,14 @@ export const workbenchCapabilityRegistry = [
     icon: PackagePlus,
     id: 'startingItems',
     label: 'Starting Items'
+  }),
+  workflow({
+    description:
+      'Edit the 23 Battle Cafe reward rows with searchable items and exact owner percentage totals.',
+    games: swordShieldGames,
+    icon: Coffee,
+    id: 'battleCafeRewards',
+    label: 'Battle Cafe Rewards'
   }),
   workflow({
     description:

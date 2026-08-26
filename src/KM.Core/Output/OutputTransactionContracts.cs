@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json.Serialization;
 using KM.Core.Projects;
+using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
 
 namespace KM.Core.Output;
@@ -108,13 +109,15 @@ public sealed record OutputApplyReceiptTarget
         OutputMutationKind kind,
         OutputFileState preimage,
         OutputFileState postimage,
-        IEnumerable<OwnedTarget> ownershipClaims)
+        IEnumerable<OwnedTarget> ownershipClaims,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor = null)
         : this(
             path,
             kind,
             preimage,
             postimage,
-            (ownershipClaims ?? throw new ArgumentNullException(nameof(ownershipClaims))).ToImmutableArray())
+            (ownershipClaims ?? throw new ArgumentNullException(nameof(ownershipClaims))).ToImmutableArray(),
+            runtimeMutableDescriptor)
     {
     }
 
@@ -124,7 +127,8 @@ public sealed record OutputApplyReceiptTarget
         OutputMutationKind kind,
         OutputFileState preimage,
         OutputFileState postimage,
-        ImmutableArray<OwnedTarget> ownershipClaims)
+        ImmutableArray<OwnedTarget> ownershipClaims,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor = null)
     {
         Path = path ?? throw new ArgumentNullException(nameof(path));
         Kind = SemanticContractGuards.DefinedEnum(kind, nameof(kind));
@@ -143,6 +147,22 @@ public sealed record OutputApplyReceiptTarget
         {
             throw new ArgumentException("Receipt ownership claims are invalid or out of bounds.", nameof(ownershipClaims));
         }
+
+        if (runtimeMutableDescriptor is not null)
+        {
+            runtimeMutableDescriptor.ValidateIdentity(path, OwnershipClaims[0].GameFamily);
+            var state = Kind == OutputMutationKind.Write ? Postimage : Preimage;
+            if (state.LengthBytes != GameplaySettingsJournal.JournalSize
+                || Kind == OutputMutationKind.Write && runtimeMutableDescriptor.MinimumGeneration is null
+                || !OwnershipClaims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))
+            {
+                throw new ArgumentException(
+                    "A runtime-mutable receipt target has invalid state, generation, or ownership scope.",
+                    nameof(runtimeMutableDescriptor));
+            }
+        }
+
+        RuntimeMutableDescriptor = runtimeMutableDescriptor;
     }
 
     public RelativeOutputPath Path { get; }
@@ -154,6 +174,8 @@ public sealed record OutputApplyReceiptTarget
     public OutputFileState Postimage { get; }
 
     public ImmutableArray<OwnedTarget> OwnershipClaims { get; }
+
+    public OutputRuntimeMutableDescriptor? RuntimeMutableDescriptor { get; }
 }
 
 public sealed record OutputApplyReceipt

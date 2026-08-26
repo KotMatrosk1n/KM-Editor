@@ -3,7 +3,9 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Formats.SV;
 using KM.Formats.SwSh;
 using KM.SV.Workflows;
@@ -223,10 +225,8 @@ public sealed class SvTextEditSessionService
 
         try
         {
-            lock (SvWorkflowFileSource.OutputWriteSyncRoot)
-            {
-                return ApplyChangePlanCore(paths, session, reviewedPlan, outputMode);
-            }
+            using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+            return ApplyChangePlanCore(paths, session, reviewedPlan, outputMode);
         }
         finally
         {
@@ -338,28 +338,31 @@ public sealed class SvTextEditSessionService
             return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var snapshots = CaptureOutputSnapshots(paths, pendingOutputs, outputMode, diagnostics);
-        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-        {
-            return SvEditSessionSupport.CreateApplyResult(
-                applyId,
-                appliedAt,
-                currentPlan,
-                writtenFiles,
-                diagnostics);
-        }
-
-        TextOutput? activeOutput = null;
         try
         {
-            foreach (var output in pendingOutputs)
-            {
-                activeOutput = output;
-                SvWorkflowFileSource.Write(paths, output.VirtualPath, output.Contents, outputMode);
-                writtenFiles.Add(SvEditSessionSupport.GeneratedReference(output.VirtualPath, outputMode));
-            }
+            var context = new SvOutputApplyContext(
+                OutputReviewFingerprint.FromChangePlan(currentPlan),
+                new OwnershipOwnerId("workflow.sv.text"),
+                [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, SvEditSessionSupport.TextDomain)]);
+            SvWorkflowFileSource.WriteBatch(
+                paths,
+                pendingOutputs
+                    .OrderBy(output => output.VirtualPath, StringComparer.Ordinal)
+                    .Select(output => new SvWorkflowFileWrite(
+                        output.VirtualPath,
+                        output.Contents,
+                        context))
+                    .ToArray(),
+                outputMode,
+                context,
+                () => ChangePlanReview.Matches(
+                    reviewedPlan,
+                    CreateChangePlan(paths, session, outputMode)));
+            writtenFiles.AddRange(pendingOutputs.Select(output =>
+                SvEditSessionSupport.GeneratedReference(output.VirtualPath, outputMode)));
         }
-        catch (Exception exception) when (exception is IOException
+        catch (Exception exception) when (exception is OutputCoordinatorException
+            or IOException
             or UnauthorizedAccessException
             or InvalidDataException
             or InvalidOperationException
@@ -368,9 +371,8 @@ public sealed class SvTextEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 $"S/V text output file could not be written: {exception.Message}",
-                file: activeOutput is null ? null : $"romfs/{activeOutput.VirtualPath}",
+                file: pendingOutputs.Count == 1 ? $"romfs/{pendingOutputs[0].VirtualPath}" : null,
                 expected: "Writable output root"));
-            RestoreOutputSnapshots(snapshots, diagnostics);
             writtenFiles.Clear();
         }
 
@@ -392,87 +394,6 @@ public sealed class SvTextEditSessionService
             currentPlan,
             writtenFiles.Distinct().ToArray(),
             diagnostics);
-    }
-
-    private static IReadOnlyList<OutputSnapshot> CaptureOutputSnapshots(
-        ProjectPaths paths,
-        IReadOnlyList<TextOutput> outputs,
-        SvOutputMode outputMode,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var targetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            foreach (var output in outputs)
-            {
-                targetPaths.Add(SvWorkflowFileSource.ResolveOutputPath(
-                    paths,
-                    output.VirtualPath,
-                    outputMode));
-            }
-
-            if (outputMode == SvOutputMode.Standalone)
-            {
-                targetPaths.Add(SvWorkflowFileSource.ResolveOutputPath(
-                    paths,
-                    SvWorkflowFileSource.DescriptorVirtualPath,
-                    outputMode));
-            }
-
-            return targetPaths
-                .Select(path => File.Exists(path)
-                    ? new OutputSnapshot(
-                        path,
-                        Existed: true,
-                        File.ReadAllBytes(path),
-                        File.GetLastWriteTimeUtc(path))
-                    : new OutputSnapshot(
-                        path,
-                        Existed: false,
-                        Contents: null,
-                        LastWriteTimeUtc: null))
-                .ToArray();
-        }
-        catch (Exception exception) when (exception is IOException
-            or UnauthorizedAccessException
-            or InvalidOperationException
-            or ArgumentException)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"S/V Text output rollback state could not be prepared: {exception.Message}",
-                expected: "Readable and writable output targets"));
-            return [];
-        }
-    }
-
-    private static void RestoreOutputSnapshots(
-        IReadOnlyList<OutputSnapshot> snapshots,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        foreach (var snapshot in snapshots.Reverse())
-        {
-            try
-            {
-                if (snapshot.Existed)
-                {
-                    File.WriteAllBytes(snapshot.Path, snapshot.Contents!);
-                    File.SetLastWriteTimeUtc(snapshot.Path, snapshot.LastWriteTimeUtc!.Value);
-                }
-                else if (File.Exists(snapshot.Path))
-                {
-                    File.Delete(snapshot.Path);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"S/V Text output rollback could not restore a target: {exception.Message}",
-                    file: snapshot.Path,
-                    expected: "Original output state"));
-            }
-        }
     }
 
     private static bool CanEditText(
@@ -899,10 +820,4 @@ public sealed class SvTextEditSessionService
     }
 
     private sealed record TextOutput(string VirtualPath, byte[] Contents);
-
-    private sealed record OutputSnapshot(
-        string Path,
-        bool Existed,
-        byte[]? Contents,
-        DateTime? LastWriteTimeUtc);
 }

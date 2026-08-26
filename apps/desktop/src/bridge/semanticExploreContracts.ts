@@ -39,6 +39,7 @@ const boundedDisplayTextSchema = z
     !/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/iu.test(value)
   ));
 const fingerprintSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const sourceObservationTokenSchema = z.string().regex(/^sob1_[a-f0-9]{64}$/u);
 const nonnegativeInt64Schema = z
   .string()
   .regex(/^(?:0|[1-9][0-9]{0,18})$/u)
@@ -133,7 +134,8 @@ export const semanticExploreDifferenceKindSchema = z.enum([
 export const semanticExploreScopeSchema = z.strictObject({
   paths: projectPathsSchema,
   pendingSession: editSessionSchema.nullable().optional(),
-  projectId: workspaceProjectIdSchema
+  projectId: workspaceProjectIdSchema,
+  sourceObservationToken: sourceObservationTokenSchema.optional()
 });
 
 export const semanticExploreCapabilitiesRequestSchema = z.strictObject({

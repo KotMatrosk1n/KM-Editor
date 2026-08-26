@@ -194,6 +194,9 @@ public sealed record DynamaxAdventureSeedSearchDto(
 public sealed record DynamaxAdventureSaveSeedDto(
     string? SaveFilePath,
     string? BackupFilePath,
+    string? RecoveryFilePath,
+    string RecoveryArtifactStatus,
+    string Outcome,
     string? OldSeed,
     string NewSeed,
     bool WasChanged,

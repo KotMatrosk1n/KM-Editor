@@ -110,16 +110,29 @@ public sealed class GuidedDesignApplicationService
 
         var initial = semanticExploreService.ReadCapabilities(
             new ReadSemanticCapabilitiesRequest(request.Scope));
-        var capabilityRead = ReadProjectCapabilitiesCached(
-            request.Scope.Paths,
-            initial.Revision);
-        var completed = semanticExploreService.ReadCapabilities(
-            new ReadSemanticCapabilitiesRequest(request.Scope));
-        EnsureSameSemanticObservation(initial, completed);
-        if (capabilityRead.Cacheable)
+        var capabilityCacheKey = CapabilityCacheKey(
+            initial.Revision,
+            semanticExploreService.ReadSourceCacheIdentity(request.Scope));
+        ProjectCapabilityRead capabilityRead;
+        ReadSemanticCapabilitiesResponse completed;
+        lock (capabilityCacheSync)
         {
-            CacheProjectCapabilities(completed.Revision, capabilityRead.Capabilities);
+            // Capability readiness is decoded once per exact semantic revision. Keep the
+            // source recheck and cache publication inside the same gate so launch preload
+            // and a foreground open cannot duplicate or publish a stale readiness result.
+            capabilityRead = ReadProjectCapabilitiesCached(
+                request.Scope.Paths,
+                initial.Revision.GameFamily,
+                capabilityCacheKey);
+            completed = semanticExploreService.ReadCapabilities(
+                new ReadSemanticCapabilitiesRequest(request.Scope));
+            EnsureSameSemanticObservation(initial, completed);
+            if (capabilityRead.Cacheable)
+            {
+                CacheProjectCapabilities(capabilityCacheKey, capabilityRead.Capabilities);
+            }
         }
+
         return new ReadGuidedDesignCapabilitiesResponse(
             completed.Revision,
             completed.Snapshots,
@@ -312,33 +325,45 @@ public sealed class GuidedDesignApplicationService
 
     private ProjectCapabilityRead ReadProjectCapabilitiesCached(
         ProjectPathsDto paths,
-        SemanticProjectRevisionDto revision)
+        SemanticGameFamilyDto family,
+        string cacheKey)
     {
-        var key = JsonSerializer.Serialize(revision, BridgeJson.SerializerOptions);
         lock (capabilityCacheSync)
         {
             if (capabilityCache is { } cached
-                && string.Equals(cached.RevisionKey, key, StringComparison.Ordinal))
+                && string.Equals(cached.CacheKey, cacheKey, StringComparison.Ordinal))
             {
                 return new ProjectCapabilityRead(cached.Capabilities, Cacheable: true);
             }
         }
 
-        return ReadProjectCapabilities(paths, revision.GameFamily);
+        return ReadProjectCapabilities(paths, family);
     }
 
     private void CacheProjectCapabilities(
-        SemanticProjectRevisionDto revision,
+        string cacheKey,
         IReadOnlyList<GuidedDesignCapabilityDto> capabilities)
     {
-        var key = JsonSerializer.Serialize(revision, BridgeJson.SerializerOptions);
         lock (capabilityCacheSync)
         {
-            // A single immutable nine-row entry is deliberately retained. The
-            // exact semantic revision is the cache key, so any source revision
-            // change forces a fresh bounded readiness observation.
-            capabilityCache = new CapabilityCacheEntry(key, capabilities.ToArray());
+            // A single immutable nine-row entry is deliberately retained. The key
+            // excludes pending edits but includes the server-verified source identity.
+            capabilityCache = new CapabilityCacheEntry(
+                cacheKey,
+                capabilities.ToArray());
         }
+    }
+
+    private static string CapabilityCacheKey(
+        SemanticProjectRevisionDto revision,
+        string sourceCacheIdentity)
+    {
+        return string.Join(
+            ':',
+            "guided-design-capabilities-v1",
+            revision.ProjectId,
+            revision.GameFamily.ToString(),
+            sourceCacheIdentity);
     }
 
     private static T? TryLoad<T>(Func<T> load)
@@ -373,25 +398,7 @@ public sealed class GuidedDesignApplicationService
         IReadOnlyList<ApiDiagnostic> diagnostics) =>
         summary.Availability == WorkflowAvailabilityDto.Available
         && !summary.Diagnostics.Concat(diagnostics)
-            .Any(diagnostic =>
-                diagnostic.Severity == ApiDiagnosticSeverity.Error
-                || diagnostic.Severity == ApiDiagnosticSeverity.Warning
-                    && !IsReadinessIrrelevantProjectWarning(diagnostic));
-
-    private static bool IsReadinessIrrelevantProjectWarning(ApiDiagnostic diagnostic)
-    {
-        if (!string.Equals(diagnostic.Domain, "project", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return string.Equals(diagnostic.Field, "outputRootPath", StringComparison.Ordinal)
-                && diagnostic.Code is ProjectValidator.OutputRootNotConfiguredDiagnosticCode
-                    or ProjectValidator.OutputRootMissingDiagnosticCode
-            || string.Equals(diagnostic.Field, "saveFilePath", StringComparison.Ordinal)
-                && diagnostic.Code is ProjectValidator.SaveFileWrongKindDiagnosticCode
-                    or ProjectValidator.SaveFileMissingDiagnosticCode;
-    }
+            .Any(diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
     private static bool HasTrainerField(TrainersWorkflowDto workflow, string field) =>
         workflow.EditableFields.Count(candidate =>
@@ -605,8 +612,10 @@ public sealed class GuidedDesignApplicationService
             ?? throw new SemanticExploreValidationException(
                 "The exact layered source is unavailable for Guided Design.",
                 SemanticExploreFailureKind.Unsupported);
-        var capabilityRead = ReadProjectCapabilitiesCached(scope.Paths, initial.Revision);
-        var capabilities = capabilityRead.Capabilities;
+        var capabilityResponse = ReadCapabilities(
+            new ReadGuidedDesignCapabilitiesRequest(scope));
+        EnsureExpectedRevision(capabilityResponse.Revision, expectedRevision);
+        var capabilities = capabilityResponse.Capabilities;
         var provider = GuidedDesignProviders.Build(
             initial.Revision.GameFamily,
             input,
@@ -670,11 +679,6 @@ public sealed class GuidedDesignApplicationService
             throw new SemanticExploreValidationException(
                 "The Guided Design source changed while the proposal was generated. Refresh and retry.",
                 SemanticExploreFailureKind.StaleRevision);
-        }
-
-        if (capabilityRead.Cacheable)
-        {
-            CacheProjectCapabilities(completed.Revision, capabilities);
         }
 
         var canImport = provider.Mutations.Count > 0
@@ -1526,7 +1530,7 @@ public sealed class GuidedDesignApplicationService
         int TotalCount);
 
     private sealed record CapabilityCacheEntry(
-        string RevisionKey,
+        string CacheKey,
         IReadOnlyList<GuidedDesignCapabilityDto> Capabilities);
 
     private sealed record ProjectCapabilityRead(

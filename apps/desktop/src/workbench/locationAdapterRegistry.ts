@@ -8,6 +8,10 @@ import {
 } from './workbenchLocation';
 import type { WorkbenchSection } from './workbenchSections';
 import {
+  getWorkbenchRecordIdentityRegistration,
+  type RecordIdentityStability
+} from './recordIdentityRegistry';
+import {
   projectGameToFamily,
   type SemanticRecordRef
 } from './semanticContracts';
@@ -18,6 +22,7 @@ export type LocationAdapterTabPolicy = 'readOnly' | 'requiresDraftAdapter';
 export type StableLocationAdapter = {
   recordKind: string;
   recordKindSchemaVersion: number;
+  identityStability: RecordIdentityStability;
   section: WorkbenchSection;
   tabPolicy: LocationAdapterTabPolicy;
   valueKind: StableLocationValueKind;
@@ -59,6 +64,7 @@ const stableLocationAdapters = [
   adapter('items', 'item', 'integer'),
   adapter('pokemon', 'pokemon-personal', 'integer'),
   adapter('moves', 'move', 'integer'),
+  adapter('text', 'text-entry', 'string'),
   adapter('trainers', 'trainer', 'integer'),
   adapter('shops', 'shop', 'string'),
   adapter('encounters', 'encounter-table', 'string'),
@@ -195,7 +201,15 @@ function adapter(
   valueKind: StableLocationValueKind,
   tabPolicy: LocationAdapterTabPolicy = 'requiresDraftAdapter'
 ): StableLocationAdapter {
+  const identity = getWorkbenchRecordIdentityRegistration(section);
+  if (
+    identity.stability === 'notRecordScoped' ||
+    identity.stability === 'operationScoped'
+  ) {
+    throw new Error('A stable location adapter requires a record-scoped identity registration.');
+  }
   return {
+    identityStability: identity.stability,
     recordKind,
     recordKindSchemaVersion: 1,
     section,

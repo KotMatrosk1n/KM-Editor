@@ -9,6 +9,11 @@ internal static class OutputFileSystemDurability
 {
     private const uint MoveFileReplaceExisting = 0x00000001;
     private const uint MoveFileWriteThrough = 0x00000008;
+    private const int WindowsErrorAccessDenied = 5;
+    private const int WindowsErrorSharingViolation = 32;
+    private const int WindowsErrorLockViolation = 33;
+    private const int WindowsTransientMoveMaximumAttempts = 200;
+    private static readonly TimeSpan WindowsTransientMoveRetryDelay = TimeSpan.FromMilliseconds(10);
     private const int AtCurrentWorkingDirectory = -100;
     private const uint LinuxRenameNoReplace = 0x00000001;
     private const uint MacOsRenameExclusive = 0x00000004;
@@ -19,11 +24,11 @@ internal static class OutputFileSystemDurability
         {
             var flags = MoveFileWriteThrough
                         | (overwrite ? MoveFileReplaceExisting : 0);
-            if (!MoveFileEx(ToNativeWindowsPath(source), ToNativeWindowsPath(destination), flags))
+            if (!MoveFileExWithTransientRetry(source, destination, flags, out var errorCode))
             {
                 throw new IOException(
                     "A durable output file move failed.",
-                    new Win32Exception(Marshal.GetLastWin32Error()));
+                    new Win32Exception(errorCode));
             }
 
             return;
@@ -37,14 +42,15 @@ internal static class OutputFileSystemDurability
     {
         if (OperatingSystem.IsWindows())
         {
-            if (!MoveFileEx(
-                    ToNativeWindowsPath(source),
-                    ToNativeWindowsPath(destination),
-                    MoveFileWriteThrough))
+            if (!MoveFileExWithTransientRetry(
+                    source,
+                    destination,
+                    MoveFileWriteThrough,
+                    out var errorCode))
             {
                 throw new IOException(
                     "A durable output directory move failed.",
-                    new Win32Exception(Marshal.GetLastWin32Error()));
+                    new Win32Exception(errorCode));
             }
 
             return;
@@ -149,6 +155,44 @@ internal static class OutputFileSystemDurability
         return fullPath.StartsWith("\\\\", StringComparison.Ordinal)
             ? "\\\\?\\UNC\\" + fullPath[2..]
             : "\\\\?\\" + fullPath;
+    }
+
+    private static bool MoveFileExWithTransientRetry(
+        string source,
+        string destination,
+        uint flags,
+        out int errorCode)
+    {
+        var nativeSource = ToNativeWindowsPath(source);
+        var nativeDestination = ToNativeWindowsPath(destination);
+        for (var attempt = 1; attempt <= WindowsTransientMoveMaximumAttempts; attempt++)
+        {
+            if (MoveFileEx(nativeSource, nativeDestination, flags))
+            {
+                errorCode = 0;
+                return true;
+            }
+
+            errorCode = Marshal.GetLastWin32Error();
+            if (!IsTransientWindowsMoveError(errorCode)
+                || attempt == WindowsTransientMoveMaximumAttempts)
+            {
+                return false;
+            }
+
+            Thread.Sleep(WindowsTransientMoveRetryDelay);
+        }
+
+        errorCode = 0;
+        return false;
+    }
+
+    private static bool IsTransientWindowsMoveError(int errorCode)
+    {
+        return errorCode is
+            WindowsErrorAccessDenied or
+            WindowsErrorSharingViolation or
+            WindowsErrorLockViolation;
     }
 
     [DllImport("kernel32.dll", EntryPoint = "MoveFileExW", CharSet = CharSet.Unicode, SetLastError = true)]

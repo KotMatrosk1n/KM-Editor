@@ -35,6 +35,7 @@ import type {
 import './workbench.css';
 
 export type WorkbenchSectionProps = {
+  analysisPreparation?: ReactNode;
   balanceLab: ReactNode;
   bookmarks: readonly WorkspaceTargetViewModel[];
   capabilities: readonly CapabilityDiscoveryViewModel[];
@@ -50,6 +51,7 @@ export type WorkbenchSectionProps = {
   onNavigateTarget: (location: WorkbenchLocation) => void;
   onNoteChange?: (text: string) => void;
   onOpenCapability: (section: WorkbenchSectionId) => void;
+  onOpenTool?: (tool: WorkbenchToolId) => void;
   onOpenRecentProject?: (projectId: string) => void;
   onOpenSavedView?: (viewId: string) => void;
   onRemoveRecentProject?: (projectId: string) => void;
@@ -58,6 +60,8 @@ export type WorkbenchSectionProps = {
   onSelectOutputProfile?: (profileId: string) => void;
   outputProfiles: readonly WorkspaceOutputProfileViewModel[];
   pins: readonly WorkspaceTargetViewModel[];
+  preparationScopeKey?: string | null;
+  preloadTools?: readonly WorkbenchToolId[];
   recentProjects: readonly WorkspaceRecentProjectViewModel[];
   recents: readonly WorkspaceTargetViewModel[];
   researchLab?: ReactNode;
@@ -66,7 +70,7 @@ export type WorkbenchSectionProps = {
   workflowHome: ReactNode;
 };
 
-type WorkbenchToolId =
+export type WorkbenchToolId =
   | 'balanceLab'
   | 'gameModules'
   | 'guidedDesign'
@@ -84,6 +88,7 @@ type WorkbenchTool = {
 };
 
 export function WorkbenchSection({
+  analysisPreparation,
   balanceLab,
   bookmarks,
   capabilities,
@@ -99,6 +104,7 @@ export function WorkbenchSection({
   onNavigateTarget,
   onNoteChange,
   onOpenCapability,
+  onOpenTool,
   onOpenRecentProject,
   onOpenSavedView,
   onRemoveRecentProject,
@@ -107,6 +113,8 @@ export function WorkbenchSection({
   onSelectOutputProfile,
   outputProfiles,
   pins,
+  preparationScopeKey,
+  preloadTools = [],
   recentProjects,
   recents,
   researchLab,
@@ -116,9 +124,13 @@ export function WorkbenchSection({
 }: WorkbenchSectionProps) {
   const { t } = useLocalization();
   const [openTool, setOpenTool] = useState<WorkbenchToolId | null>(null);
+  const [mountedTools, setMountedTools] = useState<ReadonlySet<WorkbenchToolId>>(
+    () => new Set(preloadTools)
+  );
   const labBackRef = useRef<HTMLButtonElement | null>(null);
   const launcherRefs = useRef<Partial<Record<WorkbenchToolId, HTMLButtonElement | null>>>({});
   const previouslyOpenToolRef = useRef<WorkbenchToolId | null>(null);
+  const preparationScopeKeyRef = useRef(preparationScopeKey);
   const workbenchHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const tools: readonly WorkbenchTool[] = [
     {
@@ -169,6 +181,20 @@ export function WorkbenchSection({
   ];
   const selectedTool = tools.find((tool) => tool.id === openTool && tool.content) ?? null;
   useEffect(() => {
+    if (preparationScopeKeyRef.current === preparationScopeKey) return;
+    preparationScopeKeyRef.current = preparationScopeKey;
+    setMountedTools(new Set([
+      ...preloadTools,
+      ...(openTool ? [openTool] : [])
+    ]));
+  }, [openTool, preloadTools, preparationScopeKey]);
+  useEffect(() => {
+    setMountedTools((current) => {
+      if (preloadTools.every((tool) => current.has(tool))) return current;
+      return new Set([...current, ...preloadTools]);
+    });
+  }, [preloadTools]);
+  useEffect(() => {
     if (openTool && !selectedTool) {
       setOpenTool(null);
     }
@@ -185,24 +211,13 @@ export function WorkbenchSection({
     }
     previouslyOpenToolRef.current = openTool && selectedTool ? openTool : null;
   }, [openTool, selectedTool]);
-  if (openTool && selectedTool) {
-    return (
-      <section aria-label={t(selectedTool.titleKey)} className="km-workbench-lab-view">
-        <button
-          ref={labBackRef}
-          className="secondary-button compact-button km-workbench-lab-back"
-          onClick={() => setOpenTool(null)}
-          type="button"
-        >
-          <ArrowLeft aria-hidden="true" size={15} />
-          <span>{t(selectedTool.backKey)}</span>
-        </button>
-        {selectedTool.content}
-      </section>
-    );
-  }
   return (
-    <section aria-labelledby="km-workbench-heading" className="km-workbench-home wide-panel">
+    <>
+    <section
+      aria-labelledby="km-workbench-heading"
+      className="km-workbench-home wide-panel"
+      hidden={openTool !== null}
+    >
       <header className="km-workbench-home-heading">
         <LayoutDashboard aria-hidden="true" size={20} />
         <div>
@@ -296,7 +311,13 @@ export function WorkbenchSection({
                 launcherRefs.current[tool.id] = node;
               }}
               className="secondary-button compact-button"
-              onClick={() => setOpenTool(tool.id)}
+              onClick={() => {
+                onOpenTool?.(tool.id);
+                setMountedTools((current) => current.has(tool.id)
+                  ? current
+                  : new Set([...current, tool.id]));
+                setOpenTool(tool.id);
+              }}
               type="button"
             >
               {t(tool.openKey)}
@@ -485,12 +506,36 @@ export function WorkbenchSection({
         </section>
       </div>
 
+      {analysisPreparation}
+
       {semanticExplore}
 
       <section aria-label={t('workbench.workflows.title')} className="km-workbench-workflows">
         {workflowHome}
       </section>
     </section>
+    {tools
+      .filter((tool) => tool.content && mountedTools.has(tool.id))
+      .map((tool) => (
+        <section
+          aria-label={t(tool.titleKey)}
+          className="km-workbench-lab-view"
+          hidden={openTool !== tool.id}
+          key={tool.id}
+        >
+          <button
+            ref={openTool === tool.id ? labBackRef : undefined}
+            className="secondary-button compact-button km-workbench-lab-back"
+            onClick={() => setOpenTool(null)}
+            type="button"
+          >
+            <ArrowLeft aria-hidden="true" size={15} />
+            <span>{t(tool.backKey)}</span>
+          </button>
+          {tool.content}
+        </section>
+      ))}
+    </>
   );
 }
 

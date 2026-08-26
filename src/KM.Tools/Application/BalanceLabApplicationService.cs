@@ -21,6 +21,7 @@ namespace KM.Tools.Application;
 public sealed class BalanceLabApplicationService
 {
     private const int MaximumFindingsPerResponse = 100;
+    private const int StudyBuildLockCount = 8;
     private const string CacheCallerKeyPrefix = "balance-lab-v1";
 
     private readonly SemanticExploreApplicationService semanticExploreService;
@@ -29,6 +30,11 @@ public sealed class BalanceLabApplicationService
     private readonly Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh;
     private readonly Func<ProjectPathsDto, ItemsWorkflowDto> loadItemsFresh;
     private readonly Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh;
+    private readonly SemaphoreSlim[] studyBuildLocks =
+    [
+        new(1, 1), new(1, 1), new(1, 1), new(1, 1),
+        new(1, 1), new(1, 1), new(1, 1), new(1, 1),
+    ];
     private readonly BoundedDerivedIndexCache<BalanceLabStudyData> cache = new(
         new BoundedDerivedIndexCacheOptions
         {
@@ -103,28 +109,53 @@ public sealed class BalanceLabApplicationService
                 NextCursor: null);
         }
 
-        var coreRevision = ToCoreRevision(semanticCapabilities.Revision);
+        var studySourceLayer = request.Layer == SemanticSourceLayerKindDto.Base
+            ? SemanticSourceLayerKindDto.Base
+            : SemanticSourceLayerKindDto.Layered;
+        var sourceCacheIdentity = semanticExploreService.ReadSourceCacheIdentity(request.Scope);
+        var coreRevision = ToCoreSourceRevision(
+            semanticCapabilities.Revision,
+            studySourceLayer,
+            sourceCacheIdentity);
         var key = new DerivedIndexCacheKey(
             coreRevision,
-            $"{CacheCallerKeyPrefix}:{request.Layer}:{request.Study}");
+            $"{CacheCallerKeyPrefix}:{studySourceLayer}:{request.Study}");
         BalanceLabStudyData study;
-        DerivedIndexCacheItem<BalanceLabStudyData>? pendingCacheItem = null;
+        (SemanticProjectRevisionDto Revision, SemanticSourceSnapshotDto Snapshot)?
+            verifiedCompletion = null;
         if (!cache.TryGet(key, out study))
         {
-            var built = await BuildStudyAsync(request, provider, cancellationToken).ConfigureAwait(false);
-            study = built.Value;
-            pendingCacheItem = study.Cacheable ? built : null;
+            var buildLock = StudyBuildLock(key);
+            await buildLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!cache.TryGet(key, out study))
+                {
+                    var built = await BuildStudyAsync(
+                            request,
+                            provider,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    study = built.Value;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    verifiedCompletion = ReadCompletedSnapshot(request, snapshot);
+                    if (study.Cacheable && !cache.Set(key, built))
+                    {
+                        throw new SemanticExploreValidationException(
+                            "The Balance Lab study exceeds its bounded cache budget.",
+                            SemanticExploreFailureKind.LimitExceeded);
+                    }
+                }
+            }
+            finally
+            {
+                buildLock.Release();
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var (completedRevision, completedSnapshot) = ReadCompletedSnapshot(request, snapshot);
-
-        if (pendingCacheItem is not null && !cache.Set(key, pendingCacheItem))
-        {
-            throw new SemanticExploreValidationException(
-                "The Balance Lab study exceeds its bounded cache budget.",
-                SemanticExploreFailureKind.LimitExceeded);
-        }
+        var (completedRevision, completedSnapshot) = verifiedCompletion
+            ?? ReadCompletedSnapshot(request, snapshot);
 
         if (offset > study.Points.Count)
         {
@@ -189,6 +220,12 @@ public sealed class BalanceLabApplicationService
             findings,
             study.Diagnostics,
             nextCursor);
+    }
+
+    private SemaphoreSlim StudyBuildLock(DerivedIndexCacheKey key)
+    {
+        var stripe = (key.GetHashCode() & int.MaxValue) % StudyBuildLockCount;
+        return studyBuildLocks[stripe];
     }
 
     private (SemanticProjectRevisionDto Revision, SemanticSourceSnapshotDto Snapshot) ReadCompletedSnapshot(
@@ -531,7 +568,10 @@ public sealed class BalanceLabApplicationService
         }
     }
 
-    private static ProjectSourceRevision ToCoreRevision(SemanticProjectRevisionDto revision)
+    private static ProjectSourceRevision ToCoreSourceRevision(
+        SemanticProjectRevisionDto revision,
+        SemanticSourceLayerKindDto sourceLayer,
+        string sourceCacheIdentity)
     {
         var family = revision.GameFamily switch
         {
@@ -540,11 +580,21 @@ public sealed class BalanceLabApplicationService
             SemanticGameFamilyDto.LegendsZA => GameFamily.LegendsZA,
             _ => throw new ArgumentOutOfRangeException(nameof(revision), revision.GameFamily, null),
         };
+        var canonical = string.Join(
+            '\n',
+            "balance-lab-source-revision-v1",
+            revision.ProjectId,
+            revision.GameFamily.ToString(),
+            sourceLayer.ToString(),
+            sourceCacheIdentity);
+        var fingerprint = Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        var generation = Convert.ToInt64(fingerprint[..15], 16);
         return new ProjectSourceRevision(
             new ProjectId(revision.ProjectId),
             family,
-            long.Parse(revision.Generation, NumberStyles.None, CultureInfo.InvariantCulture),
-            revision.Fingerprint);
+            generation,
+            fingerprint);
     }
 
     private static IBalanceLabFamilyProvider GetProvider(SemanticGameFamilyDto family)

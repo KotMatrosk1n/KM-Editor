@@ -974,6 +974,35 @@ internal sealed class ZaWorkflowFileSource
             revalidateReviewedState: revalidateReviewedState);
     }
 
+    internal static IReadOnlyList<string> GetOwnedStandaloneRomFsVirtualPaths(
+        ProjectPaths paths,
+        OwnershipOwnerId ownerId)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(ownerId);
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Pokemon Legends Z-A owned output inspection requires an output root.");
+        }
+
+        using var outputLock = AcquireOutputLock(paths);
+        var coordinator = new OutputTransactionCoordinator(paths.OutputRootPath);
+        var projectId = ProjectIdentity.FromPaths(paths);
+        var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
+        const string romFsPrefix = "romfs/";
+        return inventory.Files
+            .Where(record => record.ProjectId == projectId
+                && record.GameFamily == GameFamily.LegendsZA
+                && string.Equals(record.OutputMode, ToOutputModeKey(ZaOutputMode.Standalone), StringComparison.Ordinal)
+                && record.Path.Value.StartsWith(romFsPrefix, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(record.Path.Value, $"romfs/{DescriptorVirtualPath}", StringComparison.OrdinalIgnoreCase)
+                && record.Claims.Any(claim => claim.OwnerId == ownerId))
+            .Select(record => NormalizeVirtualPath(record.Path.Value[romFsPrefix.Length..]))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     internal static OutputApplyResult? ApplyStandaloneMixedBatch(
         ProjectPaths paths,
         IReadOnlyList<ZaWorkflowFileWrite> romFsWrites,

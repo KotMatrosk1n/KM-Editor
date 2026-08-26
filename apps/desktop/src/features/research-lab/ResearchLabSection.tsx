@@ -195,21 +195,21 @@ export function ResearchLabSection({
             ))}
           </div>
 
-          {activeView === 'comparison' ? (
+          <div hidden={activeView !== 'comparison'}>
             <ResearchComparisonView
               controller={controller}
               onCreateAnnotation={createAnnotation}
               onPickSource={onPickSource}
               revision={revision}
             />
-          ) : null}
-          {activeView === 'observations' ? (
+          </div>
+          <div hidden={activeView !== 'observations'}>
             <ResearchObservationsView
               capabilities={capabilities}
               comparison={controller.comparison.data}
             />
-          ) : null}
-          {activeView === 'annotations' ? (
+          </div>
+          <div hidden={activeView !== 'annotations'}>
             <ResearchAnnotationsView
               canNavigateRecord={canNavigateRecord}
               controller={controller}
@@ -218,8 +218,8 @@ export function ResearchLabSection({
               onNavigateRecord={onNavigateRecord}
               revision={revision}
             />
-          ) : null}
-          {activeView === 'ownership' ? (
+          </div>
+          <div hidden={activeView !== 'ownership'}>
             <ResearchOwnershipView
               capabilities={capabilities}
               comparison={controller.comparison.data}
@@ -227,10 +227,10 @@ export function ResearchLabSection({
               isLoadingMore={controller.comparison.isAppending}
               onLoadMore={() => void controller.loadMore()}
             />
-          ) : null}
-          {activeView === 'extensions' ? (
+          </div>
+          <div hidden={activeView !== 'extensions'}>
             <ResearchExtensionsView capabilities={capabilities} />
-          ) : null}
+          </div>
         </>
       ) : null}
     </section>

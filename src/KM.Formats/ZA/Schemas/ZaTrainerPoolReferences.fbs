@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Generated.TrainerPools;
+
+table ZaTrainerPoolIdentity {
+  trainerId:string;
+  assetId:string;
+  rosterId:string;
+}
+
+table ZaTrainerPoolIdentityGroup {
+  identities:[ZaTrainerPoolIdentity];
+}
+
+table ZaTrainerPoolIdentityDatabaseArray {
+  groups:[ZaTrainerPoolIdentityGroup];
+}
+
+table ZaTrainerPoolSpawnerTableReference {
+  tableId:string;
+  activationConditions:[ZaTrainerPoolSpawnerActivationCondition];
+}
+
+table ZaTrainerPoolSpawnerActivationCondition {
+  elements:[ZaTrainerPoolSpawnerActivationElement];
+}
+
+table ZaTrainerPoolSpawnerActivationElement {
+  parameters:[ZaTrainerPoolSpawnerActivationParameter];
+}
+
+table ZaTrainerPoolSpawnerActivationParameter {
+  condition:string;
+  op:int;
+  parameters:[string];
+}
+
+table ZaTrainerPoolSpawnerZoneInfo {
+  zoneId:string;
+  variationId:string;
+}
+
+table ZaTrainerPoolSpawnerAppearanceInfo {
+  minimumCount:int;
+  maximumCount:int;
+}
+
+table ZaTrainerPoolSpawnerObjectInfo {
+  objectName:string;
+  createScenePath:string;
+  additionalFlags:[int];
+  zoneInfo:ZaTrainerPoolSpawnerZoneInfo;
+  appearanceInfo:ZaTrainerPoolSpawnerAppearanceInfo;
+}
+
+table ZaTrainerPoolSpawnerCoolTimeInfo {
+  time:float;
+}
+
+table ZaTrainerPoolSpawner {
+  id:string;
+  appearanceObjects:[ZaTrainerPoolSpawnerObjectInfo];
+  coolTimeInfo:ZaTrainerPoolSpawnerCoolTimeInfo;
+  tableReferences:[ZaTrainerPoolSpawnerTableReference];
+}
+
+table ZaTrainerPoolSpawnerGroup {
+  spawners:[ZaTrainerPoolSpawner];
+}
+
+table ZaTrainerPoolSpawnerDatabaseArray {
+  groups:[ZaTrainerPoolSpawnerGroup];
+}

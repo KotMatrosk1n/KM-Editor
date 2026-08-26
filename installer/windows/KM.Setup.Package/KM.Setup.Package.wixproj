@@ -25,6 +25,7 @@
     -->
     <KmPayloadDir Condition="'$(KmPayloadDir)' == ''">$(MSBuildProjectDirectory)\obj\payload\app</KmPayloadDir>
     <KmAppExecutableName Condition="'$(KmAppExecutableName)' == ''">km-editor-desktop.exe</KmAppExecutableName>
+    <KmAppUserModelId Condition="'$(KmAppUserModelId)' == ''">app.kmeditor.desktop</KmAppUserModelId>
     <KmSidecarExecutableName Condition="'$(KmSidecarExecutableName)' == ''">km-tools-bridge.exe</KmSidecarExecutableName>
     <KmInstallFolderName Condition="'$(KmInstallFolderName)' == ''">KM Editor</KmInstallFolderName>
     <KmProductRegistryKey Condition="'$(KmProductRegistryKey)' == ''">Software\kmeditor\KM Editor</KmProductRegistryKey>
@@ -41,7 +42,7 @@
     -->
     <SuppressIces>$(SuppressIces);ICE57</SuppressIces>
 
-    <DefineConstants>$(DefineConstants);KmProductName=$(KmProductName);KmManufacturer=$(KmManufacturer);KmVersion=$(KmVersion);KmMsiUpgradeCode=$(KmMsiUpgradeCode);KmAppExecutableName=$(KmAppExecutableName);KmSidecarExecutableName=$(KmSidecarExecutableName);KmInstallFolderName=$(KmInstallFolderName);KmProductRegistryKey=$(KmProductRegistryKey);KmAppComponentGuid=$(KmAppComponentGuid);KmBridgeComponentGuid=$(KmBridgeComponentGuid);KmRegistrationComponentGuid=$(KmRegistrationComponentGuid);KmStartMenuComponentGuid=$(KmStartMenuComponentGuid);KmDesktopComponentGuid=$(KmDesktopComponentGuid)</DefineConstants>
+    <DefineConstants>$(DefineConstants);KmProductName=$(KmProductName);KmManufacturer=$(KmManufacturer);KmVersion=$(KmVersion);KmMsiUpgradeCode=$(KmMsiUpgradeCode);KmAppExecutableName=$(KmAppExecutableName);KmAppUserModelId=$(KmAppUserModelId);KmSidecarExecutableName=$(KmSidecarExecutableName);KmInstallFolderName=$(KmInstallFolderName);KmProductRegistryKey=$(KmProductRegistryKey);KmAppComponentGuid=$(KmAppComponentGuid);KmBridgeComponentGuid=$(KmBridgeComponentGuid);KmRegistrationComponentGuid=$(KmRegistrationComponentGuid);KmStartMenuComponentGuid=$(KmStartMenuComponentGuid);KmDesktopComponentGuid=$(KmDesktopComponentGuid)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -51,7 +52,7 @@
 
   <Target Name="ValidateKmPackageInputs" BeforeTargets="CoreCompile">
     <Error Condition="'$(KmVersion)' == ''" Text="KmVersion is required and must be supplied by the release driver (for example, -p:KmVersion=1.2.3)." />
-    <Error Condition="'$(KmProductName)' != 'KM Editor' Or '$(KmInstallFolderName)' != 'KM Editor' Or '$(KmProductRegistryKey)' != 'Software\kmeditor\KM Editor' Or '$(KmMsiUpgradeCode)' != '7a06ff31-5a9f-5a2c-aab6-92b8d255d620'" Text="KM Editor setup requires the published production MSI identity." />
+    <Error Condition="'$(KmProductName)' != 'KM Editor' Or '$(KmInstallFolderName)' != 'KM Editor' Or '$(KmProductRegistryKey)' != 'Software\kmeditor\KM Editor' Or '$(KmMsiUpgradeCode)' != '7a06ff31-5a9f-5a2c-aab6-92b8d255d620' Or '$(KmAppUserModelId)' != 'app.kmeditor.desktop'" Text="KM Editor setup requires the published production application and MSI identity." />
     <Error Condition="!Exists('$(KmPayloadDir)\$(KmAppExecutableName)')" Text="KM MSI input is missing: $(KmPayloadDir)\$(KmAppExecutableName). Stage the release app payload and pass -p:KmPayloadDir=... if necessary." />
     <Error Condition="!Exists('$(KmPayloadDir)\$(KmSidecarExecutableName)')" Text="KM MSI input is missing: $(KmPayloadDir)\$(KmSidecarExecutableName). Stage the target-suffixed Tauri sidecar under its final installed name before building." />
   </Target>

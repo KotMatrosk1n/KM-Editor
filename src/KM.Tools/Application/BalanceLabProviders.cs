@@ -901,7 +901,8 @@ internal abstract class BalanceLabFamilyProviderBase : IBalanceLabFamilyProvider
         }
 
         var cacheable = summary.Availability != WorkflowAvailabilityDto.Disabled
-            && sourceDiagnostics.Length == 0;
+            && sourceDiagnostics.All(diagnostic =>
+                diagnostic.Severity != ApiDiagnosticSeverity.Error);
         return new BalanceLabStudyData(
             Capabilities.Single(capability => capability.Study == study),
             points,

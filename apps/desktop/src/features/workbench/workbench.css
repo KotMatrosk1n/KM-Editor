@@ -1006,6 +1006,89 @@
   width: 100%;
 }
 
+.km-retained-workbench {
+  display: contents;
+}
+
+.km-retained-workbench[hidden],
+.km-workbench-home[hidden],
+.km-workbench-lab-view[hidden] {
+  display: none;
+}
+
+.analysis-preparation-panel {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  color: var(--color-text-soft);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.analysis-preparation-header,
+.analysis-preparation-header > div {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.analysis-preparation-header {
+  justify-content: space-between;
+}
+
+.analysis-preparation-header svg {
+  color: var(--color-gold);
+}
+
+.analysis-preparation-header .status-pill.is-error {
+  color: var(--color-danger);
+  background: rgb(var(--color-danger-rgb) / 12%);
+  border-color: var(--color-danger-border);
+}
+
+.analysis-preparation-summary {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.analysis-preparation-systems {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis-preparation-systems li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.analysis-preparation-systems li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.analysis-preparation-systems li > small {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .km-workbench-lab-back {
   align-items: center;
   display: inline-flex;
@@ -1056,6 +1139,13 @@
     background: Canvas;
     border-color: CanvasText;
     box-shadow: none;
+  }
+
+  .analysis-preparation-panel,
+  .analysis-preparation-systems li {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
   }
 
   .km-command-option,

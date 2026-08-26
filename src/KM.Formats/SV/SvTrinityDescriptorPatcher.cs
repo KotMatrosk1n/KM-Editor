@@ -34,8 +34,20 @@ public static class SvTrinityDescriptorPatcher
         ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
         ArgumentNullException.ThrowIfNull(additionalLayeredVirtualPaths);
 
-        var layeredFileHashes = EnumerateLayeredVirtualPaths(outputRoot)
-            .Concat(MaterializeVirtualPaths(additionalLayeredVirtualPaths))
+        return CreateLayeredDescriptorFromVirtualPaths(
+            baseRomFsRoot,
+            EnumerateLayeredVirtualPaths(outputRoot)
+                .Concat(MaterializeVirtualPaths(additionalLayeredVirtualPaths)));
+    }
+
+    public static byte[] CreateLayeredDescriptorFromVirtualPaths(
+        string baseRomFsRoot,
+        IEnumerable<string> layeredVirtualPaths)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
+        ArgumentNullException.ThrowIfNull(layeredVirtualPaths);
+
+        var layeredFileHashes = MaterializeVirtualPaths(layeredVirtualPaths)
             .Where(path => !string.Equals(
                 path,
                 DescriptorVirtualPath,
@@ -44,7 +56,9 @@ public static class SvTrinityDescriptorPatcher
             .ToHashSet();
 
         var descriptorBytes = ReadBaseDescriptor(baseRomFsRoot);
-        return RemoveFileHashes(descriptorBytes, layeredFileHashes);
+        return layeredFileHashes.Count == 0
+            ? descriptorBytes
+            : RemoveFileHashes(descriptorBytes, layeredFileHashes);
     }
 
     public static byte[] ReadBaseDescriptor(string baseRomFsRoot)

@@ -3,7 +3,9 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.SV.Workflows;
 
 namespace KM.SV.TypeChart;
@@ -262,6 +264,8 @@ public sealed class SvTypeChartEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session, outputMode);
@@ -284,7 +288,14 @@ public sealed class SvTypeChartEditSessionService
         var pendingEdit = session.PendingEdits.Single();
         if (IsUninstallEdit(pendingEdit))
         {
-            ApplyUninstall(paths, writtenFiles, diagnostics);
+            ApplyUninstall(
+                paths,
+                session,
+                reviewedPlan,
+                currentPlan,
+                outputMode,
+                writtenFiles,
+                diagnostics);
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
@@ -294,12 +305,24 @@ public sealed class SvTypeChartEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        ApplyMain(paths, values, writtenFiles, diagnostics);
+        ApplyMain(
+            paths,
+            session,
+            reviewedPlan,
+            currentPlan,
+            outputMode,
+            values,
+            writtenFiles,
+            diagnostics);
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
     private void ApplyMain(
         ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ChangePlan currentPlan,
+        SvOutputMode outputMode,
         IReadOnlyList<int> values,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -324,8 +347,13 @@ public sealed class SvTypeChartEditSessionService
                 File.ReadAllBytes(source.AbsolutePath),
                 gameOrderValues,
                 paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            ApplyMainMutation(
+                paths,
+                session,
+                reviewedPlan,
+                currentPlan,
+                outputMode,
+                output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SvTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -355,10 +383,22 @@ public sealed class SvTypeChartEditSessionService
                 file: SvTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Writable output root"));
         }
+        catch (OutputCoordinatorException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Type Chart output could not be committed: {exception.Message}",
+                file: SvTypeChartWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
+        }
     }
 
-    private static void ApplyUninstall(
+    private void ApplyUninstall(
         ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ChangePlan currentPlan,
+        SvOutputMode outputMode,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -391,14 +431,14 @@ public sealed class SvTypeChartEditSessionService
                 File.ReadAllBytes(targetPath),
                 baseBytes,
                 paths.SelectedGame);
-            if (restored.SequenceEqual(baseBytes))
-            {
-                File.Delete(targetPath);
-            }
-            else
-            {
-                File.WriteAllBytes(targetPath, restored);
-            }
+            ApplyMainMutation(
+                paths,
+                session,
+                reviewedPlan,
+                currentPlan,
+                outputMode,
+                restored.SequenceEqual(baseBytes) ? null : restored,
+                baseBytes);
 
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SvTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
@@ -429,6 +469,40 @@ public sealed class SvTypeChartEditSessionService
                 file: SvTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Writable output root"));
         }
+        catch (OutputCoordinatorException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Type Chart uninstall could not update output: {exception.Message}",
+                file: SvTypeChartWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
+        }
+    }
+
+    private void ApplyMainMutation(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ChangePlan currentPlan,
+        SvOutputMode outputMode,
+        byte[]? bytes,
+        byte[]? deleteFallbackBytes = null)
+    {
+        var context = new SvOutputApplyContext(
+            OutputReviewFingerprint.FromChangePlan(currentPlan),
+            new OwnershipOwnerId("workflow.sv.type-chart"),
+            [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, TypeChartEditDomain)]);
+        SvWorkflowFileSource.ApplyStandaloneOutputBatch(
+            paths,
+            [new SvStandaloneOutputMutation(
+                SvTypeChartWorkflowService.ExeFsMainPath,
+                bytes,
+                deleteFallbackBytes,
+                context)],
+            context,
+            () => ReviewedPlanMatchesCurrentPlan(
+                reviewedPlan,
+                CreateChangePlan(paths, session, outputMode)));
     }
 
     private static bool CanStage(

@@ -117,6 +117,12 @@ internal static class SvLabels
     public static string EnumName<TEnum>(TEnum value, string prefix = "")
         where TEnum : struct, Enum
     {
+        if (typeof(TEnum) == typeof(global::GemType)
+            && Convert.ToInt32(value, CultureInfo.InvariantCulture) == (int)global::GemType.NIJI)
+        {
+            return "Stellar";
+        }
+
         return FormatRawName(value.ToString(), prefix);
     }
 

@@ -23,7 +23,11 @@ Depending on the selected game, the editor can work with Pokémon, moves, traine
 
 Useful names, sprites, selectors, filters, and game-aware controls make it easier to find the record you intended to edit without keeping a spreadsheet of internal IDs open on another monitor.
 
-Workbench adds project navigation, recents, pins, bookmarks, saved views, notes, output profiles, and capability discovery. Its read-only tools can search supported Items, Pokémon, and Moves records, compare project layers, study balance data, inspect supported game systems, and compare user-selected dumps without changing game output.
+Supported Items, Moves, Pokémon, Trainers, and Text drafts are saved privately with the project and tied to the source revision they came from. Workbench record tabs protect unfinished drafts, while guarded row copy and paste is available for supported Pokémon learnset rows, encounter slots, and trainer party members in each game family.
+
+Game-specific workflows include Sword and Shield Max Lair route planning and Battle Cafe rewards, Scarlet and Violet TM Machine controls and existing-cell Habitat Coordinates, and Legends Z-A Trainer Pools, trainer name and class actions, and Fashion Catalog editing. Each workflow exposes only the records, values, and source layouts it can verify.
+
+Workbench adds project navigation, recents, pins, bookmarks, saved views, notes, output profiles, and capability discovery. Its read-only tools can search supported Items, Pokémon, and Moves records, compare project layers, study balance data, inspect supported game systems, and compare user-selected dumps without changing game output. Shared analysis data can prepare in the background, and previously opened analysis tools and their internal tabs remain ready while you move through the workspace.
 
 Guided Design builds bounded proposals from exact targets, constraints, pins, and deterministic seeds. Semantic Merge can compare supported Sword and Shield item, Pokémon personal, and move fields from two user-owned mods, resolve field-level choices, and create portable recipes without writing output directly.
 
@@ -33,7 +37,7 @@ Not every game supports the same features because the games themselves do not wo
 
 Normal editor changes are staged before they are applied. You can work across multiple editors, open **Changes**, inspect the pending targets, and remove anything you do not want before files are written. Dedicated advanced workflows expose their own preview and apply plans when they cannot safely share the normal edit session.
 
-The Output Safety panel tracks KM-managed output separately from foreign or uncertain files. It provides recovery status, integrity scans, reviewed cleanup, apply history, checkpoints, and safe project relocation while refusing destructive actions when ownership or source state cannot be proven.
+The Output Safety panel tracks KM-managed output separately from foreign or uncertain files. It provides recovery status, integrity scans, reviewed cleanup, apply history, checkpoints, and safe project relocation while refusing destructive actions when ownership or source state cannot be proven. Ordinary applies and supported advanced workflows coordinate through the same project output boundary.
 
 Your clean Base RomFS and Base ExeFS remain untouched. Generated files are written to a separate Output Root, and supported existing output can be layered over the clean base when you continue an established project.
 

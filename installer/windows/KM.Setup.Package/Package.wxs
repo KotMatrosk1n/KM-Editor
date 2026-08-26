@@ -287,7 +287,11 @@
             Description="$(KmProductName)"
             Target="[INSTALLFOLDER]$(KmAppExecutableName)"
             WorkingDirectory="INSTALLFOLDER"
-            Advertise="no" />
+            Advertise="no">
+            <ShortcutProperty
+              Key="System.AppUserModel.ID"
+              Value="$(KmAppUserModelId)" />
+          </Shortcut>
           <RegistryValue
             Root="HKMU"
             Key="$(KmProductRegistryKey)\Installer\Shortcuts"
@@ -309,7 +313,11 @@
             Description="$(KmProductName)"
             Target="[INSTALLFOLDER]$(KmAppExecutableName)"
             WorkingDirectory="INSTALLFOLDER"
-            Advertise="no" />
+            Advertise="no">
+            <ShortcutProperty
+              Key="System.AppUserModel.ID"
+              Value="$(KmAppUserModelId)" />
+          </Shortcut>
           <RegistryValue
             Root="HKMU"
             Key="$(KmProductRegistryKey)\Installer\Shortcuts"

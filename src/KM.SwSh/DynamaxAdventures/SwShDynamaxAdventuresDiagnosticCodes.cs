@@ -13,6 +13,15 @@ internal static class SwShDynamaxAdventuresDiagnosticCodes
     public const string PersonalDataMissing = "KM-SWSH-DYNAMAX-ADVENTURES-PERSONAL-DATA-MISSING";
     public const string MoveDataMissing = "KM-SWSH-DYNAMAX-ADVENTURES-MOVE-DATA-MISSING";
     public const string LearnsetDataMissing = "KM-SWSH-DYNAMAX-ADVENTURES-LEARNSET-DATA-MISSING";
+    public const string SeedBoundsInvalid = "KM-SWSH-DYNAMAX-ADVENTURES-SEED-BOUNDS-INVALID";
+    public const string ProjectUnsupported = "KM-SWSH-DYNAMAX-ADVENTURES-PROJECT-UNSUPPORTED";
+    public const string SourceUnavailable = "KM-SWSH-DYNAMAX-ADVENTURES-SOURCE-UNAVAILABLE";
+    public const string SourceUnsupported = "KM-SWSH-DYNAMAX-ADVENTURES-SOURCE-UNSUPPORTED";
+    public const string LayoutUnsupported = "KM-SWSH-DYNAMAX-ADVENTURES-LAYOUT-UNSUPPORTED";
+    public const string SavePreimageStale = "KM-SWSH-DYNAMAX-ADVENTURES-SAVE-PREIMAGE-STALE";
+    public const string VerificationFailed = "KM-SWSH-DYNAMAX-ADVENTURES-VERIFICATION-FAILED";
+    public const string RecoveryRequired = "KM-SWSH-DYNAMAX-ADVENTURES-RECOVERY-REQUIRED";
+    public const string IoFailed = "KM-SWSH-DYNAMAX-ADVENTURES-IO-FAILED";
 
     public static bool IsTableRestoreTrigger(string? code)
     {

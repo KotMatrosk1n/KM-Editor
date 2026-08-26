@@ -16,6 +16,8 @@ namespace KM.SwSh.Rentals;
 
 public sealed class SwShRentalPokemonWorkflowService
 {
+    private readonly Func<string, byte[]> readAllBytes;
+
     public const int MaximumPokemonEvValue = 252;
 
     public const string SpeciesField = "species";
@@ -117,6 +119,11 @@ public sealed class SwShRentalPokemonWorkflowService
         CreateField(FixedIvPresetField, "IV preset", "integer", SwShRentalPokemonArchive.MinimumFixedIvValue, SwShRentalPokemonArchive.MaximumFixedIvValue, FixedIvPresetOptions),
     ];
 
+    public SwShRentalPokemonWorkflowService(Func<string, byte[]>? readAllBytes = null)
+    {
+        this.readAllBytes = readAllBytes ?? File.ReadAllBytes;
+    }
+
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -161,7 +168,7 @@ public sealed class SwShRentalPokemonWorkflowService
 
         try
         {
-            var archive = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
+            var archive = SwShRentalPokemonArchive.Parse(readAllBytes(source.AbsolutePath));
             var provenance = CreateProvenance(source.GraphEntry);
             var rentals = archive.Rentals
                 .Select(rental => ToRentalEntry(rental, lookupTables, provenance))
@@ -539,7 +546,7 @@ public sealed class SwShRentalPokemonWorkflowService
             : $"{fallbackPrefix} {id.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    private static RentalLookupTables LoadLookupTables(
+    private RentalLookupTables LoadLookupTables(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -569,7 +576,7 @@ public sealed class SwShRentalPokemonWorkflowService
                 + (moveAvailability.HasSemanticData ? 1 : 0));
     }
 
-    private static ItemSemanticData LoadItemSemanticData(OpenedProject project)
+    private ItemSemanticData LoadItemSemanticData(OpenedProject project)
     {
         var source = SwShItemsWorkflowService.ResolveItemDataSource(project);
         if (source is null)
@@ -579,7 +586,7 @@ public sealed class SwShRentalPokemonWorkflowService
 
         try
         {
-            var itemIds = SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
+            var itemIds = SwShItemTable.Parse(readAllBytes(source.AbsolutePath))
                 .Records
                 .Select(record => record.ItemId)
                 .Where(itemId => itemId >= 0)
@@ -727,7 +734,7 @@ public sealed class SwShRentalPokemonWorkflowService
         return $"{MessageRootPath}/{language}/common";
     }
 
-    private static string[] LoadMessageTable(
+    private string[] LoadMessageTable(
         OpenedProject project,
         string? messageRoot,
         string fileName,
@@ -747,7 +754,7 @@ public sealed class SwShRentalPokemonWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+            return SwShGameTextFile.Parse(readAllBytes(source.AbsolutePath))
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();

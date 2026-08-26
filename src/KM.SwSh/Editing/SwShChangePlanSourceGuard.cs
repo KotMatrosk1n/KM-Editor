@@ -5,13 +5,19 @@ using System.Text;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 
 namespace KM.SwSh.Editing;
 
 public static class SwShChangePlanSourceGuard
 {
     private const string DiagnosticDomain = "workflow.changePlan";
+    private const string OutputMode = "sword-shield-layered-output";
+    private const string OutputOwner = "sword-shield-verified-editor";
+    private const string OutputPreservationRule = "verified-whole-file-postimage";
+    private const string OutputOrigin = "workflow.sword-shield.change-plan";
 
     public static ChangePlan Capture(ProjectPaths paths, ChangePlan plan)
     {
@@ -967,7 +973,8 @@ public static class SwShChangePlanSourceGuard
                     .ToArray(),
             };
 
-            var commits = new List<VerifiedOutputCommit>(changedTargets.Count);
+            var projectId = ProjectIdentity.FromPaths(SourcePaths);
+            var mutations = new List<OutputMutation>(changedTargets.Count);
             foreach (var relativePath in changedTargets.Order(StringComparer.Ordinal))
             {
                 var snapshotPath = ResolveContainedPath(snapshotOutputRootPath, relativePath);
@@ -1008,159 +1015,123 @@ public static class SwShChangePlanSourceGuard
                     };
                 }
 
-                commits.Add(new VerifiedOutputCommit(
-                    relativePath,
-                    snapshotPath,
-                    targetPath,
-                    StagingPath: null,
-                    ExpectedMissing: !initialSnapshotFileStates.ContainsKey(relativePath),
-                    CreatedDirectories: Array.Empty<string>()));
+                try
+                {
+                    var path = new RelativeOutputPath(relativePath);
+                    var expectedPreimage = initialSnapshotFileStates.TryGetValue(relativePath, out var initialState)
+                        ? OutputFileState.Existing(initialState.Fingerprint, initialState.Length)
+                        : OutputFileState.Missing;
+                    var ownership = new OwnedTarget(
+                        GameFamily.SwordShield,
+                        new OwnedTargetAddress(path),
+                        new OwnershipOwnerId(OutputOwner),
+                        new PreservationRuleDescriptor(
+                            OutputPreservationRule,
+                            schemaVersion: 1,
+                            preservesUnownedData: true,
+                            requiresPreimage: true));
+                    if (File.Exists(snapshotPath))
+                    {
+                        mutations.Add(OutputMutation.Write(
+                            path,
+                            File.ReadAllBytes(snapshotPath),
+                            expectedPreimage,
+                            [ownership]));
+                    }
+                    else
+                    {
+                        var adoptionAuthority = new OutputLegacyAdoptionDeleteAuthority(
+                            projectId,
+                            GameFamily.SwordShield,
+                            OutputMode,
+                            path,
+                            ownership.OwnerId,
+                            ownership.PreservationRule,
+                            expectedPreimage);
+                        mutations.Add(OutputMutation.DeleteLegacyAdoption(
+                            path,
+                            expectedPreimage,
+                            [ownership],
+                            adoptionAuthority));
+                    }
+                }
+                catch (Exception exception) when (exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException or
+                    OverflowException)
+                {
+                    diagnostics.Add(CreateReadDiagnostic(
+                        relativePath,
+                        $"Verified output could not be prepared for the shared transaction: {SanitizeDiagnosticText(exception.Message, snapshotRootPath)}"));
+                    return result with
+                    {
+                        WrittenFiles = Array.Empty<ProjectFileReference>(),
+                        Diagnostics = diagnostics,
+                    };
+                }
+            }
+
+            if (mutations.Count == 0)
+            {
+                return result;
             }
 
             try
             {
-                for (var index = 0; index < commits.Count; index++)
+                for (var index = 0; index < mutations.Count; index++)
                 {
-                    var commit = commits[index];
-                    commits[index] = PrepareOutputCommit(
-                        commit.RelativePath,
-                        commit.SnapshotPath,
-                        commit.TargetPath);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                var cleanupFailed = false;
-                if (exception is VerifiedOutputPreparationException preparationException)
-                {
-                    cleanupFailed |= !preparationException.Commit.TryDeleteStagingArtifacts();
+                    var mutation = mutations[index];
+                    ReleaseOutputSourceStream(mutation.Path.Value);
+                    beforePromotion?.Invoke(index, mutation.Path.Value);
                 }
 
-                foreach (var commit in commits.AsEnumerable().Reverse())
+                var plan = new OutputApplyPlan(
+                    projectId,
+                    GameFamily.SwordShield,
+                    OutputMode,
+                    OutputReviewFingerprint.FromChangePlan(CurrentPlan),
+                    [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, OutputOrigin)],
+                    mutations);
+                var outputResult = new OutputTransactionCoordinator(SourcePaths.OutputRootPath!)
+                    .ApplyAsync(plan)
+                    .GetAwaiter()
+                    .GetResult();
+                if (outputResult.Outcome == OutputApplyOutcome.Committed)
                 {
-                    cleanupFailed |= !commit.TryDeleteStagingArtifacts();
+                    return result with { OutputTransaction = outputResult };
                 }
 
                 diagnostics.Add(CreateReadDiagnostic(
                     string.Empty,
-                    $"Verified outputs could not be prepared for commit: {SanitizeDiagnosticText(exception.Message, snapshotRootPath)}"));
-                if (cleanupFailed)
+                    outputResult.Outcome == OutputApplyOutcome.RecoveryRequired
+                        ? "Verified output transaction requires recovery before another write can begin."
+                        : "Verified output transaction did not commit and all promoted targets were rolled back.") with
                 {
-                    diagnostics.Add(CreateReadDiagnostic(
-                        string.Empty,
-                        "Temporary verified output staging artifacts could not be deleted."));
-                }
-
+                    Code = outputResult.Receipt.OutcomeCode,
+                });
+                return result with
+                {
+                    WrittenFiles = Array.Empty<ProjectFileReference>(),
+                    Diagnostics = diagnostics,
+                    OutputTransaction = outputResult,
+                };
+            }
+            catch (Exception exception) when (exception is
+                OutputCoordinatorException or
+                IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                InvalidOperationException)
+            {
+                diagnostics.Add(CreateReadDiagnostic(
+                    string.Empty,
+                    $"Verified outputs could not be committed through the shared output transaction: {SanitizeDiagnosticText(exception.Message, snapshotRootPath)}"));
                 return result with
                 {
                     WrittenFiles = Array.Empty<ProjectFileReference>(),
                     Diagnostics = diagnostics,
                 };
-            }
-
-            var completedRollbacks = new List<SwShOutputRollbackScope>();
-            var activeRelativePath = string.Empty;
-            try
-            {
-                for (var index = 0; index < commits.Count; index++)
-                {
-                    var commit = commits[index];
-                    activeRelativePath = commit.RelativePath;
-                    if (!OutputPreimageMatches(commit.RelativePath, commit.TargetPath))
-                    {
-                        throw new IOException("The Output Root target changed before verified promotion.");
-                    }
-
-                    if (!SwShOutputRollbackScope.TryCapture(
-                        SourcePaths,
-                        [commit.RelativePath],
-                        out var rollbackScope,
-                        out var captureFailure))
-                    {
-                        throw new IOException(
-                            $"The current Output Root target could not be snapshotted before promotion: {captureFailure?.Message ?? "Unknown snapshot error."}");
-                    }
-
-                    ReleaseOutputSourceStream(commit.RelativePath);
-                    try
-                    {
-                        // The source handle must be released for an atomic replacement on Windows.
-                        // Recheck the full preimage immediately afterward so a late replacement is
-                        // preserved instead of being overwritten or restored from our snapshot.
-                        beforePromotion?.Invoke(index, commit.RelativePath);
-                        if (!OutputPreimageMatches(commit.RelativePath, commit.TargetPath))
-                        {
-                            throw new IOException("The Output Root target changed before verified promotion.");
-                        }
-
-                        CommitOutput(commit);
-                        completedRollbacks.Add(rollbackScope!);
-                    }
-                    catch
-                    {
-                        // Every promotion primitive is atomic. A failed primitive has not changed this
-                        // target, so discard its snapshot instead of deleting a concurrent collision.
-                        rollbackScope!.Commit();
-                        rollbackScope.Dispose();
-                        throw;
-                    }
-                }
-
-                foreach (var rollback in completedRollbacks)
-                {
-                    rollback.Commit();
-                    rollback.Dispose();
-                }
-
-                completedRollbacks.Clear();
-                return result;
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                diagnostics.Add(CreateReadDiagnostic(
-                    activeRelativePath,
-                    $"Verified outputs could not be committed: {SanitizeDiagnosticText(exception.Message, snapshotRootPath)}"));
-                var rollbackFailures = new List<SwShOutputRollbackFailure>();
-                foreach (var rollback in completedRollbacks.AsEnumerable().Reverse())
-                {
-                    rollbackFailures.AddRange(rollback.Rollback());
-                    rollback.Dispose();
-                }
-
-                completedRollbacks.Clear();
-                foreach (var failure in rollbackFailures)
-                {
-                    diagnostics.Add(CreateReadDiagnostic(
-                        failure.RelativePath,
-                        $"Verified output rollback failed: {failure.Message}"));
-                }
-
-                return result with
-                {
-                    WrittenFiles = rollbackFailures
-                        .Where(failure => !string.IsNullOrWhiteSpace(failure.RelativePath))
-                        .Select(failure => new ProjectFileReference(
-                            ProjectFileLayer.Generated,
-                            failure.RelativePath))
-                        .Distinct()
-                        .ToArray(),
-                    Diagnostics = diagnostics,
-                };
-            }
-            finally
-            {
-                var cleanupFailed = false;
-                foreach (var commit in commits.AsEnumerable().Reverse())
-                {
-                    cleanupFailed |= !commit.TryDeleteStagingArtifacts();
-                }
-
-                if (cleanupFailed)
-                {
-                    diagnostics.Add(CreateReadDiagnostic(
-                        activeRelativePath,
-                        "Temporary verified output staging artifacts could not be deleted."));
-                }
             }
         }
 
@@ -1206,55 +1177,6 @@ public static class SwShChangePlanSourceGuard
             }
         }
 
-        private VerifiedOutputCommit PrepareOutputCommit(
-            string relativePath,
-            string snapshotPath,
-            string targetPath)
-        {
-            string? stagingPath = null;
-            var createdDirectories = new List<string>();
-            if (File.Exists(snapshotPath))
-            {
-                var targetDirectory = Path.GetDirectoryName(targetPath)!;
-                var currentDirectory = targetDirectory;
-                while (!Directory.Exists(currentDirectory)
-                    && PathContainment.IsWithinRoot(Path.GetRelativePath(SourcePaths.OutputRootPath!, currentDirectory)))
-                {
-                    createdDirectories.Add(currentDirectory);
-                    currentDirectory = Path.GetDirectoryName(currentDirectory)!;
-                }
-
-                try
-                {
-                    Directory.CreateDirectory(targetDirectory);
-                    stagingPath = Path.Combine(
-                        targetDirectory,
-                        $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.km-verified.tmp");
-                    File.Copy(snapshotPath, stagingPath, overwrite: false);
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    throw new VerifiedOutputPreparationException(
-                        new VerifiedOutputCommit(
-                            relativePath,
-                            snapshotPath,
-                            targetPath,
-                            stagingPath,
-                            ExpectedMissing: !initialSnapshotFileStates.ContainsKey(relativePath),
-                            createdDirectories),
-                        exception);
-                }
-            }
-
-            return new VerifiedOutputCommit(
-                relativePath,
-                snapshotPath,
-                targetPath,
-                stagingPath,
-                ExpectedMissing: !initialSnapshotFileStates.ContainsKey(relativePath),
-                createdDirectories);
-        }
-
         private void ReleaseOutputSourceStream(string relativePath)
         {
             foreach (var source in sourceStreams.Keys
@@ -1265,30 +1187,6 @@ public static class SwShChangePlanSourceGuard
                 sourceStreams[source].Dispose();
                 sourceStreams.Remove(source);
             }
-        }
-
-        private static void CommitOutput(VerifiedOutputCommit commit)
-        {
-            if (!File.Exists(commit.SnapshotPath))
-            {
-                if (Directory.Exists(commit.TargetPath))
-                {
-                    throw new IOException($"Output target '{commit.RelativePath}' is a directory and cannot be deleted as a file.");
-                }
-
-                File.Delete(commit.TargetPath);
-                return;
-            }
-
-            if (Directory.Exists(commit.TargetPath))
-            {
-                throw new IOException($"Output target '{commit.RelativePath}' is a directory and cannot be replaced as a file.");
-            }
-
-            File.Move(
-                commit.StagingPath!,
-                commit.TargetPath,
-                overwrite: !commit.ExpectedMissing);
         }
 
         private static bool SnapshotStatesMatch(
@@ -1327,62 +1225,6 @@ public static class SwShChangePlanSourceGuard
             ObjectDisposedException.ThrowIf(disposed, this);
         }
 
-        private sealed record VerifiedOutputCommit(
-            string RelativePath,
-            string SnapshotPath,
-            string TargetPath,
-            string? StagingPath,
-            bool ExpectedMissing,
-            IReadOnlyList<string> CreatedDirectories)
-        {
-            public bool TryDeleteStagingArtifacts()
-            {
-                return VerifiedApplyScope.TryDeleteStagingArtifacts(StagingPath, CreatedDirectories);
-            }
-        }
-
-        private sealed class VerifiedOutputPreparationException(
-            VerifiedOutputCommit commit,
-            Exception innerException)
-            : IOException(innerException.Message, innerException)
-        {
-            public VerifiedOutputCommit Commit { get; } = commit;
-        }
-
-        private static bool TryDeleteStagingArtifacts(
-            string? stagingPath,
-            IEnumerable<string> createdDirectories)
-        {
-            var succeeded = true;
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(stagingPath) && File.Exists(stagingPath))
-                {
-                    File.Delete(stagingPath);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                succeeded = false;
-            }
-
-            foreach (var directory in createdDirectories)
-            {
-                try
-                {
-                    if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
-                    {
-                        Directory.Delete(directory);
-                    }
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    succeeded = false;
-                }
-            }
-
-            return succeeded;
-        }
     }
 
     private static bool IsSafeRelativePath(string relativePath)

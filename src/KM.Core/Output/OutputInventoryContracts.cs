@@ -3,6 +3,7 @@
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using KM.Core.Projects;
+using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
 
 namespace KM.Core.Output;
@@ -18,7 +19,8 @@ public sealed record OutputOwnershipRecord
         string outputMode,
         bool fileDeleteEligible,
         OutputTransactionId transactionId,
-        DateTimeOffset updatedAtUtc)
+        DateTimeOffset updatedAtUtc,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor = null)
         : this(
             path,
             currentState,
@@ -28,7 +30,8 @@ public sealed record OutputOwnershipRecord
             outputMode,
             fileDeleteEligible,
             transactionId,
-            updatedAtUtc)
+            updatedAtUtc,
+            runtimeMutableDescriptor)
     {
     }
 
@@ -42,7 +45,8 @@ public sealed record OutputOwnershipRecord
         string outputMode,
         bool fileDeleteEligible,
         OutputTransactionId transactionId,
-        DateTimeOffset updatedAtUtc)
+        DateTimeOffset updatedAtUtc,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor = null)
     {
         Path = path ?? throw new ArgumentNullException(nameof(path));
         CurrentState = currentState ?? throw new ArgumentNullException(nameof(currentState));
@@ -82,6 +86,20 @@ public sealed record OutputOwnershipRecord
         FileDeleteEligible = fileDeleteEligible;
         TransactionId = transactionId;
         UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
+        if (runtimeMutableDescriptor is not null)
+        {
+            runtimeMutableDescriptor.ValidateIdentity(path, GameFamily);
+            if (runtimeMutableDescriptor.MinimumGeneration is null
+                || currentState.LengthBytes != GameplaySettingsJournal.JournalSize
+                || !Claims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))
+            {
+                throw new ArgumentException(
+                    "A runtime-mutable ownership record has invalid state, generation, or ownership scope.",
+                    nameof(runtimeMutableDescriptor));
+            }
+        }
+
+        RuntimeMutableDescriptor = runtimeMutableDescriptor;
     }
 
     public RelativeOutputPath Path { get; }
@@ -106,6 +124,8 @@ public sealed record OutputOwnershipRecord
     public OutputTransactionId TransactionId { get; }
 
     public DateTimeOffset UpdatedAtUtc { get; }
+
+    public OutputRuntimeMutableDescriptor? RuntimeMutableDescriptor { get; }
 }
 
 public sealed record OutputCreatedDirectoryOwnership

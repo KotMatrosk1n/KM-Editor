@@ -114,9 +114,14 @@ public sealed class SemanticExploreApplicationService
     private const int MaximumExternalTraversalDepth = 128;
     private const long MaximumExternalFileBytes = 64L * 1024L * 1024L;
     private const long MaximumExternalAggregateBytes = 512L * 1024L * 1024L;
+    private const int MaximumVerifiedSourceObservations = 16;
+    private const int SourceMaterializationLockCount = 8;
+    private const int SourceObservationTokenLength = 69;
+    private const string SourceObservationTokenPrefix = "sob1_";
     private const string QueryMaterializationLimitMessage =
         "The semantic query exceeds its bounded materialization limits.";
-    private const string CacheCallerKey = "semantic-explore-v1";
+    private const string SourceCacheCallerKey = "semantic-explore-source-v1";
+    private const string PendingCacheCallerKey = "semantic-explore-pending-v1";
     private const uint FileShareRead = 0x00000001;
     private const uint FileShareWrite = 0x00000002;
     private const uint FileShareDelete = 0x00000004;
@@ -140,10 +145,26 @@ public sealed class SemanticExploreApplicationService
     private readonly Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh;
     private readonly Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh;
     private readonly Func<ProjectPathsDto, string> captureExactSourceFingerprint;
-    private readonly BoundedDerivedIndexCache<SemanticProjectIndex> cache = new(
+    private readonly object cachePublicationSync = new();
+    private long cacheInvalidationEpoch;
+    private readonly object sourceObservationSync = new();
+    private readonly Dictionary<string, VerifiedSourceObservation> sourceObservations = new(
+        StringComparer.Ordinal);
+    private readonly object[] sourceMaterializationLocks =
+    [
+        new(), new(), new(), new(), new(), new(), new(), new(),
+    ];
+    private long sourceObservationAccessSequence;
+    private readonly BoundedDerivedIndexCache<SemanticSourceIndex> sourceCache = new(
         new BoundedDerivedIndexCacheOptions
         {
             MaximumEntryCount = 8,
+            MaximumSizeBytes = SemanticIndexSizingLimits.MaximumIndexSizeBytes,
+        });
+    private readonly BoundedDerivedIndexCache<SemanticPendingOverlay> pendingOverlayCache = new(
+        new BoundedDerivedIndexCacheOptions
+        {
+            MaximumEntryCount = 4,
             MaximumSizeBytes = SemanticIndexSizingLimits.MaximumIndexSizeBytes,
         });
     private readonly BoundedDerivedIndexCache<SemanticIndexedLayer> externalCache = new(
@@ -171,6 +192,92 @@ public sealed class SemanticExploreApplicationService
         this.loadMovesFresh = loadMovesFresh ?? throw new ArgumentNullException(nameof(loadMovesFresh));
         this.captureExactSourceFingerprint = captureExactSourceFingerprint
             ?? throw new ArgumentNullException(nameof(captureExactSourceFingerprint));
+    }
+
+    internal string RegisterVerifiedSourceObservation(
+        string projectId,
+        ProjectPathsDto paths,
+        string sourceFingerprint)
+    {
+        var scope = new SemanticExploreScopeDto(projectId, paths);
+        ValidateScope(scope);
+        if (!IsSha256Fingerprint(sourceFingerprint))
+        {
+            throw new SemanticExploreValidationException(
+                "The verified project source observation is invalid.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        var scopeIdentity = SourceObservationScopeIdentity(scope);
+        var normalizedFingerprint = sourceFingerprint.ToLowerInvariant();
+        string verifiedToken;
+        bool sourceChanged;
+        lock (sourceObservationSync)
+        {
+            sourceChanged = sourceObservations.Values.Any(observation =>
+                string.Equals(
+                    observation.ScopeIdentity,
+                    scopeIdentity,
+                    StringComparison.Ordinal)
+                && !string.Equals(
+                    observation.SourceFingerprint,
+                    normalizedFingerprint,
+                    StringComparison.Ordinal));
+            var matching = sourceObservations.Values.FirstOrDefault(observation =>
+                string.Equals(observation.ScopeIdentity, scopeIdentity, StringComparison.Ordinal)
+                && string.Equals(
+                    observation.SourceFingerprint,
+                    normalizedFingerprint,
+                    StringComparison.Ordinal));
+            if (matching is not null)
+            {
+                RemoveSourceObservationsForScope(
+                    scopeIdentity,
+                    exceptToken: matching.Token);
+                TouchSourceObservation(matching);
+                verifiedToken = matching.Token;
+            }
+            else
+            {
+                RemoveSourceObservationsForScope(scopeIdentity, exceptToken: null);
+                do
+                {
+                    verifiedToken = SourceObservationTokenPrefix
+                        + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+                }
+                while (sourceObservations.ContainsKey(verifiedToken));
+
+                AddSourceObservation(
+                    verifiedToken,
+                    scopeIdentity,
+                    normalizedFingerprint);
+            }
+        }
+
+        if (sourceChanged)
+        {
+            ClearDerivedCaches();
+        }
+
+        return verifiedToken;
+    }
+
+    public void ClearMemoryCaches()
+    {
+        lock (sourceObservationSync)
+        {
+            sourceObservations.Clear();
+            sourceObservationAccessSequence = 0;
+        }
+
+        ClearDerivedCaches();
+    }
+
+    internal string ReadSourceCacheIdentity(SemanticExploreScopeDto scope)
+    {
+        ValidateScope(scope);
+        var family = ToFamily(scope.Paths.SelectedGame!.Value);
+        return CaptureSourceObservation(scope, family).Fingerprint;
     }
 
     public ReadSemanticCapabilitiesResponse ReadCapabilities(ReadSemanticCapabilitiesRequest request)
@@ -870,6 +977,7 @@ public sealed class SemanticExploreApplicationService
         ValidateScope(scope);
         var gameFamily = ToFamily(scope.Paths.SelectedGame!.Value);
         var observation = CaptureSourceObservation(scope, gameFamily);
+        var buildEpoch = CaptureCacheEpoch();
         var revisionFingerprint = Hash(
             "semantic-project-revision-v2",
             scope.ProjectId,
@@ -884,46 +992,177 @@ public sealed class SemanticExploreApplicationService
             gameFamily,
             generation,
             revisionFingerprint);
-        var coreRevision = ToCoreRevision(revision);
-        var key = new DerivedIndexCacheKey(coreRevision, CacheCallerKey);
-        if (cache.TryGet(key, out var cached))
-        {
-            return cached;
-        }
 
-        var provider = GetProvider(gameFamily);
-        var materializationBudget = new SemanticMaterializationBudget(
-            SemanticExploreSizeEstimator.ProjectEnvelopeSizeBytes);
-        var basePaths = scope.Paths with { OutputRootPath = null };
-        var baseData = provider.Build(LoadCorpus(basePaths), materializationBudget);
-        var layeredData = provider.Build(LoadCorpus(scope.Paths), materializationBudget);
-        var pendingData = ApplyPendingOverlay(
-            layeredData,
-            scope.PendingSession,
+        var sourceRevisionFingerprint = Hash(
+            "semantic-project-source-revision-v1",
+            scope.ProjectId,
+            gameFamily.ToString(),
+            observation.Fingerprint);
+        var sourceGeneration = Convert
+            .ToUInt64(sourceRevisionFingerprint[..15], 16)
+            .ToString(CultureInfo.InvariantCulture);
+        var sourceRevision = new SemanticProjectRevisionDto(
+            scope.ProjectId,
             gameFamily,
-            materializationBudget);
-        ValidateLayerBounds(baseData);
-        ValidateLayerBounds(layeredData);
-        ValidateLayerBounds(pendingData);
+            sourceGeneration,
+            sourceRevisionFingerprint);
+        var sourceKey = new DerivedIndexCacheKey(
+            ToCoreRevision(sourceRevision),
+            SourceCacheCallerKey);
 
-        var baseFingerprint = FingerprintLayer(baseData, pendingSession: null);
-        var layeredFingerprint = FingerprintLayer(layeredData, pendingSession: null);
-        var pendingFingerprint = FingerprintLayer(pendingData, scope.PendingSession);
-
-        var completedObservation = CaptureSourceObservation(scope, gameFamily);
-        if (!string.Equals(
-                observation.Fingerprint,
-                completedObservation.Fingerprint,
-                StringComparison.Ordinal))
+        SemanticSourceIndex sourceIndex;
+        bool sourceCacheable;
+        SemanticMaterializationBudget materializationBudget;
+        if (sourceCache.TryGet(sourceKey, out var cachedSource))
         {
-            throw new SemanticExploreValidationException(
-                "The semantic project sources changed while the index was being built. Retry the query.",
-                SemanticExploreFailureKind.StaleRevision);
+            sourceIndex = cachedSource;
+            sourceCacheable = true;
+            materializationBudget = new SemanticMaterializationBudget(
+                EstimateSourceSize(sourceIndex));
+        }
+        else
+        {
+            lock (SourceMaterializationLock(sourceRevisionFingerprint))
+            {
+                if (sourceCache.TryGet(sourceKey, out cachedSource))
+                {
+                    sourceIndex = cachedSource;
+                    sourceCacheable = true;
+                    materializationBudget = new SemanticMaterializationBudget(
+                        EstimateSourceSize(sourceIndex));
+                }
+                else
+                {
+                    var provider = GetProvider(gameFamily);
+                    materializationBudget = new SemanticMaterializationBudget(
+                        SemanticExploreSizeEstimator.ProjectEnvelopeSizeBytes);
+                    var basePaths = scope.Paths with { OutputRootPath = null };
+                    var baseData = provider.Build(LoadCorpus(basePaths), materializationBudget);
+                    var layeredData = provider.Build(LoadCorpus(scope.Paths), materializationBudget);
+                    ValidateLayerBounds(baseData);
+                    ValidateLayerBounds(layeredData);
+
+                    sourceIndex = new SemanticSourceIndex(
+                        baseData,
+                        FingerprintLayer(baseData, pendingSession: null),
+                        layeredData,
+                        FingerprintLayer(layeredData, pendingSession: null));
+
+                    var completedObservation = CaptureSourceObservation(
+                        scope,
+                        gameFamily,
+                        forceRefresh: true);
+                    if (!string.Equals(
+                            observation.Fingerprint,
+                            completedObservation.Fingerprint,
+                            StringComparison.Ordinal))
+                    {
+                        InvalidateSourceObservation(scope.SourceObservationToken);
+                        throw new SemanticExploreValidationException(
+                            "The semantic project sources changed while the index was being built. Retry the query.",
+                            SemanticExploreFailureKind.StaleRevision);
+                    }
+
+                    var sourceSize = EstimateSourceSize(sourceIndex);
+                    if (sourceSize > SemanticIndexSizingLimits.MaximumIndexSizeBytes)
+                    {
+                        throw new SemanticExploreValidationException(
+                            "The semantic index exceeds its bounded cache budget.",
+                            SemanticExploreFailureKind.LimitExceeded);
+                    }
+
+                    sourceCacheable = new[] { baseData, layeredData }
+                        .All(layer => layer.DomainStatuses.All(status => status.Available));
+                    if (sourceCacheable
+                        && !PublishSourceIndex(
+                            buildEpoch,
+                            sourceKey,
+                            sourceIndex,
+                            sourceSize))
+                    {
+                        throw new SemanticExploreValidationException(
+                            "The semantic index exceeds its bounded cache budget.",
+                            SemanticExploreFailureKind.LimitExceeded);
+                    }
+                }
+            }
         }
 
-        var baseLayer = Layer(baseData, SemanticSourceLayerKindDto.Base, revision, baseFingerprint);
-        var layeredLayer = Layer(layeredData, SemanticSourceLayerKindDto.Layered, revision, layeredFingerprint);
-        var pendingLayer = Layer(pendingData, SemanticSourceLayerKindDto.Pending, revision, pendingFingerprint);
+        SemanticLayerData pendingData;
+        string pendingFingerprint;
+        if (scope.PendingSession is not { PendingEdits.Count: > 0 })
+        {
+            pendingData = ApplyPendingOverlay(
+                sourceIndex.LayeredData,
+                scope.PendingSession,
+                gameFamily,
+                materializationBudget);
+            pendingFingerprint = FingerprintLayer(pendingData, scope.PendingSession);
+        }
+        else
+        {
+            var pendingKey = new DerivedIndexCacheKey(
+                ToCoreRevision(revision),
+                PendingCacheCallerKey);
+            if (pendingOverlayCache.TryGet(pendingKey, out var cachedPending))
+            {
+                pendingData = cachedPending.Data;
+                pendingFingerprint = cachedPending.Fingerprint;
+            }
+            else
+            {
+                lock (SourceMaterializationLock(revisionFingerprint))
+                {
+                    if (pendingOverlayCache.TryGet(pendingKey, out cachedPending))
+                    {
+                        pendingData = cachedPending.Data;
+                        pendingFingerprint = cachedPending.Fingerprint;
+                    }
+                    else
+                    {
+                        pendingData = ApplyPendingOverlay(
+                            sourceIndex.LayeredData,
+                            scope.PendingSession,
+                            gameFamily,
+                            materializationBudget);
+                        ValidateLayerBounds(pendingData);
+                        pendingFingerprint = FingerprintLayer(pendingData, scope.PendingSession);
+                        var pendingOverlay = new SemanticPendingOverlay(
+                            pendingData,
+                            pendingFingerprint);
+                        var pendingSize = EstimatePendingOverlaySize(pendingOverlay);
+                        if (sourceCacheable
+                            && !PublishPendingOverlay(
+                                buildEpoch,
+                                pendingKey,
+                                pendingOverlay,
+                                pendingSize))
+                        {
+                            throw new SemanticExploreValidationException(
+                                "The semantic index exceeds its bounded cache budget.",
+                                SemanticExploreFailureKind.LimitExceeded);
+                        }
+                    }
+                }
+            }
+        }
+
+        ValidateLayerBounds(pendingData);
+        var baseLayer = Layer(
+            sourceIndex.BaseData,
+            SemanticSourceLayerKindDto.Base,
+            revision,
+            sourceIndex.BaseFingerprint);
+        var layeredLayer = Layer(
+            sourceIndex.LayeredData,
+            SemanticSourceLayerKindDto.Layered,
+            revision,
+            sourceIndex.LayeredFingerprint);
+        var pendingLayer = Layer(
+            pendingData,
+            SemanticSourceLayerKindDto.Pending,
+            revision,
+            pendingFingerprint);
         var built = new SemanticProjectIndex(revision, baseLayer, layeredLayer, pendingLayer);
 
         var estimatedSize = EstimateSize(built);
@@ -934,14 +1173,7 @@ public sealed class SemanticExploreApplicationService
                 SemanticExploreFailureKind.LimitExceeded);
         }
 
-        var cacheable = new[] { baseData, layeredData, pendingData }
-            .All(layer => layer.DomainStatuses.All(status => status.Available && !status.Partial));
-        if (cacheable && !cache.Set(key, built, estimatedSize))
-        {
-            throw new SemanticExploreValidationException(
-                "The semantic index exceeds its bounded cache budget.",
-                SemanticExploreFailureKind.LimitExceeded);
-        }
+        EnsureCacheEpoch(buildEpoch);
 
         return built;
     }
@@ -968,9 +1200,16 @@ public sealed class SemanticExploreApplicationService
 
     private SemanticSourceObservation CaptureSourceObservation(
         SemanticExploreScopeDto scope,
-        SemanticGameFamilyDto family)
+        SemanticGameFamilyDto family,
+        bool forceRefresh = false)
     {
         string sourceFingerprint;
+        if (!forceRefresh
+            && TryResolveSourceObservation(scope, out sourceFingerprint))
+        {
+            return CreateSourceObservation(scope, family, sourceFingerprint);
+        }
+
         try
         {
             sourceFingerprint = captureExactSourceFingerprint(scope.Paths);
@@ -1008,6 +1247,20 @@ public sealed class SemanticExploreApplicationService
                 SemanticExploreFailureKind.InvalidData);
         }
 
+        sourceFingerprint = sourceFingerprint.ToLowerInvariant();
+        if (!forceRefresh)
+        {
+            RegisterRequestedSourceObservation(scope, sourceFingerprint);
+        }
+
+        return CreateSourceObservation(scope, family, sourceFingerprint);
+    }
+
+    private static SemanticSourceObservation CreateSourceObservation(
+        SemanticExploreScopeDto scope,
+        SemanticGameFamilyDto family,
+        string sourceFingerprint)
+    {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         AppendHash(hash, "semantic-source-observation-v2");
         AppendHash(hash, scope.ProjectId);
@@ -1017,6 +1270,254 @@ public sealed class SemanticExploreApplicationService
         AppendHash(hash, sourceFingerprint.ToLowerInvariant());
 
         return new SemanticSourceObservation(Convert.ToHexStringLower(hash.GetHashAndReset()));
+    }
+
+    private object SourceMaterializationLock(string sourceRevisionFingerprint)
+    {
+        var stripe = (int)(Convert.ToUInt32(sourceRevisionFingerprint[..8], 16)
+            % SourceMaterializationLockCount);
+        return sourceMaterializationLocks[stripe];
+    }
+
+    private long CaptureCacheEpoch()
+    {
+        lock (cachePublicationSync)
+        {
+            return cacheInvalidationEpoch;
+        }
+    }
+
+    private void ClearDerivedCaches()
+    {
+        lock (cachePublicationSync)
+        {
+            cacheInvalidationEpoch = checked(cacheInvalidationEpoch + 1);
+            sourceCache.Clear();
+            pendingOverlayCache.Clear();
+            externalCache.Clear();
+            semanticMergeExternalCache.Clear();
+        }
+    }
+
+    private void EnsureCacheEpoch(long expectedEpoch)
+    {
+        lock (cachePublicationSync)
+        {
+            EnsureCacheEpochCore(expectedEpoch);
+        }
+    }
+
+    private bool PublishSourceIndex(
+        long expectedEpoch,
+        DerivedIndexCacheKey key,
+        SemanticSourceIndex index,
+        long size)
+    {
+        lock (cachePublicationSync)
+        {
+            EnsureCacheEpochCore(expectedEpoch);
+            return sourceCache.Set(key, index, size);
+        }
+    }
+
+    private bool PublishPendingOverlay(
+        long expectedEpoch,
+        DerivedIndexCacheKey key,
+        SemanticPendingOverlay overlay,
+        long size)
+    {
+        lock (cachePublicationSync)
+        {
+            EnsureCacheEpochCore(expectedEpoch);
+            return pendingOverlayCache.Set(key, overlay, size);
+        }
+    }
+
+    private void EnsureCacheEpochCore(long expectedEpoch)
+    {
+        if (expectedEpoch != cacheInvalidationEpoch)
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic project cache changed while the index was being built. Retry the query.",
+                SemanticExploreFailureKind.StaleRevision);
+        }
+    }
+
+    private bool TryResolveSourceObservation(
+        SemanticExploreScopeDto scope,
+        out string sourceFingerprint)
+    {
+        var token = scope.SourceObservationToken;
+        if (token is null)
+        {
+            sourceFingerprint = string.Empty;
+            return false;
+        }
+
+        var scopeIdentity = SourceObservationScopeIdentity(scope);
+        lock (sourceObservationSync)
+        {
+            if (!sourceObservations.TryGetValue(token, out var observation))
+            {
+                sourceFingerprint = string.Empty;
+                return false;
+            }
+
+            if (!string.Equals(
+                    observation.ScopeIdentity,
+                    scopeIdentity,
+                    StringComparison.Ordinal))
+            {
+                throw new SemanticExploreValidationException(
+                    "The semantic source observation does not belong to this project scope.",
+                    SemanticExploreFailureKind.InvalidData);
+            }
+
+            TouchSourceObservation(observation);
+            sourceFingerprint = observation.SourceFingerprint;
+            return true;
+        }
+    }
+
+    private void RegisterRequestedSourceObservation(
+        SemanticExploreScopeDto scope,
+        string sourceFingerprint)
+    {
+        var token = scope.SourceObservationToken;
+        if (token is null)
+        {
+            return;
+        }
+
+        var scopeIdentity = SourceObservationScopeIdentity(scope);
+        bool sourceChanged;
+        lock (sourceObservationSync)
+        {
+            if (sourceObservations.TryGetValue(token, out var existing))
+            {
+                if (!string.Equals(existing.ScopeIdentity, scopeIdentity, StringComparison.Ordinal)
+                    || !string.Equals(
+                        existing.SourceFingerprint,
+                        sourceFingerprint,
+                        StringComparison.Ordinal))
+                {
+                    throw new SemanticExploreValidationException(
+                        "The semantic source observation is no longer valid for this project scope.",
+                        SemanticExploreFailureKind.StaleRevision);
+                }
+
+                TouchSourceObservation(existing);
+                return;
+            }
+
+            sourceChanged = sourceObservations.Values.Any(observation =>
+                string.Equals(
+                    observation.ScopeIdentity,
+                    scopeIdentity,
+                    StringComparison.Ordinal)
+                && !string.Equals(
+                    observation.SourceFingerprint,
+                    sourceFingerprint,
+                    StringComparison.Ordinal));
+            RemoveSourceObservationsForScope(
+                scopeIdentity,
+                exceptToken: null,
+                exceptFingerprint: sourceFingerprint);
+            AddSourceObservation(token, scopeIdentity, sourceFingerprint);
+        }
+
+        if (sourceChanged)
+        {
+            ClearDerivedCaches();
+        }
+    }
+
+    private static string SourceObservationScopeIdentity(SemanticExploreScopeDto scope)
+    {
+        return Hash(
+            "semantic-source-observation-scope-v1",
+            scope.ProjectId,
+            scope.Paths.BaseRomFsPath ?? string.Empty,
+            scope.Paths.BaseExeFsPath ?? string.Empty,
+            scope.Paths.OutputRootPath ?? string.Empty,
+            scope.Paths.SaveFilePath ?? string.Empty,
+            scope.Paths.ScarletVioletSupportFolderPath ?? string.Empty,
+            scope.Paths.PokemonLegendsZASupportFolderPath ?? string.Empty,
+            scope.Paths.SelectedGame?.ToString() ?? string.Empty,
+            scope.Paths.GameTextLanguage ?? string.Empty);
+    }
+
+    private void AddSourceObservation(
+        string token,
+        string scopeIdentity,
+        string sourceFingerprint)
+    {
+        if (sourceObservations.Count >= MaximumVerifiedSourceObservations)
+        {
+            var oldest = sourceObservations.Values.MinBy(observation =>
+                observation.AccessSequence);
+            if (oldest is not null)
+            {
+                sourceObservations.Remove(oldest.Token);
+            }
+        }
+
+        sourceObservations[token] = new VerifiedSourceObservation(
+            token,
+            scopeIdentity,
+            sourceFingerprint,
+            checked(++sourceObservationAccessSequence));
+    }
+
+    private void TouchSourceObservation(VerifiedSourceObservation observation)
+    {
+        sourceObservations[observation.Token] = observation with
+        {
+            AccessSequence = checked(++sourceObservationAccessSequence),
+        };
+    }
+
+    private void RemoveSourceObservationsForScope(
+        string scopeIdentity,
+        string? exceptToken,
+        string? exceptFingerprint = null)
+    {
+        var tokens = sourceObservations.Values
+            .Where(observation =>
+                string.Equals(observation.ScopeIdentity, scopeIdentity, StringComparison.Ordinal)
+                && !string.Equals(observation.Token, exceptToken, StringComparison.Ordinal)
+                && (exceptFingerprint is null
+                    || !string.Equals(
+                        observation.SourceFingerprint,
+                        exceptFingerprint,
+                        StringComparison.Ordinal)))
+            .Select(observation => observation.Token)
+            .ToArray();
+        foreach (var token in tokens)
+        {
+            sourceObservations.Remove(token);
+        }
+    }
+
+    private void InvalidateSourceObservation(string? token)
+    {
+        if (token is null)
+        {
+            return;
+        }
+
+        lock (sourceObservationSync)
+        {
+            sourceObservations.Remove(token);
+        }
+    }
+
+    private static bool IsSourceObservationToken(string? token)
+    {
+        return token is { Length: SourceObservationTokenLength }
+            && token.StartsWith(SourceObservationTokenPrefix, StringComparison.Ordinal)
+            && token.AsSpan(SourceObservationTokenPrefix.Length).ToArray().All(character =>
+                character is >= '0' and <= '9' or >= 'a' and <= 'f');
     }
 
     private static bool IsSha256Fingerprint(string? fingerprint)
@@ -1855,6 +2356,14 @@ public sealed class SemanticExploreApplicationService
         {
             throw new SemanticExploreValidationException(
                 "The semantic project scope does not match the configured project.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        if (scope.SourceObservationToken is not null
+            && !IsSourceObservationToken(scope.SourceObservationToken))
+        {
+            throw new SemanticExploreValidationException(
+                "The semantic source observation token is malformed.",
                 SemanticExploreFailureKind.InvalidData);
         }
 
@@ -3047,6 +3556,48 @@ public sealed class SemanticExploreApplicationService
         return size;
     }
 
+    private static long EstimateSourceSize(SemanticSourceIndex index)
+    {
+        long size = SemanticExploreSizeEstimator.ProjectEnvelopeSizeBytes;
+        var observedData = new HashSet<SemanticLayerData>(ReferenceEqualityComparer.Instance);
+        size = checked(
+            size
+            + EstimateSourceLayerSize(
+                index.BaseData,
+                index.BaseFingerprint,
+                observedData.Add(index.BaseData)));
+        size = checked(
+            size
+            + EstimateSourceLayerSize(
+                index.LayeredData,
+                index.LayeredFingerprint,
+                observedData.Add(index.LayeredData)));
+        return size;
+    }
+
+    private static long EstimatePendingOverlaySize(SemanticPendingOverlay overlay)
+    {
+        return EstimateSourceLayerSize(
+            overlay.Data,
+            overlay.Fingerprint,
+            includeData: true);
+    }
+
+    private static long EstimateSourceLayerSize(
+        SemanticLayerData data,
+        string fingerprint,
+        bool includeData)
+    {
+        long size = SemanticExploreSizeEstimator.LayerEnvelopeSizeBytes;
+        size = checked(size + SemanticExploreSizeEstimator.EstimateString(fingerprint));
+        if (!includeData)
+        {
+            return size;
+        }
+
+        return checked(size + SemanticExploreSizeEstimator.EstimateLayerData(data));
+    }
+
     private static long EstimateLayerSize(SemanticIndexedLayer layer, bool includeData = true)
     {
         long size = SemanticExploreSizeEstimator.LayerEnvelopeSizeBytes;
@@ -3347,7 +3898,23 @@ public sealed class SemanticExploreApplicationService
         SemanticIndexedLayer Layered,
         SemanticIndexedLayer Pending);
 
+    private sealed record SemanticSourceIndex(
+        SemanticLayerData BaseData,
+        string BaseFingerprint,
+        SemanticLayerData LayeredData,
+        string LayeredFingerprint);
+
+    private sealed record SemanticPendingOverlay(
+        SemanticLayerData Data,
+        string Fingerprint);
+
     private sealed record SemanticSourceObservation(string Fingerprint);
+
+    private sealed record VerifiedSourceObservation(
+        string Token,
+        string ScopeIdentity,
+        string SourceFingerprint,
+        long AccessSequence);
 
     private sealed record SemanticIndexedLayer(
         SemanticLayerData Data,

@@ -6,6 +6,21 @@ using KM.ZA.Workflows;
 
 namespace KM.ZA.Trainers;
 
+public static class ZaTrainerIdentityDiagnosticCodes
+{
+    public const string ReassignmentBlocked = "KM-ZA-TRAINER-IDENTITY-REASSIGNMENT-BLOCKED";
+    public const string ClassPairUnverified = "KM-ZA-TRAINER-IDENTITY-CLASS-PAIR-UNVERIFIED";
+    public const string ClassPairUnchanged = "KM-ZA-TRAINER-IDENTITY-CLASS-PAIR-UNCHANGED";
+    public const string PendingEditInvalid = "KM-ZA-TRAINER-IDENTITY-PENDING-EDIT-INVALID";
+    public const string PlanStale = "KM-ZA-TRAINER-IDENTITY-PLAN-STALE";
+}
+
+public static class ZaTrainerClassReassignmentBlockReasons
+{
+    public const string HyperspaceArchetype = "hyperspaceArchetype";
+    public const string UnresolvedClassPair = "unresolvedClassPair";
+}
+
 public sealed record ZaTrainerProvenance(
     string SourceFile,
     string TeamSourceFile,
@@ -83,7 +98,24 @@ public sealed record ZaTrainerRecord(
 {
     public bool IsSharedRivalRoster { get; init; }
     public string? RivalStarterBranch { get; init; }
+    public ZaTrainerTextTarget? NameTextTarget { get; init; }
+    public ZaTrainerTextTarget? ClassTextTarget { get; init; }
+    public string? ClassPairId { get; init; }
+    public bool CanReassignClass { get; init; }
+    public string? ClassReassignmentBlockedReason { get; init; }
 }
+
+public sealed record ZaTrainerTextTarget(
+    string MessageKey,
+    int LineIndex,
+    string Kind,
+    int SharedTrainerCount);
+
+public sealed record ZaTrainerClassPairOption(
+    string PairId,
+    string Label,
+    int UsageCount,
+    bool PresentationCanaryRequired);
 
 public sealed record ZaTrainerAiFlagState(
     int Bit,
@@ -128,6 +160,12 @@ public sealed record ZaTrainersWorkflow(
     ZaTrainersWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
+    public IReadOnlyList<ZaTrainerClassPairOption> ClassPairOptions { get; init; } =
+        Array.Empty<ZaTrainerClassPairOption>();
+
     internal ZaPokemonAvailability PokemonAvailability { get; init; } =
         ZaPokemonAvailability.Unfiltered;
+
+    internal IReadOnlyDictionary<string, (ulong Primary, ulong Secondary)> ClassPairValues { get; init; } =
+        new Dictionary<string, (ulong Primary, ulong Secondary)>(StringComparer.Ordinal);
 }

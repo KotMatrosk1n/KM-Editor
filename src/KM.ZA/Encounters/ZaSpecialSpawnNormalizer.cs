@@ -181,28 +181,9 @@ internal static class ZaSpecialSpawnNormalizer
         var effectivePairs = CreatePairMap(effectiveWorkflow);
         var baseEncounterRows = CreateEncounterRowMap(baseEncounterDocument);
         var baseSpecialSlots = FindBaseSpecialSlots(baseSpawnerDocument, baseEncounterRows);
-        var nativeBasePairs = baseSpecialSlots
-            .Where(candidate =>
-                candidate.Definition.Policy == SpecialSpawnPolicy.FilterByNativePair)
-            .GroupBy(candidate => candidate.Definition.CompatibilityGroup, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(candidate => candidate.NativePair).ToHashSet(),
-                StringComparer.Ordinal);
-        var compatiblePairs = nativeBasePairs.ToDictionary(
-            group => group.Key,
-            group => group.Value.ToHashSet(),
-            StringComparer.Ordinal);
-        foreach (var (compatibilityGroup, verifiedPairs) in VerifiedCompatiblePairs)
-        {
-            if (!compatiblePairs.TryGetValue(compatibilityGroup, out var groupPairs))
-            {
-                groupPairs = [];
-                compatiblePairs.Add(compatibilityGroup, groupPairs);
-            }
-
-            groupPairs.UnionWith(verifiedPairs);
-        }
+        var compatibility = CreateCompatibilityCatalog(baseSpecialSlots);
+        var nativeBasePairs = compatibility.NativePairs;
+        var compatiblePairs = compatibility.CompatiblePairs;
         var currentSpawners = spawnerDocument.Entries.ToDictionary(
             entry => (entry.GroupIndex, entry.SpawnerIndex));
         var errors = new List<string>();
@@ -285,6 +266,90 @@ internal static class ZaSpecialSpawnNormalizer
             normalizedCount,
             restoredCount,
             errors);
+    }
+
+    public static IReadOnlyList<ZaEncounterCompatibilityRule> ProjectCompatibilityRules(
+        ZaPokemonSpawnerDataDocument baseSpawnerDocument,
+        ZaEncounterDataDocument baseEncounterDocument)
+    {
+        ArgumentNullException.ThrowIfNull(baseSpawnerDocument);
+        ArgumentNullException.ThrowIfNull(baseEncounterDocument);
+
+        var baseEncounterRows = CreateEncounterRowMap(baseEncounterDocument);
+        var baseSpecialSlots = FindBaseSpecialSlots(baseSpawnerDocument, baseEncounterRows);
+        var compatibility = CreateCompatibilityCatalog(baseSpecialSlots);
+        var rules = new List<ZaEncounterCompatibilityRule>();
+
+        foreach (var definitionGroup in Definitions
+                     .GroupBy(definition =>
+                         (definition.CompatibilityGroup, definition.Policy))
+                     .OrderBy(group => group.Key.CompatibilityGroup, StringComparer.Ordinal)
+                     .ThenBy(group => group.Key.Policy))
+        {
+            var groupId = definitionGroup.Key.CompatibilityGroup;
+            var policy = definitionGroup.Key.Policy;
+            var displayName = definitionGroup
+                .Select(definition => definition.DisplayName)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .First();
+            var actionIds = definitionGroup
+                .SelectMany(definition => definition.PopActionIds)
+                .Distinct()
+                .Order()
+                .ToArray();
+            var pairs = policy == SpecialSpawnPolicy.AlwaysPreserve
+                ? []
+                : compatibility.CompatiblePairs.GetValueOrDefault(groupId, [])
+                    .OrderBy(pair => pair.SpeciesId)
+                    .ThenBy(pair => pair.Form)
+                    .Select(pair => new ZaEncounterCompatibilityPair(
+                        pair.SpeciesId,
+                        pair.Form,
+                        compatibility.NativePairs.GetValueOrDefault(groupId, []).Contains(pair),
+                        VerifiedCompatiblePairs.GetValueOrDefault(groupId, []).Contains(pair)))
+                    .ToArray();
+
+            rules.Add(new ZaEncounterCompatibilityRule(
+                groupId,
+                displayName,
+                policy == SpecialSpawnPolicy.AlwaysPreserve
+                    ? ZaEncounterCompatibilityPolicy.PreserveForEveryReplacement
+                    : ZaEncounterCompatibilityPolicy.FilterByVerifiedPair,
+                actionIds,
+                definitionGroup.Any(definition => definition.TagOnlyMarker is not null),
+                pairs));
+        }
+
+        return rules;
+    }
+
+    private static SpecialSpawnCompatibilityCatalog CreateCompatibilityCatalog(
+        IReadOnlyList<BaseSpecialSlot> baseSpecialSlots)
+    {
+        var nativeBasePairs = baseSpecialSlots
+            .Where(candidate =>
+                candidate.Definition.Policy == SpecialSpawnPolicy.FilterByNativePair)
+            .GroupBy(candidate => candidate.Definition.CompatibilityGroup, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(candidate => candidate.NativePair).ToHashSet(),
+                StringComparer.Ordinal);
+        var compatiblePairs = nativeBasePairs.ToDictionary(
+            group => group.Key,
+            group => group.Value.ToHashSet(),
+            StringComparer.Ordinal);
+        foreach (var (compatibilityGroup, verifiedPairs) in VerifiedCompatiblePairs)
+        {
+            if (!compatiblePairs.TryGetValue(compatibilityGroup, out var groupPairs))
+            {
+                groupPairs = [];
+                compatiblePairs.Add(compatibilityGroup, groupPairs);
+            }
+
+            groupPairs.UnionWith(verifiedPairs);
+        }
+
+        return new SpecialSpawnCompatibilityCatalog(nativeBasePairs, compatiblePairs);
     }
 
     private static Dictionary<(int GroupIndex, int SpawnerIndex, int SlotIndex), SpeciesFormPair>
@@ -464,6 +529,10 @@ internal static class ZaSpecialSpawnNormalizer
         SpecialSpawnDefinition Definition,
         int NormalizedTagCount,
         SpeciesFormPair NativePair);
+
+    private sealed record SpecialSpawnCompatibilityCatalog(
+        IReadOnlyDictionary<string, HashSet<SpeciesFormPair>> NativePairs,
+        IReadOnlyDictionary<string, HashSet<SpeciesFormPair>> CompatiblePairs);
 }
 
 internal sealed record ZaSpecialSpawnNormalizationResult(

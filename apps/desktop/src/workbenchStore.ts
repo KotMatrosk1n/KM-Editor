@@ -40,12 +40,17 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type AngeFightWorkflow } from './bridge/angeFightContracts';
+import { type BattleCafeRewardsWorkflow } from './bridge/battleCafeRewardsContracts';
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
+import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
+import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
+import { type TmMachineControlsWorkflow } from './bridge/tmMachineControlsContracts';
+import { type TrainerPoolsWorkflow } from './bridge/trainerPoolsContracts';
 import { createLoadedWorkflowEvictionState } from './workflowRetention';
 import type { WorkbenchSection } from './workbench/workbenchSections';
 export type { WorkbenchSection } from './workbench/workbenchSections';
@@ -86,6 +91,7 @@ type WorkbenchState = {
   angeFightWorkflow: AngeFightWorkflow | null;
   fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
   fashionUnlockWorkflow: FashionUnlockWorkflow | null; gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null; hyperspaceBypassWorkflow: HyperspaceBypassWorkflow | null; ivScreenWorkflow: IvScreenWorkflow | null;
+  fashionCatalogWorkflow: FashionCatalogWorkflow | null;
   exeFsPatchSearchText: string;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   flagworkSaveSearchText: string;
@@ -123,6 +129,7 @@ type WorkbenchState = {
   royalCandySearchText: string;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null; npcItemGiftWorkflow: NpcItemGiftWorkflow | null;
+  battleCafeRewardsWorkflow: BattleCafeRewardsWorkflow | null;
   spreadsheetImportPreview: SpreadsheetImportPreview | null;
   spreadsheetImportSearchText: string;
   spreadsheetImportSourcePath: string;
@@ -160,9 +167,12 @@ type WorkbenchState = {
   selectedTrainerPartySlot: number | null;
   shopSearchText: string;
   shopsWorkflow: ShopsWorkflow | null;
+  tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
+  habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   textSearchText: string;
   textWorkflow: TextWorkflow | null;
   trainerSearchText: string;
+  trainerPoolsWorkflow: TrainerPoolsWorkflow | null;
   trainersWorkflow: TrainersWorkflow | null;
   workflows: WorkflowSummary[];
   evictLoadedWorkflowSections: (sections: Iterable<WorkbenchSection>) => void;
@@ -183,6 +193,7 @@ type WorkbenchState = {
   setAngeFightWorkflow: (angeFightWorkflow: AngeFightWorkflow) => void;
   setFairyGymBoostsWorkflow: (fairyGymBoostsWorkflow: FairyGymBoostsWorkflow) => void;
   setFashionUnlockWorkflow: (fashionUnlockWorkflow: FashionUnlockWorkflow) => void;
+  setFashionCatalogWorkflow: (fashionCatalogWorkflow: FashionCatalogWorkflow) => void;
   setGymUniformRemovalWorkflow: (
     gymUniformRemovalWorkflow: GymUniformRemovalWorkflow
   ) => void;
@@ -231,6 +242,7 @@ type WorkbenchState = {
   setRoyalCandySearchText: (royalCandySearchText: string) => void;
   setRoyalCandyWorkflow: (royalCandyWorkflow: RoyalCandyWorkflow) => void;
   setStartingItemsWorkflow: (startingItemsWorkflow: StartingItemsWorkflow) => void; setNpcItemGiftWorkflow: (npcItemGiftWorkflow: NpcItemGiftWorkflow) => void;
+  setBattleCafeRewardsWorkflow: (battleCafeRewardsWorkflow: BattleCafeRewardsWorkflow) => void;
   setSpreadsheetImportPreview: (preview: SpreadsheetImportPreview | null) => void;
   setSpreadsheetImportSearchText: (spreadsheetImportSearchText: string) => void;
   setSpreadsheetImportSourcePath: (sourcePath: string) => void;
@@ -272,10 +284,13 @@ type WorkbenchState = {
   setSelectedTrainerPartySlot: (selectedTrainerPartySlot: number | null) => void;
   setShopSearchText: (shopSearchText: string) => void;
   setShopsWorkflow: (shopsWorkflow: ShopsWorkflow) => void;
+  setTmMachineControlsWorkflow: (tmMachineControlsWorkflow: TmMachineControlsWorkflow) => void;
+  setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow) => void;
   setTextSearchText: (textSearchText: string) => void;
   setTextWorkflow: (textWorkflow: TextWorkflow) => void;
   setTrainerSearchText: (trainerSearchText: string) => void;
   setTrainersWorkflow: (trainersWorkflow: TrainersWorkflow) => void;
+  setTrainerPoolsWorkflow: (trainerPoolsWorkflow: TrainerPoolsWorkflow) => void;
   setWorkflows: (workflows: WorkflowSummary[]) => void;
   clearSelectedGame: () => void;
   setSelectedGame: (selectedGame: ProjectGame) => void;
@@ -383,6 +398,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     angeFightWorkflow: null,
     fairyGymBoostsWorkflow: null,
     fashionUnlockWorkflow: null,
+    fashionCatalogWorkflow: null,
     gymUniformRemovalWorkflow: null, hyperspaceBypassWorkflow: null, ivScreenWorkflow: null,
     exeFsPatchSearchText: '',
     exeFsPatchWorkflow: null,
@@ -419,6 +435,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     royalCandySearchText: '',
     royalCandyWorkflow: null,
     startingItemsWorkflow: null, npcItemGiftWorkflow: null,
+    battleCafeRewardsWorkflow: null,
     spreadsheetImportPreview: null,
     spreadsheetImportSearchText: '',
     spreadsheetImportSourcePath: '',
@@ -456,9 +473,12 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     selectedTrainerPartySlot: null,
     shopSearchText: '',
     shopsWorkflow: null,
+    tmMachineControlsWorkflow: null,
+    habitatCoordinatesWorkflow: null,
     textSearchText: '',
     textWorkflow: null,
     trainerSearchText: '',
+    trainerPoolsWorkflow: null,
     trainersWorkflow: null
   };
 }
@@ -490,6 +510,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   angeFightWorkflow: null,
   fairyGymBoostsWorkflow: null,
   fashionUnlockWorkflow: null,
+  fashionCatalogWorkflow: null,
   gymUniformRemovalWorkflow: null, hyperspaceBypassWorkflow: null, ivScreenWorkflow: null,
   exeFsPatchSearchText: '',
   exeFsPatchWorkflow: null,
@@ -529,6 +550,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   royalCandySearchText: '',
   royalCandyWorkflow: null,
   startingItemsWorkflow: null, npcItemGiftWorkflow: null,
+  battleCafeRewardsWorkflow: null,
   spreadsheetImportPreview: null,
   spreadsheetImportSearchText: '',
   spreadsheetImportSourcePath: '',
@@ -566,9 +588,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedTrainerPartySlot: null,
   shopSearchText: '',
   shopsWorkflow: null,
+  tmMachineControlsWorkflow: null,
+  habitatCoordinatesWorkflow: null,
   textSearchText: '',
   textWorkflow: null,
   trainerSearchText: '',
+  trainerPoolsWorkflow: null,
   trainersWorkflow: null,
   workflows: [],
   setActiveSection: (activeSection) => set({ activeSection }),
@@ -891,6 +916,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         trainersWorkflow
       };
     }),
+  setTrainerPoolsWorkflow: (trainerPoolsWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'trainerPools'),
+      trainerPoolsWorkflow
+    })),
+  setFashionCatalogWorkflow: (fashionCatalogWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'fashionCatalog'),
+      fashionCatalogWorkflow
+    })),
   setShopsWorkflow: (shopsWorkflow) =>
     set((state) => {
       const selectedShopId = shopsWorkflow.shops.some(
@@ -905,6 +940,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         shopsWorkflow
       };
     }),
+  setTmMachineControlsWorkflow: (tmMachineControlsWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'tmMachineControls'),
+      tmMachineControlsWorkflow
+    })),
+  setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'habitatCoordinates'),
+      habitatCoordinatesWorkflow
+    })),
   setEncountersWorkflow: (encountersWorkflow) =>
     set((state) => {
       const selectedEncounterTableId = resolveSelectedEncounterTableId(
@@ -1173,6 +1218,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setNpcItemGiftWorkflow: (npcItemGiftWorkflow) =>
     set((state) => ({ activeSection: resolveWorkflowLoadSection(state.activeSection, 'npcItemGift'), npcItemGiftWorkflow })),
+  setBattleCafeRewardsWorkflow: (battleCafeRewardsWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'battleCafeRewards'),
+      battleCafeRewardsWorkflow
+    })),
   setSpreadsheetImportWorkflow: (spreadsheetImportWorkflow) =>
     set((state) => {
       const selectedSpreadsheetImportProfileId = spreadsheetImportWorkflow.profiles.some(

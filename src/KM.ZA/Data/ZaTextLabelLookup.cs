@@ -292,6 +292,51 @@ internal sealed class ZaTextLabelLookup
         return FirstUsableTrainerName(GetIndexed(trainerNames, trainerId));
     }
 
+    public (string MessageKey, int LineIndex)? TrainerNameTarget(string? key, int trainerId)
+    {
+        foreach (var candidate in TrainerNameKeyCandidates(key))
+        {
+            if (trainerNameIndices.TryGetValue(candidate, out var index)
+                && !string.IsNullOrWhiteSpace(FirstUsableTrainerName(GetIndexed(trainerNames, index))))
+            {
+                return (candidate, index);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(key) && GetIndexed(trainerNames, trainerId) is not null)
+        {
+            var entry = trainerNameIndices
+                .Where(candidate => candidate.Value == trainerId)
+                .OrderBy(candidate => candidate.Key, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(entry.Key))
+            {
+                return (entry.Key, trainerId);
+            }
+        }
+
+        return null;
+    }
+
+    public (string MessageKey, int LineIndex)? TrainerTypeTarget(ulong primaryHash, ulong secondaryHash)
+    {
+        var index = trainerTypeHashIndices.TryGetValue(primaryHash, out var primaryIndex)
+            ? primaryIndex
+            : trainerTypeHashIndices.TryGetValue(secondaryHash, out var secondaryIndex)
+                ? secondaryIndex
+                : -1;
+        if (index < 0 || GetIndexed(trainerTypes, index) is null)
+        {
+            return null;
+        }
+
+        var entry = trainerTypeIndices
+            .Where(candidate => candidate.Value == index)
+            .OrderBy(candidate => candidate.Key, StringComparer.Ordinal)
+            .FirstOrDefault();
+        return string.IsNullOrWhiteSpace(entry.Key) ? null : (entry.Key, index);
+    }
+
     public string? HyperspaceTrainerClassFromText(string? key)
     {
         return TrainerNameKeyCandidates(key)

@@ -95,6 +95,24 @@ internal sealed class ZaPokemonEditSessionService
         this.pokemonWorkflowService = pokemonWorkflowService ?? new ZaPokemonWorkflowService(this.fileSource);
     }
 
+    public ZaPokemonEditResult ReadEffective(ProjectPaths paths, EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+        ZaEditSessionSupport.CanEdit(
+            project,
+            workflow.Summary,
+            workflow.Diagnostics,
+            ZaEditSessionSupport.PokemonDomain,
+            diagnostics);
+        return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+    }
+
     public ZaPokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,

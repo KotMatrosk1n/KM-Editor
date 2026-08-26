@@ -110,6 +110,28 @@ public sealed class SvTrinityArchive : IDisposable
         return BuildIndexFromFiles(descriptorPath, trpfsPath, maximumIndexBytes: null);
     }
 
+    public static SvTrinityArchiveIndex BuildIndex(string romFsRoot, int maximumIndexBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(romFsRoot);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumIndexBytes);
+
+        var normalizedRoot = ResolveRomFsRoot(romFsRoot);
+        var descriptorPath = Path.Combine(normalizedRoot, DescriptorRelativePath);
+        var trpfsPath = Path.Combine(normalizedRoot, FileSystemRelativePath);
+
+        if (!File.Exists(descriptorPath))
+        {
+            throw new FileNotFoundException("Scarlet/Violet Trinity descriptor was not found.", descriptorPath);
+        }
+
+        if (!File.Exists(trpfsPath))
+        {
+            throw new FileNotFoundException("Scarlet/Violet Trinity file system was not found.", trpfsPath);
+        }
+
+        return BuildIndexFromFiles(descriptorPath, trpfsPath, maximumIndexBytes);
+    }
+
     public bool ContainsFile(string virtualPath)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -135,6 +157,24 @@ public sealed class SvTrinityArchive : IDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
 
         var fileHash = SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath));
+        return TryReadFileHashCore(fileHash, maximumBytes, out bytes);
+    }
+
+    public bool TryReadFileHash(ulong fileHash, out byte[] bytes)
+    {
+        return TryReadFileHashCore(fileHash, maximumBytes: null, out bytes);
+    }
+
+    public bool TryReadFileHash(ulong fileHash, int maximumBytes, out byte[] bytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+        return TryReadFileHashCore(fileHash, maximumBytes, out bytes);
+    }
+
+    private bool TryReadFileHashCore(ulong fileHash, int? maximumBytes, out byte[] bytes)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+
         if (!compiledIndex.FileIndicesByHash.TryGetValue(fileHash, out var locationIndex))
         {
             bytes = [];

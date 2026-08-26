@@ -110,7 +110,29 @@ public sealed record TrainerRecordDto(
     public bool? ZaSharedRivalRoster { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ZaRivalStarterBranch { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TrainerTextTargetDto? ZaNameTextTarget { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TrainerTextTargetDto? ZaClassTextTarget { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ZaClassPairId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ZaCanReassignClass { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ZaClassReassignmentBlockedReason { get; init; }
 }
+
+public sealed record TrainerTextTargetDto(
+    string MessageKey,
+    int LineIndex,
+    string Kind,
+    int SharedTrainerCount);
+
+public sealed record TrainerClassPairOptionDto(
+    string PairId,
+    string Label,
+    int UsageCount,
+    bool PresentationCanaryRequired);
 
 public sealed record TrainerAiFlagStateDto(
     int Bit,
@@ -145,7 +167,11 @@ public sealed record TrainersWorkflowDto(
     IReadOnlyList<TrainerRecordDto> Trainers,
     IReadOnlyList<TrainerEditableFieldDto> EditableFields,
     TrainersWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<TrainerClassPairOptionDto> ZaClassPairOptions { get; init; } =
+        Array.Empty<TrainerClassPairOptionDto>();
+}
 
 public sealed record TrainersWorkflowDeltaDto(
     IReadOnlyList<TrainerRecordDto> Trainers,

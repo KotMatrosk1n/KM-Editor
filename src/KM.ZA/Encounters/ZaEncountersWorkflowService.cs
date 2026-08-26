@@ -172,6 +172,69 @@ internal sealed class ZaEncountersWorkflowService
             includeEncounterTables);
     }
 
+    internal ZaEncounterCompatibilityWorkflow LoadGameModuleCompatibility(
+        OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var diagnostics = new List<ValidationDiagnostic>();
+        if (project.Paths.SelectedGame is not ProjectGame.ZA)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Error(
+                "Encounter Compatibility requires a Z-A project.",
+                expected: "Z-A project"));
+            return new ZaEncounterCompatibilityWorkflow([], [], diagnostics);
+        }
+
+        try
+        {
+            var encounterSource = fileSource.ReadBase(project, ZaDataPaths.EncountDataArray);
+            var spawnerSource = fileSource.ReadBase(project, ZaDataPaths.PokemonSpawnerDataArray);
+            var encounterDocument = ZaEncounterDataDocument.Parse(
+                encounterSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
+            var spawnerDocument = ZaPokemonSpawnerDataDocument.Parse(
+                spawnerSource.Bytes,
+                fileSource.BoundedTableRecordLimit,
+                fileSource.BoundedNestedRecordLimit);
+            var rules = ZaSpecialSpawnNormalizer.ProjectCompatibilityRules(
+                spawnerDocument,
+                encounterDocument);
+            var cityPairs = CreateOutzoneAvailability(
+                    encounterDocument,
+                    spawnerSource.Bytes)
+                .ObservedPairs
+                .Select(pair => new ZaEncounterCompatibilityPair(
+                    pair.SpeciesId,
+                    pair.Form,
+                    ObservedInBasePlacement: true,
+                    VerifiedExtension: false))
+                .ToArray();
+            if (rules.Count == 0 || cityPairs.Length == 0)
+            {
+                throw new InvalidDataException(
+                    "The base encounter sources did not expose the required compatibility rules.");
+            }
+
+            return new ZaEncounterCompatibilityWorkflow(rules, cityPairs, diagnostics);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException
+                or ArgumentException
+                or OverflowException
+            && !fileSource.IsBoundedSemanticLimit(exception))
+        {
+            diagnostics.Add(ZaWorkflowSupport.Error(
+                $"Encounter Compatibility could not be loaded safely: {exception.Message}",
+                $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}",
+                expected: "Readable bounded base encounter compatibility sources"));
+            return new ZaEncounterCompatibilityWorkflow([], [], diagnostics);
+        }
+    }
+
     private ZaEncountersWorkflow Load(
         OpenedProject project,
         bool includeEditorMetadata,
@@ -361,6 +424,18 @@ internal sealed class ZaEncountersWorkflowService
                                     slot,
                                     out _,
                                     out var blockedReason);
+                                if (canRevert
+                                    && !ZaEncounterBossActionRestoreResolver.TryResolve(
+                                        workflow,
+                                        table,
+                                        slot,
+                                        out _,
+                                        out var bossActionBlockedReason))
+                                {
+                                    canRevert = false;
+                                    blockedReason = bossActionBlockedReason;
+                                }
+
                                 return slot with
                                 {
                                     CanRevertToVanilla = canRevert,
@@ -402,10 +477,18 @@ internal sealed class ZaEncountersWorkflowService
     {
         var encounterSource = fileSource.ReadBase(project, ZaDataPaths.EncountDataArray);
         var spawnerSource = fileSource.ReadBase(project, ZaDataPaths.PokemonSpawnerDataArray);
-        var pokemonRowGroups = ZaEncounterDataDocument.Parse(
-                encounterSource.Bytes,
-                fileSource.BoundedTableRecordLimit,
-                fileSource.BoundedNestedRecordLimit)
+        var encounterDocument = ZaEncounterDataDocument.Parse(
+            encounterSource.Bytes,
+            fileSource.BoundedTableRecordLimit,
+            fileSource.BoundedNestedRecordLimit);
+        return CreateOutzoneAvailability(encounterDocument, spawnerSource.Bytes);
+    }
+
+    private ZaOutzoneEncounterAvailability CreateOutzoneAvailability(
+        ZaEncounterDataDocument encounterDocument,
+        byte[] spawnerBytes)
+    {
+        var pokemonRowGroups = encounterDocument
             .Entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
             .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
@@ -424,7 +507,7 @@ internal sealed class ZaEncountersWorkflowService
         var pokemonRows = pokemonRowGroups
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var spawnerTable = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(
-            new ByteBuffer(spawnerSource.Bytes));
+            new ByteBuffer(spawnerBytes));
         EnsureBoundedSpawnerTable(spawnerTable);
         var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(spawnerTable);
         var observedPairs = new HashSet<(int SpeciesId, int Form)>();

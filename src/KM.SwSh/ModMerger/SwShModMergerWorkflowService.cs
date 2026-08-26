@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Output;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.FpsPatch;
 using KM.SwSh.Workflows;
@@ -335,7 +336,7 @@ public sealed class SwShModMergerWorkflowService
 
         var expectedCommitToken = reviewToken ?? currentTokenAfter;
         writtenFiles.AddRange(WriteOutputsTransactionally(
-            outputRoot,
+            paths,
             plan.Outputs,
             diagnostics,
             () =>
@@ -1831,15 +1832,15 @@ public sealed class SwShModMergerWorkflowService
     }
 
     private static IReadOnlyList<string> WriteOutputsTransactionally(
-        string outputRoot,
+        ProjectPaths paths,
         IReadOnlyList<MergeOutput> outputs,
         ICollection<ValidationDiagnostic> diagnostics,
         Func<bool>? canCommit = null,
         Action<int, string>? beforeCommitOutput = null)
     {
-        var preparedOutputs = new List<PreparedMergeOutput>();
-        var createdDirectories = new List<string>();
-        var writtenFiles = new List<string>();
+        var outputRoot = paths.OutputRootPath
+            ?? throw new InvalidOperationException("Mod Merger apply requires an Output Root.");
+        var preparedOutputs = new List<(MergeOutput Output, string TargetPath, OutputFileState Preimage)>();
         MergeOutput? activeOutput = null;
 
         try
@@ -1853,12 +1854,25 @@ public sealed class SwShModMergerWorkflowService
                     return Array.Empty<string>();
                 }
 
-                preparedOutputs.Add(PrepareOutput(
-                    outputRoot,
-                    targetPath,
-                    output,
-                    createdDirectories,
-                    diagnostics));
+                ValidateOutputContents(output);
+                if (Directory.Exists(targetPath))
+                {
+                    throw new IOException($"Output target '{output.RelativePath}' is a directory.");
+                }
+
+                if (!SwShOutputTransactionWriter.TryCapturePreimage(
+                        paths,
+                        output.RelativePath,
+                        out var preimage,
+                        out var captureFailure)
+                    || preimage is null)
+                {
+                    throw new IOException(
+                        captureFailure?.Message
+                        ?? "The output target preimage could not be captured.");
+                }
+
+                preparedOutputs.Add((output, targetPath, preimage));
             }
 
             if (canCommit is not null && !canCommit())
@@ -1872,170 +1886,46 @@ public sealed class SwShModMergerWorkflowService
                 var preparedOutput = preparedOutputs[index];
                 activeOutput = preparedOutput.Output;
                 beforeCommitOutput?.Invoke(index, preparedOutput.TargetPath);
-                VerifyTargetMatchesPreimage(preparedOutput);
-                File.Move(
-                    preparedOutput.TempPath,
-                    preparedOutput.TargetPath,
-                    overwrite: preparedOutput.TargetPreimage.Exists);
-                preparedOutput.IsCommitted = true;
-                VerifyFileContents(preparedOutput.TargetPath, preparedOutput.Output);
-                writtenFiles.Add(preparedOutput.Output.RelativePath);
             }
 
-            return writtenFiles;
+            var mutations = preparedOutputs
+                .Select(preparedOutput => SwShOutputFileMutation.Write(
+                    preparedOutput.Output.RelativePath,
+                    preparedOutput.Output.Contents,
+                    preparedOutput.Preimage))
+                .ToArray();
+            if (!SwShOutputTransactionWriter.TryApply(
+                    paths,
+                    mutations,
+                    "workflow.sword-shield.mod-merger-apply",
+                    out _,
+                    out var applyFailure))
+            {
+                throw new IOException(
+                    applyFailure?.Message
+                    ?? "The merged output transaction did not commit.");
+            }
+
+            return preparedOutputs
+                .Select(preparedOutput => preparedOutput.Output.RelativePath)
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            var rollbackFailures = RollBackPreparedOutputs(preparedOutputs, diagnostics);
-            writtenFiles.Clear();
-            writtenFiles.AddRange(rollbackFailures);
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                rollbackFailures.Count == 0
-                    ? $"Merged output transaction failed and all output changes were rolled back: {exception.Message}"
-                    : $"Merged output transaction failed and rollback was incomplete for {rollbackFailures.Count} output file(s): {exception.Message}",
+                $"Merged output transaction did not commit: {exception.Message}",
                 file: activeOutput?.RelativePath,
                 expected: "All selected outputs written and verified together"));
-            return writtenFiles;
+            return Array.Empty<string>();
         }
         finally
         {
-            foreach (var preparedOutput in preparedOutputs)
-            {
-                TryDeleteTransactionFile(
-                    preparedOutput.TempPath,
-                    "temporary output",
-                    preparedOutput.Output.RelativePath,
-                    diagnostics);
-                if (!preparedOutput.RollbackFailed)
-                {
-                    TryDeleteTransactionFile(
-                        preparedOutput.BackupPath,
-                        "rollback backup",
-                        preparedOutput.Output.RelativePath,
-                        diagnostics);
-                }
-            }
-
-            TryDeleteCreatedDirectories(outputRoot, createdDirectories, diagnostics);
-
             foreach (var output in outputs)
             {
                 ClearOutputContents(output);
             }
         }
-    }
-
-    private static PreparedMergeOutput PrepareOutput(
-        string outputRoot,
-        string targetPath,
-        MergeOutput output,
-        ICollection<string> createdDirectories,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        ValidateOutputContents(output);
-        if (Directory.Exists(targetPath))
-        {
-            throw new IOException($"Output target '{output.RelativePath}' is a directory.");
-        }
-
-        var directory = Path.GetDirectoryName(targetPath)
-            ?? throw new IOException("Output target directory could not be resolved.");
-        CreateOutputDirectory(outputRoot, directory, createdDirectories);
-
-        var nonce = Guid.NewGuid().ToString("N");
-        var fileName = Path.GetFileName(targetPath);
-        var tempPath = Path.Combine(directory, $".{fileName}.{nonce}.tmp");
-        var backupPath = Path.Combine(directory, $".{fileName}.{nonce}.bak");
-        var targetExisted = File.Exists(targetPath);
-
-        try
-        {
-            File.WriteAllBytes(tempPath, output.Contents);
-            VerifyFileContents(tempPath, output);
-            OutputTargetPreimage targetPreimage;
-            if (targetExisted)
-            {
-                File.Copy(targetPath, backupPath, overwrite: false);
-                targetPreimage = CaptureExistingTargetPreimage(backupPath);
-            }
-            else
-            {
-                targetPreimage = OutputTargetPreimage.Missing;
-            }
-
-            return new PreparedMergeOutput(
-                output,
-                targetPath,
-                tempPath,
-                backupPath,
-                targetPreimage);
-        }
-        catch
-        {
-            TryDeleteTransactionFile(
-                tempPath,
-                "temporary output",
-                output.RelativePath,
-                diagnostics);
-            TryDeleteTransactionFile(
-                backupPath,
-                "rollback backup",
-                output.RelativePath,
-                diagnostics);
-            throw;
-        }
-    }
-
-    private static IReadOnlyList<string> RollBackPreparedOutputs(
-        IReadOnlyList<PreparedMergeOutput> preparedOutputs,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var failures = new List<string>();
-        foreach (var preparedOutput in preparedOutputs.Reverse())
-        {
-            if (!preparedOutput.IsCommitted)
-            {
-                continue;
-            }
-
-            try
-            {
-                if (preparedOutput.TargetPreimage.Exists)
-                {
-                    EnsureTargetStillContainsCommittedOutput(preparedOutput);
-                    File.Copy(preparedOutput.BackupPath, preparedOutput.TargetPath, overwrite: true);
-                    if (!FileMatchesFingerprint(
-                        preparedOutput.TargetPath,
-                        preparedOutput.TargetPreimage.Length,
-                        preparedOutput.TargetPreimage.Sha256))
-                    {
-                        throw new IOException("The restored output does not match its rollback backup.");
-                    }
-                }
-                else if (Directory.Exists(preparedOutput.TargetPath))
-                {
-                    throw new IOException("Rollback target is now a directory and was left untouched.");
-                }
-                else if (File.Exists(preparedOutput.TargetPath))
-                {
-                    EnsureTargetStillContainsCommittedOutput(preparedOutput);
-                    File.Delete(preparedOutput.TargetPath);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                preparedOutput.RollbackFailed = true;
-                failures.Add(preparedOutput.Output.RelativePath);
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Merged output rollback could not restore the original file without overwriting a concurrent change: {exception.Message}",
-                    file: preparedOutput.Output.RelativePath,
-                    expected: "Original output restored after a failed merge"));
-            }
-        }
-
-        return failures;
     }
 
     private static void ValidateOutputContents(MergeOutput output)
@@ -2059,180 +1949,10 @@ public sealed class SwShModMergerWorkflowService
         Array.Clear(output.Contents);
     }
 
-    private static void VerifyFileContents(string path, MergeOutput output)
-    {
-        var fileInfo = new FileInfo(path);
-        if (fileInfo.Length != output.ExpectedLength)
-        {
-            throw new InvalidDataException(
-                $"Expected {output.ExpectedLength.ToString(CultureInfo.InvariantCulture)} bytes but wrote {fileInfo.Length.ToString(CultureInfo.InvariantCulture)} bytes.");
-        }
-
-        var actualSha256 = ComputeFileSha256(path);
-        if (!string.Equals(actualSha256, output.Sha256, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException("Written file hash does not match the planned merge bytes.");
-        }
-    }
-
     private static string ComputeSha256(byte[] contents)
     {
         return Convert.ToHexString(SHA256.HashData(contents));
     }
-
-    private static string ComputeFileSha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        using var sha256 = SHA256.Create();
-        return Convert.ToHexString(sha256.ComputeHash(stream));
-    }
-
-    private static OutputTargetPreimage CaptureExistingTargetPreimage(string path)
-    {
-        var fileInfo = new FileInfo(path);
-        return new OutputTargetPreimage(
-            Exists: true,
-            fileInfo.Length,
-            ComputeFileSha256(path));
-    }
-
-    private static void VerifyTargetMatchesPreimage(PreparedMergeOutput preparedOutput)
-    {
-        var preimage = preparedOutput.TargetPreimage;
-        if (!preimage.Exists)
-        {
-            if (File.Exists(preparedOutput.TargetPath) || Directory.Exists(preparedOutput.TargetPath))
-            {
-                throw new InvalidDataException(
-                    $"Output target '{preparedOutput.Output.RelativePath}' was created after review.");
-            }
-
-            return;
-        }
-
-        if (!FileMatchesFingerprint(
-            preparedOutput.TargetPath,
-            preimage.Length,
-            preimage.Sha256))
-        {
-            throw new InvalidDataException(
-                $"Output target '{preparedOutput.Output.RelativePath}' changed after review.");
-        }
-    }
-
-    private static void EnsureTargetStillContainsCommittedOutput(PreparedMergeOutput preparedOutput)
-    {
-        if (!FileMatchesFingerprint(
-            preparedOutput.TargetPath,
-            preparedOutput.Output.ExpectedLength,
-            preparedOutput.Output.Sha256))
-        {
-            throw new IOException("Rollback target changed after commit and was left untouched.");
-        }
-    }
-
-    private static bool FileMatchesFingerprint(string path, long expectedLength, string expectedSha256)
-    {
-        if (Directory.Exists(path) || !File.Exists(path))
-        {
-            return false;
-        }
-
-        var fileInfo = new FileInfo(path);
-        return fileInfo.Length == expectedLength
-            && string.Equals(
-                ComputeFileSha256(path),
-                expectedSha256,
-                StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static void CreateOutputDirectory(
-        string outputRoot,
-        string directory,
-        ICollection<string> createdDirectories)
-    {
-        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(outputRoot));
-        var fullDirectory = Path.GetFullPath(directory);
-        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(fullRoot, fullDirectory)))
-        {
-            throw new IOException("Output target directory escapes Output Root.");
-        }
-
-        var current = fullDirectory;
-        while (!PathsEqual(current, fullRoot) && !Directory.Exists(current))
-        {
-            createdDirectories.Add(current);
-            current = Path.GetDirectoryName(current)
-                ?? throw new IOException("Output target directory ancestry could not be resolved.");
-        }
-
-        Directory.CreateDirectory(fullDirectory);
-    }
-
-    private static void TryDeleteCreatedDirectories(
-        string outputRoot,
-        IEnumerable<string> createdDirectories,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        foreach (var directory in createdDirectories
-            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
-            .OrderByDescending(path => path.Length))
-        {
-            try
-            {
-                if (!Directory.Exists(directory)
-                    || Directory.EnumerateFileSystemEntries(directory).Any())
-                {
-                    continue;
-                }
-
-                Directory.Delete(directory, recursive: false);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"Mod Merger could not remove an empty transaction-created output directory: {exception.Message}",
-                    file: Path.GetRelativePath(outputRoot, directory).Replace(Path.DirectorySeparatorChar, '/'),
-                    expected: "No empty transaction-created output directories left behind"));
-            }
-        }
-    }
-
-    private static bool PathsEqual(string left, string right)
-    {
-        return string.Equals(
-            Path.TrimEndingDirectorySeparator(left),
-            Path.TrimEndingDirectorySeparator(right),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-    }
-
-    private static void TryDeleteTransactionFile(
-        string path,
-        string artifact,
-        string relativePath,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (FileNotFoundException)
-        {
-        }
-        catch (DirectoryNotFoundException)
-        {
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Mod Merger could not remove its {artifact}: {exception.Message}",
-                file: relativePath,
-                expected: "Transaction artifacts removed after apply"));
-        }
-    }
-
     private static string? ResolveOutputPath(
         string outputRootPath,
         string relativePath,
@@ -2344,39 +2064,4 @@ public sealed class SwShModMergerWorkflowService
         long ExpectedLength,
         string Sha256);
 
-    private sealed class PreparedMergeOutput
-    {
-        public PreparedMergeOutput(
-            MergeOutput output,
-            string targetPath,
-            string tempPath,
-            string backupPath,
-            OutputTargetPreimage targetPreimage)
-        {
-            Output = output;
-            TargetPath = targetPath;
-            TempPath = tempPath;
-            BackupPath = backupPath;
-            TargetPreimage = targetPreimage;
-        }
-
-        public MergeOutput Output { get; }
-
-        public string TargetPath { get; }
-
-        public string TempPath { get; }
-
-        public string BackupPath { get; }
-
-        public OutputTargetPreimage TargetPreimage { get; }
-
-        public bool IsCommitted { get; set; }
-
-        public bool RollbackFailed { get; set; }
-    }
-
-    private sealed record OutputTargetPreimage(bool Exists, long Length, string Sha256)
-    {
-        public static OutputTargetPreimage Missing { get; } = new(false, 0, string.Empty);
-    }
 }

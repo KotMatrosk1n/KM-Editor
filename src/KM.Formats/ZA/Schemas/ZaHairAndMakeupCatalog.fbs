@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Generated.FashionCatalog;
+
+table ZaHairAndMakeupCatalogEntry {
+    ItemId:uint;
+    ModelKey:string (required);
+    CatalogTypeCode:uint;
+    ReservedFlag:bool;
+    ColorValue:string;
+    LabelKey:string;
+    DisplayOrder:uint;
+    GroupCode:int;
+    VariantCode:int;
+}
+
+table ZaHairAndMakeupCatalogArray {
+    Entries:[ZaHairAndMakeupCatalogEntry] (required);
+}
+
+root_type ZaHairAndMakeupCatalogArray;
