@@ -137,7 +137,7 @@ export function SemanticExploreSection({
       >
         {modules.map((module) => (
           <button
-            aria-controls="semantic-explore-module-panel"
+            aria-controls={`semantic-explore-module-panel-${module}`}
             aria-selected={activeModule === module}
             className={activeModule === module ? 'is-active' : undefined}
             id={`semantic-explore-module-${module}`}
@@ -163,30 +163,34 @@ export function SemanticExploreSection({
         ))}
       </div>
 
-      <div
-        aria-labelledby={`semantic-explore-module-${activeModule}`}
-        className="km-semantic-module"
-        id="semantic-explore-module-panel"
-        role="tabpanel"
-      >
-        {activeModule === 'explore' ? (
-          <ExploreModulePanel controller={controller} onNavigateEntity={onNavigateEntity} />
-        ) : null}
-        {activeModule === 'compare' ? (
-          <CompareModulePanel
-            controller={controller}
-            externalComparisonDisabled={externalComparisonDisabled}
-            onNavigateEntity={onNavigateEntity}
-            onPickExternalMod={onPickExternalMod}
-          />
-        ) : null}
-        {activeModule === 'ownership' ? (
-          <OwnershipModulePanel controller={controller} onNavigateEntity={onNavigateEntity} />
-        ) : null}
-        {activeModule === 'changes' ? (
-          <ChangesModulePanel controller={controller} onNavigateEntity={onNavigateEntity} />
-        ) : null}
-      </div>
+      {modules.map((module) => (
+        <div
+          aria-labelledby={`semantic-explore-module-${module}`}
+          className="km-semantic-module"
+          hidden={activeModule !== module}
+          id={`semantic-explore-module-panel-${module}`}
+          key={module}
+          role="tabpanel"
+        >
+          {module === 'explore' ? (
+            <ExploreModulePanel controller={controller} onNavigateEntity={onNavigateEntity} />
+          ) : null}
+          {module === 'compare' ? (
+            <CompareModulePanel
+              controller={controller}
+              externalComparisonDisabled={externalComparisonDisabled}
+              onNavigateEntity={onNavigateEntity}
+              onPickExternalMod={onPickExternalMod}
+            />
+          ) : null}
+          {module === 'ownership' ? (
+            <OwnershipModulePanel controller={controller} onNavigateEntity={onNavigateEntity} />
+          ) : null}
+          {module === 'changes' ? (
+            <ChangesModulePanel controller={controller} onNavigateEntity={onNavigateEntity} />
+          ) : null}
+        </div>
+      ))}
     </section>
   );
 }

@@ -17,6 +17,7 @@ using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.Text;
+using KM.Api.TmMachine;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
@@ -37,6 +38,7 @@ using KM.SV.Raids;
 using KM.SV.Shops;
 using KM.SV.StaticEncounters;
 using KM.SV.Text;
+using KM.SV.TmMachine;
 using KM.SV.Trainers;
 using KM.SV.Trades;
 using KM.SV.TypeChart;
@@ -327,6 +329,32 @@ public static class SvBridgeMapper
 
         return new UpdateShopInventoryItemResponse(
             ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadTmMachineControlsResponse ToDto(SvTmMachineControlsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        return new LoadTmMachineControlsResponse(ToTmMachineControlsWorkflowDto(workflow));
+    }
+
+    public static StageTmRecipeAvailabilityResponse ToTmRecipeAvailabilityDto(
+        SvTmMachineControlsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new StageTmRecipeAvailabilityResponse(
+            ToTmMachineControlsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageTmMaterialVisibilityResponse ToTmMaterialVisibilityDto(
+        SvTmMachineControlsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new StageTmMaterialVisibilityResponse(
+            ToTmMachineControlsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -732,6 +760,44 @@ public static class SvBridgeMapper
         {
             EditorFamily = "sv",
         };
+    }
+
+    private static TmMachineControlsWorkflowDto ToTmMachineControlsWorkflowDto(
+        SvTmMachineControlsWorkflow workflow)
+    {
+        return new TmMachineControlsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.SupportedBuild,
+            ToDto(workflow.RecipeAvailability),
+            ToDto(workflow.MaterialVisibility),
+            workflow.Provenance.Select(ToDto).ToArray(),
+            new TmMachineControlsStatsDto(
+                workflow.Stats.RecipeCount,
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.SupportedBuildCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TmMachineControlStateDto ToDto(SvTmMachineControlState state)
+    {
+        return new TmMachineControlStateDto(
+            state.Policy,
+            state.Status,
+            state.Message,
+            state.CanStage,
+            state.StagedPolicy,
+            state.MatchingRecordCount,
+            state.TotalRecordCount);
+    }
+
+    private static TmMachineControlProvenanceDto ToDto(SvTmMachineControlProvenance provenance)
+    {
+        return new TmMachineControlProvenanceDto(
+            provenance.Control,
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState),
+            provenance.Sha256);
     }
 
     private static TradePokemonWorkflowDto ToTradePokemonWorkflowDto(SvTradePokemonWorkflow workflow)

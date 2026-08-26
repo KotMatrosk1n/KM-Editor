@@ -9,6 +9,10 @@ internal sealed record SwShAmxCellPatch(
     int Value,
     bool RequirePackedConstantOperand = false);
 
+internal sealed record SwShAmxDataCellPatch(
+    int Cell,
+    long Value);
+
 internal static class SwShAmxCellPatcher
 {
     private const ushort PawnMagic16 = 0xF1E2;
@@ -92,6 +96,57 @@ internal static class SwShAmxCellPatcher
         }
 
         WriteCells(decoded.Expanded, decoded.Header.Cod, codeCells, decoded.CellSize);
+        return WritePatchedAmx(data, decoded, originalExpanded);
+    }
+
+    public static long ReadDataCell(byte[] data, int cell)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        var decoded = Decode(data);
+        var dataCellCount = (decoded.Header.Hea - decoded.Header.Dat) / decoded.CellSize;
+        if ((uint)cell >= (uint)dataCellCount)
+        {
+            throw new InvalidDataException(
+                $"AMX data cell {cell} is outside data cell count {dataCellCount}.");
+        }
+
+        return unchecked((long)ReadCell(
+            decoded.Expanded,
+            decoded.Header.Dat + cell * decoded.CellSize,
+            decoded.CellSize));
+    }
+
+    public static byte[] ApplyDataCellPatches(
+        byte[] data,
+        IReadOnlyList<SwShAmxDataCellPatch> patches)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(patches);
+
+        var decoded = Decode(data);
+        var originalExpanded = decoded.Expanded.ToArray();
+        var dataCellCount = (decoded.Header.Hea - decoded.Header.Dat) / decoded.CellSize;
+        var patchedCells = new HashSet<int>();
+        foreach (var patch in patches)
+        {
+            if ((uint)patch.Cell >= (uint)dataCellCount)
+            {
+                throw new InvalidDataException(
+                    $"AMX data cell {patch.Cell} is outside data cell count {dataCellCount}.");
+            }
+
+            if (!patchedCells.Add(patch.Cell))
+            {
+                throw new InvalidDataException($"AMX data cell {patch.Cell} was supplied more than once.");
+            }
+
+            WriteCell(
+                decoded.Expanded,
+                decoded.Header.Dat + patch.Cell * decoded.CellSize,
+                unchecked((ulong)patch.Value),
+                decoded.CellSize);
+        }
+
         return WritePatchedAmx(data, decoded, originalExpanded);
     }
 

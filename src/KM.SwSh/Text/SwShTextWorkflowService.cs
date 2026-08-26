@@ -254,7 +254,7 @@ public sealed class SwShTextWorkflowService
 
     private readonly SwShTextCacheStore cacheStore;
     private readonly object sourceInventorySyncRoot = new();
-    private ProjectId? retainedSourceInventoryProjectId;
+    private OpenedProject? retainedSourceInventoryProject;
     private TextSourceInventory? retainedSourceInventory;
 
     public SwShTextWorkflowService(SwShCacheManager? cacheManager = null)
@@ -377,7 +377,7 @@ public sealed class SwShTextWorkflowService
         cacheStore.ClearMemoryCache();
         lock (sourceInventorySyncRoot)
         {
-            retainedSourceInventoryProjectId = null;
+            retainedSourceInventoryProject = null;
             retainedSourceInventory = null;
         }
     }
@@ -982,14 +982,14 @@ public sealed class SwShTextWorkflowService
     {
         lock (sourceInventorySyncRoot)
         {
-            if (retainedSourceInventoryProjectId == project.Id
+            if (ReferenceEquals(retainedSourceInventoryProject, project)
                 && retainedSourceInventory is not null)
             {
                 return retainedSourceInventory;
             }
 
             var inventory = CreateSourceInventory(project);
-            retainedSourceInventoryProjectId = project.Id;
+            retainedSourceInventoryProject = project;
             retainedSourceInventory = inventory;
             return inventory;
         }

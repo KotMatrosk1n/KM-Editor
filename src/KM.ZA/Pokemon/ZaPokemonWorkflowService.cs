@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Globalization;
+using System.Security;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
@@ -300,11 +301,15 @@ internal sealed class ZaPokemonWorkflowService
     ];
 
     private readonly ZaWorkflowFileSource fileSource;
+    private readonly Func<string, byte[]> readExecutableBytes;
     private readonly ProjectWorkflowMemoryCache<ZaPokemonWorkflow> memoryCache = new();
 
-    public ZaPokemonWorkflowService(ZaWorkflowFileSource? fileSource = null)
+    public ZaPokemonWorkflowService(
+        ZaWorkflowFileSource? fileSource = null,
+        Func<string, byte[]>? readExecutableBytes = null)
     {
         this.fileSource = fileSource ?? new ZaWorkflowFileSource();
+        this.readExecutableBytes = readExecutableBytes ?? File.ReadAllBytes;
     }
 
     public ZaWorkflowSummary CreateSummary(OpenedProject project)
@@ -327,9 +332,17 @@ internal sealed class ZaPokemonWorkflowService
             return cachedWorkflow!;
         }
 
-        var workflow = LoadUncached(project);
+        var workflow = LoadUncached(project, includeDexEditor: true);
         memoryCache.Set(project.Paths, workflow);
         return workflow;
+    }
+
+    internal ZaPokemonWorkflow LoadGameModuleReadOnly(
+        OpenedProject project,
+        bool includeDexEditor = false)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        return LoadUncached(project, includeDexEditor);
     }
 
     public void ClearMemoryCache()
@@ -337,7 +350,7 @@ internal sealed class ZaPokemonWorkflowService
         memoryCache.Clear();
     }
 
-    private ZaPokemonWorkflow LoadUncached(OpenedProject project)
+    private ZaPokemonWorkflow LoadUncached(OpenedProject project, bool includeDexEditor)
     {
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -492,33 +505,36 @@ internal sealed class ZaPokemonWorkflowService
                 });
             }
 
-            try
+            if (includeDexEditor)
             {
-                pokedexSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
-                pokedexMegaSource = fileSource.Read(project, ZaDataPaths.PokedexMegaContentsData);
-                dexEditor = AddVanillaLayoutStatus(
-                    project,
-                    CreateDexEditor(
+                try
+                {
+                    pokedexSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
+                    pokedexMegaSource = fileSource.Read(project, ZaDataPaths.PokedexMegaContentsData);
+                    dexEditor = AddVanillaLayoutStatus(
                         project,
-                        pokemon,
+                        CreateDexEditor(
+                            project,
+                            pokemon,
+                            source,
+                            pokedexSource,
+                            pokedexMegaSource));
+                }
+                catch (Exception exception) when (
+                    exception is IOException or InvalidDataException or ArgumentException or OverflowException)
+                {
+                    var blockedReason =
+                        $"Pokédex placement is unavailable because its active slot mapping could not be verified: {exception.Message}";
+                    dexEditor = CreateBlockedDexEditor(
+                        project,
+                        blockedReason,
                         source,
                         pokedexSource,
-                        pokedexMegaSource));
-            }
-            catch (Exception exception) when (
-                exception is IOException or InvalidDataException or ArgumentException or OverflowException)
-            {
-                var blockedReason =
-                    $"Pokédex placement is unavailable because its active slot mapping could not be verified: {exception.Message}";
-                dexEditor = CreateBlockedDexEditor(
-                    project,
-                    blockedReason,
-                    source,
-                    pokedexSource,
-                    pokedexMegaSource);
-                diagnostics.Add(ZaWorkflowSupport.Warning(
-                    blockedReason,
-                    $"romfs/{ZaDataPaths.PokedexContentsData}"));
+                        pokedexMegaSource);
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        blockedReason,
+                        $"romfs/{ZaDataPaths.PokedexContentsData}"));
+                }
             }
         }
         catch (ProjectFileOperationException)
@@ -966,7 +982,7 @@ internal sealed class ZaPokemonWorkflowService
             VanillaLayoutFingerprint: null);
     }
 
-    private static ZaPokemonDexEditor CreateBlockedDexEditor(
+    private ZaPokemonDexEditor CreateBlockedDexEditor(
         OpenedProject project,
         string blockedReason,
         ZaWorkflowFile? personalSource,
@@ -1059,6 +1075,7 @@ internal sealed class ZaPokemonWorkflowService
             exception is IOException
                 or InvalidDataException
                 or InvalidOperationException
+                or SecurityException
                 or UnauthorizedAccessException
                 or ArgumentException
                 or NotSupportedException
@@ -1075,7 +1092,7 @@ internal sealed class ZaPokemonWorkflowService
         }
     }
 
-    private static DexExecutableStatus AnalyzeDexExecutable(
+    private DexExecutableStatus AnalyzeDexExecutable(
         OpenedProject project,
         int? expectedRegularCount,
         int? activeSpeciesCount)
@@ -1089,6 +1106,7 @@ internal sealed class ZaPokemonWorkflowService
             exception is IOException
                 or InvalidDataException
                 or InvalidOperationException
+                or SecurityException
                 or UnauthorizedAccessException
                 or ArgumentException
                 or NotSupportedException)
@@ -1118,7 +1136,7 @@ internal sealed class ZaPokemonWorkflowService
         try
         {
             var analysis = ZaDexLayoutMainPatcher.Analyze(
-                File.ReadAllBytes(effectiveMain.AbsolutePath),
+                readExecutableBytes(effectiveMain.AbsolutePath),
                 project.Paths.SelectedGame);
             if (analysis.Kind is ZaDexLayoutMainKind.UnsupportedBuild
                 or ZaDexLayoutMainKind.GameMismatch
@@ -1173,7 +1191,7 @@ internal sealed class ZaPokemonWorkflowService
             }
 
             var baseAnalysis = ZaDexLayoutMainPatcher.Analyze(
-                File.ReadAllBytes(baseMain.AbsolutePath),
+                readExecutableBytes(baseMain.AbsolutePath),
                 project.Paths.SelectedGame);
             if (baseAnalysis.Kind != ZaDexLayoutMainKind.Vanilla
                 || baseAnalysis.RegularCount != ZaDexLayoutMainPatcher.VanillaRegularCount
@@ -1201,6 +1219,7 @@ internal sealed class ZaPokemonWorkflowService
             exception is IOException
                 or InvalidDataException
                 or InvalidOperationException
+                or SecurityException
                 or UnauthorizedAccessException
                 or ArgumentException
                 or NotSupportedException)

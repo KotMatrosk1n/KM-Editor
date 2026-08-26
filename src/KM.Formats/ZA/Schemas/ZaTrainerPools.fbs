@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Generated.TrainerPools;
+
+table ZaTrainerPoolActivationParameter {
+  condition:string;
+  op:int;
+  parameters:[string];
+}
+
+table ZaTrainerPoolActivationElement {
+  parameters:[ZaTrainerPoolActivationParameter];
+}
+
+table ZaTrainerPoolActivationCondition {
+  elements:[ZaTrainerPoolActivationElement];
+}
+
+table ZaTrainerPoolAiInfo {
+  actionId:int;
+  pointName:string;
+  actorName:string;
+  createIgnoreFlags:[int];
+  homeRange:float;
+  popActionId:int;
+}
+
+table ZaTrainerPoolAppearance {
+  id:string;
+  trainerId:string;
+  tags:[string];
+  weight:int;
+  activationConditions:[ZaTrainerPoolActivationCondition];
+  aiInfo:ZaTrainerPoolAiInfo;
+}
+
+table ZaTrainerPoolTable {
+  id:string;
+  appearances:[ZaTrainerPoolAppearance];
+}
+
+table ZaTrainerPoolDatabaseGroup {
+  tables:[ZaTrainerPoolTable];
+}
+
+table ZaTrainerPoolDatabaseArray {
+  groups:[ZaTrainerPoolDatabaseGroup];
+}
+
+root_type ZaTrainerPoolDatabaseArray;

@@ -748,7 +748,7 @@ internal sealed class SvTeraRaidsWorkflowService
         }
     }
 
-    private static IEnumerable<SvTeraRaidEntry> BuildRaidEntries(
+    internal static IEnumerable<SvTeraRaidEntry> BuildRaidEntries(
         RaidEnemySourceRows sourceRows,
         SvTextLabelLookup labels,
         SvTeraRaidAbilityResolver abilityResolver,

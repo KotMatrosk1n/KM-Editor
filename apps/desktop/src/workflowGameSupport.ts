@@ -34,12 +34,17 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type AngeFightWorkflow } from './bridge/angeFightContracts';
+import { type BattleCafeRewardsWorkflow } from './bridge/battleCafeRewardsContracts';
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
+import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
+import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
+import { type TmMachineControlsWorkflow } from './bridge/tmMachineControlsContracts';
+import { type TrainerPoolsWorkflow } from './bridge/trainerPoolsContracts';
 import { type WorkbenchSection } from './workbenchStore';
 import {
   getWorkbenchCapabilityRegistration,
@@ -70,13 +75,14 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'editors',
     label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'moves', 'items', 'placement', 'behavior', 'text']
+    sectionIds: ['pokemon', 'trainers', 'trainerPools', 'fashionCatalog', 'moves', 'items', 'placement', 'behavior', 'text']
   },
   {
     id: 'encountersPokemonSources',
     label: 'Encounters & Pokemon Sources',
     sectionIds: [
       'encounters',
+      'habitatCoordinates',
       'staticEncounters',
       'giftPokemon',
       'tradePokemon',
@@ -85,7 +91,11 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'raidBattles'
     ]
   },
-  { id: 'economy', label: 'Economy', sectionIds: ['shops', 'raidRewards', 'raidBonusRewards'] },
+  {
+    id: 'economy',
+    label: 'Economy',
+    sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
+  },
   { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
@@ -158,6 +168,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'rentalPokemon',
   'raidBattles',
   'shops',
+  'tmMachineControls',
   'raidRewards',
   'raidBonusRewards',
   'text'
@@ -178,6 +189,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.rentalPokemon',
   'workflow.raidBattles',
   'workflow.shops',
+  'workflow.tmMachineControls',
   'workflow.raidRewards',
   'workflow.raidBonusRewards',
   'workflow.text'
@@ -215,6 +227,7 @@ export function isPokemonLegendsZAAdvancedEditorSection(
 export type LoadedWorkflowStateBySection = {
   angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
+  battleCafeRewardsWorkflow: BattleCafeRewardsWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
@@ -222,6 +235,7 @@ export type LoadedWorkflowStateBySection = {
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
   fashionUnlockWorkflow: FashionUnlockWorkflow | null;
+  fashionCatalogWorkflow: FashionCatalogWorkflow | null;
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
@@ -242,6 +256,8 @@ export type LoadedWorkflowStateBySection = {
   selectedGame: ProjectGame | null;
   shinyRateWorkflow: ShinyRateWorkflow | null;
   shopsWorkflow: ShopsWorkflow | null;
+  tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
+  habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
@@ -250,6 +266,7 @@ export type LoadedWorkflowStateBySection = {
   textWorkflow: TextWorkflow | null;
   tradePokemonWorkflow: TradePokemonWorkflow | null;
   trainersWorkflow: TrainersWorkflow | null;
+  trainerPoolsWorkflow: TrainerPoolsWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
   zaModMergerWorkflow: ZaModMergerWorkflow | null;
 };
@@ -298,6 +315,8 @@ export function getLoadedWorkflowStateForSection(
       return state.angeFightWorkflow !== null;
     case 'bagHook':
       return state.bagHookWorkflow !== null;
+    case 'battleCafeRewards':
+      return state.battleCafeRewardsWorkflow !== null;
     case 'behavior':
       return state.behaviorWorkflow !== null;
     case 'catchCap':
@@ -314,6 +333,8 @@ export function getLoadedWorkflowStateForSection(
       return state.fairyGymBoostsWorkflow !== null;
     case 'fashionUnlock':
       return state.fashionUnlockWorkflow !== null;
+    case 'fashionCatalog':
+      return state.fashionCatalogWorkflow !== null;
     case 'flagworkSave':
       return state.flagworkSaveWorkflow !== null;
     case 'giftPokemon':
@@ -358,6 +379,10 @@ export function getLoadedWorkflowStateForSection(
       return state.shinyRateWorkflow !== null;
     case 'shops':
       return state.shopsWorkflow !== null;
+    case 'tmMachineControls':
+      return state.tmMachineControlsWorkflow !== null;
+    case 'habitatCoordinates':
+      return state.habitatCoordinatesWorkflow !== null;
     case 'spreadsheetImport':
       return state.spreadsheetImportWorkflow !== null;
     case 'startingItems':
@@ -370,6 +395,8 @@ export function getLoadedWorkflowStateForSection(
       return state.tradePokemonWorkflow !== null;
     case 'trainers':
       return state.trainersWorkflow !== null;
+    case 'trainerPools':
+      return state.trainerPoolsWorkflow !== null;
     case 'typeChart':
       return state.typeChartWorkflow !== null;
     default:

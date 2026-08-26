@@ -81,7 +81,7 @@ public static class OutputReviewFingerprint
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var budget = new FramingBudget(MaximumFramedTextBytes);
-        AppendText(hash, budget, "km-output-mutations-v2");
+        AppendText(hash, budget, "km-output-mutations-v4");
         AppendInt32(hash, materialized.Length);
         foreach (var mutation in materialized)
         {
@@ -96,6 +96,45 @@ public static class OutputReviewFingerprint
             AppendState(hash, budget, mutation.PlannedPostimage);
             AppendNullableText(hash, budget, mutation.OwnershipOutputMode);
             AppendNullableBoolean(hash, mutation.RestoredFileDeleteEligibility);
+            if (mutation.RuntimeMutableDescriptor is { } runtimeMutable)
+            {
+                AppendBoolean(hash, true);
+                AppendInt32(hash, (int)runtimeMutable.Kind);
+                AppendText(
+                    hash,
+                    budget,
+                    runtimeMutable.TitleId.ToString("X16", System.Globalization.CultureInfo.InvariantCulture));
+                AppendNullableText(
+                    hash,
+                    budget,
+                    runtimeMutable.MinimumGeneration?.ToString(
+                        "X16",
+                        System.Globalization.CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                AppendBoolean(hash, false);
+            }
+
+            if (mutation.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
+            {
+                AppendBoolean(hash, true);
+                AppendText(hash, budget, legacyAdoption.ProjectId.Value);
+                AppendInt32(hash, (int)legacyAdoption.GameFamily);
+                AppendText(hash, budget, legacyAdoption.OutputMode);
+                AppendText(hash, budget, legacyAdoption.Target.CanonicalKey);
+                AppendText(hash, budget, legacyAdoption.OwnerId.Value);
+                AppendText(hash, budget, legacyAdoption.PreservationRule.Key);
+                AppendInt32(hash, legacyAdoption.PreservationRule.SchemaVersion);
+                AppendBoolean(hash, legacyAdoption.PreservationRule.PreservesUnownedData);
+                AppendBoolean(hash, legacyAdoption.PreservationRule.RequiresPreimage);
+                AppendState(hash, budget, legacyAdoption.ReviewedPreimage);
+            }
+            else
+            {
+                AppendBoolean(hash, false);
+            }
+
             AppendInt32(hash, mutation.OwnershipClaims.Length);
             foreach (var claim in mutation.OwnershipClaims)
             {

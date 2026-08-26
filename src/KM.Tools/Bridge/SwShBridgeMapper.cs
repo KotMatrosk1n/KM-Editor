@@ -3,6 +3,7 @@
 using KM.Api.Editing;
 using KM.Api.BagHook;
 using KM.Api.Behavior;
+using KM.Api.BattleCafeRewards;
 using KM.Api.CatchCap;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Encounters;
@@ -12,6 +13,7 @@ using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
+using KM.Api.GameModules;
 using KM.Api.HyperTraining;
 using KM.Api.Items;
 using KM.Api.IvScreen;
@@ -37,6 +39,7 @@ using KM.Api.Workflows;
 using KM.Core.Projects;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
+using KM.SwSh.BattleCafeRewards;
 using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
@@ -46,6 +49,7 @@ using KM.SwSh.FashionUnlock;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.GameModules;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
@@ -72,6 +76,43 @@ namespace KM.Tools.Bridge;
 
 public static class SwShBridgeMapper
 {
+    public static SwordShieldGameModuleSourceBatchDto ToDto(
+        SwShGameModuleWorkflowBatch batch)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+
+        return new SwordShieldGameModuleSourceBatchDto(
+            new SwordShieldRewardEcosystemSourceDto(
+                ToDto(batch.RewardEcosystem.NpcItemGifts).Workflow,
+                ToDto(batch.RewardEcosystem.RaidRewards).Workflow,
+                ToBonusDto(batch.RewardEcosystem.RaidBonusRewards).Workflow,
+                ToDto(batch.RewardEcosystem.Shops).Workflow,
+                ToDto(batch.RewardEcosystem.Placement).Workflow),
+            ToDto(batch.ExeFsCompatibility).Workflow,
+            ToDto(batch.DynamaxAdventures).Workflow,
+            ToDto(batch.RentalPokemon).Workflow,
+            ToDto(batch.RoyalCandyProgression).Workflow,
+            new SwordShieldBattleCafeRewardSourceDto(
+                batch.BattleCafeRewards.Rewards
+                    .Select(reward => new SwordShieldBattleCafeRewardEntryDto(
+                        reward.RowIndex,
+                        reward.ItemId,
+                        reward.ItemName,
+                        reward.DwightPercent,
+                        reward.BernardPercent,
+                        reward.RichardPercent))
+                    .ToArray(),
+                batch.BattleCafeRewards.UnavailableReasonCode),
+            new SwordShieldTrainerTypeEventAssignmentSourceDto(
+                batch.EventAssignments.Assignments
+                    .Select(assignment => new SwordShieldTrainerTypeEventAssignmentDto(
+                        assignment.TrainerTypeId,
+                        assignment.EventName,
+                        assignment.IsLayered))
+                    .ToArray(),
+                batch.EventAssignments.UnavailableReasonCode));
+    }
+
     public static ListWorkflowsResponse ToDto(SwShWorkflowList workflowList)
     {
         ArgumentNullException.ThrowIfNull(workflowList);
@@ -238,6 +279,23 @@ public static class SwShBridgeMapper
             new DynamaxAdventureSaveSeedDto(
                 result.SaveFilePath,
                 result.BackupFilePath,
+                result.RecoveryFilePath,
+                result.RecoveryArtifactStatus switch
+                {
+                    SwShDynamaxAdventureRecoveryArtifactStatus.None => "none",
+                    SwShDynamaxAdventureRecoveryArtifactStatus.Retained => "retained",
+                    SwShDynamaxAdventureRecoveryArtifactStatus.Unavailable => "unavailable",
+                    _ => throw new ArgumentOutOfRangeException(nameof(result), result.RecoveryArtifactStatus, "Unknown recovery artifact status."),
+                },
+                result.Outcome switch
+                {
+                    SwShDynamaxAdventureSaveSeedOutcome.Rejected => "rejected",
+                    SwShDynamaxAdventureSaveSeedOutcome.Unchanged => "unchanged",
+                    SwShDynamaxAdventureSaveSeedOutcome.Updated => "updated",
+                    SwShDynamaxAdventureSaveSeedOutcome.Recovered => "recovered",
+                    SwShDynamaxAdventureSaveSeedOutcome.RecoveryRequired => "recoveryRequired",
+                    _ => throw new ArgumentOutOfRangeException(nameof(result), result.Outcome, "Unknown save seed outcome."),
+                },
                 result.OldSeed,
                 result.NewSeed,
                 result.WasChanged,
@@ -614,6 +672,24 @@ public static class SwShBridgeMapper
 
         return new StageNpcItemGiftResponse(
             ToNpcItemGiftWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadBattleCafeRewardsWorkflowResponse ToDto(
+        SwShBattleCafeRewardsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        return new LoadBattleCafeRewardsWorkflowResponse(
+            ToBattleCafeRewardsWorkflowDto(workflow));
+    }
+
+    public static StageBattleCafeRewardRowsResponse ToDto(
+        SwShBattleCafeRewardsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new StageBattleCafeRewardRowsResponse(
+            ToBattleCafeRewardsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1952,6 +2028,35 @@ public static class SwShBridgeMapper
                 workflow.Stats.GiftCount,
                 workflow.Stats.SourceFileCount,
                 workflow.Stats.ItemOptionCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static BattleCafeRewardsWorkflowDto ToBattleCafeRewardsWorkflowDto(
+        SwShBattleCafeRewardsWorkflow workflow)
+    {
+        return new BattleCafeRewardsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Rewards.Select(reward => new BattleCafeRewardRowDto(
+                reward.RowIndex,
+                reward.ItemId,
+                reward.ItemName,
+                reward.DwightPercent,
+                reward.BernardPercent,
+                reward.RichardPercent)).ToArray(),
+            workflow.ItemOptions.Select(item => new BattleCafeRewardItemOptionDto(
+                item.ItemId,
+                item.Name,
+                item.Category)).ToArray(),
+            new BattleCafeRewardTotalsDto(
+                workflow.Totals.DwightPercent,
+                workflow.Totals.BernardPercent,
+                workflow.Totals.RichardPercent),
+            workflow.Provenance is null
+                ? null
+                : new BattleCafeRewardsProvenanceDto(
+                    workflow.Provenance.SourceFile,
+                    ProjectBridgeMapper.ToDto(workflow.Provenance.SourceLayer),
+                    ProjectBridgeMapper.ToDto(workflow.Provenance.FileState)),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 

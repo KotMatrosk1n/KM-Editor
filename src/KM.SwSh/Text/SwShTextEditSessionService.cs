@@ -206,6 +206,17 @@ public sealed class SwShTextEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
         var pendingOutputs = new List<TextOutput>();
         var textEdits = session.PendingEdits.Where(IsTextEdit).ToArray();
@@ -356,7 +367,8 @@ public sealed class SwShTextEditSessionService
                 "Applied Text change plan to the configured LayeredFS output root."));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static bool CanEditText(

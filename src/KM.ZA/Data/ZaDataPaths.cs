@@ -23,6 +23,10 @@ public static class ZaDataPaths
     public const string ItemDataArray = "world/exl/item_data/item_data/item_data.bin";
     public const string EvolutionItemConversionArray = "world/ik_data/battle/plib_item_conversion/plib_item_conversion_array.bin";
     public const string TrainerDataArray = "world/ik_data/trainer/trdata/trdata_array.bin";
+    public const string TrainerPoolTableDataArray =
+        "world/ik_data/field/npc/za_trainer_table_data/za_trainer_table_data/za_trainer_table_data_array.bin";
+    public const string TrainerPoolIdentityDataArray =
+        "world/ik_data/field/npc/za_trainer_data/za_trainer_data/za_trainer_data_array.bin";
     public const string PokemonDataArray = "world/ik_data/field/pokemon/pokemon_data/pokemon_data/pokemon_data_array.bin";
     public const string EncountDataArray = "world/ik_data/field/pokemon/encount_data/encount_data/encount_data_array.bin";
     public const string PokemonSpawnerDataArray = "world/ik_data/field/pokemon_spawner/pokemon_spawner_data/pokemon_spawner_data_array.bin";

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 import {
   type ApplyChangePlanRequest,
   type ApplyChangePlanResponse,
@@ -34,6 +34,12 @@ import {
   type LoadRentalPokemonWorkflowResponse,
   type LoadDynamaxAdventuresWorkflowRequest,
   type LoadDynamaxAdventuresWorkflowResponse,
+  type PlanDynamaxAdventureSeedRequest,
+  type PlanDynamaxAdventureSeedResponse,
+  type SearchDynamaxAdventureSeedRequest,
+  type SearchDynamaxAdventureSeedResponse,
+  type SetDynamaxAdventureSaveSeedRequest,
+  type SetDynamaxAdventureSaveSeedResponse,
   type PreviewDynamaxAdventureDefaultsRequest,
   type PreviewDynamaxAdventureDefaultsResponse,
   type StageDynamaxAdventureRepairRequest,
@@ -88,8 +94,10 @@ import {
   type StageCatchCapUninstallResponse,
   type StageHyperTrainingRequest,
   type StageHyperTrainingResponse,
-  type StageTypeChartRequest, type StageTypeChartResponse,
-  type StageTypeChartUninstallRequest, type StageTypeChartUninstallResponse,
+  type StageTypeChartRequest,
+  type StageTypeChartResponse,
+  type StageTypeChartUninstallRequest,
+  type StageTypeChartUninstallResponse,
   type StageIvScreenInstallRequest,
   type StageIvScreenInstallResponse,
   type StageIvScreenUninstallRequest,
@@ -203,6 +211,12 @@ import {
   loadRentalPokemonWorkflowResponseSchema,
   loadDynamaxAdventuresWorkflowRequestSchema,
   loadDynamaxAdventuresWorkflowResponseSchema,
+  planDynamaxAdventureSeedRequestSchema,
+  planDynamaxAdventureSeedResponseSchema,
+  searchDynamaxAdventureSeedRequestSchema,
+  searchDynamaxAdventureSeedResponseSchema,
+  setDynamaxAdventureSaveSeedRequestSchema,
+  setDynamaxAdventureSaveSeedResponseSchema,
   previewDynamaxAdventureDefaultsRequestSchema,
   previewDynamaxAdventureDefaultsResponseSchema,
   stageDynamaxAdventureRepairRequestSchema,
@@ -282,8 +296,8 @@ import {
   updateTextEntryResponseSchema,
   updateTrainerFieldResponseSchema,
   validateEditSessionResponseSchema,
-  validateProjectResponseSchema
-} from './contracts';
+  validateProjectResponseSchema,
+} from "./contracts";
 import {
   type LoadFashionUnlockWorkflowRequest,
   type LoadFashionUnlockWorkflowResponse,
@@ -293,8 +307,52 @@ import {
   type StageFashionUnlockUninstallResponse,
   loadFashionUnlockWorkflowResponseSchema,
   stageFashionUnlockInstallResponseSchema,
-  stageFashionUnlockUninstallResponseSchema
-} from './fashionUnlockContracts';
+  stageFashionUnlockUninstallResponseSchema,
+} from "./fashionUnlockContracts";
+import {
+  type LoadFashionCatalogWorkflowRequest,
+  type LoadFashionCatalogWorkflowResponse,
+  type StageFashionCatalogFieldEditRequest,
+  type StageFashionCatalogFieldEditResponse,
+  loadFashionCatalogWorkflowRequestSchema,
+  loadFashionCatalogWorkflowResponseSchema,
+  stageFashionCatalogFieldEditRequestSchema,
+  stageFashionCatalogFieldEditResponseSchema,
+} from "./fashionCatalogContracts";
+import {
+  type LoadTmMachineControlsRequest,
+  type LoadTmMachineControlsResponse,
+  type StageTmMaterialVisibilityRequest,
+  type StageTmMaterialVisibilityResponse,
+  type StageTmRecipeAvailabilityRequest,
+  type StageTmRecipeAvailabilityResponse,
+  loadTmMachineControlsRequestSchema,
+  loadTmMachineControlsResponseSchema,
+  stageTmMaterialVisibilityRequestSchema,
+  stageTmMaterialVisibilityResponseSchema,
+  stageTmRecipeAvailabilityRequestSchema,
+  stageTmRecipeAvailabilityResponseSchema,
+} from "./tmMachineControlsContracts";
+import {
+  type LoadHabitatCoordinatesRequest,
+  type LoadHabitatCoordinatesResponse,
+  type StageHabitatCoordinateRequest,
+  type StageHabitatCoordinateResponse,
+  loadHabitatCoordinatesRequestSchema,
+  loadHabitatCoordinatesResponseSchema,
+  stageHabitatCoordinateRequestSchema,
+  stageHabitatCoordinateResponseSchema,
+} from "./habitatCoordinatesContracts";
+import {
+  type LoadTrainerPoolsWorkflowRequest,
+  type LoadTrainerPoolsWorkflowResponse,
+  type StageTrainerPoolFixedCountSwapRequest,
+  type StageTrainerPoolFixedCountSwapResponse,
+  loadTrainerPoolsWorkflowRequestSchema,
+  loadTrainerPoolsWorkflowResponseSchema,
+  stageTrainerPoolFixedCountSwapRequestSchema,
+  stageTrainerPoolFixedCountSwapResponseSchema,
+} from "./trainerPoolsContracts";
 import {
   type LoadGymUniformRemovalWorkflowRequest,
   type LoadGymUniformRemovalWorkflowResponse,
@@ -304,8 +362,8 @@ import {
   type StageGymUniformRemovalUninstallResponse,
   loadGymUniformRemovalWorkflowResponseSchema,
   stageGymUniformRemovalInstallResponseSchema,
-  stageGymUniformRemovalUninstallResponseSchema
-} from './gymUniformRemovalContracts';
+  stageGymUniformRemovalUninstallResponseSchema,
+} from "./gymUniformRemovalContracts";
 import {
   type ApplyFpsPatchRequest,
   type ApplyFpsPatchResponse,
@@ -315,8 +373,8 @@ import {
   type RestoreFpsPatchResponse,
   applyFpsPatchResponseSchema,
   loadFpsPatchResponseSchema,
-  restoreFpsPatchResponseSchema
-} from './fpsPatchContracts';
+  restoreFpsPatchResponseSchema,
+} from "./fpsPatchContracts";
 import {
   type ApplyProfanityFilterRequest,
   type ApplyProfanityFilterResponse,
@@ -326,24 +384,32 @@ import {
   type RestoreProfanityFilterResponse,
   applyProfanityFilterResponseSchema,
   loadProfanityFilterResponseSchema,
-  restoreProfanityFilterResponseSchema
-} from './profanityFilterContracts';
+  restoreProfanityFilterResponseSchema,
+} from "./profanityFilterContracts";
 import {
   type LoadNpcItemGiftWorkflowRequest,
   type LoadNpcItemGiftWorkflowResponse,
   type StageNpcItemGiftRequest,
   type StageNpcItemGiftResponse,
   loadNpcItemGiftWorkflowResponseSchema,
-  stageNpcItemGiftResponseSchema
-} from './npcItemGiftContracts';
+  stageNpcItemGiftResponseSchema,
+} from "./npcItemGiftContracts";
+import {
+  type LoadBattleCafeRewardsWorkflowRequest,
+  type LoadBattleCafeRewardsWorkflowResponse,
+  type StageBattleCafeRewardRowsRequest,
+  type StageBattleCafeRewardRowsResponse,
+  loadBattleCafeRewardsWorkflowResponseSchema,
+  stageBattleCafeRewardRowsResponseSchema,
+} from "./battleCafeRewardsContracts";
 import {
   type LoadFairyGymBoostsWorkflowRequest,
   type LoadFairyGymBoostsWorkflowResponse,
   type StageFairyGymBoostsRequest,
   type StageFairyGymBoostsResponse,
   loadFairyGymBoostsWorkflowResponseSchema,
-  stageFairyGymBoostsResponseSchema
-} from './fairyGymBoostsContracts';
+  stageFairyGymBoostsResponseSchema,
+} from "./fairyGymBoostsContracts";
 import {
   type LoadAngeFightWorkflowRequest,
   type LoadAngeFightWorkflowResponse,
@@ -353,16 +419,16 @@ import {
   type StageAngeFightUninstallResponse,
   loadAngeFightWorkflowResponseSchema,
   stageAngeFightResponseSchema,
-  stageAngeFightUninstallResponseSchema
-} from './angeFightContracts';
+  stageAngeFightUninstallResponseSchema,
+} from "./angeFightContracts";
 import {
   type LoadShinyRateWorkflowRequest,
   type LoadShinyRateWorkflowResponse,
   type StageShinyRateRequest,
   type StageShinyRateResponse,
   loadShinyRateWorkflowResponseSchema,
-  stageShinyRateResponseSchema
-} from './shinyRateContracts';
+  stageShinyRateResponseSchema,
+} from "./shinyRateContracts";
 import {
   type LoadHyperspaceBypassWorkflowRequest,
   type LoadHyperspaceBypassWorkflowResponse,
@@ -372,385 +438,519 @@ import {
   type StageHyperspaceBypassUninstallResponse,
   loadHyperspaceBypassWorkflowResponseSchema,
   stageHyperspaceBypassInstallResponseSchema,
-  stageHyperspaceBypassUninstallResponseSchema
-} from './hyperspaceBypassContracts';
-export { ProjectBridgeError } from './projectBridgeError';
-import { sendProjectBridgeRequest, type ProjectBridgeTransport } from './projectBridgeRequest';
-import { createSvBatchFieldProjectBridgeApi, type SvBatchFieldProjectBridgeApi } from './svBatchFieldProjectBridge';
-import { createSvCacheProjectBridgeApi, type SvCacheProjectBridgeApi } from './svCacheProjectBridge';
-import { createZaCacheProjectBridgeApi, type ZaCacheProjectBridgeApi } from './zaCacheProjectBridge';
+  stageHyperspaceBypassUninstallResponseSchema,
+} from "./hyperspaceBypassContracts";
+export { ProjectBridgeError } from "./projectBridgeError";
+import {
+  sendProjectBridgeRequest,
+  type ProjectBridgeTransport,
+} from "./projectBridgeRequest";
+import {
+  createSvBatchFieldProjectBridgeApi,
+  type SvBatchFieldProjectBridgeApi,
+} from "./svBatchFieldProjectBridge";
+import {
+  createSvCacheProjectBridgeApi,
+  type SvCacheProjectBridgeApi,
+} from "./svCacheProjectBridge";
+import {
+  createZaCacheProjectBridgeApi,
+  type ZaCacheProjectBridgeApi,
+} from "./zaCacheProjectBridge";
 import {
   createSwShCacheProjectBridgeApi,
-  type SwShCacheProjectBridgeApi
-} from './swShCacheProjectBridge';
-import { createGameDumpProjectBridgeApi, type GameDumpProjectBridgeApi } from './gameDumpProjectBridge';
+  type SwShCacheProjectBridgeApi,
+} from "./swShCacheProjectBridge";
+import {
+  createGameDumpProjectBridgeApi,
+  type GameDumpProjectBridgeApi,
+} from "./gameDumpProjectBridge";
 import {
   createSwShPlacementProjectBridgeApi,
-  type SwShPlacementProjectBridgeApi
-} from './swShPlacementProjectBridge';
+  type SwShPlacementProjectBridgeApi,
+} from "./swShPlacementProjectBridge";
 import {
   createWorkspaceDraftProjectBridgeApi,
-  type WorkspaceDraftProjectBridgeApi
-} from './workspaceDraftProjectBridge';
+  type WorkspaceDraftProjectBridgeApi,
+} from "./workspaceDraftProjectBridge";
+import {
+  createProjectSourceRevisionProjectBridgeApi,
+  type ProjectSourceRevisionProjectBridgeApi,
+} from "./projectSourceRevisionProjectBridge";
 import {
   createWorkspacePersonalStateProjectBridgeApi,
-  type WorkspacePersonalStateProjectBridgeApi
-} from './workspacePersonalStateProjectBridge';
+  type WorkspacePersonalStateProjectBridgeApi,
+} from "./workspacePersonalStateProjectBridge";
 import {
   createOutputSafetyProjectBridgeApi,
-  type OutputSafetyProjectBridgeApi
-} from './outputSafetyProjectBridge';
+  type OutputSafetyProjectBridgeApi,
+} from "./outputSafetyProjectBridge";
+import {
+  createGameplaySettingsProjectBridgeApi,
+  type GameplaySettingsProjectBridgeApi,
+} from "./gameplaySettingsProjectBridge";
 import {
   createChangeSetProjectBridgeApi,
-  type ChangeSetProjectBridgeApi
-} from './changeSetProjectBridge';
+  type ChangeSetProjectBridgeApi,
+} from "./changeSetProjectBridge";
 import {
   createSemanticExploreProjectBridgeApi,
-  type SemanticExploreProjectBridgeApi
-} from './semanticExploreProjectBridge';
+  type SemanticExploreProjectBridgeApi,
+} from "./semanticExploreProjectBridge";
 import {
   createBalanceLabProjectBridgeApi,
-  type BalanceLabProjectBridgeApi
-} from './balanceLabProjectBridge';
+  type BalanceLabProjectBridgeApi,
+} from "./balanceLabProjectBridge";
 import {
   createGameModuleProjectBridgeApi,
-  type GameModuleProjectBridgeApi
-} from './gameModuleProjectBridge';
+  type GameModuleProjectBridgeApi,
+} from "./gameModuleProjectBridge";
 import {
   createGuidedDesignProjectBridgeApi,
-  type GuidedDesignProjectBridgeApi
-} from './guidedDesignProjectBridge';
+  type GuidedDesignProjectBridgeApi,
+} from "./guidedDesignProjectBridge";
 import {
   createSemanticMergeProjectBridgeApi,
-  type SemanticMergeProjectBridgeApi
-} from './semanticMergeProjectBridge';
+  type SemanticMergeProjectBridgeApi,
+} from "./semanticMergeProjectBridge";
 import {
   createResearchLabProjectBridgeApi,
-  type ResearchLabProjectBridgeApi
-} from './researchLabProjectBridge';
+  type ResearchLabProjectBridgeApi,
+} from "./researchLabProjectBridge";
+import {
+  createRowClipboardProjectBridgeApi,
+  type RowClipboardProjectBridgeApi,
+} from "./rowClipboardProjectBridge";
 
 export type ProjectBridge = {
-  applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
-  createChangePlan: (request: CreateChangePlanRequest) => Promise<CreateChangePlanResponse>;
-  listWorkflows: (request: ListWorkflowsRequest) => Promise<ListWorkflowsResponse>;
-  loadEncountersWorkflow: (request: LoadEncountersWorkflowRequest) => Promise<LoadEncountersWorkflowResponse>;
+  applyChangePlan: (
+    request: ApplyChangePlanRequest,
+  ) => Promise<ApplyChangePlanResponse>;
+  createChangePlan: (
+    request: CreateChangePlanRequest,
+  ) => Promise<CreateChangePlanResponse>;
+  listWorkflows: (
+    request: ListWorkflowsRequest,
+  ) => Promise<ListWorkflowsResponse>;
+  loadEncountersWorkflow: (
+    request: LoadEncountersWorkflowRequest,
+  ) => Promise<LoadEncountersWorkflowResponse>;
   loadExeFsPatchWorkflow: (
-    request: LoadExeFsPatchWorkflowRequest
+    request: LoadExeFsPatchWorkflowRequest,
   ) => Promise<LoadExeFsPatchWorkflowResponse>;
-  stageExeFsPatch: (request: StageExeFsPatchRequest) => Promise<StageExeFsPatchResponse>;
+  stageExeFsPatch: (
+    request: StageExeFsPatchRequest,
+  ) => Promise<StageExeFsPatchResponse>;
   loadFlagworkSaveWorkflow: (
-    request: LoadFlagworkSaveWorkflowRequest
+    request: LoadFlagworkSaveWorkflowRequest,
   ) => Promise<LoadFlagworkSaveWorkflowResponse>;
   loadGiftPokemonWorkflow: (
-    request: LoadGiftPokemonWorkflowRequest
+    request: LoadGiftPokemonWorkflowRequest,
   ) => Promise<LoadGiftPokemonWorkflowResponse>;
   loadTradePokemonWorkflow: (
-    request: LoadTradePokemonWorkflowRequest
+    request: LoadTradePokemonWorkflowRequest,
   ) => Promise<LoadTradePokemonWorkflowResponse>;
   loadStaticEncountersWorkflow: (
-    request: LoadStaticEncountersWorkflowRequest
+    request: LoadStaticEncountersWorkflowRequest,
   ) => Promise<LoadStaticEncountersWorkflowResponse>;
   loadRentalPokemonWorkflow: (
-    request: LoadRentalPokemonWorkflowRequest
+    request: LoadRentalPokemonWorkflowRequest,
   ) => Promise<LoadRentalPokemonWorkflowResponse>;
   loadDynamaxAdventuresWorkflow: (
-    request: LoadDynamaxAdventuresWorkflowRequest
+    request: LoadDynamaxAdventuresWorkflowRequest,
   ) => Promise<LoadDynamaxAdventuresWorkflowResponse>;
+  planDynamaxAdventureSeed: (
+    request: PlanDynamaxAdventureSeedRequest,
+  ) => Promise<PlanDynamaxAdventureSeedResponse>;
+  searchDynamaxAdventureSeed: (
+    request: SearchDynamaxAdventureSeedRequest,
+  ) => Promise<SearchDynamaxAdventureSeedResponse>;
+  setDynamaxAdventureSaveSeed: (
+    request: SetDynamaxAdventureSaveSeedRequest,
+  ) => Promise<SetDynamaxAdventureSaveSeedResponse>;
   previewDynamaxAdventureDefaults: (
-    request: PreviewDynamaxAdventureDefaultsRequest
+    request: PreviewDynamaxAdventureDefaultsRequest,
   ) => Promise<PreviewDynamaxAdventureDefaultsResponse>;
   stageDynamaxAdventureRepair: (
-    request: StageDynamaxAdventureRepairRequest
+    request: StageDynamaxAdventureRepairRequest,
   ) => Promise<StageDynamaxAdventureRepairResponse>;
   stageDynamaxAdventureRestore: (
-    request: StageDynamaxAdventureRestoreRequest
+    request: StageDynamaxAdventureRestoreRequest,
   ) => Promise<StageDynamaxAdventureRestoreResponse>;
-  loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
-  loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
+  loadItemsWorkflow: (
+    request: LoadItemsWorkflowRequest,
+  ) => Promise<LoadItemsWorkflowResponse>;
+  loadMovesWorkflow: (
+    request: LoadMovesWorkflowRequest,
+  ) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
-    request: LoadPokemonWorkflowRequest
+    request: LoadPokemonWorkflowRequest,
   ) => Promise<LoadPokemonWorkflowResponse>;
   updatePokemonField: (
-    request: UpdatePokemonFieldRequest
+    request: UpdatePokemonFieldRequest,
   ) => Promise<UpdatePokemonFieldResponse>;
   updatePokemonLearnset: (
-    request: UpdatePokemonLearnsetRequest
+    request: UpdatePokemonLearnsetRequest,
   ) => Promise<UpdatePokemonLearnsetResponse>;
   updatePokemonEvolution: (
-    request: UpdatePokemonEvolutionRequest
+    request: UpdatePokemonEvolutionRequest,
   ) => Promise<UpdatePokemonEvolutionResponse>;
   movePokemonDexPlacement: (
-    request: MovePokemonDexPlacementRequest
+    request: MovePokemonDexPlacementRequest,
   ) => Promise<MovePokemonDexPlacementResponse>;
   resizePokemonDex: (
-    request: ResizePokemonDexRequest
+    request: ResizePokemonDexRequest,
   ) => Promise<ResizePokemonDexResponse>;
   stagePokemonDexVanilla: (
-    request: StagePokemonDexVanillaRequest
+    request: StagePokemonDexVanillaRequest,
   ) => Promise<StagePokemonDexVanillaResponse>;
   stagePokemonDexMegaSync: (
-    request: StagePokemonDexMegaSyncRequest
+    request: StagePokemonDexMegaSyncRequest,
   ) => Promise<StagePokemonDexMegaSyncResponse>;
   swapPokemonDexPlacement: (
-    request: SwapPokemonDexPlacementRequest
+    request: SwapPokemonDexPlacementRequest,
   ) => Promise<SwapPokemonDexPlacementResponse>;
   loadPlacementWorkflow: (
-    request: LoadPlacementWorkflowRequest
+    request: LoadPlacementWorkflowRequest,
   ) => Promise<LoadPlacementWorkflowResponse>;
   loadBehaviorWorkflow: (
-    request: LoadBehaviorWorkflowRequest
+    request: LoadBehaviorWorkflowRequest,
   ) => Promise<LoadBehaviorWorkflowResponse>;
   loadRaidBattlesWorkflow: (
-    request: LoadRaidBattlesWorkflowRequest
+    request: LoadRaidBattlesWorkflowRequest,
   ) => Promise<LoadRaidBattlesWorkflowResponse>;
   loadTeraRaidsWorkflow: (
-    request: LoadTeraRaidsWorkflowRequest
+    request: LoadTeraRaidsWorkflowRequest,
   ) => Promise<LoadTeraRaidsWorkflowResponse>;
   loadRaidRewardsWorkflow: (
-    request: LoadRaidRewardsWorkflowRequest
+    request: LoadRaidRewardsWorkflowRequest,
   ) => Promise<LoadRaidRewardsWorkflowResponse>;
   loadRaidBonusRewardsWorkflow: (
-    request: LoadRaidBonusRewardsWorkflowRequest
+    request: LoadRaidBonusRewardsWorkflowRequest,
   ) => Promise<LoadRaidBonusRewardsWorkflowResponse>;
   loadBagHookWorkflow: (
-    request: LoadBagHookWorkflowRequest
+    request: LoadBagHookWorkflowRequest,
   ) => Promise<LoadBagHookWorkflowResponse>;
   stageBagHookInstall: (
-    request: StageBagHookInstallRequest
+    request: StageBagHookInstallRequest,
   ) => Promise<StageBagHookInstallResponse>;
   stageBagHookUninstall: (
-    request: StageBagHookUninstallRequest
+    request: StageBagHookUninstallRequest,
   ) => Promise<StageBagHookUninstallResponse>;
   loadCatchCapWorkflow: (
-    request: LoadCatchCapWorkflowRequest
+    request: LoadCatchCapWorkflowRequest,
   ) => Promise<LoadCatchCapWorkflowResponse>;
-  stageCatchCap: (request: StageCatchCapRequest) => Promise<StageCatchCapResponse>;
+  stageCatchCap: (
+    request: StageCatchCapRequest,
+  ) => Promise<StageCatchCapResponse>;
   stageCatchCapUninstall: (
-    request: StageCatchCapUninstallRequest
+    request: StageCatchCapUninstallRequest,
   ) => Promise<StageCatchCapUninstallResponse>;
   loadHyperTrainingWorkflow: (
-    request: LoadHyperTrainingWorkflowRequest
+    request: LoadHyperTrainingWorkflowRequest,
   ) => Promise<LoadHyperTrainingWorkflowResponse>;
   stageHyperTraining: (
-    request: StageHyperTrainingRequest
+    request: StageHyperTrainingRequest,
   ) => Promise<StageHyperTrainingResponse>;
   loadShinyRateWorkflow: (
-    request: LoadShinyRateWorkflowRequest
+    request: LoadShinyRateWorkflowRequest,
   ) => Promise<LoadShinyRateWorkflowResponse>;
   stageShinyRate: (
-    request: StageShinyRateRequest
+    request: StageShinyRateRequest,
   ) => Promise<StageShinyRateResponse>;
   loadTypeChartWorkflow: (
-    request: LoadTypeChartWorkflowRequest
+    request: LoadTypeChartWorkflowRequest,
   ) => Promise<LoadTypeChartWorkflowResponse>;
   stageTypeChart: (
-    request: StageTypeChartRequest
+    request: StageTypeChartRequest,
   ) => Promise<StageTypeChartResponse>;
-  stageTypeChartUninstall: (request: StageTypeChartUninstallRequest) => Promise<StageTypeChartUninstallResponse>;
+  stageTypeChartUninstall: (
+    request: StageTypeChartUninstallRequest,
+  ) => Promise<StageTypeChartUninstallResponse>;
   loadAngeFightWorkflow: (
-    request: LoadAngeFightWorkflowRequest
+    request: LoadAngeFightWorkflowRequest,
   ) => Promise<LoadAngeFightWorkflowResponse>;
   stageAngeFight: (
-    request: StageAngeFightRequest
+    request: StageAngeFightRequest,
   ) => Promise<StageAngeFightResponse>;
   stageAngeFightUninstall: (
-    request: StageAngeFightUninstallRequest
+    request: StageAngeFightUninstallRequest,
   ) => Promise<StageAngeFightUninstallResponse>;
   loadFairyGymBoostsWorkflow: (
-    request: LoadFairyGymBoostsWorkflowRequest
+    request: LoadFairyGymBoostsWorkflowRequest,
   ) => Promise<LoadFairyGymBoostsWorkflowResponse>;
   stageFairyGymBoosts: (
-    request: StageFairyGymBoostsRequest
+    request: StageFairyGymBoostsRequest,
   ) => Promise<StageFairyGymBoostsResponse>;
   loadFashionUnlockWorkflow: (
-    request: LoadFashionUnlockWorkflowRequest
+    request: LoadFashionUnlockWorkflowRequest,
   ) => Promise<LoadFashionUnlockWorkflowResponse>;
   stageFashionUnlockInstall: (
-    request: StageFashionUnlockInstallRequest
+    request: StageFashionUnlockInstallRequest,
   ) => Promise<StageFashionUnlockInstallResponse>;
   stageFashionUnlockUninstall: (
-    request: StageFashionUnlockUninstallRequest
+    request: StageFashionUnlockUninstallRequest,
   ) => Promise<StageFashionUnlockUninstallResponse>;
   loadGymUniformRemovalWorkflow: (
-    request: LoadGymUniformRemovalWorkflowRequest
+    request: LoadGymUniformRemovalWorkflowRequest,
   ) => Promise<LoadGymUniformRemovalWorkflowResponse>;
   stageGymUniformRemovalInstall: (
-    request: StageGymUniformRemovalInstallRequest
+    request: StageGymUniformRemovalInstallRequest,
   ) => Promise<StageGymUniformRemovalInstallResponse>;
   stageGymUniformRemovalUninstall: (
-    request: StageGymUniformRemovalUninstallRequest
+    request: StageGymUniformRemovalUninstallRequest,
   ) => Promise<StageGymUniformRemovalUninstallResponse>;
   loadHyperspaceBypassWorkflow: (
-    request: LoadHyperspaceBypassWorkflowRequest
+    request: LoadHyperspaceBypassWorkflowRequest,
   ) => Promise<LoadHyperspaceBypassWorkflowResponse>;
   stageHyperspaceBypassInstall: (
-    request: StageHyperspaceBypassInstallRequest
+    request: StageHyperspaceBypassInstallRequest,
   ) => Promise<StageHyperspaceBypassInstallResponse>;
   stageHyperspaceBypassUninstall: (
-    request: StageHyperspaceBypassUninstallRequest
+    request: StageHyperspaceBypassUninstallRequest,
   ) => Promise<StageHyperspaceBypassUninstallResponse>;
   loadIvScreenWorkflow: (
-    request: LoadIvScreenWorkflowRequest
+    request: LoadIvScreenWorkflowRequest,
   ) => Promise<LoadIvScreenWorkflowResponse>;
   stageIvScreenInstall: (
-    request: StageIvScreenInstallRequest
+    request: StageIvScreenInstallRequest,
   ) => Promise<StageIvScreenInstallResponse>;
   stageIvScreenUninstall: (
-    request: StageIvScreenUninstallRequest
+    request: StageIvScreenUninstallRequest,
   ) => Promise<StageIvScreenUninstallResponse>;
   loadRoyalCandyWorkflow: (
-    request: LoadRoyalCandyWorkflowRequest
+    request: LoadRoyalCandyWorkflowRequest,
   ) => Promise<LoadRoyalCandyWorkflowResponse>;
   stageRoyalCandyWorkflow: (
-    request: StageRoyalCandyWorkflowRequest
+    request: StageRoyalCandyWorkflowRequest,
   ) => Promise<StageRoyalCandyWorkflowResponse>;
   loadStartingItemsWorkflow: (
-    request: LoadStartingItemsWorkflowRequest
+    request: LoadStartingItemsWorkflowRequest,
   ) => Promise<LoadStartingItemsWorkflowResponse>;
   stageStartingItems: (
-    request: StageStartingItemsRequest
+    request: StageStartingItemsRequest,
   ) => Promise<StageStartingItemsResponse>;
   loadNpcItemGiftWorkflow: (
-    request: LoadNpcItemGiftWorkflowRequest
+    request: LoadNpcItemGiftWorkflowRequest,
   ) => Promise<LoadNpcItemGiftWorkflowResponse>;
   stageNpcItemGift: (
-    request: StageNpcItemGiftRequest
+    request: StageNpcItemGiftRequest,
   ) => Promise<StageNpcItemGiftResponse>;
+  loadBattleCafeRewardsWorkflow: (
+    request: LoadBattleCafeRewardsWorkflowRequest,
+  ) => Promise<LoadBattleCafeRewardsWorkflowResponse>;
+  stageBattleCafeRewardRows: (
+    request: StageBattleCafeRewardRowsRequest,
+  ) => Promise<StageBattleCafeRewardRowsResponse>;
   loadSpreadsheetImportWorkflow: (
-    request: LoadSpreadsheetImportWorkflowRequest
+    request: LoadSpreadsheetImportWorkflowRequest,
   ) => Promise<LoadSpreadsheetImportWorkflowResponse>;
   previewSpreadsheetImport: (
-    request: PreviewSpreadsheetImportRequest
+    request: PreviewSpreadsheetImportRequest,
   ) => Promise<PreviewSpreadsheetImportResponse>;
   loadModMergerWorkflow: (
-    request: LoadModMergerWorkflowRequest
+    request: LoadModMergerWorkflowRequest,
   ) => Promise<LoadModMergerWorkflowResponse>;
-  stageModMerge: (request: StageModMergeRequest) => Promise<StageModMergeResponse>;
-  applyModMerge: (request: ApplyModMergeRequest) => Promise<ApplyModMergeResponse>;
+  stageModMerge: (
+    request: StageModMergeRequest,
+  ) => Promise<StageModMergeResponse>;
+  applyModMerge: (
+    request: ApplyModMergeRequest,
+  ) => Promise<ApplyModMergeResponse>;
   loadSvModMergerWorkflow: (
-    request: LoadSvModMergerWorkflowRequest
+    request: LoadSvModMergerWorkflowRequest,
   ) => Promise<LoadSvModMergerWorkflowResponse>;
   stageSvModMerge: (
-    request: StageSvModMergeRequest
+    request: StageSvModMergeRequest,
   ) => Promise<StageSvModMergeResponse>;
   applySvModMerge: (
-    request: ApplySvModMergeRequest
+    request: ApplySvModMergeRequest,
   ) => Promise<ApplySvModMergeResponse>;
   loadZaModMergerWorkflow: (
-    request: LoadZaModMergerWorkflowRequest
+    request: LoadZaModMergerWorkflowRequest,
   ) => Promise<LoadZaModMergerWorkflowResponse>;
   stageZaModMerge: (
-    request: StageZaModMergeRequest
+    request: StageZaModMergeRequest,
   ) => Promise<StageZaModMergeResponse>;
   applyZaModMerge: (
-    request: ApplyZaModMergeRequest
+    request: ApplyZaModMergeRequest,
   ) => Promise<ApplyZaModMergeResponse>;
   loadFpsPatch: (request: LoadFpsPatchRequest) => Promise<LoadFpsPatchResponse>;
-  applyFpsPatch: (request: ApplyFpsPatchRequest) => Promise<ApplyFpsPatchResponse>;
-  restoreFpsPatch: (request: RestoreFpsPatchRequest) => Promise<RestoreFpsPatchResponse>;
-  loadProfanityFilter: (request: LoadProfanityFilterRequest) => Promise<LoadProfanityFilterResponse>;
-  applyProfanityFilter: (request: ApplyProfanityFilterRequest) => Promise<ApplyProfanityFilterResponse>;
+  applyFpsPatch: (
+    request: ApplyFpsPatchRequest,
+  ) => Promise<ApplyFpsPatchResponse>;
+  restoreFpsPatch: (
+    request: RestoreFpsPatchRequest,
+  ) => Promise<RestoreFpsPatchResponse>;
+  loadProfanityFilter: (
+    request: LoadProfanityFilterRequest,
+  ) => Promise<LoadProfanityFilterResponse>;
+  applyProfanityFilter: (
+    request: ApplyProfanityFilterRequest,
+  ) => Promise<ApplyProfanityFilterResponse>;
   restoreProfanityFilter: (
-    request: RestoreProfanityFilterRequest
+    request: RestoreProfanityFilterRequest,
   ) => Promise<RestoreProfanityFilterResponse>;
   importRandomizerSeed: (
-    request: ImportRandomizerSeedRequest
+    request: ImportRandomizerSeedRequest,
   ) => Promise<ImportRandomizerSeedResponse>;
-  applyRandomizer: (request: ApplyRandomizerRequest) => Promise<ApplyRandomizerResponse>;
-  restoreRandomizer: (request: RestoreRandomizerRequest) => Promise<RestoreRandomizerResponse>;
-  loadShopsWorkflow: (request: LoadShopsWorkflowRequest) => Promise<LoadShopsWorkflowResponse>;
-  loadTextWorkflow: (request: LoadTextWorkflowRequest) => Promise<LoadTextWorkflowResponse>;
+  applyRandomizer: (
+    request: ApplyRandomizerRequest,
+  ) => Promise<ApplyRandomizerResponse>;
+  restoreRandomizer: (
+    request: RestoreRandomizerRequest,
+  ) => Promise<RestoreRandomizerResponse>;
+  loadShopsWorkflow: (
+    request: LoadShopsWorkflowRequest,
+  ) => Promise<LoadShopsWorkflowResponse>;
+  loadTmMachineControls: (
+    request: LoadTmMachineControlsRequest,
+  ) => Promise<LoadTmMachineControlsResponse>;
+  stageTmRecipeAvailability: (
+    request: StageTmRecipeAvailabilityRequest,
+  ) => Promise<StageTmRecipeAvailabilityResponse>;
+  stageTmMaterialVisibility: (
+    request: StageTmMaterialVisibilityRequest,
+  ) => Promise<StageTmMaterialVisibilityResponse>;
+  loadHabitatCoordinates: (
+    request: LoadHabitatCoordinatesRequest,
+  ) => Promise<LoadHabitatCoordinatesResponse>;
+  stageHabitatCoordinate: (
+    request: StageHabitatCoordinateRequest,
+  ) => Promise<StageHabitatCoordinateResponse>;
+  loadTextWorkflow: (
+    request: LoadTextWorkflowRequest,
+  ) => Promise<LoadTextWorkflowResponse>;
   loadTrainersWorkflow: (
-    request: LoadTrainersWorkflowRequest
+    request: LoadTrainersWorkflowRequest,
   ) => Promise<LoadTrainersWorkflowResponse>;
+  loadTrainerPoolsWorkflow: (
+    request: LoadTrainerPoolsWorkflowRequest,
+  ) => Promise<LoadTrainerPoolsWorkflowResponse>;
+  stageTrainerPoolFixedCountSwap: (
+    request: StageTrainerPoolFixedCountSwapRequest,
+  ) => Promise<StageTrainerPoolFixedCountSwapResponse>;
+  loadFashionCatalogWorkflow: (
+    request: LoadFashionCatalogWorkflowRequest,
+  ) => Promise<LoadFashionCatalogWorkflowResponse>;
+  stageFashionCatalogFieldEdit: (
+    request: StageFashionCatalogFieldEditRequest,
+  ) => Promise<StageFashionCatalogFieldEditResponse>;
   openProject: (request: OpenProjectRequest) => Promise<OpenProjectResponse>;
-  refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
-  startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
-  updateItemField: (request: UpdateItemFieldRequest) => Promise<UpdateItemFieldResponse>;
+  refreshFileGraph: (
+    request: RefreshFileGraphRequest,
+  ) => Promise<RefreshFileGraphResponse>;
+  startEditSession: (
+    request: StartEditSessionRequest,
+  ) => Promise<StartEditSessionResponse>;
+  updateItemField: (
+    request: UpdateItemFieldRequest,
+  ) => Promise<UpdateItemFieldResponse>;
   updateGiftPokemonField: (
-    request: UpdateGiftPokemonFieldRequest
+    request: UpdateGiftPokemonFieldRequest,
   ) => Promise<UpdateGiftPokemonFieldResponse>;
   updateTradePokemonField: (
-    request: UpdateTradePokemonFieldRequest
+    request: UpdateTradePokemonFieldRequest,
   ) => Promise<UpdateTradePokemonFieldResponse>;
   updateStaticEncounterField: (
-    request: UpdateStaticEncounterFieldRequest
+    request: UpdateStaticEncounterFieldRequest,
   ) => Promise<UpdateStaticEncounterFieldResponse>;
   updateStaticEncounterFields: (
-    request: UpdateStaticEncounterFieldsRequest
+    request: UpdateStaticEncounterFieldsRequest,
   ) => Promise<UpdateStaticEncounterFieldResponse>;
   updateRentalPokemonField: (
-    request: UpdateRentalPokemonFieldRequest
+    request: UpdateRentalPokemonFieldRequest,
   ) => Promise<UpdateRentalPokemonFieldResponse>;
   updateDynamaxAdventureField: (
-    request: UpdateDynamaxAdventureFieldRequest
+    request: UpdateDynamaxAdventureFieldRequest,
   ) => Promise<UpdateDynamaxAdventureFieldResponse>;
-  updateMoveField: (request: UpdateMoveFieldRequest) => Promise<UpdateMoveFieldResponse>;
+  updateMoveField: (
+    request: UpdateMoveFieldRequest,
+  ) => Promise<UpdateMoveFieldResponse>;
   updateRaidBattleSlotField: (
-    request: UpdateRaidBattleSlotFieldRequest
+    request: UpdateRaidBattleSlotFieldRequest,
   ) => Promise<UpdateRaidBattleSlotFieldResponse>;
   updateRaidBattleSlotFields: (
-    request: UpdateRaidBattleSlotFieldsRequest
+    request: UpdateRaidBattleSlotFieldsRequest,
   ) => Promise<UpdateRaidBattleSlotFieldsResponse>;
   updateTeraRaidField: (
-    request: UpdateTeraRaidFieldRequest
+    request: UpdateTeraRaidFieldRequest,
   ) => Promise<UpdateTeraRaidFieldResponse>;
   updateTeraRaidFields: (
-    request: UpdateTeraRaidFieldsRequest
+    request: UpdateTeraRaidFieldsRequest,
   ) => Promise<UpdateTeraRaidFieldsResponse>;
   updateRaidRewardField: (
-    request: UpdateRaidRewardFieldRequest
+    request: UpdateRaidRewardFieldRequest,
   ) => Promise<UpdateRaidRewardFieldResponse>;
   updateRaidRewardFields: (
-    request: UpdateRaidRewardFieldsRequest
+    request: UpdateRaidRewardFieldsRequest,
   ) => Promise<UpdateRaidRewardFieldsResponse>;
   updateRaidBonusRewardField: (
-    request: UpdateRaidBonusRewardFieldRequest
+    request: UpdateRaidBonusRewardFieldRequest,
   ) => Promise<UpdateRaidBonusRewardFieldResponse>;
   updateRaidBonusRewardFields: (
-    request: UpdateRaidBonusRewardFieldsRequest
+    request: UpdateRaidBonusRewardFieldsRequest,
   ) => Promise<UpdateRaidBonusRewardFieldsResponse>;
   updateBehaviorEntryField: (
-    request: UpdateBehaviorEntryFieldRequest
+    request: UpdateBehaviorEntryFieldRequest,
   ) => Promise<UpdateBehaviorEntryFieldResponse>;
   updateBehaviorEntryFields: (
-    request: UpdateBehaviorEntryFieldsRequest
+    request: UpdateBehaviorEntryFieldsRequest,
   ) => Promise<UpdateBehaviorEntryFieldsResponse>;
   updateShopInventoryItem: (
-    request: UpdateShopInventoryItemRequest
+    request: UpdateShopInventoryItemRequest,
   ) => Promise<UpdateShopInventoryItemResponse>;
-  updateTextEntry: (request: UpdateTextEntryRequest) => Promise<UpdateTextEntryResponse>;
+  updateTextEntry: (
+    request: UpdateTextEntryRequest,
+  ) => Promise<UpdateTextEntryResponse>;
   updateTrainerField: (
-    request: UpdateTrainerFieldRequest
+    request: UpdateTrainerFieldRequest,
   ) => Promise<UpdateTrainerFieldResponse>;
   validateEditSession: (
-    request: ValidateEditSessionRequest
+    request: ValidateEditSessionRequest,
   ) => Promise<ValidateEditSessionResponse>;
-  validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
-} & SvBatchFieldProjectBridgeApi & SvCacheProjectBridgeApi & ZaCacheProjectBridgeApi &
-  GameDumpProjectBridgeApi & SwShPlacementProjectBridgeApi & SwShCacheProjectBridgeApi &
-  WorkspaceDraftProjectBridgeApi & WorkspacePersonalStateProjectBridgeApi &
-  OutputSafetyProjectBridgeApi & ChangeSetProjectBridgeApi & SemanticExploreProjectBridgeApi &
-  BalanceLabProjectBridgeApi & GameModuleProjectBridgeApi & GuidedDesignProjectBridgeApi &
-  SemanticMergeProjectBridgeApi & ResearchLabProjectBridgeApi;
+  validateProject: (
+    request: ValidateProjectRequest,
+  ) => Promise<ValidateProjectResponse>;
+} & SvBatchFieldProjectBridgeApi &
+  SvCacheProjectBridgeApi &
+  ZaCacheProjectBridgeApi &
+  GameDumpProjectBridgeApi &
+  SwShPlacementProjectBridgeApi &
+  SwShCacheProjectBridgeApi &
+  WorkspaceDraftProjectBridgeApi &
+  ProjectSourceRevisionProjectBridgeApi &
+  WorkspacePersonalStateProjectBridgeApi &
+  OutputSafetyProjectBridgeApi &
+  GameplaySettingsProjectBridgeApi &
+  ChangeSetProjectBridgeApi &
+  SemanticExploreProjectBridgeApi &
+  BalanceLabProjectBridgeApi &
+  GameModuleProjectBridgeApi &
+  GuidedDesignProjectBridgeApi &
+  SemanticMergeProjectBridgeApi &
+  ResearchLabProjectBridgeApi &
+  RowClipboardProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
-    return Promise.reject(new Error('Project bridge is only available in the desktop app.'));
+    return Promise.reject(
+      new Error("Project bridge is only available in the desktop app."),
+    );
   }
 
-  return invoke<string>('project_bridge', { requestJson });
+  return invoke<string>("project_bridge", { requestJson });
 };
 
 function validateDynamaxAdventureResponseGame<
-  TResponse extends { workflow: { detectedGame: 'sword' | 'shield' | null } }
+  TResponse extends { workflow: { detectedGame: "sword" | "shield" | null } },
 >(selectedGame: string | null, response: TResponse) {
   if (
     response.workflow.detectedGame !== null &&
     response.workflow.detectedGame !== selectedGame
   ) {
     throw new Error(
-      `Dynamax Adventures response detected ${response.workflow.detectedGame}, but the request selected ${selectedGame}.`
+      `Dynamax Adventures response detected ${response.workflow.detectedGame}, but the request selected ${selectedGame}.`,
     );
   }
 
@@ -758,7 +958,7 @@ function validateDynamaxAdventureResponseGame<
 }
 
 export function createProjectBridge(
-  transport: ProjectBridgeTransport = tauriProjectBridgeTransport
+  transport: ProjectBridgeTransport = tauriProjectBridgeTransport,
 ): ProjectBridge {
   return {
     applyChangePlan: (request) =>
@@ -766,328 +966,368 @@ export function createProjectBridge(
         transport,
         kmCommandNames.applyChangePlan,
         request,
-        applyChangePlanResponseSchema
+        applyChangePlanResponseSchema,
       ),
     createChangePlan: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.createChangePlan,
         request,
-        createChangePlanResponseSchema
+        createChangePlanResponseSchema,
       ),
     listWorkflows: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.listWorkflows,
         request,
-        listWorkflowsResponseSchema
+        listWorkflowsResponseSchema,
       ),
     loadEncountersWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadEncountersWorkflow,
         request,
-        loadEncountersWorkflowResponseSchema
+        loadEncountersWorkflowResponseSchema,
       ),
     loadBagHookWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadBagHookWorkflow,
         request,
-        loadBagHookWorkflowResponseSchema
+        loadBagHookWorkflowResponseSchema,
       ),
     stageBagHookInstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageBagHookInstall,
         request,
-        stageBagHookInstallResponseSchema
+        stageBagHookInstallResponseSchema,
       ),
     stageBagHookUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageBagHookUninstall,
         request,
-        stageBagHookUninstallResponseSchema
+        stageBagHookUninstallResponseSchema,
       ),
     loadCatchCapWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadCatchCapWorkflow,
         request,
-        loadCatchCapWorkflowResponseSchema
+        loadCatchCapWorkflowResponseSchema,
       ),
     stageCatchCap: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageCatchCap,
         request,
-        stageCatchCapResponseSchema
+        stageCatchCapResponseSchema,
       ),
     stageCatchCapUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageCatchCapUninstall,
         request,
-        stageCatchCapUninstallResponseSchema
+        stageCatchCapUninstallResponseSchema,
       ),
     loadHyperTrainingWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadHyperTrainingWorkflow,
         request,
-        loadHyperTrainingWorkflowResponseSchema
+        loadHyperTrainingWorkflowResponseSchema,
       ),
     stageHyperTraining: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageHyperTraining,
         request,
-        stageHyperTrainingResponseSchema
+        stageHyperTrainingResponseSchema,
       ),
     loadShinyRateWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadShinyRateWorkflow,
         request,
-        loadShinyRateWorkflowResponseSchema
+        loadShinyRateWorkflowResponseSchema,
       ),
     stageShinyRate: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageShinyRate,
         request,
-        stageShinyRateResponseSchema
+        stageShinyRateResponseSchema,
       ),
     loadTypeChartWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadTypeChartWorkflow,
         request,
-        loadTypeChartWorkflowResponseSchema
+        loadTypeChartWorkflowResponseSchema,
       ),
     stageTypeChart: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageTypeChart,
         request,
-        stageTypeChartResponseSchema
+        stageTypeChartResponseSchema,
       ),
-    stageTypeChartUninstall: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTypeChartUninstall, request, stageTypeChartUninstallResponseSchema),
+    stageTypeChartUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageTypeChartUninstall,
+        request,
+        stageTypeChartUninstallResponseSchema,
+      ),
     loadAngeFightWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadAngeFightWorkflow,
         request,
-        loadAngeFightWorkflowResponseSchema
+        loadAngeFightWorkflowResponseSchema,
       ),
     stageAngeFight: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageAngeFight,
         request,
-        stageAngeFightResponseSchema
+        stageAngeFightResponseSchema,
       ),
     stageAngeFightUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageAngeFightUninstall,
         request,
-        stageAngeFightUninstallResponseSchema
+        stageAngeFightUninstallResponseSchema,
       ),
     loadFairyGymBoostsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadFairyGymBoostsWorkflow,
         request,
-        loadFairyGymBoostsWorkflowResponseSchema
+        loadFairyGymBoostsWorkflowResponseSchema,
       ),
     stageFairyGymBoosts: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageFairyGymBoosts,
         request,
-        stageFairyGymBoostsResponseSchema
+        stageFairyGymBoostsResponseSchema,
       ),
     loadFashionUnlockWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadFashionUnlockWorkflow,
         request,
-        loadFashionUnlockWorkflowResponseSchema
+        loadFashionUnlockWorkflowResponseSchema,
       ),
     stageFashionUnlockInstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageFashionUnlockInstall,
         request,
-        stageFashionUnlockInstallResponseSchema
+        stageFashionUnlockInstallResponseSchema,
       ),
     stageFashionUnlockUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageFashionUnlockUninstall,
         request,
-        stageFashionUnlockUninstallResponseSchema
+        stageFashionUnlockUninstallResponseSchema,
       ),
     loadGymUniformRemovalWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadGymUniformRemovalWorkflow,
         request,
-        loadGymUniformRemovalWorkflowResponseSchema
+        loadGymUniformRemovalWorkflowResponseSchema,
       ),
     stageGymUniformRemovalInstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageGymUniformRemovalInstall,
         request,
-        stageGymUniformRemovalInstallResponseSchema
+        stageGymUniformRemovalInstallResponseSchema,
       ),
     stageGymUniformRemovalUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageGymUniformRemovalUninstall,
         request,
-        stageGymUniformRemovalUninstallResponseSchema
+        stageGymUniformRemovalUninstallResponseSchema,
       ),
     loadHyperspaceBypassWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadHyperspaceBypassWorkflow,
         request,
-        loadHyperspaceBypassWorkflowResponseSchema
+        loadHyperspaceBypassWorkflowResponseSchema,
       ),
     stageHyperspaceBypassInstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageHyperspaceBypassInstall,
         request,
-        stageHyperspaceBypassInstallResponseSchema
+        stageHyperspaceBypassInstallResponseSchema,
       ),
     stageHyperspaceBypassUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageHyperspaceBypassUninstall,
         request,
-        stageHyperspaceBypassUninstallResponseSchema
+        stageHyperspaceBypassUninstallResponseSchema,
       ),
     loadIvScreenWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadIvScreenWorkflow,
         request,
-        loadIvScreenWorkflowResponseSchema
+        loadIvScreenWorkflowResponseSchema,
       ),
     stageIvScreenInstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageIvScreenInstall,
         request,
-        stageIvScreenInstallResponseSchema
+        stageIvScreenInstallResponseSchema,
       ),
     stageIvScreenUninstall: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageIvScreenUninstall,
         request,
-        stageIvScreenUninstallResponseSchema
+        stageIvScreenUninstallResponseSchema,
       ),
     loadExeFsPatchWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadExeFsPatchWorkflow,
         request,
-        loadExeFsPatchWorkflowResponseSchema
+        loadExeFsPatchWorkflowResponseSchema,
       ),
     stageExeFsPatch: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageExeFsPatch,
         request,
-        stageExeFsPatchResponseSchema
+        stageExeFsPatchResponseSchema,
       ),
     loadFlagworkSaveWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadFlagworkSaveWorkflow,
         request,
-        loadFlagworkSaveWorkflowResponseSchema
+        loadFlagworkSaveWorkflowResponseSchema,
       ),
     loadGiftPokemonWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadGiftPokemonWorkflow,
         request,
-        loadGiftPokemonWorkflowResponseSchema
+        loadGiftPokemonWorkflowResponseSchema,
       ),
     loadTradePokemonWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadTradePokemonWorkflow,
         request,
-        loadTradePokemonWorkflowResponseSchema
+        loadTradePokemonWorkflowResponseSchema,
       ),
     loadStaticEncountersWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadStaticEncountersWorkflow,
         request,
-        loadStaticEncountersWorkflowResponseSchema
+        loadStaticEncountersWorkflowResponseSchema,
       ),
     loadRentalPokemonWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadRentalPokemonWorkflow,
         request,
-        loadRentalPokemonWorkflowResponseSchema
+        loadRentalPokemonWorkflowResponseSchema,
       ),
     loadDynamaxAdventuresWorkflow: async (request) => {
-      const validatedRequest = loadDynamaxAdventuresWorkflowRequestSchema.parse(request);
+      const validatedRequest =
+        loadDynamaxAdventuresWorkflowRequestSchema.parse(request);
       const response = await sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadDynamaxAdventuresWorkflow,
         validatedRequest,
-        loadDynamaxAdventuresWorkflowResponseSchema
+        loadDynamaxAdventuresWorkflowResponseSchema,
       );
       return validateDynamaxAdventureResponseGame(
         validatedRequest.paths.selectedGame,
-        response
+        response,
+      );
+    },
+    planDynamaxAdventureSeed: async (request) => {
+      const validatedRequest =
+        planDynamaxAdventureSeedRequestSchema.parse(request);
+      return await sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.planDynamaxAdventureSeed,
+        validatedRequest,
+        planDynamaxAdventureSeedResponseSchema,
+      );
+    },
+    searchDynamaxAdventureSeed: async (request) => {
+      const validatedRequest =
+        searchDynamaxAdventureSeedRequestSchema.parse(request);
+      return await sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.searchDynamaxAdventureSeed,
+        validatedRequest,
+        searchDynamaxAdventureSeedResponseSchema,
+      );
+    },
+    setDynamaxAdventureSaveSeed: async (request) => {
+      const validatedRequest =
+        setDynamaxAdventureSaveSeedRequestSchema.parse(request);
+      return await sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.setDynamaxAdventureSaveSeed,
+        validatedRequest,
+        setDynamaxAdventureSaveSeedResponseSchema,
       );
     },
     previewDynamaxAdventureDefaults: async (request) => {
-      const validatedRequest = previewDynamaxAdventureDefaultsRequestSchema.parse(request);
+      const validatedRequest =
+        previewDynamaxAdventureDefaultsRequestSchema.parse(request);
       return await sendProjectBridgeRequest(
         transport,
         kmCommandNames.previewDynamaxAdventureDefaults,
         validatedRequest,
-        previewDynamaxAdventureDefaultsResponseSchema
+        previewDynamaxAdventureDefaultsResponseSchema,
       );
     },
     stageDynamaxAdventureRepair: async (request) => {
-      const validatedRequest = stageDynamaxAdventureRepairRequestSchema.parse(request);
+      const validatedRequest =
+        stageDynamaxAdventureRepairRequestSchema.parse(request);
       const response = await sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageDynamaxAdventureRepair,
         validatedRequest,
-        stageDynamaxAdventureRepairResponseSchema
+        stageDynamaxAdventureRepairResponseSchema,
       );
       return validateDynamaxAdventureResponseGame(
         validatedRequest.paths.selectedGame,
-        response
+        response,
       );
     },
     stageDynamaxAdventureRestore: async (request) => {
-      const validatedRequest = stageDynamaxAdventureRestoreRequestSchema.parse(request);
+      const validatedRequest =
+        stageDynamaxAdventureRestoreRequestSchema.parse(request);
       const response = await sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageDynamaxAdventureRestore,
         validatedRequest,
-        stageDynamaxAdventureRestoreResponseSchema
+        stageDynamaxAdventureRestoreResponseSchema,
       );
       return validateDynamaxAdventureResponseGame(
         validatedRequest.paths.selectedGame,
-        response
+        response,
       );
     },
     loadItemsWorkflow: (request) =>
@@ -1095,326 +1335,446 @@ export function createProjectBridge(
         transport,
         kmCommandNames.loadItemsWorkflow,
         request,
-        loadItemsWorkflowResponseSchema
+        loadItemsWorkflowResponseSchema,
       ),
     loadMovesWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadMovesWorkflow,
         request,
-        loadMovesWorkflowResponseSchema
+        loadMovesWorkflowResponseSchema,
       ),
     loadPokemonWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadPokemonWorkflow,
         request,
-        loadPokemonWorkflowResponseSchema
+        loadPokemonWorkflowResponseSchema,
       ),
     loadPlacementWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadPlacementWorkflow,
         request,
-        loadPlacementWorkflowResponseSchema
+        loadPlacementWorkflowResponseSchema,
       ),
     loadBehaviorWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadBehaviorWorkflow,
         request,
-        loadBehaviorWorkflowResponseSchema
+        loadBehaviorWorkflowResponseSchema,
       ),
     loadRaidBattlesWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadRaidBattlesWorkflow,
         request,
-        loadRaidBattlesWorkflowResponseSchema
+        loadRaidBattlesWorkflowResponseSchema,
       ),
     loadTeraRaidsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadTeraRaidsWorkflow,
         request,
-        loadTeraRaidsWorkflowResponseSchema
+        loadTeraRaidsWorkflowResponseSchema,
       ),
     loadRaidRewardsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadRaidRewardsWorkflow,
         request,
-        loadRaidRewardsWorkflowResponseSchema
+        loadRaidRewardsWorkflowResponseSchema,
       ),
     loadRaidBonusRewardsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadRaidBonusRewardsWorkflow,
         request,
-        loadRaidBonusRewardsWorkflowResponseSchema
+        loadRaidBonusRewardsWorkflowResponseSchema,
       ),
     loadRoyalCandyWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadRoyalCandyWorkflow,
         request,
-        loadRoyalCandyWorkflowResponseSchema
+        loadRoyalCandyWorkflowResponseSchema,
       ),
     stageRoyalCandyWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageRoyalCandyWorkflow,
         request,
-        stageRoyalCandyWorkflowResponseSchema
+        stageRoyalCandyWorkflowResponseSchema,
       ),
     loadStartingItemsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadStartingItemsWorkflow,
         request,
-        loadStartingItemsWorkflowResponseSchema
+        loadStartingItemsWorkflowResponseSchema,
       ),
     stageStartingItems: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageStartingItems,
         request,
-        stageStartingItemsResponseSchema
+        stageStartingItemsResponseSchema,
       ),
     loadNpcItemGiftWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadNpcItemGiftWorkflow,
         request,
-        loadNpcItemGiftWorkflowResponseSchema
+        loadNpcItemGiftWorkflowResponseSchema,
       ),
     stageNpcItemGift: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageNpcItemGift,
         request,
-        stageNpcItemGiftResponseSchema
+        stageNpcItemGiftResponseSchema,
+      ),
+    loadBattleCafeRewardsWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadBattleCafeRewardsWorkflow,
+        request,
+        loadBattleCafeRewardsWorkflowResponseSchema,
+      ),
+    stageBattleCafeRewardRows: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageBattleCafeRewardRows,
+        request,
+        stageBattleCafeRewardRowsResponseSchema,
       ),
     loadSpreadsheetImportWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadSpreadsheetImportWorkflow,
         request,
-        loadSpreadsheetImportWorkflowResponseSchema
+        loadSpreadsheetImportWorkflowResponseSchema,
       ),
     previewSpreadsheetImport: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.previewSpreadsheetImport,
         request,
-        previewSpreadsheetImportResponseSchema
+        previewSpreadsheetImportResponseSchema,
       ),
     loadModMergerWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadModMergerWorkflow,
         request,
-        loadModMergerWorkflowResponseSchema
+        loadModMergerWorkflowResponseSchema,
       ),
     stageModMerge: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageModMerge,
         request,
-        stageModMergeResponseSchema
+        stageModMergeResponseSchema,
       ),
     applyModMerge: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.applyModMerge,
         request,
-        applyModMergeResponseSchema
+        applyModMergeResponseSchema,
       ),
     loadSvModMergerWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadSvModMergerWorkflow,
         request,
-        loadSvModMergerWorkflowResponseSchema
+        loadSvModMergerWorkflowResponseSchema,
       ),
     stageSvModMerge: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageSvModMerge,
         request,
-        stageSvModMergeResponseSchema
+        stageSvModMergeResponseSchema,
       ),
     applySvModMerge: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.applySvModMerge,
         request,
-        applySvModMergeResponseSchema
+        applySvModMergeResponseSchema,
       ),
     loadZaModMergerWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadZaModMergerWorkflow,
         request,
-        loadZaModMergerWorkflowResponseSchema
+        loadZaModMergerWorkflowResponseSchema,
       ),
     stageZaModMerge: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stageZaModMerge,
         request,
-        stageZaModMergeResponseSchema
+        stageZaModMergeResponseSchema,
       ),
     applyZaModMerge: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.applyZaModMerge,
         request,
-        applyZaModMergeResponseSchema
+        applyZaModMergeResponseSchema,
       ),
     loadFpsPatch: (request) =>
-      sendProjectBridgeRequest(transport, kmCommandNames.loadFpsPatch, request, loadFpsPatchResponseSchema),
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadFpsPatch,
+        request,
+        loadFpsPatchResponseSchema,
+      ),
     applyFpsPatch: (request) =>
-      sendProjectBridgeRequest(transport, kmCommandNames.applyFpsPatch, request, applyFpsPatchResponseSchema),
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applyFpsPatch,
+        request,
+        applyFpsPatchResponseSchema,
+      ),
     restoreFpsPatch: (request) =>
-      sendProjectBridgeRequest(transport, kmCommandNames.restoreFpsPatch, request, restoreFpsPatchResponseSchema),
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.restoreFpsPatch,
+        request,
+        restoreFpsPatchResponseSchema,
+      ),
     loadProfanityFilter: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadProfanityFilter,
         request,
-        loadProfanityFilterResponseSchema
+        loadProfanityFilterResponseSchema,
       ),
     applyProfanityFilter: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.applyProfanityFilter,
         request,
-        applyProfanityFilterResponseSchema
+        applyProfanityFilterResponseSchema,
       ),
     restoreProfanityFilter: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.restoreProfanityFilter,
         request,
-        restoreProfanityFilterResponseSchema
+        restoreProfanityFilterResponseSchema,
       ),
     importRandomizerSeed: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.importRandomizerSeed,
         request,
-        importRandomizerSeedResponseSchema
+        importRandomizerSeedResponseSchema,
       ),
     applyRandomizer: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.applyRandomizer,
         request,
-        applyRandomizerResponseSchema
+        applyRandomizerResponseSchema,
       ),
     restoreRandomizer: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.restoreRandomizer,
         request,
-        restoreRandomizerResponseSchema
+        restoreRandomizerResponseSchema,
       ),
     loadShopsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadShopsWorkflow,
         request,
-        loadShopsWorkflowResponseSchema
+        loadShopsWorkflowResponseSchema,
       ),
+    loadTmMachineControls: (request) => {
+      const validatedRequest =
+        loadTmMachineControlsRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadTmMachineControls,
+        validatedRequest,
+        loadTmMachineControlsResponseSchema,
+      );
+    },
+    stageTmRecipeAvailability: (request) => {
+      const validatedRequest =
+        stageTmRecipeAvailabilityRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageTmRecipeAvailability,
+        validatedRequest,
+        stageTmRecipeAvailabilityResponseSchema,
+      );
+    },
+    stageTmMaterialVisibility: (request) => {
+      const validatedRequest =
+        stageTmMaterialVisibilityRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageTmMaterialVisibility,
+        validatedRequest,
+        stageTmMaterialVisibilityResponseSchema,
+      );
+    },
+    loadHabitatCoordinates: (request) => {
+      const validatedRequest =
+        loadHabitatCoordinatesRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadHabitatCoordinates,
+        validatedRequest,
+        loadHabitatCoordinatesResponseSchema,
+      );
+    },
+    stageHabitatCoordinate: (request) => {
+      const validatedRequest =
+        stageHabitatCoordinateRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageHabitatCoordinate,
+        validatedRequest,
+        stageHabitatCoordinateResponseSchema,
+      );
+    },
     loadTextWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadTextWorkflow,
         request,
-        loadTextWorkflowResponseSchema
+        loadTextWorkflowResponseSchema,
       ),
     loadTrainersWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadTrainersWorkflow,
         request,
-        loadTrainersWorkflowResponseSchema
+        loadTrainersWorkflowResponseSchema,
       ),
+    loadTrainerPoolsWorkflow: (request) => {
+      const validatedRequest =
+        loadTrainerPoolsWorkflowRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadTrainerPoolsWorkflow,
+        validatedRequest,
+        loadTrainerPoolsWorkflowResponseSchema,
+      );
+    },
+    stageTrainerPoolFixedCountSwap: (request) => {
+      const validatedRequest =
+        stageTrainerPoolFixedCountSwapRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageTrainerPoolFixedCountSwap,
+        validatedRequest,
+        stageTrainerPoolFixedCountSwapResponseSchema,
+      );
+    },
+    loadFashionCatalogWorkflow: (request) => {
+      const validatedRequest =
+        loadFashionCatalogWorkflowRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadFashionCatalogWorkflow,
+        validatedRequest,
+        loadFashionCatalogWorkflowResponseSchema,
+      );
+    },
+    stageFashionCatalogFieldEdit: (request) => {
+      const validatedRequest =
+        stageFashionCatalogFieldEditRequestSchema.parse(request);
+      return sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageFashionCatalogFieldEdit,
+        validatedRequest,
+        stageFashionCatalogFieldEditResponseSchema,
+      );
+    },
     openProject: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.openProject,
         request,
-        openProjectResponseSchema
+        openProjectResponseSchema,
       ),
     refreshFileGraph: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.refreshFileGraph,
         request,
-        refreshFileGraphResponseSchema
+        refreshFileGraphResponseSchema,
       ),
     startEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.startEditSession,
         request,
-        startEditSessionResponseSchema
+        startEditSessionResponseSchema,
       ),
     updateItemField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateItemField,
         request,
-        updateItemFieldResponseSchema
+        updateItemFieldResponseSchema,
       ),
     updateGiftPokemonField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateGiftPokemonField,
         request,
-        updateGiftPokemonFieldResponseSchema
+        updateGiftPokemonFieldResponseSchema,
       ),
     updateTradePokemonField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateTradePokemonField,
         request,
-        updateTradePokemonFieldResponseSchema
+        updateTradePokemonFieldResponseSchema,
       ),
     updateStaticEncounterField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateStaticEncounterField,
         request,
-        updateStaticEncounterFieldResponseSchema
+        updateStaticEncounterFieldResponseSchema,
       ),
     updateStaticEncounterFields: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateStaticEncounterFields,
         request,
-        updateStaticEncounterFieldResponseSchema
+        updateStaticEncounterFieldResponseSchema,
       ),
     updateRentalPokemonField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRentalPokemonField,
         request,
-        updateRentalPokemonFieldResponseSchema
+        updateRentalPokemonFieldResponseSchema,
       ),
     updateDynamaxAdventureField: async (request) => {
-      const validatedRequest = updateDynamaxAdventureFieldRequestSchema.parse(request);
+      const validatedRequest =
+        updateDynamaxAdventureFieldRequestSchema.parse(request);
       const response = await sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateDynamaxAdventureField,
         validatedRequest,
-        updateDynamaxAdventureFieldResponseSchema
+        updateDynamaxAdventureFieldResponseSchema,
       );
       return validateDynamaxAdventureResponseGame(
         validatedRequest.paths.selectedGame,
-        response
+        response,
       );
     },
     updateMoveField: (request) =>
@@ -1422,154 +1782,154 @@ export function createProjectBridge(
         transport,
         kmCommandNames.updateMoveField,
         request,
-        updateMoveFieldResponseSchema
+        updateMoveFieldResponseSchema,
       ),
     updatePokemonField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updatePokemonField,
         request,
-        updatePokemonFieldResponseSchema
+        updatePokemonFieldResponseSchema,
       ),
     updatePokemonLearnset: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updatePokemonLearnset,
         request,
-        updatePokemonLearnsetResponseSchema
+        updatePokemonLearnsetResponseSchema,
       ),
     updatePokemonEvolution: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updatePokemonEvolution,
         request,
-        updatePokemonEvolutionResponseSchema
+        updatePokemonEvolutionResponseSchema,
       ),
     movePokemonDexPlacement: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.movePokemonDexPlacement,
         request,
-        movePokemonDexPlacementResponseSchema
+        movePokemonDexPlacementResponseSchema,
       ),
     resizePokemonDex: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.resizePokemonDex,
         request,
-        resizePokemonDexResponseSchema
+        resizePokemonDexResponseSchema,
       ),
     stagePokemonDexVanilla: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stagePokemonDexVanilla,
         request,
-        stagePokemonDexVanillaResponseSchema
+        stagePokemonDexVanillaResponseSchema,
       ),
     stagePokemonDexMegaSync: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.stagePokemonDexMegaSync,
         request,
-        stagePokemonDexMegaSyncResponseSchema
+        stagePokemonDexMegaSyncResponseSchema,
       ),
     swapPokemonDexPlacement: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.swapPokemonDexPlacement,
         request,
-        swapPokemonDexPlacementResponseSchema
+        swapPokemonDexPlacementResponseSchema,
       ),
     updateRaidBattleSlotField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRaidBattleSlotField,
         request,
-        updateRaidBattleSlotFieldResponseSchema
+        updateRaidBattleSlotFieldResponseSchema,
       ),
     updateRaidBattleSlotFields: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRaidBattleSlotFields,
         request,
-        updateRaidBattleSlotFieldsResponseSchema
+        updateRaidBattleSlotFieldsResponseSchema,
       ),
     updateTeraRaidField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateTeraRaidField,
         request,
-        updateTeraRaidFieldResponseSchema
+        updateTeraRaidFieldResponseSchema,
       ),
     updateTeraRaidFields: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateTeraRaidFields,
         request,
-        updateTeraRaidFieldsResponseSchema
+        updateTeraRaidFieldsResponseSchema,
       ),
     updateRaidRewardField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRaidRewardField,
         request,
-        updateRaidRewardFieldResponseSchema
+        updateRaidRewardFieldResponseSchema,
       ),
     updateRaidRewardFields: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRaidRewardFields,
         request,
-        updateRaidRewardFieldsResponseSchema
+        updateRaidRewardFieldsResponseSchema,
       ),
     updateRaidBonusRewardField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRaidBonusRewardField,
         request,
-        updateRaidBonusRewardFieldResponseSchema
+        updateRaidBonusRewardFieldResponseSchema,
       ),
     updateRaidBonusRewardFields: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateRaidBonusRewardFields,
         request,
-        updateRaidBonusRewardFieldsResponseSchema
+        updateRaidBonusRewardFieldsResponseSchema,
       ),
     updateBehaviorEntryField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateBehaviorEntryField,
         request,
-        updateBehaviorEntryFieldResponseSchema
+        updateBehaviorEntryFieldResponseSchema,
       ),
     updateBehaviorEntryFields: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateBehaviorEntryFields,
         request,
-        updateBehaviorEntryFieldsResponseSchema
+        updateBehaviorEntryFieldsResponseSchema,
       ),
     updateShopInventoryItem: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateShopInventoryItem,
         request,
-        updateShopInventoryItemResponseSchema
+        updateShopInventoryItemResponseSchema,
       ),
     updateTextEntry: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateTextEntry,
         request,
-        updateTextEntryResponseSchema
+        updateTextEntryResponseSchema,
       ),
     updateTrainerField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateTrainerField,
         request,
-        updateTrainerFieldResponseSchema
+        updateTrainerFieldResponseSchema,
       ),
     ...createGameDumpProjectBridgeApi(transport),
     ...createSvBatchFieldProjectBridgeApi(transport),
@@ -1578,8 +1938,10 @@ export function createProjectBridge(
     ...createSwShCacheProjectBridgeApi(transport),
     ...createSwShPlacementProjectBridgeApi(transport),
     ...createWorkspaceDraftProjectBridgeApi(transport),
+    ...createProjectSourceRevisionProjectBridgeApi(transport),
     ...createWorkspacePersonalStateProjectBridgeApi(transport),
     ...createOutputSafetyProjectBridgeApi(transport),
+    ...createGameplaySettingsProjectBridgeApi(transport),
     ...createChangeSetProjectBridgeApi(transport),
     ...createSemanticExploreProjectBridgeApi(transport),
     ...createBalanceLabProjectBridgeApi(transport),
@@ -1587,25 +1949,26 @@ export function createProjectBridge(
     ...createGuidedDesignProjectBridgeApi(transport),
     ...createSemanticMergeProjectBridgeApi(transport),
     ...createResearchLabProjectBridgeApi(transport),
+    ...createRowClipboardProjectBridgeApi(transport),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.validateEditSession,
         request,
-        validateEditSessionResponseSchema
+        validateEditSessionResponseSchema,
       ),
     validateProject: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.validateProject,
         request,
-        validateProjectResponseSchema
-      )
+        validateProjectResponseSchema,
+      ),
   };
 }
 
 export const projectBridge = createProjectBridge();
 
 function hasTauriRuntime() {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

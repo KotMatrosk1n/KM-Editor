@@ -120,7 +120,8 @@ public enum SemanticChangeFormatDto
 public sealed record SemanticExploreScopeDto(
     string ProjectId,
     ProjectPathsDto Paths,
-    EditSessionDto? PendingSession = null);
+    EditSessionDto? PendingSession = null,
+    string? SourceObservationToken = null);
 
 public sealed record SemanticProjectRevisionDto(
     string ProjectId,

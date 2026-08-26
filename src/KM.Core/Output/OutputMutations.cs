@@ -3,6 +3,7 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using KM.Core.Projects;
+using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
 
 namespace KM.Core.Output;
@@ -27,7 +28,9 @@ public sealed record OutputMutation
         OutputFileState plannedPostimage,
         ImmutableArray<OwnedTarget> ownershipClaims,
         string? ownershipOutputMode,
-        bool? restoredFileDeleteEligibility)
+        bool? restoredFileDeleteEligibility,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor,
+        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority)
     {
         Kind = kind;
         Path = path;
@@ -37,6 +40,8 @@ public sealed record OutputMutation
         OwnershipClaims = ownershipClaims;
         OwnershipOutputMode = ownershipOutputMode;
         RestoredFileDeleteEligibility = restoredFileDeleteEligibility;
+        RuntimeMutableDescriptor = runtimeMutableDescriptor;
+        LegacyAdoptionDeleteAuthority = legacyAdoptionDeleteAuthority;
     }
 
     public OutputMutationKind Kind { get; }
@@ -63,6 +68,18 @@ public sealed record OutputMutation
     /// </summary>
     internal bool? RestoredFileDeleteEligibility { get; }
 
+    /// <summary>
+    /// Present only for an exact, title-scoped file whose valid generation may
+    /// advance outside the editor after the reviewed transaction commits.
+    /// </summary>
+    public OutputRuntimeMutableDescriptor? RuntimeMutableDescriptor { get; }
+
+    /// <summary>
+    /// Explicit authority for deleting one exact legacy output that predates the
+    /// ownership inventory. Ordinary unowned deletes remain prohibited.
+    /// </summary>
+    public OutputLegacyAdoptionDeleteAuthority? LegacyAdoptionDeleteAuthority { get; }
+
     public static OutputMutation Write(
         RelativeOutputPath path,
         ReadOnlyMemory<byte> postimage,
@@ -76,7 +93,9 @@ public sealed record OutputMutation
             expectedPreimage,
             ownershipClaims,
             ownershipOutputMode,
-            restoredFileDeleteEligibility: null);
+            restoredFileDeleteEligibility: null,
+            runtimeMutableDescriptor: null,
+            legacyAdoptionDeleteAuthority: null);
     }
 
     internal static OutputMutation WriteCheckpointRestore(
@@ -93,7 +112,77 @@ public sealed record OutputMutation
             expectedPreimage,
             ownershipClaims,
             ownershipOutputMode,
-            restoredFileDeleteEligibility);
+            restoredFileDeleteEligibility,
+            runtimeMutableDescriptor: null,
+            legacyAdoptionDeleteAuthority: null);
+    }
+
+    public static OutputMutation WriteRuntimeMutableBootstrap(
+        RelativeOutputPath path,
+        ReadOnlyMemory<byte> postimage,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        GameFamily gameFamily,
+        ulong titleId,
+        string? ownershipOutputMode = null)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreimage);
+        if (expectedPreimage.Exists)
+        {
+            throw new ArgumentException(
+                "A runtime-mutable bootstrap requires a missing reviewed preimage.",
+                nameof(expectedPreimage));
+        }
+
+        var descriptor = OutputRuntimeMutableDescriptor.ValidateBootstrap(
+            path,
+            gameFamily,
+            titleId,
+            postimage.Span);
+        return CreateWrite(
+            path,
+            postimage,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            restoredFileDeleteEligibility: null,
+            descriptor,
+            legacyAdoptionDeleteAuthority: null);
+    }
+
+    public static OutputMutation WriteRuntimeMutableTransition(
+        RelativeOutputPath path,
+        ReadOnlyMemory<byte> reviewedPreimage,
+        ReadOnlyMemory<byte> postimage,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        GameFamily gameFamily,
+        ulong titleId,
+        string? ownershipOutputMode = null)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreimage);
+        if (!expectedPreimage.Exists || ComputeState(reviewedPreimage.Span) != expectedPreimage)
+        {
+            throw new ArgumentException(
+                "A runtime-mutable update requires the exact reviewed preimage bytes.",
+                nameof(reviewedPreimage));
+        }
+
+        var descriptor = OutputRuntimeMutableDescriptor.ValidateTransition(
+            path,
+            gameFamily,
+            titleId,
+            reviewedPreimage.Span,
+            postimage.Span);
+        return CreateWrite(
+            path,
+            postimage,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            restoredFileDeleteEligibility: null,
+            descriptor,
+            legacyAdoptionDeleteAuthority: null);
     }
 
     private static OutputMutation CreateWrite(
@@ -102,7 +191,9 @@ public sealed record OutputMutation
         OutputFileState expectedPreimage,
         IEnumerable<OwnedTarget> ownershipClaims,
         string? ownershipOutputMode,
-        bool? restoredFileDeleteEligibility)
+        bool? restoredFileDeleteEligibility,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor,
+        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(expectedPreimage);
@@ -129,7 +220,9 @@ public sealed record OutputMutation
             plannedPostimage,
             ValidateOwnership(path, ownershipClaims, plannedPostimage.LengthBytes),
             ValidateOptionalOutputMode(ownershipOutputMode),
-            restoredFileDeleteEligibility);
+            restoredFileDeleteEligibility,
+            runtimeMutableDescriptor,
+            legacyAdoptionDeleteAuthority);
     }
 
     public static OutputMutation Delete(
@@ -137,6 +230,70 @@ public sealed record OutputMutation
         OutputFileState expectedPreimage,
         IEnumerable<OwnedTarget> ownershipClaims,
         string? ownershipOutputMode = null)
+    {
+        return CreateDelete(
+            path,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            runtimeMutableDescriptor: null,
+            legacyAdoptionDeleteAuthority: null);
+    }
+
+    public static OutputMutation DeleteLegacyAdoption(
+        RelativeOutputPath path,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        OutputLegacyAdoptionDeleteAuthority authority)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        return CreateDelete(
+            path,
+            expectedPreimage,
+            ownershipClaims,
+            authority.OutputMode,
+            runtimeMutableDescriptor: null,
+            legacyAdoptionDeleteAuthority: authority);
+    }
+
+    public static OutputMutation DeleteRuntimeMutable(
+        RelativeOutputPath path,
+        ReadOnlyMemory<byte> reviewedPreimage,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        GameFamily gameFamily,
+        ulong titleId,
+        string? ownershipOutputMode = null)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreimage);
+        if (!expectedPreimage.Exists || ComputeState(reviewedPreimage.Span) != expectedPreimage)
+        {
+            throw new ArgumentException(
+                "A runtime-mutable delete requires the exact reviewed preimage bytes.",
+                nameof(reviewedPreimage));
+        }
+
+        var descriptor = OutputRuntimeMutableDescriptor.ValidateExplicitDeletion(
+            path,
+            gameFamily,
+            titleId,
+            reviewedPreimage.Span);
+        return CreateDelete(
+            path,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            descriptor,
+            legacyAdoptionDeleteAuthority: null);
+    }
+
+    private static OutputMutation CreateDelete(
+        RelativeOutputPath path,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        string? ownershipOutputMode,
+        OutputRuntimeMutableDescriptor? runtimeMutableDescriptor,
+        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(expectedPreimage);
@@ -153,7 +310,16 @@ public sealed record OutputMutation
             OutputFileState.Missing,
             ValidateOwnership(path, ownershipClaims, expectedPreimage.LengthBytes),
             ValidateOptionalOutputMode(ownershipOutputMode),
-            restoredFileDeleteEligibility: null);
+            restoredFileDeleteEligibility: null,
+            runtimeMutableDescriptor,
+            legacyAdoptionDeleteAuthority);
+    }
+
+    private static OutputFileState ComputeState(ReadOnlySpan<byte> bytes)
+    {
+        return OutputFileState.Existing(
+            Convert.ToHexStringLower(SHA256.HashData(bytes)),
+            bytes.Length);
     }
 
     private static string? ValidateOptionalOutputMode(string? outputMode)
@@ -215,6 +381,81 @@ public sealed record OutputMutation
 
         return builder.ToImmutable();
     }
+}
+
+public sealed record OutputLegacyAdoptionDeleteAuthority
+{
+    public OutputLegacyAdoptionDeleteAuthority(
+        ProjectId projectId,
+        GameFamily gameFamily,
+        string outputMode,
+        RelativeOutputPath target,
+        OwnershipOwnerId ownerId,
+        PreservationRuleDescriptor preservationRule,
+        OutputFileState reviewedPreimage)
+    {
+        _ = SemanticContractGuards.StableId(projectId.Value, nameof(projectId));
+        ProjectId = projectId;
+        GameFamily = SemanticContractGuards.DefinedEnum(gameFamily, nameof(gameFamily));
+        OutputMode = SemanticContractGuards.ContractKey(outputMode, nameof(outputMode));
+        Target = target ?? throw new ArgumentNullException(nameof(target));
+        OwnerId = ownerId ?? throw new ArgumentNullException(nameof(ownerId));
+        PreservationRule = preservationRule ?? throw new ArgumentNullException(nameof(preservationRule));
+        ReviewedPreimage = reviewedPreimage ?? throw new ArgumentNullException(nameof(reviewedPreimage));
+        if (!ReviewedPreimage.Exists)
+        {
+            throw new ArgumentException(
+                "Legacy output deletion authority requires an existing reviewed preimage.",
+                nameof(reviewedPreimage));
+        }
+    }
+
+    public ProjectId ProjectId { get; }
+
+    public GameFamily GameFamily { get; }
+
+    public string OutputMode { get; }
+
+    public RelativeOutputPath Target { get; }
+
+    public OwnershipOwnerId OwnerId { get; }
+
+    public PreservationRuleDescriptor PreservationRule { get; }
+
+    public OutputFileState ReviewedPreimage { get; }
+
+    internal void ValidateBinding(
+        ProjectId projectId,
+        GameFamily gameFamily,
+        string outputMode,
+        OutputMutationKind kind,
+        RelativeOutputPath target,
+        OutputFileState expectedPreimage,
+        IReadOnlyList<OwnedTarget> ownershipClaims)
+    {
+        if (ProjectId != projectId
+            || GameFamily != gameFamily
+            || !string.Equals(OutputMode, outputMode, StringComparison.Ordinal)
+            || kind != OutputMutationKind.Delete
+            || Target != target
+            || ReviewedPreimage != expectedPreimage
+            || ownershipClaims.Count != 1)
+        {
+            throw new ArgumentException("Legacy output deletion authority does not match its apply binding.");
+        }
+
+        var claim = ownershipClaims[0];
+        if (claim.GameFamily != GameFamily
+            || claim.Address.File != Target
+            || claim.Address.ScopeKind != OwnedTargetScopeKind.File
+            || claim.OwnerId != OwnerId
+            || claim.PreservationRule != PreservationRule)
+        {
+            throw new ArgumentException(
+                "Legacy output deletion authority requires one exact whole-file ownership claim.");
+        }
+    }
+
 }
 
 public enum OutputApplyOriginKind
@@ -354,7 +595,7 @@ public sealed record OutputApplyPlan
             semanticReviewHash,
             nameof(semanticReviewHash));
         Origins = ValidateOrigins(origins);
-        Mutations = ValidateMutations(gameFamily, mutations);
+        Mutations = ValidateMutations(projectId, gameFamily, OutputMode, mutations);
         ReadDependencies = ValidateDependencies(
             readDependencies,
             dependency => dependency.Path.CanonicalKey,
@@ -412,7 +653,9 @@ public sealed record OutputApplyPlan
     }
 
     private static ImmutableArray<OutputMutation> ValidateMutations(
+        ProjectId projectId,
         GameFamily gameFamily,
+        string outputMode,
         IEnumerable<OutputMutation> mutations)
     {
         ArgumentNullException.ThrowIfNull(mutations);
@@ -436,6 +679,44 @@ public sealed record OutputApplyPlan
                 throw new ArgumentException(
                     "Every output ownership claim must belong to the apply plan's game family.",
                     nameof(mutations));
+            }
+
+            if (mutation.RuntimeMutableDescriptor is { } runtimeMutable)
+            {
+                runtimeMutable.ValidateIdentity(mutation.Path, gameFamily);
+                var state = mutation.Kind == OutputMutationKind.Write
+                    ? mutation.PlannedPostimage
+                    : mutation.ExpectedPreimage;
+                if (state.LengthBytes != GameplaySettingsJournal.JournalSize
+                    || mutation.Kind == OutputMutationKind.Write && runtimeMutable.MinimumGeneration is null
+                    || mutation.RestoredFileDeleteEligibility.HasValue
+                    || !mutation.OwnershipClaims.Any(
+                        claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))
+                {
+                    throw new ArgumentException(
+                        "A runtime-mutable mutation has invalid state, generation, or ownership scope.",
+                        nameof(mutations));
+                }
+            }
+
+            if (mutation.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
+            {
+                legacyAdoption.ValidateBinding(
+                    projectId,
+                    gameFamily,
+                    outputMode,
+                    mutation.Kind,
+                    mutation.Path,
+                    mutation.ExpectedPreimage,
+                    mutation.OwnershipClaims);
+                if (!string.Equals(mutation.OwnershipOutputMode, outputMode, StringComparison.Ordinal)
+                    || mutation.RuntimeMutableDescriptor is not null
+                    || mutation.RestoredFileDeleteEligibility.HasValue)
+                {
+                    throw new ArgumentException(
+                        "Legacy output deletion authority cannot be combined with another mutation authority.",
+                        nameof(mutations));
+                }
             }
 
             totalWriteBytes = checked(totalWriteBytes + mutation.Postimage.Length);

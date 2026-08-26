@@ -31,6 +31,12 @@ import {
   OccurrenceCount,
   TechnicalDetails
 } from '../workbench/AnalysisPresentation';
+import {
+  presentGameModuleFactLabel,
+  presentGameModuleFactValue,
+  presentGameModuleRecordSummary,
+  presentGameModuleRecordTitle
+} from './gameModulePresentation';
 
 export function GameModuleResults({
   canNavigateRecord,
@@ -101,14 +107,16 @@ function GameModuleResultCard({
   root: GameModuleRecord;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const rootTitle = presentGameModuleRecordTitle(root, t) ?? root.title;
+  const rootSummary = presentGameModuleRecordSummary(root, t) ?? root.summary;
   return (
     <li>
       <article>
         <header>
           <ListTree aria-hidden="true" size={17} />
           <div data-localization-ignore="true">
-            <h3>{root.title}</h3>
-            {root.summary ? <p>{root.summary}</p> : null}
+            <h3>{rootTitle}</h3>
+            {rootSummary ? <p>{rootSummary}</p> : null}
           </div>
           <div className="km-game-module-record-badges">
             <span data-state={root.coverage}>
@@ -136,8 +144,13 @@ function GameModuleResultCard({
               <div className="km-analysis-related-record" key={record.recordId}>
                 <header>
                   <div data-localization-ignore="true">
-                    <strong>{relatedRecordTitle(record, root)}</strong>
-                    {record.summary && record.summary !== root.summary ? <p>{record.summary}</p> : null}
+                    <strong>
+                      {presentGameModuleRecordTitle(record, t) ?? relatedRecordTitle(record, root)}
+                    </strong>
+                    {(presentGameModuleRecordSummary(record, t) ?? record.summary) &&
+                    (presentGameModuleRecordSummary(record, t) ?? record.summary) !== rootSummary ? (
+                      <p>{presentGameModuleRecordSummary(record, t) ?? record.summary}</p>
+                    ) : null}
                   </div>
                   <div>
                     {record.coverage !== root.coverage ? (
@@ -183,8 +196,9 @@ function RecordFacts({
 }) {
   const { t, translateLiteral } = useLocalization();
   const entries = gameFactEntries(facts, (fact) => {
+    const localizedLabel = presentGameModuleFactLabel(fact, t);
     const labelKey = presentationFactLabelKey(fact.label);
-    return labelKey ? t(labelKey) : fact.label;
+    return localizedLabel ?? (labelKey ? t(labelKey) : fact.label);
   });
   const groups = (['verified', 'derived', 'unknown'] as const)
     .map((confidence) => ({
@@ -209,9 +223,10 @@ function RecordFacts({
             ) : null}
             <dl>
               {group.facts.map(({ fact, key, label }) => {
+                const localizedFactValue = presentGameModuleFactValue(fact, t);
                 const value = presentFactValue(
                   fact.label,
-                  fact.value.displayValue,
+                  localizedFactValue ?? fact.value.displayValue,
                   fact.unit,
                   translateLiteral
                 );
@@ -221,9 +236,12 @@ function RecordFacts({
                     <dd data-localization-ignore="true">
                       <span>{value.displayValue}</span>
                       {value.unit ? <small>{value.unit}</small> : null}
-                      {value.changed ? (
+                      {value.changed || localizedFactValue !== null ? (
                         <TechnicalDetails summary={translateLiteral('Technical details')}>
-                          <code>{fact.label}: {value.exactValue}</code>
+                          <code>
+                            {fact.fieldKey}: {fact.value.displayValue}
+                            {fact.unit ? ` ${fact.unit}` : ''}
+                          </code>
                         </TechnicalDetails>
                       ) : null}
                     </dd>

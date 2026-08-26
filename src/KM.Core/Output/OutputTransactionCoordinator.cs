@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using KM.Core.Projects;
+using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
 
 namespace KM.Core.Output;
@@ -334,30 +335,69 @@ public sealed class OutputTransactionCoordinator
                 continue;
             }
 
-            var current = await TryFingerprintTargetAsync(path, cancellationToken).ConfigureAwait(false);
-            if (current is null)
+            if (ownershipByPath.TryGetValue(path.CanonicalKey, out var owned))
+            {
+                if (owned.RuntimeMutableDescriptor is { } runtimeMutable)
+                {
+                    var observation = await TryObserveRuntimeMutableTargetAsync(
+                            path,
+                            runtimeMutable,
+                            owned.GameFamily,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    entries.Add(observation is null
+                        ? new OutputIntegrityEntry(
+                            path,
+                            OutputIntegrityClassification.Unknown,
+                            null,
+                            owned.CurrentState)
+                        : new OutputIntegrityEntry(
+                            path,
+                            !observation.State.Exists
+                                ? OutputIntegrityClassification.KmOwnedStale
+                                : observation.State == owned.CurrentState
+                                  || observation.IsOwnedAtOrAfter
+                                  && observation.Generation != runtimeMutable.MinimumGeneration
+                                    ? OutputIntegrityClassification.KmOwnedCurrent
+                                    : OutputIntegrityClassification.Conflicted,
+                            observation.State,
+                            owned.CurrentState));
+                    continue;
+                }
+
+                var ownedCurrent = await TryFingerprintTargetAsync(path, cancellationToken).ConfigureAwait(false);
+                if (ownedCurrent is null)
+                {
+                    entries.Add(new OutputIntegrityEntry(
+                        path,
+                        OutputIntegrityClassification.Unknown,
+                        null,
+                        owned.CurrentState));
+                    continue;
+                }
+
+                entries.Add(new OutputIntegrityEntry(
+                    path,
+                    ownedCurrent == owned.CurrentState
+                        ? OutputIntegrityClassification.KmOwnedCurrent
+                        : OutputIntegrityClassification.Conflicted,
+                    ownedCurrent,
+                    owned.CurrentState));
+                continue;
+            }
+
+            var unownedCurrent = await TryFingerprintTargetAsync(path, cancellationToken).ConfigureAwait(false);
+            if (unownedCurrent is null)
             {
                 entries.Add(new OutputIntegrityEntry(path, OutputIntegrityClassification.Unknown, null, null));
                 continue;
             }
 
-            if (ownershipByPath.TryGetValue(path.CanonicalKey, out var owned))
-            {
-                entries.Add(new OutputIntegrityEntry(
-                    path,
-                    current == owned.CurrentState
-                        ? OutputIntegrityClassification.KmOwnedCurrent
-                        : OutputIntegrityClassification.Conflicted,
-                    current,
-                    owned.CurrentState));
-                continue;
-            }
-
             var classification = baselineByPath.TryGetValue(path.CanonicalKey, out var baselineState)
-                                 && current == baselineState.State
+                                 && unownedCurrent == baselineState.State
                 ? OutputIntegrityClassification.BaseEquivalent
                 : OutputIntegrityClassification.Foreign;
-            entries.Add(new OutputIntegrityEntry(path, classification, current, null));
+            entries.Add(new OutputIntegrityEntry(path, classification, unownedCurrent, null));
         }
 
         foreach (var owned in inventory.Files)
@@ -434,7 +474,8 @@ public sealed class OutputTransactionCoordinator
                     continue;
                 }
 
-                if (RequiresProviderCoordinatedMutation(owned.OutputMode, owned.Path))
+                if (owned.RuntimeMutableDescriptor is not null
+                    || RequiresProviderCoordinatedMutation(owned.OutputMode, owned.Path))
                 {
                     entries.Add(new OutputCleanupEntry(path, OutputCleanupDisposition.NotOwned));
                     continue;
@@ -891,7 +932,9 @@ public sealed class OutputTransactionCoordinator
         CancellationToken cancellationToken)
     {
         var scopeFiles = inventory.Files
-            .Where(record => OwnershipScopeMatches(record, projectId, gameFamily))
+            .Where(record => OwnershipScopeMatches(record, projectId, gameFamily)
+                && record.RuntimeMutableDescriptor is null
+                && !RequiresProviderCoordinatedMutation(record.OutputMode, record.Path))
             .OrderBy(record => record.Path.CanonicalKey, StringComparer.Ordinal)
             .ToImmutableArray();
         if (scopeFiles.IsEmpty)
@@ -1413,13 +1456,15 @@ public sealed class OutputTransactionCoordinator
             .Where(record => OwnershipScopeMatches(
                 record,
                 manifest.Summary.ProjectId,
-                manifest.Summary.GameFamily))
+                manifest.Summary.GameFamily)
+                && record.RuntimeMutableDescriptor is null
+                && !RequiresProviderCoordinatedMutation(record.OutputMode, record.Path))
             .ToDictionary(record => record.Path.CanonicalKey, StringComparer.Ordinal);
         var checkpointByPath = manifest.Entries.ToDictionary(entry => entry.Path.CanonicalKey, StringComparer.Ordinal);
         if (manifest.Entries.Any(entry =>
-                RequiresProviderCoordinatedMutation(entry.OutputMode, entry.Path))
-            || ownedByPath.Values.Any(record =>
-                RequiresProviderCoordinatedMutation(record.OutputMode, record.Path)))
+                allOwnedByPath.GetValueOrDefault(entry.Path.CanonicalKey)?.RuntimeMutableDescriptor is not null)
+            || manifest.Entries.Any(entry =>
+                RequiresProviderCoordinatedMutation(entry.OutputMode, entry.Path)))
         {
             // Some standalone layouts maintain a directory-wide derived index.
             // Generic file restore cannot prove that index remains coherent until
@@ -1710,12 +1755,65 @@ public sealed class OutputTransactionCoordinator
                 throw new OutputOwnershipConflictException(mutation.Path);
             }
 
+            var legacyAdoptionAuthorized = false;
+            if (mutation.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
+            {
+                legacyAdoption.ValidateBinding(
+                    plan.ProjectId,
+                    plan.GameFamily,
+                    plan.OutputMode,
+                    mutation.Kind,
+                    mutation.Path,
+                    mutation.ExpectedPreimage,
+                    mutation.OwnershipClaims);
+                legacyAdoptionAuthorized = !hasOwnedRecord
+                    || LegacyAdoptionMatchesOwnedRecord(
+                        owned!,
+                        mutation,
+                        plan.OutputMode);
+                if (!legacyAdoptionAuthorized)
+                {
+                    throw new OutputOwnershipConflictException(mutation.Path);
+                }
+            }
+
+            if (mutation.RuntimeMutableDescriptor is { } runtimeMutable)
+            {
+                if (!hasOwnedRecord)
+                {
+                    if (mutation.ExpectedPreimage.Exists || mutation.Kind == OutputMutationKind.Delete)
+                    {
+                        throw new OutputOwnershipConflictException(mutation.Path);
+                    }
+                }
+                else if (owned!.RuntimeMutableDescriptor is not { } ownedRuntimeMutable
+                         || !ownedRuntimeMutable.HasSameIdentity(runtimeMutable)
+                         || ownedRuntimeMutable.MinimumGeneration is null
+                         || runtimeMutable.MinimumGeneration is { } mutationGeneration
+                         && ownedRuntimeMutable.MinimumGeneration is { } ownedGeneration
+                         && !OutputRuntimeMutableDescriptor.IsGenerationAtOrAfter(
+                             mutation.Kind == OutputMutationKind.Write
+                                 ? unchecked(mutationGeneration - 1)
+                                 : mutationGeneration,
+                             ownedGeneration))
+                {
+                    throw new OutputOwnershipConflictException(mutation.Path);
+                }
+            }
+            else if (owned?.RuntimeMutableDescriptor is not null)
+            {
+                throw new OutputOwnershipConflictException(mutation.Path);
+            }
+
+            var ordinaryDeleteAuthorized = hasOwnedRecord
+                && owned!.FileDeleteEligible
+                && HasWholeFileOwnership(owned.Claims)
+                && HasWholeFileOwnership(mutation.OwnershipClaims)
+                && (mutation.RuntimeMutableDescriptor is not null
+                    || owned.CurrentState == mutation.ExpectedPreimage);
             if (mutation.Kind == OutputMutationKind.Delete
-                && (!hasOwnedRecord
-                    || owned!.CurrentState != mutation.ExpectedPreimage
-                    || !owned.FileDeleteEligible
-                    || !HasWholeFileOwnership(owned.Claims)
-                    || !HasWholeFileOwnership(mutation.OwnershipClaims)))
+                && !ordinaryDeleteAuthorized
+                && !legacyAdoptionAuthorized)
             {
                 throw new OutputOwnershipConflictException(mutation.Path);
             }
@@ -1738,9 +1836,11 @@ public sealed class OutputTransactionCoordinator
                 mutation.PlannedPostimage,
                 mutation.OwnershipClaims,
                 mutation.OwnershipOutputMode ?? plan.OutputMode,
+                mutation.RuntimeMutableDescriptor,
                 mutation.RestoredFileDeleteEligibility,
                 mutation.Kind == OutputMutationKind.Write ? $"{index:D6}.stage.bin" : null,
-                mutation.ExpectedPreimage.Exists ? $"{index:D6}.backup.bin" : null))
+                mutation.ExpectedPreimage.Exists ? $"{index:D6}.backup.bin" : null,
+                mutation.LegacyAdoptionDeleteAuthority))
             .ToImmutableArray();
         var journal = new OutputTransactionJournal(
             OutputTransactionJournal.CurrentSchemaVersion,
@@ -2289,10 +2389,18 @@ public sealed class OutputTransactionCoordinator
         string transactionDirectory,
         string journalPath)
     {
-        foreach (var entry in journal.Entries)
+        var finalizedEntries = journal.Entries.ToBuilder();
+        for (var index = 0; index < journal.Entries.Length; index++)
         {
+            var entry = journal.Entries[index];
             var current = await ComputeTargetStateAsync(entry.Path, CancellationToken.None).ConfigureAwait(false);
-            if (current != entry.Postimage)
+            if (current == entry.Postimage)
+            {
+                continue;
+            }
+
+            if (entry.Kind != OutputMutationKind.Write
+                || entry.RuntimeMutableDescriptor is not { MinimumGeneration: { } minimumGeneration } runtimeMutable)
             {
                 return await MarkRecoveryRequiredAsync(
                         journal,
@@ -2301,7 +2409,40 @@ public sealed class OutputTransactionCoordinator
                         OutputOutcomeCodes.PostimageChanged)
                 .ConfigureAwait(false);
             }
+
+            var observation = await TryObserveRuntimeMutableTargetAsync(
+                    entry.Path,
+                    runtimeMutable,
+                    journal.GameFamily,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (observation is not
+                {
+                    State.Exists: true,
+                    IsOwnedAtOrAfter: true,
+                    Generation: { } generation,
+                }
+                || generation == minimumGeneration)
+            {
+                return await MarkRecoveryRequiredAsync(
+                        journal,
+                        transactionDirectory,
+                        journalPath,
+                        OutputOutcomeCodes.PostimageChanged)
+                    .ConfigureAwait(false);
+            }
+
+            finalizedEntries[index] = entry with
+            {
+                Postimage = observation.State,
+                RuntimeMutableDescriptor = new OutputRuntimeMutableDescriptor(
+                    runtimeMutable.Kind,
+                    runtimeMutable.TitleId,
+                    generation),
+            };
         }
+
+        journal = journal with { Entries = finalizedEntries.ToImmutable() };
 
         // Once this phase is durable, recovery must never choose rollback: the
         // ownership inventory may be published by the next operation.
@@ -2410,7 +2551,8 @@ public sealed class OutputTransactionCoordinator
                     entry.OwnershipOutputMode,
                     fileDeleteEligible,
                     journal.TransactionId,
-                    completedAtUtc);
+                    completedAtUtc,
+                    entry.RuntimeMutableDescriptor);
             }
             else
             {
@@ -2467,12 +2609,29 @@ public sealed class OutputTransactionCoordinator
         return claims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File);
     }
 
+    private static bool LegacyAdoptionMatchesOwnedRecord(
+        OutputOwnershipRecord owned,
+        OutputMutation mutation,
+        string outputMode)
+    {
+        return owned.RuntimeMutableDescriptor is null
+            && owned.CurrentState == mutation.ExpectedPreimage
+            && string.Equals(owned.OutputMode, outputMode, StringComparison.Ordinal)
+            && owned.Claims.Length == 1
+            && mutation.OwnershipClaims.Length == 1
+            && owned.Claims[0] == mutation.OwnershipClaims[0];
+    }
+
     private static bool RequiresProviderCoordinatedMutation(
         string outputMode,
         RelativeOutputPath path)
     {
-        return string.Equals(outputMode, "za.standalone", StringComparison.Ordinal)
-               && path.CanonicalKey.StartsWith("ROMFS/", StringComparison.Ordinal);
+        return string.Equals(
+                   outputMode,
+                   GameplayBundleDeploymentPlanner.OutputMode,
+                   StringComparison.Ordinal)
+               || string.Equals(outputMode, "za.standalone", StringComparison.Ordinal)
+                   && path.CanonicalKey.StartsWith("ROMFS/", StringComparison.Ordinal);
     }
 
     private static bool IsKnownOutcomeCode(string outcomeCode)
@@ -2873,9 +3032,36 @@ public sealed class OutputTransactionCoordinator
         {
             var entry = journal.Entries[index];
             cancellationToken.ThrowIfCancellationRequested();
-            var current = await TryFingerprintTargetAsync(entry.Path, cancellationToken).ConfigureAwait(false);
-            currentStates.Add(current);
             var wasPublished = index < journal.PublishedEntryCount;
+            RuntimeMutableTargetObservation? runtimeObservation = null;
+            OutputFileState? current;
+            if (wasPublished
+                && !classifyAsRollingBack
+                && entry.Kind == OutputMutationKind.Write
+                && entry.RuntimeMutableDescriptor is { } runtimeMutable)
+            {
+                runtimeObservation = await TryObserveRuntimeMutableTargetAsync(
+                        entry.Path,
+                        runtimeMutable,
+                        journal.GameFamily,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                current = runtimeObservation?.State;
+            }
+            else
+            {
+                current = await TryFingerprintTargetAsync(entry.Path, cancellationToken).ConfigureAwait(false);
+            }
+
+            currentStates.Add(current);
+            var currentIsRuntimeSuccessor = runtimeObservation is
+            {
+                State.Exists: true,
+                IsOwnedAtOrAfter: true,
+                Generation: { } observedGeneration,
+            }
+                && entry.RuntimeMutableDescriptor?.MinimumGeneration is { } minimumGeneration
+                && observedGeneration != minimumGeneration;
 
             var stagePath = entry.StageFileName is null
                 ? null
@@ -2949,9 +3135,11 @@ public sealed class OutputTransactionCoordinator
                     && !discarded.Exists
                     && (!captured.Exists || captureIsExpectedPreimage)
                     && current is not null
-                    && (current == entry.Preimage || current == entry.Postimage)
+                    && (current == entry.Preimage
+                        || current == entry.Postimage
+                        || currentIsRuntimeSuccessor)
                     && !(captured.Exists && current == entry.Preimage);
-                if (current != entry.Postimage)
+                if (current != entry.Postimage && !currentIsRuntimeSuccessor)
                 {
                     allPostimages = false;
                 }
@@ -3204,6 +3392,47 @@ public sealed class OutputTransactionCoordinator
                 || !string.Equals(entry.BackupFileName, expectedBackupName, StringComparison.Ordinal))
             {
                 throw new ArgumentException("The output transaction journal contains an invalid entry.", nameof(journal));
+            }
+
+            if (entry.RuntimeMutableDescriptor is { } runtimeMutable)
+            {
+                runtimeMutable.ValidateIdentity(entry.Path, journal.GameFamily);
+                var mutableState = entry.Kind == OutputMutationKind.Write
+                    ? entry.Postimage
+                    : entry.Preimage;
+                if (mutableState.LengthBytes != GameplaySettingsJournal.JournalSize
+                    || entry.Kind == OutputMutationKind.Write && runtimeMutable.MinimumGeneration is null
+                    || entry.RestoredFileDeleteEligibility.HasValue
+                    || !HasWholeFileOwnership(entry.OwnershipClaims))
+                {
+                    throw new ArgumentException(
+                        "The output transaction journal contains an invalid runtime-mutable entry.",
+                        nameof(journal));
+                }
+            }
+
+
+            if (entry.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
+            {
+                legacyAdoption.ValidateBinding(
+                    journal.ProjectId,
+                    journal.GameFamily,
+                    journal.OutputMode,
+                    entry.Kind,
+                    entry.Path,
+                    entry.Preimage,
+                    entry.OwnershipClaims);
+                if (!string.Equals(
+                        entry.OwnershipOutputMode,
+                        journal.OutputMode,
+                        StringComparison.Ordinal)
+                    || entry.RuntimeMutableDescriptor is not null
+                    || entry.RestoredFileDeleteEligibility.HasValue)
+                {
+                    throw new ArgumentException(
+                        "The output transaction journal contains conflicting deletion authority.",
+                        nameof(journal));
+                }
             }
 
             _ = SemanticContractGuards.ContractKey(entry.OwnershipOutputMode, nameof(journal));
@@ -3463,6 +3692,72 @@ public sealed class OutputTransactionCoordinator
         try
         {
             return await ComputeTargetStateAsync(relativePath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            OutputCoordinatorException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<RuntimeMutableTargetObservation?> TryObserveRuntimeMutableTargetAsync(
+        RelativeOutputPath relativePath,
+        OutputRuntimeMutableDescriptor descriptor,
+        GameFamily gameFamily,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            paths.ValidateTarget(relativePath);
+            descriptor.ValidateIdentity(relativePath, gameFamily);
+            var path = paths.ResolveTarget(relativePath);
+            if (!File.Exists(path))
+            {
+                paths.ValidateTarget(relativePath);
+                return new RuntimeMutableTargetObservation(
+                    OutputFileState.Missing,
+                    IsOwnedAtOrAfter: false,
+                    Generation: null);
+            }
+
+            await using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: GameplaySettingsJournal.JournalSize,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            if (stream.Length != GameplaySettingsJournal.JournalSize)
+            {
+                var invalidState = await ComputeStreamStateAsync(
+                        stream,
+                        options.MaximumFingerprintFileBytes,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                paths.ValidateTarget(relativePath);
+                return new RuntimeMutableTargetObservation(
+                    invalidState,
+                    IsOwnedAtOrAfter: false,
+                    Generation: null);
+            }
+
+            var bytes = new byte[GameplaySettingsJournal.JournalSize];
+            await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
+            var state = OutputFileState.Existing(
+                Convert.ToHexStringLower(SHA256.HashData(bytes)),
+                bytes.Length);
+            var isOwnedAtOrAfter = descriptor.IsOwnedAtOrAfter(bytes, gameFamily, out var generation);
+            paths.ValidateTarget(relativePath);
+            return new RuntimeMutableTargetObservation(
+                state,
+                isOwnedAtOrAfter,
+                isOwnedAtOrAfter ? generation : null);
         }
         catch (OperationCanceledException)
         {
@@ -3794,10 +4089,11 @@ public sealed class OutputTransactionCoordinator
                 tokens.Add(target.Path.CanonicalKey);
                 tokens.AddRange(OutputRevisionCalculator.FileStateTokens(target.Preimage));
                 tokens.AddRange(OutputRevisionCalculator.FileStateTokens(target.Postimage));
+                AppendRuntimeMutableRevisionTokens(tokens, target.RuntimeMutableDescriptor);
             }
         }
 
-        return OutputRevisionCalculator.FromTokens("output-history-v1", tokens);
+        return OutputRevisionCalculator.FromTokens("output-history-v2", tokens);
     }
 
     private static OutputStateRevision ComputeInventoryRevision(OutputOwnershipInventory inventory)
@@ -3815,6 +4111,7 @@ public sealed class OutputTransactionCoordinator
             tokens.Add(record.OutputMode);
             tokens.Add(record.FileDeleteEligible ? "1" : "0");
             tokens.Add(record.TransactionId.Value);
+            AppendRuntimeMutableRevisionTokens(tokens, record.RuntimeMutableDescriptor);
             foreach (var claim in record.Claims)
             {
                 AppendOwnershipRevisionTokens(tokens, claim);
@@ -3832,7 +4129,25 @@ public sealed class OutputTransactionCoordinator
             tokens.Add(directory.TransactionId.Value);
         }
 
-        return OutputRevisionCalculator.FromTokens("output-ownership-v1", tokens);
+        return OutputRevisionCalculator.FromTokens("output-ownership-v2", tokens);
+    }
+
+    private static void AppendRuntimeMutableRevisionTokens(
+        ICollection<string?> tokens,
+        OutputRuntimeMutableDescriptor? descriptor)
+    {
+        if (descriptor is null)
+        {
+            tokens.Add("ordinary");
+            return;
+        }
+
+        tokens.Add("runtime-mutable");
+        tokens.Add(((int)descriptor.Kind).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        tokens.Add(descriptor.TitleId.ToString("X16", System.Globalization.CultureInfo.InvariantCulture));
+        tokens.Add(descriptor.MinimumGeneration?.ToString(
+            "X16",
+            System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static OutputStateRevision ComputeIntegrityRevision(
@@ -3923,7 +4238,7 @@ public sealed class OutputTransactionCoordinator
     private static string ComputeRecoveryJournalFingerprint(OutputTransactionJournal journal)
     {
         return OutputRevisionCalculator.FromTokens(
-            "output-recovery-journal-v1",
+            "output-recovery-journal-v2",
             EnumerateRecoveryJournalTokens(journal),
             OutputLimits.MaximumJournalRevisionTokens).Value;
     }
@@ -3961,6 +4276,44 @@ public sealed class OutputTransactionCoordinator
             }
 
             yield return entry.OwnershipOutputMode;
+            yield return entry.RuntimeMutableDescriptor is null ? "ordinary" : "runtime-mutable";
+            yield return entry.RuntimeMutableDescriptor is null
+                ? null
+                : ((int)entry.RuntimeMutableDescriptor.Kind).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+            yield return entry.RuntimeMutableDescriptor?.TitleId.ToString(
+                "X16",
+                System.Globalization.CultureInfo.InvariantCulture);
+            yield return entry.RuntimeMutableDescriptor?.MinimumGeneration?.ToString(
+                "X16",
+                System.Globalization.CultureInfo.InvariantCulture);
+            if (entry.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
+            {
+                yield return "legacy-adoption-delete";
+                yield return legacyAdoption.ProjectId.Value;
+                yield return ((int)legacyAdoption.GameFamily).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+                yield return legacyAdoption.OutputMode;
+                yield return legacyAdoption.Target.CanonicalKey;
+                yield return legacyAdoption.OwnerId.Value;
+                yield return legacyAdoption.PreservationRule.Key;
+                yield return legacyAdoption.PreservationRule.SchemaVersion.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+                yield return legacyAdoption.PreservationRule.PreservesUnownedData.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+                yield return legacyAdoption.PreservationRule.RequiresPreimage.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+                foreach (var token in OutputRevisionCalculator.FileStateTokens(
+                             legacyAdoption.ReviewedPreimage))
+                {
+                    yield return token;
+                }
+            }
+            else
+            {
+                yield return "ordinary-delete-authority";
+            }
+
             yield return entry.RestoredFileDeleteEligibility?.ToString(System.Globalization.CultureInfo.InvariantCulture);
             yield return entry.StageFileName;
             yield return entry.BackupFileName;
@@ -4044,7 +4397,8 @@ public sealed class OutputTransactionCoordinator
                 entry.Kind,
                 entry.Preimage,
                 entry.Postimage,
-                entry.OwnershipClaims)),
+                entry.OwnershipClaims,
+                entry.RuntimeMutableDescriptor)),
             outcomeCode);
     }
 
@@ -4200,6 +4554,11 @@ public sealed class OutputTransactionCoordinator
     private sealed record RecoveryClassification(
         OutputRecoveryTransactionStatus Status,
         ImmutableArray<OutputFileState?> CurrentStates);
+
+    private sealed record RuntimeMutableTargetObservation(
+        OutputFileState State,
+        bool IsOwnedAtOrAfter,
+        ulong? Generation);
 
     private sealed record CheckpointRestoreMaterial(
         OutputCheckpointRestorePreview Preview,

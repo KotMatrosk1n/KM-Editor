@@ -4,6 +4,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.AngeFight;
 using KM.Api.BagHook;
+using KM.Api.BattleCafeRewards;
 using KM.Api.Behavior;
 using KM.Api.CatchCap;
 using KM.Api.ChangeSets;
@@ -13,6 +14,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.FairyGymBoosts;
 using KM.Api.FashionUnlock;
+using KM.Api.FashionCatalog;
 using KM.Api.Flagwork;
 using KM.Api.FpsPatch;
 using KM.Api.GameDump;
@@ -20,6 +22,7 @@ using KM.Api.GameModules;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.GuidedDesign;
+using KM.Api.HabitatCoordinates;
 using KM.Api.HyperspaceBypass;
 using KM.Api.HyperTraining;
 using KM.Api.Items;
@@ -36,6 +39,7 @@ using KM.Api.Research;
 using KM.Api.Raids;
 using KM.Api.Randomizer;
 using KM.Api.Rentals;
+using KM.Api.RuntimeSettings;
 using KM.Api.RoyalCandy;
 using KM.Api.Semantics;
 using KM.Api.SemanticMerging;
@@ -47,7 +51,9 @@ using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.SwShCache;
 using KM.Api.Text;
+using KM.Api.TmMachine;
 using KM.Api.Trainers;
+using KM.Api.TrainerPools;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
@@ -63,6 +69,7 @@ using KM.Core.Semantics;
 using KM.Core.Workspace;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
+using KM.SwSh.BattleCafeRewards;
 using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Editing;
@@ -99,6 +106,7 @@ using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
+using KM.SV.GameModules;
 using KM.SV.Text;
 using KM.ZA.Encounters;
 using KM.ZA.Gifts;
@@ -174,6 +182,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly SwShRoyalCandyEditSessionService royalCandyEditSessionService;
     private readonly SwShStartingItemsEditSessionService startingItemsEditSessionService;
     private readonly SwShNpcItemGiftEditSessionService npcItemGiftEditSessionService;
+    private readonly SwShBattleCafeRewardsEditSessionService battleCafeRewardsEditSessionService;
     private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
@@ -202,6 +211,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly SemanticMergeApplicationService semanticMergeApplicationService;
     private readonly ResearchAnnotationApplicationService researchAnnotationApplicationService;
     private readonly ResearchLabApplicationService researchLabApplicationService;
+    private readonly RowClipboardApplicationService rowClipboardApplicationService;
+    private readonly GameplaySettingsApplicationService gameplaySettingsApplicationService;
     private readonly bool ownsSemanticMergeApplicationService;
     private readonly bool ownsResearchLabApplicationService;
 
@@ -233,6 +244,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         SwShRoyalCandyEditSessionService? royalCandyEditSessionService = null,
         SwShStartingItemsEditSessionService? startingItemsEditSessionService = null,
         SwShNpcItemGiftEditSessionService? npcItemGiftEditSessionService = null,
+        SwShBattleCafeRewardsEditSessionService? battleCafeRewardsEditSessionService = null,
         SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
@@ -261,7 +273,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         GuidedDesignApplicationService? guidedDesignApplicationService = null,
         SemanticMergeApplicationService? semanticMergeApplicationService = null,
         ResearchAnnotationApplicationService? researchAnnotationApplicationService = null,
-        ResearchLabApplicationService? researchLabApplicationService = null)
+        ResearchLabApplicationService? researchLabApplicationService = null,
+        RowClipboardApplicationService? rowClipboardApplicationService = null,
+        GameplaySettingsApplicationService? gameplaySettingsApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -288,6 +302,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         this.royalCandyEditSessionService = royalCandyEditSessionService ?? new SwShRoyalCandyEditSessionService(this.projectWorkspaceService);
         this.startingItemsEditSessionService = startingItemsEditSessionService ?? new SwShStartingItemsEditSessionService(this.projectWorkspaceService);
         this.npcItemGiftEditSessionService = npcItemGiftEditSessionService ?? new SwShNpcItemGiftEditSessionService(this.projectWorkspaceService);
+        this.battleCafeRewardsEditSessionService = battleCafeRewardsEditSessionService ?? new SwShBattleCafeRewardsEditSessionService(this.projectWorkspaceService);
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
@@ -315,6 +330,16 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             this.swShWorkflowService.SharedPokemonWorkflowService);
         this.svWorkflowService = svWorkflowService ?? new SvWorkflowService(this.projectWorkspaceService);
         this.zaWorkflowService = zaWorkflowService ?? new ZaWorkflowService(this.projectWorkspaceService);
+        var rowClipboardMutations = new RowClipboardWorkflowMutationProvider(
+            this.swShWorkflowService,
+            this.svWorkflowService,
+            this.zaWorkflowService);
+        this.rowClipboardApplicationService = rowClipboardApplicationService
+            ?? new RowClipboardApplicationService(
+                rowClipboardMutations.CaptureSourceFingerprint,
+                rowClipboardMutations.Mutate);
+        this.gameplaySettingsApplicationService = gameplaySettingsApplicationService
+            ?? new GameplaySettingsApplicationService();
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
         this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
         this.zaGameDumpService = zaGameDumpService ?? new ZaGameDumpService(this.zaWorkflowService);
@@ -354,11 +379,20 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             ?? new GameModuleApplicationService(
                 this.semanticExploreApplicationService,
                 LoadGameModuleTeraRaidsFresh,
+                LoadGameModulePackedLooseSourceComparisonFresh,
+                LoadGameModuleEventDataComparisonFresh,
+                LoadGameModuleScenePlacementProjectionFresh,
+                LoadGameModuleScarletVioletTypeEffectivenessStateFresh,
                 LoadGameModuleScriptedBossTimelineFresh,
+                LoadGameModuleSwordShieldCapabilityBatchFresh,
                 LoadGameModuleZaCapabilityBatchFresh,
                 LoadGameModuleTrainerArchetypesFresh,
                 LoadGameModuleWildSpawnsFresh,
-                LoadGameModuleMoveVariantsFresh);
+                LoadGameModuleMoveVariantsFresh,
+                LoadGameModuleEncounterCompatibilityFresh,
+                LoadGameModuleAlphaMovesFresh,
+                LoadGameModuleTrainerPoolsFresh,
+                LoadGameModuleTypeEffectivenessStateFresh);
         this.guidedDesignApplicationService = guidedDesignApplicationService
             ?? new GuidedDesignApplicationService(
                 this.semanticExploreApplicationService,
@@ -487,6 +521,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                         KmCommandNames.ClearSwShCache);
             }
 
+            if (IsWorkflowCacheMutation(command))
+            {
+                // Invalidate verified semantic observations before any output mutation. A failed
+                // mutation may still have changed files, so retaining a pre-mutation token is unsafe.
+                semanticExploreApplicationService.ClearMemoryCaches();
+            }
+
             var response = command switch
             {
                 KmCommandNames.OpenProject => DispatchOpenProject(requestJson),
@@ -516,6 +557,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadTrainersWorkflow => DispatchLoadTrainersWorkflow(requestJson),
                 KmCommandNames.UpdateTrainerField => DispatchUpdateTrainerField(requestJson),
                 KmCommandNames.UpdateTrainerFields => DispatchUpdateTrainerFields(requestJson),
+                KmCommandNames.LoadTrainerPoolsWorkflow => DispatchLoadTrainerPoolsWorkflow(requestJson),
+                KmCommandNames.StageTrainerPoolFixedCountSwap => DispatchStageTrainerPoolFixedCountSwap(requestJson),
+                KmCommandNames.LoadFashionCatalogWorkflow => DispatchLoadFashionCatalogWorkflow(requestJson),
+                KmCommandNames.StageFashionCatalogFieldEdit => DispatchStageFashionCatalogFieldEdit(requestJson),
                 KmCommandNames.LoadGiftPokemonWorkflow => DispatchLoadGiftPokemonWorkflow(requestJson),
                 KmCommandNames.UpdateGiftPokemonField => DispatchUpdateGiftPokemonField(requestJson),
                 KmCommandNames.UpdateGiftPokemonFields => DispatchUpdateGiftPokemonFields(requestJson),
@@ -539,10 +584,19 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.SetDynamaxAdventureSaveSeed => DispatchSetDynamaxAdventureSaveSeed(requestJson),
                 KmCommandNames.LoadShopsWorkflow => DispatchLoadShopsWorkflow(requestJson),
                 KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
+                KmCommandNames.LoadTmMachineControls => DispatchLoadTmMachineControls(requestJson),
+                KmCommandNames.StageTmRecipeAvailability => DispatchStageTmRecipeAvailability(requestJson),
+                KmCommandNames.StageTmMaterialVisibility => DispatchStageTmMaterialVisibility(requestJson),
+                KmCommandNames.LoadHabitatCoordinates => DispatchLoadHabitatCoordinates(requestJson),
+                KmCommandNames.StageHabitatCoordinate => DispatchStageHabitatCoordinate(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
                 KmCommandNames.UpdateEncounterSlotField => DispatchUpdateEncounterSlotField(requestJson),
                 KmCommandNames.UpdateEncounterSlotFields => DispatchUpdateEncounterSlotFields(requestJson),
                 KmCommandNames.StageEncounterSlotVanilla => DispatchStageEncounterSlotVanilla(requestJson),
+                KmCommandNames.PrepareRowClipboardCopy => DispatchPrepareRowClipboardCopy(requestJson),
+                KmCommandNames.PreviewRowClipboardPaste => DispatchPreviewRowClipboardPaste(requestJson),
+                KmCommandNames.StageRowClipboardPaste => DispatchStageRowClipboardPaste(requestJson),
+                KmCommandNames.ClearRowClipboardAuthorizations => DispatchClearRowClipboardAuthorizations(requestJson),
                 KmCommandNames.LoadRaidBattlesWorkflow => DispatchLoadRaidBattlesWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotFields => DispatchUpdateRaidBattleSlotFields(requestJson),
@@ -603,6 +657,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.StageStartingItems => DispatchStageStartingItems(requestJson),
                 KmCommandNames.LoadNpcItemGiftWorkflow => DispatchLoadNpcItemGiftWorkflow(requestJson),
                 KmCommandNames.StageNpcItemGift => DispatchStageNpcItemGift(requestJson),
+                KmCommandNames.LoadBattleCafeRewardsWorkflow => DispatchLoadBattleCafeRewardsWorkflow(requestJson),
+                KmCommandNames.StageBattleCafeRewardRows => DispatchStageBattleCafeRewardRows(requestJson),
                 KmCommandNames.LoadSpreadsheetImportWorkflow => DispatchLoadSpreadsheetImportWorkflow(requestJson),
                 KmCommandNames.PreviewSpreadsheetImport => DispatchPreviewSpreadsheetImport(requestJson),
                 KmCommandNames.LoadModMergerWorkflow => DispatchLoadModMergerWorkflow(requestJson),
@@ -680,12 +736,16 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.ReadWorkspaceDrafts => DispatchReadWorkspaceDrafts(requestJson),
                 KmCommandNames.WriteWorkspaceDrafts => DispatchWriteWorkspaceDrafts(requestJson),
                 KmCommandNames.DeleteWorkspaceDrafts => DispatchDeleteWorkspaceDrafts(requestJson),
+                KmCommandNames.ReadProjectSourceRevision => DispatchReadProjectSourceRevision(requestJson),
                 KmCommandNames.ReadWorkspaceApplicationState => DispatchReadWorkspaceApplicationState(requestJson),
                 KmCommandNames.WriteWorkspaceApplicationState => DispatchWriteWorkspaceApplicationState(requestJson),
                 KmCommandNames.ReadWorkspaceProjectState => DispatchReadWorkspaceProjectState(requestJson),
                 KmCommandNames.WriteWorkspaceProjectState => DispatchWriteWorkspaceProjectState(requestJson),
                 KmCommandNames.DeleteWorkspaceProjectState => DispatchDeleteWorkspaceProjectState(requestJson),
                 KmCommandNames.GetOutputRecoveryStatus => DispatchGetOutputRecoveryStatus(requestJson),
+                KmCommandNames.GetGameplaySettings => DispatchGetGameplaySettings(requestJson),
+                KmCommandNames.PreviewGameplaySettingsUpdate => DispatchPreviewGameplaySettingsUpdate(requestJson),
+                KmCommandNames.ApplyGameplaySettingsUpdate => DispatchApplyGameplaySettingsUpdate(requestJson),
                 KmCommandNames.ReconcileOutputRecovery => DispatchReconcileOutputRecovery(requestJson),
                 KmCommandNames.ScanOutputIntegrity => DispatchScanOutputIntegrity(requestJson),
                 KmCommandNames.PreviewOutputCleanup => DispatchPreviewOutputCleanup(requestJson),
@@ -825,6 +885,33 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             return (
                 SerializeFailure(
                     GetWorkspaceErrorCode(exception),
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (GameplaySettingsUnavailableException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.GameplaySettingsUnavailable,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (GameplaySettingsStateConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.GameplaySettingsStateStale,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (GameplaySettingsReviewExpiredException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.GameplaySettingsReviewExpired,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1486,6 +1573,36 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<GetOutputRecoveryStatusRequest>(requestJson);
         var response = outputSafetyApplicationService
             .GetRecoveryStatusAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchGetGameplaySettings(string requestJson)
+    {
+        var request = DeserializeRequest<GetGameplaySettingsRequest>(requestJson);
+        var response = gameplaySettingsApplicationService
+            .GetAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewGameplaySettingsUpdate(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewGameplaySettingsUpdateRequest>(requestJson);
+        var response = gameplaySettingsApplicationService
+            .PreviewUpdateAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyGameplaySettingsUpdate(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyGameplaySettingsUpdateRequest>(requestJson);
+        var response = gameplaySettingsApplicationService
+            .ApplyUpdateAsync(request.Payload)
             .GetAwaiter()
             .GetResult();
         return SerializeSuccess(response, request.RequestId);
@@ -2836,6 +2953,348 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchReadProjectSourceRevision(string requestJson)
+    {
+        var request = DeserializeRequest<ReadProjectSourceRevisionRequest>(requestJson);
+        if (request.Payload.Paths is null
+            || string.IsNullOrWhiteSpace(request.Payload.ProjectId)
+            || request.Payload.Paths.SelectedGame is null)
+        {
+            throw new SemanticExploreValidationException(
+                "The project source revision request is malformed.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var actualProjectId = ProjectIdentity.FromPaths(paths).ToString();
+        if (!string.Equals(actualProjectId, request.Payload.ProjectId, StringComparison.Ordinal))
+        {
+            throw new SemanticExploreValidationException(
+                "The project source revision request does not match the selected project.",
+                SemanticExploreFailureKind.StaleRevision);
+        }
+
+        (string Fingerprint, string Token) CaptureObservation()
+        {
+            var initialFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
+            var observedFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
+            if (!string.Equals(initialFingerprint, observedFingerprint, StringComparison.Ordinal))
+            {
+                throw new SemanticExploreValidationException(
+                    "The project sources changed while their revision was being read. Retry the request.",
+                    SemanticExploreFailureKind.StaleRevision);
+            }
+
+            var sourceObservationToken = semanticExploreApplicationService
+                .RegisterVerifiedSourceObservation(
+                    actualProjectId,
+                    request.Payload.Paths,
+                    observedFingerprint);
+            return (Fingerprint: observedFingerprint, Token: sourceObservationToken);
+        }
+
+        var completedObservation = string.IsNullOrWhiteSpace(request.Payload.Paths.OutputRootPath)
+            ? CaptureObservation()
+            : ExecuteExclusiveOutputOperation(request.Payload.Paths, CaptureObservation);
+
+        return SerializeSuccess(
+            new ReadProjectSourceRevisionResponse(
+                actualProjectId,
+                request.Payload.Paths.SelectedGame.Value,
+                completedObservation.Fingerprint,
+                completedObservation.Token),
+            request.RequestId);
+    }
+
+    private string DispatchLoadTrainerPoolsWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadTrainerPoolsWorkflowRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsPokemonLegendsZA(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "Trainer Pools are only available for Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
+        return SerializeSuccess(
+            ZaBridgeMapper.ToDto(zaWorkflowService.LoadTrainerPools(paths)),
+            request.RequestId);
+    }
+
+    private string DispatchStageTrainerPoolFixedCountSwap(string requestJson)
+    {
+        var request = DeserializeRequest<StageTrainerPoolFixedCountSwapRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsPokemonLegendsZA(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "Trainer Pools fixed-count swaps are only available for Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var operation = new KM.ZA.TrainerPools.ZaTrainerPoolFixedCountSwap(
+            request.Payload.SourceLogicalPoolId,
+            request.Payload.SourceRawTrainerId,
+            request.Payload.DestinationLogicalPoolId,
+            request.Payload.DestinationRawTrainerId);
+        var response = ZaBridgeMapper.ToDto(
+            zaWorkflowService.StageTrainerPoolFixedCountSwap(paths, session, operation));
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadFashionCatalogWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadFashionCatalogWorkflowRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsPokemonLegendsZA(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "Fashion Catalog is only available for Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
+        return SerializeSuccess(
+            ZaFashionCatalogBridgeMapper.ToDto(zaWorkflowService.LoadFashionCatalog(paths)),
+            request.RequestId);
+    }
+
+    private string DispatchStageFashionCatalogFieldEdit(string requestJson)
+    {
+        var request = DeserializeRequest<StageFashionCatalogFieldEditRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsPokemonLegendsZA(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "Fashion Catalog edits are only available for Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var operation = ZaFashionCatalogBridgeMapper.ToCore(
+            request.Payload.CatalogFile,
+            request.Payload.Binding,
+            request.Payload.Field,
+            request.Payload.Value,
+            request.Payload.Clear);
+        return SerializeSuccess(
+            ZaFashionCatalogBridgeMapper.ToDto(
+                zaWorkflowService.StageFashionCatalogFieldEdit(paths, session, operation)),
+            request.RequestId);
+    }
+
+    private string DispatchLoadTmMachineControls(string requestJson)
+    {
+        var request = DeserializeRequest<LoadTmMachineControlsRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "TM Machine Controls are only available for Pokemon Scarlet and Pokemon Violet projects.",
+                request.RequestId);
+        }
+
+        var response = SvBridgeMapper.ToDto(
+            svWorkflowService.LoadTmMachineControls(paths));
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageTmRecipeAvailability(string requestJson)
+    {
+        var request = DeserializeRequest<StageTmRecipeAvailabilityRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "TM recipe availability is only available for Pokemon Scarlet and Pokemon Violet projects.",
+                request.RequestId);
+        }
+
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = SvBridgeMapper.ToTmRecipeAvailabilityDto(
+            svWorkflowService.StageTmRecipeAvailability(
+                paths,
+                session,
+                request.Payload.AllAvailable));
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageTmMaterialVisibility(string requestJson)
+    {
+        var request = DeserializeRequest<StageTmMaterialVisibilityRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "TM material visibility is only available for Pokemon Scarlet and Pokemon Violet projects.",
+                request.RequestId);
+        }
+
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = SvBridgeMapper.ToTmMaterialVisibilityDto(
+            svWorkflowService.StageTmMaterialVisibility(
+                paths,
+                session,
+                request.Payload.AlwaysVisible));
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadHabitatCoordinates(string requestJson)
+    {
+        var request = DeserializeRequest<LoadHabitatCoordinatesRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "Habitat Coordinates are only available for Pokemon Scarlet and Pokemon Violet projects.",
+                request.RequestId);
+        }
+
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = SvHabitatCoordinatesBridgeMapper.ToDto(
+            svWorkflowService.LoadHabitatCoordinates(
+                paths,
+                SvHabitatCoordinatesBridgeMapper.ToCore(request.Payload.Query),
+                session));
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageHabitatCoordinate(string requestJson)
+    {
+        var request = DeserializeRequest<StageHabitatCoordinateRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                BridgeErrorCodes.GameMismatch,
+                "Habitat Coordinates are only available for Pokemon Scarlet and Pokemon Violet projects.",
+                request.RequestId);
+        }
+
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = SvHabitatCoordinatesBridgeMapper.ToDto(
+            svWorkflowService.StageHabitatCoordinate(
+                paths,
+                session,
+                SvHabitatCoordinatesBridgeMapper.ToCore(request.Payload.Query),
+                request.Payload.Region,
+                SvHabitatCoordinatesBridgeMapper.ToCore(request.Payload.Binding),
+                SvHabitatCoordinatesBridgeMapper.ToCore(request.Payload.Coordinate)));
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPrepareRowClipboardCopy(string requestJson)
+    {
+        var request = DeserializeRequest<PrepareRowClipboardCopyRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        return SerializeSuccess(
+            RowClipboardBridgeMapper.ToDto(
+                rowClipboardApplicationService.PrepareCopy(paths, session)),
+            request.RequestId);
+    }
+
+    private string DispatchPreviewRowClipboardPaste(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewRowClipboardPasteRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        try
+        {
+            var envelope = RowClipboardBridgeMapper.ToCore(request.Payload.Envelope);
+            var mode = RowClipboardBridgeMapper.ToCorePasteMode(request.Payload.Mode);
+            var target = RowClipboardBridgeMapper.ToCore(request.Payload.Target);
+            return SerializeSuccess(
+                RowClipboardBridgeMapper.ToDto(
+                    rowClipboardApplicationService.Preview(paths, session, envelope, mode, target)),
+                request.RequestId);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException or
+            OverflowException)
+        {
+            return SerializeSuccess(
+                RowClipboardBridgeMapper.InvalidPreviewEnvelope(
+                    "The pasted logical-row clipboard content is invalid or incompatible."),
+                request.RequestId);
+        }
+    }
+
+    private string DispatchStageRowClipboardPaste(string requestJson)
+    {
+        var request = DeserializeRequest<StageRowClipboardPasteRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        try
+        {
+            var envelope = RowClipboardBridgeMapper.ToCore(request.Payload.Envelope);
+            var mode = RowClipboardBridgeMapper.ToCorePasteMode(request.Payload.Mode);
+            var target = RowClipboardBridgeMapper.ToCore(request.Payload.Target);
+            return SerializeSuccess(
+                RowClipboardBridgeMapper.ToDto(
+                    rowClipboardApplicationService.Stage(
+                        paths,
+                        session,
+                        envelope,
+                        mode,
+                        target,
+                        request.Payload.AuthorizationId,
+                        request.Payload.ExpectedTargetRevision)),
+                request.RequestId);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException or
+            OverflowException)
+        {
+            return SerializeSuccess(
+                RowClipboardBridgeMapper.InvalidStageEnvelope(
+                    request.Payload.Session,
+                    "The pasted logical-row clipboard content is invalid or incompatible."),
+                request.RequestId);
+        }
+    }
+
+    private string DispatchClearRowClipboardAuthorizations(string requestJson)
+    {
+        var request = DeserializeRequest<ClearRowClipboardAuthorizationsRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        return SerializeSuccess(
+            new ClearRowClipboardAuthorizationsResponse(
+                rowClipboardApplicationService.Clear(paths)),
+            request.RequestId);
+    }
+
     private string DispatchLoadEncountersWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadEncountersWorkflowRequest>(requestJson);
@@ -3998,6 +4457,50 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadBattleCafeRewardsWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadBattleCafeRewardsWorkflowRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new BridgeRequestException("Battle Cafe Rewards project paths are required.");
+        var workflow = swShWorkflowService.LoadBattleCafeRewards(ProjectBridgeMapper.ToCore(paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageBattleCafeRewardRows(string requestJson)
+    {
+        var request = DeserializeRequest<StageBattleCafeRewardRowsRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new BridgeRequestException("Battle Cafe Rewards project paths are required.");
+        var rows = request.Payload.Rows
+            ?? throw new BridgeRequestException("Battle Cafe reward rows are required.");
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = battleCafeRewardsEditSessionService.StageRows(
+            ProjectBridgeMapper.ToCore(paths),
+            rows.Select(row =>
+            {
+                var edit = row
+                    ?? throw new BridgeRequestException("Battle Cafe reward row entries are required.");
+                return new SwShBattleCafeRewardsRowEdit(
+                    edit.RowIndex,
+                    edit.ExpectedItemId,
+                    edit.ExpectedDwightPercent,
+                    edit.ExpectedBernardPercent,
+                    edit.ExpectedRichardPercent,
+                    edit.ItemId,
+                    edit.DwightPercent,
+                    edit.BernardPercent,
+                    edit.RichardPercent);
+            }).ToArray(),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadSpreadsheetImportWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadSpreadsheetImportWorkflowRequest>(requestJson);
@@ -4966,6 +5469,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
             EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
             EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.Validate(paths, session),
+            EditSessionDomain.BattleCafeRewards => battleCafeRewardsEditSessionService.Validate(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
         };
@@ -5009,6 +5513,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.BattleCafeRewards => battleCafeRewardsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => itemsEditSessionService.CreateChangePlan(paths, session),
         };
@@ -5053,6 +5558,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.BattleCafeRewards => battleCafeRewardsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
         };
@@ -5341,6 +5847,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             "workflow.royalCandy" => EditSessionDomain.RoyalCandy,
             "workflow.startingItems" => EditSessionDomain.StartingItems,
             "workflow.npcItemGift" => EditSessionDomain.NpcItemGift,
+            "workflow.battleCafeRewards" => EditSessionDomain.BattleCafeRewards,
             null or "" => EditSessionDomain.None,
             _ => EditSessionDomain.Mixed,
         };
@@ -5412,6 +5919,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.RoyalCandy => "workflow.royalCandy",
             EditSessionDomain.StartingItems => "workflow.startingItems",
             EditSessionDomain.NpcItemGift => "workflow.npcItemGift",
+            EditSessionDomain.BattleCafeRewards => "workflow.battleCafeRewards",
             _ => string.Empty,
         };
     }
@@ -5492,6 +6000,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             ["workflow.royalCandy"] => EditSessionDomain.RoyalCandy,
             ["workflow.startingItems"] => EditSessionDomain.StartingItems,
             ["workflow.npcItemGift"] => EditSessionDomain.NpcItemGift,
+            ["workflow.battleCafeRewards"] => EditSessionDomain.BattleCafeRewards,
             _ => EditSessionDomain.Mixed,
         };
     }
@@ -6181,6 +6690,63 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             SemanticExploreFailureKind.Unsupported);
     }
 
+    private SvPackedLooseSourceComparison LoadGameModulePackedLooseSourceComparisonFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.LoadPackedLooseSourceComparison(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected packed and loose source module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private SvEventDataComparison LoadGameModuleEventDataComparisonFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.LoadEventDataComparison(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected event data comparison module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private SvScenePlacementProjection LoadGameModuleScenePlacementProjectionFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.LoadScenePlacementProjection(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected scene placement module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private SvTypeEffectivenessStateProjection
+        LoadGameModuleScarletVioletTypeEffectivenessStateFresh(
+            ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.LoadTypeEffectivenessStateProjection(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Scarlet/Violet type-effectiveness module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
     private (EncountersWorkflowDto Encounters, MovesWorkflowDto Moves)
         LoadGameModuleScriptedBossTimelineFresh(ProjectPathsDto pathsDto)
     {
@@ -6198,11 +6764,30 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             SemanticExploreFailureKind.Unsupported);
     }
 
+    private SwordShieldGameModuleSourceBatchDto LoadGameModuleSwordShieldCapabilityBatchFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return SwShBridgeMapper.ToDto(
+                swShWorkflowService.LoadGameModuleSourcesFreshBounded(paths));
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Sword and Shield game module capability provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
     private (
         EncountersWorkflowDto ScriptedBossEncounters,
         EncountersWorkflowDto WildEncounters,
         MovesWorkflowDto Moves,
-        TrainersWorkflowDto Trainers)
+        TrainersWorkflowDto Trainers,
+        EncounterCompatibilityWorkflowDto EncounterCompatibility,
+        PokemonWorkflowDto Pokemon,
+        TrainerPoolsWorkflowDto TrainerPools,
+        LegendsZaTypeEffectivenessStateDto TypeEffectivenessState)
         LoadGameModuleZaCapabilityBatchFresh(ProjectPathsDto pathsDto)
     {
         var paths = ProjectBridgeMapper.ToCore(pathsDto);
@@ -6213,7 +6798,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 ZaBridgeMapper.ToDto(sources.ScriptedBossEncounters).Workflow,
                 ZaBridgeMapper.ToDto(sources.WildEncounters).Workflow,
                 ZaBridgeMapper.ToDto(sources.Moves).Workflow,
-                ZaBridgeMapper.ToDto(sources.Trainers).Workflow);
+                ZaBridgeMapper.ToDto(sources.Trainers).Workflow,
+                ZaBridgeMapper.ToGameModuleDto(sources.EncounterCompatibility),
+                ZaBridgeMapper.ToGameModuleDto(sources.Pokemon),
+                ZaBridgeMapper.ToGameModuleDto(sources.TrainerPools),
+                ZaBridgeMapper.ToGameModuleDto(sources.TypeEffectivenessState));
         }
 
         throw new SemanticExploreValidationException(
@@ -6260,6 +6849,64 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             SemanticExploreFailureKind.Unsupported);
     }
 
+    private EncounterCompatibilityWorkflowDto LoadGameModuleEncounterCompatibilityFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToGameModuleDto(
+                zaWorkflowService.LoadGameModuleEncounterCompatibility(paths));
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected encounter compatibility module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private PokemonWorkflowDto LoadGameModuleAlphaMovesFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToGameModuleDto(
+                zaWorkflowService.LoadGameModuleAlphaMoves(paths));
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected alpha move module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private TrainerPoolsWorkflowDto LoadGameModuleTrainerPoolsFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToGameModuleDto(
+                zaWorkflowService.LoadGameModuleTrainerPools(paths));
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Trainer Pools game module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private LegendsZaTypeEffectivenessStateDto LoadGameModuleTypeEffectivenessStateFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return ZaBridgeMapper.ToGameModuleDto(
+                zaWorkflowService.LoadGameModuleTypeEffectivenessState(paths));
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Type Effectiveness State game module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
     private static string GetSemanticExploreErrorCode(SemanticExploreFailureKind failureKind)
     {
         return failureKind switch
@@ -6293,6 +6940,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
 
     private void ClearWorkflowMemoryCaches(bool clearReusableDataCaches = true)
     {
+        semanticExploreApplicationService.ClearMemoryCaches();
         projectWorkspaceService.ClearMemoryCache();
         swShWorkflowService.ClearMemoryCaches(clearReusableDataCaches);
         svWorkflowService.ClearMemoryCaches(clearReusableDataCaches);
@@ -6326,6 +6974,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.RestoreProfanityFilter or
             KmCommandNames.ApplyRandomizer or
             KmCommandNames.RestoreRandomizer or
+            KmCommandNames.ApplyGameplaySettingsUpdate or
             KmCommandNames.ReconcileOutputRecovery or
             KmCommandNames.ApplyOutputCleanup or
             KmCommandNames.RestoreOutputCheckpoint or
@@ -6336,6 +6985,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     {
         return command is
             KmCommandNames.GetOutputRecoveryStatus or
+            KmCommandNames.GetGameplaySettings or
+            KmCommandNames.PreviewGameplaySettingsUpdate or
+            KmCommandNames.ApplyGameplaySettingsUpdate or
             KmCommandNames.ReconcileOutputRecovery or
             KmCommandNames.ScanOutputIntegrity or
             KmCommandNames.PreviewOutputCleanup or
@@ -6423,6 +7075,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StageStartingItems or
             KmCommandNames.LoadNpcItemGiftWorkflow or
             KmCommandNames.StageNpcItemGift or
+            KmCommandNames.LoadBattleCafeRewardsWorkflow or
+            KmCommandNames.StageBattleCafeRewardRows or
             KmCommandNames.LoadModMergerWorkflow or
             KmCommandNames.StageModMerge or
             KmCommandNames.ApplyModMerge or
@@ -6451,6 +7105,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadSvModMergerWorkflow or
             KmCommandNames.StageSvModMerge or
             KmCommandNames.ApplySvModMerge or
+            KmCommandNames.LoadTmMachineControls or
+            KmCommandNames.StageTmRecipeAvailability or
+            KmCommandNames.StageTmMaterialVisibility or
+            KmCommandNames.LoadHabitatCoordinates or
+            KmCommandNames.StageHabitatCoordinate or
             KmCommandNames.GetSvCacheStatus or
             KmCommandNames.UpdateSvCacheSettings or
             KmCommandNames.ClearSvCache or
@@ -6476,6 +7135,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
             KmCommandNames.StageAngeFightUninstall or
+            KmCommandNames.LoadTrainerPoolsWorkflow or
+            KmCommandNames.StageTrainerPoolFixedCountSwap or
+            KmCommandNames.LoadFashionCatalogWorkflow or
+            KmCommandNames.StageFashionCatalogFieldEdit or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge;
@@ -6487,6 +7150,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.OpenProject or
             KmCommandNames.ValidateProject or
             KmCommandNames.RefreshFileGraph or
+            KmCommandNames.ReadProjectSourceRevision or
             KmCommandNames.ListWorkflows or
             KmCommandNames.LoadItemsWorkflow or
             KmCommandNames.UpdateItemField or
@@ -6505,6 +7169,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadTrainersWorkflow or
             KmCommandNames.UpdateTrainerField or
             KmCommandNames.UpdateTrainerFields or
+            KmCommandNames.LoadTrainerPoolsWorkflow or
+            KmCommandNames.StageTrainerPoolFixedCountSwap or
+            KmCommandNames.LoadFashionCatalogWorkflow or
+            KmCommandNames.StageFashionCatalogFieldEdit or
             KmCommandNames.LoadPlacementWorkflow or
             KmCommandNames.UpdatePlacementObjectField or
             KmCommandNames.UpdatePlacementObjectFields or
@@ -6519,6 +7187,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.UpdateEncounterSlotField or
             KmCommandNames.UpdateEncounterSlotFields or
             KmCommandNames.StageEncounterSlotVanilla or
+            KmCommandNames.PrepareRowClipboardCopy or
+            KmCommandNames.PreviewRowClipboardPaste or
+            KmCommandNames.StageRowClipboardPaste or
+            KmCommandNames.ClearRowClipboardAuthorizations or
             KmCommandNames.LoadStaticEncountersWorkflow or
             KmCommandNames.UpdateStaticEncounterField or
             KmCommandNames.UpdateStaticEncounterFields or
@@ -6946,6 +7618,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         RoyalCandy,
         StartingItems,
         NpcItemGift,
+        BattleCafeRewards,
         Mixed,
     }
 }

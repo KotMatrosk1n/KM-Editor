@@ -102,6 +102,9 @@ public sealed record EncounterSlotRecordDto(
     public bool? HasExplicitMoves { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? HasAlphaChance { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? FlawlessIvCount { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

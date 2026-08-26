@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Core.Semantics;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
+using KM.SwSh.BattleCafeRewards;
 using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Editing;
@@ -16,6 +18,7 @@ using KM.SwSh.FashionUnlock;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.GameModules;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
@@ -46,6 +49,8 @@ public sealed class SwShWorkflowService
     private const int MaximumSemanticSourceFiles = 20_000;
     private const long MaximumSemanticSourceBytesPerFile = 64L * 1024L * 1024L;
     private const long MaximumSemanticSourceBytes = 512L * 1024L * 1024L;
+    private const long MaximumSemanticFingerprintBytesPerFile = 512L * 1024L * 1024L;
+    private const long MaximumSemanticFingerprintBytes = 2L * 1024L * 1024L * 1024L;
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShPokemonWorkflowService pokemonWorkflowService;
     private readonly SwShMovesWorkflowService movesWorkflowService;
@@ -73,6 +78,7 @@ public sealed class SwShWorkflowService
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
     private readonly SwShStartingItemsWorkflowService startingItemsWorkflowService;
     private readonly SwShNpcItemGiftWorkflowService npcItemGiftWorkflowService;
+    private readonly SwShBattleCafeRewardsWorkflowService battleCafeRewardsWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShSpreadsheetImportWorkflowService spreadsheetImportWorkflowService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
@@ -117,6 +123,7 @@ public sealed class SwShWorkflowService
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
         SwShStartingItemsWorkflowService? startingItemsWorkflowService = null,
         SwShNpcItemGiftWorkflowService? npcItemGiftWorkflowService = null,
+        SwShBattleCafeRewardsWorkflowService? battleCafeRewardsWorkflowService = null,
         SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShParsedDataCache? parsedDataCache = null,
@@ -152,6 +159,7 @@ public sealed class SwShWorkflowService
         this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService(this.exeFsPatchWorkflowService, this.bagHookWorkflowService);
         this.startingItemsWorkflowService = startingItemsWorkflowService ?? new SwShStartingItemsWorkflowService(this.bagHookWorkflowService, this.itemsWorkflowService);
         this.npcItemGiftWorkflowService = npcItemGiftWorkflowService ?? new SwShNpcItemGiftWorkflowService(this.bagHookWorkflowService, this.itemsWorkflowService);
+        this.battleCafeRewardsWorkflowService = battleCafeRewardsWorkflowService ?? new SwShBattleCafeRewardsWorkflowService(this.itemsWorkflowService);
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.spreadsheetImportWorkflowService = spreadsheetImportWorkflowService ?? new SwShSpreadsheetImportWorkflowService();
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
@@ -203,6 +211,7 @@ public sealed class SwShWorkflowService
             royalCandyWorkflowService.CreateSummary(project),
             startingItemsWorkflowService.CreateSummary(project),
             npcItemGiftWorkflowService.CreateSummary(project),
+            battleCafeRewardsWorkflowService.CreateSummary(project),
             spreadsheetImportWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         };
@@ -250,13 +259,14 @@ public sealed class SwShWorkflowService
             MaximumGraphEntries = 250_000,
         }).Build(paths);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "swsh-semantic-source-v3");
+        AppendSemanticSourceHash(hash, "swsh-semantic-source-v4");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
         AppendSemanticSourceHash(hash, SwShGameTextLanguage.Resolve(paths));
         var sourceCount = 0;
         long sourceBytes = 0;
         foreach (var entry in graph.Entries
-                     .Where(entry => IsSemanticExploreSource(entry.RelativePath))
+                     .Where(entry => IsSemanticExploreSource(entry.RelativePath)
+                         || SwShGameModuleWorkflowService.IsKnownSourcePath(entry.RelativePath))
                      .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal))
         {
             AppendSemanticSourceHash(hash, entry.RelativePath);
@@ -372,6 +382,90 @@ public sealed class SwShWorkflowService
             .UpdateSlotFields(paths, session, updates);
     }
 
+    public SwShGameModuleWorkflowBatch LoadGameModuleSourcesFreshBounded(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return new SwShGameModuleWorkflowService().LoadFreshBounded(paths);
+    }
+
+    public SwShPokemonEditResult ReadPokemonEffectiveFreshBounded(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = new SwShPokemonWorkflowService(ReadSemanticSourceBytes);
+        return new SwShPokemonEditSessionService(workspace, workflow)
+            .ReadEffective(paths, session);
+    }
+
+    public SwShPokemonEditResult UpdatePokemonLearnsetFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        int personalId,
+        string action,
+        int? slot,
+        int? moveId,
+        int? level)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = new SwShPokemonWorkflowService(ReadSemanticSourceBytes);
+        return new SwShPokemonEditSessionService(workspace, workflow)
+            .UpdateLearnset(paths, session, personalId, action, slot, moveId, level);
+    }
+
+    public SwShTrainersEditResult ReadTrainersEffectiveFreshBounded(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = SwShTrainersWorkflowService.CreateBounded(ReadSemanticSourceBytes);
+        return new SwShTrainersEditSessionService(workspace, workflow)
+            .ReadEffective(paths, session);
+    }
+
+    public SwShTrainersEditResult UpdateTrainerFieldsFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShTrainerFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+        var workspace = new ProjectWorkspaceService();
+        var workflow = SwShTrainersWorkflowService.CreateBounded(ReadSemanticSourceBytes);
+        var service = new SwShTrainersEditSessionService(workspace, workflow);
+        var original = service.ReadEffective(paths, session);
+        var currentSession = original.Session;
+        var current = original;
+        foreach (var update in TrainerFieldUpdateOrdering.IdentityFirst(
+                     updates,
+                     static update => update.Field,
+                     SwShTrainersWorkflowService.SpeciesIdField,
+                     SwShTrainersWorkflowService.FormField))
+        {
+            current = service.UpdateField(
+                paths,
+                currentSession,
+                update.TrainerId,
+                update.Slot,
+                update.Field,
+                update.Value);
+            if (current.Diagnostics.Any(value => value.Severity == DiagnosticSeverity.Error))
+            {
+                return new SwShTrainersEditResult(
+                    original.Workflow,
+                    original.Session,
+                    current.Diagnostics);
+            }
+
+            currentSession = current.Session;
+        }
+
+        return current;
+    }
+
     public ChangePlan CreateGuidedChangePlanFreshBounded(
         ProjectPaths paths,
         EditSession session)
@@ -468,12 +562,20 @@ public sealed class SwShWorkflowService
             throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
         }
 
-        var root = layered ? paths.OutputRootPath : paths.BaseRomFsPath;
+        var root = layered
+            ? paths.OutputRootPath
+            : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+                ? paths.BaseRomFsPath
+                : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                    ? paths.BaseExeFsPath
+                    : throw new InvalidDataException("A semantic base source path is outside a configured source root.");
         var child = layered
             ? relativePath
             : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
                 ? relativePath["romfs/".Length..]
-                : throw new InvalidDataException("A semantic base source path is outside RomFS.");
+                : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                    ? relativePath["exefs/".Length..]
+                    : throw new InvalidDataException("A semantic base source path is outside a configured source root.");
         if (string.IsNullOrWhiteSpace(root))
         {
             throw new InvalidDataException("A semantic source root is unavailable.");
@@ -509,8 +611,8 @@ public sealed class SwShWorkflowService
             FileOptions.SequentialScan);
         var observedLength = stream.Length;
         if (observedLength < 0
-            || observedLength > MaximumSemanticSourceBytesPerFile
-            || observedLength > MaximumSemanticSourceBytes - sourceBytes)
+            || observedLength > MaximumSemanticFingerprintBytesPerFile
+            || observedLength > MaximumSemanticFingerprintBytes - sourceBytes)
         {
             throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
         }
@@ -1080,6 +1182,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return npcItemGiftWorkflowService.Load(project);
+    }
+
+    public SwShBattleCafeRewardsWorkflow LoadBattleCafeRewards(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return battleCafeRewardsWorkflowService.Load(project);
     }
 
     public SwShSpreadsheetImportWorkflow LoadSpreadsheetImport(ProjectPaths paths)

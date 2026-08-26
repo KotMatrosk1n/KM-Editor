@@ -19,6 +19,10 @@ import type {
 } from '../semantic-explore/useSemanticExploreController';
 import { GuidedDesignSection } from './GuidedDesignSection';
 import { useGuidedDesignController } from './useGuidedDesignController';
+import {
+  preparationStateFromQueryStatus,
+  type AnalysisPreparationState
+} from '../workbench/analysisPreparation';
 
 export type GuidedDesignRuntimeProps = {
   authoringContextRevision: string | null;
@@ -36,6 +40,7 @@ export type GuidedDesignRuntimeProps = {
   ) => Promise<GuidedDesignImportResponse>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenChanges: () => void;
+  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -56,6 +61,7 @@ export function GuidedDesignRuntime({
   onImportProposal,
   onNavigateRecord,
   onOpenChanges,
+  onPreparationStateChange,
   onRefreshCapabilities,
   onStaleRevision,
   revision,
@@ -67,6 +73,13 @@ export function GuidedDesignRuntime({
       void onEnsureCapabilities();
     }
   }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
+  useEffect(() => {
+    if (!revision) {
+      onPreparationStateChange?.(
+        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+      );
+    }
+  }, [capabilityStatus, onPreparationStateChange, revision]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -109,6 +122,7 @@ export function GuidedDesignRuntime({
       onImportProposal={onImportProposal}
       onNavigateRecord={onNavigateRecord}
       onOpenChanges={onOpenChanges}
+      onPreparationStateChange={onPreparationStateChange}
       onStaleRevision={onStaleRevision}
       revision={revision}
       scope={scope}
@@ -127,6 +141,7 @@ function GuidedDesignReadyRuntime({
   onImportProposal,
   onNavigateRecord,
   onOpenChanges,
+  onPreparationStateChange,
   onStaleRevision,
   revision,
   scope
@@ -160,6 +175,11 @@ function GuidedDesignReadyRuntime({
     revision,
     scope
   ]);
+  useEffect(() => {
+    onPreparationStateChange?.(
+      preparationStateFromQueryStatus(controller.capabilities.status)
+    );
+  }, [controller.capabilities.status, onPreparationStateChange]);
 
   return (
     <GuidedDesignSection

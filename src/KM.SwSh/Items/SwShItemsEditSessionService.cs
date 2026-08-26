@@ -346,6 +346,22 @@ public sealed class SwShItemsEditSessionService
 
         diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
 
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var targetPath = ResolveOutputPath(paths, SwShItemsWorkflowService.ItemDataPath, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) || targetPath is null)
         {
@@ -413,7 +429,8 @@ public sealed class SwShItemsEditSessionService
                 expected: "Supported Sword/Shield item field values"));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static bool CanEditItems(

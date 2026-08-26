@@ -40,6 +40,7 @@ public enum GameModuleDto
     ScarletVioletPackedLooseComparison,
     ScarletVioletEventDataComparison,
     ScarletVioletScenePlacementEditing,
+    ScarletVioletTypeEffectivenessState,
     ScarletVioletStellarBehavior,
     LegendsZaScriptedBossTimeline,
     LegendsZaTrainerArchetypes,
@@ -49,6 +50,7 @@ public enum GameModuleDto
     LegendsZaDexLayoutPlanning,
     LegendsZaMoveVariantComparison,
     LegendsZaTrainerPoolSwitching,
+    LegendsZaTypeEffectivenessState,
 }
 
 public enum GameModuleMaturityDto

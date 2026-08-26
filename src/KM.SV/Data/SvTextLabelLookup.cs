@@ -88,6 +88,40 @@ internal sealed class SvTextLabelLookup
             LoadKeyIndicesWithFallback(project, fileSource, language, SvDataPaths.TrainerTypeKeys, "trainer class keys", diagnostics));
     }
 
+    public static SvTextLabelLookup LoadPokemonNames(
+        OpenedProject project,
+        SvWorkflowFileSource fileSource,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ProjectPaths? paths = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(fileSource);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        var language = paths is null
+            ? SvGameTextLanguage.English
+            : SvGameTextLanguage.Resolve(paths);
+
+        return new SvTextLabelLookup(
+            [],
+            [],
+            [],
+            LoadIndexedTableWithFallback(
+                project,
+                fileSource,
+                language,
+                SvDataPaths.PokemonNames,
+                "Pokemon names",
+                diagnostics),
+            [],
+            [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+            [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+            [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
+    }
+
     public static SvTextLabelLookup None() => Empty;
 
     public int ItemNameCount => itemNames.Count;

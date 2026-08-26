@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Generated.FashionCatalog;
+
+table ZaDressUpGroupCatalogEntry {
+    ModelPart:string (required);
+    DisplayOrder:uint;
+    DisplayLabel:string (required);
+}
+
+table ZaDressUpGroupCatalogArray {
+    Entries:[ZaDressUpGroupCatalogEntry] (required);
+}
+
+root_type ZaDressUpGroupCatalogArray;

@@ -1,377 +1,474 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-import { z, type ZodTypeAny } from 'zod';
-import { diagnosticErrorCodes, kmErrorCodeSchema } from '../errorCodes';
+import { z, type ZodTypeAny } from "zod";
+import { diagnosticErrorCodes, kmErrorCodeSchema } from "../errorCodes";
 export const kmCommandNameValues = [
-  'project.open',
-  'project.validate',
-  'project.fileGraph.refresh',
-  'workflow.list',
-  'items.load',
-  'items.field.update', 'items.fields.update', 'items.item.vanilla.stage',
-  'pokemon.load',
-  'pokemon.field.update', 'pokemon.fields.update',
-  'pokemon.learnset.update',
-  'pokemon.evolution.update',
-  'pokemon.dex.swap',
-  'pokemon.dex.move',
-  'pokemon.dex.resize',
-  'pokemon.dex.vanilla.stage',
-  'pokemon.dex.megas.sync.stage',
-  'moves.load',
-  'moves.field.update', 'moves.fields.update', 'moves.move.vanilla.stage',
-  'text.load',
-  'text.entry.update',
-  'trainers.load',
-  'trainers.field.update', 'trainers.fields.update',
-  'giftPokemon.load',
-  'giftPokemon.field.update', 'giftPokemon.fields.update', 'giftPokemon.gift.vanilla.stage',
-  'tradePokemon.load',
-  'tradePokemon.field.update', 'tradePokemon.fields.update',
-  'staticEncounters.load',
-  'staticEncounters.field.update',
-  'staticEncounters.fields.update',
-  'rentalPokemon.load',
-  'rentalPokemon.field.update',
-  'rentalPokemon.fields.update',
-  'dynamaxAdventures.load',
-  'dynamaxAdventures.field.update', 'dynamaxAdventures.defaults.preview',
-  'dynamaxAdventures.repair.stage',
-  'dynamaxAdventures.restore.stage',
-  'shops.load',
-  'shops.inventory.update',
-  'encounters.load',
-  'encounters.slots.update',
-  'encounters.slot.vanilla.stage',
-  'raidBattles.load',
-  'raidBattles.slot.update',
-  'raidBattles.slots.update',
-  'teraRaids.load',
-  'teraRaids.field.update', 'teraRaids.fields.update',
-  'raidRewards.load',
-  'raidRewards.reward.update',
-  'raidRewards.rewards.update',
-  'raidBonusRewards.load',
-  'raidBonusRewards.reward.update',
-  'raidBonusRewards.rewards.update',
-  'placement.load',
-  'placement.catalog.open',
-  'placement.catalog.query',
-  'placement.object.load',
-  'placement.objects.update',
-  'behavior.load',
-  'behavior.entry.update',
-  'behavior.fields.update',
-  'flagworkSave.load',
-  'bagHook.load',
-  'bagHook.install.stage',
-  'bagHook.uninstall.stage',
-  'catchCap.load',
-  'catchCap.stage',
-  'catchCap.uninstall.stage',
-  'hyperTraining.load',
-  'hyperTraining.stage',
-  'shinyRate.load',
-  'shinyRate.stage',
-  'typeChart.load',
-  'typeChart.stage', 'typeChart.uninstall.stage', 'fairyGymBoosts.load', 'fairyGymBoosts.stage',
-  'angeFight.load',
-  'angeFight.stage',
-  'angeFight.uninstall.stage',
-  'fashionUnlock.load',
-  'fashionUnlock.install.stage',
-  'fashionUnlock.uninstall.stage',
-  'gymUniformRemoval.load', 'gymUniformRemoval.install.stage',
-  'gymUniformRemoval.uninstall.stage', 'hyperspaceBypass.load', 'hyperspaceBypass.install.stage', 'hyperspaceBypass.uninstall.stage',
-  'ivScreen.load',
-  'ivScreen.install.stage',
-  'ivScreen.uninstall.stage',
-  'exefsPatches.load',
-  'exefsPatches.patch.stage',
-  'royalCandy.load',
-  'royalCandy.workflow.stage',
-  'startingItems.load',
-  'startingItems.stage',
-  'npcItemGift.load',
-  'npcItemGift.stage',
-  'spreadsheetImport.load',
-  'spreadsheetImport.preview',
-  'modMerger.load',
-  'modMerger.stage',
-  'modMerger.apply',
-  'svModMerger.load',
-  'svModMerger.stage',
-  'svModMerger.apply',
-  'zaModMerger.load',
-  'zaModMerger.stage',
-  'zaModMerger.apply',
-  'svCache.status', 'svCache.settings.update', 'svCache.clear', 'svCache.warmup.step',
-  'zaCache.status', 'zaCache.settings.update', 'zaCache.clear', 'zaCache.warmup.step',
-  'swshCache.status', 'swshCache.settings.update', 'swshCache.clear', 'swshCache.warmup.step',
-  'fpsPatch.load', 'fpsPatch.apply', 'fpsPatch.restore',
-  'profanityFilter.load', 'profanityFilter.apply', 'profanityFilter.restore',
-  'randomizer.seed.import',
-  'randomizer.apply',
-  'randomizer.restore',
-  'gameDump.load',
-  'gameDump.run',
-  'workspace.drafts.read',
-  'workspace.drafts.write',
-  'workspace.drafts.delete',
-  'workspace.applicationState.read',
-  'workspace.applicationState.write',
-  'workspace.projectState.read',
-  'workspace.projectState.write',
-  'workspace.projectState.delete',
-  'output.recovery.status',
-  'output.recovery.reconcile',
-  'output.integrity.scan',
-  'output.cleanup.preview',
-  'output.cleanup.apply',
-  'output.history.list',
-  'output.checkpoint.list',
-  'output.checkpoint.create',
-  'output.checkpoint.restore.preview',
-  'output.checkpoint.restore',
-  'output.checkpoint.delete',
-  'project.relocation.preview',
-  'project.relocation.apply',
-  'support.report.build',
-  'editSession.start',
-  'editSession.get',
-  'editSession.discard',
-  'editSession.validate',
-  'changePlan.create',
-  'changePlan.apply',
-  'changeSets.read',
-  'changeSets.mutate',
-  'changeSets.captureSession',
-  'changeSets.materialize',
-  'changeSets.export',
-  'changeSets.import',
-  'semantic.capabilities',
-  'semantic.search',
-  'semantic.entity',
-  'semantic.compare',
-  'semantic.references',
-  'semantic.impact',
-  'semantic.ownership',
-  'semantic.external.compare',
-  'semantic.changes',
-  'semantic.balance-lab',
-  'gameModules.capabilities',
-  'gameModules.query',
-  'guidedDesign.capabilities',
-  'guidedDesign.preview',
-  'guidedDesign.import',
-  'semanticMerge.capabilities',
-  'semanticMerge.source.open',
-  'semanticMerge.preview',
-  'semanticMerge.import',
-  'recipes.export',
-  'recipes.validate',
-  'recipes.preview',
-  'recipes.import',
-  'researchLab.capabilities',
-  'researchLab.source.open',
-  'researchLab.source.close',
-  'researchLab.compare',
-  'researchLab.byteWindow',
-  'researchLab.annotations.read',
-  'researchLab.annotations.mutate'
+  "project.open",
+  "project.validate",
+  "project.fileGraph.refresh",
+  "workflow.list",
+  "items.load",
+  "items.field.update",
+  "items.fields.update",
+  "items.item.vanilla.stage",
+  "pokemon.load",
+  "pokemon.field.update",
+  "pokemon.fields.update",
+  "pokemon.learnset.update",
+  "pokemon.evolution.update",
+  "pokemon.dex.swap",
+  "pokemon.dex.move",
+  "pokemon.dex.resize",
+  "pokemon.dex.vanilla.stage",
+  "pokemon.dex.megas.sync.stage",
+  "moves.load",
+  "moves.field.update",
+  "moves.fields.update",
+  "moves.move.vanilla.stage",
+  "text.load",
+  "text.entry.update",
+  "trainers.load",
+  "trainers.field.update",
+  "trainers.fields.update",
+  "trainerPools.load",
+  "trainerPools.fixedCountSwap.stage",
+  "fashionCatalog.load",
+  "fashionCatalog.field.stage",
+  "giftPokemon.load",
+  "giftPokemon.field.update",
+  "giftPokemon.fields.update",
+  "giftPokemon.gift.vanilla.stage",
+  "tradePokemon.load",
+  "tradePokemon.field.update",
+  "tradePokemon.fields.update",
+  "staticEncounters.load",
+  "staticEncounters.field.update",
+  "staticEncounters.fields.update",
+  "rentalPokemon.load",
+  "rentalPokemon.field.update",
+  "rentalPokemon.fields.update",
+  "dynamaxAdventures.load",
+  "dynamaxAdventures.field.update",
+  "dynamaxAdventures.defaults.preview",
+  "dynamaxAdventures.repair.stage",
+  "dynamaxAdventures.restore.stage",
+  "dynamaxAdventures.seed.plan",
+  "dynamaxAdventures.seed.search",
+  "dynamaxAdventures.seed.save.set",
+  "shops.load",
+  "shops.inventory.update",
+  "tmMachineControls.load",
+  "tmMachineControls.recipeAvailability.stage",
+  "tmMachineControls.materialVisibility.stage",
+  "habitatCoordinates.load",
+  "habitatCoordinates.coordinate.stage",
+  "encounters.load",
+  "encounters.slots.update",
+  "encounters.slot.vanilla.stage",
+  "raidBattles.load",
+  "raidBattles.slot.update",
+  "raidBattles.slots.update",
+  "teraRaids.load",
+  "teraRaids.field.update",
+  "teraRaids.fields.update",
+  "raidRewards.load",
+  "raidRewards.reward.update",
+  "raidRewards.rewards.update",
+  "raidBonusRewards.load",
+  "raidBonusRewards.reward.update",
+  "raidBonusRewards.rewards.update",
+  "placement.load",
+  "placement.catalog.open",
+  "placement.catalog.query",
+  "placement.object.load",
+  "placement.objects.update",
+  "behavior.load",
+  "behavior.entry.update",
+  "behavior.fields.update",
+  "flagworkSave.load",
+  "bagHook.load",
+  "bagHook.install.stage",
+  "bagHook.uninstall.stage",
+  "catchCap.load",
+  "catchCap.stage",
+  "catchCap.uninstall.stage",
+  "hyperTraining.load",
+  "hyperTraining.stage",
+  "shinyRate.load",
+  "shinyRate.stage",
+  "typeChart.load",
+  "typeChart.stage",
+  "typeChart.uninstall.stage",
+  "fairyGymBoosts.load",
+  "fairyGymBoosts.stage",
+  "angeFight.load",
+  "angeFight.stage",
+  "angeFight.uninstall.stage",
+  "fashionUnlock.load",
+  "fashionUnlock.install.stage",
+  "fashionUnlock.uninstall.stage",
+  "gymUniformRemoval.load",
+  "gymUniformRemoval.install.stage",
+  "gymUniformRemoval.uninstall.stage",
+  "hyperspaceBypass.load",
+  "hyperspaceBypass.install.stage",
+  "hyperspaceBypass.uninstall.stage",
+  "ivScreen.load",
+  "ivScreen.install.stage",
+  "ivScreen.uninstall.stage",
+  "exefsPatches.load",
+  "exefsPatches.patch.stage",
+  "royalCandy.load",
+  "royalCandy.workflow.stage",
+  "startingItems.load",
+  "startingItems.stage",
+  "npcItemGift.load",
+  "npcItemGift.stage",
+  "battleCafeRewards.load",
+  "battleCafeRewards.rows.stage",
+  "spreadsheetImport.load",
+  "spreadsheetImport.preview",
+  "modMerger.load",
+  "modMerger.stage",
+  "modMerger.apply",
+  "svModMerger.load",
+  "svModMerger.stage",
+  "svModMerger.apply",
+  "zaModMerger.load",
+  "zaModMerger.stage",
+  "zaModMerger.apply",
+  "svCache.status",
+  "svCache.settings.update",
+  "svCache.clear",
+  "svCache.warmup.step",
+  "zaCache.status",
+  "zaCache.settings.update",
+  "zaCache.clear",
+  "zaCache.warmup.step",
+  "swshCache.status",
+  "swshCache.settings.update",
+  "swshCache.clear",
+  "swshCache.warmup.step",
+  "fpsPatch.load",
+  "fpsPatch.apply",
+  "fpsPatch.restore",
+  "profanityFilter.load",
+  "profanityFilter.apply",
+  "profanityFilter.restore",
+  "randomizer.seed.import",
+  "randomizer.apply",
+  "randomizer.restore",
+  "gameDump.load",
+  "gameDump.run",
+  "workspace.drafts.read",
+  "workspace.drafts.write",
+  "workspace.drafts.delete",
+  "project.sourceRevision.read",
+  "workspace.applicationState.read",
+  "workspace.applicationState.write",
+  "workspace.projectState.read",
+  "workspace.projectState.write",
+  "workspace.projectState.delete",
+  "output.recovery.status",
+  "gameplaySettings.get",
+  "gameplaySettings.update.preview",
+  "gameplaySettings.update.apply",
+  "output.recovery.reconcile",
+  "output.integrity.scan",
+  "output.cleanup.preview",
+  "output.cleanup.apply",
+  "output.history.list",
+  "output.checkpoint.list",
+  "output.checkpoint.create",
+  "output.checkpoint.restore.preview",
+  "output.checkpoint.restore",
+  "output.checkpoint.delete",
+  "project.relocation.preview",
+  "project.relocation.apply",
+  "support.report.build",
+  "editSession.start",
+  "editSession.get",
+  "editSession.discard",
+  "editSession.validate",
+  "rowClipboard.copy.prepare",
+  "rowClipboard.paste.preview",
+  "rowClipboard.paste.stage",
+  "rowClipboard.authorizations.clear",
+  "changePlan.create",
+  "changePlan.apply",
+  "changeSets.read",
+  "changeSets.mutate",
+  "changeSets.captureSession",
+  "changeSets.materialize",
+  "changeSets.export",
+  "changeSets.import",
+  "semantic.capabilities",
+  "semantic.search",
+  "semantic.entity",
+  "semantic.compare",
+  "semantic.references",
+  "semantic.impact",
+  "semantic.ownership",
+  "semantic.external.compare",
+  "semantic.changes",
+  "semantic.balance-lab",
+  "gameModules.capabilities",
+  "gameModules.query",
+  "guidedDesign.capabilities",
+  "guidedDesign.preview",
+  "guidedDesign.import",
+  "semanticMerge.capabilities",
+  "semanticMerge.source.open",
+  "semanticMerge.preview",
+  "semanticMerge.import",
+  "recipes.export",
+  "recipes.validate",
+  "recipes.preview",
+  "recipes.import",
+  "researchLab.capabilities",
+  "researchLab.source.open",
+  "researchLab.source.close",
+  "researchLab.compare",
+  "researchLab.byteWindow",
+  "researchLab.annotations.read",
+  "researchLab.annotations.mutate",
 ] as const;
 
 export const kmCommandNameSchema = z.enum(kmCommandNameValues);
 export type KmCommandName = z.infer<typeof kmCommandNameSchema>;
 
 export const kmCommandNames = {
-  applyChangePlan: 'changePlan.apply',
-  captureChangeSetSession: 'changeSets.captureSession',
-  createChangePlan: 'changePlan.create',
-  exportChangeSets: 'changeSets.export',
-  importChangeSets: 'changeSets.import',
-  materializeChangeSets: 'changeSets.materialize',
-  mutateChangeSets: 'changeSets.mutate',
-  readChangeSets: 'changeSets.read',
-  compareExternalSemantic: 'semantic.external.compare',
-  compareSemantic: 'semantic.compare',
-  getSemanticCapabilities: 'semantic.capabilities',
-  getSemanticEntity: 'semantic.entity',
-  getGuidedDesignCapabilities: 'guidedDesign.capabilities',
-  importGuidedDesignProposal: 'guidedDesign.import',
-  previewGuidedDesign: 'guidedDesign.preview',
-  exportKmRecipe: 'recipes.export',
-  getSemanticMergeCapabilities: 'semanticMerge.capabilities',
-  importKmRecipe: 'recipes.import',
-  importSemanticMerge: 'semanticMerge.import',
-  openSemanticMergeSource: 'semanticMerge.source.open',
-  previewKmRecipe: 'recipes.preview',
-  previewSemanticMerge: 'semanticMerge.preview',
-  validateKmRecipe: 'recipes.validate',
-  getGameModuleCapabilities: 'gameModules.capabilities',
-  queryGameModule: 'gameModules.query',
-  compareResearchSources: 'researchLab.compare',
-  closeResearchSource: 'researchLab.source.close',
-  getResearchLabCapabilities: 'researchLab.capabilities',
-  mutateResearchAnnotations: 'researchLab.annotations.mutate',
-  openResearchSource: 'researchLab.source.open',
-  readResearchAnnotations: 'researchLab.annotations.read',
-  readResearchByteWindow: 'researchLab.byteWindow',
-  queryBalanceLab: 'semantic.balance-lab',
-  querySemanticChanges: 'semantic.changes',
-  querySemanticImpact: 'semantic.impact',
-  querySemanticOwnership: 'semantic.ownership',
-  querySemanticReferences: 'semantic.references',
-  searchSemantic: 'semantic.search',
-  discardEditSession: 'editSession.discard',
-  getEditSession: 'editSession.get',
-  listWorkflows: 'workflow.list',
-  loadItemsWorkflow: 'items.load',
-  stageItemVanilla: 'items.item.vanilla.stage',
-  updateItemFields: 'items.fields.update',
-  loadPokemonWorkflow: 'pokemon.load',
-  updatePokemonField: 'pokemon.field.update',
-  updatePokemonFields: 'pokemon.fields.update',
-  updatePokemonLearnset: 'pokemon.learnset.update',
-  updatePokemonEvolution: 'pokemon.evolution.update',
-  swapPokemonDexPlacement: 'pokemon.dex.swap',
-  movePokemonDexPlacement: 'pokemon.dex.move',
-  resizePokemonDex: 'pokemon.dex.resize',
-  stagePokemonDexVanilla: 'pokemon.dex.vanilla.stage',
-  stagePokemonDexMegaSync: 'pokemon.dex.megas.sync.stage',
-  loadMovesWorkflow: 'moves.load',
-  stageMoveVanilla: 'moves.move.vanilla.stage',
-  updateMoveField: 'moves.field.update',
-  updateMoveFields: 'moves.fields.update',
-  loadTextWorkflow: 'text.load',
-  updateTextEntry: 'text.entry.update',
-  loadTrainersWorkflow: 'trainers.load',
-  updateTrainerField: 'trainers.field.update',
-  updateTrainerFields: 'trainers.fields.update',
-  loadGiftPokemonWorkflow: 'giftPokemon.load',
-  updateGiftPokemonField: 'giftPokemon.field.update',
-  updateGiftPokemonFields: 'giftPokemon.fields.update',
-  stageGiftPokemonVanilla: 'giftPokemon.gift.vanilla.stage',
-  loadTradePokemonWorkflow: 'tradePokemon.load',
-  updateTradePokemonField: 'tradePokemon.field.update',
-  updateTradePokemonFields: 'tradePokemon.fields.update',
-  loadStaticEncountersWorkflow: 'staticEncounters.load',
-  updateStaticEncounterField: 'staticEncounters.field.update',
-  updateStaticEncounterFields: 'staticEncounters.fields.update',
-  loadRentalPokemonWorkflow: 'rentalPokemon.load',
-  updateRentalPokemonField: 'rentalPokemon.field.update',
-  updateRentalPokemonFields: 'rentalPokemon.fields.update',
-  loadDynamaxAdventuresWorkflow: 'dynamaxAdventures.load',
-  updateDynamaxAdventureField: 'dynamaxAdventures.field.update', previewDynamaxAdventureDefaults: 'dynamaxAdventures.defaults.preview',
-  stageDynamaxAdventureRepair: 'dynamaxAdventures.repair.stage',
-  stageDynamaxAdventureRestore: 'dynamaxAdventures.restore.stage',
-  loadShopsWorkflow: 'shops.load',
-  updateShopInventoryItem: 'shops.inventory.update',
-  loadEncountersWorkflow: 'encounters.load',
-  updateEncounterSlotFields: 'encounters.slots.update',
-  stageEncounterSlotVanilla: 'encounters.slot.vanilla.stage',
-  loadRaidBattlesWorkflow: 'raidBattles.load',
-  updateRaidBattleSlotField: 'raidBattles.slot.update',
-  updateRaidBattleSlotFields: 'raidBattles.slots.update',
-  loadTeraRaidsWorkflow: 'teraRaids.load',
-  updateTeraRaidField: 'teraRaids.field.update',
-  updateTeraRaidFields: 'teraRaids.fields.update',
-  loadRaidRewardsWorkflow: 'raidRewards.load',
-  updateRaidRewardField: 'raidRewards.reward.update',
-  updateRaidRewardFields: 'raidRewards.rewards.update',
-  loadRaidBonusRewardsWorkflow: 'raidBonusRewards.load',
-  updateRaidBonusRewardField: 'raidBonusRewards.reward.update',
-  updateRaidBonusRewardFields: 'raidBonusRewards.rewards.update',
-  loadPlacementWorkflow: 'placement.load',
-  openSwShPlacementCatalog: 'placement.catalog.open',
-  querySwShPlacementCatalog: 'placement.catalog.query',
-  loadSwShPlacementObject: 'placement.object.load',
-  updatePlacementObjectFields: 'placement.objects.update',
-  loadBehaviorWorkflow: 'behavior.load',
-  updateBehaviorEntryField: 'behavior.entry.update',
-  updateBehaviorEntryFields: 'behavior.fields.update',
-  loadFlagworkSaveWorkflow: 'flagworkSave.load',
-  loadBagHookWorkflow: 'bagHook.load',
-  stageBagHookInstall: 'bagHook.install.stage',
-  stageBagHookUninstall: 'bagHook.uninstall.stage',
-  loadCatchCapWorkflow: 'catchCap.load',
-  stageCatchCap: 'catchCap.stage',
-  stageCatchCapUninstall: 'catchCap.uninstall.stage',
-  loadHyperTrainingWorkflow: 'hyperTraining.load',
-  stageHyperTraining: 'hyperTraining.stage',
-  loadShinyRateWorkflow: 'shinyRate.load',
-  stageShinyRate: 'shinyRate.stage',
-  loadTypeChartWorkflow: 'typeChart.load',
-  stageTypeChart: 'typeChart.stage',
-  stageTypeChartUninstall: 'typeChart.uninstall.stage',
-  loadAngeFightWorkflow: 'angeFight.load',
-  stageAngeFight: 'angeFight.stage',
-  stageAngeFightUninstall: 'angeFight.uninstall.stage',
-  loadFairyGymBoostsWorkflow: 'fairyGymBoosts.load', stageFairyGymBoosts: 'fairyGymBoosts.stage',
-  loadFashionUnlockWorkflow: 'fashionUnlock.load',
-  stageFashionUnlockInstall: 'fashionUnlock.install.stage',
-  stageFashionUnlockUninstall: 'fashionUnlock.uninstall.stage',
-  loadGymUniformRemovalWorkflow: 'gymUniformRemoval.load',
-  stageGymUniformRemovalInstall: 'gymUniformRemoval.install.stage',
-  stageGymUniformRemovalUninstall: 'gymUniformRemoval.uninstall.stage',
-  loadHyperspaceBypassWorkflow: 'hyperspaceBypass.load', stageHyperspaceBypassInstall: 'hyperspaceBypass.install.stage', stageHyperspaceBypassUninstall: 'hyperspaceBypass.uninstall.stage',
-  loadIvScreenWorkflow: 'ivScreen.load',
-  stageIvScreenInstall: 'ivScreen.install.stage',
-  stageIvScreenUninstall: 'ivScreen.uninstall.stage',
-  loadExeFsPatchWorkflow: 'exefsPatches.load',
-  stageExeFsPatch: 'exefsPatches.patch.stage',
-  loadRoyalCandyWorkflow: 'royalCandy.load',
-  stageRoyalCandyWorkflow: 'royalCandy.workflow.stage',
-  loadStartingItemsWorkflow: 'startingItems.load',
-  stageStartingItems: 'startingItems.stage',
-  loadNpcItemGiftWorkflow: 'npcItemGift.load',
-  stageNpcItemGift: 'npcItemGift.stage',
-  loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
-  previewSpreadsheetImport: 'spreadsheetImport.preview',
-  loadModMergerWorkflow: 'modMerger.load',
-  stageModMerge: 'modMerger.stage',
-  applyModMerge: 'modMerger.apply',
-  loadSvModMergerWorkflow: 'svModMerger.load', stageSvModMerge: 'svModMerger.stage', applySvModMerge: 'svModMerger.apply',
-  loadZaModMergerWorkflow: 'zaModMerger.load', stageZaModMerge: 'zaModMerger.stage', applyZaModMerge: 'zaModMerger.apply',
-  getSvCacheStatus: 'svCache.status', updateSvCacheSettings: 'svCache.settings.update', clearSvCache: 'svCache.clear', warmupSvCacheStep: 'svCache.warmup.step',
-  getZaCacheStatus: 'zaCache.status', updateZaCacheSettings: 'zaCache.settings.update', clearZaCache: 'zaCache.clear', warmupZaCacheStep: 'zaCache.warmup.step',
-  getSwShCacheStatus: 'swshCache.status', updateSwShCacheSettings: 'swshCache.settings.update', clearSwShCache: 'swshCache.clear', warmupSwShCacheStep: 'swshCache.warmup.step',
-  loadFpsPatch: 'fpsPatch.load', applyFpsPatch: 'fpsPatch.apply', restoreFpsPatch: 'fpsPatch.restore',
-  loadProfanityFilter: 'profanityFilter.load', applyProfanityFilter: 'profanityFilter.apply', restoreProfanityFilter: 'profanityFilter.restore',
-  importRandomizerSeed: 'randomizer.seed.import',
-  applyRandomizer: 'randomizer.apply',
-  restoreRandomizer: 'randomizer.restore',
-  loadGameDumpWorkflow: 'gameDump.load', runGameDump: 'gameDump.run',
-  readWorkspaceDrafts: 'workspace.drafts.read',
-  writeWorkspaceDrafts: 'workspace.drafts.write',
-  deleteWorkspaceDrafts: 'workspace.drafts.delete',
-  readWorkspaceApplicationState: 'workspace.applicationState.read',
-  writeWorkspaceApplicationState: 'workspace.applicationState.write',
-  readWorkspaceProjectState: 'workspace.projectState.read',
-  writeWorkspaceProjectState: 'workspace.projectState.write',
-  deleteWorkspaceProjectState: 'workspace.projectState.delete',
-  getOutputRecoveryStatus: 'output.recovery.status',
-  reconcileOutputRecovery: 'output.recovery.reconcile',
-  scanOutputIntegrity: 'output.integrity.scan',
-  previewOutputCleanup: 'output.cleanup.preview',
-  applyOutputCleanup: 'output.cleanup.apply',
-  listOutputHistory: 'output.history.list',
-  listOutputCheckpoints: 'output.checkpoint.list',
-  createOutputCheckpoint: 'output.checkpoint.create',
-  previewOutputCheckpointRestore: 'output.checkpoint.restore.preview',
-  restoreOutputCheckpoint: 'output.checkpoint.restore',
-  deleteOutputCheckpoint: 'output.checkpoint.delete',
-  previewProjectRelocation: 'project.relocation.preview',
-  applyProjectRelocation: 'project.relocation.apply',
-  buildSupportReport: 'support.report.build',
-  openProject: 'project.open',
-  refreshFileGraph: 'project.fileGraph.refresh',
-  startEditSession: 'editSession.start',
-  updateItemField: 'items.field.update',
-  validateEditSession: 'editSession.validate',
-  validateProject: 'project.validate'
+  applyChangePlan: "changePlan.apply",
+  captureChangeSetSession: "changeSets.captureSession",
+  createChangePlan: "changePlan.create",
+  exportChangeSets: "changeSets.export",
+  importChangeSets: "changeSets.import",
+  materializeChangeSets: "changeSets.materialize",
+  mutateChangeSets: "changeSets.mutate",
+  readChangeSets: "changeSets.read",
+  compareExternalSemantic: "semantic.external.compare",
+  compareSemantic: "semantic.compare",
+  getSemanticCapabilities: "semantic.capabilities",
+  getSemanticEntity: "semantic.entity",
+  getGuidedDesignCapabilities: "guidedDesign.capabilities",
+  importGuidedDesignProposal: "guidedDesign.import",
+  previewGuidedDesign: "guidedDesign.preview",
+  exportKmRecipe: "recipes.export",
+  getSemanticMergeCapabilities: "semanticMerge.capabilities",
+  importKmRecipe: "recipes.import",
+  importSemanticMerge: "semanticMerge.import",
+  openSemanticMergeSource: "semanticMerge.source.open",
+  previewKmRecipe: "recipes.preview",
+  previewSemanticMerge: "semanticMerge.preview",
+  validateKmRecipe: "recipes.validate",
+  getGameModuleCapabilities: "gameModules.capabilities",
+  queryGameModule: "gameModules.query",
+  compareResearchSources: "researchLab.compare",
+  closeResearchSource: "researchLab.source.close",
+  getResearchLabCapabilities: "researchLab.capabilities",
+  mutateResearchAnnotations: "researchLab.annotations.mutate",
+  openResearchSource: "researchLab.source.open",
+  readResearchAnnotations: "researchLab.annotations.read",
+  readResearchByteWindow: "researchLab.byteWindow",
+  queryBalanceLab: "semantic.balance-lab",
+  querySemanticChanges: "semantic.changes",
+  querySemanticImpact: "semantic.impact",
+  querySemanticOwnership: "semantic.ownership",
+  querySemanticReferences: "semantic.references",
+  searchSemantic: "semantic.search",
+  discardEditSession: "editSession.discard",
+  getEditSession: "editSession.get",
+  prepareRowClipboardCopy: "rowClipboard.copy.prepare",
+  previewRowClipboardPaste: "rowClipboard.paste.preview",
+  stageRowClipboardPaste: "rowClipboard.paste.stage",
+  clearRowClipboardAuthorizations: "rowClipboard.authorizations.clear",
+  listWorkflows: "workflow.list",
+  loadItemsWorkflow: "items.load",
+  stageItemVanilla: "items.item.vanilla.stage",
+  updateItemFields: "items.fields.update",
+  loadPokemonWorkflow: "pokemon.load",
+  updatePokemonField: "pokemon.field.update",
+  updatePokemonFields: "pokemon.fields.update",
+  updatePokemonLearnset: "pokemon.learnset.update",
+  updatePokemonEvolution: "pokemon.evolution.update",
+  swapPokemonDexPlacement: "pokemon.dex.swap",
+  movePokemonDexPlacement: "pokemon.dex.move",
+  resizePokemonDex: "pokemon.dex.resize",
+  stagePokemonDexVanilla: "pokemon.dex.vanilla.stage",
+  stagePokemonDexMegaSync: "pokemon.dex.megas.sync.stage",
+  loadMovesWorkflow: "moves.load",
+  stageMoveVanilla: "moves.move.vanilla.stage",
+  updateMoveField: "moves.field.update",
+  updateMoveFields: "moves.fields.update",
+  loadTextWorkflow: "text.load",
+  updateTextEntry: "text.entry.update",
+  loadTrainersWorkflow: "trainers.load",
+  updateTrainerField: "trainers.field.update",
+  updateTrainerFields: "trainers.fields.update",
+  loadTrainerPoolsWorkflow: "trainerPools.load",
+  stageTrainerPoolFixedCountSwap: "trainerPools.fixedCountSwap.stage",
+  loadFashionCatalogWorkflow: "fashionCatalog.load",
+  stageFashionCatalogFieldEdit: "fashionCatalog.field.stage",
+  loadGiftPokemonWorkflow: "giftPokemon.load",
+  updateGiftPokemonField: "giftPokemon.field.update",
+  updateGiftPokemonFields: "giftPokemon.fields.update",
+  stageGiftPokemonVanilla: "giftPokemon.gift.vanilla.stage",
+  loadTradePokemonWorkflow: "tradePokemon.load",
+  updateTradePokemonField: "tradePokemon.field.update",
+  updateTradePokemonFields: "tradePokemon.fields.update",
+  loadStaticEncountersWorkflow: "staticEncounters.load",
+  updateStaticEncounterField: "staticEncounters.field.update",
+  updateStaticEncounterFields: "staticEncounters.fields.update",
+  loadRentalPokemonWorkflow: "rentalPokemon.load",
+  updateRentalPokemonField: "rentalPokemon.field.update",
+  updateRentalPokemonFields: "rentalPokemon.fields.update",
+  loadDynamaxAdventuresWorkflow: "dynamaxAdventures.load",
+  updateDynamaxAdventureField: "dynamaxAdventures.field.update",
+  previewDynamaxAdventureDefaults: "dynamaxAdventures.defaults.preview",
+  stageDynamaxAdventureRepair: "dynamaxAdventures.repair.stage",
+  stageDynamaxAdventureRestore: "dynamaxAdventures.restore.stage",
+  planDynamaxAdventureSeed: "dynamaxAdventures.seed.plan",
+  searchDynamaxAdventureSeed: "dynamaxAdventures.seed.search",
+  setDynamaxAdventureSaveSeed: "dynamaxAdventures.seed.save.set",
+  loadShopsWorkflow: "shops.load",
+  updateShopInventoryItem: "shops.inventory.update",
+  loadTmMachineControls: "tmMachineControls.load",
+  stageTmRecipeAvailability: "tmMachineControls.recipeAvailability.stage",
+  stageTmMaterialVisibility: "tmMachineControls.materialVisibility.stage",
+  loadHabitatCoordinates: "habitatCoordinates.load",
+  stageHabitatCoordinate: "habitatCoordinates.coordinate.stage",
+  loadEncountersWorkflow: "encounters.load",
+  updateEncounterSlotFields: "encounters.slots.update",
+  stageEncounterSlotVanilla: "encounters.slot.vanilla.stage",
+  loadRaidBattlesWorkflow: "raidBattles.load",
+  updateRaidBattleSlotField: "raidBattles.slot.update",
+  updateRaidBattleSlotFields: "raidBattles.slots.update",
+  loadTeraRaidsWorkflow: "teraRaids.load",
+  updateTeraRaidField: "teraRaids.field.update",
+  updateTeraRaidFields: "teraRaids.fields.update",
+  loadRaidRewardsWorkflow: "raidRewards.load",
+  updateRaidRewardField: "raidRewards.reward.update",
+  updateRaidRewardFields: "raidRewards.rewards.update",
+  loadRaidBonusRewardsWorkflow: "raidBonusRewards.load",
+  updateRaidBonusRewardField: "raidBonusRewards.reward.update",
+  updateRaidBonusRewardFields: "raidBonusRewards.rewards.update",
+  loadPlacementWorkflow: "placement.load",
+  openSwShPlacementCatalog: "placement.catalog.open",
+  querySwShPlacementCatalog: "placement.catalog.query",
+  loadSwShPlacementObject: "placement.object.load",
+  updatePlacementObjectFields: "placement.objects.update",
+  loadBehaviorWorkflow: "behavior.load",
+  updateBehaviorEntryField: "behavior.entry.update",
+  updateBehaviorEntryFields: "behavior.fields.update",
+  loadFlagworkSaveWorkflow: "flagworkSave.load",
+  loadBagHookWorkflow: "bagHook.load",
+  stageBagHookInstall: "bagHook.install.stage",
+  stageBagHookUninstall: "bagHook.uninstall.stage",
+  loadCatchCapWorkflow: "catchCap.load",
+  stageCatchCap: "catchCap.stage",
+  stageCatchCapUninstall: "catchCap.uninstall.stage",
+  loadHyperTrainingWorkflow: "hyperTraining.load",
+  stageHyperTraining: "hyperTraining.stage",
+  loadShinyRateWorkflow: "shinyRate.load",
+  stageShinyRate: "shinyRate.stage",
+  loadTypeChartWorkflow: "typeChart.load",
+  stageTypeChart: "typeChart.stage",
+  stageTypeChartUninstall: "typeChart.uninstall.stage",
+  loadAngeFightWorkflow: "angeFight.load",
+  stageAngeFight: "angeFight.stage",
+  stageAngeFightUninstall: "angeFight.uninstall.stage",
+  loadFairyGymBoostsWorkflow: "fairyGymBoosts.load",
+  stageFairyGymBoosts: "fairyGymBoosts.stage",
+  loadFashionUnlockWorkflow: "fashionUnlock.load",
+  stageFashionUnlockInstall: "fashionUnlock.install.stage",
+  stageFashionUnlockUninstall: "fashionUnlock.uninstall.stage",
+  loadGymUniformRemovalWorkflow: "gymUniformRemoval.load",
+  stageGymUniformRemovalInstall: "gymUniformRemoval.install.stage",
+  stageGymUniformRemovalUninstall: "gymUniformRemoval.uninstall.stage",
+  loadHyperspaceBypassWorkflow: "hyperspaceBypass.load",
+  stageHyperspaceBypassInstall: "hyperspaceBypass.install.stage",
+  stageHyperspaceBypassUninstall: "hyperspaceBypass.uninstall.stage",
+  loadIvScreenWorkflow: "ivScreen.load",
+  stageIvScreenInstall: "ivScreen.install.stage",
+  stageIvScreenUninstall: "ivScreen.uninstall.stage",
+  loadExeFsPatchWorkflow: "exefsPatches.load",
+  stageExeFsPatch: "exefsPatches.patch.stage",
+  loadRoyalCandyWorkflow: "royalCandy.load",
+  stageRoyalCandyWorkflow: "royalCandy.workflow.stage",
+  loadStartingItemsWorkflow: "startingItems.load",
+  stageStartingItems: "startingItems.stage",
+  loadNpcItemGiftWorkflow: "npcItemGift.load",
+  stageNpcItemGift: "npcItemGift.stage",
+  loadBattleCafeRewardsWorkflow: "battleCafeRewards.load",
+  stageBattleCafeRewardRows: "battleCafeRewards.rows.stage",
+  loadSpreadsheetImportWorkflow: "spreadsheetImport.load",
+  previewSpreadsheetImport: "spreadsheetImport.preview",
+  loadModMergerWorkflow: "modMerger.load",
+  stageModMerge: "modMerger.stage",
+  applyModMerge: "modMerger.apply",
+  loadSvModMergerWorkflow: "svModMerger.load",
+  stageSvModMerge: "svModMerger.stage",
+  applySvModMerge: "svModMerger.apply",
+  loadZaModMergerWorkflow: "zaModMerger.load",
+  stageZaModMerge: "zaModMerger.stage",
+  applyZaModMerge: "zaModMerger.apply",
+  getSvCacheStatus: "svCache.status",
+  updateSvCacheSettings: "svCache.settings.update",
+  clearSvCache: "svCache.clear",
+  warmupSvCacheStep: "svCache.warmup.step",
+  getZaCacheStatus: "zaCache.status",
+  updateZaCacheSettings: "zaCache.settings.update",
+  clearZaCache: "zaCache.clear",
+  warmupZaCacheStep: "zaCache.warmup.step",
+  getSwShCacheStatus: "swshCache.status",
+  updateSwShCacheSettings: "swshCache.settings.update",
+  clearSwShCache: "swshCache.clear",
+  warmupSwShCacheStep: "swshCache.warmup.step",
+  loadFpsPatch: "fpsPatch.load",
+  applyFpsPatch: "fpsPatch.apply",
+  restoreFpsPatch: "fpsPatch.restore",
+  loadProfanityFilter: "profanityFilter.load",
+  applyProfanityFilter: "profanityFilter.apply",
+  restoreProfanityFilter: "profanityFilter.restore",
+  importRandomizerSeed: "randomizer.seed.import",
+  applyRandomizer: "randomizer.apply",
+  restoreRandomizer: "randomizer.restore",
+  loadGameDumpWorkflow: "gameDump.load",
+  runGameDump: "gameDump.run",
+  readWorkspaceDrafts: "workspace.drafts.read",
+  writeWorkspaceDrafts: "workspace.drafts.write",
+  deleteWorkspaceDrafts: "workspace.drafts.delete",
+  readProjectSourceRevision: "project.sourceRevision.read",
+  readWorkspaceApplicationState: "workspace.applicationState.read",
+  writeWorkspaceApplicationState: "workspace.applicationState.write",
+  readWorkspaceProjectState: "workspace.projectState.read",
+  writeWorkspaceProjectState: "workspace.projectState.write",
+  deleteWorkspaceProjectState: "workspace.projectState.delete",
+  getOutputRecoveryStatus: "output.recovery.status",
+  getGameplaySettings: "gameplaySettings.get",
+  previewGameplaySettingsUpdate: "gameplaySettings.update.preview",
+  applyGameplaySettingsUpdate: "gameplaySettings.update.apply",
+  reconcileOutputRecovery: "output.recovery.reconcile",
+  scanOutputIntegrity: "output.integrity.scan",
+  previewOutputCleanup: "output.cleanup.preview",
+  applyOutputCleanup: "output.cleanup.apply",
+  listOutputHistory: "output.history.list",
+  listOutputCheckpoints: "output.checkpoint.list",
+  createOutputCheckpoint: "output.checkpoint.create",
+  previewOutputCheckpointRestore: "output.checkpoint.restore.preview",
+  restoreOutputCheckpoint: "output.checkpoint.restore",
+  deleteOutputCheckpoint: "output.checkpoint.delete",
+  previewProjectRelocation: "project.relocation.preview",
+  applyProjectRelocation: "project.relocation.apply",
+  buildSupportReport: "support.report.build",
+  openProject: "project.open",
+  refreshFileGraph: "project.fileGraph.refresh",
+  startEditSession: "editSession.start",
+  updateItemField: "items.field.update",
+  validateEditSession: "editSession.validate",
+  validateProject: "project.validate",
 } as const satisfies Record<string, KmCommandName>;
 
-export const apiDiagnosticSeveritySchema = z.enum(['info', 'warning', 'error']);
+export const apiDiagnosticSeveritySchema = z.enum(["info", "warning", "error"]);
 
 export const apiDiagnosticSchema = z.strictObject({
   code: kmErrorCodeSchema.nullish(),
@@ -380,42 +477,56 @@ export const apiDiagnosticSchema = z.strictObject({
   field: z.string().nullable().optional(),
   file: z.string().nullable().optional(),
   message: z.string(),
-  severity: apiDiagnosticSeveritySchema
+  severity: apiDiagnosticSeveritySchema,
 });
 
 export const apiErrorSchema = z.strictObject({
   code: kmErrorCodeSchema,
   diagnostics: z.array(apiDiagnosticSchema),
-  message: z.string()
+  message: z.string(),
 });
-export const projectGameSchema = z.enum(['sword', 'shield', 'scarlet', 'violet', 'za']);
+export const projectGameSchema = z.enum([
+  "sword",
+  "shield",
+  "scarlet",
+  "violet",
+  "za",
+]);
 export type ProjectGame = z.infer<typeof projectGameSchema>;
 export const projectPathsSchema = z.strictObject({
-  baseExeFsPath: z.string().nullable(), baseRomFsPath: z.string().nullable(), gameTextLanguage: z.string().nullable().optional(), outputRootPath: z.string().nullable(), pokemonLegendsZASupportFolderPath: z.string().nullable().optional(), saveFilePath: z.string().nullable(), scarletVioletSupportFolderPath: z.string().nullable().optional(), selectedGame: projectGameSchema.nullable().default(null)
+  baseExeFsPath: z.string().nullable(),
+  baseRomFsPath: z.string().nullable(),
+  gameTextLanguage: z.string().nullable().optional(),
+  outputRootPath: z.string().nullable(),
+  pokemonLegendsZASupportFolderPath: z.string().nullable().optional(),
+  saveFilePath: z.string().nullable(),
+  scarletVioletSupportFolderPath: z.string().nullable().optional(),
+  selectedGame: projectGameSchema.nullable().default(null),
 });
+export type ProjectPaths = z.infer<typeof projectPathsSchema>;
 
 export const openProjectRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 export const validateProjectRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 export const refreshFileGraphRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 export const listWorkflowsRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 export const loadItemsWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadPokemonWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadMovesWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const textWorkflowQuerySchema = z.strictObject({
@@ -423,50 +534,50 @@ export const textWorkflowQuerySchema = z.strictObject({
   language: z.string().nullable().optional(),
   limit: z.number().int().positive().nullable().optional(),
   offset: z.number().int().nonnegative().nullable().optional(),
-  searchText: z.string().nullable().optional()
+  searchText: z.string().nullable().optional(),
 });
 
 export const loadTextWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  query: textWorkflowQuerySchema.nullable().optional()
+  query: textWorkflowQuerySchema.nullable().optional(),
 });
 
 export const loadTrainersWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadGiftPokemonWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadTradePokemonWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadStaticEncountersWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadRentalPokemonWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const dynamaxAdventureEditableFieldNameSchema = z.enum([
-  'species',
-  'form',
-  'level',
-  'ability',
-  'gigantamaxState',
-  'move0Id',
-  'move1Id',
-  'move2Id',
-  'move3Id',
-  'guaranteedPerfectIvs',
-  'ivAttack',
-  'ivDefense',
-  'ivSpecialAttack',
-  'ivSpecialDefense',
-  'ivSpeed'
+  "species",
+  "form",
+  "level",
+  "ability",
+  "gigantamaxState",
+  "move0Id",
+  "move1Id",
+  "move2Id",
+  "move3Id",
+  "guaranteedPerfectIvs",
+  "ivAttack",
+  "ivDefense",
+  "ivSpecialAttack",
+  "ivSpecialDefense",
+  "ivSpeed",
 ]);
 
 const dynamaxAdventureEncounterCount = 273;
@@ -486,19 +597,21 @@ const dynamaxAdventureFieldRanges = {
   move1Id: [0, 826],
   move2Id: [0, 826],
   move3Id: [0, 826],
-  species: [1, 898]
+  species: [1, 898],
 } as const satisfies Record<
   z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
   readonly [number, number]
 >;
 const dynamaxAdventureIvOptionValues = [
   -1,
-  ...Array.from({ length: 32 }, (_, value) => value)
+  ...Array.from({ length: 32 }, (_, value) => value),
 ];
-const dynamaxAdventureExactFieldOptionValues: Partial<Record<
-  z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
-  readonly number[]
->> = {
+const dynamaxAdventureExactFieldOptionValues: Partial<
+  Record<
+    z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
+    readonly number[]
+  >
+> = {
   ability: [0, 1, 2],
   gigantamaxState: [0, 1, 2],
   guaranteedPerfectIvs: [0, 2, 3, 4, 5, 6],
@@ -506,133 +619,185 @@ const dynamaxAdventureExactFieldOptionValues: Partial<Record<
   ivDefense: dynamaxAdventureIvOptionValues,
   ivSpecialAttack: dynamaxAdventureIvOptionValues,
   ivSpecialDefense: dynamaxAdventureIvOptionValues,
-  ivSpeed: dynamaxAdventureIvOptionValues
+  ivSpeed: dynamaxAdventureIvOptionValues,
 };
 
 export const loadDynamaxAdventuresWorkflowRequestSchema = z
   .strictObject({ paths: projectPathsSchema })
   .superRefine(validateDynamaxAdventureRequestGame);
 
+const dynamaxAdventureSeedValueSchema = z
+  .string()
+  .trim()
+  .regex(/^(?:0[xX][0-9A-Fa-f]{1,16}|[0-9]{1,20})$/u);
+
+const createDynamaxAdventureRequiredRowsSchema = (minimumLength: 0 | 1) =>
+  z
+    .array(z.number().int().min(0).max(272))
+    .min(minimumLength)
+    .max(273)
+    .refine((rows) => new Set(rows).size === rows.length, {
+      message: "Dynamax Adventures required rows must be unique.",
+    });
+
+export const planDynamaxAdventureSeedRequestSchema = z
+  .strictObject({
+    npcCount: z.number().int().min(0).max(3),
+    paths: projectPathsSchema,
+    requiredRows: createDynamaxAdventureRequiredRowsSchema(0),
+    seed: dynamaxAdventureSeedValueSchema,
+  })
+  .superRefine(validateDynamaxAdventureRequestGame);
+
+export const searchDynamaxAdventureSeedRequestSchema = z
+  .strictObject({
+    limit: dynamaxAdventureSeedValueSchema,
+    maxResults: z.number().int().min(1).max(1_000),
+    npcCount: z.number().int().min(0).max(3),
+    paths: projectPathsSchema,
+    requiredRows: createDynamaxAdventureRequiredRowsSchema(1),
+    startSeed: dynamaxAdventureSeedValueSchema,
+  })
+  .superRefine(validateDynamaxAdventureRequestGame);
+
+export const setDynamaxAdventureSaveSeedRequestSchema = z
+  .strictObject({
+    paths: projectPathsSchema,
+    seed: dynamaxAdventureSeedValueSchema,
+  })
+  .superRefine(validateDynamaxAdventureRequestGame);
+
 export const loadShopsWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadEncountersWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadRaidBattlesWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadTeraRaidsWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadRaidRewardsWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadRaidBonusRewardsWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadPlacementWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadBehaviorWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadFlagworkSaveWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadBagHookWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadCatchCapWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadHyperTrainingWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadTypeChartWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadIvScreenWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadExeFsPatchWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadRoyalCandyWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadStartingItemsWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const loadSpreadsheetImportWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const startEditSessionRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const projectHealthStateSchema = z.enum([
-  'needsPaths',
-  'readOnlyReady',
-  'editableReady',
-  'blocked'
+  "needsPaths",
+  "readOnlyReady",
+  "editableReady",
+  "blocked",
 ]);
 
 export const projectPathRoleSchema = z.enum([
-  'baseRomFs',
-  'baseExeFs',
-  'outputRoot',
-  'saveFile',
-  'scarletVioletSupportFolder',
-  'pokemonLegendsZASupportFolder'
+  "baseRomFs",
+  "baseExeFs",
+  "outputRoot",
+  "saveFile",
+  "scarletVioletSupportFolder",
+  "pokemonLegendsZASupportFolder",
 ]);
 
-export const projectPathStatusSchema = z.enum(['notSet', 'missing', 'wrongKind', 'valid', 'unsafe']);
+export const projectPathStatusSchema = z.enum([
+  "notSet",
+  "missing",
+  "wrongKind",
+  "valid",
+  "unsafe",
+]);
 
 export const projectPathValidationSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   isRequired: z.boolean(),
   path: z.string().nullable(),
   role: projectPathRoleSchema,
-  status: projectPathStatusSchema
+  status: projectPathStatusSchema,
 });
 
 export const projectFileGraphSummarySchema = z.strictObject({
   baseFileCount: z.number().int().nonnegative(),
   layeredFileCount: z.number().int().nonnegative(),
   layeredOnlyCount: z.number().int().nonnegative(),
-  overrideCount: z.number().int().nonnegative()
+  overrideCount: z.number().int().nonnegative(),
 });
 
 export const projectFileGraphEntryStateSchema = z.enum([
-  'baseOnly',
-  'layeredOverride',
-  'layeredOnly'
+  "baseOnly",
+  "layeredOverride",
+  "layeredOnly",
 ]);
 
-export const projectFileLayerSchema = z.enum(['base', 'layered', 'pending', 'generated']);
+export const projectFileLayerSchema = z.enum([
+  "base",
+  "layered",
+  "pending",
+  "generated",
+]);
 
 export const projectFileReferenceSchema = z.strictObject({
   layer: projectFileLayerSchema,
-  relativePath: z.string()
+  relativePath: z.string(),
 });
 
 const pendingEditAssociationIdSchema = z
@@ -646,7 +811,7 @@ export const pendingEditSchema = z.strictObject({
     .strictObject({
       changeSetId: pendingEditAssociationIdSchema,
       operationId: pendingEditAssociationIdSchema,
-      version: z.literal(1)
+      version: z.literal(1),
     })
     .nullable()
     .optional(),
@@ -656,31 +821,42 @@ export const pendingEditSchema = z.strictObject({
   owner: z.string().nullable().optional(),
   recordId: z.string().nullable().optional(),
   sources: z.array(projectFileReferenceSchema),
-  summary: z.string()
+  summary: z.string(),
 });
 
 export const editSessionSchema = z.strictObject({
   authoringBinding: z
     .strictObject({
       outputProfileId: pendingEditAssociationIdSchema.nullable(),
-      outputMode: z.enum(['standalone', 'trinityModManager', 'trinityBypass']).nullable(),
+      outputMode: z
+        .enum(["standalone", "trinityModManager", "trinityBypass"])
+        .nullable(),
       outputRootFingerprint: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
       projectId: z.string().min(1).max(128),
-      selectedChangeSetIds: z.array(pendingEditAssociationIdSchema).max(64).refine(
-        (values) => new Set(values).size === values.length,
-        { message: 'Selected change-set identifiers must be unique.' }
-      ),
+      selectedChangeSetIds: z
+        .array(pendingEditAssociationIdSchema)
+        .max(64)
+        .refine((values) => new Set(values).size === values.length, {
+          message: "Selected change-set identifiers must be unique.",
+        }),
       version: z.literal(1),
       workspaceETag: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
       workspaceFingerprint: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
-      workspacePersonalStateETag: z.string().regex(/^[A-Fa-f0-9]{64}$/u).nullable()
+      workspacePersonalStateETag: z
+        .string()
+        .regex(/^[A-Fa-f0-9]{64}$/u)
+        .nullable(),
     })
     .superRefine((binding, context) => {
-      if ((binding.outputProfileId === null) !== (binding.workspacePersonalStateETag === null)) {
+      if (
+        (binding.outputProfileId === null) !==
+        (binding.workspacePersonalStateETag === null)
+      ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'A selected output profile requires an exact personal-state ETag.',
-          path: ['workspacePersonalStateETag']
+          message:
+            "A selected output profile requires an exact personal-state ETag.",
+          path: ["workspacePersonalStateETag"],
         });
       }
     })
@@ -688,40 +864,52 @@ export const editSessionSchema = z.strictObject({
     .optional(),
   hasPendingChanges: z.boolean(),
   pendingEdits: z.array(pendingEditSchema),
-  sessionId: z.string()
+  sessionId: z.string(),
 });
 
 export const validateEditSessionRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema
+  session: editSessionSchema,
 });
 
-export const changePlanOutputModeSchema = z.enum(['standalone', 'trinityModManager', 'trinityBypass']);
+export const changePlanOutputModeSchema = z.enum([
+  "standalone",
+  "trinityModManager",
+  "trinityBypass",
+]);
 
-export const createChangePlanRequestSchema = z.strictObject({ outputMode: changePlanOutputModeSchema.optional(), paths: projectPathsSchema, session: editSessionSchema });
+export const createChangePlanRequestSchema = z.strictObject({
+  outputMode: changePlanOutputModeSchema.optional(),
+  paths: projectPathsSchema,
+  session: editSessionSchema,
+});
 
 export const applyChangePlanRequestSchema = z.strictObject({
   changePlan: z.lazy(() => changePlanSchema),
   outputMode: changePlanOutputModeSchema.optional(),
   paths: projectPathsSchema,
-  session: editSessionSchema
+  session: editSessionSchema,
 });
 
 export const previewDynamaxAdventureDefaultsRequestSchema = z
   .strictObject({
-    entryIndex: z.number().int().min(0).max(dynamaxAdventureNormalEncounterCount - 1),
+    entryIndex: z
+      .number()
+      .int()
+      .min(0)
+      .max(dynamaxAdventureNormalEncounterCount - 1),
     form: z.number().int().min(0).max(255),
     level: z.number().int().min(1).max(100),
     paths: projectPathsSchema,
     session: editSessionSchema.nullable(),
-    species: z.number().int().min(1).max(898)
+    species: z.number().int().min(1).max(898),
   })
   .superRefine(validateDynamaxAdventureRequestGame);
 
 export const stageDynamaxAdventureRepairRequestSchema = z
   .strictObject({
     paths: projectPathsSchema,
-    session: editSessionSchema.nullable()
+    session: editSessionSchema.nullable(),
   })
   .superRefine(validateDynamaxAdventureRequestGame)
   .superRefine((request, context) => {
@@ -731,8 +919,8 @@ export const stageDynamaxAdventureRepairRequestSchema = z
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['session'],
-        'Dynamax Adventures repair requires an empty edit session.'
+        ["session"],
+        "Dynamax Adventures repair requires an empty edit session.",
       );
     }
   });
@@ -746,23 +934,23 @@ function isCanonicalDynamaxAdventureRestoreRetryEdit(edit: {
   summary: string;
 }) {
   return (
-    edit.domain === 'workflow.dynamaxAdventures' &&
-    edit.recordId === 'dynamaxAdventure:0' &&
-    edit.field === 'level' &&
-    typeof edit.newValue === 'string' &&
+    edit.domain === "workflow.dynamaxAdventures" &&
+    edit.recordId === "dynamaxAdventure:0" &&
+    edit.field === "level" &&
+    typeof edit.newValue === "string" &&
     /^(?:[1-9]|[1-9]\d|100)$/.test(edit.newValue) &&
-    edit.summary === 'Restore the vanilla Dynamax Adventures table.' &&
+    edit.summary === "Restore the vanilla Dynamax Adventures table." &&
     edit.sources.length === 1 &&
-    edit.sources[0]?.layer === 'layered' &&
+    edit.sources[0]?.layer === "layered" &&
     edit.sources[0]?.relativePath ===
-      'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+      "romfs/bin/appli/chika/data_table/underground_exploration_poke.bin"
   );
 }
 
 export const stageDynamaxAdventureRestoreRequestSchema = z
   .strictObject({
     paths: projectPathsSchema,
-    session: editSessionSchema.nullable()
+    session: editSessionSchema.nullable(),
   })
   .superRefine(validateDynamaxAdventureRequestGame)
   .superRefine((request, context) => {
@@ -778,8 +966,8 @@ export const stageDynamaxAdventureRestoreRequestSchema = z
     if (claimsPendingSession && !isCanonicalRestoreRetry) {
       addDynamaxAdventureContractIssue(
         context,
-        ['session'],
-        'Dynamax Adventures table restore requires an empty edit session or its exact staged restore marker.'
+        ["session"],
+        "Dynamax Adventures table restore requires an empty edit session or its exact staged restore marker.",
       );
     }
   });
@@ -788,81 +976,85 @@ export const previewSpreadsheetImportRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   profileId: z.string(),
   session: editSessionSchema.nullable(),
-  sourcePath: z.string()
+  sourcePath: z.string(),
 });
 
 export const modMergerConflictResolutionSchema = z.strictObject({
   conflictId: z.string(),
-  source: z.enum(['mod1', 'mod2'])
+  source: z.enum(["mod1", "mod2"]),
 });
 
-export const modMergerMergeModeSchema = z.enum(['smart', 'preferMod1', 'preferMod2']);
+export const modMergerMergeModeSchema = z.enum([
+  "smart",
+  "preferMod1",
+  "preferMod2",
+]);
 
 export const loadModMergerWorkflowRequestSchema = z.strictObject({
   modDirectory1: z.string().nullable(),
   modDirectory2: z.string().nullable(),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const stageModMergeRequestSchema = z.strictObject({
-  mergeMode: modMergerMergeModeSchema.default('smart'),
+  mergeMode: modMergerMergeModeSchema.default("smart"),
   modDirectory1: z.string().nullable(),
   modDirectory2: z.string().nullable(),
   paths: projectPathsSchema,
   resolutions: z.array(modMergerConflictResolutionSchema),
   selectedDirectory1Files: z.array(z.string()),
-  selectedDirectory2Files: z.array(z.string())
+  selectedDirectory2Files: z.array(z.string()),
 });
 
 export const applyModMergeRequestSchema = z.strictObject({
-  mergeMode: modMergerMergeModeSchema.default('smart'),
+  mergeMode: modMergerMergeModeSchema.default("smart"),
   modDirectory1: z.string().nullable(),
   modDirectory2: z.string().nullable(),
   paths: projectPathsSchema,
   reviewToken: z.string().min(1),
   resolutions: z.array(modMergerConflictResolutionSchema),
   selectedDirectory1Files: z.array(z.string()),
-  selectedDirectory2Files: z.array(z.string())
+  selectedDirectory2Files: z.array(z.string()),
 });
 
 export const svModMergerSourceSchema = z.strictObject({
   isEnabled: z.boolean(),
-  path: z.string()
+  path: z.string(),
 });
 
 export const loadSvModMergerWorkflowRequestSchema = z.strictObject({
   modSources: z.array(svModMergerSourceSchema),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const stageSvModMergeRequestSchema = z.strictObject({
   modSources: z.array(svModMergerSourceSchema),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const applySvModMergeRequestSchema = z.strictObject({
   modSources: z.array(svModMergerSourceSchema),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const zaModMergerSourceSchema = z.strictObject({
   isEnabled: z.boolean(),
-  path: z.string()
+  path: z.string(),
 });
 
 export const loadZaModMergerWorkflowRequestSchema = z.strictObject({
   modSources: z.array(zaModMergerSourceSchema),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const stageZaModMergeRequestSchema = z.strictObject({
   modSources: z.array(zaModMergerSourceSchema),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const applyZaModMergeRequestSchema = z.strictObject({
   modSources: z.array(zaModMergerSourceSchema),
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const randomizerOptionsSchema = z.strictObject({
@@ -901,39 +1093,39 @@ export const randomizerOptionsSchema = z.strictObject({
   typeChartNoImmunities: z.boolean(),
   typeChartOneImmunityPerType: z.boolean(),
   typePrimary: z.boolean(),
-  typeSecondary: z.boolean()
+  typeSecondary: z.boolean(),
 });
 
 export const randomizerConfigSchema = z.strictObject({
   options: randomizerOptionsSchema,
   outputHash: z.string().nullable().optional().default(null),
   rollSeed: z.string().nullable().optional().default(null),
-  userSeed: z.string().max(20)
+  userSeed: z.string().max(20),
 });
 
 export const importRandomizerSeedRequestSchema = z.strictObject({
-  seed: z.string()
+  seed: z.string(),
 });
 
 export const applyRandomizerRequestSchema = z.strictObject({
   config: randomizerConfigSchema,
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const restoreRandomizerRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
 });
 
 export const projectFileGraphEntrySchema = z.strictObject({
   baseFile: projectFileReferenceSchema.nullable(),
   layeredFile: projectFileReferenceSchema.nullable(),
   relativePath: z.string(),
-  state: projectFileGraphEntryStateSchema
+  state: projectFileGraphEntryStateSchema,
 });
 
 export const projectFileGraphSchema = z.strictObject({
   entries: z.array(projectFileGraphEntrySchema),
-  summary: projectFileGraphSummarySchema
+  summary: projectFileGraphSummarySchema,
 });
 
 export const projectHealthSchema = z.strictObject({
@@ -942,52 +1134,56 @@ export const projectHealthSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   fileGraph: projectFileGraphSummarySchema,
   paths: z.array(projectPathValidationSchema),
-  state: projectHealthStateSchema
+  state: projectHealthStateSchema,
 });
 
 export const openProjectResponseSchema = z.strictObject({
   fileGraph: projectFileGraphSchema,
   health: projectHealthSchema,
-  projectId: z.string()
+  projectId: z.string(),
 });
 
 export const validateProjectResponseSchema = z.strictObject({
   health: projectHealthSchema,
-  projectId: z.string()
+  projectId: z.string(),
 });
 
 export const refreshFileGraphResponseSchema = z.strictObject({
-  fileGraph: projectFileGraphSchema
+  fileGraph: projectFileGraphSchema,
 });
 
-export const workflowAvailabilitySchema = z.enum(['disabled', 'readOnly', 'available']);
+export const workflowAvailabilitySchema = z.enum([
+  "disabled",
+  "readOnly",
+  "available",
+]);
 
 export const workflowSummarySchema = z.strictObject({
   availability: workflowAvailabilitySchema,
   description: z.string(),
   diagnostics: z.array(apiDiagnosticSchema),
   id: z.string(),
-  label: z.string()
+  label: z.string(),
 });
 
 export const listWorkflowsResponseSchema = z.strictObject({
-  workflows: z.array(workflowSummarySchema)
+  workflows: z.array(workflowSummarySchema),
 });
 
 export const itemProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const itemDetailSchema = z.strictObject({
   label: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const itemDetailGroupSchema = z.strictObject({
   details: z.array(itemDetailSchema),
-  label: z.string()
+  label: z.string(),
 });
 
 export const itemMetadataSchema = z.strictObject({
@@ -1024,14 +1220,17 @@ export const itemMetadataSchema = z.strictObject({
   isProjectedTechnicalMachineSlot: z.boolean().optional().default(false),
   isTechnicalMachineProvisioned: z.boolean().optional().default(false),
   canMaterializeTechnicalMachine: z.boolean().optional().default(false),
-  technicalMachineCompatibilityRequiresReload: z.boolean().optional().default(false),
+  technicalMachineCompatibilityRequiresReload: z
+    .boolean()
+    .optional()
+    .default(false),
   pouch: z.number().int(),
   pouchFlags: z.number().int(),
   ppGain: z.number().int(),
   sortIndex: z.number().int(),
   compatiblePokemonCount: z.number().int().nonnegative(),
   useFlags1: z.number().int(),
-  useFlags2: z.number().int()
+  useFlags2: z.number().int(),
 });
 
 export const itemRecordSchema = z.strictObject({
@@ -1048,12 +1247,12 @@ export const itemRecordSchema = z.strictObject({
   revertToVanillaBlockedReason: z.string().nullable(),
   sellPrice: z.number().int().nonnegative(),
   sharedItemIds: z.array(z.number().int().nonnegative()),
-  wattsPrice: z.number().int().nonnegative()
+  wattsPrice: z.number().int().nonnegative(),
 });
 
 export const itemEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const itemEditableFieldSchema = z.strictObject({
@@ -1064,12 +1263,12 @@ export const itemEditableFieldSchema = z.strictObject({
   minimumValue: z.number().int().nullable(),
   options: z.array(itemEditableFieldOptionSchema),
   readOnlyReason: z.string().nullable().optional().default(null),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const itemsWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
-  totalItemCount: z.number().int().nonnegative()
+  totalItemCount: z.number().int().nonnegative(),
 });
 
 export const itemsWorkflowSchema = z.strictObject({
@@ -1077,17 +1276,17 @@ export const itemsWorkflowSchema = z.strictObject({
   editableFields: z.array(itemEditableFieldSchema),
   items: z.array(itemRecordSchema),
   stats: itemsWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadItemsWorkflowResponseSchema = z.strictObject({
-  workflow: itemsWorkflowSchema
+  workflow: itemsWorkflowSchema,
 });
 
 export const pokemonProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const pokemonBaseStatsSchema = z.strictObject({
@@ -1097,7 +1296,7 @@ export const pokemonBaseStatsSchema = z.strictObject({
   specialAttack: z.number().int().nonnegative(),
   specialDefense: z.number().int().nonnegative(),
   speed: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative()
+  total: z.number().int().nonnegative(),
 });
 
 export const pokemonAbilitySetSchema = z.strictObject({
@@ -1106,7 +1305,7 @@ export const pokemonAbilitySetSchema = z.strictObject({
   ability2: z.number().int().nonnegative(),
   ability2Label: z.string(),
   hiddenAbility: z.number().int().nonnegative(),
-  hiddenAbilityLabel: z.string()
+  hiddenAbilityLabel: z.string(),
 });
 
 export const pokemonDexPresenceSchema = z.strictObject({
@@ -1114,7 +1313,7 @@ export const pokemonDexPresenceSchema = z.strictObject({
   crownDexIndex: z.number().int().nonnegative(),
   isInAnyDex: z.boolean(),
   isPresentInGame: z.boolean(),
-  regionalDexIndex: z.number().int().nonnegative()
+  regionalDexIndex: z.number().int().nonnegative(),
 });
 
 export const pokemonPersonalDetailsSchema = z.strictObject({
@@ -1156,20 +1355,20 @@ export const pokemonPersonalDetailsSchema = z.strictObject({
   regionalDexIndex: z.number().int().nonnegative().optional(),
   type1: z.number().int().nonnegative(),
   type2: z.number().int().nonnegative(),
-  weight: z.number().int().nonnegative().optional()
+  weight: z.number().int().nonnegative().optional(),
 });
 
 export const pokemonEvolutionRecordSchema = z.strictObject({
   argument: z.number().int().nonnegative(),
-  argumentKind: z.string().default('value'),
-  argumentLabel: z.string().default('Argument'),
-  argumentValue: z.string().default(''),
+  argumentKind: z.string().default("value"),
+  argumentLabel: z.string().default("Argument"),
+  argumentValue: z.string().default(""),
   form: z.number().int().nonnegative(),
   level: z.number().int().nonnegative(),
   method: z.number().int().nonnegative(),
-  methodName: z.string().default(''),
+  methodName: z.string().default(""),
   slot: z.number().int().nonnegative(),
-  species: z.number().int().nonnegative()
+  species: z.number().int().nonnegative(),
 });
 export const pokemonLearnsetMoveSchema = z.strictObject({
   level: z.number().int().nonnegative(),
@@ -1177,26 +1376,26 @@ export const pokemonLearnsetMoveSchema = z.strictObject({
   moveId: z.number().int().nonnegative(),
   moveName: z.string(),
   rawLevel: z.number().int().nonnegative().nullable().optional(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().nonnegative(),
 });
 export const pokemonCompatibilityEntrySchema = z.strictObject({
   canLearn: z.boolean(),
   label: z.string(),
   moveId: z.number().int().nonnegative(),
   moveName: z.string(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().nonnegative(),
 });
 
 export const pokemonCompatibilityGroupSchema = z.strictObject({
   enabledCount: z.number().int().nonnegative(),
   entries: z.array(pokemonCompatibilityEntrySchema),
   groupId: z.string(),
-  label: z.string()
+  label: z.string(),
 });
 
 export const pokemonEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const pokemonAlphaMoveSchema = z.strictObject({
@@ -1211,7 +1410,7 @@ export const pokemonAlphaMoveSchema = z.strictObject({
   provenance: pokemonProvenanceSchema.nullable().default(null),
   restoreBlockedReason: z.string().nullable(),
   vanillaMoveId: z.number().int().nonnegative().nullable(),
-  vanillaMoveName: z.string().nullable()
+  vanillaMoveName: z.string().nullable(),
 });
 
 export const pokemonEditableFieldSchema = z.strictObject({
@@ -1221,7 +1420,7 @@ export const pokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(pokemonEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const pokemonEvolutionMethodOptionSchema = z.strictObject({
@@ -1230,15 +1429,15 @@ export const pokemonEvolutionMethodOptionSchema = z.strictObject({
   argumentOptions: z.array(pokemonEditableFieldOptionSchema),
   label: z.string(),
   usesLevel: z.boolean(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const pokemonDexPlacementSchema = z.strictObject({
-  dexKind: z.enum(['regular', 'hyperspace']),
+  dexKind: z.enum(["regular", "hyperspace"]),
   displayedNumber: z.number().int().positive(),
   internalIndex: z.number().int().positive(),
   label: z.string(),
-  speciesId: z.number().int().positive()
+  speciesId: z.number().int().positive(),
 });
 
 export const pokemonDexEditorSchema = z.strictObject({
@@ -1254,7 +1453,7 @@ export const pokemonDexEditorSchema = z.strictObject({
   isVanillaLayout: z.boolean(),
   placements: z.array(pokemonDexPlacementSchema),
   regularCount: z.number().int().nonnegative(),
-  returnToVanillaBlockedReason: z.string().nullable()
+  returnToVanillaBlockedReason: z.string().nullable(),
 });
 
 export const pokemonRecordSchema = z.strictObject({
@@ -1281,7 +1480,7 @@ export const pokemonRecordSchema = z.strictObject({
   speciesId: z.number().int().nonnegative(),
   type1: z.string(),
   type2: z.string(),
-  weight: z.number().int().nonnegative()
+  weight: z.number().int().nonnegative(),
 });
 
 export const pokemonWorkflowStatsSchema = z.strictObject({
@@ -1289,22 +1488,24 @@ export const pokemonWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalEvolutionCount: z.number().int().nonnegative(),
   totalLearnsetMoveCount: z.number().int().nonnegative(),
-  totalPokemonCount: z.number().int().nonnegative()
+  totalPokemonCount: z.number().int().nonnegative(),
 });
 
 export const pokemonWorkflowSchema = z.strictObject({
   dexEditor: pokemonDexEditorSchema.nullable().optional().default(null),
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(pokemonEditableFieldSchema),
-  evolutionMethodOptions: z.array(pokemonEvolutionMethodOptionSchema).default([]),
+  evolutionMethodOptions: z
+    .array(pokemonEvolutionMethodOptionSchema)
+    .default([]),
   learnsetMoveOptions: z.array(pokemonEditableFieldOptionSchema).default([]),
   pokemon: z.array(pokemonRecordSchema),
   stats: pokemonWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadPokemonWorkflowResponseSchema = z.strictObject({
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const updatePokemonFieldRequestSchema = z.strictObject({
@@ -1312,13 +1513,13 @@ export const updatePokemonFieldRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   personalId: z.number().int().nonnegative(),
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updatePokemonFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const updatePokemonLearnsetRequestSchema = z.strictObject({
@@ -1328,13 +1529,13 @@ export const updatePokemonLearnsetRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   personalId: z.number().int().nonnegative(),
   session: editSessionSchema.nullable(),
-  slot: z.number().int().nonnegative().nullable()
+  slot: z.number().int().nonnegative().nullable(),
 });
 
 export const updatePokemonLearnsetResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const updatePokemonEvolutionRequestSchema = z.strictObject({
@@ -1347,80 +1548,80 @@ export const updatePokemonEvolutionRequestSchema = z.strictObject({
   personalId: z.number().int().nonnegative(),
   session: editSessionSchema.nullable(),
   slot: z.number().int().nonnegative().nullable(),
-  species: z.number().int().nonnegative().nullable()
+  species: z.number().int().nonnegative().nullable(),
 });
 
 export const updatePokemonEvolutionResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const swapPokemonDexPlacementRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
   sourceSpeciesId: z.number().int().positive(),
-  targetSpeciesId: z.number().int().positive()
+  targetSpeciesId: z.number().int().positive(),
 });
 
 export const swapPokemonDexPlacementResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const movePokemonDexPlacementRequestSchema = z.strictObject({
-  destinationDexKind: z.enum(['regular', 'hyperspace']),
+  destinationDexKind: z.enum(["regular", "hyperspace"]),
   destinationDisplayedNumber: z.number().int().positive(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  sourceSpeciesId: z.number().int().positive()
+  sourceSpeciesId: z.number().int().positive(),
 });
 
 export const movePokemonDexPlacementResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const resizePokemonDexRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   regularCount: z.number().int().min(1).max(363),
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const resizePokemonDexResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const stagePokemonDexVanillaRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stagePokemonDexVanillaResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const stagePokemonDexMegaSyncRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stagePokemonDexMegaSyncResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: pokemonWorkflowSchema
+  workflow: pokemonWorkflowSchema,
 });
 
 export const moveProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const moveStatChangeRecordSchema = z.strictObject({
@@ -1428,18 +1629,18 @@ export const moveStatChangeRecordSchema = z.strictObject({
   slot: z.number().int().nonnegative(),
   stage: z.number().int(),
   stat: z.number().int(),
-  statName: z.string()
+  statName: z.string(),
 });
 
 export const moveFlagRecordSchema = z.strictObject({
   enabled: z.boolean(),
   field: z.string(),
-  label: z.string()
+  label: z.string(),
 });
 
 export const moveEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().finite()
+  value: z.number().finite(),
 });
 
 export const moveEditableFieldSchema = z.strictObject({
@@ -1448,7 +1649,7 @@ export const moveEditableFieldSchema = z.strictObject({
   maximumValue: z.number().finite().nullable(),
   minimumValue: z.number().finite().nullable(),
   options: z.array(moveEditableFieldOptionSchema).default([]),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const moveRuntimeVariantRecordSchema = z.strictObject({
@@ -1483,7 +1684,7 @@ export const moveRuntimeVariantRecordSchema = z.strictObject({
   type: z.number().int().nonnegative(),
   typeName: z.string(),
   valueEffectRatio: z.number().int(),
-  variant: z.number().int().nonnegative()
+  variant: z.number().int().nonnegative(),
 });
 
 export const moveTimingRecordSchema = z.strictObject({
@@ -1524,180 +1725,183 @@ export const moveTimingRecordSchema = z.strictObject({
   spawnOrigin: z.number().int(),
   targetCorrectionType: z.number().int(),
   timingMoveId: z.number().int().nonnegative(),
-  variant: z.number().int().nonnegative()
+  variant: z.number().int().nonnegative(),
 });
 
 export const movePlayerDamageInvocationSourceRecordSchema = z.strictObject({
-  kind: z.enum(['child', 'landing', 'coreLanding']),
-  parentBulletId: z.number().int().positive()
+  kind: z.enum(["child", "landing", "coreLanding"]),
+  parentBulletId: z.number().int().positive(),
 });
 
 const movePlayerDamageLocalConditionSemanticKeys = [
-  'when-reached',
-  'before-hp-phase-2-transition-completes',
-  'after-hp-phase-2-transition-completes',
-  'boss-mega-control-1a',
-  'boss-mega-control-1b',
-  'boss-mega-control-1c',
-  'boss-mega-control-2a',
-  'boss-mega-control-2b',
-  'boss-mega-control-2c',
-  'boss-mega-control-3a',
-  'boss-mega-control-3b',
-  'groudon',
-  'darkrai',
-  'kyogre',
-  'mega-darkrai',
-  'rayquaza',
-  'zygarde-complete',
-  'tatsugiri',
-  'dragonite',
-  'absol',
-  'meowstic-single-bullet',
-  'unclassified'
+  "when-reached",
+  "before-hp-phase-2-transition-completes",
+  "after-hp-phase-2-transition-completes",
+  "boss-mega-control-1a",
+  "boss-mega-control-1b",
+  "boss-mega-control-1c",
+  "boss-mega-control-2a",
+  "boss-mega-control-2b",
+  "boss-mega-control-2c",
+  "boss-mega-control-3a",
+  "boss-mega-control-3b",
+  "groudon",
+  "darkrai",
+  "kyogre",
+  "mega-darkrai",
+  "rayquaza",
+  "zygarde-complete",
+  "tatsugiri",
+  "dragonite",
+  "absol",
+  "meowstic-single-bullet",
+  "unclassified",
 ] as const;
 
 const movePlayerDamageLocalConditionExpectations = {
-  'when-reached': {
-    kind: 'when-reached',
+  "when-reached": {
+    kind: "when-reached",
     rawTag: null,
-    state: 'verified-none'
+    state: "verified-none",
   },
-  'before-hp-phase-2-transition-completes': {
-    kind: 'hp-phase-transition',
-    rawTag: 'Heat2_Not_Performed',
-    state: 'verified'
+  "before-hp-phase-2-transition-completes": {
+    kind: "hp-phase-transition",
+    rawTag: "Heat2_Not_Performed",
+    state: "verified",
   },
-  'after-hp-phase-2-transition-completes': {
-    kind: 'hp-phase-transition',
-    rawTag: 'Heat2_Performed',
-    state: 'verified'
+  "after-hp-phase-2-transition-completes": {
+    kind: "hp-phase-transition",
+    rawTag: "Heat2_Performed",
+    state: "verified",
   },
-  'boss-mega-control-1a': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_1A',
-    state: 'verified'
+  "boss-mega-control-1a": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_1A",
+    state: "verified",
   },
-  'boss-mega-control-1b': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_1B',
-    state: 'verified'
+  "boss-mega-control-1b": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_1B",
+    state: "verified",
   },
-  'boss-mega-control-1c': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_1C',
-    state: 'verified'
+  "boss-mega-control-1c": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_1C",
+    state: "verified",
   },
-  'boss-mega-control-2a': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_2A',
-    state: 'verified'
+  "boss-mega-control-2a": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_2A",
+    state: "verified",
   },
-  'boss-mega-control-2b': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_2B',
-    state: 'verified'
+  "boss-mega-control-2b": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_2B",
+    state: "verified",
   },
-  'boss-mega-control-2c': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_2C',
-    state: 'verified'
+  "boss-mega-control-2c": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_2C",
+    state: "verified",
   },
-  'boss-mega-control-3a': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_3A',
-    state: 'verified'
+  "boss-mega-control-3a": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_3A",
+    state: "verified",
   },
-  'boss-mega-control-3b': {
-    kind: 'controller-pattern',
-    rawTag: 'BosoMega_Control_3B',
-    state: 'verified'
+  "boss-mega-control-3b": {
+    kind: "controller-pattern",
+    rawTag: "BosoMega_Control_3B",
+    state: "verified",
   },
   groudon: {
-    kind: 'identity',
-    rawTag: 'BosoGuraadon',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "BosoGuraadon",
+    state: "verified",
   },
   darkrai: {
-    kind: 'identity',
-    rawTag: 'BosoDaakurai',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "BosoDaakurai",
+    state: "verified",
   },
   kyogre: {
-    kind: 'identity',
-    rawTag: 'BosoKaiooga',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "BosoKaiooga",
+    state: "verified",
   },
-  'mega-darkrai': {
-    kind: 'identity',
-    rawTag: 'BosoMegaDaakurai',
-    state: 'verified'
+  "mega-darkrai": {
+    kind: "identity",
+    rawTag: "BosoMegaDaakurai",
+    state: "verified",
   },
   rayquaza: {
-    kind: 'identity',
-    rawTag: 'BosoRekkuuza',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "BosoRekkuuza",
+    state: "verified",
   },
-  'zygarde-complete': {
-    kind: 'identity',
-    rawTag: 'Zigarude_100%',
-    state: 'verified'
+  "zygarde-complete": {
+    kind: "identity",
+    rawTag: "Zigarude_100%",
+    state: "verified",
   },
   tatsugiri: {
-    kind: 'identity',
-    rawTag: 'Poke0952',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "Poke0952",
+    state: "verified",
   },
   dragonite: {
-    kind: 'identity',
-    rawTag: 'Poke0149',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "Poke0149",
+    state: "verified",
   },
   absol: {
-    kind: 'identity',
-    rawTag: 'Poke0359',
-    state: 'verified'
+    kind: "identity",
+    rawTag: "Poke0359",
+    state: "verified",
   },
-  'meowstic-single-bullet': {
-    kind: 'choreography',
-    rawTag: 'Nyaonikusu_Single_Bullet',
-    state: 'verified'
+  "meowstic-single-bullet": {
+    kind: "choreography",
+    rawTag: "Nyaonikusu_Single_Bullet",
+    state: "verified",
   },
   unclassified: {
-    kind: 'unknown',
+    kind: "unknown",
     rawTag: undefined,
-    state: 'unclassified'
-  }
+    state: "unclassified",
+  },
 } as const;
 
 export const movePlayerDamageLocalConditionRecordSchema = z
   .strictObject({
     kind: z.enum([
-      'when-reached',
-      'hp-phase-transition',
-      'controller-pattern',
-      'identity',
-      'choreography',
-      'unknown'
+      "when-reached",
+      "hp-phase-transition",
+      "controller-pattern",
+      "identity",
+      "choreography",
+      "unknown",
     ]),
     rawTag: z.string().min(1).nullable(),
     semanticKey: z.enum(movePlayerDamageLocalConditionSemanticKeys),
-    state: z.enum(['verified-none', 'verified', 'unclassified'])
+    state: z.enum(["verified-none", "verified", "unclassified"]),
   })
   .superRefine((condition, context) => {
-    const expected = movePlayerDamageLocalConditionExpectations[condition.semanticKey];
+    const expected =
+      movePlayerDamageLocalConditionExpectations[condition.semanticKey];
     if (condition.state !== expected.state) {
       context.addIssue({
-        code: 'custom',
-        message: 'Player-damage local-condition state does not match its semantic key.',
-        path: ['state']
+        code: "custom",
+        message:
+          "Player-damage local-condition state does not match its semantic key.",
+        path: ["state"],
       });
     }
     if (condition.kind !== expected.kind) {
       context.addIssue({
-        code: 'custom',
-        message: 'Player-damage local-condition kind does not match its semantic key.',
-        path: ['kind']
+        code: "custom",
+        message:
+          "Player-damage local-condition kind does not match its semantic key.",
+        path: ["kind"],
       });
     }
     if (
@@ -1706,9 +1910,10 @@ export const movePlayerDamageLocalConditionRecordSchema = z
         : condition.rawTag !== expected.rawTag
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Player-damage local-condition raw tag does not match its semantic key.',
-        path: ['rawTag']
+        code: "custom",
+        message:
+          "Player-damage local-condition raw tag does not match its semantic key.",
+        path: ["rawTag"],
       });
     }
   });
@@ -1719,15 +1924,15 @@ export const movePlayerDamageTimelineLaunchRecordSchema = z.strictObject({
     z.array(
       z.strictObject({
         childBulletId: z.number().int().positive(),
-        kind: z.enum(['child', 'landing', 'coreLanding']),
-        parentBulletId: z.number().int().positive()
-      })
-    )
+        kind: z.enum(["child", "landing", "coreLanding"]),
+        parentBulletId: z.number().int().positive(),
+      }),
+    ),
   ),
   rootBulletId: z.number().int().positive(),
   shootActionKey: z.string().regex(/^\d+:\d+:[1-9]\d*$/),
   timelineName: z.string().min(1),
-  timelinePath: z.string().min(1)
+  timelinePath: z.string().min(1),
 });
 
 export const movePlayerDamageInvocationRecordSchema = z.strictObject({
@@ -1738,7 +1943,9 @@ export const movePlayerDamageInvocationRecordSchema = z.strictObject({
   resourcePath: z.string().min(1),
   role: z.string().min(1),
   sources: z.array(movePlayerDamageInvocationSourceRecordSchema),
-  verifiedVanillaTimelineLaunches: z.array(movePlayerDamageTimelineLaunchRecordSchema)
+  verifiedVanillaTimelineLaunches: z.array(
+    movePlayerDamageTimelineLaunchRecordSchema,
+  ),
 });
 
 export const movePlayerDamageRecordSchema = z
@@ -1751,39 +1958,42 @@ export const movePlayerDamageRecordSchema = z
     playerDamage: z.number().int().min(0).max(999),
     runtimeMoveId: z.number().int().min(2000).max(2999),
     vanillaPlayerDamage: z.number().int().min(0).max(999),
-    verifiedVanillaTimelineCatalogAvailable: z.boolean()
+    verifiedVanillaTimelineCatalogAvailable: z.boolean(),
   })
   .superRefine((record, context) => {
     const shootActionKeys = new Set<string>();
     for (const [invocationIndex, invocation] of record.invocations.entries()) {
-      for (const [launchIndex, launch] of
-        invocation.verifiedVanillaTimelineLaunches.entries()) {
+      for (const [
+        launchIndex,
+        launch,
+      ] of invocation.verifiedVanillaTimelineLaunches.entries()) {
         const expectedKey = `${record.attackId}:${invocation.bulletId}:${launchIndex + 1}`;
         if (launch.shootActionKey !== expectedKey) {
           context.addIssue({
-            code: 'custom',
+            code: "custom",
             message:
-              'Player-damage Shoot action keys must match the Attack ID, damage Bullet ID, and one-based catalog order.',
+              "Player-damage Shoot action keys must match the Attack ID, damage Bullet ID, and one-based catalog order.",
             path: [
-              'invocations',
+              "invocations",
               invocationIndex,
-              'verifiedVanillaTimelineLaunches',
+              "verifiedVanillaTimelineLaunches",
               launchIndex,
-              'shootActionKey'
-            ]
+              "shootActionKey",
+            ],
           });
         }
         if (shootActionKeys.has(launch.shootActionKey)) {
           context.addIssue({
-            code: 'custom',
-            message: 'Player-damage Shoot action keys must be unique within an Attack row.',
+            code: "custom",
+            message:
+              "Player-damage Shoot action keys must be unique within an Attack row.",
             path: [
-              'invocations',
+              "invocations",
               invocationIndex,
-              'verifiedVanillaTimelineLaunches',
+              "verifiedVanillaTimelineLaunches",
               launchIndex,
-              'shootActionKey'
-            ]
+              "shootActionKey",
+            ],
           });
         }
         shootActionKeys.add(launch.shootActionKey);
@@ -1793,12 +2003,12 @@ export const movePlayerDamageRecordSchema = z
 
 export const moveVanillaFieldValueSchema = z.strictObject({
   field: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const scriptedBossPhaseAvailabilitySchema = z.strictObject({
   phaseKey: z.string().min(1),
-  state: z.enum(['available', 'context-only', 'unavailable', 'unverified'])
+  state: z.enum(["available", "context-only", "unavailable", "unverified"]),
 });
 
 export const scriptedBossPhaseSchema = z
@@ -1810,221 +2020,227 @@ export const scriptedBossPhaseSchema = z
     minimumHpPercent: z.number().int().min(0).max(100),
     speciesId: z.number().int().min(1),
     stage: z.number().int().min(1),
-    stageName: z.string().min(1)
+    stageName: z.string().min(1),
   })
   .superRefine((phase, context) => {
     if (phase.minimumHpPercent >= phase.maximumHpPercent) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss phase HP ranges must have a minimum below their maximum.',
-        path: ['minimumHpPercent']
+        code: "custom",
+        message:
+          "Boss phase HP ranges must have a minimum below their maximum.",
+        path: ["minimumHpPercent"],
       });
     }
   });
 
 export const scriptedBossPhaseModelSchema = z.strictObject({
   kind: z.enum([
-    'hp-bands',
-    'battle-stages',
-    'battle-stages-with-hp-bands',
-    'none',
-    'unknown'
+    "hp-bands",
+    "battle-stages",
+    "battle-stages-with-hp-bands",
+    "none",
+    "unknown",
   ]),
   phases: z.array(scriptedBossPhaseSchema),
-  state: z.enum(['verified', 'unverified', 'verified-none'])
+  state: z.enum(["verified", "unverified", "verified-none"]),
 });
 
 export const scriptedBossAffectedScopeSchema = z.strictObject({
   battleContexts: z.array(
-    z.enum(['story', 'simulation', 'simulation-dlc', 'rematch', 'rush'])
+    z.enum(["story", "simulation", "simulation-dlc", "rematch", "rush"]),
   ),
   includesPrimaryController: z.boolean(),
   key: z.string().min(1),
   label: z.string().min(1),
-  speciesIds: z.array(z.number().int().positive())
+  speciesIds: z.array(z.number().int().positive()),
 });
 
 export const scriptedBossActionSchema = z
   .strictObject({
     affectedScopes: z.array(scriptedBossAffectedScopeSchema).default([]),
     canEdit: z.boolean(),
-    compatibilityReason: z.enum(['no-damage', 'ally-targeting']).nullable(),
+    compatibilityReason: z.enum(["no-damage", "ally-targeting"]).nullable(),
     compatibilityState: z.enum([
-      'base-verified',
-      'gameplay-tested',
-      'known-incompatible',
-      'experimental',
-      'unavailable',
-      'not-applicable'
+      "base-verified",
+      "gameplay-tested",
+      "known-incompatible",
+      "experimental",
+      "unavailable",
+      "not-applicable",
     ]),
     key: z.string(),
-    kind: z.enum(['battle-move', 'movement-helper', 'scripted-mechanic']),
+    kind: z.enum(["battle-move", "movement-helper", "scripted-mechanic"]),
     lockReason: z
       .enum([
-        'controller-script',
-        'timing-choreography',
-        'selector-unavailable',
-        'runtime-catalog-unavailable'
+        "controller-script",
+        "timing-choreography",
+        "selector-unavailable",
+        "runtime-catalog-unavailable",
       ])
       .nullable(),
     moveId: z.number().int().min(0).max(999).nullable(),
     name: z.string(),
     phaseAvailability: z.array(scriptedBossPhaseAvailabilitySchema),
-    phaseContext: z.enum(['after-stun', 'bomb-rock-deployed']).nullable(),
+    phaseContext: z.enum(["after-stun", "bomb-rock-deployed"]).nullable(),
     runtimeMoveId: z.number().int().nullable(),
     runtimeState: z.enum([
-      'runtime-data-present',
-      'missing-battle',
-      'missing-timing',
-      'missing-battle-and-timing',
-      'timing-only',
-      'invalid-reference',
-      'unavailable',
-      'not-applicable'
+      "runtime-data-present",
+      "missing-battle",
+      "missing-timing",
+      "missing-battle-and-timing",
+      "timing-only",
+      "invalid-reference",
+      "unavailable",
+      "not-applicable",
     ]),
     selectorActionId: z.number().int().positive().nullable(),
     usesBattleParameters: z.boolean(),
     usesTimingParameters: z.boolean(),
     vanillaMoveId: z.number().int().min(0).max(999).nullable(),
-    variant: z.union([z.literal(0), z.literal(1), z.literal(2)]).nullable()
+    variant: z.union([z.literal(0), z.literal(1), z.literal(2)]).nullable(),
   })
   .superRefine((action, context) => {
     const phaseKeys = new Set(
-      action.phaseAvailability.map((availability) => availability.phaseKey)
+      action.phaseAvailability.map((availability) => availability.phaseKey),
     );
     const contextOnlyCount = action.phaseAvailability.filter(
-      (availability) => availability.state === 'context-only'
+      (availability) => availability.state === "context-only",
     ).length;
     if (phaseKeys.size !== action.phaseAvailability.length) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss action phase availability cannot repeat a phase key.',
-        path: ['phaseAvailability']
+        code: "custom",
+        message: "Boss action phase availability cannot repeat a phase key.",
+        path: ["phaseAvailability"],
       });
     }
 
     if (action.phaseContext !== null && contextOnlyCount === 0) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss action phase context requires at least one context-only phase.',
-        path: ['phaseContext']
+        code: "custom",
+        message:
+          "Boss action phase context requires at least one context-only phase.",
+        path: ["phaseContext"],
       });
     }
 
     if (action.phaseContext === null && contextOnlyCount !== 0) {
       context.addIssue({
-        code: 'custom',
-        message: 'Context-only phase availability requires a phase context.',
-        path: ['phaseContext']
+        code: "custom",
+        message: "Context-only phase availability requires a phase context.",
+        path: ["phaseContext"],
       });
     }
 
     if (
-      action.compatibilityState === 'known-incompatible' &&
+      action.compatibilityState === "known-incompatible" &&
       action.compatibilityReason === null
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Known-incompatible boss actions require an observed behavior reason.',
-        path: ['compatibilityReason']
+        code: "custom",
+        message:
+          "Known-incompatible boss actions require an observed behavior reason.",
+        path: ["compatibilityReason"],
       });
     }
 
     if (
-      action.compatibilityState !== 'known-incompatible' &&
+      action.compatibilityState !== "known-incompatible" &&
       action.compatibilityReason !== null
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Only known-incompatible boss actions can declare a compatibility reason.',
-        path: ['compatibilityReason']
+        code: "custom",
+        message:
+          "Only known-incompatible boss actions can declare a compatibility reason.",
+        path: ["compatibilityReason"],
       });
     }
 
     if (action.canEdit) {
-      if (action.kind !== 'battle-move') {
+      if (action.kind !== "battle-move") {
         context.addIssue({
-          code: 'custom',
-          message: 'Only battle-move boss actions can be editable.',
-          path: ['canEdit']
+          code: "custom",
+          message: "Only battle-move boss actions can be editable.",
+          path: ["canEdit"],
         });
       }
       if (action.selectorActionId === null) {
         context.addIssue({
-          code: 'custom',
-          message: 'Editable boss actions require a selector action ID.',
-          path: ['selectorActionId']
+          code: "custom",
+          message: "Editable boss actions require a selector action ID.",
+          path: ["selectorActionId"],
         });
       }
       if (action.variant === null) {
         context.addIssue({
-          code: 'custom',
-          message: 'Editable boss actions require a runtime variant.',
-          path: ['variant']
+          code: "custom",
+          message: "Editable boss actions require a runtime variant.",
+          path: ["variant"],
         });
       }
       if (action.lockReason !== null) {
         context.addIssue({
-          code: 'custom',
-          message: 'Editable boss actions cannot declare a lock reason.',
-          path: ['lockReason']
+          code: "custom",
+          message: "Editable boss actions cannot declare a lock reason.",
+          path: ["lockReason"],
         });
       }
     } else if (action.lockReason === null) {
       context.addIssue({
-        code: 'custom',
-        message: 'Read-only boss actions require a lock reason.',
-        path: ['lockReason']
+        code: "custom",
+        message: "Read-only boss actions require a lock reason.",
+        path: ["lockReason"],
       });
     }
   });
 
 export const scriptedBossMoveCompatibilitySchema = z.strictObject({
-  reason: z.enum(['no-damage', 'ally-targeting']).nullable(),
+  reason: z.enum(["no-damage", "ally-targeting"]).nullable(),
   selectorActionId: z.number().int().positive(),
-  state: z.enum(['base-verified', 'gameplay-tested', 'known-incompatible'])
+  state: z.enum(["base-verified", "gameplay-tested", "known-incompatible"]),
 });
 
 export const scriptedBossMoveOptionSchema = z
   .strictObject({
-    defaultCompatibilityState: z.literal('experimental'),
+    defaultCompatibilityState: z.literal("experimental"),
     moveId: z.number().int().min(0).max(999),
     name: z.string(),
     runtimeMoveId: z.number().int().min(0).max(2999),
     selectorCompatibilities: z.array(scriptedBossMoveCompatibilitySchema),
-    variant: z.union([z.literal(0), z.literal(1), z.literal(2)])
+    variant: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   })
   .superRefine((option, context) => {
     const selectorIds = option.selectorCompatibilities.map(
-      (compatibility) => compatibility.selectorActionId
+      (compatibility) => compatibility.selectorActionId,
     );
     if (new Set(selectorIds).size !== selectorIds.length) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss move compatibility cannot repeat a selector action ID.',
-        path: ['selectorCompatibilities']
+        code: "custom",
+        message: "Boss move compatibility cannot repeat a selector action ID.",
+        path: ["selectorCompatibilities"],
       });
     }
 
     option.selectorCompatibilities.forEach((compatibility, index) => {
       if (
-        compatibility.state === 'known-incompatible' &&
+        compatibility.state === "known-incompatible" &&
         compatibility.reason === null
       ) {
         context.addIssue({
-          code: 'custom',
-          message: 'Known-incompatible boss move choices require an observed behavior reason.',
-          path: ['selectorCompatibilities', index, 'reason']
+          code: "custom",
+          message:
+            "Known-incompatible boss move choices require an observed behavior reason.",
+          path: ["selectorCompatibilities", index, "reason"],
         });
       }
       if (
-        compatibility.state !== 'known-incompatible' &&
+        compatibility.state !== "known-incompatible" &&
         compatibility.reason !== null
       ) {
         context.addIssue({
-          code: 'custom',
-          message: 'Only known-incompatible boss move choices can declare a reason.',
-          path: ['selectorCompatibilities', index, 'reason']
+          code: "custom",
+          message:
+            "Only known-incompatible boss move choices can declare a reason.",
+          path: ["selectorCompatibilities", index, "reason"],
         });
       }
     });
@@ -2039,92 +2255,101 @@ export const scriptedBossProfileSchema = z
     name: z.string(),
     phaseModel: scriptedBossPhaseModelSchema,
     scope: z.enum([
-      'base-rogue-mega',
-      'verified-scripted-boss',
-      'verified-scripted-follower'
+      "base-rogue-mega",
+      "verified-scripted-boss",
+      "verified-scripted-follower",
     ]),
-    speciesId: z.number().int().nonnegative()
+    speciesId: z.number().int().nonnegative(),
   })
   .superRefine((profile, context) => {
     const phaseKeys = profile.phaseModel.phases.map((phase) => phase.key);
     const uniquePhaseKeys = new Set(phaseKeys);
     const phaseSlots = new Set(
-      profile.phaseModel.phases.map((phase) => `${phase.stage}:${phase.hpPhase}`)
+      profile.phaseModel.phases.map(
+        (phase) => `${phase.stage}:${phase.hpPhase}`,
+      ),
     );
     if (uniquePhaseKeys.size !== phaseKeys.length) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss phase models cannot repeat a phase key.',
-        path: ['phaseModel', 'phases']
+        code: "custom",
+        message: "Boss phase models cannot repeat a phase key.",
+        path: ["phaseModel", "phases"],
       });
     }
     if (phaseSlots.size !== phaseKeys.length) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss phase models cannot repeat a battle-stage and HP-phase pair.',
-        path: ['phaseModel', 'phases']
+        code: "custom",
+        message:
+          "Boss phase models cannot repeat a battle-stage and HP-phase pair.",
+        path: ["phaseModel", "phases"],
       });
     }
 
     const orderedPhases = [...profile.phaseModel.phases].sort(
-      (left, right) => left.stage - right.stage || left.hpPhase - right.hpPhase
+      (left, right) => left.stage - right.stage || left.hpPhase - right.hpPhase,
     );
     if (
       orderedPhases.some(
-        (phase, index) => phase.key !== profile.phaseModel.phases[index]?.key
+        (phase, index) => phase.key !== profile.phaseModel.phases[index]?.key,
       )
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Boss phases must be ordered by battle stage and HP phase.',
-        path: ['phaseModel', 'phases']
+        code: "custom",
+        message: "Boss phases must be ordered by battle stage and HP phase.",
+        path: ["phaseModel", "phases"],
       });
     }
 
-    const hasVerifiedModel = profile.phaseModel.state === 'verified';
-    const hasNoPhaseModel = profile.phaseModel.state === 'verified-none';
+    const hasVerifiedModel = profile.phaseModel.state === "verified";
+    const hasNoPhaseModel = profile.phaseModel.state === "verified-none";
     if (
       hasVerifiedModel &&
       (profile.phaseModel.phases.length === 0 ||
-        profile.phaseModel.kind === 'none' ||
-        profile.phaseModel.kind === 'unknown')
+        profile.phaseModel.kind === "none" ||
+        profile.phaseModel.kind === "unknown")
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Verified boss phase models require a known kind and at least one phase.',
-        path: ['phaseModel']
+        code: "custom",
+        message:
+          "Verified boss phase models require a known kind and at least one phase.",
+        path: ["phaseModel"],
       });
     }
     if (
-      profile.phaseModel.state === 'unverified' &&
-      (profile.phaseModel.kind !== 'unknown' || profile.phaseModel.phases.length !== 0)
+      profile.phaseModel.state === "unverified" &&
+      (profile.phaseModel.kind !== "unknown" ||
+        profile.phaseModel.phases.length !== 0)
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Unverified boss phase models must use the unknown kind and no phases.',
-        path: ['phaseModel']
+        code: "custom",
+        message:
+          "Unverified boss phase models must use the unknown kind and no phases.",
+        path: ["phaseModel"],
       });
     }
     if (
       hasNoPhaseModel &&
-      (profile.phaseModel.kind !== 'none' || profile.phaseModel.phases.length !== 0)
+      (profile.phaseModel.kind !== "none" ||
+        profile.phaseModel.phases.length !== 0)
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'Verified phase-free boss models must use the none kind and no phases.',
-        path: ['phaseModel']
+        code: "custom",
+        message:
+          "Verified phase-free boss models must use the none kind and no phases.",
+        path: ["phaseModel"],
       });
     }
 
     for (const [actionIndex, action] of profile.actions.entries()) {
       const actionPhaseKeys = new Set(
-        action.phaseAvailability.map((availability) => availability.phaseKey)
+        action.phaseAvailability.map((availability) => availability.phaseKey),
       );
       if (!hasVerifiedModel && action.phaseAvailability.length !== 0) {
         context.addIssue({
-          code: 'custom',
-          message: 'Only verified boss phase models can expose action phase availability.',
-          path: ['actions', actionIndex, 'phaseAvailability']
+          code: "custom",
+          message:
+            "Only verified boss phase models can expose action phase availability.",
+          path: ["actions", actionIndex, "phaseAvailability"],
         });
       }
       if (
@@ -2133,9 +2358,10 @@ export const scriptedBossProfileSchema = z
           phaseKeys.some((phaseKey) => !actionPhaseKeys.has(phaseKey)))
       ) {
         context.addIssue({
-          code: 'custom',
-          message: 'Boss action phase availability must cover every verified phase exactly once.',
-          path: ['actions', actionIndex, 'phaseAvailability']
+          code: "custom",
+          message:
+            "Boss action phase availability must cover every verified phase exactly once.",
+          path: ["actions", actionIndex, "phaseAvailability"],
         });
       }
     }
@@ -2183,14 +2409,14 @@ export const moveRecordSchema = z.strictObject({
   type: z.number().int().nonnegative(),
   typeName: z.string(),
   vanillaValues: z.array(moveVanillaFieldValueSchema),
-  version: z.number().int().nonnegative()
+  version: z.number().int().nonnegative(),
 });
 
 export const movesWorkflowStatsSchema = z.strictObject({
   activeFlagCount: z.number().int().nonnegative(),
   enabledMoveCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalMoveCount: z.number().int().nonnegative()
+  totalMoveCount: z.number().int().nonnegative(),
 });
 
 export const movesWorkflowSchema = z.strictObject({
@@ -2200,17 +2426,17 @@ export const movesWorkflowSchema = z.strictObject({
   projectileOptions: z.array(moveEditableFieldOptionSchema).default([]),
   scriptedBosses: z.array(scriptedBossProfileSchema).default([]),
   stats: movesWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadMovesWorkflowResponseSchema = z.strictObject({
-  workflow: movesWorkflowSchema
+  workflow: movesWorkflowSchema,
 });
 
 export const textProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const textEntryRecordSchema = z.strictObject({
@@ -2224,7 +2450,7 @@ export const textEntryRecordSchema = z.strictObject({
   sourceFile: z.string(),
   textId: z.number().int().nonnegative(),
   textKey: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const dialogueReferenceRecordSchema = z.strictObject({
@@ -2233,13 +2459,13 @@ export const dialogueReferenceRecordSchema = z.strictObject({
   label: z.string(),
   preview: z.string(),
   provenance: textProvenanceSchema,
-  textId: z.number().int().nonnegative()
+  textId: z.number().int().nonnegative(),
 });
 
 export const textWorkflowStatsSchema = z.strictObject({
   dialogueReferenceCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalTextEntryCount: z.number().int().nonnegative()
+  totalTextEntryCount: z.number().int().nonnegative(),
 });
 
 export const textEditableFieldSchema = z.strictObject({
@@ -2247,14 +2473,14 @@ export const textEditableFieldSchema = z.strictObject({
   label: z.string(),
   maximumLength: z.number().int().nullable(),
   minimumLength: z.number().int().nullable(),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const textCategorySchema = z.strictObject({
   categoryId: z.string().min(1),
   description: z.string(),
   label: z.string(),
-  sourceFileCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
 });
 
 export const textResultPageSchema = z
@@ -2263,28 +2489,29 @@ export const textResultPageSchema = z
     hasPrevious: z.boolean(),
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
-    returnedEntryCount: z.number().int().nonnegative()
+    returnedEntryCount: z.number().int().nonnegative(),
   })
   .superRefine((page, context) => {
     if (page.returnedEntryCount > page.limit) {
       context.addIssue({
-        code: 'custom',
-        message: 'Text result pages cannot return more entries than their requested limit.',
-        path: ['returnedEntryCount']
+        code: "custom",
+        message:
+          "Text result pages cannot return more entries than their requested limit.",
+        path: ["returnedEntryCount"],
       });
     }
-    if (page.hasPrevious !== (page.offset > 0)) {
+    if (page.hasPrevious !== page.offset > 0) {
       context.addIssue({
-        code: 'custom',
-        message: 'Text result page previous-state must match its offset.',
-        path: ['hasPrevious']
+        code: "custom",
+        message: "Text result page previous-state must match its offset.",
+        path: ["hasPrevious"],
       });
     }
   });
 
 export const textLanguageSchema = z.strictObject({
   label: z.string(),
-  language: z.string().min(1)
+  language: z.string().min(1),
 });
 
 export const textWorkflowSchema = z.strictObject({
@@ -2298,11 +2525,11 @@ export const textWorkflowSchema = z.strictObject({
   selectedCategoryId: z.string().nullable(),
   selectedLanguage: z.string().nullable(),
   stats: textWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadTextWorkflowResponseSchema = z.strictObject({
-  workflow: textWorkflowSchema
+  workflow: textWorkflowSchema,
 });
 
 export const trainerProvenanceSchema = z.strictObject({
@@ -2314,7 +2541,7 @@ export const trainerProvenanceSchema = z.strictObject({
   sourceLayer: projectFileLayerSchema,
   teamFileState: projectFileGraphEntryStateSchema,
   teamSourceFile: z.string(),
-  teamSourceLayer: projectFileLayerSchema
+  teamSourceLayer: projectFileLayerSchema,
 });
 
 export const trainerPokemonStatsSchema = z.strictObject({
@@ -2323,23 +2550,25 @@ export const trainerPokemonStatsSchema = z.strictObject({
   hp: z.number().int(),
   specialAttack: z.number().int(),
   specialDefense: z.number().int(),
-  speed: z.number().int()
+  speed: z.number().int(),
 });
 
 const trainerFormOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const trainerEditableFieldOptionSchema = z.strictObject({
   ...trainerFormOptionSchema.shape,
-  formOptions: z.array(trainerFormOptionSchema).nullable().optional()
+  formOptions: z.array(trainerFormOptionSchema).nullable().optional(),
 });
 
 export const trainerPokemonRecordSchema = z.strictObject({
   ability: z.number().int(),
   abilityLabel: z.string(),
-  abilityOptions: z.array(z.strictObject({ label: z.string(), value: z.number().int() })).default([]),
+  abilityOptions: z
+    .array(z.strictObject({ label: z.string(), value: z.number().int() }))
+    .default([]),
   baseStats: trainerPokemonStatsSchema.nullable().optional(),
   canDynamax: z.boolean().nullable().default(null),
   canGigantamax: z.boolean().nullable().default(null),
@@ -2363,7 +2592,7 @@ export const trainerPokemonRecordSchema = z.strictObject({
   speciesId: z.number().int().nonnegative(),
   species: z.string(),
   teraType: z.number().int().nonnegative().nullable().default(null),
-  teraTypeLabel: z.string().nullable().default(null)
+  teraTypeLabel: z.string().nullable().default(null),
 });
 
 export const trainerAiFlagStateSchema = z.strictObject({
@@ -2371,7 +2600,21 @@ export const trainerAiFlagStateSchema = z.strictObject({
   description: z.string(),
   enabled: z.boolean(),
   label: z.string(),
-  mask: z.number().int().nonnegative()
+  mask: z.number().int().nonnegative(),
+});
+
+export const zaTrainerTextTargetSchema = z.strictObject({
+  kind: z.string(),
+  lineIndex: z.number().int().nonnegative(),
+  messageKey: z.string().min(1),
+  sharedTrainerCount: z.number().int().positive(),
+});
+
+export const zaTrainerClassPairOptionSchema = z.strictObject({
+  label: z.string(),
+  pairId: z.string().min(1),
+  presentationCanaryRequired: z.boolean(),
+  usageCount: z.number().int().positive(),
 });
 
 export const trainerRecordSchema = z.strictObject({
@@ -2383,7 +2626,7 @@ export const trainerRecordSchema = z.strictObject({
   canTerastallize: z.boolean().nullable().default(null),
   classBall: z.string().nullable().default(null),
   classBallId: z.number().int().nonnegative().nullable().default(null),
-  classBallScope: z.string().default('Class file missing'),
+  classBallScope: z.string().default("Class file missing"),
   gift: z.number().int().nonnegative().default(0),
   heal: z.boolean().default(false),
   itemIds: z.array(z.number().int().nonnegative()).default([]),
@@ -2398,11 +2641,19 @@ export const trainerRecordSchema = z.strictObject({
   trainerClass: z.string(),
   trainerClassId: z.number().int().nonnegative(),
   trainerId: z.number().int().nonnegative(),
+  zaCanReassignClass: z.boolean().nullable().default(null),
+  zaClassPairId: z.string().nullable().default(null),
+  zaClassReassignmentBlockedReason: z.string().nullable().default(null),
+  zaClassTextTarget: zaTrainerTextTargetSchema.nullable().default(null),
   zaLastHand: z.boolean().nullable().default(null),
   zaMegaEvolution: z.boolean().nullable().default(null),
+  zaNameTextTarget: zaTrainerTextTargetSchema.nullable().default(null),
   zaRank: z.number().int().nonnegative().nullable().default(null),
-  zaRivalStarterBranch: z.enum(['fire', 'grass', 'water']).nullable().default(null),
-  zaSharedRivalRoster: z.boolean().nullable().default(null)
+  zaRivalStarterBranch: z
+    .enum(["fire", "grass", "water"])
+    .nullable()
+    .default(null),
+  zaSharedRivalRoster: z.boolean().nullable().default(null),
 });
 
 export const trainerEditableFieldSchema = z.strictObject({
@@ -2411,13 +2662,13 @@ export const trainerEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(trainerEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const trainersWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalPokemonCount: z.number().int().nonnegative(),
-  totalTrainerCount: z.number().int().nonnegative()
+  totalTrainerCount: z.number().int().nonnegative(),
 });
 
 export const trainersWorkflowSchema = z.strictObject({
@@ -2425,38 +2676,50 @@ export const trainersWorkflowSchema = z.strictObject({
   editableFields: z.array(trainerEditableFieldSchema),
   stats: trainersWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  trainers: z.array(trainerRecordSchema)
+  trainers: z.array(trainerRecordSchema),
+  zaClassPairOptions: z.array(zaTrainerClassPairOptionSchema).default([]),
 });
 
 export const trainersWorkflowDeltaSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   stats: trainersWorkflowStatsSchema,
-  trainers: z.array(trainerRecordSchema)
+  trainers: z.array(trainerRecordSchema),
 });
 
 export const loadTrainersWorkflowResponseSchema = z.strictObject({
-  workflow: trainersWorkflowSchema
+  workflow: trainersWorkflowSchema,
 });
 
-export const giftPokemonProvenanceSchema = z.strictObject({ fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema });
+export const giftPokemonProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema,
+});
 
-export const giftPokemonIvsSchema = z.strictObject({ attack: z.number().int(), defense: z.number().int(), hp: z.number().int(), specialAttack: z.number().int(), specialDefense: z.number().int(), speed: z.number().int() });
+export const giftPokemonIvsSchema = z.strictObject({
+  attack: z.number().int(),
+  defense: z.number().int(),
+  hp: z.number().int(),
+  specialAttack: z.number().int(),
+  specialDefense: z.number().int(),
+  speed: z.number().int(),
+});
 
 export const giftPokemonMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int(),
   pointUps: z.number().int().nonnegative(),
-  slot: z.number().int().min(0).max(3)
+  slot: z.number().int().min(0).max(3),
 });
 
 const giftPokemonFormOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const giftPokemonEditableFieldOptionSchema = z.strictObject({
   ...giftPokemonFormOptionSchema.shape,
-  formOptions: z.array(giftPokemonFormOptionSchema).nullable().optional()
+  formOptions: z.array(giftPokemonFormOptionSchema).nullable().optional(),
 });
 
 export const giftPokemonEditableFieldSchema = z.strictObject({
@@ -2465,7 +2728,7 @@ export const giftPokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(giftPokemonEditableFieldOptionSchema),
-  valueKind: z.enum(['boolean', 'integer'])
+  valueKind: z.enum(["boolean", "integer"]),
 });
 
 export const giftPokemonRecordSchema = z.strictObject({
@@ -2480,7 +2743,7 @@ export const giftPokemonRecordSchema = z.strictObject({
   canRevertToVanilla: z.boolean().nullable().default(null),
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   eventLabel: z.string().nullable().default(null),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int(),
@@ -2511,33 +2774,33 @@ export const giftPokemonRecordSchema = z.strictObject({
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
   teraType: z.number().int().nullable().default(null),
-  teraTypeLabel: z.string().nullable().default(null)
+  teraTypeLabel: z.string().nullable().default(null),
 });
 
 export const giftPokemonWorkflowStatsSchema = z.strictObject({
   eggGiftCount: z.number().int().nonnegative(),
   fixedIvGiftCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalGiftCount: z.number().int().nonnegative()
+  totalGiftCount: z.number().int().nonnegative(),
 });
 
 export const giftPokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   editableFields: z.array(giftPokemonEditableFieldSchema),
   gifts: z.array(giftPokemonRecordSchema),
   stats: giftPokemonWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadGiftPokemonWorkflowResponseSchema = z.strictObject({
-  workflow: giftPokemonWorkflowSchema
+  workflow: giftPokemonWorkflowSchema,
 });
 
 export const tradePokemonProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const tradePokemonIvsSchema = z.strictObject({
@@ -2546,23 +2809,23 @@ export const tradePokemonIvsSchema = z.strictObject({
   hp: z.number().int(),
   specialAttack: z.number().int(),
   specialDefense: z.number().int(),
-  speed: z.number().int()
+  speed: z.number().int(),
 });
 
 export const tradePokemonMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int(),
-  slot: z.number().int().min(0).max(3)
+  slot: z.number().int().min(0).max(3),
 });
 
 const tradePokemonFormOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const tradePokemonEditableFieldOptionSchema = z.strictObject({
   ...tradePokemonFormOptionSchema.shape,
-  formOptions: z.array(tradePokemonFormOptionSchema).nullable().optional()
+  formOptions: z.array(tradePokemonFormOptionSchema).nullable().optional(),
 });
 
 export const tradePokemonEditableFieldSchema = z.strictObject({
@@ -2571,7 +2834,7 @@ export const tradePokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(tradePokemonEditableFieldOptionSchema),
-  valueKind: z.enum(['boolean', 'integer'])
+  valueKind: z.enum(["boolean", "integer"]),
 });
 
 export const tradePokemonRecordSchema = z.strictObject({
@@ -2582,7 +2845,7 @@ export const tradePokemonRecordSchema = z.strictObject({
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   eventLabel: z.string().nullable().default(null),
   field03: z.number().int().nonnegative(),
   flawlessIvCount: z.number().int().nullable(),
@@ -2627,32 +2890,32 @@ export const tradePokemonRecordSchema = z.strictObject({
   teraTypeLabel: z.string().nullable().default(null),
   tradeIndex: z.number().int().nonnegative(),
   trainerId: z.number().int().nonnegative(),
-  unknownRequirement: z.number().int().nonnegative()
+  unknownRequirement: z.number().int().nonnegative(),
 });
 
 export const tradePokemonWorkflowStatsSchema = z.strictObject({
   fixedIvTradeCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalTradeCount: z.number().int().nonnegative()
+  totalTradeCount: z.number().int().nonnegative(),
 });
 
 export const tradePokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(tradePokemonEditableFieldSchema),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   stats: tradePokemonWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  trades: z.array(tradePokemonRecordSchema)
+  trades: z.array(tradePokemonRecordSchema),
 });
 
 export const loadTradePokemonWorkflowResponseSchema = z.strictObject({
-  workflow: tradePokemonWorkflowSchema
+  workflow: tradePokemonWorkflowSchema,
 });
 
 export const staticEncounterProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const staticEncounterStatsSchema = z.strictObject({
@@ -2661,27 +2924,27 @@ export const staticEncounterStatsSchema = z.strictObject({
   hp: z.number().int(),
   specialAttack: z.number().int(),
   specialDefense: z.number().int(),
-  speed: z.number().int()
+  speed: z.number().int(),
 });
 
 export const staticEncounterMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().nonnegative(),
 });
 
 const staticEncounterFormOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const staticEncounterEditableFieldOptionSchema = z.strictObject({
   ...staticEncounterFormOptionSchema.shape,
-  formOptions: z.array(staticEncounterFormOptionSchema).nullable().optional()
+  formOptions: z.array(staticEncounterFormOptionSchema).nullable().optional(),
 });
 
 export const staticEncounterEditableFieldSchema = z.strictObject({
-  description: z.string().default(''),
+  description: z.string().default(""),
   field: z.string(),
   group: z.string().nullable().default(null),
   isReadOnly: z.boolean().default(false),
@@ -2689,7 +2952,7 @@ export const staticEncounterEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(staticEncounterEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const staticEncounterRecordSchema = z.strictObject({
@@ -2700,7 +2963,7 @@ export const staticEncounterRecordSchema = z.strictObject({
   categoryId: z.string().nullable().default(null),
   categoryLabel: z.string().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   encounterId: z.string(),
   encounterIndex: z.number().int().nonnegative(),
   encounterScenario: z.number().int().nonnegative(),
@@ -2730,35 +2993,40 @@ export const staticEncounterRecordSchema = z.strictObject({
   shinyLockLabel: z.string(),
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
-  supportedFields: z.array(z.string()).default([])
+  supportedFields: z.array(z.string()).default([]),
 });
 
 export const staticEncountersWorkflowStatsSchema = z.strictObject({
   coinSymbolCount: z.number().int().nonnegative().default(0),
   fixedIvEncounterCount: z.number().int().nonnegative(),
   fixedSymbolCount: z.number().int().nonnegative().default(0),
-  gigantamaxEncounterCount: z.number().int().nonnegative().nullable().default(null),
+  gigantamaxEncounterCount: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullable()
+    .default(null),
   sourceFileCount: z.number().int().nonnegative(),
-  totalEncounterCount: z.number().int().nonnegative()
+  totalEncounterCount: z.number().int().nonnegative(),
 });
 
 export const staticEncountersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(staticEncounterEditableFieldSchema),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   encounters: z.array(staticEncounterRecordSchema),
   stats: staticEncountersWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadStaticEncountersWorkflowResponseSchema = z.strictObject({
-  workflow: staticEncountersWorkflowSchema
+  workflow: staticEncountersWorkflowSchema,
 });
 
 export const rentalPokemonProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const rentalPokemonStatsSchema = z.strictObject({
@@ -2767,18 +3035,18 @@ export const rentalPokemonStatsSchema = z.strictObject({
   hp: z.number().int(),
   specialAttack: z.number().int(),
   specialDefense: z.number().int(),
-  speed: z.number().int()
+  speed: z.number().int(),
 });
 
 export const rentalPokemonMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int().nonnegative(),
-  slot: z.number().int().min(0).max(3)
+  slot: z.number().int().min(0).max(3),
 });
 
 export const rentalPokemonEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const rentalPokemonEditableFieldSchema = z.strictObject({
@@ -2787,7 +3055,7 @@ export const rentalPokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(rentalPokemonEditableFieldOptionSchema),
-  valueKind: z.enum(['boolean', 'integer'])
+  valueKind: z.enum(["boolean", "integer"]),
 });
 
 export const rentalPokemonRecordSchema = z.strictObject({
@@ -2817,13 +3085,13 @@ export const rentalPokemonRecordSchema = z.strictObject({
   rentalIndex: z.number().int().nonnegative(),
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
-  trainerId: z.number().int().nonnegative()
+  trainerId: z.number().int().nonnegative(),
 });
 
 export const rentalPokemonWorkflowStatsSchema = z.strictObject({
   perfectIvRentalCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalRentalCount: z.number().int().nonnegative()
+  totalRentalCount: z.number().int().nonnegative(),
 });
 
 export const rentalPokemonWorkflowSchema = z.strictObject({
@@ -2831,25 +3099,25 @@ export const rentalPokemonWorkflowSchema = z.strictObject({
   editableFields: z.array(rentalPokemonEditableFieldSchema),
   rentals: z.array(rentalPokemonRecordSchema),
   stats: rentalPokemonWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadRentalPokemonWorkflowResponseSchema = z.strictObject({
-  workflow: rentalPokemonWorkflowSchema
+  workflow: rentalPokemonWorkflowSchema,
 });
 
 export const dynamaxAdventureProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.literal(
-    'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+    "romfs/bin/appli/chika/data_table/underground_exploration_poke.bin",
   ),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const dynamaxAdventureMoveSchema = z.strictObject({
   move: z.string().min(1),
   moveId: z.number().int().min(0).max(826),
-  slot: z.number().int().min(1).max(4)
+  slot: z.number().int().min(1).max(4),
 });
 
 export const dynamaxAdventureIvsSchema = z.strictObject({
@@ -2858,12 +3126,12 @@ export const dynamaxAdventureIvsSchema = z.strictObject({
   hp: z.number().int().min(-6).max(31),
   specialAttack: z.number().int().min(-1).max(31),
   specialDefense: z.number().int().min(-1).max(31),
-  speed: z.number().int().min(-1).max(31)
+  speed: z.number().int().min(-1).max(31),
 });
 
 export const dynamaxAdventureEditableFieldOptionSchema = z.strictObject({
   label: z.string().min(1),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 const dynamaxAdventureGuaranteedPerfectIvsSchema = z.union([
@@ -2872,12 +3140,12 @@ const dynamaxAdventureGuaranteedPerfectIvsSchema = z.union([
   z.literal(3),
   z.literal(4),
   z.literal(5),
-  z.literal(6)
+  z.literal(6),
 ]);
 
 export const dynamaxAdventureDefaultFieldSchema = z.strictObject({
   field: dynamaxAdventureEditableFieldNameSchema,
-  value: z.string().regex(/^-?\d+$/)
+  value: z.string().regex(/^-?\d+$/),
 });
 
 export const dynamaxAdventureEditableFieldSchema = z.strictObject({
@@ -2886,7 +3154,7 @@ export const dynamaxAdventureEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(dynamaxAdventureEditableFieldOptionSchema),
-  valueKind: z.literal('integer')
+  valueKind: z.literal("integer"),
 });
 
 export const dynamaxAdventurePokemonSnapshotSchema = z.strictObject({
@@ -2901,7 +3169,7 @@ export const dynamaxAdventurePokemonSnapshotSchema = z.strictObject({
   level: z.number().int().min(1).max(100),
   moves: z.array(dynamaxAdventureMoveSchema).length(4),
   species: z.string().min(1),
-  speciesId: z.number().int().min(1).max(898)
+  speciesId: z.number().int().min(1).max(898),
 });
 
 export const dynamaxAdventureBossTargetOptionSchema = z.strictObject({
@@ -2913,7 +3181,7 @@ export const dynamaxAdventureBossTargetOptionSchema = z.strictObject({
   species: z.string().min(1),
   speciesId: z.number().int().min(1).max(898),
   version: z.number().int().min(0).max(2),
-  versionLabel: z.string().min(1)
+  versionLabel: z.string().min(1),
 });
 
 export const dynamaxAdventureRecordSchema = z.strictObject({
@@ -2953,7 +3221,7 @@ export const dynamaxAdventureRecordSchema = z.strictObject({
   uiMessageId: z.string().regex(/^0x[0-9A-F]{16}$/),
   vanillaPokemon: dynamaxAdventurePokemonSnapshotSchema.nullable(),
   version: z.number().int().min(0).max(2),
-  versionLabel: z.string().min(1)
+  versionLabel: z.string().min(1),
 });
 
 export const dynamaxAdventuresWorkflowStatsSchema = z.strictObject({
@@ -2961,28 +3229,28 @@ export const dynamaxAdventuresWorkflowStatsSchema = z.strictObject({
   singleCaptureCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
   storyGatedCount: z.number().int().nonnegative(),
-  totalEncounterCount: z.number().int().nonnegative()
+  totalEncounterCount: z.number().int().nonnegative(),
 });
 
 export const dynamaxAdventureInstallStatusSchema = z.enum([
-  'unknown',
-  'blocked',
-  'available',
-  'repairable',
-  'modified'
+  "unknown",
+  "blocked",
+  "available",
+  "repairable",
+  "modified",
 ]);
 
 export const dynamaxAdventureReservedRegionSchema = z.strictObject({
-  area: z.enum(['main.ro', 'main.text']),
+  area: z.enum(["main.ro", "main.text"]),
   label: z.string().min(1),
   offset: z.string().regex(/^(?:ro|text)\+0x[0-9A-F]+\.\.0x[0-9A-F]+$/),
-  rule: z.enum(['do-not-overwrite', 'payload-preserve-stride-padding'])
+  rule: z.enum(["do-not-overwrite", "payload-preserve-stride-padding"]),
 });
 
 const dynamaxAdventuresWorkflowShapeSchema = z.strictObject({
-  buildId: z.union([z.literal('unknown'), z.string().regex(/^[A-F0-9]{64}$/)]),
+  buildId: z.union([z.literal("unknown"), z.string().regex(/^[A-F0-9]{64}$/)]),
   canRestoreVanillaTable: z.boolean(),
-  detectedGame: z.enum(['sword', 'shield']).nullable(),
+  detectedGame: z.enum(["sword", "shield"]).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(dynamaxAdventureEditableFieldSchema),
   encounters: z.array(dynamaxAdventureRecordSchema),
@@ -2994,14 +3262,211 @@ const dynamaxAdventuresWorkflowShapeSchema = z.strictObject({
   safeNormalSpeciesOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
   stats: dynamaxAdventuresWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  usesVanillaRecoveryProjection: z.boolean()
+  usesVanillaRecoveryProjection: z.boolean(),
 });
 
 export const dynamaxAdventuresWorkflowSchema =
-  dynamaxAdventuresWorkflowShapeSchema.superRefine(validateDynamaxAdventuresWorkflow);
+  dynamaxAdventuresWorkflowShapeSchema.superRefine(
+    validateDynamaxAdventuresWorkflow,
+  );
 
 export const loadDynamaxAdventuresWorkflowResponseSchema = z.strictObject({
-  workflow: dynamaxAdventuresWorkflowSchema
+  workflow: dynamaxAdventuresWorkflowSchema,
+});
+
+const dynamaxAdventureSeedTemplateSchema = z.strictObject({
+  form: z.number().int().min(0).max(255),
+  isBoss: z.boolean(),
+  row: z.number().int().min(0).max(272),
+  species: z.number().int().min(1).max(898),
+});
+
+const dynamaxAdventureSeedRowPositionSchema = z
+  .strictObject({
+    kind: z.enum(["rental", "encounter"]),
+    row: z.number().int().min(0).max(272),
+    slot: z.number().int().min(0).max(9),
+  })
+  .superRefine((position, context) => {
+    if (position.kind === "rental" && position.slot > 5) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Dynamax Adventures rental positions use slots 0 through 5.",
+        path: ["slot"],
+      });
+    }
+  });
+
+const dynamaxAdventureSeedPlanSchema = z
+  .strictObject({
+    diagnostics: z.array(apiDiagnosticSchema),
+    encounters: z.array(dynamaxAdventureSeedTemplateSchema).max(10),
+    npcCount: z.number().int().min(0).max(3),
+    rentals: z.array(dynamaxAdventureSeedTemplateSchema).max(6),
+    requiredRowPositions: z
+      .array(dynamaxAdventureSeedRowPositionSchema)
+      .max(273),
+    seed: dynamaxAdventureSeedValueSchema,
+  })
+  .superRefine((plan, context) => {
+    if (
+      !plan.diagnostics.some((diagnostic) => diagnostic.severity === "error") &&
+      (plan.rentals.length !== 6 || plan.encounters.length !== 10)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "A successful Dynamax Adventures route preview requires six rentals and ten encounters.",
+        path: ["rentals"],
+      });
+    }
+  });
+
+const dynamaxAdventureSeedSearchMatchSchema = z.strictObject({
+  positions: z.array(dynamaxAdventureSeedRowPositionSchema).max(273),
+  seed: dynamaxAdventureSeedValueSchema,
+});
+
+const dynamaxAdventureSeedSearchSchema = z
+  .strictObject({
+    diagnostics: z.array(apiDiagnosticSchema),
+    limit: dynamaxAdventureSeedValueSchema,
+    maxResults: z.number().int().min(1).max(1_000),
+    npcCount: z.number().int().min(0).max(3),
+    results: z.array(dynamaxAdventureSeedSearchMatchSchema).max(1_000),
+    startSeed: dynamaxAdventureSeedValueSchema,
+  })
+  .superRefine((search, context) => {
+    const seeds = search.results.map((result) =>
+      result.seed.toLocaleUpperCase(),
+    );
+    if (
+      search.results.length > search.maxResults ||
+      new Set(seeds).size !== seeds.length
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Dynamax Adventures seed search results must be bounded and unique.",
+        path: ["results"],
+      });
+    }
+  });
+
+const dynamaxAdventureSaveSeedSchema = z
+  .strictObject({
+    backupFilePath: z.string().min(1).nullable(),
+    checksumsValid: z.boolean(),
+    diagnostics: z.array(apiDiagnosticSchema),
+    newSeed: dynamaxAdventureSeedValueSchema,
+    oldSeed: dynamaxAdventureSeedValueSchema.nullable(),
+    outcome: z.enum([
+      "rejected",
+      "unchanged",
+      "updated",
+      "recovered",
+      "recoveryRequired",
+    ]),
+    recoveryArtifactStatus: z.enum(["none", "retained", "unavailable"]),
+    recoveryFilePath: z.string().min(1).nullable(),
+    saveFilePath: z.string().min(1).nullable(),
+    wasChanged: z.boolean(),
+  })
+  .superRefine((result, context) => {
+    const hasError = result.diagnostics.some(
+      (diagnostic) => diagnostic.severity === "error",
+    );
+    const isSuccessful =
+      result.outcome === "unchanged" || result.outcome === "updated";
+    if (
+      isSuccessful &&
+      (hasError ||
+        result.saveFilePath === null ||
+        result.oldSeed === null ||
+        !result.checksumsValid)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "A successful save seed result requires verified checksums and complete source metadata.",
+        path: ["checksumsValid"],
+      });
+    }
+    if ((result.outcome === "updated") !== result.wasChanged) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Only an updated save seed result may report a changed save.",
+        path: ["wasChanged"],
+      });
+    }
+    if ((result.outcome === "updated") !== (result.backupFilePath !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Only an updated save seed result may expose the normal backup path.",
+        path: ["backupFilePath"],
+      });
+    }
+    if (
+      result.outcome === "recovered" &&
+      (result.recoveryArtifactStatus !== "retained" ||
+        result.recoveryFilePath === null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "A recovered save seed result requires a retained recovery artifact and path.",
+        path: ["recoveryFilePath"],
+      });
+    }
+    if (
+      result.outcome === "recoveryRequired" &&
+      !(
+        (result.recoveryArtifactStatus === "retained" &&
+          result.recoveryFilePath !== null) ||
+        (result.recoveryArtifactStatus === "unavailable" &&
+          result.recoveryFilePath === null)
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "A recovery-required result must report whether its recovery artifact was retained or unavailable.",
+        path: ["recoveryFilePath"],
+      });
+    }
+    if (
+      result.outcome !== "recovered" &&
+      result.outcome !== "recoveryRequired" &&
+      (result.recoveryArtifactStatus !== "none" ||
+        result.recoveryFilePath !== null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Recovery metadata is valid only for a recovery outcome.",
+        path: ["recoveryFilePath"],
+      });
+    }
+    if (!isSuccessful && !hasError) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "An unsuccessful save seed result requires an actionable error diagnostic.",
+        path: ["diagnostics"],
+      });
+    }
+  });
+
+export const planDynamaxAdventureSeedResponseSchema = z.strictObject({
+  plan: dynamaxAdventureSeedPlanSchema,
+});
+
+export const searchDynamaxAdventureSeedResponseSchema = z.strictObject({
+  search: dynamaxAdventureSeedSearchSchema,
+});
+
+export const setDynamaxAdventureSaveSeedResponseSchema = z.strictObject({
+  result: dynamaxAdventureSaveSeedSchema,
 });
 
 const previewDynamaxAdventureDefaultsResponseShapeSchema = z.strictObject({
@@ -3009,32 +3474,36 @@ const previewDynamaxAdventureDefaultsResponseShapeSchema = z.strictObject({
   changes: z.array(dynamaxAdventureDefaultFieldSchema),
   diagnostics: z.array(apiDiagnosticSchema),
   gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
-  moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema)
+  moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
 });
 
 export const previewDynamaxAdventureDefaultsResponseSchema =
   previewDynamaxAdventureDefaultsResponseShapeSchema.superRefine(
-    validateDynamaxAdventureDefaultsPreview
+    validateDynamaxAdventureDefaultsPreview,
   );
 
 function validateDynamaxAdventureDefaultsPreview(
   preview: z.infer<typeof previewDynamaxAdventureDefaultsResponseShapeSchema>,
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
-  if (preview.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+  if (
+    preview.diagnostics.some((diagnostic) => diagnostic.severity === "error")
+  ) {
     return;
   }
 
   const requiredFields = [
-    'form',
-    'ability',
-    'gigantamaxState',
-    'move0Id',
-    'move1Id',
-    'move2Id',
-    'move3Id'
+    "form",
+    "ability",
+    "gigantamaxState",
+    "move0Id",
+    "move1Id",
+    "move2Id",
+    "move3Id",
   ] as const;
-  const changesByField = new Map(preview.changes.map((change) => [change.field, change.value]));
+  const changesByField = new Map(
+    preview.changes.map((change) => [change.field, change.value]),
+  );
   if (
     preview.changes.length !== requiredFields.length ||
     changesByField.size !== requiredFields.length ||
@@ -3042,21 +3511,33 @@ function validateDynamaxAdventureDefaultsPreview(
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['changes'],
-      'Successful Dynamax Adventures defaults must return the exact dependent field set.'
+      ["changes"],
+      "Successful Dynamax Adventures defaults must return the exact dependent field set.",
     );
     return;
   }
 
-  validateDynamaxAdventureOptions(preview.abilityOptions, context, ['abilityOptions'], 0, 2);
+  validateDynamaxAdventureOptions(
+    preview.abilityOptions,
+    context,
+    ["abilityOptions"],
+    0,
+    2,
+  );
   validateDynamaxAdventureOptions(
     preview.gigantamaxOptions,
     context,
-    ['gigantamaxOptions'],
+    ["gigantamaxOptions"],
     0,
-    2
+    2,
   );
-  validateDynamaxAdventureOptions(preview.moveOptions, context, ['moveOptions'], 0, 826);
+  validateDynamaxAdventureOptions(
+    preview.moveOptions,
+    context,
+    ["moveOptions"],
+    0,
+    826,
+  );
   if (
     preview.abilityOptions.length === 0 ||
     preview.gigantamaxOptions.length === 0 ||
@@ -3064,33 +3545,37 @@ function validateDynamaxAdventureDefaultsPreview(
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['abilityOptions'],
-      'Successful Dynamax Adventures defaults require exact dependency options.'
+      ["abilityOptions"],
+      "Successful Dynamax Adventures defaults require exact dependency options.",
     );
   }
 
-  const form = Number(changesByField.get('form'));
-  const ability = Number(changesByField.get('ability'));
-  const gigantamaxState = Number(changesByField.get('gigantamaxState'));
+  const form = Number(changesByField.get("form"));
+  const ability = Number(changesByField.get("ability"));
+  const gigantamaxState = Number(changesByField.get("gigantamaxState"));
   if (!Number.isInteger(form) || form < 0 || form > 255) {
     addDynamaxAdventureContractIssue(
       context,
-      ['changes'],
-      'Dynamax Adventures default form is outside the supported range.'
+      ["changes"],
+      "Dynamax Adventures default form is outside the supported range.",
     );
   }
   if (!preview.abilityOptions.some((option) => option.value === ability)) {
     addDynamaxAdventureContractIssue(
       context,
-      ['changes'],
-      'Dynamax Adventures default ability is not in the returned options.'
+      ["changes"],
+      "Dynamax Adventures default ability is not in the returned options.",
     );
   }
-  if (!preview.gigantamaxOptions.some((option) => option.value === gigantamaxState)) {
+  if (
+    !preview.gigantamaxOptions.some(
+      (option) => option.value === gigantamaxState,
+    )
+  ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['changes'],
-      'Dynamax Adventures default Gigantamax state is not in the returned options.'
+      ["changes"],
+      "Dynamax Adventures default Gigantamax state is not in the returned options.",
     );
   }
   for (const field of requiredFields.slice(3)) {
@@ -3098,8 +3583,8 @@ function validateDynamaxAdventureDefaultsPreview(
     if (!preview.moveOptions.some((option) => option.value === move)) {
       addDynamaxAdventureContractIssue(
         context,
-        ['changes'],
-        'Dynamax Adventures default move is not in the returned options.'
+        ["changes"],
+        "Dynamax Adventures default move is not in the returned options.",
       );
     }
   }
@@ -3107,84 +3592,93 @@ function validateDynamaxAdventureDefaultsPreview(
 
 function validateDynamaxAdventureRequestGame(
   request: { paths: z.infer<typeof projectPathsSchema> },
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
-  if (request.paths.selectedGame !== 'sword' && request.paths.selectedGame !== 'shield') {
+  if (
+    request.paths.selectedGame !== "sword" &&
+    request.paths.selectedGame !== "shield"
+  ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['paths', 'selectedGame'],
-      'Dynamax Adventures requires Sword or Shield.'
+      ["paths", "selectedGame"],
+      "Dynamax Adventures requires Sword or Shield.",
     );
   }
 }
 
 function validateDynamaxAdventuresWorkflow(
   workflow: z.infer<typeof dynamaxAdventuresWorkflowShapeSchema>,
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
   const buildIds = {
-    shield: 'A16802625E7826BF83B6F9708E475B912A9AB7DF000000000000000000000000',
-    sword: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000'
+    shield: "A16802625E7826BF83B6F9708E475B912A9AB7DF000000000000000000000000",
+    sword: "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000",
   } as const;
   if (
-    workflow.summary.id !== 'dynamaxAdventures' ||
-    workflow.summary.label !== 'Dynamax Adventures'
+    workflow.summary.id !== "dynamaxAdventures" ||
+    workflow.summary.label !== "Dynamax Adventures"
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['summary'],
-      'Dynamax Adventures workflow identity is not canonical.'
+      ["summary"],
+      "Dynamax Adventures workflow identity is not canonical.",
     );
   }
 
-  if (workflow.canRestoreVanillaTable && !workflow.usesVanillaRecoveryProjection) {
+  if (
+    workflow.canRestoreVanillaTable &&
+    !workflow.usesVanillaRecoveryProjection
+  ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['canRestoreVanillaTable'],
-      'Dynamax Adventures vanilla table restore requires the verified vanilla recovery projection.'
+      ["canRestoreVanillaTable"],
+      "Dynamax Adventures vanilla table restore requires the verified vanilla recovery projection.",
     );
   }
 
-  if (workflow.canRestoreVanillaTable && workflow.summary.availability !== 'readOnly') {
+  if (
+    workflow.canRestoreVanillaTable &&
+    workflow.summary.availability !== "readOnly"
+  ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['canRestoreVanillaTable'],
-      'Dynamax Adventures vanilla table restore is only available in read-only recovery mode.'
+      ["canRestoreVanillaTable"],
+      "Dynamax Adventures vanilla table restore is only available in read-only recovery mode.",
     );
   }
 
   if (workflow.usesVanillaRecoveryProjection) {
-    if (workflow.summary.availability !== 'readOnly') {
+    if (workflow.summary.availability !== "readOnly") {
       addDynamaxAdventureContractIssue(
         context,
-        ['usesVanillaRecoveryProjection'],
-        'Dynamax Adventures recovery projection must remain read-only.'
+        ["usesVanillaRecoveryProjection"],
+        "Dynamax Adventures recovery projection must remain read-only.",
       );
     }
     if (workflow.encounters.length !== dynamaxAdventureEncounterCount) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters'],
-        'Dynamax Adventures recovery projection requires the canonical 273 verified vanilla rows.'
+        ["encounters"],
+        "Dynamax Adventures recovery projection requires the canonical 273 verified vanilla rows.",
       );
     }
     workflow.encounters.forEach((encounter, encounterIndex) => {
       if (
         encounter.isEditable ||
         encounter.layoutWritableFields.length > 0 ||
-        encounter.provenance.fileState !== 'layeredOverride' ||
-        encounter.provenance.sourceLayer !== 'layered' ||
+        encounter.provenance.fileState !== "layeredOverride" ||
+        encounter.provenance.sourceLayer !== "layered" ||
         encounter.vanillaPokemon === null ||
         (encounter.vanillaPokemon !== null &&
           !doesDynamaxAdventureRecordMatchSnapshot(
             encounter,
-            encounter.vanillaPokemon
+            encounter.vanillaPokemon,
           ))
       ) {
         addDynamaxAdventureContractIssue(
           context,
-          ['encounters', encounterIndex],
-          'Dynamax Adventures recovery projection rows must be read-only verified vanilla targets.'
+          ["encounters", encounterIndex],
+          "Dynamax Adventures recovery projection rows must be read-only verified vanilla targets.",
         );
       }
     });
@@ -3193,50 +3687,54 @@ function validateDynamaxAdventuresWorkflow(
   if (workflow.canRestoreVanillaTable) {
     const workflowDiagnostics = [
       ...workflow.diagnostics,
-      ...workflow.summary.diagnostics
+      ...workflow.summary.diagnostics,
     ];
     if (workflow.encounters.length !== dynamaxAdventureEncounterCount) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters'],
-        'Dynamax Adventures vanilla table restore requires the canonical 273-row table.'
+        ["encounters"],
+        "Dynamax Adventures vanilla table restore requires the canonical 273-row table.",
       );
     }
     if (
       workflow.encounters.some(
         (encounter) =>
-          encounter.provenance.fileState !== 'layeredOverride' ||
-          encounter.provenance.sourceLayer !== 'layered'
+          encounter.provenance.fileState !== "layeredOverride" ||
+          encounter.provenance.sourceLayer !== "layered",
       )
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters'],
-        'Dynamax Adventures vanilla table restore requires a layered table source.'
+        ["encounters"],
+        "Dynamax Adventures vanilla table restore requires a layered table source.",
       );
     }
     const hasRecoverableTableDiagnostic = workflowDiagnostics.some(
       (diagnostic) =>
-        diagnostic.severity === 'error' &&
+        diagnostic.severity === "error" &&
         (diagnostic.code ===
           diagnosticErrorCodes.swshDynamaxAdventuresTableLayoutMismatch ||
           diagnostic.code ===
             diagnosticErrorCodes.swshDynamaxAdventuresRowApiDomainInvalid ||
-          diagnostic.code === diagnosticErrorCodes.swshDynamaxAdventuresRowFormUnresolved ||
-          diagnostic.code === diagnosticErrorCodes.swshDynamaxAdventuresHiddenRowChanged)
+          diagnostic.code ===
+            diagnosticErrorCodes.swshDynamaxAdventuresRowFormUnresolved ||
+          diagnostic.code ===
+            diagnosticErrorCodes.swshDynamaxAdventuresHiddenRowChanged),
     );
     if (!hasRecoverableTableDiagnostic) {
       addDynamaxAdventureContractIssue(
         context,
-        ['diagnostics'],
-        'Dynamax Adventures vanilla table restore requires a recoverable layered-table diagnostic.'
+        ["diagnostics"],
+        "Dynamax Adventures vanilla table restore requires a recoverable layered-table diagnostic.",
       );
     }
-    if (!['available', 'repairable', 'modified'].includes(workflow.installStatus)) {
+    if (
+      !["available", "repairable", "modified"].includes(workflow.installStatus)
+    ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['installStatus'],
-        'Dynamax Adventures vanilla table restore requires a verified non-conflicting executable.'
+        ["installStatus"],
+        "Dynamax Adventures vanilla table restore requires a verified non-conflicting executable.",
       );
     }
   }
@@ -3247,86 +3745,85 @@ function validateDynamaxAdventuresWorkflow(
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['buildId'],
-      'Dynamax Adventures build identity does not match the detected game.'
+      ["buildId"],
+      "Dynamax Adventures build identity does not match the detected game.",
     );
   }
 
-  if (
-    workflow.detectedGame === null &&
-    workflow.reservedRegions.length > 0
-  ) {
+  if (workflow.detectedGame === null && workflow.reservedRegions.length > 0) {
     addDynamaxAdventureContractIssue(
       context,
-      ['reservedRegions'],
-      'Dynamax Adventures cannot claim owned regions without a detected game.'
+      ["reservedRegions"],
+      "Dynamax Adventures cannot claim owned regions without a detected game.",
     );
   }
 
   const reservedRegionIdentities = workflow.reservedRegions.map(
-    (region) => `${region.area}:${region.offset}`
+    (region) => `${region.area}:${region.offset}`,
   );
-  if (new Set(reservedRegionIdentities).size !== reservedRegionIdentities.length) {
+  if (
+    new Set(reservedRegionIdentities).size !== reservedRegionIdentities.length
+  ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['reservedRegions'],
-      'Dynamax Adventures reserved regions must be unique.'
+      ["reservedRegions"],
+      "Dynamax Adventures reserved regions must be unique.",
     );
   }
 
   if (
-    workflow.installStatus === 'unknown' &&
-    (workflow.buildId !== 'unknown' ||
+    workflow.installStatus === "unknown" &&
+    (workflow.buildId !== "unknown" ||
       workflow.detectedGame !== null ||
       workflow.reservedRegions.length > 0)
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['installStatus'],
-      'Unknown Dynamax Adventures executable state cannot claim inspected identity.'
+      ["installStatus"],
+      "Unknown Dynamax Adventures executable state cannot claim inspected identity.",
     );
   }
 
   if (
-    ['available', 'repairable', 'modified'].includes(workflow.installStatus) &&
-    (workflow.buildId === 'unknown' ||
+    ["available", "repairable", "modified"].includes(workflow.installStatus) &&
+    (workflow.buildId === "unknown" ||
       workflow.detectedGame === null ||
       workflow.reservedRegions.length === 0)
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['installStatus'],
-      'Writable Dynamax Adventures executable state requires exact identity and ownership.'
+      ["installStatus"],
+      "Writable Dynamax Adventures executable state requires exact identity and ownership.",
     );
   }
 
   if (
     workflow.hasLegacyBossTargetPatch &&
-    workflow.installStatus !== 'repairable'
+    workflow.installStatus !== "repairable"
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['hasLegacyBossTargetPatch'],
-      'A Dynamax Adventures legacy final-boss target remap must expose a repairable executable state.'
+      ["hasLegacyBossTargetPatch"],
+      "A Dynamax Adventures legacy final-boss target remap must expose a repairable executable state.",
     );
   }
 
   const requiredFieldNames = new Set([
-    'species',
-    'form',
-    'level',
-    'ability',
-    'gigantamaxState',
-    'move0Id',
-    'move1Id',
-    'move2Id',
-    'move3Id',
-    'guaranteedPerfectIvs',
-    'ivAttack',
-    'ivDefense',
-    'ivSpecialAttack',
-    'ivSpecialDefense',
-    'ivSpeed'
+    "species",
+    "form",
+    "level",
+    "ability",
+    "gigantamaxState",
+    "move0Id",
+    "move1Id",
+    "move2Id",
+    "move3Id",
+    "guaranteedPerfectIvs",
+    "ivAttack",
+    "ivDefense",
+    "ivSpecialAttack",
+    "ivSpecialDefense",
+    "ivSpeed",
   ]);
   const fieldNames = workflow.editableFields.map((field) => field.field);
   const actualFieldNames = new Set<string>(fieldNames);
@@ -3337,71 +3834,77 @@ function validateDynamaxAdventuresWorkflow(
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['editableFields'],
-      'Dynamax Adventures editable fields are not the exact safe field set.'
+      ["editableFields"],
+      "Dynamax Adventures editable fields are not the exact safe field set.",
     );
   }
 
   workflow.editableFields.forEach((field, fieldIndex) => {
-    const [minimumValue, maximumValue] = dynamaxAdventureFieldRanges[field.field];
+    const [minimumValue, maximumValue] =
+      dynamaxAdventureFieldRanges[field.field];
     if (
       field.minimumValue !== minimumValue ||
       field.maximumValue !== maximumValue
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['editableFields', fieldIndex],
-        'Dynamax Adventures editable field range is not canonical.'
+        ["editableFields", fieldIndex],
+        "Dynamax Adventures editable field range is not canonical.",
       );
     }
     validateDynamaxAdventureOptions(
       field.options,
       context,
-      ['editableFields', fieldIndex, 'options'],
+      ["editableFields", fieldIndex, "options"],
       minimumValue,
-      maximumValue
+      maximumValue,
     );
-    const expectedOptionValues = dynamaxAdventureExactFieldOptionValues[field.field];
+    const expectedOptionValues =
+      dynamaxAdventureExactFieldOptionValues[field.field];
     if (
       expectedOptionValues !== undefined &&
       (field.options.length !== expectedOptionValues.length ||
         field.options.some(
-          (option, optionIndex) => option.value !== expectedOptionValues[optionIndex]
+          (option, optionIndex) =>
+            option.value !== expectedOptionValues[optionIndex],
         ))
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['editableFields', fieldIndex, 'options'],
-        'Dynamax Adventures editable field options are not canonical.'
+        ["editableFields", fieldIndex, "options"],
+        "Dynamax Adventures editable field options are not canonical.",
       );
     }
   });
 
-  const entryIndexes = workflow.encounters.map((encounter) => encounter.entryIndex);
+  const entryIndexes = workflow.encounters.map(
+    (encounter) => encounter.entryIndex,
+  );
   if (
-    (workflow.encounters.length > 0 || workflow.summary.availability === 'available') &&
+    (workflow.encounters.length > 0 ||
+      workflow.summary.availability === "available") &&
     workflow.encounters.length !== dynamaxAdventureEncounterCount
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['encounters'],
-      'Dynamax Adventures must expose the canonical 273-row table.'
+      ["encounters"],
+      "Dynamax Adventures must expose the canonical 273-row table.",
     );
   }
 
   if (new Set(entryIndexes).size !== entryIndexes.length) {
     addDynamaxAdventureContractIssue(
       context,
-      ['encounters'],
-      'Dynamax Adventures entry indexes must be unique.'
+      ["encounters"],
+      "Dynamax Adventures entry indexes must be unique.",
     );
   }
 
   if (entryIndexes.some((entryIndex, index) => entryIndex !== index)) {
     addDynamaxAdventureContractIssue(
       context,
-      ['encounters'],
-      'Dynamax Adventures entry indexes must match stable table order.'
+      ["encounters"],
+      "Dynamax Adventures entry indexes must match stable table order.",
     );
   }
 
@@ -3412,8 +3915,8 @@ function validateDynamaxAdventuresWorkflow(
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters', encounterIndex, 'layoutWritableFields'],
-        'Dynamax Adventures layout-writable fields must be unique.'
+        ["encounters", encounterIndex, "layoutWritableFields"],
+        "Dynamax Adventures layout-writable fields must be unique.",
       );
     }
     if (
@@ -3422,8 +3925,8 @@ function validateDynamaxAdventuresWorkflow(
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters', encounterIndex, 'bossTargetSpeciesId'],
-        'Dynamax Adventures boss metadata must remain informational row identity.'
+        ["encounters", encounterIndex, "bossTargetSpeciesId"],
+        "Dynamax Adventures boss metadata must remain informational row identity.",
       );
     }
     if (
@@ -3432,50 +3935,50 @@ function validateDynamaxAdventuresWorkflow(
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters', encounterIndex, 'isEditable'],
-        'Dynamax Adventures boss rows 226 through 272 must remain read-only.'
+        ["encounters", encounterIndex, "isEditable"],
+        "Dynamax Adventures boss rows 226 through 272 must remain read-only.",
       );
     }
     if (!encounter.isEditable && encounter.layoutWritableFields.length > 0) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters', encounterIndex, 'layoutWritableFields'],
-        'Read-only Dynamax Adventures rows cannot claim writable layout fields.'
+        ["encounters", encounterIndex, "layoutWritableFields"],
+        "Read-only Dynamax Adventures rows cannot claim writable layout fields.",
       );
     }
-    validateDynamaxAdventureMoveSlots(
-      encounter.moves,
-      context,
-      ['encounters', encounterIndex, 'moves']
-    );
+    validateDynamaxAdventureMoveSlots(encounter.moves, context, [
+      "encounters",
+      encounterIndex,
+      "moves",
+    ]);
     validateDynamaxAdventureOptions(
       encounter.abilityOptions,
       context,
-      ['encounters', encounterIndex, 'abilityOptions'],
+      ["encounters", encounterIndex, "abilityOptions"],
       0,
-      2
+      2,
     );
     validateDynamaxAdventureOptions(
       encounter.gigantamaxOptions,
       context,
-      ['encounters', encounterIndex, 'gigantamaxOptions'],
+      ["encounters", encounterIndex, "gigantamaxOptions"],
       0,
-      2
+      2,
     );
     validateDynamaxAdventureOptions(
       encounter.moveOptions,
       context,
-      ['encounters', encounterIndex, 'moveOptions'],
+      ["encounters", encounterIndex, "moveOptions"],
       0,
-      826
+      826,
     );
     const expectedSourceLayer =
-      encounter.provenance.fileState === 'baseOnly' ? 'base' : 'layered';
+      encounter.provenance.fileState === "baseOnly" ? "base" : "layered";
     if (encounter.provenance.sourceLayer !== expectedSourceLayer) {
       addDynamaxAdventureContractIssue(
         context,
-        ['encounters', encounterIndex, 'provenance'],
-        'Dynamax Adventures provenance layer does not match its file state.'
+        ["encounters", encounterIndex, "provenance"],
+        "Dynamax Adventures provenance layer does not match its file state.",
       );
     }
 
@@ -3486,36 +3989,38 @@ function validateDynamaxAdventuresWorkflow(
       value: number;
     }> = [
       {
-        field: 'ability',
+        field: "ability",
         options: encounter.abilityOptions,
-        path: 'abilityOptions',
-        value: encounter.ability
+        path: "abilityOptions",
+        value: encounter.ability,
       },
       {
-        field: 'gigantamaxState',
+        field: "gigantamaxState",
         options: encounter.gigantamaxOptions,
-        path: 'gigantamaxOptions',
-        value: encounter.gigantamaxState
+        path: "gigantamaxOptions",
+        value: encounter.gigantamaxState,
       },
       ...encounter.moves.map((move, moveIndex) => ({
         field: `move${moveIndex}Id` as z.infer<
           typeof dynamaxAdventureEditableFieldNameSchema
         >,
         options: encounter.moveOptions,
-        path: 'moveOptions',
-        value: move.moveId
-      }))
+        path: "moveOptions",
+        value: move.moveId,
+      })),
     ];
     for (const optionValue of writableOptionValues) {
       if (
-        workflow.summary.availability === 'available' &&
+        workflow.summary.availability === "available" &&
         encounter.layoutWritableFields.includes(optionValue.field) &&
-        !optionValue.options.some((option) => option.value === optionValue.value)
+        !optionValue.options.some(
+          (option) => option.value === optionValue.value,
+        )
       ) {
         addDynamaxAdventureContractIssue(
           context,
-          ['encounters', encounterIndex, optionValue.path],
-          'A layout-writable Dynamax Adventures value is missing from its verified options.'
+          ["encounters", encounterIndex, optionValue.path],
+          "A layout-writable Dynamax Adventures value is missing from its verified options.",
         );
       }
     }
@@ -3523,20 +4028,20 @@ function validateDynamaxAdventuresWorkflow(
       encounter.guaranteedPerfectIvs,
       encounter.ivs.hp,
       context,
-      ['encounters', encounterIndex, 'ivs', 'hp']
+      ["encounters", encounterIndex, "ivs", "hp"],
     );
 
     if (encounter.vanillaPokemon) {
       validateDynamaxAdventureMoveSlots(
         encounter.vanillaPokemon.moves,
         context,
-        ['encounters', encounterIndex, 'vanillaPokemon', 'moves']
+        ["encounters", encounterIndex, "vanillaPokemon", "moves"],
       );
       validateDynamaxAdventureGuaranteedIvs(
         encounter.vanillaPokemon.guaranteedPerfectIvs,
         encounter.vanillaPokemon.ivs.hp,
         context,
-        ['encounters', encounterIndex, 'vanillaPokemon', 'ivs', 'hp']
+        ["encounters", encounterIndex, "vanillaPokemon", "ivs", "hp"],
       );
     }
   });
@@ -3544,39 +4049,43 @@ function validateDynamaxAdventuresWorkflow(
   validateDynamaxAdventureOptions(
     workflow.safeNormalSpeciesOptions,
     context,
-    ['safeNormalSpeciesOptions'],
+    ["safeNormalSpeciesOptions"],
     1,
-    898
+    898,
   );
 
-  if (workflow.summary.availability === 'available') {
+  if (workflow.summary.availability === "available") {
     if (
-      workflow.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
-      workflow.summary.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      workflow.diagnostics.some(
+        (diagnostic) => diagnostic.severity === "error",
+      ) ||
+      workflow.summary.diagnostics.some(
+        (diagnostic) => diagnostic.severity === "error",
+      )
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['diagnostics'],
-        'Available Dynamax Adventures cannot contain error diagnostics.'
+        ["diagnostics"],
+        "Available Dynamax Adventures cannot contain error diagnostics.",
       );
     }
 
     if (workflow.safeNormalSpeciesOptions.length === 0) {
       addDynamaxAdventureContractIssue(
         context,
-        ['safeNormalSpeciesOptions'],
-        'Available Dynamax Adventures requires safe species dependency data.'
+        ["safeNormalSpeciesOptions"],
+        "Available Dynamax Adventures requires safe species dependency data.",
       );
     }
 
     if (
-      workflow.installStatus === 'unknown' ||
-      workflow.installStatus === 'blocked'
+      workflow.installStatus === "unknown" ||
+      workflow.installStatus === "blocked"
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['installStatus'],
-        'Available Dynamax Adventures requires a writable executable state.'
+        ["installStatus"],
+        "Available Dynamax Adventures requires a writable executable state.",
       );
     }
 
@@ -3584,8 +4093,8 @@ function validateDynamaxAdventuresWorkflow(
       if (encounter.vanillaPokemon === null) {
         addDynamaxAdventureContractIssue(
           context,
-          ['encounters', encounterIndex, 'vanillaPokemon'],
-          'Available Dynamax Adventures rows require a verified vanilla snapshot.'
+          ["encounters", encounterIndex, "vanillaPokemon"],
+          "Available Dynamax Adventures rows require a verified vanilla snapshot.",
         );
       }
       if (
@@ -3597,19 +4106,22 @@ function validateDynamaxAdventuresWorkflow(
       ) {
         addDynamaxAdventureContractIssue(
           context,
-          ['encounters', encounterIndex],
-          'Editable Dynamax Adventures rows require restore and exact option metadata.'
+          ["encounters", encounterIndex],
+          "Editable Dynamax Adventures rows require restore and exact option metadata.",
         );
       }
       if (
         !encounter.isEditable &&
         encounter.vanillaPokemon !== null &&
-        !doesDynamaxAdventureRecordMatchSnapshot(encounter, encounter.vanillaPokemon)
+        !doesDynamaxAdventureRecordMatchSnapshot(
+          encounter,
+          encounter.vanillaPokemon,
+        )
       ) {
         addDynamaxAdventureContractIssue(
           context,
-          ['encounters', encounterIndex, 'vanillaPokemon'],
-          'Available read-only Dynamax Adventures rows must match verified vanilla Pokemon data.'
+          ["encounters", encounterIndex, "vanillaPokemon"],
+          "Available read-only Dynamax Adventures rows must match verified vanilla Pokemon data.",
         );
       }
     });
@@ -3617,22 +4129,22 @@ function validateDynamaxAdventuresWorkflow(
 
   const expectedStats = {
     guaranteedPerfectIvEncounterCount: workflow.encounters.filter(
-      (encounter) => encounter.guaranteedPerfectIvs > 0
+      (encounter) => encounter.guaranteedPerfectIvs > 0,
     ).length,
     singleCaptureCount: workflow.encounters.filter(
-      (encounter) => encounter.isSingleCapture
+      (encounter) => encounter.isSingleCapture,
     ).length,
     storyGatedCount: workflow.encounters.filter(
-      (encounter) => encounter.isStoryProgressGated
+      (encounter) => encounter.isStoryProgressGated,
     ).length,
-    totalEncounterCount: workflow.encounters.length
+    totalEncounterCount: workflow.encounters.length,
   };
   for (const [field, value] of Object.entries(expectedStats)) {
     if (workflow.stats[field as keyof typeof expectedStats] !== value) {
       addDynamaxAdventureContractIssue(
         context,
-        ['stats', field],
-        'Dynamax Adventures statistics do not match the returned records.'
+        ["stats", field],
+        "Dynamax Adventures statistics do not match the returned records.",
       );
     }
   }
@@ -3640,8 +4152,8 @@ function validateDynamaxAdventuresWorkflow(
   if (workflow.encounters.length > 0 && workflow.stats.sourceFileCount < 1) {
     addDynamaxAdventureContractIssue(
       context,
-      ['stats', 'sourceFileCount'],
-      'Dynamax Adventures records require at least one reported source file.'
+      ["stats", "sourceFileCount"],
+      "Dynamax Adventures records require at least one reported source file.",
     );
   }
 }
@@ -3649,20 +4161,20 @@ function validateDynamaxAdventuresWorkflow(
 function validateDynamaxAdventureMoveSlots(
   moves: Array<{ slot: number }>,
   context: z.RefinementCtx,
-  path: Array<string | number>
+  path: Array<string | number>,
 ) {
   if (moves.some((move, index) => move.slot !== index + 1)) {
     addDynamaxAdventureContractIssue(
       context,
       path,
-      'Dynamax Adventures moves must be ordered in exact slots 1 through 4.'
+      "Dynamax Adventures moves must be ordered in exact slots 1 through 4.",
     );
   }
 }
 
 function doesDynamaxAdventureRecordMatchSnapshot(
   encounter: z.infer<typeof dynamaxAdventureRecordSchema>,
-  snapshot: z.infer<typeof dynamaxAdventurePokemonSnapshotSchema>
+  snapshot: z.infer<typeof dynamaxAdventurePokemonSnapshotSchema>,
 ) {
   return (
     encounter.ability === snapshot.ability &&
@@ -3685,7 +4197,7 @@ function validateDynamaxAdventureOptions(
   context: z.RefinementCtx,
   path: Array<string | number>,
   minimum: number,
-  maximum: number
+  maximum: number,
 ) {
   const values = options.map((option) => option.value);
   if (
@@ -3695,7 +4207,7 @@ function validateDynamaxAdventureOptions(
     addDynamaxAdventureContractIssue(
       context,
       path,
-      'Dynamax Adventures options must be unique and within the field range.'
+      "Dynamax Adventures options must be unique and within the field range.",
     );
   }
 }
@@ -3704,7 +4216,7 @@ function validateDynamaxAdventureGuaranteedIvs(
   guaranteedPerfectIvs: number,
   hp: number,
   context: z.RefinementCtx,
-  path: Array<string | number>
+  path: Array<string | number>,
 ) {
   const hasMatchingGuaranteedEncoding =
     guaranteedPerfectIvs > 0 ? hp === -guaranteedPerfectIvs : hp >= -1;
@@ -3712,7 +4224,7 @@ function validateDynamaxAdventureGuaranteedIvs(
     addDynamaxAdventureContractIssue(
       context,
       path,
-      'Dynamax Adventures HP IV metadata does not match the guaranteed IV count.'
+      "Dynamax Adventures HP IV metadata does not match the guaranteed IV count.",
     );
   }
 }
@@ -3720,15 +4232,15 @@ function validateDynamaxAdventureGuaranteedIvs(
 function addDynamaxAdventureContractIssue(
   context: z.RefinementCtx,
   path: Array<string | number>,
-  message: string
+  message: string,
 ) {
-  context.addIssue({ code: 'custom', message, path });
+  context.addIssue({ code: "custom", message, path });
 }
 
 export const shopProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const shopInventoryRecordSchema = z.strictObject({
@@ -3743,7 +4255,7 @@ export const shopInventoryRecordSchema = z.strictObject({
   rowId: z.string().nullable().default(null),
   slot: z.number().int().positive(),
   stockLimit: z.number().int().nonnegative().nullable(),
-  supportedFields: z.array(z.string()).default([])
+  supportedFields: z.array(z.string()).default([]),
 });
 
 export const shopEditableFieldOptionSchema = z.strictObject({
@@ -3751,7 +4263,7 @@ export const shopEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
   price: z.number().int().nonnegative(),
   prices: z.record(z.string(), z.number().int().nonnegative()).default({}),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const shopEditableFieldSchema = z.strictObject({
@@ -3760,60 +4272,60 @@ export const shopEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(shopEditableFieldOptionSchema).default([]),
-  valueKind: z.enum(['integer', 'text'])
+  valueKind: z.enum(["integer", "text"]),
 });
 
 export const shopRecordSchema = z.strictObject({
   canEditInventoryOrder: z.boolean().default(true),
   currency: z.string(),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   globalPriceField: z.string().nullable().default(null),
   inventory: z.array(shopInventoryRecordSchema),
   inventoryCount: z.number().int().positive().default(1),
   inventoryIndex: z.number().int().positive().default(1),
-  inventoryLabel: z.string().default('Inventory'),
-  inventorySummary: z.string().default(''),
-  kind: z.string().default('Unknown'),
+  inventoryLabel: z.string().default("Inventory"),
+  inventorySummary: z.string().default(""),
+  kind: z.string().default("Unknown"),
   location: z.string(),
   name: z.string(),
   provenance: shopProvenanceSchema,
   shopId: z.string(),
-  sourceHash: z.string().default('')
+  sourceHash: z.string().default(""),
 });
 
 export const shopsWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalInventoryItemCount: z.number().int().nonnegative(),
-  totalShopCount: z.number().int().nonnegative()
+  totalShopCount: z.number().int().nonnegative(),
 });
 
 export const shopsWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(shopEditableFieldSchema),
-  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   shops: z.array(shopRecordSchema),
   stats: shopsWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadShopsWorkflowResponseSchema = z.strictObject({
-  workflow: shopsWorkflowSchema
+  workflow: shopsWorkflowSchema,
 });
 
 export const encounterProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 const encounterFormOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const encounterEditableFieldOptionSchema = z.strictObject({
   ...encounterFormOptionSchema.shape,
-  formOptions: z.array(encounterFormOptionSchema).nullable().optional()
+  formOptions: z.array(encounterFormOptionSchema).nullable().optional(),
 });
 
 export const encounterSlotRecordSchema = z.strictObject({
@@ -3836,6 +4348,7 @@ export const encounterSlotRecordSchema = z.strictObject({
   flawlessIvCount: z.number().int().nullable().optional(),
   gender: z.number().int().nullable().optional(),
   hasExplicitMoves: z.boolean().nullable().optional(),
+  hasAlphaChance: z.boolean().nullable().optional(),
   heldItemId: z.number().int().nullable().optional(),
   isAlpha: z.boolean().optional(),
   itemDropSummaries: z.array(z.string()).nullable().optional(),
@@ -3868,32 +4381,32 @@ export const encounterSlotRecordSchema = z.strictObject({
   timeOfDay: z.string().nullable(),
   weather: z.string(),
   weight: z.number().int().nonnegative(),
-  ability: z.number().int().nullable().optional()
+  ability: z.number().int().nullable().optional(),
 });
 
 const bossBattleContextSchema = z.strictObject({
   key: z.string(),
   label: z.string(),
-  rank: z.number().int()
+  rank: z.number().int(),
 });
 
 const encounterPhaseConditionSchema = z.strictObject({
   operator: z.number().int(),
-  values: z.array(z.string())
+  values: z.array(z.string()),
 });
 
 export const scriptedEncounterMoveOwnershipSchema = z.strictObject({
   affectedScopes: z.array(scriptedBossAffectedScopeSchema),
   authority: z.enum([
-    'dedicated-follower-action-template',
-    'shared-primary-controller'
+    "dedicated-follower-action-template",
+    "shared-primary-controller",
   ]),
   caveat: z.string().min(1),
   encounterMoveListAuthoritative: z.literal(false),
   profileKey: z.string().min(1),
   profileName: z.string().min(1),
   selectorActionIds: z.array(z.number().int().positive()).min(1),
-  state: z.literal('scripted-controller')
+  state: z.literal("scripted-controller"),
 });
 
 export const encounterEditableFieldSchema = z.strictObject({
@@ -3902,7 +4415,7 @@ export const encounterEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(encounterEditableFieldOptionSchema).optional(),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const encounterPlayerPartnerRecordSchema = z.strictObject({
@@ -3936,7 +4449,7 @@ export const encounterPlayerPartnerRecordSchema = z.strictObject({
   shinyMode: z.number().int(),
   slot: z.literal(-1),
   species: z.string().min(1),
-  speciesId: z.number().int().nonnegative()
+  speciesId: z.number().int().nonnegative(),
 });
 
 export const encounterTableRecordSchema = z.strictObject({
@@ -3959,21 +4472,23 @@ export const encounterTableRecordSchema = z.strictObject({
   playerPartner: encounterPlayerPartnerRecordSchema.nullable().optional(),
   provenance: encounterProvenanceSchema,
   rawSpawnerId: z.string().nullable().optional(),
-  scriptedMoveOwnership: scriptedEncounterMoveOwnershipSchema.nullable().optional(),
+  scriptedMoveOwnership: scriptedEncounterMoveOwnershipSchema
+    .nullable()
+    .optional(),
   slots: z.array(encounterSlotRecordSchema),
   spawnerCategory: z
-    .enum(['spawnGroup', 'spawnPoint', 'specialEncounter', 'alpha', 'other'])
+    .enum(["spawnGroup", "spawnPoint", "specialEncounter", "alpha", "other"])
     .nullable()
     .optional(),
   tableDetails: z.string().nullable().optional(),
   tableLabel: z.string().nullable().optional(),
-  tableId: z.string()
+  tableId: z.string(),
 });
 
 export const encountersWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalSlotCount: z.number().int().nonnegative(),
-  totalTableCount: z.number().int().nonnegative()
+  totalTableCount: z.number().int().nonnegative(),
 });
 
 export const encountersWorkflowSchema = z.strictObject({
@@ -3983,32 +4498,32 @@ export const encountersWorkflowSchema = z.strictObject({
   scriptedBosses: z.array(scriptedBossProfileSchema).default([]),
   stats: encountersWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  tables: z.array(encounterTableRecordSchema)
+  tables: z.array(encounterTableRecordSchema),
 });
 
 export const loadEncountersWorkflowResponseSchema = z.strictObject({
-  workflow: encountersWorkflowSchema
+  workflow: encountersWorkflowSchema,
 });
 
 export const raidBattleProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const raidBattleEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const raidBattleRewardLinkSchema = z.strictObject({
   isMatched: z.boolean(),
   preview: z.string(),
   rewardItemCount: z.number().int().nonnegative(),
-  rewardKind: z.enum(['drop', 'bonus']),
+  rewardKind: z.enum(["drop", "bonus"]),
   rewardKindLabel: z.string(),
   sourceTableHash: z.string(),
-  tableId: z.string()
+  tableId: z.string(),
 });
 
 export const raidBattleSlotRecordSchema = z.strictObject({
@@ -4031,7 +4546,7 @@ export const raidBattleSlotRecordSchema = z.strictObject({
   probabilitySummary: z.string(),
   slot: z.number().int().positive(),
   species: z.string(),
-  speciesId: z.number().int().nonnegative()
+  speciesId: z.number().int().nonnegative(),
 });
 
 export const raidBattleTableRecordSchema = z.strictObject({
@@ -4042,7 +4557,7 @@ export const raidBattleTableRecordSchema = z.strictObject({
   slots: z.array(raidBattleSlotRecordSchema),
   sourceTableHash: z.string(),
   tableIndex: z.number().int().nonnegative(),
-  tableId: z.string()
+  tableId: z.string(),
 });
 
 export const raidBattleEditableFieldSchema = z.strictObject({
@@ -4051,14 +4566,14 @@ export const raidBattleEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(raidBattleEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const raidBattlesWorkflowStatsSchema = z.strictObject({
   gigantamaxSlotCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
   totalSlotCount: z.number().int().nonnegative(),
-  totalTableCount: z.number().int().nonnegative()
+  totalTableCount: z.number().int().nonnegative(),
 });
 
 export const raidBattlesWorkflowSchema = z.strictObject({
@@ -4066,22 +4581,22 @@ export const raidBattlesWorkflowSchema = z.strictObject({
   editableFields: z.array(raidBattleEditableFieldSchema),
   stats: raidBattlesWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  tables: z.array(raidBattleTableRecordSchema)
+  tables: z.array(raidBattleTableRecordSchema),
 });
 
 export const loadRaidBattlesWorkflowResponseSchema = z.strictObject({
-  workflow: raidBattlesWorkflowSchema
+  workflow: raidBattlesWorkflowSchema,
 });
 
 export const teraRaidProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const teraRaidEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().int(),
 });
 
 export const teraRaidEditableFieldSchema = z.strictObject({
@@ -4090,14 +4605,14 @@ export const teraRaidEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(teraRaidEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const teraRaidMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int().nonnegative(),
   pointUps: z.number().int().nonnegative(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().nonnegative(),
 });
 
 export const teraRaidIvsSchema = z.strictObject({
@@ -4106,7 +4621,7 @@ export const teraRaidIvsSchema = z.strictObject({
   hp: z.number().int(),
   specialAttack: z.number().int(),
   specialDefense: z.number().int(),
-  speed: z.number().int()
+  speed: z.number().int(),
 });
 
 export const teraRaidRewardItemSchema = z.strictObject({
@@ -4125,7 +4640,7 @@ export const teraRaidRewardItemSchema = z.strictObject({
   subjectType: z.number().int().nullable(),
   subjectTypeLabel: z.string().nullable(),
   tableHash: z.string(),
-  tableIndex: z.number().int().nonnegative()
+  tableIndex: z.number().int().nonnegative(),
 });
 
 export const teraRaidRewardTableSchema = z.strictObject({
@@ -4137,7 +4652,7 @@ export const teraRaidRewardTableSchema = z.strictObject({
   rewardKindLabel: z.string(),
   rewards: z.array(teraRaidRewardItemSchema),
   tableHash: z.string(),
-  tableIndex: z.number().int().nonnegative()
+  tableIndex: z.number().int().nonnegative(),
 });
 
 export const teraRaidRecordSchema = z.strictObject({
@@ -4198,14 +4713,14 @@ export const teraRaidRecordSchema = z.strictObject({
   versionLabel: z.string(),
   weightMode: z.number().int(),
   weightModeLabel: z.string(),
-  weightValue: z.number().int()
+  weightValue: z.number().int(),
 });
 
 export const teraRaidsWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalRaidCount: z.number().int().nonnegative(),
   totalRewardItemCount: z.number().int().nonnegative(),
-  totalRewardTableCount: z.number().int().nonnegative()
+  totalRewardTableCount: z.number().int().nonnegative(),
 });
 
 export const teraRaidsWorkflowSchema = z.strictObject({
@@ -4215,17 +4730,17 @@ export const teraRaidsWorkflowSchema = z.strictObject({
   lotteryRewardTables: z.array(teraRaidRewardTableSchema),
   raids: z.array(teraRaidRecordSchema),
   stats: teraRaidsWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadTeraRaidsWorkflowResponseSchema = z.strictObject({
-  workflow: teraRaidsWorkflowSchema
+  workflow: teraRaidsWorkflowSchema,
 });
 
 export const raidRewardProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 const raidRewardUint32Schema = z.number().int().nonnegative().max(0xffff_ffff);
@@ -4237,7 +4752,7 @@ export const raidRewardItemRecordSchema = z.strictObject({
   quantity: raidRewardUint32Schema,
   slot: z.number().int().positive(),
   values: z.array(raidRewardUint32Schema).min(5),
-  weight: raidRewardUint32Schema
+  weight: raidRewardUint32Schema,
 });
 
 export const raidRewardTableRecordSchema = z.strictObject({
@@ -4247,17 +4762,17 @@ export const raidRewardTableRecordSchema = z.strictObject({
   gameVersion: z.string(),
   provenance: raidRewardProvenanceSchema,
   rank: z.number().int().nonnegative(),
-  rewardKind: z.enum(['drop', 'bonus']),
+  rewardKind: z.enum(["drop", "bonus"]),
   rewardKindLabel: z.string(),
   rewards: z.array(raidRewardItemRecordSchema),
   sourceTableHash: z.string(),
   tableIndex: z.number().int().nonnegative(),
-  tableId: z.string()
+  tableId: z.string(),
 });
 
 export const raidRewardEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: raidRewardUint32Schema
+  value: raidRewardUint32Schema,
 });
 
 export const raidRewardEditableFieldSchema = z.strictObject({
@@ -4266,13 +4781,13 @@ export const raidRewardEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(raidRewardEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const raidRewardsWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalRewardItemCount: z.number().int().nonnegative(),
-  totalTableCount: z.number().int().nonnegative()
+  totalTableCount: z.number().int().nonnegative(),
 });
 
 export const raidRewardsWorkflowSchema = z.strictObject({
@@ -4280,27 +4795,40 @@ export const raidRewardsWorkflowSchema = z.strictObject({
   editableFields: z.array(raidRewardEditableFieldSchema),
   stats: raidRewardsWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  tables: z.array(raidRewardTableRecordSchema)
+  tables: z.array(raidRewardTableRecordSchema),
 });
 
 export const loadRaidRewardsWorkflowResponseSchema = z.strictObject({
-  workflow: raidRewardsWorkflowSchema
+  workflow: raidRewardsWorkflowSchema,
 });
 
 export const loadRaidBonusRewardsWorkflowResponseSchema = z.strictObject({
-  workflow: raidRewardsWorkflowSchema
+  workflow: raidRewardsWorkflowSchema,
 });
 
 export const placementProvenanceSchema = z.strictObject({
-  fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const placementEditableFieldOptionSchema = z.strictObject({
-  label: z.string(), value: z.number().int()
+  label: z.string(),
+  value: z.number().int(),
 });
 
 export const placementFieldValueSchema = z.strictObject({
-  description: z.string().optional().default(''), displayValue: z.string(), field: z.string(), group: z.string(), isReadOnly: z.boolean(), label: z.string(), maximumValue: z.number().optional().default(0), minimumValue: z.number().optional().default(0), options: z.array(placementEditableFieldOptionSchema).nullish(), value: z.string(), valueKind: z.string().optional().default('text')
+  description: z.string().optional().default(""),
+  displayValue: z.string(),
+  field: z.string(),
+  group: z.string(),
+  isReadOnly: z.boolean(),
+  label: z.string(),
+  maximumValue: z.number().optional().default(0),
+  minimumValue: z.number().optional().default(0),
+  options: z.array(placementEditableFieldOptionSchema).nullish(),
+  value: z.string(),
+  valueKind: z.string().optional().default("text"),
 });
 
 export const placedObjectRecordSchema = z.strictObject({
@@ -4326,39 +4854,56 @@ export const placedObjectRecordSchema = z.strictObject({
   x: z.number(),
   y: z.number(),
   zoneIndex: z.number().int().nonnegative(),
-  z: z.number()
+  z: z.number(),
 });
 
 export const placementEditableFieldSchema = z.strictObject({
-  description: z.string().optional(), field: z.string(), group: z.string().optional(), isReadOnly: z.boolean().optional(), label: z.string(),
-  maximumValue: z.number(), minimumValue: z.number(), options: z.array(placementEditableFieldOptionSchema).optional(), valueKind: z.string()
+  description: z.string().optional(),
+  field: z.string(),
+  group: z.string().optional(),
+  isReadOnly: z.boolean().optional(),
+  label: z.string(),
+  maximumValue: z.number(),
+  minimumValue: z.number(),
+  options: z.array(placementEditableFieldOptionSchema).optional(),
+  valueKind: z.string(),
 });
 
 export const placementCategorySchema = z.strictObject({
-  description: z.string(), id: z.string(), label: z.string(), objectCount: z.number().int().nonnegative()
+  description: z.string(),
+  id: z.string(),
+  label: z.string(),
+  objectCount: z.number().int().nonnegative(),
 });
 
 export const placementWorkflowStatsSchema = z.strictObject({
-  sourceFileCount: z.number().int().nonnegative(), totalAreaCount: z.number().int().nonnegative(), totalObjectCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
+  totalAreaCount: z.number().int().nonnegative(),
+  totalObjectCount: z.number().int().nonnegative(),
 });
 
 export const placementWorkflowSchema = z.strictObject({
-  categories: z.array(placementCategorySchema).nullish(), diagnostics: z.array(apiDiagnosticSchema),
-  editableFields: z.array(placementEditableFieldSchema), objects: z.array(placedObjectRecordSchema),
-  stats: placementWorkflowStatsSchema, summary: workflowSummarySchema
+  categories: z.array(placementCategorySchema).nullish(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(placementEditableFieldSchema),
+  objects: z.array(placedObjectRecordSchema),
+  stats: placementWorkflowStatsSchema,
+  summary: workflowSummarySchema,
 });
 
-export const loadPlacementWorkflowResponseSchema = z.strictObject({ workflow: placementWorkflowSchema });
+export const loadPlacementWorkflowResponseSchema = z.strictObject({
+  workflow: placementWorkflowSchema,
+});
 
 export const behaviorProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const behaviorFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const behaviorFieldSchema = z.strictObject({
@@ -4370,12 +4915,12 @@ export const behaviorFieldSchema = z.strictObject({
   maximumValue: z.number(),
   minimumValue: z.number(),
   options: z.array(behaviorFieldOptionSchema).optional(),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const behaviorFieldValueSchema = z.strictObject({
   field: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const behaviorEntryRecordSchema = z.strictObject({
@@ -4395,13 +4940,13 @@ export const behaviorEntryRecordSchema = z.strictObject({
   modelPart: z.string(),
   provenance: behaviorProvenanceSchema,
   speciesId: z.number().int(),
-  speciesName: z.string()
+  speciesName: z.string(),
 });
 
 export const behaviorWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalBehaviorCount: z.number().int().nonnegative(),
-  totalEntryCount: z.number().int().nonnegative()
+  totalEntryCount: z.number().int().nonnegative(),
 });
 
 export const behaviorWorkflowSchema = z.strictObject({
@@ -4409,17 +4954,17 @@ export const behaviorWorkflowSchema = z.strictObject({
   entries: z.array(behaviorEntryRecordSchema),
   fields: z.array(behaviorFieldSchema),
   stats: behaviorWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadBehaviorWorkflowResponseSchema = z.strictObject({
-  workflow: behaviorWorkflowSchema
+  workflow: behaviorWorkflowSchema,
 });
 
 export const flagworkSaveProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const flagRecordSchema = z.strictObject({
@@ -4434,7 +4979,7 @@ export const flagRecordSchema = z.strictObject({
   name: z.string(),
   provenance: flagworkSaveProvenanceSchema,
   table: z.string(),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const saveBlockRecordSchema = z.strictObject({
@@ -4445,7 +4990,7 @@ export const saveBlockRecordSchema = z.strictObject({
   kind: z.string(),
   name: z.string(),
   provenance: flagworkSaveProvenanceSchema,
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const saveFileRecordSchema = z.strictObject({
@@ -4453,14 +4998,14 @@ export const saveFileRecordSchema = z.strictObject({
   fileName: z.string(),
   sha256: z.string(),
   sizeBytes: z.number().int().nonnegative(),
-  status: z.string()
+  status: z.string(),
 });
 
 export const flagworkSaveWorkflowStatsSchema = z.strictObject({
   hasSaveFile: z.boolean(),
   sourceFileCount: z.number().int().nonnegative(),
   totalFlagCount: z.number().int().nonnegative(),
-  totalSaveBlockCount: z.number().int().nonnegative()
+  totalSaveBlockCount: z.number().int().nonnegative(),
 });
 
 export const flagworkSaveWorkflowSchema = z.strictObject({
@@ -4469,17 +5014,17 @@ export const flagworkSaveWorkflowSchema = z.strictObject({
   saveFile: saveFileRecordSchema.nullable(),
   saveBlocks: z.array(saveBlockRecordSchema),
   stats: flagworkSaveWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadFlagworkSaveWorkflowResponseSchema = z.strictObject({
-  workflow: flagworkSaveWorkflowSchema
+  workflow: flagworkSaveWorkflowSchema,
 });
 
 export const exeFsPatchProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const exeFsPatchRecordSchema = z.strictObject({
@@ -4490,7 +5035,7 @@ export const exeFsPatchRecordSchema = z.strictObject({
   patchKind: z.string(),
   provenance: exeFsPatchProvenanceSchema,
   status: z.string(),
-  targetFile: z.string()
+  targetFile: z.string(),
 });
 
 export const exeFsSegmentRecordSchema = z.strictObject({
@@ -4502,7 +5047,7 @@ export const exeFsSegmentRecordSchema = z.strictObject({
   name: z.string(),
   provenance: exeFsPatchProvenanceSchema,
   segmentId: z.string(),
-  sha256: z.string()
+  sha256: z.string(),
 });
 
 export const exeFsPatchCheckRecordSchema = z.strictObject({
@@ -4515,7 +5060,7 @@ export const exeFsPatchCheckRecordSchema = z.strictObject({
   offset: z.string(),
   patchId: z.string(),
   provenance: exeFsPatchProvenanceSchema,
-  status: z.string()
+  status: z.string(),
 });
 
 export const exeFsPatchWorkflowStatsSchema = z.strictObject({
@@ -4524,7 +5069,7 @@ export const exeFsPatchWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalCheckCount: z.number().int().nonnegative(),
   totalPatchCount: z.number().int().nonnegative(),
-  warningCount: z.number().int().nonnegative()
+  warningCount: z.number().int().nonnegative(),
 });
 
 export const exeFsPatchWorkflowSchema = z.strictObject({
@@ -4533,29 +5078,29 @@ export const exeFsPatchWorkflowSchema = z.strictObject({
   patches: z.array(exeFsPatchRecordSchema),
   segments: z.array(exeFsSegmentRecordSchema),
   stats: exeFsPatchWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadExeFsPatchWorkflowResponseSchema = z.strictObject({
-  workflow: exeFsPatchWorkflowSchema
+  workflow: exeFsPatchWorkflowSchema,
 });
 
 export const stageExeFsPatchRequestSchema = z.strictObject({
   patchId: z.string().trim().min(1),
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageExeFsPatchResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: exeFsPatchWorkflowSchema
+  workflow: exeFsPatchWorkflowSchema,
 });
 
 export const bagHookProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const bagHookSlotRecordSchema = z.strictObject({
@@ -4568,7 +5113,7 @@ export const bagHookSlotRecordSchema = z.strictObject({
   quantity: z.number().int().positive().nullable(),
   reservedFor: z.string(),
   slot: z.number().int().positive(),
-  status: z.string()
+  status: z.string(),
 });
 
 export const bagHookWorkflowStatsSchema = z.strictObject({
@@ -4576,7 +5121,7 @@ export const bagHookWorkflowStatsSchema = z.strictObject({
   occupiedSlotCount: z.number().int().nonnegative(),
   reservedSlotCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalSlotCount: z.number().int().nonnegative()
+  totalSlotCount: z.number().int().nonnegative(),
 });
 
 export const bagHookWorkflowSchema = z.strictObject({
@@ -4585,39 +5130,39 @@ export const bagHookWorkflowSchema = z.strictObject({
   installStatus: z.string(),
   slots: z.array(bagHookSlotRecordSchema),
   stats: bagHookWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadBagHookWorkflowResponseSchema = z.strictObject({
-  workflow: bagHookWorkflowSchema
+  workflow: bagHookWorkflowSchema,
 });
 
 export const stageBagHookInstallRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageBagHookInstallResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: bagHookWorkflowSchema
+  workflow: bagHookWorkflowSchema,
 });
 
 export const stageBagHookUninstallRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageBagHookUninstallResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: bagHookWorkflowSchema
+  workflow: bagHookWorkflowSchema,
 });
 
 export const catchCapProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const catchCapRecordSchema = z.strictObject({
@@ -4627,66 +5172,73 @@ export const catchCapRecordSchema = z.strictObject({
   // editor can show the problem and still let the user repair or uninstall the hook.
   levelCap: z.number().int().min(0).max(255),
   maximumLevelCap: z.number().int().min(1).max(100),
-  minimumLevelCap: z.number().int().min(1).max(100)
+  minimumLevelCap: z.number().int().min(1).max(100),
 });
 
 export const catchCapSelectionSchema = z.strictObject({
   badgeCount: z.number().int().min(0).max(8),
-  levelCap: z.number().int().min(1).max(100)
+  levelCap: z.number().int().min(1).max(100),
 });
 
 export const catchCapWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
-  totalCapCount: z.number().int().nonnegative()
+  totalCapCount: z.number().int().nonnegative(),
 });
 
 export const catchCapWorkflowSchema = z.strictObject({
   buildId: z.string(),
   capLogicSha256: z.string(),
   caps: z.array(catchCapRecordSchema),
-  detectedGame: z.enum(['sword', 'shield']).nullable(),
+  detectedGame: z.enum(["sword", "shield"]).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
   displayHookOffsetHex: z.string(),
   installMessage: z.string(),
-  installStatus: z.enum(['disabled', 'readOnly', 'available', 'installed', 'blocked', 'foreign']),
+  installStatus: z.enum([
+    "disabled",
+    "readOnly",
+    "available",
+    "installed",
+    "blocked",
+    "foreign",
+  ]),
   logicExpression: z.string(),
   provenance: catchCapProvenanceSchema,
   runtimeHookOffsetHex: z.string(),
   stats: catchCapWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadCatchCapWorkflowResponseSchema = z.strictObject({
-  workflow: catchCapWorkflowSchema
+  workflow: catchCapWorkflowSchema,
 });
 
 export const stageCatchCapRequestSchema = z.strictObject({
   caps: z.array(catchCapSelectionSchema),
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageCatchCapResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: catchCapWorkflowSchema
+  workflow: catchCapWorkflowSchema,
 });
 
 export const stageCatchCapUninstallRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageCatchCapUninstallResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: catchCapWorkflowSchema
+  workflow: catchCapWorkflowSchema,
 });
 
 export const hyperTrainingProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const hyperTrainingSourceRecordSchema = z.strictObject({
@@ -4694,7 +5246,7 @@ export const hyperTrainingSourceRecordSchema = z.strictObject({
   provenance: hyperTrainingProvenanceSchema,
   relativePath: z.string(),
   sourceId: z.string(),
-  status: z.enum(['available', 'missing', 'optionalMissing'])
+  status: z.enum(["available", "missing", "optionalMissing"]),
 });
 
 export const hyperTrainingLevelRuleSchema = z.strictObject({
@@ -4708,112 +5260,118 @@ export const hyperTrainingLevelRuleSchema = z.strictObject({
   runtimeSummary: z.string(),
   scriptCell: z.string(),
   scriptMinimumLevel: z.number().int().min(1).max(100),
-  vanillaMinimumLevel: z.number().int()
+  vanillaMinimumLevel: z.number().int(),
 });
 
 export const hyperTrainingWorkflowStatsSchema = z.strictObject({
   outputFileCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
 });
 
 export const hyperTrainingWorkflowSchema = z.strictObject({
-  buildId: z.union([z.literal('unknown'), z.string().regex(/^[A-F0-9]{40}$/)]),
-  detectedGame: z.enum(['sword', 'shield']).nullable(),
+  buildId: z.union([z.literal("unknown"), z.string().regex(/^[A-F0-9]{40}$/)]),
+  detectedGame: z.enum(["sword", "shield"]).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
   installMessage: z.string(),
-  installStatus: z.enum(['available', 'blocked', 'disabled', 'installed', 'readOnly']),
+  installStatus: z.enum([
+    "available",
+    "blocked",
+    "disabled",
+    "installed",
+    "readOnly",
+  ]),
   levelRule: hyperTrainingLevelRuleSchema,
   sources: z.array(hyperTrainingSourceRecordSchema),
   stats: hyperTrainingWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadHyperTrainingWorkflowResponseSchema = z.strictObject({
-  workflow: hyperTrainingWorkflowSchema
+  workflow: hyperTrainingWorkflowSchema,
 });
 
 export const stageHyperTrainingRequestSchema = z.strictObject({
   minimumLevel: z.number().int().min(1).max(100),
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageHyperTrainingResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: hyperTrainingWorkflowSchema
+  workflow: hyperTrainingWorkflowSchema,
 });
 
 const typeChartTypeDefinitions = [
-  ['Normal', 'NOR', '#A8A878'],
-  ['Fire', 'FIR', '#F05030'],
-  ['Water', 'WAT', '#6890F0'],
-  ['Electric', 'ELE', '#F8D030'],
-  ['Grass', 'GRA', '#78C850'],
-  ['Ice', 'ICE', '#78C8F0'],
-  ['Fighting', 'FIG', '#A05038'],
-  ['Poison', 'POI', '#A040A0'],
-  ['Ground', 'GRO', '#E0C068'],
-  ['Flying', 'FLY', '#8080F0'],
-  ['Psychic', 'PSY', '#F85888'],
-  ['Bug', 'BUG', '#A8B820'],
-  ['Rock', 'ROC', '#B8A038'],
-  ['Ghost', 'GHO', '#6060B0'],
-  ['Dragon', 'DRA', '#7038F8'],
-  ['Dark', 'DAR', '#705848'],
-  ['Steel', 'STE', '#B8B8D0'],
-  ['Fairy', 'FAI', '#EE99EE']
+  ["Normal", "NOR", "#A8A878"],
+  ["Fire", "FIR", "#F05030"],
+  ["Water", "WAT", "#6890F0"],
+  ["Electric", "ELE", "#F8D030"],
+  ["Grass", "GRA", "#78C850"],
+  ["Ice", "ICE", "#78C8F0"],
+  ["Fighting", "FIG", "#A05038"],
+  ["Poison", "POI", "#A040A0"],
+  ["Ground", "GRO", "#E0C068"],
+  ["Flying", "FLY", "#8080F0"],
+  ["Psychic", "PSY", "#F85888"],
+  ["Bug", "BUG", "#A8B820"],
+  ["Rock", "ROC", "#B8A038"],
+  ["Ghost", "GHO", "#6060B0"],
+  ["Dragon", "DRA", "#7038F8"],
+  ["Dark", "DAR", "#705848"],
+  ["Steel", "STE", "#B8B8D0"],
+  ["Fairy", "FAI", "#EE99EE"],
 ] as const;
 
 const typeChartIdentityByGame = {
   scarlet: {
-    buildId: '421C5411B487EB4D049DD065FEC9547773E8E598',
-    chartOffsetHex: 'main.ro+0x0082286C'
+    buildId: "421C5411B487EB4D049DD065FEC9547773E8E598",
+    chartOffsetHex: "main.ro+0x0082286C",
   },
   shield: {
-    buildId: 'A16802625E7826BF83B6F9708E475B912A9AB7DF',
-    chartOffsetHex: 'main.ro+0x00743600'
+    buildId: "A16802625E7826BF83B6F9708E475B912A9AB7DF",
+    chartOffsetHex: "main.ro+0x00743600",
   },
   sword: {
-    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
-    chartOffsetHex: 'main.ro+0x00743600'
+    buildId: "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471",
+    chartOffsetHex: "main.ro+0x00743600",
   },
   violet: {
-    buildId: '709BFD66115298640155FCC4979DBA151C7CC79A',
-    chartOffsetHex: 'main.ro+0x0082286C'
+    buildId: "709BFD66115298640155FCC4979DBA151C7CC79A",
+    chartOffsetHex: "main.ro+0x0082286C",
   },
   za: {
-    buildId: 'B1F12FD919EAE86AB8A978317677E64BCE443D1F',
-    chartOffsetHex: 'main.ro+0x0019F2A4'
-  }
+    buildId: "B1F12FD919EAE86AB8A978317677E64BCE443D1F",
+    chartOffsetHex: "main.ro+0x0019F2A4",
+  },
 } as const;
 
 const typeChartEffectivenessSchema = z.union([
   z.literal(0),
   z.literal(2),
   z.literal(4),
-  z.literal(8)
+  z.literal(8),
 ]);
 
 export const typeChartProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.literal('exefs/main'),
-  sourceLayer: projectFileLayerSchema
+  sourceFile: z.literal("exefs/main"),
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const typeChartSourceRecordSchema = z.strictObject({
   label: z.string().min(1),
   provenance: typeChartProvenanceSchema,
-  relativePath: z.literal('exefs/main'),
+  relativePath: z.literal("exefs/main"),
   sourceId: z.string().min(1),
-  status: z.enum(['available', 'missing'])
+  status: z.enum(["available", "missing"]),
 });
 
 export const typeChartTypeDefinitionSchema = z.strictObject({
   color: z.string().regex(/^#[A-F0-9]{6}$/),
   label: z.string().min(1),
   shortLabel: z.string().min(1),
-  typeIndex: z.number().int().min(0).max(17)
+  typeIndex: z.number().int().min(0).max(17),
 });
 
 const typeChartTypeDefinitionsSchema = z
@@ -4829,9 +5387,9 @@ const typeChartTypeDefinitionsSchema = z
         type.color !== expected[2]
       ) {
         context.addIssue({
-          code: 'custom',
+          code: "custom",
           message: `Type Chart definition ${typeIndex} does not match the canonical display mapping.`,
-          path: [typeIndex]
+          path: [typeIndex],
         });
       }
     }
@@ -4841,7 +5399,7 @@ export const typeChartCellSchema = z.strictObject({
   attackTypeIndex: z.number().int().min(0).max(17),
   defenseTypeIndex: z.number().int().min(0).max(17),
   effectiveness: typeChartEffectivenessSchema,
-  vanillaEffectiveness: typeChartEffectivenessSchema
+  vanillaEffectiveness: typeChartEffectivenessSchema,
 });
 
 const typeChartCellsSchema = z
@@ -4849,12 +5407,13 @@ const typeChartCellsSchema = z
   .length(18 * 18)
   .superRefine((cells, context) => {
     const coordinates = new Set(
-      cells.map((cell) => `${cell.attackTypeIndex}:${cell.defenseTypeIndex}`)
+      cells.map((cell) => `${cell.attackTypeIndex}:${cell.defenseTypeIndex}`),
     );
     if (coordinates.size !== 18 * 18) {
       context.addIssue({
-        code: 'custom',
-        message: 'Type Chart cells must contain every attack and defense coordinate exactly once.'
+        code: "custom",
+        message:
+          "Type Chart cells must contain every attack and defense coordinate exactly once.",
       });
     }
   });
@@ -4862,80 +5421,100 @@ const typeChartCellsSchema = z
 export const typeChartWorkflowStatsSchema = z.strictObject({
   chartCellCount: z.literal(18 * 18),
   outputFileCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
 });
 
-export const typeChartWorkflowSchema = z.strictObject({
-  buildId: z.union([z.literal('unknown'), z.string().regex(/^[A-F0-9]{40}$/)]),
-  cells: typeChartCellsSchema,
-  chartOffsetHex: z.string(),
-  detectedGame: projectGameSchema.nullable(),
-  diagnostics: z.array(apiDiagnosticSchema),
-  installMessage: z.string(),
-  installStatus: z.enum(['available', 'blocked', 'disabled', 'modified', 'readOnly']),
-  source: typeChartSourceRecordSchema.nullable(),
-  stats: typeChartWorkflowStatsSchema,
-  summary: workflowSummarySchema,
-  types: typeChartTypeDefinitionsSchema
-}).superRefine((workflow, context) => {
-  if (workflow.summary.id !== 'typeChart') {
-    context.addIssue({
-      code: 'custom',
-      message: 'Type Chart workflow summary must use the Type Chart identity.',
-      path: ['summary', 'id']
-    });
-  }
+export const typeChartWorkflowSchema = z
+  .strictObject({
+    buildId: z.union([
+      z.literal("unknown"),
+      z.string().regex(/^[A-F0-9]{40}$/),
+    ]),
+    cells: typeChartCellsSchema,
+    chartOffsetHex: z.string(),
+    detectedGame: projectGameSchema.nullable(),
+    diagnostics: z.array(apiDiagnosticSchema),
+    installMessage: z.string(),
+    installStatus: z.enum([
+      "available",
+      "blocked",
+      "disabled",
+      "modified",
+      "readOnly",
+    ]),
+    source: typeChartSourceRecordSchema.nullable(),
+    stats: typeChartWorkflowStatsSchema,
+    summary: workflowSummarySchema,
+    types: typeChartTypeDefinitionsSchema,
+  })
+  .superRefine((workflow, context) => {
+    if (workflow.summary.id !== "typeChart") {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Type Chart workflow summary must use the Type Chart identity.",
+        path: ["summary", "id"],
+      });
+    }
 
-  if (workflow.detectedGame === null) {
-    return;
-  }
+    if (workflow.detectedGame === null) {
+      return;
+    }
 
-  const expectedIdentity = typeChartIdentityByGame[workflow.detectedGame];
-  if (workflow.buildId !== expectedIdentity.buildId) {
-    context.addIssue({
-      code: 'custom',
-      message: 'Type Chart build ID does not match the detected game.',
-      path: ['buildId']
-    });
-  }
-  const hasAllowedBlockedUnknownOffset =
-    workflow.installStatus === 'blocked' && workflow.chartOffsetHex === 'unknown';
-  if (
-    workflow.chartOffsetHex !== expectedIdentity.chartOffsetHex &&
-    !hasAllowedBlockedUnknownOffset
-  ) {
-    context.addIssue({
-      code: 'custom',
-      message: 'Type Chart offset does not match the detected game.',
-      path: ['chartOffsetHex']
-    });
-  }
-});
+    const expectedIdentity = typeChartIdentityByGame[workflow.detectedGame];
+    if (workflow.buildId !== expectedIdentity.buildId) {
+      context.addIssue({
+        code: "custom",
+        message: "Type Chart build ID does not match the detected game.",
+        path: ["buildId"],
+      });
+    }
+    const hasAllowedBlockedUnknownOffset =
+      workflow.installStatus === "blocked" &&
+      workflow.chartOffsetHex === "unknown";
+    if (
+      workflow.chartOffsetHex !== expectedIdentity.chartOffsetHex &&
+      !hasAllowedBlockedUnknownOffset
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Type Chart offset does not match the detected game.",
+        path: ["chartOffsetHex"],
+      });
+    }
+  });
 
 export const loadTypeChartWorkflowResponseSchema = z.strictObject({
-  workflow: typeChartWorkflowSchema
+  workflow: typeChartWorkflowSchema,
 });
 
 export const stageTypeChartRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  values: z.array(typeChartEffectivenessSchema).length(18 * 18)
+  values: z.array(typeChartEffectivenessSchema).length(18 * 18),
 });
 
 export const stageTypeChartResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: typeChartWorkflowSchema
+  workflow: typeChartWorkflowSchema,
 });
 
-export const stageTypeChartUninstallRequestSchema = z.strictObject({ paths: projectPathsSchema, session: editSessionSchema.nullable() });
+export const stageTypeChartUninstallRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+});
 
-export const stageTypeChartUninstallResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: typeChartWorkflowSchema });
+export const stageTypeChartUninstallResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: typeChartWorkflowSchema,
+});
 
 export const ivScreenProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const ivScreenReservedRegionSchema = z.strictObject({
@@ -4944,27 +5523,27 @@ export const ivScreenReservedRegionSchema = z.strictObject({
   offsetLabel: z.string(),
   regionId: z.string(),
   rule: z.string(),
-  startOffset: z.number().int().nullable()
+  startOffset: z.number().int().nullable(),
 });
 
 export const ivScreenWorkflowStatsSchema = z.strictObject({
   reservedMainTextRegionCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
 });
 
 export const ivScreenInstallStatusSchema = z.enum([
-  'disabled',
-  'readOnly',
-  'available',
-  'installed',
-  'blocked',
-  'foreign'
+  "disabled",
+  "readOnly",
+  "available",
+  "installed",
+  "blocked",
+  "foreign",
 ]);
 
 export const ivScreenWorkflowSchema = z.strictObject({
   buildId: z.string(),
   canUninstall: z.boolean(),
-  detectedGame: z.enum(['sword', 'shield']).nullable(),
+  detectedGame: z.enum(["sword", "shield"]).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
   hyperTrainingWrapperOffsetHex: z.string(),
   installMessage: z.string(),
@@ -4976,45 +5555,45 @@ export const ivScreenWorkflowSchema = z.strictObject({
   reservedRegions: z.array(ivScreenReservedRegionSchema),
   stats: ivScreenWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  xToggleRefreshOffsetHex: z.string()
+  xToggleRefreshOffsetHex: z.string(),
 });
 
 export const loadIvScreenWorkflowResponseSchema = z.strictObject({
-  workflow: ivScreenWorkflowSchema
+  workflow: ivScreenWorkflowSchema,
 });
 
 export const stageIvScreenInstallRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageIvScreenInstallResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: ivScreenWorkflowSchema
+  workflow: ivScreenWorkflowSchema,
 });
 
 export const stageIvScreenUninstallRequestSchema = z.strictObject({
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageIvScreenUninstallResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: ivScreenWorkflowSchema
+  workflow: ivScreenWorkflowSchema,
 });
 
 export const royalCandyProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const royalCandyWorkflowStepRecordSchema = z.strictObject({
   description: z.string(),
   label: z.string(),
-  step: z.number().int().nonnegative()
+  step: z.number().int().nonnegative(),
 });
 
 export const royalCandyLevelCapRecordSchema = z.strictObject({
@@ -5026,12 +5605,12 @@ export const royalCandyLevelCapRecordSchema = z.strictObject({
   progressHash: z.string(),
   progressKind: z.string(),
   slot: z.number().int().nonnegative(),
-  workMinimum: z.number().int().nullable()
+  workMinimum: z.number().int().nullable(),
 });
 
 export const royalCandyLevelCapSelectionSchema = z.strictObject({
   levelCap: z.number().int(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().nonnegative(),
 });
 
 export const royalCandyWorkflowCheckRecordSchema = z.strictObject({
@@ -5041,7 +5620,7 @@ export const royalCandyWorkflowCheckRecordSchema = z.strictObject({
   provenance: royalCandyProvenanceSchema,
   status: z.string(),
   target: z.string(),
-  workflowId: z.string()
+  workflowId: z.string(),
 });
 
 export const royalCandyOutputRecordSchema = z.strictObject({
@@ -5052,7 +5631,7 @@ export const royalCandyOutputRecordSchema = z.strictObject({
   relativePath: z.string(),
   sourceFile: z.string(),
   status: z.string(),
-  workflowId: z.string()
+  workflowId: z.string(),
 });
 
 export const royalCandyWorkflowRecordSchema = z.strictObject({
@@ -5067,7 +5646,7 @@ export const royalCandyWorkflowRecordSchema = z.strictObject({
   steps: z.array(royalCandyWorkflowStepRecordSchema),
   target: z.string(),
   templateItemId: z.number().int().nonnegative(),
-  workflowId: z.string()
+  workflowId: z.string(),
 });
 
 export const royalCandyWorkflowStatsSchema = z.strictObject({
@@ -5078,7 +5657,7 @@ export const royalCandyWorkflowStatsSchema = z.strictObject({
   totalCheckCount: z.number().int().nonnegative(),
   totalStepCount: z.number().int().nonnegative(),
   totalWorkflowCount: z.number().int().nonnegative(),
-  warningCount: z.number().int().nonnegative()
+  warningCount: z.number().int().nonnegative(),
 });
 
 export const royalCandyWorkflowSchema = z.strictObject({
@@ -5087,51 +5666,51 @@ export const royalCandyWorkflowSchema = z.strictObject({
   outputs: z.array(royalCandyOutputRecordSchema),
   stats: royalCandyWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  workflows: z.array(royalCandyWorkflowRecordSchema)
+  workflows: z.array(royalCandyWorkflowRecordSchema),
 });
 
 export const loadRoyalCandyWorkflowResponseSchema = z.strictObject({
-  workflow: royalCandyWorkflowSchema
+  workflow: royalCandyWorkflowSchema,
 });
 
 export const stageRoyalCandyWorkflowRequestSchema = z.strictObject({
   levelCaps: z.array(royalCandyLevelCapSelectionSchema).optional(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  workflowId: z.string().trim().min(1)
+  workflowId: z.string().trim().min(1),
 });
 
 export const stageRoyalCandyWorkflowResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: royalCandyWorkflowSchema
+  workflow: royalCandyWorkflowSchema,
 });
 
 export const startingItemsProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const startingItemOptionRecordSchema = z.strictObject({
   category: z.string(),
   isKeyItem: z.boolean(),
   itemId: z.number().int().positive(),
-  name: z.string()
+  name: z.string(),
 });
 
 export const startingItemsBlockerKindSchema = z.enum([
-  'none',
-  'bagHookMissing',
-  'bagHookDamaged',
-  'itemMetadataUnavailable'
+  "none",
+  "bagHookMissing",
+  "bagHookDamaged",
+  "itemMetadataUnavailable",
 ]);
 
 export const startingItemGrantStatusSchema = z.enum([
-  'empty',
-  'occupied',
-  'conflict',
-  'unavailable'
+  "empty",
+  "occupied",
+  "conflict",
+  "unavailable",
 ]);
 
 export const startingItemGrantRecordSchema = z.strictObject({
@@ -5142,20 +5721,20 @@ export const startingItemGrantRecordSchema = z.strictObject({
   provenance: startingItemsProvenanceSchema,
   quantity: z.number().int().min(1).max(999),
   slot: z.number().int().min(2).max(20),
-  status: startingItemGrantStatusSchema
+  status: startingItemGrantStatusSchema,
 });
 
 export const startingItemGrantSelectionSchema = z.strictObject({
   itemId: z.number().int().nonnegative().nullable(),
   quantity: z.number().int().min(1).max(999),
-  slot: z.number().int().min(2).max(20)
+  slot: z.number().int().min(2).max(20),
 });
 
 export const startingItemsWorkflowStatsSchema = z.strictObject({
   itemOptionCount: z.number().int().nonnegative(),
   occupiedGrantSlotCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalGrantSlotCount: z.number().int().nonnegative()
+  totalGrantSlotCount: z.number().int().nonnegative(),
 });
 
 export const startingItemsWorkflowSchema = z.strictObject({
@@ -5163,32 +5742,32 @@ export const startingItemsWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   grants: z.array(startingItemGrantRecordSchema),
   installMessage: z.string(),
-  installStatus: z.enum(['available', 'readOnly', 'blocked']),
+  installStatus: z.enum(["available", "readOnly", "blocked"]),
   itemOptions: z.array(startingItemOptionRecordSchema),
   stats: startingItemsWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadStartingItemsWorkflowResponseSchema = z.strictObject({
-  workflow: startingItemsWorkflowSchema
+  workflow: startingItemsWorkflowSchema,
 });
 
 export const stageStartingItemsRequestSchema = z.strictObject({
   grants: z.array(startingItemGrantSelectionSchema),
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
 });
 
 export const stageStartingItemsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: startingItemsWorkflowSchema
+  workflow: startingItemsWorkflowSchema,
 });
 
 export const spreadsheetImportProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
 });
 
 export const spreadsheetImportColumnRecordSchema = z.strictObject({
@@ -5196,7 +5775,7 @@ export const spreadsheetImportColumnRecordSchema = z.strictObject({
   description: z.string(),
   header: z.string(),
   isRequired: z.boolean(),
-  valueKind: z.string()
+  valueKind: z.string(),
 });
 
 export const spreadsheetImportProfileRecordSchema = z.strictObject({
@@ -5207,24 +5786,24 @@ export const spreadsheetImportProfileRecordSchema = z.strictObject({
   provenance: spreadsheetImportProvenanceSchema,
   sourceKind: z.string(),
   status: z.string(),
-  targetWorkflow: z.string()
+  targetWorkflow: z.string(),
 });
 
 export const spreadsheetImportWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalColumnCount: z.number().int().nonnegative(),
-  totalProfileCount: z.number().int().nonnegative()
+  totalProfileCount: z.number().int().nonnegative(),
 });
 
 export const spreadsheetImportWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   profiles: z.array(spreadsheetImportProfileRecordSchema),
   stats: spreadsheetImportWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const loadSpreadsheetImportWorkflowResponseSchema = z.strictObject({
-  workflow: spreadsheetImportWorkflowSchema
+  workflow: spreadsheetImportWorkflowSchema,
 });
 
 export const spreadsheetImportCellPreviewRecordSchema = z.strictObject({
@@ -5232,7 +5811,7 @@ export const spreadsheetImportCellPreviewRecordSchema = z.strictObject({
   header: z.string(),
   message: z.string(),
   status: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const spreadsheetImportRowPreviewRecordSchema = z.strictObject({
@@ -5241,7 +5820,7 @@ export const spreadsheetImportRowPreviewRecordSchema = z.strictObject({
   recordId: z.string(),
   rowNumber: z.number().int().nonnegative(),
   status: z.string(),
-  summary: z.string()
+  summary: z.string(),
 });
 
 export const spreadsheetImportPreviewSchema = z.strictObject({
@@ -5251,14 +5830,14 @@ export const spreadsheetImportPreviewSchema = z.strictObject({
   rows: z.array(spreadsheetImportRowPreviewRecordSchema),
   skippedRowCount: z.number().int().nonnegative(),
   sourcePath: z.string(),
-  totalRowCount: z.number().int().nonnegative()
+  totalRowCount: z.number().int().nonnegative(),
 });
 
 export const previewSpreadsheetImportResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: spreadsheetImportPreviewSchema,
   session: editSessionSchema,
-  workflow: spreadsheetImportWorkflowSchema
+  workflow: spreadsheetImportWorkflowSchema,
 });
 
 export const modMergerFileRecordSchema = z.strictObject({
@@ -5266,13 +5845,13 @@ export const modMergerFileRecordSchema = z.strictObject({
   relativePath: z.string(),
   size: z.number().int().nonnegative(),
   status: z.string(),
-  supportKind: z.string()
+  supportKind: z.string(),
 });
 
 export const modMergerWorkflowStatsSchema = z.strictObject({
   directory1FileCount: z.number().int().nonnegative(),
   directory2FileCount: z.number().int().nonnegative(),
-  matchingFileCount: z.number().int().nonnegative()
+  matchingFileCount: z.number().int().nonnegative(),
 });
 
 export const modMergerWorkflowSchema = z.strictObject({
@@ -5283,7 +5862,7 @@ export const modMergerWorkflowSchema = z.strictObject({
   modDirectory2: z.string().nullable(),
   outputRootPath: z.string().nullable(),
   stats: modMergerWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const modMergerConflictRecordSchema = z.strictObject({
@@ -5293,7 +5872,7 @@ export const modMergerConflictRecordSchema = z.strictObject({
   directory2Value: z.string(),
   label: z.string(),
   relativePath: z.string(),
-  resolution: z.enum(['mod1', 'mod2']).nullable()
+  resolution: z.enum(["mod1", "mod2"]).nullable(),
 });
 
 export const modMergerFilePreviewRecordSchema = z.strictObject({
@@ -5305,7 +5884,7 @@ export const modMergerFilePreviewRecordSchema = z.strictObject({
   relativePath: z.string(),
   status: z.string(),
   summary: z.string(),
-  supportKind: z.string()
+  supportKind: z.string(),
 });
 
 export const modMergerPreviewSchema = z.strictObject({
@@ -5319,24 +5898,24 @@ export const modMergerPreviewSchema = z.strictObject({
   reviewToken: z.string(),
   selectedFileCount: z.number().int().nonnegative(),
   status: z.string(),
-  unresolvedConflictCount: z.number().int().nonnegative()
+  unresolvedConflictCount: z.number().int().nonnegative(),
 });
 
 export const loadModMergerWorkflowResponseSchema = z.strictObject({
-  workflow: modMergerWorkflowSchema
+  workflow: modMergerWorkflowSchema,
 });
 
 export const stageModMergeResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: modMergerPreviewSchema,
-  workflow: modMergerWorkflowSchema
+  workflow: modMergerWorkflowSchema,
 });
 
 export const applyModMergeResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: modMergerPreviewSchema,
   workflow: modMergerWorkflowSchema,
-  writtenFiles: z.array(z.string())
+  writtenFiles: z.array(z.string()),
 });
 
 export const svModMergerSourceRecordSchema = z.strictObject({
@@ -5348,7 +5927,7 @@ export const svModMergerSourceRecordSchema = z.strictObject({
   overrideCount: z.number().int().nonnegative(),
   path: z.string(),
   sourceIndex: z.number().int().nonnegative(),
-  status: z.string()
+  status: z.string(),
 });
 
 export const svModMergerWorkflowStatsSchema = z.strictObject({
@@ -5356,7 +5935,7 @@ export const svModMergerWorkflowStatsSchema = z.strictObject({
   outputFileCount: z.number().int().nonnegative(),
   overrideCount: z.number().int().nonnegative(),
   sourceCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
 });
 
 export const svModMergerWorkflowSchema = z.strictObject({
@@ -5364,7 +5943,7 @@ export const svModMergerWorkflowSchema = z.strictObject({
   outputRootPath: z.string().nullable(),
   sources: z.array(svModMergerSourceRecordSchema),
   stats: svModMergerWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 
 export const svModMergerFilePreviewRecordSchema = z.strictObject({
@@ -5376,7 +5955,7 @@ export const svModMergerFilePreviewRecordSchema = z.strictObject({
   sourceName: z.string(),
   status: z.string(),
   summary: z.string(),
-  supportKind: z.string()
+  supportKind: z.string(),
 });
 
 export const svModMergerPreviewSchema = z.strictObject({
@@ -5387,24 +5966,24 @@ export const svModMergerPreviewSchema = z.strictObject({
   readyFileCount: z.number().int().nonnegative(),
   selectedFileCount: z.number().int().nonnegative(),
   status: z.string(),
-  unresolvedConflictCount: z.number().int().nonnegative()
+  unresolvedConflictCount: z.number().int().nonnegative(),
 });
 
 export const loadSvModMergerWorkflowResponseSchema = z.strictObject({
-  workflow: svModMergerWorkflowSchema
+  workflow: svModMergerWorkflowSchema,
 });
 
 export const stageSvModMergeResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: svModMergerPreviewSchema,
-  workflow: svModMergerWorkflowSchema
+  workflow: svModMergerWorkflowSchema,
 });
 
 export const applySvModMergeResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: svModMergerPreviewSchema,
   workflow: svModMergerWorkflowSchema,
-  writtenFiles: z.array(z.string())
+  writtenFiles: z.array(z.string()),
 });
 
 export const zaModMergerSourceRecordSchema = z.strictObject({
@@ -5416,21 +5995,21 @@ export const zaModMergerSourceRecordSchema = z.strictObject({
   overrideCount: z.number().int().nonnegative(),
   path: z.string(),
   sourceIndex: z.number().int(),
-  status: z.string()
+  status: z.string(),
 });
 export const zaModMergerWorkflowStatsSchema = z.strictObject({
   enabledSourceCount: z.number().int().nonnegative(),
   outputFileCount: z.number().int().nonnegative(),
   overrideCount: z.number().int().nonnegative(),
   sourceCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(),
 });
 export const zaModMergerWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   outputRootPath: z.string().nullable(),
   sources: z.array(zaModMergerSourceRecordSchema),
   stats: zaModMergerWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
 });
 export const zaModMergerFilePreviewRecordSchema = z.strictObject({
   mergeKind: z.string(),
@@ -5441,7 +6020,7 @@ export const zaModMergerFilePreviewRecordSchema = z.strictObject({
   sourceName: z.string(),
   status: z.string(),
   summary: z.string(),
-  supportKind: z.string()
+  supportKind: z.string(),
 });
 export const zaModMergerPreviewSchema = z.strictObject({
   canApply: z.boolean(),
@@ -5451,24 +6030,24 @@ export const zaModMergerPreviewSchema = z.strictObject({
   readyFileCount: z.number().int().nonnegative(),
   selectedFileCount: z.number().int().nonnegative(),
   status: z.string(),
-  unresolvedConflictCount: z.number().int().nonnegative()
+  unresolvedConflictCount: z.number().int().nonnegative(),
 });
 
 export const loadZaModMergerWorkflowResponseSchema = z.strictObject({
-  workflow: zaModMergerWorkflowSchema
+  workflow: zaModMergerWorkflowSchema,
 });
 
 export const stageZaModMergeResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: zaModMergerPreviewSchema,
-  workflow: zaModMergerWorkflowSchema
+  workflow: zaModMergerWorkflowSchema,
 });
 
 export const applyZaModMergeResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   preview: zaModMergerPreviewSchema,
   workflow: zaModMergerWorkflowSchema,
-  writtenFiles: z.array(z.string())
+  writtenFiles: z.array(z.string()),
 });
 
 export const updateItemFieldRequestSchema = z.strictObject({
@@ -5476,13 +6055,13 @@ export const updateItemFieldRequestSchema = z.strictObject({
   itemId: z.number().int().nonnegative(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateItemFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: itemsWorkflowSchema
+  workflow: itemsWorkflowSchema,
 });
 
 export const updateMoveFieldRequestSchema = z.strictObject({
@@ -5490,13 +6069,13 @@ export const updateMoveFieldRequestSchema = z.strictObject({
   moveId: z.number().int().nonnegative(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateMoveFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: movesWorkflowSchema
+  workflow: movesWorkflowSchema,
 });
 
 export const updateTextEntryRequestSchema = z.strictObject({
@@ -5504,13 +6083,13 @@ export const updateTextEntryRequestSchema = z.strictObject({
   query: textWorkflowQuerySchema.nullable().optional(),
   session: editSessionSchema.nullable(),
   textKey: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateTextEntryResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: textWorkflowSchema
+  workflow: textWorkflowSchema,
 });
 
 export const updateTrainerFieldRequestSchema = z.strictObject({
@@ -5519,13 +6098,13 @@ export const updateTrainerFieldRequestSchema = z.strictObject({
   session: editSessionSchema.nullable(),
   slot: z.number().int().nonnegative().nullable(),
   trainerId: z.number().int().nonnegative(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateTrainerFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflowDelta: trainersWorkflowDeltaSchema
+  workflowDelta: trainersWorkflowDeltaSchema,
 });
 
 export const updateGiftPokemonFieldRequestSchema = z.strictObject({
@@ -5533,13 +6112,13 @@ export const updateGiftPokemonFieldRequestSchema = z.strictObject({
   giftIndex: z.number().int().nonnegative(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateGiftPokemonFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: giftPokemonWorkflowSchema
+  workflow: giftPokemonWorkflowSchema,
 });
 
 export const updateTradePokemonFieldRequestSchema = z.strictObject({
@@ -5547,13 +6126,13 @@ export const updateTradePokemonFieldRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
   tradeIndex: z.number().int().nonnegative(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateTradePokemonFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: tradePokemonWorkflowSchema
+  workflow: tradePokemonWorkflowSchema,
 });
 
 export const updateStaticEncounterFieldRequestSchema = z.strictObject({
@@ -5562,26 +6141,26 @@ export const updateStaticEncounterFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const staticEncounterFieldUpdateSchema = z.strictObject({
   encounterId: z.string().optional(),
   encounterIndex: z.number().int().nonnegative(),
   field: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateStaticEncounterFieldsRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  updates: z.array(staticEncounterFieldUpdateSchema).min(1)
+  updates: z.array(staticEncounterFieldUpdateSchema).min(1),
 });
 
 export const updateStaticEncounterFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: staticEncountersWorkflowSchema
+  workflow: staticEncountersWorkflowSchema,
 });
 
 export const updateRentalPokemonFieldRequestSchema = z.strictObject({
@@ -5589,22 +6168,26 @@ export const updateRentalPokemonFieldRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   rentalIndex: z.number().int().nonnegative(),
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateRentalPokemonFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: rentalPokemonWorkflowSchema
+  workflow: rentalPokemonWorkflowSchema,
 });
 
 export const updateDynamaxAdventureFieldRequestSchema = z
   .strictObject({
-    entryIndex: z.number().int().min(0).max(dynamaxAdventureNormalEncounterCount - 1),
+    entryIndex: z
+      .number()
+      .int()
+      .min(0)
+      .max(dynamaxAdventureNormalEncounterCount - 1),
     field: dynamaxAdventureEditableFieldNameSchema,
     paths: projectPathsSchema,
     session: editSessionSchema.nullable(),
-    value: z.string().regex(/^-?\d+$/)
+    value: z.string().regex(/^-?\d+$/),
   })
   .superRefine(validateDynamaxAdventureRequestGame)
   .superRefine(validateDynamaxAdventureUpdateRequest);
@@ -5612,30 +6195,30 @@ export const updateDynamaxAdventureFieldRequestSchema = z
 const dynamaxAdventureFieldResponseShapeSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: dynamaxAdventuresWorkflowSchema
+  workflow: dynamaxAdventuresWorkflowSchema,
 });
 
 export const updateDynamaxAdventureFieldResponseSchema =
   dynamaxAdventureFieldResponseShapeSchema.superRefine(
-    validateDynamaxAdventureUpdateResponse
+    validateDynamaxAdventureUpdateResponse,
   );
 
 export const stageDynamaxAdventureRepairResponseSchema =
   updateDynamaxAdventureFieldResponseSchema.superRefine(
-    validateDynamaxAdventureRepairResponse
+    validateDynamaxAdventureRepairResponse,
   );
 
 export const stageDynamaxAdventureRestoreResponseSchema =
   dynamaxAdventureFieldResponseShapeSchema.superRefine(
-    validateDynamaxAdventureRestoreResponse
+    validateDynamaxAdventureRestoreResponse,
   );
 
 function validateDynamaxAdventureRestoreResponse(
   response: z.infer<typeof dynamaxAdventureFieldResponseShapeSchema>,
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
   if (
-    response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    response.diagnostics.some((diagnostic) => diagnostic.severity === "error")
   ) {
     if (
       response.session.hasPendingChanges ||
@@ -5643,8 +6226,8 @@ function validateDynamaxAdventureRestoreResponse(
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['session'],
-        'Failed Dynamax Adventures table restore staging must return a sanitized empty session.'
+        ["session"],
+        "Failed Dynamax Adventures table restore staging must return a sanitized empty session.",
       );
     }
     return;
@@ -5658,8 +6241,8 @@ function validateDynamaxAdventureRestoreResponse(
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'pendingEdits'],
-      'Dynamax Adventures table restore must stage exactly one canonical recovery marker.'
+      ["session", "pendingEdits"],
+      "Dynamax Adventures table restore must stage exactly one canonical recovery marker.",
     );
     return;
   }
@@ -5668,35 +6251,35 @@ function validateDynamaxAdventureRestoreResponse(
   const edit = pendingEdits[0]!;
   if (
     !owner ||
-    owner.provenance.fileState !== 'layeredOverride' ||
-    owner.provenance.sourceLayer !== 'layered' ||
-    edit.domain !== 'workflow.dynamaxAdventures' ||
+    owner.provenance.fileState !== "layeredOverride" ||
+    owner.provenance.sourceLayer !== "layered" ||
+    edit.domain !== "workflow.dynamaxAdventures" ||
     edit.recordId !== `dynamaxAdventure:${owner.entryIndex}` ||
-    edit.field !== 'level' ||
+    edit.field !== "level" ||
     edit.newValue !== owner.level.toString() ||
-    edit.summary !== 'Restore the vanilla Dynamax Adventures table.' ||
+    edit.summary !== "Restore the vanilla Dynamax Adventures table." ||
     edit.sources.length !== 1 ||
     edit.sources[0]?.layer !== owner.provenance.sourceLayer ||
     edit.sources[0]?.relativePath !== owner.provenance.sourceFile
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'pendingEdits', 0],
-      'Dynamax Adventures table restore marker does not match the first loaded layered row.'
+      ["session", "pendingEdits", 0],
+      "Dynamax Adventures table restore marker does not match the first loaded layered row.",
     );
   }
 }
 
 function validateDynamaxAdventureRepairResponse(
   response: z.infer<typeof updateDynamaxAdventureFieldResponseSchema>,
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
   if (
     [
       ...response.diagnostics,
       ...response.workflow.diagnostics,
-      ...response.workflow.summary.diagnostics
-    ].some((diagnostic) => diagnostic.severity === 'error')
+      ...response.workflow.summary.diagnostics,
+    ].some((diagnostic) => diagnostic.severity === "error")
   ) {
     return;
   }
@@ -5705,29 +6288,31 @@ function validateDynamaxAdventureRepairResponse(
   if (pendingEdits.length !== 1) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'pendingEdits'],
-      'Dynamax Adventures repair must stage exactly one canonical owner marker.'
+      ["session", "pendingEdits"],
+      "Dynamax Adventures repair must stage exactly one canonical owner marker.",
     );
     return;
   }
 
   const edit = pendingEdits[0]!;
-  const ownerMatch = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(edit.recordId ?? '');
+  const ownerMatch = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(
+    edit.recordId ?? "",
+  );
   const ownerIndex = ownerMatch ? Number(ownerMatch[1]) : Number.NaN;
   const owner = Number.isSafeInteger(ownerIndex)
     ? response.workflow.encounters[ownerIndex]
     : undefined;
   if (
-    edit.domain !== 'workflow.dynamaxAdventures' ||
-    edit.field !== 'level' ||
-    edit.summary !== 'Repair Dynamax Adventures executable projection.' ||
+    edit.domain !== "workflow.dynamaxAdventures" ||
+    edit.field !== "level" ||
+    edit.summary !== "Repair Dynamax Adventures executable projection." ||
     !owner?.isEditable ||
     edit.newValue !== owner.level.toString()
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'pendingEdits', 0],
-      'Dynamax Adventures repair marker does not match its safe normal-row owner.'
+      ["session", "pendingEdits", 0],
+      "Dynamax Adventures repair marker does not match its safe normal-row owner.",
     );
   }
 
@@ -5739,8 +6324,8 @@ function validateDynamaxAdventureRepairResponse(
   ) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'pendingEdits', 0, 'sources'],
-      'Dynamax Adventures repair marker source must exactly match its owner provenance.'
+      ["session", "pendingEdits", 0, "sources"],
+      "Dynamax Adventures repair marker source must exactly match its owner provenance.",
     );
   }
 }
@@ -5750,13 +6335,13 @@ function validateDynamaxAdventureUpdateRequest(
     field: z.infer<typeof dynamaxAdventureEditableFieldNameSchema>;
     value: string;
   },
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
   if (!isValidDynamaxAdventureFieldValue(request.field, request.value)) {
     addDynamaxAdventureContractIssue(
       context,
-      ['value'],
-      `Dynamax Adventures ${request.field} is outside its supported range.`
+      ["value"],
+      `Dynamax Adventures ${request.field} is outside its supported range.`,
     );
   }
 }
@@ -5766,37 +6351,39 @@ function validateDynamaxAdventureUpdateResponse(
     session: z.infer<typeof editSessionSchema>;
     workflow: z.infer<typeof dynamaxAdventuresWorkflowSchema>;
   },
-  context: z.RefinementCtx
+  context: z.RefinementCtx,
 ) {
   const { pendingEdits } = response.session;
-  if (response.session.hasPendingChanges !== (pendingEdits.length > 0)) {
+  if (response.session.hasPendingChanges !== pendingEdits.length > 0) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'hasPendingChanges'],
-      'Dynamax Adventures session pending state does not match its edits.'
+      ["session", "hasPendingChanges"],
+      "Dynamax Adventures session pending state does not match its edits.",
     );
   }
 
   const ownerIndexes = new Set<number>();
   pendingEdits.forEach((edit, editIndex) => {
-    if (edit.summary === 'Restore the vanilla Dynamax Adventures table.') {
+    if (edit.summary === "Restore the vanilla Dynamax Adventures table.") {
       addDynamaxAdventureContractIssue(
         context,
-        ['session', 'pendingEdits', editIndex, 'summary'],
-        'Ordinary Dynamax Adventures field updates cannot stage a full-table restore marker.'
+        ["session", "pendingEdits", editIndex, "summary"],
+        "Ordinary Dynamax Adventures field updates cannot stage a full-table restore marker.",
       );
     }
 
-    if (edit.domain !== 'workflow.dynamaxAdventures') {
+    if (edit.domain !== "workflow.dynamaxAdventures") {
       addDynamaxAdventureContractIssue(
         context,
-        ['session', 'pendingEdits', editIndex, 'domain'],
-        'Dynamax Adventures update responses cannot contain another workflow domain.'
+        ["session", "pendingEdits", editIndex, "domain"],
+        "Dynamax Adventures update responses cannot contain another workflow domain.",
       );
       return;
     }
 
-    const ownerMatch = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(edit.recordId ?? '');
+    const ownerMatch = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(
+      edit.recordId ?? "",
+    );
     const ownerIndex = ownerMatch ? Number(ownerMatch[1]) : Number.NaN;
     if (
       !Number.isSafeInteger(ownerIndex) ||
@@ -5805,8 +6392,8 @@ function validateDynamaxAdventureUpdateResponse(
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['session', 'pendingEdits', editIndex, 'recordId'],
-        'Dynamax Adventures pending edits require one canonical normal-row owner.'
+        ["session", "pendingEdits", editIndex, "recordId"],
+        "Dynamax Adventures pending edits require one canonical normal-row owner.",
       );
     } else {
       ownerIndexes.add(ownerIndex);
@@ -5814,8 +6401,8 @@ function validateDynamaxAdventureUpdateResponse(
       if (owner?.isEditable !== true) {
         addDynamaxAdventureContractIssue(
           context,
-          ['session', 'pendingEdits', editIndex, 'recordId'],
-          'Dynamax Adventures pending edits must target an editable normal row.'
+          ["session", "pendingEdits", editIndex, "recordId"],
+          "Dynamax Adventures pending edits must target an editable normal row.",
         );
       }
       if (
@@ -5826,22 +6413,24 @@ function validateDynamaxAdventureUpdateResponse(
       ) {
         addDynamaxAdventureContractIssue(
           context,
-          ['session', 'pendingEdits', editIndex, 'sources'],
-          'Dynamax Adventures pending edit source must exactly match its owner provenance.'
+          ["session", "pendingEdits", editIndex, "sources"],
+          "Dynamax Adventures pending edit source must exactly match its owner provenance.",
         );
       }
     }
 
-    const fieldResult = dynamaxAdventureEditableFieldNameSchema.safeParse(edit.field);
+    const fieldResult = dynamaxAdventureEditableFieldNameSchema.safeParse(
+      edit.field,
+    );
     if (
       !fieldResult.success ||
-      typeof edit.newValue !== 'string' ||
+      typeof edit.newValue !== "string" ||
       !isValidDynamaxAdventureFieldValue(fieldResult.data, edit.newValue)
     ) {
       addDynamaxAdventureContractIssue(
         context,
-        ['session', 'pendingEdits', editIndex],
-        'Dynamax Adventures pending edit field or value is outside the safe contract.'
+        ["session", "pendingEdits", editIndex],
+        "Dynamax Adventures pending edit field or value is outside the safe contract.",
       );
     }
   });
@@ -5849,15 +6438,15 @@ function validateDynamaxAdventureUpdateResponse(
   if (ownerIndexes.size > 1) {
     addDynamaxAdventureContractIssue(
       context,
-      ['session', 'pendingEdits'],
-      'Dynamax Adventures pending edits must belong to one normal row.'
+      ["session", "pendingEdits"],
+      "Dynamax Adventures pending edits must belong to one normal row.",
     );
   }
 }
 
 function isValidDynamaxAdventureFieldValue(
   field: z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
-  value: string
+  value: string,
 ) {
   if (!/^-?\d+$/.test(value)) {
     return false;
@@ -5874,8 +6463,7 @@ function isValidDynamaxAdventureFieldValue(
   }
 
   return (
-    field !== 'guaranteedPerfectIvs' ||
-    [0, 2, 3, 4, 5, 6].includes(parsedValue)
+    field !== "guaranteedPerfectIvs" || [0, 2, 3, 4, 5, 6].includes(parsedValue)
   );
 }
 
@@ -5886,13 +6474,13 @@ export const updateShopInventoryItemRequestSchema = z.strictObject({
   session: editSessionSchema.nullable(),
   shopId: z.string(),
   slot: z.number().int().positive(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateShopInventoryItemResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: shopsWorkflowSchema
+  workflow: shopsWorkflowSchema,
 });
 
 export const updateRaidBattleSlotFieldRequestSchema = z.strictObject({
@@ -5901,32 +6489,32 @@ export const updateRaidBattleSlotFieldRequestSchema = z.strictObject({
   session: editSessionSchema.nullable(),
   slot: z.number().int().positive(),
   tableId: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const raidBattleFieldUpdateSchema = z.strictObject({
   field: z.string(),
   slot: z.number().int().positive(),
   tableId: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateRaidBattleSlotFieldsRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  updates: z.array(raidBattleFieldUpdateSchema).min(1)
+  updates: z.array(raidBattleFieldUpdateSchema).min(1),
 });
 
 export const updateRaidBattleSlotFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: raidBattlesWorkflowSchema
+  workflow: raidBattlesWorkflowSchema,
 });
 
 export const updateRaidBattleSlotFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: raidBattlesWorkflowSchema
+  workflow: raidBattlesWorkflowSchema,
 });
 
 export const updateTeraRaidFieldRequestSchema = z.strictObject({
@@ -5934,31 +6522,31 @@ export const updateTeraRaidFieldRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   recordId: z.string(),
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const teraRaidFieldUpdateSchema = z.strictObject({
   field: z.string(),
   recordId: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateTeraRaidFieldsRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  updates: z.array(teraRaidFieldUpdateSchema)
+  updates: z.array(teraRaidFieldUpdateSchema),
 });
 
 export const updateTeraRaidFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: teraRaidsWorkflowSchema
+  workflow: teraRaidsWorkflowSchema,
 });
 
 export const updateTeraRaidFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: teraRaidsWorkflowSchema
+  workflow: teraRaidsWorkflowSchema,
 });
 
 export const updateRaidRewardFieldRequestSchema = z.strictObject({
@@ -5967,32 +6555,32 @@ export const updateRaidRewardFieldRequestSchema = z.strictObject({
   session: editSessionSchema.nullable(),
   slot: z.number().int().positive(),
   tableId: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const raidRewardFieldUpdateSchema = z.strictObject({
   field: z.string(),
   slot: z.number().int().positive(),
   tableId: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateRaidRewardFieldsRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  updates: z.array(raidRewardFieldUpdateSchema).min(1)
+  updates: z.array(raidRewardFieldUpdateSchema).min(1),
 });
 
 export const updateRaidRewardFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: raidRewardsWorkflowSchema
+  workflow: raidRewardsWorkflowSchema,
 });
 
 export const updateRaidRewardFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: raidRewardsWorkflowSchema
+  workflow: raidRewardsWorkflowSchema,
 });
 
 export const updateRaidBonusRewardFieldRequestSchema = z.strictObject({
@@ -6001,25 +6589,25 @@ export const updateRaidBonusRewardFieldRequestSchema = z.strictObject({
   session: editSessionSchema.nullable(),
   slot: z.number().int().positive(),
   tableId: z.string(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateRaidBonusRewardFieldsRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  updates: z.array(raidRewardFieldUpdateSchema).min(1)
+  updates: z.array(raidRewardFieldUpdateSchema).min(1),
 });
 
 export const updateRaidBonusRewardFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: raidRewardsWorkflowSchema
+  workflow: raidRewardsWorkflowSchema,
 });
 
 export const updateRaidBonusRewardFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: raidRewardsWorkflowSchema
+  workflow: raidRewardsWorkflowSchema,
 });
 
 export const updateBehaviorEntryFieldRequestSchema = z.strictObject({
@@ -6027,13 +6615,13 @@ export const updateBehaviorEntryFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  value: z.string()
+  value: z.string(),
 });
 
 export const updateBehaviorEntryFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: behaviorWorkflowSchema
+  workflow: behaviorWorkflowSchema,
 });
 
 export const updateBehaviorEntryFieldsRequestSchema = z.strictObject({
@@ -6044,26 +6632,26 @@ export const updateBehaviorEntryFieldsRequestSchema = z.strictObject({
       z.strictObject({
         entryId: z.string().min(1),
         field: z.string().min(1),
-        value: z.string()
-      })
+        value: z.string(),
+      }),
     )
-    .min(1)
+    .min(1),
 });
 
 export const updateBehaviorEntryFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: behaviorWorkflowSchema
+  workflow: behaviorWorkflowSchema,
 });
 
 export const startEditSessionResponseSchema = z.strictObject({
-  session: editSessionSchema
+  session: editSessionSchema,
 });
 
 export const validateEditSessionResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   isValid: z.boolean(),
-  session: editSessionSchema
+  session: editSessionSchema,
 });
 
 export const plannedFileWriteSchema = z.strictObject({
@@ -6071,88 +6659,95 @@ export const plannedFileWriteSchema = z.strictObject({
   replacesExistingOutput: z.boolean(),
   sourceFingerprint: z.string().nullable().optional(),
   sources: z.array(projectFileReferenceSchema),
-  targetRelativePath: z.string()
+  targetRelativePath: z.string(),
 });
 
 export const changePlanSchema = z.strictObject({
   canApply: z.boolean(),
   diagnostics: z.array(apiDiagnosticSchema),
   sessionId: z.string(),
-  writes: z.array(plannedFileWriteSchema)
+  writes: z.array(plannedFileWriteSchema),
 });
 
 export const createChangePlanResponseSchema = z.strictObject({
-  changePlan: changePlanSchema
+  changePlan: changePlanSchema,
 });
 
 export const outputTransactionResultSchema = z.strictObject({
-  completedAtUtc: z.string().refine(
-    (value) =>
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value) &&
-      Number.isFinite(Date.parse(value)),
-    { message: 'Expected an ISO 8601 timestamp with an offset.' }
-  ),
-  outcome: z.enum(['committed', 'rolledBack', 'recoveryRequired']),
+  completedAtUtc: z
+    .string()
+    .refine(
+      (value) =>
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(
+          value,
+        ) && Number.isFinite(Date.parse(value)),
+      { message: "Expected an ISO 8601 timestamp with an offset." },
+    ),
+  outcome: z.enum(["committed", "rolledBack", "recoveryRequired"]),
   outcomeCode: kmErrorCodeSchema.nullable(),
   targetCount: z.number().int().nonnegative(),
-  transactionId: z.string().regex(/^[a-f0-9]{32}$/u)
+  transactionId: z.string().regex(/^[a-f0-9]{32}$/u),
 });
 
 export const applyResultSchema = z.strictObject({
   applyId: z.string(),
   diagnostics: z.array(apiDiagnosticSchema),
-  outputTransaction: outputTransactionResultSchema.nullable().optional().default(null),
-  writtenFiles: z.array(z.string())
+  outputTransaction: outputTransactionResultSchema
+    .nullable()
+    .optional()
+    .default(null),
+  writtenFiles: z.array(z.string()),
 });
 
 export const applyChangePlanResponseSchema = z.strictObject({
-  applyResult: applyResultSchema
+  applyResult: applyResultSchema,
 });
 
 export const importRandomizerSeedResponseSchema = z.strictObject({
   config: randomizerConfigSchema.nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
-  seed: z.string().nullable()
+  seed: z.string().nullable(),
 });
 
 export const applyRandomizerResponseSchema = z.strictObject({
   applyResult: applyResultSchema,
-  seed: z.string()
+  seed: z.string(),
 });
 
 export const restoreRandomizerResponseSchema = z.strictObject({
-  applyResult: applyResultSchema
+  applyResult: applyResultSchema,
 });
 
 export function createBridgeRequestSchema<TPayloadSchema extends ZodTypeAny>(
-  payloadSchema: TPayloadSchema
+  payloadSchema: TPayloadSchema,
 ) {
   return z.strictObject({
     command: kmCommandNameSchema,
     payload: payloadSchema,
-    requestId: z.string().nullable().optional()
+    requestId: z.string().nullable().optional(),
   });
 }
 
 export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
-  payloadSchema: TPayloadSchema
+  payloadSchema: TPayloadSchema,
 ) {
   return z
     .strictObject({
       error: apiErrorSchema.nullable().optional(),
       payload: payloadSchema.nullable().optional(),
-      requestId: z.string().nullable().optional()
+      requestId: z.string().nullable().optional(),
     })
     .superRefine((response, context) => {
-      const hasPayload = response.payload !== null && response.payload !== undefined;
+      const hasPayload =
+        response.payload !== null && response.payload !== undefined;
       const hasError = response.error !== null && response.error !== undefined;
 
       // Reject contradictory envelopes here. An empty envelope is structurally valid so the
       // request layer can report the more specific KM-BRIDGE-RESPONSE-PAYLOAD-MISSING code.
       if (hasPayload && hasError) {
         context.addIssue({
-          code: 'custom',
-          message: 'Bridge responses cannot contain both payload and error.'
+          code: "custom",
+          message: "Bridge responses cannot contain both payload and error.",
         });
       }
     });
@@ -6160,30 +6755,48 @@ export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
 
 export type ApiDiagnostic = z.infer<typeof apiDiagnosticSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
-export type ApplyChangePlanRequest = z.infer<typeof applyChangePlanRequestSchema>;
-export type ApplyChangePlanResponse = z.infer<typeof applyChangePlanResponseSchema>;
+export type ApplyChangePlanRequest = z.infer<
+  typeof applyChangePlanRequestSchema
+>;
+export type ApplyChangePlanResponse = z.infer<
+  typeof applyChangePlanResponseSchema
+>;
 export type ApplyResult = z.infer<typeof applyResultSchema>;
-export type OutputTransactionResult = z.infer<typeof outputTransactionResultSchema>;
+export type OutputTransactionResult = z.infer<
+  typeof outputTransactionResultSchema
+>;
 export type ChangePlan = z.infer<typeof changePlanSchema>;
 export type ChangePlanOutputMode = z.infer<typeof changePlanOutputModeSchema>;
-export type CreateChangePlanRequest = z.infer<typeof createChangePlanRequestSchema>;
-export type CreateChangePlanResponse = z.infer<typeof createChangePlanResponseSchema>;
+export type CreateChangePlanRequest = z.infer<
+  typeof createChangePlanRequestSchema
+>;
+export type CreateChangePlanResponse = z.infer<
+  typeof createChangePlanResponseSchema
+>;
 export type EditSession = z.infer<typeof editSessionSchema>;
 export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type PokemonEditableField = z.infer<typeof pokemonEditableFieldSchema>;
-export type PokemonEditableFieldOption = z.infer<typeof pokemonEditableFieldOptionSchema>;
+export type PokemonEditableFieldOption = z.infer<
+  typeof pokemonEditableFieldOptionSchema
+>;
 export type PokemonAlphaMove = z.infer<typeof pokemonAlphaMoveSchema>;
 export type PokemonDexEditor = z.infer<typeof pokemonDexEditorSchema>;
 export type PokemonDexPlacement = z.infer<typeof pokemonDexPlacementSchema>;
 export type PokemonEvolutionMethodOption = z.infer<
   typeof pokemonEvolutionMethodOptionSchema
 >;
-export type PokemonEvolutionRecord = z.infer<typeof pokemonEvolutionRecordSchema>;
+export type PokemonEvolutionRecord = z.infer<
+  typeof pokemonEvolutionRecordSchema
+>;
 export type PokemonLearnsetMove = z.infer<typeof pokemonLearnsetMoveSchema>;
-export type PokemonCompatibilityEntry = z.infer<typeof pokemonCompatibilityEntrySchema>;
-export type PokemonCompatibilityGroup = z.infer<typeof pokemonCompatibilityGroupSchema>;
+export type PokemonCompatibilityEntry = z.infer<
+  typeof pokemonCompatibilityEntrySchema
+>;
+export type PokemonCompatibilityGroup = z.infer<
+  typeof pokemonCompatibilityGroupSchema
+>;
 export type PokemonRecord = z.infer<typeof pokemonRecordSchema>;
 export type PokemonWorkflow = z.infer<typeof pokemonWorkflowSchema>;
 export type MoveEditableField = z.infer<typeof moveEditableFieldSchema>;
@@ -6192,8 +6805,12 @@ export type MoveRecord = z.infer<typeof moveRecordSchema>;
 export type MoveStatChangeRecord = z.infer<typeof moveStatChangeRecordSchema>;
 export type MovesWorkflow = z.infer<typeof movesWorkflowSchema>;
 export type ScriptedBossAction = z.infer<typeof scriptedBossActionSchema>;
-export type ScriptedBossAffectedScope = z.infer<typeof scriptedBossAffectedScopeSchema>;
-export type ScriptedBossMoveOption = z.infer<typeof scriptedBossMoveOptionSchema>;
+export type ScriptedBossAffectedScope = z.infer<
+  typeof scriptedBossAffectedScopeSchema
+>;
+export type ScriptedBossMoveOption = z.infer<
+  typeof scriptedBossMoveOptionSchema
+>;
 export type ScriptedBossProfile = z.infer<typeof scriptedBossProfileSchema>;
 export type ScriptedEncounterMoveOwnership = z.infer<
   typeof scriptedEncounterMoveOwnershipSchema
@@ -6206,67 +6823,107 @@ export type TrainerPokemonRecord = z.infer<typeof trainerPokemonRecordSchema>;
 export type TrainerRecord = z.infer<typeof trainerRecordSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type TrainersWorkflowDelta = z.infer<typeof trainersWorkflowDeltaSchema>;
-export type GiftPokemonEditableField = z.infer<typeof giftPokemonEditableFieldSchema>;
+export type GiftPokemonEditableField = z.infer<
+  typeof giftPokemonEditableFieldSchema
+>;
 export type GiftPokemonEditableFieldOption = z.infer<
   typeof giftPokemonEditableFieldOptionSchema
 >;
 export type GiftPokemonRecord = z.infer<typeof giftPokemonRecordSchema>;
 export type GiftPokemonWorkflow = z.infer<typeof giftPokemonWorkflowSchema>;
-export type TradePokemonEditableField = z.infer<typeof tradePokemonEditableFieldSchema>;
+export type TradePokemonEditableField = z.infer<
+  typeof tradePokemonEditableFieldSchema
+>;
 export type TradePokemonEditableFieldOption = z.infer<
   typeof tradePokemonEditableFieldOptionSchema
 >;
 export type TradePokemonMoveRecord = z.infer<typeof tradePokemonMoveSchema>;
 export type TradePokemonRecord = z.infer<typeof tradePokemonRecordSchema>;
 export type TradePokemonWorkflow = z.infer<typeof tradePokemonWorkflowSchema>;
-export type StaticEncounterEditableField = z.infer<typeof staticEncounterEditableFieldSchema>;
+export type StaticEncounterEditableField = z.infer<
+  typeof staticEncounterEditableFieldSchema
+>;
 export type StaticEncounterEditableFieldOption = z.infer<
   typeof staticEncounterEditableFieldOptionSchema
 >;
-export type StaticEncounterMoveRecord = z.infer<typeof staticEncounterMoveSchema>;
+export type StaticEncounterMoveRecord = z.infer<
+  typeof staticEncounterMoveSchema
+>;
 export type StaticEncounterRecord = z.infer<typeof staticEncounterRecordSchema>;
-export type StaticEncountersWorkflow = z.infer<typeof staticEncountersWorkflowSchema>;
-export type RentalPokemonEditableField = z.infer<typeof rentalPokemonEditableFieldSchema>;
-export type RentalPokemonEditableFieldOption = z.infer<typeof rentalPokemonEditableFieldOptionSchema>;
+export type StaticEncountersWorkflow = z.infer<
+  typeof staticEncountersWorkflowSchema
+>;
+export type RentalPokemonEditableField = z.infer<
+  typeof rentalPokemonEditableFieldSchema
+>;
+export type RentalPokemonEditableFieldOption = z.infer<
+  typeof rentalPokemonEditableFieldOptionSchema
+>;
 export type RentalPokemonMoveRecord = z.infer<typeof rentalPokemonMoveSchema>;
 export type RentalPokemonRecord = z.infer<typeof rentalPokemonRecordSchema>;
 export type RentalPokemonWorkflow = z.infer<typeof rentalPokemonWorkflowSchema>;
-export type DynamaxAdventureEditableField = z.infer<typeof dynamaxAdventureEditableFieldSchema>;
-export type DynamaxAdventureEditableFieldOption = z.infer<typeof dynamaxAdventureEditableFieldOptionSchema>;
-export type DynamaxAdventureMoveRecord = z.infer<typeof dynamaxAdventureMoveSchema>;
-export type DynamaxAdventurePokemonSnapshot = z.infer<typeof dynamaxAdventurePokemonSnapshotSchema>;
-export type DynamaxAdventureRecord = z.infer<typeof dynamaxAdventureRecordSchema>;
-export type DynamaxAdventuresWorkflow = z.infer<typeof dynamaxAdventuresWorkflowSchema>;
+export type DynamaxAdventureEditableField = z.infer<
+  typeof dynamaxAdventureEditableFieldSchema
+>;
+export type DynamaxAdventureEditableFieldOption = z.infer<
+  typeof dynamaxAdventureEditableFieldOptionSchema
+>;
+export type DynamaxAdventureMoveRecord = z.infer<
+  typeof dynamaxAdventureMoveSchema
+>;
+export type DynamaxAdventurePokemonSnapshot = z.infer<
+  typeof dynamaxAdventurePokemonSnapshotSchema
+>;
+export type DynamaxAdventureRecord = z.infer<
+  typeof dynamaxAdventureRecordSchema
+>;
+export type DynamaxAdventuresWorkflow = z.infer<
+  typeof dynamaxAdventuresWorkflowSchema
+>;
 export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;
-export type ShopEditableFieldOption = z.infer<typeof shopEditableFieldOptionSchema>;
+export type ShopEditableFieldOption = z.infer<
+  typeof shopEditableFieldOptionSchema
+>;
 export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
 export type ShopRecord = z.infer<typeof shopRecordSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
-export type EncounterEditableField = z.infer<typeof encounterEditableFieldSchema>;
+export type EncounterEditableField = z.infer<
+  typeof encounterEditableFieldSchema
+>;
 export type EncounterPlayerPartnerRecord = z.infer<
   typeof encounterPlayerPartnerRecordSchema
 >;
 export type EncounterSlotRecord = z.infer<typeof encounterSlotRecordSchema>;
 export type EncounterTableRecord = z.infer<typeof encounterTableRecordSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
-export type RaidBattleEditableField = z.infer<typeof raidBattleEditableFieldSchema>;
-export type RaidBattleEditableFieldOption = z.infer<typeof raidBattleEditableFieldOptionSchema>;
+export type RaidBattleEditableField = z.infer<
+  typeof raidBattleEditableFieldSchema
+>;
+export type RaidBattleEditableFieldOption = z.infer<
+  typeof raidBattleEditableFieldOptionSchema
+>;
 export type RaidBattleSlotRecord = z.infer<typeof raidBattleSlotRecordSchema>;
 export type RaidBattleTableRecord = z.infer<typeof raidBattleTableRecordSchema>;
 export type RaidBattlesWorkflow = z.infer<typeof raidBattlesWorkflowSchema>;
 export type TeraRaidEditableField = z.infer<typeof teraRaidEditableFieldSchema>;
-export type TeraRaidEditableFieldOption = z.infer<typeof teraRaidEditableFieldOptionSchema>;
+export type TeraRaidEditableFieldOption = z.infer<
+  typeof teraRaidEditableFieldOptionSchema
+>;
 export type TeraRaidMoveRecord = z.infer<typeof teraRaidMoveSchema>;
 export type TeraRaidRecord = z.infer<typeof teraRaidRecordSchema>;
 export type TeraRaidRewardItem = z.infer<typeof teraRaidRewardItemSchema>;
 export type TeraRaidRewardTable = z.infer<typeof teraRaidRewardTableSchema>;
 export type TeraRaidsWorkflow = z.infer<typeof teraRaidsWorkflowSchema>;
-export type RaidRewardEditableField = z.infer<typeof raidRewardEditableFieldSchema>;
+export type RaidRewardEditableField = z.infer<
+  typeof raidRewardEditableFieldSchema
+>;
 export type RaidRewardItemRecord = z.infer<typeof raidRewardItemRecordSchema>;
 export type RaidRewardTableRecord = z.infer<typeof raidRewardTableRecordSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacedObjectRecord = z.infer<typeof placedObjectRecordSchema>;
-export type PlacementEditableField = z.infer<typeof placementEditableFieldSchema>;
+export type PlacementEditableField = z.infer<
+  typeof placementEditableFieldSchema
+>;
 export type PlacementFieldValue = z.infer<typeof placementFieldValueSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type BehaviorEntryRecord = z.infer<typeof behaviorEntryRecordSchema>;
@@ -6286,36 +6943,64 @@ export type BagHookWorkflow = z.infer<typeof bagHookWorkflowSchema>;
 export type CatchCapRecord = z.infer<typeof catchCapRecordSchema>;
 export type CatchCapSelection = z.infer<typeof catchCapSelectionSchema>;
 export type CatchCapWorkflow = z.infer<typeof catchCapWorkflowSchema>;
-export type HyperTrainingSourceRecord = z.infer<typeof hyperTrainingSourceRecordSchema>;
+export type HyperTrainingSourceRecord = z.infer<
+  typeof hyperTrainingSourceRecordSchema
+>;
 export type HyperTrainingWorkflow = z.infer<typeof hyperTrainingWorkflowSchema>;
 export type TypeChartCell = z.infer<typeof typeChartCellSchema>;
 export type TypeChartSourceRecord = z.infer<typeof typeChartSourceRecordSchema>;
-export type TypeChartTypeDefinition = z.infer<typeof typeChartTypeDefinitionSchema>;
+export type TypeChartTypeDefinition = z.infer<
+  typeof typeChartTypeDefinitionSchema
+>;
 export type TypeChartWorkflow = z.infer<typeof typeChartWorkflowSchema>;
-export type IvScreenReservedRegion = z.infer<typeof ivScreenReservedRegionSchema>;
+export type IvScreenReservedRegion = z.infer<
+  typeof ivScreenReservedRegionSchema
+>;
 export type IvScreenWorkflow = z.infer<typeof ivScreenWorkflowSchema>;
-export type RoyalCandyOutputRecord = z.infer<typeof royalCandyOutputRecordSchema>;
+export type RoyalCandyOutputRecord = z.infer<
+  typeof royalCandyOutputRecordSchema
+>;
 export type RoyalCandyWorkflowCheckRecord = z.infer<
   typeof royalCandyWorkflowCheckRecordSchema
 >;
-export type RoyalCandyLevelCapRecord = z.infer<typeof royalCandyLevelCapRecordSchema>;
-export type RoyalCandyLevelCapSelection = z.infer<typeof royalCandyLevelCapSelectionSchema>;
-export type RoyalCandyWorkflowRecord = z.infer<typeof royalCandyWorkflowRecordSchema>;
+export type RoyalCandyLevelCapRecord = z.infer<
+  typeof royalCandyLevelCapRecordSchema
+>;
+export type RoyalCandyLevelCapSelection = z.infer<
+  typeof royalCandyLevelCapSelectionSchema
+>;
+export type RoyalCandyWorkflowRecord = z.infer<
+  typeof royalCandyWorkflowRecordSchema
+>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
-export type StartingItemGrantRecord = z.infer<typeof startingItemGrantRecordSchema>;
-export type StartingItemGrantSelection = z.infer<typeof startingItemGrantSelectionSchema>;
-export type StartingItemOptionRecord = z.infer<typeof startingItemOptionRecordSchema>;
+export type StartingItemGrantRecord = z.infer<
+  typeof startingItemGrantRecordSchema
+>;
+export type StartingItemGrantSelection = z.infer<
+  typeof startingItemGrantSelectionSchema
+>;
+export type StartingItemOptionRecord = z.infer<
+  typeof startingItemOptionRecordSchema
+>;
 export type StartingItemsWorkflow = z.infer<typeof startingItemsWorkflowSchema>;
 export type SpreadsheetImportProfileRecord = z.infer<
   typeof spreadsheetImportProfileRecordSchema
 >;
-export type SpreadsheetImportPreview = z.infer<typeof spreadsheetImportPreviewSchema>;
-export type SpreadsheetImportWorkflow = z.infer<typeof spreadsheetImportWorkflowSchema>;
-export type ModMergerConflictRecord = z.infer<typeof modMergerConflictRecordSchema>;
+export type SpreadsheetImportPreview = z.infer<
+  typeof spreadsheetImportPreviewSchema
+>;
+export type SpreadsheetImportWorkflow = z.infer<
+  typeof spreadsheetImportWorkflowSchema
+>;
+export type ModMergerConflictRecord = z.infer<
+  typeof modMergerConflictRecordSchema
+>;
 export type ModMergerConflictResolution = z.infer<
   typeof modMergerConflictResolutionSchema
 >;
-export type ModMergerFilePreviewRecord = z.infer<typeof modMergerFilePreviewRecordSchema>;
+export type ModMergerFilePreviewRecord = z.infer<
+  typeof modMergerFilePreviewRecordSchema
+>;
 export type ModMergerFileRecord = z.infer<typeof modMergerFileRecordSchema>;
 export type ModMergerMergeMode = z.infer<typeof modMergerMergeModeSchema>;
 export type ModMergerPreview = z.infer<typeof modMergerPreviewSchema>;
@@ -6325,27 +7010,51 @@ export type SvModMergerFilePreviewRecord = z.infer<
 >;
 export type SvModMergerPreview = z.infer<typeof svModMergerPreviewSchema>;
 export type SvModMergerSource = z.infer<typeof svModMergerSourceSchema>;
-export type SvModMergerSourceRecord = z.infer<typeof svModMergerSourceRecordSchema>;
+export type SvModMergerSourceRecord = z.infer<
+  typeof svModMergerSourceRecordSchema
+>;
 export type SvModMergerWorkflow = z.infer<typeof svModMergerWorkflowSchema>;
 export type ZaModMergerFilePreviewRecord = z.infer<
   typeof zaModMergerFilePreviewRecordSchema
 >;
 export type ZaModMergerPreview = z.infer<typeof zaModMergerPreviewSchema>;
 export type ZaModMergerSource = z.infer<typeof zaModMergerSourceSchema>;
-export type ZaModMergerSourceRecord = z.infer<typeof zaModMergerSourceRecordSchema>;
+export type ZaModMergerSourceRecord = z.infer<
+  typeof zaModMergerSourceRecordSchema
+>;
 export type ZaModMergerWorkflow = z.infer<typeof zaModMergerWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
-export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
-export type LoadItemsWorkflowResponse = z.infer<typeof loadItemsWorkflowResponseSchema>;
-export type LoadPokemonWorkflowRequest = z.infer<typeof loadPokemonWorkflowRequestSchema>;
-export type LoadPokemonWorkflowResponse = z.infer<typeof loadPokemonWorkflowResponseSchema>;
-export type UpdatePokemonFieldRequest = z.infer<typeof updatePokemonFieldRequestSchema>;
-export type UpdatePokemonFieldResponse = z.infer<typeof updatePokemonFieldResponseSchema>;
-export type UpdatePokemonLearnsetRequest = z.infer<typeof updatePokemonLearnsetRequestSchema>;
-export type UpdatePokemonLearnsetResponse = z.infer<typeof updatePokemonLearnsetResponseSchema>;
-export type UpdatePokemonEvolutionRequest = z.infer<typeof updatePokemonEvolutionRequestSchema>;
-export type UpdatePokemonEvolutionResponse = z.infer<typeof updatePokemonEvolutionResponseSchema>;
+export type LoadItemsWorkflowRequest = z.infer<
+  typeof loadItemsWorkflowRequestSchema
+>;
+export type LoadItemsWorkflowResponse = z.infer<
+  typeof loadItemsWorkflowResponseSchema
+>;
+export type LoadPokemonWorkflowRequest = z.infer<
+  typeof loadPokemonWorkflowRequestSchema
+>;
+export type LoadPokemonWorkflowResponse = z.infer<
+  typeof loadPokemonWorkflowResponseSchema
+>;
+export type UpdatePokemonFieldRequest = z.infer<
+  typeof updatePokemonFieldRequestSchema
+>;
+export type UpdatePokemonFieldResponse = z.infer<
+  typeof updatePokemonFieldResponseSchema
+>;
+export type UpdatePokemonLearnsetRequest = z.infer<
+  typeof updatePokemonLearnsetRequestSchema
+>;
+export type UpdatePokemonLearnsetResponse = z.infer<
+  typeof updatePokemonLearnsetResponseSchema
+>;
+export type UpdatePokemonEvolutionRequest = z.infer<
+  typeof updatePokemonEvolutionRequestSchema
+>;
+export type UpdatePokemonEvolutionResponse = z.infer<
+  typeof updatePokemonEvolutionResponseSchema
+>;
 export type SwapPokemonDexPlacementRequest = z.infer<
   typeof swapPokemonDexPlacementRequestSchema
 >;
@@ -6358,8 +7067,12 @@ export type MovePokemonDexPlacementRequest = z.infer<
 export type MovePokemonDexPlacementResponse = z.infer<
   typeof movePokemonDexPlacementResponseSchema
 >;
-export type ResizePokemonDexRequest = z.infer<typeof resizePokemonDexRequestSchema>;
-export type ResizePokemonDexResponse = z.infer<typeof resizePokemonDexResponseSchema>;
+export type ResizePokemonDexRequest = z.infer<
+  typeof resizePokemonDexRequestSchema
+>;
+export type ResizePokemonDexResponse = z.infer<
+  typeof resizePokemonDexResponseSchema
+>;
 export type StagePokemonDexVanillaRequest = z.infer<
   typeof stagePokemonDexVanillaRequestSchema
 >;
@@ -6372,15 +7085,31 @@ export type StagePokemonDexMegaSyncRequest = z.infer<
 export type StagePokemonDexMegaSyncResponse = z.infer<
   typeof stagePokemonDexMegaSyncResponseSchema
 >;
-export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
-export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
-export type UpdateMoveFieldRequest = z.infer<typeof updateMoveFieldRequestSchema>;
-export type UpdateMoveFieldResponse = z.infer<typeof updateMoveFieldResponseSchema>;
+export type LoadMovesWorkflowRequest = z.infer<
+  typeof loadMovesWorkflowRequestSchema
+>;
+export type LoadMovesWorkflowResponse = z.infer<
+  typeof loadMovesWorkflowResponseSchema
+>;
+export type UpdateMoveFieldRequest = z.infer<
+  typeof updateMoveFieldRequestSchema
+>;
+export type UpdateMoveFieldResponse = z.infer<
+  typeof updateMoveFieldResponseSchema
+>;
 export type TextWorkflowQuery = z.infer<typeof textWorkflowQuerySchema>;
-export type LoadTextWorkflowRequest = z.infer<typeof loadTextWorkflowRequestSchema>;
-export type LoadTextWorkflowResponse = z.infer<typeof loadTextWorkflowResponseSchema>;
-export type LoadTrainersWorkflowRequest = z.infer<typeof loadTrainersWorkflowRequestSchema>;
-export type LoadTrainersWorkflowResponse = z.infer<typeof loadTrainersWorkflowResponseSchema>;
+export type LoadTextWorkflowRequest = z.infer<
+  typeof loadTextWorkflowRequestSchema
+>;
+export type LoadTextWorkflowResponse = z.infer<
+  typeof loadTextWorkflowResponseSchema
+>;
+export type LoadTrainersWorkflowRequest = z.infer<
+  typeof loadTrainersWorkflowRequestSchema
+>;
+export type LoadTrainersWorkflowResponse = z.infer<
+  typeof loadTrainersWorkflowResponseSchema
+>;
 export type LoadGiftPokemonWorkflowRequest = z.infer<
   typeof loadGiftPokemonWorkflowRequestSchema
 >;
@@ -6405,10 +7134,45 @@ export type LoadRentalPokemonWorkflowRequest = z.infer<
 export type LoadRentalPokemonWorkflowResponse = z.infer<
   typeof loadRentalPokemonWorkflowResponseSchema
 >;
-export type LoadDynamaxAdventuresWorkflowRequest = z.infer<typeof loadDynamaxAdventuresWorkflowRequestSchema>;
-export type LoadDynamaxAdventuresWorkflowResponse = z.infer<typeof loadDynamaxAdventuresWorkflowResponseSchema>;
-export type PreviewDynamaxAdventureDefaultsRequest = z.infer<typeof previewDynamaxAdventureDefaultsRequestSchema>;
-export type PreviewDynamaxAdventureDefaultsResponse = z.infer<typeof previewDynamaxAdventureDefaultsResponseSchema>;
+export type LoadDynamaxAdventuresWorkflowRequest = z.infer<
+  typeof loadDynamaxAdventuresWorkflowRequestSchema
+>;
+export type LoadDynamaxAdventuresWorkflowResponse = z.infer<
+  typeof loadDynamaxAdventuresWorkflowResponseSchema
+>;
+export type PlanDynamaxAdventureSeedRequest = z.infer<
+  typeof planDynamaxAdventureSeedRequestSchema
+>;
+export type PlanDynamaxAdventureSeedResponse = z.infer<
+  typeof planDynamaxAdventureSeedResponseSchema
+>;
+export type SearchDynamaxAdventureSeedRequest = z.infer<
+  typeof searchDynamaxAdventureSeedRequestSchema
+>;
+export type SearchDynamaxAdventureSeedResponse = z.infer<
+  typeof searchDynamaxAdventureSeedResponseSchema
+>;
+export type SetDynamaxAdventureSaveSeedRequest = z.infer<
+  typeof setDynamaxAdventureSaveSeedRequestSchema
+>;
+export type SetDynamaxAdventureSaveSeedResponse = z.infer<
+  typeof setDynamaxAdventureSaveSeedResponseSchema
+>;
+export type DynamaxAdventureSeedPlan = z.infer<
+  typeof dynamaxAdventureSeedPlanSchema
+>;
+export type DynamaxAdventureSeedSearch = z.infer<
+  typeof dynamaxAdventureSeedSearchSchema
+>;
+export type DynamaxAdventureSaveSeedResult = z.infer<
+  typeof dynamaxAdventureSaveSeedSchema
+>;
+export type PreviewDynamaxAdventureDefaultsRequest = z.infer<
+  typeof previewDynamaxAdventureDefaultsRequestSchema
+>;
+export type PreviewDynamaxAdventureDefaultsResponse = z.infer<
+  typeof previewDynamaxAdventureDefaultsResponseSchema
+>;
 export type StageDynamaxAdventureRepairRequest = z.infer<
   typeof stageDynamaxAdventureRepairRequestSchema
 >;
@@ -6421,10 +7185,18 @@ export type StageDynamaxAdventureRestoreRequest = z.infer<
 export type StageDynamaxAdventureRestoreResponse = z.infer<
   typeof stageDynamaxAdventureRestoreResponseSchema
 >;
-export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSchema>;
-export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
-export type LoadEncountersWorkflowRequest = z.infer<typeof loadEncountersWorkflowRequestSchema>;
-export type LoadEncountersWorkflowResponse = z.infer<typeof loadEncountersWorkflowResponseSchema>;
+export type LoadShopsWorkflowRequest = z.infer<
+  typeof loadShopsWorkflowRequestSchema
+>;
+export type LoadShopsWorkflowResponse = z.infer<
+  typeof loadShopsWorkflowResponseSchema
+>;
+export type LoadEncountersWorkflowRequest = z.infer<
+  typeof loadEncountersWorkflowRequestSchema
+>;
+export type LoadEncountersWorkflowResponse = z.infer<
+  typeof loadEncountersWorkflowResponseSchema
+>;
 export type LoadRaidBattlesWorkflowRequest = z.infer<
   typeof loadRaidBattlesWorkflowRequestSchema
 >;
@@ -6437,8 +7209,12 @@ export type LoadTeraRaidsWorkflowRequest = z.infer<
 export type LoadTeraRaidsWorkflowResponse = z.infer<
   typeof loadTeraRaidsWorkflowResponseSchema
 >;
-export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkflowRequestSchema>;
-export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
+export type LoadRaidRewardsWorkflowRequest = z.infer<
+  typeof loadRaidRewardsWorkflowRequestSchema
+>;
+export type LoadRaidRewardsWorkflowResponse = z.infer<
+  typeof loadRaidRewardsWorkflowResponseSchema
+>;
 export type LoadRaidBonusRewardsWorkflowRequest = z.infer<
   typeof loadRaidBonusRewardsWorkflowRequestSchema
 >;
@@ -6471,11 +7247,19 @@ export type UpdateTeraRaidFieldsRequest = z.infer<
 export type UpdateTeraRaidFieldsResponse = z.infer<
   typeof updateTeraRaidFieldsResponseSchema
 >;
-export type UpdateRaidRewardFieldRequest = z.infer<typeof updateRaidRewardFieldRequestSchema>;
-export type UpdateRaidRewardFieldResponse = z.infer<typeof updateRaidRewardFieldResponseSchema>;
+export type UpdateRaidRewardFieldRequest = z.infer<
+  typeof updateRaidRewardFieldRequestSchema
+>;
+export type UpdateRaidRewardFieldResponse = z.infer<
+  typeof updateRaidRewardFieldResponseSchema
+>;
 export type RaidRewardFieldUpdate = z.infer<typeof raidRewardFieldUpdateSchema>;
-export type UpdateRaidRewardFieldsRequest = z.infer<typeof updateRaidRewardFieldsRequestSchema>;
-export type UpdateRaidRewardFieldsResponse = z.infer<typeof updateRaidRewardFieldsResponseSchema>;
+export type UpdateRaidRewardFieldsRequest = z.infer<
+  typeof updateRaidRewardFieldsRequestSchema
+>;
+export type UpdateRaidRewardFieldsResponse = z.infer<
+  typeof updateRaidRewardFieldsResponseSchema
+>;
 export type UpdateRaidBonusRewardFieldRequest = z.infer<
   typeof updateRaidBonusRewardFieldRequestSchema
 >;
@@ -6488,10 +7272,18 @@ export type UpdateRaidBonusRewardFieldsRequest = z.infer<
 export type UpdateRaidBonusRewardFieldsResponse = z.infer<
   typeof updateRaidBonusRewardFieldsResponseSchema
 >;
-export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;
-export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;
-export type LoadBehaviorWorkflowRequest = z.infer<typeof loadBehaviorWorkflowRequestSchema>;
-export type LoadBehaviorWorkflowResponse = z.infer<typeof loadBehaviorWorkflowResponseSchema>;
+export type LoadPlacementWorkflowRequest = z.infer<
+  typeof loadPlacementWorkflowRequestSchema
+>;
+export type LoadPlacementWorkflowResponse = z.infer<
+  typeof loadPlacementWorkflowResponseSchema
+>;
+export type LoadBehaviorWorkflowRequest = z.infer<
+  typeof loadBehaviorWorkflowRequestSchema
+>;
+export type LoadBehaviorWorkflowResponse = z.infer<
+  typeof loadBehaviorWorkflowResponseSchema
+>;
 export type UpdateBehaviorEntryFieldRequest = z.infer<
   typeof updateBehaviorEntryFieldRequestSchema
 >;
@@ -6504,28 +7296,56 @@ export type UpdateBehaviorEntryFieldsRequest = z.infer<
 export type UpdateBehaviorEntryFieldsResponse = z.infer<
   typeof updateBehaviorEntryFieldsResponseSchema
 >;
-export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
-export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
-export type LoadBagHookWorkflowRequest = z.infer<typeof loadBagHookWorkflowRequestSchema>;
-export type LoadBagHookWorkflowResponse = z.infer<typeof loadBagHookWorkflowResponseSchema>;
-export type StageBagHookInstallRequest = z.infer<typeof stageBagHookInstallRequestSchema>;
-export type StageBagHookInstallResponse = z.infer<typeof stageBagHookInstallResponseSchema>;
-export type StageBagHookUninstallRequest = z.infer<typeof stageBagHookUninstallRequestSchema>;
-export type StageBagHookUninstallResponse = z.infer<typeof stageBagHookUninstallResponseSchema>;
-export type LoadCatchCapWorkflowRequest = z.infer<typeof loadCatchCapWorkflowRequestSchema>;
-export type LoadCatchCapWorkflowResponse = z.infer<typeof loadCatchCapWorkflowResponseSchema>;
+export type LoadFlagworkSaveWorkflowRequest = z.infer<
+  typeof loadFlagworkSaveWorkflowRequestSchema
+>;
+export type LoadFlagworkSaveWorkflowResponse = z.infer<
+  typeof loadFlagworkSaveWorkflowResponseSchema
+>;
+export type LoadBagHookWorkflowRequest = z.infer<
+  typeof loadBagHookWorkflowRequestSchema
+>;
+export type LoadBagHookWorkflowResponse = z.infer<
+  typeof loadBagHookWorkflowResponseSchema
+>;
+export type StageBagHookInstallRequest = z.infer<
+  typeof stageBagHookInstallRequestSchema
+>;
+export type StageBagHookInstallResponse = z.infer<
+  typeof stageBagHookInstallResponseSchema
+>;
+export type StageBagHookUninstallRequest = z.infer<
+  typeof stageBagHookUninstallRequestSchema
+>;
+export type StageBagHookUninstallResponse = z.infer<
+  typeof stageBagHookUninstallResponseSchema
+>;
+export type LoadCatchCapWorkflowRequest = z.infer<
+  typeof loadCatchCapWorkflowRequestSchema
+>;
+export type LoadCatchCapWorkflowResponse = z.infer<
+  typeof loadCatchCapWorkflowResponseSchema
+>;
 export type StageCatchCapRequest = z.infer<typeof stageCatchCapRequestSchema>;
 export type StageCatchCapResponse = z.infer<typeof stageCatchCapResponseSchema>;
-export type StageCatchCapUninstallRequest = z.infer<typeof stageCatchCapUninstallRequestSchema>;
-export type StageCatchCapUninstallResponse = z.infer<typeof stageCatchCapUninstallResponseSchema>;
+export type StageCatchCapUninstallRequest = z.infer<
+  typeof stageCatchCapUninstallRequestSchema
+>;
+export type StageCatchCapUninstallResponse = z.infer<
+  typeof stageCatchCapUninstallResponseSchema
+>;
 export type LoadHyperTrainingWorkflowRequest = z.infer<
   typeof loadHyperTrainingWorkflowRequestSchema
 >;
 export type LoadHyperTrainingWorkflowResponse = z.infer<
   typeof loadHyperTrainingWorkflowResponseSchema
 >;
-export type StageHyperTrainingRequest = z.infer<typeof stageHyperTrainingRequestSchema>;
-export type StageHyperTrainingResponse = z.infer<typeof stageHyperTrainingResponseSchema>;
+export type StageHyperTrainingRequest = z.infer<
+  typeof stageHyperTrainingRequestSchema
+>;
+export type StageHyperTrainingResponse = z.infer<
+  typeof stageHyperTrainingResponseSchema
+>;
 export type LoadTypeChartWorkflowRequest = z.infer<
   typeof loadTypeChartWorkflowRequestSchema
 >;
@@ -6533,25 +7353,51 @@ export type LoadTypeChartWorkflowResponse = z.infer<
   typeof loadTypeChartWorkflowResponseSchema
 >;
 export type StageTypeChartRequest = z.infer<typeof stageTypeChartRequestSchema>;
-export type StageTypeChartResponse = z.infer<typeof stageTypeChartResponseSchema>;
-export type StageTypeChartUninstallRequest = z.infer<typeof stageTypeChartUninstallRequestSchema>;
-export type StageTypeChartUninstallResponse = z.infer<typeof stageTypeChartUninstallResponseSchema>;
-export type LoadIvScreenWorkflowRequest = z.infer<typeof loadIvScreenWorkflowRequestSchema>;
-export type LoadIvScreenWorkflowResponse = z.infer<typeof loadIvScreenWorkflowResponseSchema>;
-export type StageIvScreenInstallRequest = z.infer<typeof stageIvScreenInstallRequestSchema>;
-export type StageIvScreenInstallResponse = z.infer<typeof stageIvScreenInstallResponseSchema>;
+export type StageTypeChartResponse = z.infer<
+  typeof stageTypeChartResponseSchema
+>;
+export type StageTypeChartUninstallRequest = z.infer<
+  typeof stageTypeChartUninstallRequestSchema
+>;
+export type StageTypeChartUninstallResponse = z.infer<
+  typeof stageTypeChartUninstallResponseSchema
+>;
+export type LoadIvScreenWorkflowRequest = z.infer<
+  typeof loadIvScreenWorkflowRequestSchema
+>;
+export type LoadIvScreenWorkflowResponse = z.infer<
+  typeof loadIvScreenWorkflowResponseSchema
+>;
+export type StageIvScreenInstallRequest = z.infer<
+  typeof stageIvScreenInstallRequestSchema
+>;
+export type StageIvScreenInstallResponse = z.infer<
+  typeof stageIvScreenInstallResponseSchema
+>;
 export type StageIvScreenUninstallRequest = z.infer<
   typeof stageIvScreenUninstallRequestSchema
 >;
 export type StageIvScreenUninstallResponse = z.infer<
   typeof stageIvScreenUninstallResponseSchema
 >;
-export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;
-export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
-export type StageExeFsPatchRequest = z.infer<typeof stageExeFsPatchRequestSchema>;
-export type StageExeFsPatchResponse = z.infer<typeof stageExeFsPatchResponseSchema>;
-export type LoadRoyalCandyWorkflowRequest = z.infer<typeof loadRoyalCandyWorkflowRequestSchema>;
-export type LoadRoyalCandyWorkflowResponse = z.infer<typeof loadRoyalCandyWorkflowResponseSchema>;
+export type LoadExeFsPatchWorkflowRequest = z.infer<
+  typeof loadExeFsPatchWorkflowRequestSchema
+>;
+export type LoadExeFsPatchWorkflowResponse = z.infer<
+  typeof loadExeFsPatchWorkflowResponseSchema
+>;
+export type StageExeFsPatchRequest = z.infer<
+  typeof stageExeFsPatchRequestSchema
+>;
+export type StageExeFsPatchResponse = z.infer<
+  typeof stageExeFsPatchResponseSchema
+>;
+export type LoadRoyalCandyWorkflowRequest = z.infer<
+  typeof loadRoyalCandyWorkflowRequestSchema
+>;
+export type LoadRoyalCandyWorkflowResponse = z.infer<
+  typeof loadRoyalCandyWorkflowResponseSchema
+>;
 export type StageRoyalCandyWorkflowRequest = z.infer<
   typeof stageRoyalCandyWorkflowRequestSchema
 >;
@@ -6564,8 +7410,12 @@ export type LoadStartingItemsWorkflowRequest = z.infer<
 export type LoadStartingItemsWorkflowResponse = z.infer<
   typeof loadStartingItemsWorkflowResponseSchema
 >;
-export type StageStartingItemsRequest = z.infer<typeof stageStartingItemsRequestSchema>;
-export type StageStartingItemsResponse = z.infer<typeof stageStartingItemsResponseSchema>;
+export type StageStartingItemsRequest = z.infer<
+  typeof stageStartingItemsRequestSchema
+>;
+export type StageStartingItemsResponse = z.infer<
+  typeof stageStartingItemsResponseSchema
+>;
 export type LoadSpreadsheetImportWorkflowRequest = z.infer<
   typeof loadSpreadsheetImportWorkflowRequestSchema
 >;
@@ -6594,44 +7444,92 @@ export type LoadSvModMergerWorkflowRequest = z.infer<
 export type LoadSvModMergerWorkflowResponse = z.infer<
   typeof loadSvModMergerWorkflowResponseSchema
 >;
-export type StageSvModMergeRequest = z.infer<typeof stageSvModMergeRequestSchema>;
-export type StageSvModMergeResponse = z.infer<typeof stageSvModMergeResponseSchema>;
-export type ApplySvModMergeRequest = z.infer<typeof applySvModMergeRequestSchema>;
-export type ApplySvModMergeResponse = z.infer<typeof applySvModMergeResponseSchema>;
+export type StageSvModMergeRequest = z.infer<
+  typeof stageSvModMergeRequestSchema
+>;
+export type StageSvModMergeResponse = z.infer<
+  typeof stageSvModMergeResponseSchema
+>;
+export type ApplySvModMergeRequest = z.infer<
+  typeof applySvModMergeRequestSchema
+>;
+export type ApplySvModMergeResponse = z.infer<
+  typeof applySvModMergeResponseSchema
+>;
 export type LoadZaModMergerWorkflowRequest = z.infer<
   typeof loadZaModMergerWorkflowRequestSchema
 >;
 export type LoadZaModMergerWorkflowResponse = z.infer<
   typeof loadZaModMergerWorkflowResponseSchema
 >;
-export type StageZaModMergeRequest = z.infer<typeof stageZaModMergeRequestSchema>;
-export type StageZaModMergeResponse = z.infer<typeof stageZaModMergeResponseSchema>;
-export type ApplyZaModMergeRequest = z.infer<typeof applyZaModMergeRequestSchema>;
-export type ApplyZaModMergeResponse = z.infer<typeof applyZaModMergeResponseSchema>;
+export type StageZaModMergeRequest = z.infer<
+  typeof stageZaModMergeRequestSchema
+>;
+export type StageZaModMergeResponse = z.infer<
+  typeof stageZaModMergeResponseSchema
+>;
+export type ApplyZaModMergeRequest = z.infer<
+  typeof applyZaModMergeRequestSchema
+>;
+export type ApplyZaModMergeResponse = z.infer<
+  typeof applyZaModMergeResponseSchema
+>;
 export type RandomizerOptions = z.infer<typeof randomizerOptionsSchema>;
 export type RandomizerConfig = z.infer<typeof randomizerConfigSchema>;
-export type ImportRandomizerSeedRequest = z.infer<typeof importRandomizerSeedRequestSchema>;
-export type ImportRandomizerSeedResponse = z.infer<typeof importRandomizerSeedResponseSchema>;
-export type ApplyRandomizerRequest = z.infer<typeof applyRandomizerRequestSchema>;
-export type ApplyRandomizerResponse = z.infer<typeof applyRandomizerResponseSchema>;
-export type RestoreRandomizerRequest = z.infer<typeof restoreRandomizerRequestSchema>;
-export type RestoreRandomizerResponse = z.infer<typeof restoreRandomizerResponseSchema>;
+export type ImportRandomizerSeedRequest = z.infer<
+  typeof importRandomizerSeedRequestSchema
+>;
+export type ImportRandomizerSeedResponse = z.infer<
+  typeof importRandomizerSeedResponseSchema
+>;
+export type ApplyRandomizerRequest = z.infer<
+  typeof applyRandomizerRequestSchema
+>;
+export type ApplyRandomizerResponse = z.infer<
+  typeof applyRandomizerResponseSchema
+>;
+export type RestoreRandomizerRequest = z.infer<
+  typeof restoreRandomizerRequestSchema
+>;
+export type RestoreRandomizerResponse = z.infer<
+  typeof restoreRandomizerResponseSchema
+>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
 export type ProjectHealth = z.infer<typeof projectHealthSchema>;
 export type ProjectPathRole = z.infer<typeof projectPathRoleSchema>;
 export type ProjectPathValidation = z.infer<typeof projectPathValidationSchema>;
-export type RefreshFileGraphRequest = z.infer<typeof refreshFileGraphRequestSchema>;
-export type RefreshFileGraphResponse = z.infer<typeof refreshFileGraphResponseSchema>;
-export type StartEditSessionRequest = z.infer<typeof startEditSessionRequestSchema>;
-export type StartEditSessionResponse = z.infer<typeof startEditSessionResponseSchema>;
-export type UpdateItemFieldRequest = z.infer<typeof updateItemFieldRequestSchema>;
-export type UpdateItemFieldResponse = z.infer<typeof updateItemFieldResponseSchema>;
-export type UpdateTextEntryRequest = z.infer<typeof updateTextEntryRequestSchema>;
-export type UpdateTextEntryResponse = z.infer<typeof updateTextEntryResponseSchema>;
-export type UpdateTrainerFieldRequest = z.infer<typeof updateTrainerFieldRequestSchema>;
-export type UpdateTrainerFieldResponse = z.infer<typeof updateTrainerFieldResponseSchema>;
+export type RefreshFileGraphRequest = z.infer<
+  typeof refreshFileGraphRequestSchema
+>;
+export type RefreshFileGraphResponse = z.infer<
+  typeof refreshFileGraphResponseSchema
+>;
+export type StartEditSessionRequest = z.infer<
+  typeof startEditSessionRequestSchema
+>;
+export type StartEditSessionResponse = z.infer<
+  typeof startEditSessionResponseSchema
+>;
+export type UpdateItemFieldRequest = z.infer<
+  typeof updateItemFieldRequestSchema
+>;
+export type UpdateItemFieldResponse = z.infer<
+  typeof updateItemFieldResponseSchema
+>;
+export type UpdateTextEntryRequest = z.infer<
+  typeof updateTextEntryRequestSchema
+>;
+export type UpdateTextEntryResponse = z.infer<
+  typeof updateTextEntryResponseSchema
+>;
+export type UpdateTrainerFieldRequest = z.infer<
+  typeof updateTrainerFieldRequestSchema
+>;
+export type UpdateTrainerFieldResponse = z.infer<
+  typeof updateTrainerFieldResponseSchema
+>;
 export type UpdateGiftPokemonFieldRequest = z.infer<
   typeof updateGiftPokemonFieldRequestSchema
 >;
@@ -6650,7 +7548,9 @@ export type UpdateStaticEncounterFieldRequest = z.infer<
 export type UpdateStaticEncounterFieldResponse = z.infer<
   typeof updateStaticEncounterFieldResponseSchema
 >;
-export type StaticEncounterFieldUpdate = z.infer<typeof staticEncounterFieldUpdateSchema>;
+export type StaticEncounterFieldUpdate = z.infer<
+  typeof staticEncounterFieldUpdateSchema
+>;
 export type UpdateStaticEncounterFieldsRequest = z.infer<
   typeof updateStaticEncounterFieldsRequestSchema
 >;
@@ -6660,16 +7560,28 @@ export type UpdateRentalPokemonFieldRequest = z.infer<
 export type UpdateRentalPokemonFieldResponse = z.infer<
   typeof updateRentalPokemonFieldResponseSchema
 >;
-export type UpdateDynamaxAdventureFieldRequest = z.infer<typeof updateDynamaxAdventureFieldRequestSchema>;
-export type UpdateDynamaxAdventureFieldResponse = z.infer<typeof updateDynamaxAdventureFieldResponseSchema>;
+export type UpdateDynamaxAdventureFieldRequest = z.infer<
+  typeof updateDynamaxAdventureFieldRequestSchema
+>;
+export type UpdateDynamaxAdventureFieldResponse = z.infer<
+  typeof updateDynamaxAdventureFieldResponseSchema
+>;
 export type UpdateShopInventoryItemRequest = z.infer<
   typeof updateShopInventoryItemRequestSchema
 >;
 export type UpdateShopInventoryItemResponse = z.infer<
   typeof updateShopInventoryItemResponseSchema
 >;
-export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
-export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
-export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;
-export type ValidateProjectResponse = z.infer<typeof validateProjectResponseSchema>;
+export type ValidateEditSessionRequest = z.infer<
+  typeof validateEditSessionRequestSchema
+>;
+export type ValidateEditSessionResponse = z.infer<
+  typeof validateEditSessionResponseSchema
+>;
+export type ValidateProjectRequest = z.infer<
+  typeof validateProjectRequestSchema
+>;
+export type ValidateProjectResponse = z.infer<
+  typeof validateProjectResponseSchema
+>;
 export type WorkflowSummary = z.infer<typeof workflowSummarySchema>;

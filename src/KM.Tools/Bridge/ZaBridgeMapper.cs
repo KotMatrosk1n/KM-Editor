@@ -3,6 +3,7 @@
 using KM.Api.Editing;
 using KM.Api.AngeFight;
 using KM.Api.Encounters;
+using KM.Api.GameModules;
 using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.ModMerger;
@@ -16,11 +17,13 @@ using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.TypeChart;
 using KM.Api.Trainers;
+using KM.Api.TrainerPools;
 using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Encounters;
 using KM.ZA.AngeFight;
+using KM.ZA.GameModules;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
 using KM.ZA.ModMerger;
@@ -33,6 +36,7 @@ using KM.ZA.StaticEncounters;
 using KM.ZA.Text;
 using KM.ZA.TypeChart;
 using KM.ZA.Trainers;
+using KM.ZA.TrainerPools;
 using KM.ZA.Trades;
 using KM.ZA.DumpImport;
 using KM.ZA.Workflows;
@@ -93,6 +97,35 @@ public static class ZaBridgeMapper
         return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
     }
 
+    public static PokemonWorkflowDto ToGameModuleDto(ZaPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        return ToPokemonWorkflowDto(workflow);
+    }
+
+    public static EncounterCompatibilityWorkflowDto ToGameModuleDto(
+        ZaEncounterCompatibilityWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        return new EncounterCompatibilityWorkflowDto(
+            workflow.Rules.Select(rule => new EncounterCompatibilityRuleDto(
+                rule.RuleId,
+                rule.DisplayName,
+                rule.Policy switch
+                {
+                    ZaEncounterCompatibilityPolicy.PreserveForEveryReplacement =>
+                        EncounterCompatibilityPolicyDto.PreserveForEveryReplacement,
+                    ZaEncounterCompatibilityPolicy.FilterByVerifiedPair =>
+                        EncounterCompatibilityPolicyDto.FilterByVerifiedPair,
+                    _ => throw new ArgumentOutOfRangeException(nameof(rule.Policy), rule.Policy, null),
+                },
+                rule.ActionIds,
+                rule.HasTagSelector,
+                rule.CompatiblePairs.Select(ToDto).ToArray())).ToArray(),
+            workflow.CityBehaviorPairs.Select(ToDto).ToArray(),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadItemsWorkflowResponse ToDto(ZaItemsWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -144,6 +177,58 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+    }
+
+    public static LoadTrainerPoolsWorkflowResponse ToDto(ZaTrainerPoolsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTrainerPoolsWorkflowResponse(ToTrainerPoolsWorkflowDto(workflow));
+    }
+
+    public static TrainerPoolsWorkflowDto ToGameModuleDto(ZaTrainerPoolsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        return ToTrainerPoolsWorkflowDto(workflow);
+    }
+
+    public static LegendsZaTypeEffectivenessStateDto ToGameModuleDto(
+        ZaTypeEffectivenessState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return new LegendsZaTypeEffectivenessStateDto(
+            state.BuildId,
+            state.ChartOffsetHex,
+            ToDto(state.BaseSource),
+            ToDto(state.EffectiveSource),
+            state.Types.Select(type => new LegendsZaTypeEffectivenessStateTypeDto(
+                type.TypeIndex,
+                type.Label,
+                type.ShortLabel)).ToArray(),
+            state.Cells.Select(cell => new LegendsZaTypeEffectivenessStateCellDto(
+                cell.AttackTypeIndex,
+                cell.DefenseTypeIndex,
+                cell.CurrentValue,
+                cell.BaseValue)).ToArray(),
+            state.DifferenceCount);
+    }
+
+    private static LegendsZaTypeEffectivenessStateSourceDto ToDto(
+        ZaTypeEffectivenessStateSource source)
+    {
+        return new LegendsZaTypeEffectivenessStateSourceDto(
+            source.RelativePath,
+            ProjectBridgeMapper.ToDto(source.SourceLayer),
+            ProjectBridgeMapper.ToDto(source.FileState));
+    }
+
+    private static EncounterCompatibilityPairDto ToDto(ZaEncounterCompatibilityPair pair)
+    {
+        return new EncounterCompatibilityPairDto(
+            pair.SpeciesId,
+            pair.Form,
+            pair.ObservedInBasePlacement,
+            pair.VerifiedExtension);
     }
 
     public static LoadPlacementWorkflowResponse ToDto(ZaPlacementWorkflow workflow)
@@ -334,6 +419,16 @@ public static class ZaBridgeMapper
 
         return new UpdatePlacementObjectFieldsResponse(
             ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageTrainerPoolFixedCountSwapResponse ToDto(ZaTrainerPoolsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageTrainerPoolFixedCountSwapResponse(
+            ToTrainerPoolsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -808,7 +903,50 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            ZaClassPairOptions = workflow.ClassPairOptions.Select(option =>
+                new TrainerClassPairOptionDto(
+                    option.PairId,
+                    option.Label,
+                    option.UsageCount,
+                    option.PresentationCanaryRequired)).ToArray(),
+        };
+    }
+
+    private static TrainerPoolsWorkflowDto ToTrainerPoolsWorkflowDto(ZaTrainerPoolsWorkflow workflow)
+    {
+        return new TrainerPoolsWorkflowDto(
+            workflow.Pools.Select(pool => new TrainerPoolRecordDto(
+                pool.LogicalPoolId,
+                pool.DisplayLabel,
+                pool.CompatibilityGroup,
+                pool.Kind switch
+                {
+                    ZaTrainerPoolKind.Story => TrainerPoolKindDto.Story,
+                    ZaTrainerPoolKind.Infinity => TrainerPoolKindDto.Infinity,
+                    _ => throw new ArgumentOutOfRangeException(nameof(pool.Kind), pool.Kind, null),
+                },
+                pool.PhysicalTableIds,
+                pool.ReferencedPhysicalTableCount,
+                pool.MemberCount,
+                pool.TotalWeight,
+                pool.Members.Select(member => new TrainerPoolMemberDto(
+                    member.RawTrainerId,
+                    member.AppearanceAssetId,
+                    member.RawRosterId,
+                    member.RosterIndex,
+                    member.DisplayName,
+                    member.StoredRank,
+                    member.TeamSize,
+                    member.Weight)).ToArray())).ToArray(),
+            new TrainerPoolsWorkflowStatsDto(
+                workflow.Stats.LogicalPoolCount,
+                workflow.Stats.PhysicalMirrorCount,
+                workflow.Stats.MemberReferenceCount,
+                workflow.Stats.DormantPhysicalMirrorCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            workflow.CanStage);
     }
 
     private static TrainersWorkflowDeltaDto ToTrainersWorkflowDeltaDto(
@@ -1023,6 +1161,7 @@ public static class ZaBridgeMapper
             ShinyMode = slot.ShinyMode,
             MoveIds = slot.MoveIds,
             HasExplicitMoves = slot.HasExplicitMoves,
+            HasAlphaChance = slot.HasAlphaChance,
             FlawlessIvCount = slot.FlawlessIvCount,
             IvHp = slot.IvHp,
             IvAttack = slot.IvAttack,
@@ -2040,6 +2179,23 @@ public static class ZaBridgeMapper
             ZaLastHand = trainer.LastHand,
             ZaSharedRivalRoster = trainer.IsSharedRivalRoster,
             ZaRivalStarterBranch = trainer.RivalStarterBranch,
+            ZaNameTextTarget = trainer.NameTextTarget is { } nameTarget
+                ? new TrainerTextTargetDto(
+                    nameTarget.MessageKey,
+                    nameTarget.LineIndex,
+                    nameTarget.Kind,
+                    nameTarget.SharedTrainerCount)
+                : null,
+            ZaClassTextTarget = trainer.ClassTextTarget is { } classTarget
+                ? new TrainerTextTargetDto(
+                    classTarget.MessageKey,
+                    classTarget.LineIndex,
+                    classTarget.Kind,
+                    classTarget.SharedTrainerCount)
+                : null,
+            ZaClassPairId = trainer.ClassPairId,
+            ZaCanReassignClass = trainer.CanReassignClass,
+            ZaClassReassignmentBlockedReason = trainer.ClassReassignmentBlockedReason,
         };
     }
 

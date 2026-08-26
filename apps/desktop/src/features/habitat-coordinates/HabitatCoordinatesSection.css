@@ -1,0 +1,364 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.habitat-coordinates-workspace {
+  container: habitat-coordinates / inline-size;
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--km-panel-gap);
+  justify-self: stretch;
+  min-width: 0;
+  width: 100%;
+}
+
+.habitat-coordinates-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(16rem, 2fr) repeat(3, minmax(9rem, 1fr));
+  margin-top: 1rem;
+}
+
+.habitat-region-tabs {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1rem 0;
+}
+
+.habitat-region-tabs .habitat-region-tab {
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: center;
+  width: 100%;
+}
+
+.habitat-region-tabs .habitat-region-tab[aria-selected='true'] {
+  color: var(--color-text);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent) 88%, var(--color-surface)),
+    var(--color-accent)
+  );
+  border-color: var(--color-accent-bright);
+  box-shadow:
+    inset 3px 0 0 var(--color-gold),
+    var(--shadow-inset);
+}
+
+.habitat-region-blocked {
+  align-items: flex-start;
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent);
+  border-radius: 0.65rem;
+  display: flex;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+  padding: 0.8rem;
+}
+
+.habitat-region-blocked p {
+  margin: 0;
+}
+
+.habitat-coordinate-cards {
+  align-items: stretch;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(24rem, 0.9fr) minmax(28rem, 1.1fr);
+}
+
+.habitat-coordinate-card {
+  align-content: start;
+  background: linear-gradient(180deg, var(--color-surface-muted), var(--color-canvas));
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-inset);
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.habitat-coordinate-card-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.habitat-coordinate-card-heading h3 {
+  margin: 0;
+}
+
+.habitat-coordinate-search {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  margin-bottom: 0.75rem;
+}
+
+.habitat-coordinate-search-field {
+  width: 100%;
+}
+
+.habitat-coordinate-search-field:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.habitat-coordinate-search-field input:disabled {
+  cursor: not-allowed;
+}
+
+.habitat-coordinate-search-action {
+  min-width: 7rem;
+}
+
+.habitat-coordinate-list {
+  align-content: start;
+  display: grid;
+  gap: 0.4rem;
+  grid-auto-rows: max-content;
+  block-size: clamp(20rem, 48dvh, 44rem);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  scrollbar-gutter: stable;
+}
+
+.habitat-coordinate-row {
+  align-items: center;
+  min-height: var(--km-control-min-height);
+  padding: 0.55rem 0.7rem;
+  color: var(--color-text-soft);
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-inset);
+  cursor: pointer;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  justify-content: space-between;
+  text-align: left;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+  width: 100%;
+}
+
+.habitat-coordinate-row-identity,
+.habitat-coordinate-row-cell {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.habitat-coordinate-row-identity strong {
+  color: var(--color-text);
+  font-size: 0.94rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habitat-coordinate-row-identity small,
+.habitat-coordinate-row-cell small {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.habitat-coordinate-row-cell {
+  text-align: right;
+}
+
+.habitat-coordinate-row-cell > span {
+  color: var(--color-text-soft);
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.habitat-coordinate-row:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-control-hover);
+  border-color: var(--color-accent-bright);
+}
+
+.habitat-coordinate-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.habitat-coordinate-row[aria-pressed='true'] {
+  color: var(--color-text);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-accent) 26%, var(--color-control)),
+    var(--color-control) 62%
+  );
+  border-color: var(--color-accent-bright);
+  box-shadow:
+    inset 3px 0 0 var(--color-gold),
+    var(--shadow-inset);
+}
+
+.habitat-coordinate-row-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.habitat-coordinate-row-meta strong {
+  color: var(--color-gold);
+  font-size: 0.75rem;
+}
+
+.habitat-coordinate-pagination {
+  align-items: center;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: max-content minmax(8rem, 1fr) max-content;
+  margin-top: 0.8rem;
+}
+
+.habitat-coordinate-pagination > span {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.habitat-coordinate-editor {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.habitat-coordinate-editor dl {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  margin: 0;
+}
+
+.habitat-coordinate-editor dl div {
+  min-width: 0;
+}
+
+.habitat-coordinate-editor dt {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  margin-bottom: 0.15rem;
+}
+
+.habitat-coordinate-editor dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.habitat-coordinate-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.habitat-coordinates-workspace .field-label {
+  color: var(--color-text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+}
+
+.habitat-coordinates-workspace .field-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.habitat-coordinates-workspace .action-feedback {
+  margin-top: 1rem;
+  padding: 0.7rem 0.8rem;
+  color: var(--color-text-soft);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+}
+
+.habitat-coordinates-workspace .action-feedback.success {
+  color: var(--color-success-soft);
+  border-color: var(--color-success);
+}
+
+.habitat-coordinates-workspace .action-feedback.error {
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+@container habitat-coordinates (max-width: 70rem) {
+  .habitat-coordinate-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .habitat-coordinate-list {
+    block-size: clamp(18rem, 42dvh, 34rem);
+  }
+}
+
+@container habitat-coordinates (max-width: 58rem) {
+  .habitat-coordinates-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container habitat-coordinates (max-width: 38rem) {
+  .habitat-coordinates-metrics,
+  .habitat-coordinate-search,
+  .habitat-coordinate-pagination {
+    grid-template-columns: 1fr;
+  }
+
+  .habitat-coordinate-search-action,
+  .habitat-coordinate-pagination button,
+  .habitat-coordinate-actions button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .habitat-coordinate-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .habitat-coordinate-row {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .habitat-coordinate-row-meta {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .habitat-coordinate-row-cell {
+    text-align: left;
+  }
+}
+
+@media (forced-colors: active) {
+  .habitat-region-tabs .habitat-region-tab[aria-selected='true'],
+  .habitat-coordinate-row[aria-pressed='true'] {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+    box-shadow: none;
+    forced-color-adjust: none;
+  }
+}

@@ -19,12 +19,13 @@ export const gameModuleOwnerSections: Readonly<Record<GameModule, readonly Workb
     'raidRewards'
   ],
   swordShieldRoyalCandyProgression: ['royalCandy'],
-  swordShieldBattleCafeRewards: [],
+  swordShieldBattleCafeRewards: ['battleCafeRewards'],
   swordShieldEventAssignments: [],
   scarletVioletTeraRaidAnalysis: ['teraRaids'],
   scarletVioletPackedLooseComparison: [],
   scarletVioletEventDataComparison: ['giftPokemon', 'tradePokemon', 'teraRaids'],
   scarletVioletScenePlacementEditing: [],
+  scarletVioletTypeEffectivenessState: ['typeChart'],
   scarletVioletStellarBehavior: [],
   legendsZaScriptedBossTimeline: ['encounters', 'moves'],
   legendsZaTrainerArchetypes: ['trainers'],
@@ -33,7 +34,8 @@ export const gameModuleOwnerSections: Readonly<Record<GameModule, readonly Workb
   legendsZaAlphaMoveDistribution: ['pokemon'],
   legendsZaDexLayoutPlanning: ['dexLayout'],
   legendsZaMoveVariantComparison: ['moves'],
-  legendsZaTrainerPoolSwitching: []
+  legendsZaTrainerPoolSwitching: ['trainerPools'],
+  legendsZaTypeEffectivenessState: ['typeChart']
 };
 
 export function gameModuleTitleKey(module: GameModule) {
@@ -44,6 +46,18 @@ export function gameModuleDescriptionKey(module: GameModule) {
   return `gameModules.module.${module}.description`;
 }
 
+const sourceUnavailableReasonCodes = new Set([
+  'trainer-type-event-executable-build-unverified',
+  'battle-cafe-source-unavailable',
+  'battle-cafe-source-shape-unverified',
+  'trainer-type-event-source-incomplete',
+  'trainer-type-event-identity-ambiguous',
+  'trainer-type-event-source-unavailable',
+  'trainer-type-event-source-shape-unverified'
+]);
+
 export function gameModuleReasonKey(reasonCode: string) {
-  return `gameModules.reason.${reasonCode}`;
+  return sourceUnavailableReasonCodes.has(reasonCode)
+    ? 'gameModules.reason.workflow-source-unavailable'
+    : `gameModules.reason.${reasonCode}`;
 }

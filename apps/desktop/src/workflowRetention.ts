@@ -10,6 +10,7 @@ export const workflowRetentionMinimumRecent = 2;
 export const workflowStoreKeyBySection = {
   angeFight: 'angeFightWorkflow',
   bagHook: 'bagHookWorkflow',
+  battleCafeRewards: 'battleCafeRewardsWorkflow',
   behavior: 'behaviorWorkflow',
   catchCap: 'catchCapWorkflow',
   dynamaxAdventures: 'dynamaxAdventuresWorkflow',
@@ -17,6 +18,7 @@ export const workflowStoreKeyBySection = {
   exefsPatches: 'exeFsPatchWorkflow',
   fairyGymBoosts: 'fairyGymBoostsWorkflow',
   fashionUnlock: 'fashionUnlockWorkflow',
+  fashionCatalog: 'fashionCatalogWorkflow',
   flagworkSave: 'flagworkSaveWorkflow',
   giftPokemon: 'giftPokemonWorkflow',
   gymUniformRemoval: 'gymUniformRemovalWorkflow',
@@ -35,6 +37,8 @@ export const workflowStoreKeyBySection = {
   royalCandy: 'royalCandyWorkflow',
   shinyRate: 'shinyRateWorkflow',
   shops: 'shopsWorkflow',
+  tmMachineControls: 'tmMachineControlsWorkflow',
+  habitatCoordinates: 'habitatCoordinatesWorkflow',
   spreadsheetImport: 'spreadsheetImportWorkflow',
   startingItems: 'startingItemsWorkflow',
   staticEncounters: 'staticEncountersWorkflow',
@@ -42,6 +46,7 @@ export const workflowStoreKeyBySection = {
   text: 'textWorkflow',
   tradePokemon: 'tradePokemonWorkflow',
   trainers: 'trainersWorkflow',
+  trainerPools: 'trainerPoolsWorkflow',
   typeChart: 'typeChartWorkflow'
 } as const satisfies Partial<Record<WorkbenchSection, string>>;
 
@@ -80,6 +85,7 @@ type WorkflowRetentionLimits = {
 const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSection>> = {
   'workflow.angeFight': 'angeFight',
   'workflow.bagHook': 'bagHook',
+  'workflow.battleCafeRewards': 'battleCafeRewards',
   'workflow.behavior': 'behavior',
   'workflow.catchCap': 'catchCap',
   'workflow.dynamaxAdventures': 'dynamaxAdventures',
@@ -88,6 +94,7 @@ const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSectio
   'workflow.exefsPatches': 'exefsPatches',
   'workflow.fairyGymBoosts': 'fairyGymBoosts',
   'workflow.fashionUnlock': 'fashionUnlock',
+  'workflow.fashionCatalog': 'fashionCatalog',
   'workflow.flagworkSave': 'flagworkSave',
   'workflow.giftPokemon': 'giftPokemon',
   'workflow.gymUniformRemoval': 'gymUniformRemoval',
@@ -107,6 +114,8 @@ const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSectio
   'workflow.royalCandy': 'royalCandy',
   'workflow.shinyRate': 'shinyRate',
   'workflow.shops': 'shops',
+  'workflow.tmMachineControls': 'tmMachineControls',
+  'workflow.habitatCoordinates': 'habitatCoordinates',
   'workflow.spreadsheetImport': 'spreadsheetImport',
   'workflow.startingItems': 'startingItems',
   'workflow.staticEncounters': 'staticEncounters',
@@ -115,6 +124,7 @@ const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSectio
   'workflow.text': 'text',
   'workflow.tradePokemon': 'tradePokemon',
   'workflow.trainers': 'trainers',
+  'workflow.trainerPools': 'trainerPools',
   'workflow.typeChart': 'typeChart',
   'workflow.zaModMerger': 'modMerger'
 };

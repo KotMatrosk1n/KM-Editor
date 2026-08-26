@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
@@ -273,7 +274,9 @@ public sealed class SwShEncountersEditSessionService
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
-        return new ChangePlan(session.Id, [write], diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, [write], diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -296,11 +299,23 @@ public sealed class SwShEncountersEditSessionService
                 expected: "Current reviewed Encounters change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
         var dataSource = SwShEncountersWorkflowService.ResolveWildDataSource(project);
         if (dataSource is null)
@@ -379,7 +394,8 @@ public sealed class SwShEncountersEditSessionService
                 expected: "Writable output root"));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static bool CanEditEncounters(

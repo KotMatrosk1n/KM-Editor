@@ -20,6 +20,10 @@ import {
   useBalanceLabController,
   type BalanceLabLayer
 } from './useBalanceLabController';
+import {
+  preparationStateFromQueryStatus,
+  type AnalysisPreparationState
+} from '../workbench/analysisPreparation';
 
 export type BalanceLabRuntimeProps = {
   availableLayers?: readonly BalanceLabLayer[];
@@ -28,6 +32,7 @@ export type BalanceLabRuntimeProps = {
   capabilityStatus: SemanticQueryStatus;
   onEnsureCapabilities: () => Promise<void>;
   onNavigateFinding: (record: SemanticExploreRecordRef) => void;
+  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -41,6 +46,7 @@ export function BalanceLabRuntime({
   capabilityStatus,
   onEnsureCapabilities,
   onNavigateFinding,
+  onPreparationStateChange,
   onRefreshCapabilities,
   onStaleRevision,
   revision,
@@ -52,6 +58,13 @@ export function BalanceLabRuntime({
       void onEnsureCapabilities();
     }
   }, [capabilityStatus, onEnsureCapabilities, revision, scope]);
+  useEffect(() => {
+    if (!revision) {
+      onPreparationStateChange?.(
+        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+      );
+    }
+  }, [capabilityStatus, onPreparationStateChange, revision]);
 
   if (!revision) {
     const isError = capabilityStatus === 'error' || capabilityStatus === 'ready';
@@ -82,6 +95,7 @@ export function BalanceLabRuntime({
       {...(availableLayers ? { availableLayers } : {})}
       bridge={bridge}
       onNavigateFinding={onNavigateFinding}
+      onPreparationStateChange={onPreparationStateChange}
       onStaleRevision={onStaleRevision}
       revision={revision}
       scope={scope}
@@ -93,6 +107,7 @@ function BalanceLabReadyRuntime({
   availableLayers,
   bridge,
   onNavigateFinding,
+  onPreparationStateChange,
   onStaleRevision,
   revision,
   scope
@@ -111,6 +126,9 @@ function BalanceLabReadyRuntime({
     revision,
     scope
   });
+  useEffect(() => {
+    onPreparationStateChange?.(preparationStateFromQueryStatus(controller.result.status));
+  }, [controller.result.status, onPreparationStateChange]);
   return (
     <BalanceLabSection
       {...(availableLayers ? { availableLayers } : {})}

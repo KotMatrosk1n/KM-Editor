@@ -58,8 +58,8 @@ export type BalanceLabController = BalanceLabControllerSnapshot & {
 };
 
 type RequestToken = { epoch: number; id: number; queryGeneration: number };
-const maximumCachedQueries = 4;
-const maximumCacheCharacters = 256 * 1_024;
+const maximumCachedQueries = 5;
+const maximumCacheCharacters = 4 * 1_024 * 1_024;
 
 const idleQueryState = (): BalanceLabQueryState => ({
   data: null,
@@ -299,7 +299,11 @@ class BalanceLabControllerStore {
   private writeCache(options: BalanceLabQueryOptions, value: BalanceLabQueryResponse) {
     const key = this.cacheKey(options);
     const capability = value.capabilities.find((item) => item.study === options.study);
-    if (!key || capability?.state === 'unavailable' || value.diagnostics.length > 0) return;
+    if (
+      !key ||
+      capability?.state === 'unavailable' ||
+      value.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    ) return;
     this.cache.delete(key);
     this.cache.set(key, value);
     while (

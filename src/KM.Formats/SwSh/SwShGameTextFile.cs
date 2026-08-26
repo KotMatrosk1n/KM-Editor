@@ -170,10 +170,18 @@ public sealed class SwShGameTextFile
         return WriteCore(lines, this, nullLineEncoding);
     }
 
+    public byte[] WriteStructural(
+        IReadOnlyList<SwShGameTextLine> lines,
+        GameTextNullLineEncoding nullLineEncoding)
+    {
+        return WriteCore(lines, this, nullLineEncoding, allowLineCountChange: true);
+    }
+
     private static byte[] WriteCore(
         IReadOnlyList<SwShGameTextLine> lines,
         SwShGameTextFile? source,
-        GameTextNullLineEncoding nullLineEncoding)
+        GameTextNullLineEncoding nullLineEncoding,
+        bool allowLineCountChange = false)
     {
         ArgumentNullException.ThrowIfNull(lines);
         ValidateNullLineEncoding(nullLineEncoding);
@@ -183,7 +191,7 @@ public sealed class SwShGameTextFile
             throw new ArgumentOutOfRangeException(nameof(lines), "Game text files cannot contain more than 65535 lines.");
         }
 
-        if (source is not null && lines.Count != source.Lines.Count)
+        if (source is not null && lines.Count != source.Lines.Count && !allowLineCountChange)
         {
             throw new InvalidDataException("Source-preserving text writes cannot change the number of lines.");
         }
@@ -203,6 +211,7 @@ public sealed class SwShGameTextFile
         }
 
         if (source is not null
+            && lines.Count == source.Lines.Count
             && TryWriteWithinSourceCapacity(lines, source, nullLineEncoding, out var capacityPreserved))
         {
             return capacityPreserved;
@@ -218,7 +227,9 @@ public sealed class SwShGameTextFile
                 throw new ArgumentException("Text line values cannot be null.", nameof(lines));
             }
 
-            if (source is not null && string.Equals(line.Text, source.Lines[i].Text, StringComparison.Ordinal))
+            if (source is not null
+                && i < source.Lines.Count
+                && string.Equals(line.Text, source.Lines[i].Text, StringComparison.Ordinal))
             {
                 encryptedLines[i] = source._sourceEncryptedLines![i].ToArray();
             }

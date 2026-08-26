@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Schemas.FashionCatalog;
+
+table ZaFashionLineupAppearCondition {
+    Condition:string;
+    Comparison:uint;
+    Arguments:[string];
+}
+
+table ZaFashionLineupConditionHolder {
+    Values:[ZaFashionLineupAppearCondition];
+}
+
+table ZaFashionLineupConditionGroup {
+    Values:[ZaFashionLineupConditionHolder];
+}
+
+table ZaFashionLineupEntry {
+    ItemId:uint;
+    Conditions:[ZaFashionLineupConditionGroup];
+}
+
+table ZaFashionLineup {
+    LineupId:string (required);
+    Entries:[ZaFashionLineupEntry] (required);
+}
+
+table ZaFashionLineupArray {
+    Values:[ZaFashionLineup] (required);
+}
+
+root_type ZaFashionLineupArray;

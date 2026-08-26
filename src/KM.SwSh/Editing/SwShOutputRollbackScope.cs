@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 
 namespace KM.SwSh.Editing;
@@ -155,6 +156,102 @@ public sealed class SwShOutputRollbackScope : IDisposable
             failures.Add(new SwShOutputRollbackFailure(
                 string.Empty,
                 "Temporary rollback snapshots could not be deleted."));
+        }
+
+        return failures;
+    }
+
+    public IReadOnlyList<SwShOutputRollbackFailure> RollbackThroughCoordinator(
+        ProjectPaths paths,
+        string operationId)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (completed)
+        {
+            return Array.Empty<SwShOutputRollbackFailure>();
+        }
+
+        var failures = new List<SwShOutputRollbackFailure>();
+        var mutations = new List<SwShOutputFileMutation>();
+        foreach (var snapshot in snapshots)
+        {
+            if (!SwShOutputTransactionWriter.TryCapturePreimage(
+                    paths,
+                    snapshot.RelativePath,
+                    out var currentState,
+                    out var captureFailure))
+            {
+                failures.Add(new SwShOutputRollbackFailure(
+                    snapshot.RelativePath,
+                    captureFailure?.Message ?? "The current output state could not be captured."));
+                continue;
+            }
+
+            switch (snapshot.Kind)
+            {
+                case OutputSnapshotKind.File:
+                    try
+                    {
+                        mutations.Add(SwShOutputFileMutation.Write(
+                            snapshot.RelativePath,
+                            File.ReadAllBytes(snapshot.SnapshotPath!),
+                            currentState!));
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        failures.Add(new SwShOutputRollbackFailure(snapshot.RelativePath, exception.Message));
+                    }
+
+                    break;
+                case OutputSnapshotKind.Missing:
+                    if (currentState!.Exists)
+                    {
+                        mutations.Add(SwShOutputFileMutation.Delete(snapshot.RelativePath, currentState));
+                    }
+
+                    break;
+                case OutputSnapshotKind.Directory:
+                    failures.Add(new SwShOutputRollbackFailure(
+                        snapshot.RelativePath,
+                        "A directory rollback target cannot be represented as a whole-file output mutation."));
+                    break;
+                default:
+                    failures.Add(new SwShOutputRollbackFailure(
+                        snapshot.RelativePath,
+                        "The rollback target kind is not recognized."));
+                    break;
+            }
+        }
+
+        if (failures.Count == 0
+            && !SwShOutputTransactionWriter.TryApply(
+                paths,
+                mutations,
+                operationId,
+                out _,
+                out var transactionFailure))
+        {
+            failures.Add(new SwShOutputRollbackFailure(
+                transactionFailure?.RelativePath ?? string.Empty,
+                transactionFailure?.Message ?? "The rollback output transaction did not commit."));
+        }
+
+        if (failures.Count == 0)
+        {
+            completed = true;
+            if (!TryDeleteSnapshotDirectory(snapshotRootPath))
+            {
+                failures.Add(new SwShOutputRollbackFailure(
+                    string.Empty,
+                    "Temporary rollback snapshots could not be deleted."));
+            }
+        }
+        else
+        {
+            completed = true;
+            failures.Add(new SwShOutputRollbackFailure(
+                string.Empty,
+                "Temporary rollback snapshots were retained because coordinator-owned rollback did not complete."));
         }
 
         return failures;

@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
@@ -227,7 +228,9 @@ public sealed class SwShMovesEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file{(writes.Count == 1 ? string.Empty : "s")}."));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -250,11 +253,23 @@ public sealed class SwShMovesEditSessionService
                 expected: "Current reviewed Moves Data change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
         var workflow = movesWorkflowService.Load(project);
         var pendingOutputs = new List<MoveOutput>();
@@ -346,7 +361,8 @@ public sealed class SwShMovesEditSessionService
                 "Applied Moves Data change plan to the configured LayeredFS output root."));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static bool TryWriteOutputsTransactionally(

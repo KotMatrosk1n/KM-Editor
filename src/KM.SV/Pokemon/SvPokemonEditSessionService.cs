@@ -54,6 +54,24 @@ internal sealed class SvPokemonEditSessionService
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SvPokemonWorkflowService(this.fileSource);
     }
 
+    public SvPokemonEditResult ReadEffective(ProjectPaths paths, EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+        SvEditSessionSupport.CanEdit(
+            project,
+            workflow.Summary,
+            workflow.Diagnostics,
+            SvEditSessionSupport.PokemonDomain,
+            diagnostics);
+        return new SvPokemonEditResult(workflow, currentSession, diagnostics);
+    }
+
     public SvPokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,

@@ -3,14 +3,18 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.Core.Semantics;
 using KM.Formats.SV;
+using KM.Formats.SV.Habitat;
 using KM.SV.Data;
 using KM.SV.DumpImport;
 using KM.SV.Encounters;
 using KM.SV.FashionUnlock;
 using KM.SV.Gifts;
+using KM.SV.GameModules;
+using KM.SV.HabitatCoordinates;
 using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
 using KM.SV.ModMerger;
@@ -21,6 +25,7 @@ using KM.SV.Raids;
 using KM.SV.Shops;
 using KM.SV.StaticEncounters;
 using KM.SV.Text;
+using KM.SV.TmMachine;
 using KM.SV.Trainers;
 using KM.SV.Trades;
 using KM.SV.TypeChart;
@@ -42,6 +47,8 @@ public sealed class SvWorkflowService
     private readonly SvItemsWorkflowService itemsWorkflowService;
     private readonly SvMovesWorkflowService movesWorkflowService;
     private readonly SvTextWorkflowService textWorkflowService;
+    private readonly SvTmMachineControlsWorkflowService tmMachineControlsWorkflowService;
+    private readonly SvHabitatCoordinatesWorkflowService habitatCoordinatesWorkflowService;
     private readonly SvPokemonWorkflowService pokemonWorkflowService;
     private readonly SvTrainersWorkflowService trainersWorkflowService;
     private readonly SvEncountersWorkflowService encountersWorkflowService;
@@ -60,6 +67,8 @@ public sealed class SvWorkflowService
     private readonly SvItemsEditSessionService itemsEditSessionService;
     private readonly SvMovesEditSessionService movesEditSessionService;
     private readonly SvTextEditSessionService textEditSessionService;
+    private readonly SvTmMachineControlsEditSessionService tmMachineControlsEditSessionService;
+    private readonly SvHabitatCoordinatesEditSessionService habitatCoordinatesEditSessionService;
     private readonly SvPokemonEditSessionService pokemonEditSessionService;
     private readonly SvTrainersEditSessionService trainersEditSessionService;
     private readonly SvEncountersEditSessionService encountersEditSessionService;
@@ -80,9 +89,17 @@ public sealed class SvWorkflowService
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.cacheManager = cacheManager ?? new SvCacheManager();
         fileSource = new SvWorkflowFileSource(this.cacheManager);
+        var habitatFileSource = new SvWorkflowFileSource(
+            this.cacheManager,
+            bypassReusableBaseCache: true,
+            maximumReadBytes: SvHabitatDistributionDocument.MaximumSourceBytes);
         itemsWorkflowService = new SvItemsWorkflowService(fileSource);
         movesWorkflowService = new SvMovesWorkflowService(fileSource);
         textWorkflowService = new SvTextWorkflowService(fileSource, this.cacheManager);
+        tmMachineControlsWorkflowService = new SvTmMachineControlsWorkflowService(fileSource);
+        habitatCoordinatesWorkflowService = new SvHabitatCoordinatesWorkflowService(
+            habitatFileSource,
+            fileSource);
         pokemonWorkflowService = new SvPokemonWorkflowService(fileSource);
         trainersWorkflowService = new SvTrainersWorkflowService(fileSource);
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
@@ -103,6 +120,7 @@ public sealed class SvWorkflowService
         var editItemsWorkflowService = new SvItemsWorkflowService(editFileSource);
         var editMovesWorkflowService = new SvMovesWorkflowService(editFileSource);
         var editTextWorkflowService = new SvTextWorkflowService(editFileSource);
+        var editTmMachineControlsWorkflowService = new SvTmMachineControlsWorkflowService(editFileSource);
         var editPokemonWorkflowService = new SvPokemonWorkflowService(editFileSource);
         var editTrainersWorkflowService = new SvTrainersWorkflowService(editFileSource);
         var editEncountersWorkflowService = new SvEncountersWorkflowService(editFileSource);
@@ -125,6 +143,14 @@ public sealed class SvWorkflowService
             this.projectWorkspaceService,
             editFileSource,
             editTextWorkflowService);
+        tmMachineControlsEditSessionService = new SvTmMachineControlsEditSessionService(
+            this.projectWorkspaceService,
+            editFileSource,
+            editTmMachineControlsWorkflowService);
+        habitatCoordinatesEditSessionService = new SvHabitatCoordinatesEditSessionService(
+            this.projectWorkspaceService,
+            habitatFileSource,
+            habitatCoordinatesWorkflowService);
         pokemonEditSessionService = new SvPokemonEditSessionService(
             this.projectWorkspaceService,
             editFileSource,
@@ -205,6 +231,31 @@ public sealed class SvWorkflowService
         return cacheManager.WarmupStep(paths, stepIndex);
     }
 
+    public SvPackedLooseSourceComparison LoadPackedLooseSourceComparison(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return new SvPackedLooseSourceComparisonService().LoadFreshBounded(paths);
+    }
+
+    public SvEventDataComparison LoadEventDataComparison(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return new SvEventDataComparisonService(cacheManager).LoadFreshBounded(paths);
+    }
+
+    public SvScenePlacementProjection LoadScenePlacementProjection(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return new SvScenePlacementProjectionService(cacheManager).LoadFreshBounded(paths);
+    }
+
+    public SvTypeEffectivenessStateProjection LoadTypeEffectivenessStateProjection(
+        ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return new SvTypeEffectivenessStateProjectionService().LoadFreshBounded(paths);
+    }
+
     public void ClearMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
@@ -219,6 +270,12 @@ public sealed class SvWorkflowService
     public string CaptureSemanticExploreSourceFingerprint(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+        return CaptureSemanticExploreSourceFingerprintLocked(paths);
+    }
+
+    private string CaptureSemanticExploreSourceFingerprintLocked(ProjectPaths paths)
+    {
         var semanticFileSource = new SvWorkflowFileSource(
             cacheManager,
             bypassReusableBaseCache: true,
@@ -429,6 +486,41 @@ public sealed class SvWorkflowService
             .UpdateFields(paths, session, updates);
     }
 
+    public SvPokemonEditResult ReadPokemonEffectiveFreshBounded(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new SvPokemonWorkflowService(source);
+        return new SvPokemonEditSessionService(workspace, source, workflow)
+            .ReadEffective(paths, session);
+    }
+
+    public SvPokemonEditResult UpdatePokemonLearnsetFreshBounded(
+        ProjectPaths paths,
+        EditSession? session,
+        int personalId,
+        string action,
+        int? slot,
+        int? moveId,
+        int? level)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var workspace = new ProjectWorkspaceService();
+        var source = new SvWorkflowFileSource(
+            cacheManager,
+            bypassReusableBaseCache: true,
+            MaximumSemanticSourceBytesPerFile);
+        var workflow = new SvPokemonWorkflowService(source);
+        return new SvPokemonEditSessionService(workspace, source, workflow)
+            .UpdateLearnset(paths, session, personalId, action, slot, moveId, level);
+    }
+
     public SvEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
         ProjectPaths paths,
         EditSession? session,
@@ -556,6 +648,8 @@ public sealed class SvWorkflowService
             teraRaidsWorkflowService.CreateSummary(project),
             staticEncountersWorkflowService.CreateSummary(project),
             shopsWorkflowService.CreateSummary(project),
+            tmMachineControlsWorkflowService.CreateSummary(project),
+            habitatCoordinatesWorkflowService.CreateSummary(project),
             giftPokemonWorkflowService.CreateSummary(project),
             tradePokemonWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
@@ -637,6 +731,25 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return shopsWorkflowService.Load(project);
+    }
+
+    public SvTmMachineControlsWorkflow LoadTmMachineControls(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return tmMachineControlsWorkflowService.Load(project);
+    }
+
+    public SvHabitatCoordinatesWorkflow LoadHabitatCoordinates(
+        ProjectPaths paths,
+        SvHabitatCoordinatesQuery? query = null,
+        EditSession? session = null)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return habitatCoordinatesWorkflowService.Load(project, query, session);
     }
 
     public SvGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths)
@@ -949,6 +1062,39 @@ public sealed class SvWorkflowService
         return shopsEditSessionService.UpdateInventoryItem(paths, session, shopId, slot, field, value, rowId);
     }
 
+    public SvTmMachineControlsEditResult StageTmRecipeAvailability(
+        ProjectPaths paths,
+        EditSession? session,
+        bool allAvailable)
+    {
+        return tmMachineControlsEditSessionService.StageRecipeAvailability(paths, session, allAvailable);
+    }
+
+    public SvTmMachineControlsEditResult StageTmMaterialVisibility(
+        ProjectPaths paths,
+        EditSession? session,
+        bool alwaysVisible)
+    {
+        return tmMachineControlsEditSessionService.StageMaterialVisibility(paths, session, alwaysVisible);
+    }
+
+    public SvHabitatCoordinatesEditResult StageHabitatCoordinate(
+        ProjectPaths paths,
+        EditSession? session,
+        SvHabitatCoordinatesQuery? query,
+        string region,
+        SvHabitatRowBinding binding,
+        SvHabitatCoordinateChoice coordinate)
+    {
+        return habitatCoordinatesEditSessionService.StageCoordinate(
+            paths,
+            session,
+            query,
+            region,
+            binding,
+            coordinate);
+    }
+
     public SvPlacementEditResult UpdatePlacementObjectField(
         ProjectPaths paths,
         EditSession? session,
@@ -1023,14 +1169,12 @@ public sealed class SvWorkflowService
         EditSession session,
         SvOutputMode outputMode = SvOutputMode.Standalone)
     {
-        lock (SvWorkflowFileSource.OutputWriteSyncRoot)
-        {
-            projectWorkspaceService.ClearMemoryCache();
-            var domain = GetDomain(session);
-            return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
-                ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
-                : CreateSingleDomainChangePlan(paths, session, domain, outputMode);
-        }
+        using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+        projectWorkspaceService.ClearMemoryCache();
+        var domain = GetDomain(session);
+        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+            ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
+            : CreateSingleDomainChangePlan(paths, session, domain, outputMode);
     }
 
     public ApplyResult ApplyChangePlan(
@@ -1041,14 +1185,12 @@ public sealed class SvWorkflowService
     {
         try
         {
-            lock (SvWorkflowFileSource.OutputWriteSyncRoot)
-            {
-                projectWorkspaceService.ClearMemoryCache();
-                var domain = GetDomain(session);
-                return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
-                    ? ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode)
-                    : ApplySingleDomainChangePlan(paths, session, changePlan, domain, outputMode);
-            }
+            using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+            projectWorkspaceService.ClearMemoryCache();
+            var domain = GetDomain(session);
+            return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+                ? ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode)
+                : ApplySingleDomainChangePlan(paths, session, changePlan, domain, outputMode);
         }
         finally
         {
@@ -1074,6 +1216,8 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TeraRaids => teraRaidsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.Validate(paths, session),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
@@ -1102,6 +1246,8 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TeraRaids => teraRaidsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1131,6 +1277,8 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TeraRaids => teraRaidsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -1273,15 +1421,13 @@ public sealed class SvWorkflowService
     {
         try
         {
-            lock (SvWorkflowFileSource.OutputWriteSyncRoot)
-            {
-                return ApplyNormalDomainChangePlanCore(
-                    paths,
-                    session,
-                    reviewedPlan,
-                    domains,
-                    outputMode);
-            }
+            using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+            return ApplyNormalDomainChangePlanCore(
+                paths,
+                session,
+                reviewedPlan,
+                domains,
+                outputMode);
         }
         finally
         {
@@ -1317,14 +1463,21 @@ public sealed class SvWorkflowService
             return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var snapshots = CaptureNormalDomainOutputSnapshots(paths, currentPlan.Writes, diagnostics);
-        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-        {
-            return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-        }
-
         try
         {
+            var context = new SvOutputApplyContext(
+                OutputReviewFingerprint.FromChangePlan(currentPlan),
+                new OwnershipOwnerId("workflow.sv.mixed"),
+                currentSnapshot.EffectiveDomains
+                    .Select(domain => new OutputApplyOrigin(
+                        OutputApplyOriginKind.Workflow,
+                        GetDomainName(domain)))
+                    .ToArray());
+            using var outputBatch = SvWorkflowFileSource.BeginDeferredOutputBatch(
+                paths,
+                outputMode,
+                currentPlan,
+                context);
             foreach (var domain in currentSnapshot.EffectiveDomains)
             {
                 var domainSession = SliceSession(currentSnapshot.EffectiveSession, domain);
@@ -1343,13 +1496,19 @@ public sealed class SvWorkflowService
 
                 if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
                 {
-                    RestoreNormalDomainOutputSnapshots(snapshots, diagnostics);
                     writtenFiles.Clear();
                     break;
                 }
             }
+
+            if (writtenFiles.Count > 0
+                && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                outputBatch.Commit();
+            }
         }
-        catch (Exception exception) when (exception is IOException
+        catch (Exception exception) when (exception is OutputCoordinatorException
+            or IOException
             or UnauthorizedAccessException
             or InvalidDataException
             or InvalidOperationException
@@ -1361,7 +1520,6 @@ public sealed class SvWorkflowService
                 $"Scarlet/Violet mixed change plan could not be applied: {exception.Message}",
                 "sv.editor",
                 expected: "Readable sources and writable output targets"));
-            RestoreNormalDomainOutputSnapshots(snapshots, diagnostics);
             writtenFiles.Clear();
         }
 
@@ -1393,6 +1551,8 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.TeraRaidsDomain] => SvEditSessionDomain.TeraRaids,
             [SvEditSessionSupport.StaticEncountersDomain] => SvEditSessionDomain.StaticEncounters,
             [SvEditSessionSupport.ShopsDomain] => SvEditSessionDomain.Shops,
+            [SvTmMachineControlsEditSessionService.EditDomain] => SvEditSessionDomain.TmMachineControls,
+            [SvHabitatCoordinatesEditSessionService.EditDomain] => SvEditSessionDomain.HabitatCoordinates,
             [SvEditSessionSupport.GiftPokemonDomain] => SvEditSessionDomain.GiftPokemon,
             [SvEditSessionSupport.TradePokemonDomain] => SvEditSessionDomain.TradePokemon,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
@@ -1445,6 +1605,8 @@ public sealed class SvWorkflowService
             SvEditSessionSupport.TeraRaidsDomain => SvEditSessionDomain.TeraRaids,
             SvEditSessionSupport.StaticEncountersDomain => SvEditSessionDomain.StaticEncounters,
             SvEditSessionSupport.ShopsDomain => SvEditSessionDomain.Shops,
+            SvTmMachineControlsEditSessionService.EditDomain => SvEditSessionDomain.TmMachineControls,
+            SvHabitatCoordinatesEditSessionService.EditDomain => SvEditSessionDomain.HabitatCoordinates,
             SvEditSessionSupport.GiftPokemonDomain => SvEditSessionDomain.GiftPokemon,
             SvEditSessionSupport.TradePokemonDomain => SvEditSessionDomain.TradePokemon,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
@@ -1468,6 +1630,8 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TeraRaids or
             SvEditSessionDomain.StaticEncounters or
             SvEditSessionDomain.Shops or
+            SvEditSessionDomain.TmMachineControls or
+            SvEditSessionDomain.HabitatCoordinates or
             SvEditSessionDomain.GiftPokemon or
             SvEditSessionDomain.TradePokemon or
             SvEditSessionDomain.Placement;
@@ -1555,6 +1719,8 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TeraRaids => SvEditSessionSupport.TeraRaidsDomain,
             SvEditSessionDomain.StaticEncounters => SvEditSessionSupport.StaticEncountersDomain,
             SvEditSessionDomain.Shops => SvEditSessionSupport.ShopsDomain,
+            SvEditSessionDomain.TmMachineControls => SvTmMachineControlsEditSessionService.EditDomain,
+            SvEditSessionDomain.HabitatCoordinates => SvHabitatCoordinatesEditSessionService.EditDomain,
             SvEditSessionDomain.GiftPokemon => SvEditSessionSupport.GiftPokemonDomain,
             SvEditSessionDomain.TradePokemon => SvEditSessionSupport.TradePokemonDomain,
             SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
@@ -1670,104 +1836,6 @@ public sealed class SvWorkflowService
             .Append('|');
     }
 
-    private static IReadOnlyList<NormalDomainOutputSnapshot> CaptureNormalDomainOutputSnapshots(
-        ProjectPaths paths,
-        IReadOnlyList<PlannedFileWrite> writes,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        try
-        {
-            return writes
-                .Select(write => ResolvePlannedOutputPath(paths, write.TargetRelativePath))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(path => File.Exists(path)
-                    ? new NormalDomainOutputSnapshot(
-                        path,
-                        Existed: true,
-                        File.ReadAllBytes(path),
-                        File.GetLastWriteTimeUtc(path))
-                    : new NormalDomainOutputSnapshot(
-                        path,
-                        Existed: false,
-                        Contents: null,
-                        LastWriteTimeUtc: null))
-                .ToArray();
-        }
-        catch (Exception exception) when (exception is IOException
-            or UnauthorizedAccessException
-            or InvalidOperationException
-            or ArgumentException
-            or NotSupportedException)
-        {
-            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Scarlet/Violet output rollback state could not be prepared: {exception.Message}",
-                "sv.editor",
-                expected: "Readable and writable output targets"));
-            return [];
-        }
-    }
-
-    private static void RestoreNormalDomainOutputSnapshots(
-        IReadOnlyList<NormalDomainOutputSnapshot> snapshots,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        foreach (var snapshot in snapshots.Reverse())
-        {
-            try
-            {
-                if (snapshot.Existed)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(snapshot.Path)!);
-                    File.WriteAllBytes(snapshot.Path, snapshot.Contents!);
-                    File.SetLastWriteTimeUtc(snapshot.Path, snapshot.LastWriteTimeUtc!.Value);
-                }
-                else if (File.Exists(snapshot.Path))
-                {
-                    File.Delete(snapshot.Path);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Scarlet/Violet output rollback could not restore a target: {exception.Message}",
-                    "sv.editor",
-                    expected: "Original output state"));
-            }
-        }
-    }
-
-    private static string ResolvePlannedOutputPath(ProjectPaths paths, string targetRelativePath)
-    {
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            throw new InvalidOperationException("Set an output root before applying Scarlet/Violet edits.");
-        }
-
-        if (Path.IsPathRooted(targetRelativePath))
-        {
-            throw new InvalidOperationException("Scarlet/Violet output targets must be relative paths.");
-        }
-
-        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
-        var targetPath = Path.GetFullPath(Path.Combine(
-            outputRoot,
-            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(outputRoot, targetPath)))
-        {
-            throw new InvalidOperationException("Scarlet/Violet output target escapes the output root.");
-        }
-
-        return targetPath;
-    }
-
-    private sealed record NormalDomainOutputSnapshot(
-        string Path,
-        bool Existed,
-        byte[]? Contents,
-        DateTime? LastWriteTimeUtc);
-
     private sealed record NormalDomainChangePlanSnapshot(
         ChangePlan CombinedPlan,
         IReadOnlyDictionary<SvEditSessionDomain, ChangePlan> DomainPlans,
@@ -1818,6 +1886,8 @@ public sealed class SvWorkflowService
         TeraRaids,
         StaticEncounters,
         Shops,
+        TmMachineControls,
+        HabitatCoordinates,
         GiftPokemon,
         TradePokemon,
         Placement,

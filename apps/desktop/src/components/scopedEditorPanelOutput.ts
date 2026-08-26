@@ -19,9 +19,12 @@ export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'ivScreen',
   'hyperTraining',
   'shinyRate',
+  'tmMachineControls',
+  'habitatCoordinates',
   'typeChart',
   'fairyGymBoosts',
   'fashionUnlock',
+  'fashionCatalog',
   'gymUniformRemoval',
   'hyperspaceBypass'
 ]);

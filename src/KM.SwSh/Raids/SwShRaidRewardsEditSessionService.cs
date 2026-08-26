@@ -428,6 +428,17 @@ public sealed class SwShRaidRewardsEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var scopeDiagnostics))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, scopeDiagnostics);
+        }
+
+        using var verifiedApply = applyScope!;
+        paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
         var dataSource = SwShRaidRewardsWorkflowService.ResolveNestDataSource(project);
         if (dataSource is null)
@@ -551,7 +562,8 @@ public sealed class SwShRaidRewardsEditSessionService
                 $"Applied {workflowLabel} change plan to the configured LayeredFS output root."));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return verifiedApply.Commit(
+            CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics));
     }
 
     private static bool CanEditRaidRewards(

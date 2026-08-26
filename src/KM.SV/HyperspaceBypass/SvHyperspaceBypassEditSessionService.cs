@@ -3,7 +3,9 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.SV.Workflows;
 using System.Globalization;
 
@@ -259,6 +261,8 @@ public sealed class SvHyperspaceBypassEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session, outputMode);
@@ -281,7 +285,14 @@ public sealed class SvHyperspaceBypassEditSessionService
         var pendingEdit = session.PendingEdits.Single();
         if (IsUninstallEdit(pendingEdit))
         {
-            ApplyUninstall(paths, writtenFiles, diagnostics);
+            ApplyUninstall(
+                paths,
+                session,
+                reviewedPlan,
+                currentPlan,
+                outputMode,
+                writtenFiles,
+                diagnostics);
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
@@ -303,8 +314,13 @@ public sealed class SvHyperspaceBypassEditSessionService
             var output = SvHyperspaceBypassMainPatcher.Apply(
                 File.ReadAllBytes(source.AbsolutePath),
                 paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            ApplyMainMutation(
+                paths,
+                session,
+                reviewedPlan,
+                currentPlan,
+                outputMode,
+                output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SvHyperspaceBypassWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -334,12 +350,24 @@ public sealed class SvHyperspaceBypassEditSessionService
                 file: SvHyperspaceBypassWorkflowService.ExeFsMainPath,
                 expected: "Writable output root"));
         }
+        catch (OutputCoordinatorException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Hyperspace Bypass output file could not be committed: {exception.Message}",
+                file: SvHyperspaceBypassWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
+        }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
-    private static void ApplyUninstall(
+    private void ApplyUninstall(
         ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ChangePlan currentPlan,
+        SvOutputMode outputMode,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -372,14 +400,14 @@ public sealed class SvHyperspaceBypassEditSessionService
                 File.ReadAllBytes(targetPath),
                 baseBytes,
                 paths.SelectedGame);
-            if (restored.SequenceEqual(baseBytes))
-            {
-                File.Delete(targetPath);
-            }
-            else
-            {
-                File.WriteAllBytes(targetPath, restored);
-            }
+            ApplyMainMutation(
+                paths,
+                session,
+                reviewedPlan,
+                currentPlan,
+                outputMode,
+                restored.SequenceEqual(baseBytes) ? null : restored,
+                baseBytes);
 
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SvHyperspaceBypassWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
@@ -410,6 +438,40 @@ public sealed class SvHyperspaceBypassEditSessionService
                 file: SvHyperspaceBypassWorkflowService.ExeFsMainPath,
                 expected: "Writable output root"));
         }
+        catch (OutputCoordinatorException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Hyperspace Bypass uninstall could not update output: {exception.Message}",
+                file: SvHyperspaceBypassWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
+        }
+    }
+
+    private void ApplyMainMutation(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ChangePlan currentPlan,
+        SvOutputMode outputMode,
+        byte[]? bytes,
+        byte[]? deleteFallbackBytes = null)
+    {
+        var context = new SvOutputApplyContext(
+            OutputReviewFingerprint.FromChangePlan(currentPlan),
+            new OwnershipOwnerId("workflow.sv.hyperspace-bypass"),
+            [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, HyperspaceBypassEditDomain)]);
+        SvWorkflowFileSource.ApplyStandaloneOutputBatch(
+            paths,
+            [new SvStandaloneOutputMutation(
+                SvHyperspaceBypassWorkflowService.ExeFsMainPath,
+                bytes,
+                deleteFallbackBytes,
+                context)],
+            context,
+            () => ReviewedPlanMatchesCurrentPlan(
+                reviewedPlan,
+                CreateChangePlan(paths, session, outputMode)));
     }
 
     private static bool CanStageInstall(

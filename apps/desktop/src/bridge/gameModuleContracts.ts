@@ -134,6 +134,7 @@ export const gameModuleValues = [
   'scarletVioletPackedLooseComparison',
   'scarletVioletEventDataComparison',
   'scarletVioletScenePlacementEditing',
+  'scarletVioletTypeEffectivenessState',
   'scarletVioletStellarBehavior',
   'legendsZaScriptedBossTimeline',
   'legendsZaTrainerArchetypes',
@@ -142,10 +143,12 @@ export const gameModuleValues = [
   'legendsZaAlphaMoveDistribution',
   'legendsZaDexLayoutPlanning',
   'legendsZaMoveVariantComparison',
-  'legendsZaTrainerPoolSwitching'
+  'legendsZaTrainerPoolSwitching',
+  'legendsZaTypeEffectivenessState'
 ] as const;
 
 export const gameModuleSchema = z.enum(gameModuleValues);
+export const gameModuleMaximumCapabilities = gameModuleValues.length;
 export const gameModuleMaturitySchema = z.enum(['product', 'readOnlyFirst', 'researchGated']);
 export const gameModuleCoverageStateSchema = z.enum(['complete', 'partial', 'unavailable']);
 export const gameModuleConfidenceSchema = z.enum(['unknown', 'verified', 'derived']);
@@ -155,9 +158,26 @@ export const gameModuleReasonCodeSchema = z.enum([
   'bounded-nso-decoder-unavailable',
   'bounded-route-analysis-provider-unavailable',
   'bounded-progression-provider-unavailable',
+  'trainer-payout-and-runtime-acquisition-order-unavailable',
+  'patch-interaction-and-unlisted-build-coverage-unavailable',
+  'runtime-route-generation-and-unlisted-build-coverage-unavailable',
+  'runtime-progression-evaluation-unavailable',
+  'runtime-scene-availability-unavailable',
+  'scene-script-assignments-and-runtime-audio-resolution-unavailable',
+  'trainer-type-event-executable-build-unverified',
+  'battle-cafe-source-unavailable',
+  'battle-cafe-source-shape-unverified',
+  'trainer-type-event-source-incomplete',
+  'trainer-type-event-identity-ambiguous',
+  'trainer-type-event-source-unavailable',
+  'trainer-type-event-source-shape-unverified',
   'research-evidence-required',
   'progression-unlock-and-rotation-coverage-unavailable',
   'packed-loose-comparison-contract-missing',
+  'source-content-decoding-outside-scope',
+  'unmapped-event-fields-remain-opaque',
+  'coordinates-rotations-naming-and-unowned-scene-fields-excluded',
+  'stellar-and-runtime-effect-resolution-unavailable',
   'verified-event-comparison-provider-unavailable',
   'runtime-execution-order-unavailable',
   'class-and-presentation-semantics-research-gated',
@@ -165,6 +185,11 @@ export const gameModuleReasonCodeSchema = z.enum([
   'read-only-compatibility-projection-missing',
   'bounded-pokemon-projection-unavailable',
   'bounded-executable-observer-unavailable',
+  'movement-proposals-and-per-species-mega-membership-unavailable',
+  'runtime-city-behavior-and-unlisted-attachment-coverage-unavailable',
+  'mapping-addition-and-runtime-selection-coverage-unavailable',
+  'pool-resizing-and-runtime-selection-coverage-unavailable',
+  'edit-proposals-and-runtime-effect-resolution-unavailable',
   'variant-consumer-coverage-unavailable',
   'verified-trainer-pool-provider-unavailable',
   'workflow-disabled',
@@ -179,28 +204,37 @@ const readinessReasonCodes = new Set([
   'workflow-source-invalid',
   'workflow-source-unavailable',
   'bounded-provider-limit-exceeded',
-  'bounded-provider-unavailable'
+  'bounded-provider-unavailable',
+  'trainer-type-event-executable-build-unverified',
+  'battle-cafe-source-unavailable',
+  'battle-cafe-source-shape-unverified',
+  'trainer-type-event-source-incomplete',
+  'trainer-type-event-identity-ambiguous',
+  'trainer-type-event-source-unavailable',
+  'trainer-type-event-source-shape-unverified'
 ]);
 const expectedCapabilityByModule = {
-  swordShieldRewardEcosystem: ['readOnlyFirst', 'swsh.game-modules.reward-ecosystem', 'unified-acquisition-provider-unavailable', false],
-  swordShieldExeFsCompatibility: ['product', 'swsh.game-modules.exefs-compatibility', 'bounded-nso-decoder-unavailable', false],
-  swordShieldDynamaxAdventures: ['product', 'swsh.game-modules.dynamax-adventures', 'bounded-route-analysis-provider-unavailable', false],
-  swordShieldRoyalCandyProgression: ['product', 'swsh.game-modules.royal-candy-progression', 'bounded-progression-provider-unavailable', false],
-  swordShieldBattleCafeRewards: ['researchGated', 'swsh.game-modules.battle-cafe-rewards', 'research-evidence-required', false],
-  swordShieldEventAssignments: ['researchGated', 'swsh.game-modules.event-assignments', 'research-evidence-required', false],
+  swordShieldRewardEcosystem: ['readOnlyFirst', 'swsh.game-modules.reward-ecosystem', 'trainer-payout-and-runtime-acquisition-order-unavailable', true],
+  swordShieldExeFsCompatibility: ['product', 'swsh.game-modules.exefs-compatibility', 'patch-interaction-and-unlisted-build-coverage-unavailable', true],
+  swordShieldDynamaxAdventures: ['product', 'swsh.game-modules.dynamax-adventures', 'runtime-route-generation-and-unlisted-build-coverage-unavailable', true],
+  swordShieldRoyalCandyProgression: ['product', 'swsh.game-modules.royal-candy-progression', 'runtime-progression-evaluation-unavailable', true],
+  swordShieldBattleCafeRewards: ['readOnlyFirst', 'swsh.game-modules.battle-cafe-rewards', 'runtime-scene-availability-unavailable', true],
+  swordShieldEventAssignments: ['readOnlyFirst', 'swsh.game-modules.event-assignments', 'scene-script-assignments-and-runtime-audio-resolution-unavailable', true],
   scarletVioletTeraRaidAnalysis: ['product', 'sv.game-modules.tera-raid-analysis', 'progression-unlock-and-rotation-coverage-unavailable', true],
-  scarletVioletPackedLooseComparison: ['product', 'sv.game-modules.packed-loose-comparison', 'packed-loose-comparison-contract-missing', false],
-  scarletVioletEventDataComparison: ['product', 'sv.game-modules.event-data-comparison', 'verified-event-comparison-provider-unavailable', false],
-  scarletVioletScenePlacementEditing: ['researchGated', 'sv.game-modules.scene-placement', 'research-evidence-required', false],
+  scarletVioletPackedLooseComparison: ['product', 'sv.game-modules.packed-loose-comparison', 'source-content-decoding-outside-scope', true],
+  scarletVioletEventDataComparison: ['product', 'sv.game-modules.event-data-comparison', 'unmapped-event-fields-remain-opaque', true],
+  scarletVioletScenePlacementEditing: ['readOnlyFirst', 'sv.game-modules.scene-placement', 'coordinates-rotations-naming-and-unowned-scene-fields-excluded', true],
+  scarletVioletTypeEffectivenessState: ['readOnlyFirst', 'sv.game-modules.type-effectiveness-state', 'stellar-and-runtime-effect-resolution-unavailable', true],
   scarletVioletStellarBehavior: ['researchGated', 'sv.game-modules.stellar-behavior', 'research-evidence-required', false],
   legendsZaScriptedBossTimeline: ['readOnlyFirst', 'za.game-modules.scripted-boss-timeline', 'runtime-execution-order-unavailable', true],
   legendsZaTrainerArchetypes: ['product', 'za.game-modules.trainer-archetypes', 'class-and-presentation-semantics-research-gated', true],
   legendsZaWildSpawnExplorer: ['readOnlyFirst', 'za.game-modules.wild-spawn-explorer', 'placement-and-runtime-reachability-coverage-unavailable', true],
-  legendsZaEncounterCompatibility: ['product', 'za.game-modules.encounter-compatibility', 'read-only-compatibility-projection-missing', false],
-  legendsZaAlphaMoveDistribution: ['product', 'za.game-modules.alpha-move-distribution', 'bounded-pokemon-projection-unavailable', false],
-  legendsZaDexLayoutPlanning: ['product', 'za.game-modules.dex-layout-planning', 'bounded-executable-observer-unavailable', false],
+  legendsZaEncounterCompatibility: ['product', 'za.game-modules.encounter-compatibility', 'runtime-city-behavior-and-unlisted-attachment-coverage-unavailable', true],
+  legendsZaAlphaMoveDistribution: ['product', 'za.game-modules.alpha-move-distribution', 'mapping-addition-and-runtime-selection-coverage-unavailable', true],
+  legendsZaDexLayoutPlanning: ['product', 'za.game-modules.dex-layout-planning', 'movement-proposals-and-per-species-mega-membership-unavailable', true],
   legendsZaMoveVariantComparison: ['product', 'za.game-modules.move-variant-comparison', 'variant-consumer-coverage-unavailable', true],
-  legendsZaTrainerPoolSwitching: ['researchGated', 'za.game-modules.trainer-pool-switching', 'verified-trainer-pool-provider-unavailable', false]
+  legendsZaTrainerPoolSwitching: ['product', 'za.game-modules.trainer-pool-switching', 'pool-resizing-and-runtime-selection-coverage-unavailable', true],
+  legendsZaTypeEffectivenessState: ['readOnlyFirst', 'za.game-modules.type-effectiveness-state', 'edit-proposals-and-runtime-effect-resolution-unavailable', true]
 } as const;
 
 export const gameModuleCapabilitySchema = z
@@ -261,7 +295,7 @@ export const readGameModuleCapabilitiesRequestSchema = z.strictObject({
 
 export const readGameModuleCapabilitiesResponseSchema = z
   .strictObject({
-    capabilities: z.array(gameModuleCapabilitySchema).max(8),
+    capabilities: z.array(gameModuleCapabilitySchema).max(gameModuleMaximumCapabilities),
     revision: semanticExploreRevisionSchema,
     snapshots: z.array(gameModuleSnapshotSchema).max(4)
   })
@@ -405,11 +439,12 @@ export type QueryGameModuleResponse = z.infer<typeof queryGameModuleResponseSche
 export function containsGameModuleLocalPathSignature(value: string) {
   let candidate = value;
   for (let depth = 0; depth <= 3; depth += 1) {
+    const isVirtualSourceIdentity = isSafeGameModuleVirtualSourceIdentity(candidate);
     if (
       candidate.includes('\\') ||
-      candidate.split('|').some((component) => (
+      (!isVirtualSourceIdentity && candidate.split('|').some((component) => (
         component.includes('/') && component !== 'Scarlet/Violet'
-      )) ||
+      ))) ||
       /(?:^|[^A-Za-z0-9])[A-Za-z]:/u.test(candidate) ||
       /(?:^|[^A-Za-z0-9])file:/iu.test(candidate) ||
       candidate.startsWith('~')
@@ -424,6 +459,21 @@ export function containsGameModuleLocalPathSignature(value: string) {
     }
   }
   return false;
+}
+
+function isSafeGameModuleVirtualSourceIdentity(value: string) {
+  if (
+    !value.startsWith('romfs/') ||
+    value.length > 512 ||
+    new TextEncoder().encode(value).length > 512 ||
+    value.includes('\\') ||
+    value.includes(':') ||
+    unsafeTextPattern.test(value)
+  ) return false;
+  const virtualPath = value.slice('romfs/'.length);
+  return virtualPath.length > 0 && virtualPath.split('/').every((segment) => (
+    segment.trim().length > 0 && segment !== '.' && segment !== '..'
+  ));
 }
 
 export function moduleFamily(module: GameModule) {

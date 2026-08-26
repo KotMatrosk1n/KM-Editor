@@ -3,9 +3,14 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Formats.SV;
+using System.Collections.Concurrent;
 using System.Security;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SV.Workflows;
 
@@ -18,6 +23,10 @@ internal sealed class SvWorkflowFileSource
     private const int MaximumBoundedNestedRecords = 100_000;
 
     internal static object OutputWriteSyncRoot { get; } = new();
+    private static readonly ConcurrentDictionary<string, object> OutputRootLocks = new(
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    [ThreadStatic]
+    private static DeferredOutputBatch? activeDeferredOutputBatch;
 
     private readonly SvCacheManager cacheManager;
     private readonly bool bypassReusableBaseCache;
@@ -176,8 +185,26 @@ internal sealed class SvWorkflowFileSource
         var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
         var relativePath = ToRelativePath(normalizedVirtualPath);
         var entry = FindEntry(project, relativePath);
+        var suppressLayeredOutput = false;
+        if (activeDeferredOutputBatch is { IsCommitting: false } deferredBatch
+            && deferredBatch.Matches(project.Paths)
+            && deferredBatch.TryGetRomFsMutation(normalizedVirtualPath, out var deferredBytes))
+        {
+            if (deferredBytes is not null)
+            {
+                return new SvWorkflowFile(
+                    normalizedVirtualPath,
+                    relativePath,
+                    deferredBytes.ToArray(),
+                    ProjectFileLayer.Layered,
+                    ProjectFileGraphEntryState.LayeredOverride);
+            }
 
-        if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
+            suppressLayeredOutput = true;
+        }
+
+        if (!suppressLayeredOutput
+            && !string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
         {
             var trinityModManagerPath = CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath);
             var standalonePath = CombineGraphPath(project.Paths.OutputRootPath, relativePath);
@@ -377,7 +404,20 @@ internal sealed class SvWorkflowFileSource
 
         var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
         var relativePath = ToRelativePath(normalizedVirtualPath);
-        if (!string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        var suppressLayeredOutput = false;
+        if (activeDeferredOutputBatch is { IsCommitting: false } deferredBatch
+            && deferredBatch.Matches(paths)
+            && deferredBatch.TryGetRomFsMutation(normalizedVirtualPath, out var deferredBytes))
+        {
+            if (deferredBytes is not null)
+            {
+                return (deferredBytes.ToArray(), ProjectFileLayer.Layered);
+            }
+
+            suppressLayeredOutput = true;
+        }
+
+        if (!suppressLayeredOutput && !string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             var trinityModManagerPath = CombineGraphPath(paths.OutputRootPath, normalizedVirtualPath);
             var standalonePath = CombineGraphPath(paths.OutputRootPath, relativePath);
@@ -627,24 +667,763 @@ internal sealed class SvWorkflowFileSource
             File.Exists(targetPath));
     }
 
-    public static void Write(
+    public static OutputApplyResult? Write(
         ProjectPaths paths,
         string virtualRomFsPath,
         byte[] bytes,
-        SvOutputMode outputMode = SvOutputMode.Standalone)
+        SvOutputMode outputMode = SvOutputMode.Standalone,
+        SvOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
     {
         ArgumentNullException.ThrowIfNull(bytes);
+        return WriteBatch(
+            paths,
+            [new SvWorkflowFileWrite(virtualRomFsPath, bytes, applyContext)],
+            outputMode,
+            applyContext,
+            revalidateReviewedState);
+    }
 
-        lock (OutputWriteSyncRoot)
+    internal static OutputApplyResult? WriteBatch(
+        ProjectPaths paths,
+        IReadOnlyList<SvWorkflowFileWrite> writes,
+        SvOutputMode outputMode = SvOutputMode.Standalone,
+        SvOutputApplyContext? applyContext = null,
+        Func<bool>? revalidateReviewedState = null)
+    {
+        return ApplyBatchCore(
+            paths,
+            writes,
+            Array.Empty<string>(),
+            Array.Empty<SvStandaloneOutputMutation>(),
+            outputMode,
+            applyContext,
+            revalidateReviewedState);
+    }
+
+    internal static byte[] ReadOutputBytesForVerification(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        SvOutputMode outputMode)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        if (activeDeferredOutputBatch is { IsCommitting: false } deferredBatch
+            && deferredBatch.Matches(paths)
+            && deferredBatch.OutputMode == outputMode
+            && deferredBatch.TryGetRomFsMutation(normalizedVirtualPath, out var deferredBytes))
         {
-            var targetPath = ResolveOutputPath(paths, virtualRomFsPath, outputMode);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, bytes);
-            if (outputMode == SvOutputMode.Standalone)
+            return deferredBytes?.ToArray()
+                ?? throw new FileNotFoundException(
+                    "The staged Scarlet/Violet output target is deleted.");
+        }
+
+        return File.ReadAllBytes(ResolveOutputPath(paths, normalizedVirtualPath, outputMode));
+    }
+
+    internal static bool IsDeferredOutputBatchActive(
+        ProjectPaths paths,
+        SvOutputMode outputMode)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return activeDeferredOutputBatch is { IsCommitting: false } deferredBatch
+            && deferredBatch.Matches(paths)
+            && deferredBatch.OutputMode == outputMode;
+    }
+
+    internal static OutputApplyResult? ApplyStandaloneOutputBatch(
+        ProjectPaths paths,
+        IReadOnlyList<SvStandaloneOutputMutation> outputMutations,
+        SvOutputApplyContext applyContext,
+        Func<bool>? revalidateReviewedState = null)
+    {
+        ArgumentNullException.ThrowIfNull(applyContext);
+        return ApplyBatchCore(
+            paths,
+            Array.Empty<SvWorkflowFileWrite>(),
+            Array.Empty<string>(),
+            outputMutations,
+            SvOutputMode.Standalone,
+            applyContext,
+            revalidateReviewedState);
+    }
+
+    internal static OutputApplyResult? ApplyStandaloneRomFsReplacementBatch(
+        ProjectPaths paths,
+        IReadOnlyList<SvWorkflowFileWrite> writes,
+        IReadOnlyList<string> deletes,
+        SvOutputApplyContext applyContext,
+        Func<bool>? revalidateReviewedState = null)
+    {
+        ArgumentNullException.ThrowIfNull(applyContext);
+        return ApplyBatchCore(
+            paths,
+            writes,
+            deletes,
+            Array.Empty<SvStandaloneOutputMutation>(),
+            SvOutputMode.Standalone,
+            applyContext,
+            revalidateReviewedState);
+    }
+
+    internal static IReadOnlyList<string> GetOwnedStandaloneRomFsVirtualPaths(
+        ProjectPaths paths,
+        OwnershipOwnerId ownerId)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(ownerId);
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Scarlet/Violet owned output inspection requires an output root.");
+        }
+
+        using var outputLock = AcquireOutputLock(paths);
+        var coordinator = new OutputTransactionCoordinator(paths.OutputRootPath);
+        var projectId = ProjectIdentity.FromPaths(paths);
+        var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
+        const string romFsPrefix = "romfs/";
+        return inventory.Files
+            .Where(record => record.ProjectId == projectId
+                && record.GameFamily == GameFamily.ScarletViolet
+                && string.Equals(record.OutputMode, ToOutputModeKey(SvOutputMode.Standalone), StringComparison.Ordinal)
+                && record.Path.Value.StartsWith(romFsPrefix, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(record.Path.Value, ToRelativePath(DescriptorVirtualPath), StringComparison.OrdinalIgnoreCase)
+                && record.Claims.Any(claim => claim.OwnerId == ownerId))
+            .Select(record => NormalizeVirtualPath(record.Path.Value[romFsPrefix.Length..]))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    internal static DeferredOutputBatch BeginDeferredOutputBatch(
+        ProjectPaths paths,
+        SvOutputMode outputMode,
+        ChangePlan reviewedPlan,
+        SvOutputApplyContext applyContext)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(reviewedPlan);
+        ArgumentNullException.ThrowIfNull(applyContext);
+        if (activeDeferredOutputBatch is not null)
+        {
+            throw new InvalidOperationException(
+                "A Scarlet/Violet deferred output batch is already active on this thread.");
+        }
+
+        var batch = new DeferredOutputBatch(paths, outputMode, reviewedPlan, applyContext);
+        activeDeferredOutputBatch = batch;
+        return batch;
+    }
+
+    private static OutputApplyResult? ApplyBatchCore(
+        ProjectPaths paths,
+        IReadOnlyList<SvWorkflowFileWrite> writes,
+        IReadOnlyList<string> deletes,
+        IReadOnlyList<SvStandaloneOutputMutation> outputMutations,
+        SvOutputMode outputMode,
+        SvOutputApplyContext? applyContext,
+        Func<bool>? revalidateReviewedState)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        using var outputLock = AcquireOutputLock(paths);
+        return ApplyBatchCoreLocked(
+            paths,
+            writes,
+            deletes,
+            outputMutations,
+            outputMode,
+            applyContext,
+            revalidateReviewedState);
+    }
+
+    private static OutputApplyResult? ApplyBatchCoreLocked(
+        ProjectPaths paths,
+        IReadOnlyList<SvWorkflowFileWrite> writes,
+        IReadOnlyList<string> deletes,
+        IReadOnlyList<SvStandaloneOutputMutation> outputMutations,
+        SvOutputMode outputMode,
+        SvOutputApplyContext? applyContext,
+        Func<bool>? revalidateReviewedState)
+    {
+        ArgumentNullException.ThrowIfNull(writes);
+        ArgumentNullException.ThrowIfNull(deletes);
+        ArgumentNullException.ThrowIfNull(outputMutations);
+        if (writes.Count == 0 && deletes.Count == 0 && outputMutations.Count == 0)
+        {
+            throw new ArgumentException(
+                "A Scarlet/Violet output batch must contain at least one mutation.",
+                nameof(writes));
+        }
+
+        if (outputMode != SvOutputMode.Standalone && outputMutations.Count > 0)
+        {
+            throw new ArgumentException(
+                "Explicit output mutations require standalone output.",
+                nameof(outputMutations));
+        }
+
+        var normalizedWrites = writes.Select(write =>
+        {
+            ArgumentNullException.ThrowIfNull(write);
+            ArgumentException.ThrowIfNullOrWhiteSpace(write.VirtualPath);
+            ArgumentNullException.ThrowIfNull(write.Bytes);
+            var virtualPath = NormalizeVirtualPath(write.VirtualPath);
+            if (string.Equals(virtualPath, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase))
             {
-                WritePatchedDescriptor(paths);
+                throw new ArgumentException(
+                    "Scarlet/Violet workflow batches cannot write the descriptor directly.",
+                    nameof(writes));
+            }
+
+            return new SvWorkflowFileWrite(
+                virtualPath,
+                write.Bytes.ToArray(),
+                write.ApplyContext);
+        }).ToArray();
+        var normalizedDeletes = deletes.Select(delete =>
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(delete);
+            var virtualPath = NormalizeVirtualPath(delete);
+            if (string.Equals(virtualPath, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    "Scarlet/Violet workflow batches cannot delete the descriptor directly.",
+                    nameof(deletes));
+            }
+
+            return virtualPath;
+        }).ToArray();
+        var normalizedOutputMutations = outputMutations.Select(mutation =>
+        {
+            ArgumentNullException.ThrowIfNull(mutation);
+            var relativePath = NormalizeStandaloneOutputRelativePath(mutation.RelativePath);
+            return new SvStandaloneOutputMutation(
+                relativePath,
+                mutation.Bytes?.ToArray(),
+                mutation.DeleteFallbackBytes?.ToArray(),
+                mutation.ApplyContext);
+        }).ToArray();
+        if (normalizedWrites.Select(write => write.VirtualPath)
+            .Concat(normalizedDeletes)
+            .GroupBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .Any(group => group.Count() > 1)
+            || normalizedOutputMutations
+                .GroupBy(
+                    mutation => mutation.RelativePath,
+                    OperatingSystem.IsWindows()
+                        ? StringComparer.OrdinalIgnoreCase
+                        : StringComparer.Ordinal)
+                .Any(group => group.Count() > 1))
+        {
+            throw new ArgumentException(
+                "A Scarlet/Violet output batch contains duplicate or conflicting targets.",
+                nameof(writes));
+        }
+
+        if (activeDeferredOutputBatch is { IsCommitting: false } deferredBatch)
+        {
+            if (normalizedOutputMutations.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    "Explicit output mutations cannot join a normal Scarlet/Violet deferred batch.");
+            }
+
+            deferredBatch.Stage(
+                paths,
+                outputMode,
+                normalizedWrites,
+                normalizedDeletes,
+                applyContext,
+                revalidateReviewedState);
+            return null;
+        }
+
+        if (revalidateReviewedState is not null && !RevalidateReviewedState(revalidateReviewedState))
+        {
+            throw new OutputReviewStateConflictException();
+        }
+
+        var mutations = normalizedWrites.Select(write => new SvWorkflowOutputMutation(
+                ResolveOutputPath(paths, write.VirtualPath, outputMode),
+                write.Bytes,
+                DeleteFallbackBytes: null,
+                write.ApplyContext ?? applyContext))
+            .ToList();
+        mutations.AddRange(normalizedDeletes.Select(delete => new SvWorkflowOutputMutation(
+            ResolveOutputPath(paths, delete, outputMode),
+            Bytes: null,
+            DeleteFallbackBytes: null,
+            applyContext)));
+        mutations.AddRange(normalizedOutputMutations.Select(mutation => new SvWorkflowOutputMutation(
+            ResolveStandaloneOutputPath(paths, mutation.RelativePath),
+            mutation.Bytes,
+            mutation.DeleteFallbackBytes,
+            mutation.ApplyContext ?? applyContext)));
+
+        OutputDirectoryMembershipSnapshot? standaloneRomFsMembership = null;
+        if (outputMode == SvOutputMode.Standalone
+            && (normalizedWrites.Length > 0 || normalizedDeletes.Length > 0))
+        {
+            standaloneRomFsMembership = CaptureStandaloneRomFsMembership(paths);
+            var existingVirtualPaths = GetLayeredVirtualPaths(standaloneRomFsMembership);
+            var deletedVirtualPaths = normalizedDeletes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var effectiveVirtualPaths = existingVirtualPaths
+                .Where(path => !deletedVirtualPaths.Contains(path))
+                .Concat(normalizedWrites.Select(write => write.VirtualPath))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            var descriptorBytes = CreateStandaloneDescriptorPreviewFromVirtualPaths(
+                paths,
+                effectiveVirtualPaths);
+            mutations.Add(new SvWorkflowOutputMutation(
+                ResolveOutputPath(paths, DescriptorVirtualPath, SvOutputMode.Standalone),
+                descriptorBytes,
+                DeleteFallbackBytes: null,
+                applyContext));
+        }
+
+        var targetComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        if (mutations.GroupBy(
+                mutation => Path.GetFullPath(mutation.TargetPath),
+                targetComparer)
+            .Any(group => group.Count() > 1))
+        {
+            throw new InvalidDataException(
+                "A Scarlet/Violet output batch contains duplicate resolved targets.");
+        }
+
+        return PromotePreparedMutations(
+            paths,
+            mutations,
+            outputMode,
+            applyContext,
+            standaloneRomFsMembership is null
+                ? null
+                : [standaloneRomFsMembership.ToDependency()]);
+    }
+
+    private static bool RevalidateReviewedState(Func<bool> revalidateReviewedState)
+    {
+        try
+        {
+            return revalidateReviewedState();
+        }
+        catch (OutputCoordinatorException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            SecurityException or
+            InvalidOperationException or
+            ArgumentException or
+            NotSupportedException or
+            OverflowException)
+        {
+            throw new OutputReviewStateConflictException(exception);
+        }
+    }
+
+    private static OutputApplyResult? PromotePreparedMutations(
+        ProjectPaths paths,
+        IReadOnlyList<SvWorkflowOutputMutation> mutations,
+        SvOutputMode outputMode,
+        SvOutputApplyContext? applyContext,
+        IEnumerable<OutputDirectoryMembershipDependency>? directoryMembershipDependencies = null)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException("A Scarlet/Violet output batch requires an output root.");
+        }
+
+        if (!IsScarletViolet(paths.SelectedGame))
+        {
+            throw new InvalidOperationException(
+                "Scarlet/Violet output requires a matching project game.");
+        }
+
+        var outputRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.OutputRootPath));
+        var coordinatorOptions = new OutputTransactionCoordinatorOptions();
+        var coordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
+        var projectId = ProjectIdentity.FromPaths(paths);
+        var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
+        var defaultOwnerId = applyContext?.OwnerId ?? new OwnershipOwnerId("workflow.sv.output");
+        var defaultPreservationRule = applyContext?.PreservationRule
+            ?? new PreservationRuleDescriptor(
+                "sv.full-file-rebuild",
+                schemaVersion: 1,
+                preservesUnownedData: true,
+                requiresPreimage: true);
+        var outputMutations = new List<OutputMutation>(mutations.Count);
+        long plannedWriteBytes = 0;
+        long plannedBackupBytes = 0;
+        foreach (var mutation in mutations)
+        {
+            var fullTargetPath = Path.GetFullPath(mutation.TargetPath);
+            var relativePathValue = Path.GetRelativePath(outputRoot, fullTargetPath)
+                .Replace(Path.DirectorySeparatorChar, '/');
+            if (PathContainment.IsOutsideRoot(relativePathValue))
+            {
+                throw new OutputPathSecurityException();
+            }
+
+            var relativePath = new RelativeOutputPath(relativePathValue);
+            if (mutation.Bytes?.LongLength > coordinatorOptions.MaximumWriteBytesPerMutation
+                || mutation.DeleteFallbackBytes?.LongLength
+                    > coordinatorOptions.MaximumWriteBytesPerMutation)
+            {
+                throw new OutputLimitExceededException(
+                    "A Scarlet/Violet output target exceeds the configured write limit.");
+            }
+
+            var remainingBackupBytes = coordinatorOptions.MaximumBackupBytesPerApply - plannedBackupBytes;
+            var expectedPreimage = CaptureOutputFileState(
+                fullTargetPath,
+                Math.Min(coordinatorOptions.MaximumFingerprintFileBytes, remainingBackupBytes));
+            var context = mutation.ApplyContext ?? applyContext;
+            var ownership = new OwnedTarget(
+                GameFamily.ScarletViolet,
+                new OwnedTargetAddress(relativePath),
+                context?.OwnerId ?? defaultOwnerId,
+                context?.PreservationRule ?? defaultPreservationRule);
+            var bytes = mutation.Bytes;
+            if (bytes is null && expectedPreimage.Exists)
+            {
+                var owned = inventory.Files.FirstOrDefault(record =>
+                    record.Path == relativePath
+                    && record.ProjectId == projectId
+                    && record.GameFamily == GameFamily.ScarletViolet);
+                var canDelete = owned is not null
+                    && owned.FileDeleteEligible
+                    && owned.Claims.Any(claim =>
+                        claim.Address.ScopeKind == OwnedTargetScopeKind.File);
+                if (canDelete)
+                {
+                    plannedBackupBytes = checked(plannedBackupBytes + expectedPreimage.LengthBytes);
+                    outputMutations.Add(OutputMutation.Delete(
+                        relativePath,
+                        expectedPreimage,
+                        [ownership],
+                        ToOutputModeKey(outputMode)));
+                    EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+                    continue;
+                }
+
+                bytes = mutation.DeleteFallbackBytes
+                    ?? throw new OutputOwnershipConflictException(relativePath);
+            }
+            else if (bytes is null)
+            {
+                continue;
+            }
+
+            var plannedHash = Convert.ToHexStringLower(SHA256.HashData(bytes));
+            if (expectedPreimage.Exists
+                && expectedPreimage.LengthBytes == bytes.LongLength
+                && string.Equals(expectedPreimage.Sha256, plannedHash, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var nextWriteBytes = checked(plannedWriteBytes + bytes.LongLength);
+            var nextBackupBytes = checked(plannedBackupBytes + expectedPreimage.LengthBytes);
+            if (nextWriteBytes > coordinatorOptions.MaximumWriteBytesPerApply)
+            {
+                throw new OutputLimitExceededException(
+                    "The Scarlet/Violet output batch exceeds the configured write limit.");
+            }
+
+            if (nextBackupBytes > coordinatorOptions.MaximumBackupBytesPerApply)
+            {
+                throw new OutputLimitExceededException(
+                    "The Scarlet/Violet output batch exceeds the configured backup limit.");
+            }
+
+            plannedWriteBytes = nextWriteBytes;
+            plannedBackupBytes = nextBackupBytes;
+            outputMutations.Add(OutputMutation.Write(
+                relativePath,
+                bytes,
+                expectedPreimage,
+                [ownership],
+                ToOutputModeKey(outputMode)));
+            EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+        }
+
+        var membershipDependencies = directoryMembershipDependencies?.ToArray() ?? [];
+        if (outputMutations.Count == 0)
+        {
+            foreach (var dependency in membershipDependencies)
+            {
+                var current = coordinator
+                    .CaptureDirectoryMembershipAsync(dependency.Directory)
+                    .GetAwaiter()
+                    .GetResult();
+                if (current.Revision != dependency.ExpectedRevision)
+                {
+                    throw new OutputStateRevisionConflictException(
+                        dependency.ExpectedRevision,
+                        current.Revision);
+                }
+            }
+
+            return null;
+        }
+
+        var contextForPlan = applyContext ?? new SvOutputApplyContext(
+            OutputReviewFingerprint.FromMutations(outputMutations),
+            defaultOwnerId,
+            [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, "workflow.sv.output")]);
+        var origins = mutations
+            .Select(mutation => mutation.ApplyContext)
+            .Where(context => context is not null)
+            .SelectMany(context => context!.Origins)
+            .Concat(contextForPlan.Origins)
+            .Distinct()
+            .ToArray();
+        var plan = new OutputApplyPlan(
+            projectId,
+            GameFamily.ScarletViolet,
+            ToOutputModeKey(outputMode),
+            contextForPlan.SemanticReviewHash,
+            origins,
+            outputMutations,
+            directoryMembershipDependencies: membershipDependencies);
+        var result = coordinator.ApplyAsync(plan).GetAwaiter().GetResult();
+        if (result.Outcome != OutputApplyOutcome.Committed)
+        {
+            throw new SvOutputApplyNotCommittedException(result);
+        }
+
+        return result;
+    }
+
+    private static void EnsureMutationCountWithinLimit(
+        int mutationCount,
+        OutputTransactionCoordinatorOptions options)
+    {
+        if (mutationCount > options.MaximumMutationsPerApply)
+        {
+            throw new OutputLimitExceededException(
+                "The Scarlet/Violet output batch contains too many targets.");
+        }
+    }
+
+    private static OutputFileState CaptureOutputFileState(string targetPath, long maximumBytes)
+    {
+        if (Directory.Exists(targetPath))
+        {
+            throw new IOException("A Scarlet/Violet output target is a directory.");
+        }
+
+        if (!File.Exists(targetPath))
+        {
+            return OutputFileState.Missing;
+        }
+
+        using var stream = new FileStream(
+            targetPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
+        var length = stream.Length;
+        if (maximumBytes < 0 || length > maximumBytes)
+        {
+            throw new OutputLimitExceededException(
+                "A Scarlet/Violet output preimage exceeds the configured backup limit.");
+        }
+
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[128 * 1024];
+        var remaining = length;
+        while (remaining > 0)
+        {
+            var bytesRead = stream.Read(buffer, 0, (int)Math.Min(buffer.LongLength, remaining));
+            if (bytesRead == 0)
+            {
+                throw new IOException(
+                    "A Scarlet/Violet output preimage changed while it was reviewed.");
+            }
+
+            hasher.AppendData(buffer, 0, bytesRead);
+            remaining -= bytesRead;
+        }
+
+        if (stream.ReadByte() != -1)
+        {
+            throw new IOException(
+                "A Scarlet/Violet output preimage changed while it was reviewed.");
+        }
+
+        return OutputFileState.Existing(
+            Convert.ToHexStringLower(hasher.GetHashAndReset()),
+            length);
+    }
+
+    internal static IDisposable AcquireOutputLock(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var outputRoot = paths.OutputRootPath ?? string.Empty;
+        string lockKey;
+        try
+        {
+            lockKey = string.IsNullOrWhiteSpace(outputRoot)
+                ? "<unset>"
+                : Path.TrimEndingDirectorySeparator(Path.GetFullPath(outputRoot));
+            if (Directory.Exists(lockKey))
+            {
+                var rootInfo = new DirectoryInfo(lockKey);
+                if (rootInfo.LinkTarget is not null
+                    && rootInfo.ResolveLinkTarget(returnFinalTarget: true) is { } resolvedRoot)
+                {
+                    lockKey = Path.TrimEndingDirectorySeparator(
+                        Path.GetFullPath(resolvedRoot.FullName));
+                }
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                lockKey = lockKey.ToUpperInvariant();
             }
         }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            NotSupportedException or
+            PathTooLongException)
+        {
+            lockKey = $"<invalid>:{outputRoot}";
+        }
+
+        var gate = OutputRootLocks.GetOrAdd(lockKey, static _ => new object());
+        Monitor.Enter(gate);
+        Mutex? processMutex = null;
+        try
+        {
+            processMutex = new Mutex(initiallyOwned: false, CreateOutputMutexName(lockKey));
+            try
+            {
+                if (!processMutex.WaitOne(TimeSpan.FromSeconds(30)))
+                {
+                    throw new IOException(
+                        "Another KM Editor process is still writing to this Scarlet/Violet output root.");
+                }
+            }
+            catch (AbandonedMutexException)
+            {
+            }
+
+            return new SvOutputRootLock(gate, processMutex);
+        }
+        catch
+        {
+            processMutex?.Dispose();
+            Monitor.Exit(gate);
+            throw;
+        }
+    }
+
+    private static string CreateOutputMutexName(string lockKey)
+    {
+        var keyBytes = Encoding.UTF8.GetBytes(lockKey);
+        return $"KMEditor.SV.Output.{Convert.ToHexString(SHA256.HashData(keyBytes))}";
+    }
+
+    private static OutputDirectoryMembershipSnapshot CaptureStandaloneRomFsMembership(
+        ProjectPaths paths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Scarlet/Violet output membership requires an output root.");
+        }
+
+        return ReadOnlyOutputDirectoryMembership.Capture(
+            paths.OutputRootPath,
+            new RelativeOutputPath("romfs"));
+    }
+
+    private static string[] GetLayeredVirtualPaths(OutputDirectoryMembershipSnapshot membership)
+    {
+        const string prefix = "romfs/";
+        return membership.Entries
+            .Where(entry => !entry.IsDirectory)
+            .Select(entry => entry.Path.Value)
+            .Where(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(path => path[prefix.Length..])
+            .ToArray();
+    }
+
+    private static byte[] CreateStandaloneDescriptorPreviewFromVirtualPaths(
+        ProjectPaths paths,
+        IEnumerable<string> effectiveVirtualPaths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+        {
+            throw new InvalidOperationException(
+                "Scarlet/Violet descriptor preview requires a base RomFS path.");
+        }
+
+        return SvTrinityDescriptorPatcher.CreateLayeredDescriptorFromVirtualPaths(
+            paths.BaseRomFsPath,
+            effectiveVirtualPaths);
+    }
+
+    internal static string ResolveStandaloneOutputPath(ProjectPaths paths, string relativePath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException("Set an output root before writing Scarlet/Violet files.");
+        }
+
+        var normalized = NormalizeStandaloneOutputRelativePath(relativePath);
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            normalized.Replace('/', Path.DirectorySeparatorChar)));
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(outputRoot, targetPath))
+            || !OutputMetadataNamespace.IsSafePayloadDestinationPath(targetPath))
+        {
+            throw new OutputPathSecurityException();
+        }
+
+        return targetPath;
+    }
+
+    private static string NormalizeStandaloneOutputRelativePath(string relativePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        if (Path.IsPathRooted(relativePath))
+        {
+            throw new ArgumentException(
+                "A Scarlet/Violet output path must be relative.",
+                nameof(relativePath));
+        }
+
+        var normalized = new RelativeOutputPath(relativePath).Value;
+        if (OutputMetadataNamespace.ContainsReservedSegment(normalized))
+        {
+            throw new OutputPathSecurityException();
+        }
+
+        return normalized;
+    }
+
+    private static string ToOutputModeKey(SvOutputMode outputMode)
+    {
+        return outputMode switch
+        {
+            SvOutputMode.Standalone => "sv.standalone",
+            SvOutputMode.TrinityModManager => "sv.trinity-mod-manager",
+            SvOutputMode.TrinityBypass => "sv.trinity-bypass",
+            _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
+        };
     }
 
     public static PlannedWriteInfo CreateDescriptorPlannedWrite(ProjectPaths paths)
@@ -678,26 +1457,6 @@ internal sealed class SvWorkflowFileSource
             paths.BaseRomFsPath,
             paths.OutputRootPath,
             plannedVirtualPaths);
-    }
-
-    private static void WritePatchedDescriptor(ProjectPaths paths)
-    {
-        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
-        {
-            throw new InvalidOperationException("Scarlet/Violet descriptor patching requires a base RomFS path.");
-        }
-
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            throw new InvalidOperationException("Scarlet/Violet descriptor patching requires an output root.");
-        }
-
-        var descriptorBytes = SvTrinityDescriptorPatcher.CreateLayeredDescriptor(
-            paths.BaseRomFsPath,
-            paths.OutputRootPath);
-        var descriptorPath = ResolveOutputPath(paths, DescriptorVirtualPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(descriptorPath)!);
-        File.WriteAllBytes(descriptorPath, descriptorBytes);
     }
 
     public static ValidationDiagnostic CreateDiagnostic(
@@ -759,7 +1518,7 @@ internal sealed class SvWorkflowFileSource
         return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
-    private static (string Path, bool IsStandalone)? SelectLatestLooseOutput(
+    internal static (string Path, bool IsStandalone)? SelectLatestLooseOutput(
         string trinityModManagerPath,
         string standalonePath)
     {
@@ -973,6 +1732,222 @@ internal sealed class SvWorkflowFileSource
         return FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfd"))
             && FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfs"));
     }
+
+    internal sealed class DeferredOutputBatch : IDisposable
+    {
+        private readonly ProjectPaths paths;
+        private readonly SvOutputApplyContext applyContext;
+        private readonly Dictionary<string, SvWorkflowFileWrite> writes = new(
+            StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> deletes = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> reviewedTargets;
+        private readonly IReadOnlyDictionary<string, OutputFileState> reviewedStates;
+        private bool disposed;
+        private bool committed;
+
+        internal DeferredOutputBatch(
+            ProjectPaths paths,
+            SvOutputMode outputMode,
+            ChangePlan reviewedPlan,
+            SvOutputApplyContext applyContext)
+        {
+            this.paths = paths;
+            OutputMode = outputMode;
+            this.applyContext = applyContext;
+            var comparer = StringComparer.Ordinal;
+            var reviewedRelativePaths = reviewedPlan.Writes
+                .Select(write => NormalizeStandaloneOutputRelativePath(write.TargetRelativePath))
+                .ToArray();
+            var resolvedComparer = OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+            if (reviewedRelativePaths.Distinct(comparer).Count() != reviewedRelativePaths.Length
+                || reviewedRelativePaths
+                    .Select(relativePath => Path.GetFullPath(
+                        ResolveStandaloneOutputPath(paths, relativePath)))
+                    .GroupBy(path => path, resolvedComparer)
+                    .Any(group => group.Count() > 1))
+            {
+                throw new OutputReviewStateConflictException();
+            }
+
+            reviewedTargets = reviewedRelativePaths.ToHashSet(comparer);
+            var options = new OutputTransactionCoordinatorOptions();
+            long observedBytes = 0;
+            var states = new Dictionary<string, OutputFileState>(comparer);
+            foreach (var relativePath in reviewedTargets)
+            {
+                var targetPath = ResolveStandaloneOutputPath(paths, relativePath);
+                var remainingBytes = options.MaximumBackupBytesPerApply - observedBytes;
+                var state = CaptureOutputFileState(
+                    targetPath,
+                    Math.Min(options.MaximumFingerprintFileBytes, remainingBytes));
+                observedBytes = checked(observedBytes + state.LengthBytes);
+                states.Add(relativePath, state);
+            }
+
+            reviewedStates = states;
+        }
+
+        internal SvOutputMode OutputMode { get; }
+
+        internal bool IsCommitting { get; private set; }
+
+        internal bool Matches(ProjectPaths candidate)
+        {
+            return candidate == paths;
+        }
+
+        internal bool TryGetRomFsMutation(string virtualPath, out byte[]? bytes)
+        {
+            if (writes.TryGetValue(virtualPath, out var write))
+            {
+                bytes = write.Bytes;
+                return true;
+            }
+
+            if (deletes.Contains(virtualPath))
+            {
+                bytes = null;
+                return true;
+            }
+
+            bytes = null;
+            return false;
+        }
+
+        internal void Stage(
+            ProjectPaths candidatePaths,
+            SvOutputMode outputMode,
+            IReadOnlyList<SvWorkflowFileWrite> stagedWrites,
+            IReadOnlyList<string> stagedDeletes,
+            SvOutputApplyContext? operationContext,
+            Func<bool>? revalidateReviewedState)
+        {
+            ThrowIfUnavailable();
+            if (!Matches(candidatePaths) || outputMode != OutputMode)
+            {
+                throw new InvalidOperationException(
+                    "A Scarlet/Violet deferred output batch cannot cross projects or output modes.");
+            }
+
+            if (revalidateReviewedState is not null)
+            {
+                if (!RevalidateReviewedState(revalidateReviewedState))
+                {
+                    throw new OutputReviewStateConflictException();
+                }
+            }
+
+            foreach (var write in stagedWrites)
+            {
+                EnsureReviewedTarget(ToOutputRelativePath(write.VirtualPath, outputMode));
+                deletes.Remove(write.VirtualPath);
+                writes[write.VirtualPath] = write with
+                {
+                    ApplyContext = write.ApplyContext ?? operationContext,
+                };
+            }
+
+            foreach (var delete in stagedDeletes)
+            {
+                EnsureReviewedTarget(ToOutputRelativePath(delete, outputMode));
+                writes.Remove(delete);
+                deletes.Add(delete);
+            }
+        }
+
+        internal OutputApplyResult? Commit(Func<bool>? revalidateReviewedState = null)
+        {
+            ThrowIfUnavailable();
+            IsCommitting = true;
+            try
+            {
+                if (revalidateReviewedState is not null
+                    && !RevalidateReviewedState(revalidateReviewedState))
+                {
+                    throw new OutputReviewStateConflictException();
+                }
+
+                var options = new OutputTransactionCoordinatorOptions();
+                long observedBytes = 0;
+                foreach (var reviewed in reviewedStates)
+                {
+                    var targetPath = ResolveStandaloneOutputPath(paths, reviewed.Key);
+                    var remainingBytes = options.MaximumBackupBytesPerApply - observedBytes;
+                    var current = CaptureOutputFileState(
+                        targetPath,
+                        Math.Min(options.MaximumFingerprintFileBytes, remainingBytes));
+                    observedBytes = checked(observedBytes + current.LengthBytes);
+                    if (current != reviewed.Value)
+                    {
+                        throw new OutputPreimageConflictException(
+                            new RelativeOutputPath(reviewed.Key));
+                    }
+                }
+
+                if (OutputMode == SvOutputMode.Standalone
+                    && (writes.Count > 0 || deletes.Count > 0))
+                {
+                    EnsureReviewedTarget(
+                        ToOutputRelativePath(DescriptorVirtualPath, SvOutputMode.Standalone));
+                }
+
+                var result = ApplyBatchCoreLocked(
+                    paths,
+                    writes.Values.OrderBy(write => write.VirtualPath, StringComparer.Ordinal).ToArray(),
+                    deletes.Order(StringComparer.Ordinal).ToArray(),
+                    Array.Empty<SvStandaloneOutputMutation>(),
+                    OutputMode,
+                    applyContext,
+                    revalidateReviewedState: null);
+                committed = true;
+                return result;
+            }
+            finally
+            {
+                IsCommitting = false;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            if (ReferenceEquals(activeDeferredOutputBatch, this))
+            {
+                activeDeferredOutputBatch = null;
+            }
+
+            if (!committed)
+            {
+                writes.Clear();
+                deletes.Clear();
+            }
+        }
+
+        private void EnsureReviewedTarget(string relativePath)
+        {
+            var normalized = NormalizeStandaloneOutputRelativePath(relativePath);
+            if (!reviewedTargets.Contains(normalized))
+            {
+                throw new OutputReviewStateConflictException();
+            }
+        }
+
+        private void ThrowIfUnavailable()
+        {
+            if (disposed || committed || IsCommitting)
+            {
+                throw new InvalidOperationException(
+                    "The Scarlet/Violet deferred output batch is no longer available.");
+            }
+        }
+    }
 }
 
 internal sealed record SvWorkflowFile(
@@ -990,3 +1965,69 @@ internal sealed record PlannedWriteInfo(
     string TargetRelativePath,
     IReadOnlyList<ProjectFileReference> Sources,
     bool ReplacesExistingOutput);
+
+internal sealed record SvWorkflowFileWrite(
+    string VirtualPath,
+    byte[] Bytes,
+    SvOutputApplyContext? ApplyContext = null);
+
+internal sealed record SvStandaloneOutputMutation(
+    string RelativePath,
+    byte[]? Bytes,
+    byte[]? DeleteFallbackBytes = null,
+    SvOutputApplyContext? ApplyContext = null);
+
+internal sealed record SvWorkflowOutputMutation(
+    string TargetPath,
+    byte[]? Bytes,
+    byte[]? DeleteFallbackBytes,
+    SvOutputApplyContext? ApplyContext = null);
+
+internal sealed record SvOutputApplyContext(
+    string SemanticReviewHash,
+    OwnershipOwnerId OwnerId,
+    IReadOnlyList<OutputApplyOrigin> Origins,
+    PreservationRuleDescriptor? PreservationRule = null);
+
+public sealed class SvOutputApplyNotCommittedException : IOException
+{
+    public SvOutputApplyNotCommittedException(OutputApplyResult result)
+        : base(result.Outcome == OutputApplyOutcome.RolledBack
+            ? "Scarlet/Violet output was rolled back and no reviewed changes were kept."
+            : "Scarlet/Violet output requires recovery before another write can begin.")
+    {
+        Result = result ?? throw new ArgumentNullException(nameof(result));
+    }
+
+    public OutputApplyResult Result { get; }
+}
+
+internal sealed class SvOutputRootLock : IDisposable
+{
+    private object? gate;
+    private Mutex? processMutex;
+
+    public SvOutputRootLock(object gate, Mutex processMutex)
+    {
+        this.gate = gate;
+        this.processMutex = processMutex;
+    }
+
+    public void Dispose()
+    {
+        var capturedMutex = Interlocked.Exchange(ref processMutex, null);
+        try
+        {
+            capturedMutex?.ReleaseMutex();
+        }
+        finally
+        {
+            capturedMutex?.Dispose();
+            var capturedGate = Interlocked.Exchange(ref gate, null);
+            if (capturedGate is not null)
+            {
+                Monitor.Exit(capturedGate);
+            }
+        }
+    }
+}

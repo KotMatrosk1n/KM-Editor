@@ -14,6 +14,7 @@ import {
   workbenchCapabilityRegistry
 } from './capabilityRegistry';
 import { resolveWorkflowDataSection } from '../workflowGameSupport';
+import { getDiagnosticLocalizationKey } from '../diagnostics';
 import type { WorkbenchSection } from './workbenchSections';
 
 export type CapabilityDiscoveryStatus = 'available' | 'blocked' | 'editable' | 'readOnly';
@@ -78,8 +79,8 @@ function resolveWorkflowStatus(
   CapabilityDiscoveryViewModel,
   'reason' | 'reasonKey' | 'status' | 'statusKey'
 > {
-  const workflowReason = firstDiagnosticMessage(workflow?.diagnostics ?? []);
-  const healthReason = firstDiagnosticMessage(health?.diagnostics ?? []);
+  const workflowDiagnostic = firstDiagnostic(workflow?.diagnostics ?? []);
+  const healthDiagnostic = firstDiagnostic(health?.diagnostics ?? []);
   const readOnly = maturity === 'readOnly' || workflow?.availability === 'readOnly';
   const supportsReadOnlyAccess =
     readOnly || maturity === 'mixed' || maturity === 'utility';
@@ -89,11 +90,10 @@ function resolveWorkflowStatus(
 
   if (!healthAllowsOpen) {
     return {
-      reason: healthReason ?? workflowReason,
-      reasonKey:
-        healthReason || workflowReason
-          ? null
-          : 'workbench.capability.reason.projectUnavailable',
+      ...resolveCapabilityReason(
+        healthDiagnostic ?? workflowDiagnostic,
+        'workbench.capability.reason.projectUnavailable'
+      ),
       status: 'blocked',
       statusKey: 'workbench.capability.status.blocked'
     };
@@ -103,8 +103,10 @@ function resolveWorkflowStatus(
     (!workflow && !acceptsMissingWorkflowSummary)
   ) {
     return {
-      reason: workflowReason,
-      reasonKey: workflowReason ? null : 'workbench.capability.reason.projectUnavailable',
+      ...resolveCapabilityReason(
+        workflowDiagnostic,
+        'workbench.capability.reason.projectUnavailable'
+      ),
       status: 'blocked',
       statusKey: 'workbench.capability.status.blocked'
     };
@@ -133,13 +135,29 @@ function resolveWorkflowStatus(
   };
 }
 
-function firstDiagnosticMessage(
+function firstDiagnostic(
   diagnostics: readonly ApiDiagnostic[]
 ) {
   return (
-    diagnostics.find((diagnostic) => diagnostic.severity === 'error')?.message ??
-    diagnostics.find((diagnostic) => diagnostic.severity === 'warning')?.message ??
-    diagnostics[0]?.message ??
+    diagnostics.find((diagnostic) => diagnostic.severity === 'error') ??
+    diagnostics.find((diagnostic) => diagnostic.severity === 'warning') ??
+    diagnostics[0] ??
     null
   );
+}
+
+function resolveCapabilityReason(
+  diagnostic: ApiDiagnostic | null,
+  fallbackKey: string
+): Pick<CapabilityDiscoveryViewModel, 'reason' | 'reasonKey'> {
+  if (!diagnostic) {
+    return { reason: null, reasonKey: fallbackKey };
+  }
+
+  const reasonKey = diagnostic.code
+    ? getDiagnosticLocalizationKey(diagnostic.code)
+    : null;
+  return reasonKey
+    ? { reason: null, reasonKey }
+    : { reason: diagnostic.message, reasonKey: null };
 }

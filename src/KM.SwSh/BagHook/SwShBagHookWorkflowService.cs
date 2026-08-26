@@ -18,10 +18,19 @@ public sealed class SwShBagHookWorkflowService
     public const string RepairableStatus = "repairable";
 
     private readonly SwShItemsWorkflowService itemsWorkflowService;
+    private readonly Func<string, byte[]> readAllBytes;
 
     public SwShBagHookWorkflowService(SwShItemsWorkflowService? itemsWorkflowService = null)
+        : this(itemsWorkflowService, File.ReadAllBytes)
+    {
+    }
+
+    internal SwShBagHookWorkflowService(
+        SwShItemsWorkflowService? itemsWorkflowService,
+        Func<string, byte[]> readAllBytes)
     {
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+        this.readAllBytes = readAllBytes ?? throw new ArgumentNullException(nameof(readAllBytes));
     }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -100,7 +109,7 @@ public sealed class SwShBagHookWorkflowService
 
         try
         {
-            var analysis = SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(sourcePath));
+            var analysis = SwShBagHookAmxPatcher.Analyze(readAllBytes(sourcePath));
             var installStatus = analysis.Kind switch
             {
                 SwShBagHookInstallKind.InstalledV2 =>

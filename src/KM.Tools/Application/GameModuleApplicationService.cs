@@ -6,13 +6,16 @@ using System.Text;
 using KM.Api.Encounters;
 using KM.Api.GameModules;
 using KM.Api.Moves;
+using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.Semantics;
 using KM.Api.Trainers;
+using KM.Api.TrainerPools;
 using KM.Core.Indexing;
 using KM.Core.Projects;
 using KM.Core.Semantics;
+using KM.SV.GameModules;
 
 namespace KM.Tools.Application;
 
@@ -22,19 +25,39 @@ public sealed class GameModuleApplicationService
 
     private readonly SemanticExploreApplicationService semanticExploreService;
     private readonly Func<ProjectPathsDto, TeraRaidsWorkflowDto> loadTeraRaidsFresh;
+    private readonly Func<ProjectPathsDto, SvPackedLooseSourceComparison>
+        loadPackedLooseSourceComparisonFresh;
+    private readonly Func<ProjectPathsDto, SvEventDataComparison>
+        loadEventDataComparisonFresh;
+    private readonly Func<ProjectPathsDto, SvScenePlacementProjection>
+        loadScenePlacementProjectionFresh;
+    private readonly Func<ProjectPathsDto, SvTypeEffectivenessStateProjection>
+        loadScarletVioletTypeEffectivenessStateFresh;
     private readonly Func<ProjectPathsDto, (EncountersWorkflowDto Encounters, MovesWorkflowDto Moves)>
         loadScriptedBossTimelineFresh;
+    private readonly Func<ProjectPathsDto, SwordShieldGameModuleSourceBatchDto>
+        loadSwordShieldCapabilityBatchFresh;
     private readonly Func<
         ProjectPathsDto,
         (
             EncountersWorkflowDto ScriptedBossEncounters,
             EncountersWorkflowDto WildEncounters,
             MovesWorkflowDto Moves,
-            TrainersWorkflowDto Trainers)>
+            TrainersWorkflowDto Trainers,
+            EncounterCompatibilityWorkflowDto EncounterCompatibility,
+            PokemonWorkflowDto Pokemon,
+            TrainerPoolsWorkflowDto TrainerPools,
+            LegendsZaTypeEffectivenessStateDto TypeEffectivenessState)>
         loadZaCapabilityBatchFresh;
     private readonly Func<ProjectPathsDto, TrainersWorkflowDto> loadTrainersFresh;
     private readonly Func<ProjectPathsDto, EncountersWorkflowDto> loadEncountersFresh;
     private readonly Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh;
+    private readonly Func<ProjectPathsDto, EncounterCompatibilityWorkflowDto>
+        loadEncounterCompatibilityFresh;
+    private readonly Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh;
+    private readonly Func<ProjectPathsDto, TrainerPoolsWorkflowDto> loadTrainerPoolsFresh;
+    private readonly Func<ProjectPathsDto, LegendsZaTypeEffectivenessStateDto>
+        loadTypeEffectivenessStateFresh;
     private readonly BoundedDerivedIndexCache<GameModuleData> cache = new(
         new BoundedDerivedIndexCacheOptions
         {
@@ -45,26 +68,57 @@ public sealed class GameModuleApplicationService
     public GameModuleApplicationService(
         SemanticExploreApplicationService semanticExploreService,
         Func<ProjectPathsDto, TeraRaidsWorkflowDto> loadTeraRaidsFresh,
+        Func<ProjectPathsDto, SvPackedLooseSourceComparison>
+            loadPackedLooseSourceComparisonFresh,
+        Func<ProjectPathsDto, SvEventDataComparison>
+            loadEventDataComparisonFresh,
+        Func<ProjectPathsDto, SvScenePlacementProjection>
+            loadScenePlacementProjectionFresh,
+        Func<ProjectPathsDto, SvTypeEffectivenessStateProjection>
+            loadScarletVioletTypeEffectivenessStateFresh,
         Func<ProjectPathsDto, (EncountersWorkflowDto Encounters, MovesWorkflowDto Moves)>
             loadScriptedBossTimelineFresh,
+        Func<ProjectPathsDto, SwordShieldGameModuleSourceBatchDto>
+            loadSwordShieldCapabilityBatchFresh,
         Func<
             ProjectPathsDto,
             (
                 EncountersWorkflowDto ScriptedBossEncounters,
                 EncountersWorkflowDto WildEncounters,
                 MovesWorkflowDto Moves,
-                TrainersWorkflowDto Trainers)>
+                TrainersWorkflowDto Trainers,
+                EncounterCompatibilityWorkflowDto EncounterCompatibility,
+                PokemonWorkflowDto Pokemon,
+                TrainerPoolsWorkflowDto TrainerPools,
+                LegendsZaTypeEffectivenessStateDto TypeEffectivenessState)>
             loadZaCapabilityBatchFresh,
         Func<ProjectPathsDto, TrainersWorkflowDto> loadTrainersFresh,
         Func<ProjectPathsDto, EncountersWorkflowDto> loadEncountersFresh,
-        Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh)
+        Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh,
+        Func<ProjectPathsDto, EncounterCompatibilityWorkflowDto> loadEncounterCompatibilityFresh,
+        Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh,
+        Func<ProjectPathsDto, TrainerPoolsWorkflowDto> loadTrainerPoolsFresh,
+        Func<ProjectPathsDto, LegendsZaTypeEffectivenessStateDto>
+            loadTypeEffectivenessStateFresh)
     {
         this.semanticExploreService = semanticExploreService
             ?? throw new ArgumentNullException(nameof(semanticExploreService));
         this.loadTeraRaidsFresh = loadTeraRaidsFresh
             ?? throw new ArgumentNullException(nameof(loadTeraRaidsFresh));
+        this.loadPackedLooseSourceComparisonFresh = loadPackedLooseSourceComparisonFresh
+            ?? throw new ArgumentNullException(nameof(loadPackedLooseSourceComparisonFresh));
+        this.loadEventDataComparisonFresh = loadEventDataComparisonFresh
+            ?? throw new ArgumentNullException(nameof(loadEventDataComparisonFresh));
+        this.loadScenePlacementProjectionFresh = loadScenePlacementProjectionFresh
+            ?? throw new ArgumentNullException(nameof(loadScenePlacementProjectionFresh));
+        this.loadScarletVioletTypeEffectivenessStateFresh =
+            loadScarletVioletTypeEffectivenessStateFresh
+            ?? throw new ArgumentNullException(
+                nameof(loadScarletVioletTypeEffectivenessStateFresh));
         this.loadScriptedBossTimelineFresh = loadScriptedBossTimelineFresh
             ?? throw new ArgumentNullException(nameof(loadScriptedBossTimelineFresh));
+        this.loadSwordShieldCapabilityBatchFresh = loadSwordShieldCapabilityBatchFresh
+            ?? throw new ArgumentNullException(nameof(loadSwordShieldCapabilityBatchFresh));
         this.loadZaCapabilityBatchFresh = loadZaCapabilityBatchFresh
             ?? throw new ArgumentNullException(nameof(loadZaCapabilityBatchFresh));
         this.loadTrainersFresh = loadTrainersFresh
@@ -72,6 +126,14 @@ public sealed class GameModuleApplicationService
         this.loadEncountersFresh = loadEncountersFresh
             ?? throw new ArgumentNullException(nameof(loadEncountersFresh));
         this.loadMovesFresh = loadMovesFresh ?? throw new ArgumentNullException(nameof(loadMovesFresh));
+        this.loadEncounterCompatibilityFresh = loadEncounterCompatibilityFresh
+            ?? throw new ArgumentNullException(nameof(loadEncounterCompatibilityFresh));
+        this.loadPokemonFresh = loadPokemonFresh
+            ?? throw new ArgumentNullException(nameof(loadPokemonFresh));
+        this.loadTrainerPoolsFresh = loadTrainerPoolsFresh
+            ?? throw new ArgumentNullException(nameof(loadTrainerPoolsFresh));
+        this.loadTypeEffectivenessStateFresh = loadTypeEffectivenessStateFresh
+            ?? throw new ArgumentNullException(nameof(loadTypeEffectivenessStateFresh));
     }
 
     public ReadGameModuleCapabilitiesResponse ReadCapabilities(
@@ -106,7 +168,40 @@ public sealed class GameModuleApplicationService
 
         if (missing.Count > 0)
         {
-            if (semantic.Revision.GameFamily == SemanticGameFamilyDto.LegendsZA)
+            if (semantic.Revision.GameFamily == SemanticGameFamilyDto.SwordShield)
+            {
+                try
+                {
+                    var sources = loadSwordShieldCapabilityBatchFresh(request.Scope.Paths);
+                    foreach (var candidate in missing)
+                    {
+                        ResolveCapabilityCandidate(
+                            candidate,
+                            () => BuildSwordShieldCapabilityModule(
+                                candidate.Capability.Module,
+                                sources),
+                            resolvedByModule,
+                            pendingCacheItems,
+                            ref pendingCacheBytes);
+                    }
+                }
+                catch (Exception exception) when (IsReadinessFailure(exception))
+                {
+                    foreach (var candidate in missing)
+                    {
+                        ResolveCapabilityCandidate(
+                            candidate,
+                            () => BuildModule(
+                                request.Scope,
+                                candidate.Capability.Module,
+                                CancellationToken.None),
+                            resolvedByModule,
+                            pendingCacheItems,
+                            ref pendingCacheBytes);
+                    }
+                }
+            }
+            else if (semantic.Revision.GameFamily == SemanticGameFamilyDto.LegendsZA)
             {
                 try
                 {
@@ -282,14 +377,51 @@ public sealed class GameModuleApplicationService
             {
                 GameModuleDto.ScarletVioletTeraRaidAnalysis =>
                     GameModuleProviders.BuildTeraRaidAnalysis(loadTeraRaidsFresh(scope.Paths)),
+                GameModuleDto.ScarletVioletPackedLooseComparison =>
+                    GameModuleProviders.BuildPackedLooseSourceComparison(
+                        loadPackedLooseSourceComparisonFresh(scope.Paths)),
+                GameModuleDto.ScarletVioletEventDataComparison =>
+                    GameModuleProviders.BuildEventDataComparison(
+                        loadEventDataComparisonFresh(scope.Paths)),
+                GameModuleDto.ScarletVioletScenePlacementEditing =>
+                    GameModuleProviders.BuildScenePlacementProjection(
+                        loadScenePlacementProjectionFresh(scope.Paths)),
+                GameModuleDto.ScarletVioletTypeEffectivenessState =>
+                    GameModuleProviders.BuildScarletVioletTypeEffectivenessState(
+                        loadScarletVioletTypeEffectivenessStateFresh(scope.Paths)),
                 GameModuleDto.LegendsZaScriptedBossTimeline =>
                     BuildScriptedBossTimeline(scope.Paths),
                 GameModuleDto.LegendsZaTrainerArchetypes =>
                     GameModuleProviders.BuildTrainerArchetypes(loadTrainersFresh(scope.Paths)),
                 GameModuleDto.LegendsZaWildSpawnExplorer =>
                     GameModuleProviders.BuildWildSpawnExplorer(loadEncountersFresh(scope.Paths)),
+                GameModuleDto.LegendsZaEncounterCompatibility =>
+                    GameModuleProviders.BuildEncounterCompatibility(
+                        loadPokemonFresh(scope.Paths),
+                        loadEncounterCompatibilityFresh(scope.Paths)),
+                GameModuleDto.LegendsZaAlphaMoveDistribution =>
+                    GameModuleProviders.BuildAlphaMoveDistribution(loadPokemonFresh(scope.Paths)),
+                GameModuleDto.LegendsZaDexLayoutPlanning =>
+                    GameModuleProviders.BuildDexLayoutPlanning(loadPokemonFresh(scope.Paths)),
                 GameModuleDto.LegendsZaMoveVariantComparison =>
                     GameModuleProviders.BuildMoveVariantComparison(loadMovesFresh(scope.Paths)),
+                GameModuleDto.LegendsZaTrainerPoolSwitching =>
+                    GameModuleProviders.BuildTrainerPoolSwitching(loadTrainerPoolsFresh(scope.Paths)),
+                GameModuleDto.LegendsZaTypeEffectivenessState =>
+                    GameModuleProviders.BuildTypeEffectivenessState(
+                        loadTypeEffectivenessStateFresh(scope.Paths)),
+                GameModuleDto.SwordShieldRewardEcosystem =>
+                    BuildSwordShieldModule(scope.Paths, module),
+                GameModuleDto.SwordShieldExeFsCompatibility =>
+                    BuildSwordShieldModule(scope.Paths, module),
+                GameModuleDto.SwordShieldDynamaxAdventures =>
+                    BuildSwordShieldModule(scope.Paths, module),
+                GameModuleDto.SwordShieldRoyalCandyProgression =>
+                    BuildSwordShieldModule(scope.Paths, module),
+                GameModuleDto.SwordShieldBattleCafeRewards =>
+                    BuildSwordShieldModule(scope.Paths, module),
+                GameModuleDto.SwordShieldEventAssignments =>
+                    BuildSwordShieldModule(scope.Paths, module),
                 _ => throw new SemanticExploreValidationException(
                     "The requested game-specific module is unavailable.",
                     SemanticExploreFailureKind.Unsupported),
@@ -298,6 +430,41 @@ public sealed class GameModuleApplicationService
         catch (SemanticExploreValidationException)
         {
             throw;
+        }
+        catch (SvPackedLooseSourceObservationChangedException exception)
+        {
+            throw new SemanticExploreValidationException(
+                "The Scarlet/Violet source candidates changed during comparison. Refresh and retry.",
+                SemanticExploreFailureKind.StaleRevision,
+                exception);
+        }
+        catch (SvEventDataObservationChangedException exception)
+        {
+            throw new SemanticExploreValidationException(
+                "The Scarlet/Violet event sources changed during comparison. Refresh and retry.",
+                SemanticExploreFailureKind.StaleRevision,
+                exception);
+        }
+        catch (SvScenePlacementObservationChangedException exception)
+        {
+            throw new SemanticExploreValidationException(
+                "The Scarlet/Violet placement sources changed during inspection. Refresh and retry.",
+                SemanticExploreFailureKind.StaleRevision,
+                exception);
+        }
+        catch (SvTypeEffectivenessObservationChangedException exception)
+        {
+            throw new SemanticExploreValidationException(
+                "The Scarlet/Violet type-effectiveness source changed during inspection. Refresh and retry.",
+                SemanticExploreFailureKind.StaleRevision,
+                exception);
+        }
+        catch (SvTypeEffectivenessUnsupportedSourceException exception)
+        {
+            throw new SemanticExploreValidationException(
+                "The Scarlet/Violet type-effectiveness source is not an exact supported build.",
+                SemanticExploreFailureKind.Unsupported,
+                exception);
         }
         catch (Exception exception) when (IsBoundedFailure(exception))
         {
@@ -349,13 +516,61 @@ public sealed class GameModuleApplicationService
         return GameModuleProviders.BuildScriptedBossTimeline(sources.Encounters, sources.Moves);
     }
 
+    private GameModuleData BuildSwordShieldModule(ProjectPathsDto paths, GameModuleDto module)
+    {
+        return BuildSwordShieldCapabilityModule(
+            module,
+            loadSwordShieldCapabilityBatchFresh(paths)).Value;
+    }
+
+    private static DerivedIndexCacheItem<GameModuleData> BuildSwordShieldCapabilityModule(
+        GameModuleDto module,
+        SwordShieldGameModuleSourceBatchDto sources)
+    {
+        var data = module switch
+        {
+            GameModuleDto.SwordShieldRewardEcosystem =>
+                GameModuleProviders.BuildRewardEcosystem(
+                    sources.RewardEcosystem.NpcItemGifts,
+                    sources.RewardEcosystem.RaidRewards,
+                    sources.RewardEcosystem.RaidBonusRewards,
+                    sources.RewardEcosystem.Shops,
+                    sources.RewardEcosystem.Placement),
+            GameModuleDto.SwordShieldExeFsCompatibility =>
+                GameModuleProviders.BuildExeFsCompatibility(sources.ExeFsCompatibility),
+            GameModuleDto.SwordShieldDynamaxAdventures =>
+                GameModuleProviders.BuildDynamaxAdventures(
+                    sources.DynamaxAdventures,
+                    sources.RentalPokemon,
+                    sources.RewardEcosystem.RaidRewards),
+            GameModuleDto.SwordShieldRoyalCandyProgression =>
+                GameModuleProviders.BuildRoyalCandyProgression(sources.RoyalCandyProgression),
+            GameModuleDto.SwordShieldBattleCafeRewards =>
+                GameModuleProviders.BuildBattleCafeRewards(sources.BattleCafeRewards),
+            GameModuleDto.SwordShieldEventAssignments =>
+                GameModuleProviders.BuildEventAssignments(
+                    sources.EventAssignments,
+                    sources.ExeFsCompatibility),
+            _ => throw new SemanticExploreValidationException(
+                "The requested Sword and Shield game-specific module is unavailable.",
+                SemanticExploreFailureKind.Unsupported),
+        };
+        return new DerivedIndexCacheItem<GameModuleData>(
+            data,
+            GameModuleProviders.EstimateSizeBytes(data));
+    }
+
     private static DerivedIndexCacheItem<GameModuleData> BuildZaCapabilityModule(
         GameModuleDto module,
         (
             EncountersWorkflowDto ScriptedBossEncounters,
             EncountersWorkflowDto WildEncounters,
             MovesWorkflowDto Moves,
-            TrainersWorkflowDto Trainers) sources)
+            TrainersWorkflowDto Trainers,
+            EncounterCompatibilityWorkflowDto EncounterCompatibility,
+            PokemonWorkflowDto Pokemon,
+            TrainerPoolsWorkflowDto TrainerPools,
+            LegendsZaTypeEffectivenessStateDto TypeEffectivenessState) sources)
     {
         var data = module switch
         {
@@ -367,8 +582,21 @@ public sealed class GameModuleApplicationService
                 GameModuleProviders.BuildTrainerArchetypes(sources.Trainers),
             GameModuleDto.LegendsZaWildSpawnExplorer =>
                 GameModuleProviders.BuildWildSpawnExplorer(sources.WildEncounters),
+            GameModuleDto.LegendsZaEncounterCompatibility =>
+                GameModuleProviders.BuildEncounterCompatibility(
+                    sources.Pokemon,
+                    sources.EncounterCompatibility),
+            GameModuleDto.LegendsZaAlphaMoveDistribution =>
+                GameModuleProviders.BuildAlphaMoveDistribution(sources.Pokemon),
+            GameModuleDto.LegendsZaDexLayoutPlanning =>
+                GameModuleProviders.BuildDexLayoutPlanning(sources.Pokemon),
             GameModuleDto.LegendsZaMoveVariantComparison =>
                 GameModuleProviders.BuildMoveVariantComparison(sources.Moves),
+            GameModuleDto.LegendsZaTrainerPoolSwitching =>
+                GameModuleProviders.BuildTrainerPoolSwitching(sources.TrainerPools),
+            GameModuleDto.LegendsZaTypeEffectivenessState =>
+                GameModuleProviders.BuildTypeEffectivenessState(
+                    sources.TypeEffectivenessState),
             _ => throw new SemanticExploreValidationException(
                 "The requested Z-A game-specific module is unavailable.",
                 SemanticExploreFailureKind.Unsupported),

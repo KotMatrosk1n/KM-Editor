@@ -9,3 +9,9 @@ public sealed record SwShTrainersEditResult(
     SwShTrainersWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SwShTrainerFieldUpdate(
+    int TrainerId,
+    int? Slot,
+    string Field,
+    string Value);
