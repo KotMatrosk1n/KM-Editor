@@ -247,8 +247,14 @@ public sealed class SwShProfanityFilterService
             }
 
             var mutation = restored.SequenceEqual(baseBytes)
-                ? SwShOutputFileMutation.DeleteLegacyAdoption(ExeFsMainPath, reviewedPreimage)
-                : SwShOutputFileMutation.Write(ExeFsMainPath, restored, reviewedPreimage);
+                ? SwShOutputFileMutation.DeleteComposed(
+                    ExeFsMainPath,
+                    reviewedPreimage,
+                    restored)
+                : SwShOutputFileMutation.WriteComposed(
+                    ExeFsMainPath,
+                    restored,
+                    reviewedPreimage);
             if (SwShOutputTransactionWriter.TryApply(
                     paths,
                     [mutation],
@@ -452,7 +458,10 @@ public sealed class SwShProfanityFilterService
     {
         if (SwShOutputTransactionWriter.TryApply(
                 paths,
-                [SwShOutputFileMutation.Write(relativePath, contents, reviewedPreimage)],
+                [SwShOutputFileMutation.WriteComposed(
+                    relativePath,
+                    contents,
+                    reviewedPreimage)],
                 "tool.sword-shield.profanity-filter-install",
                 out outputTransaction,
                 out var failure))

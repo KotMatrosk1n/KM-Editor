@@ -9,8 +9,8 @@ export const gameplaySettingsExperienceRateStepBasisPoints = 1_000;
 
 const canonicalGenerationSchema = z.string().regex(/^(?:0|[1-9]\d*)$/u);
 const titleIdSchema = z.string().regex(/^[0-9A-F]{16}$/u);
-const bundleIdSchema = z.string().regex(/^[0-9A-F]{32}$/u);
-const packageVersionSchema = z
+const executableProfileIdSchema = z.string().regex(/^[0-9A-F]{32}$/u);
+const supportedGameVersionSchema = z
   .string()
   .regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u);
 const reviewIdSchema = z.string().regex(/^[a-f0-9]{32}$/u);
@@ -27,7 +27,6 @@ const dateTimeOffsetSchema = z
 export const gameplaySettingsStateSchema = z.enum([
   "missing",
   "ready",
-  "repairable",
   "incomplete",
   "unmanaged",
   "conflict",
@@ -42,13 +41,22 @@ export const gameplaySettingsValuesSchema = z.strictObject({
   levelCapEnabled: z.boolean(),
 });
 
+export const gameplaySettingsCapabilitySchema = z.strictObject({
+  available: z.boolean(),
+  reasonCode: z.string(),
+  scopeCode: z.string(),
+});
+
 export const gameplaySettingsSnapshotSchema = z.strictObject({
-  bundleId: bundleIdSchema,
+  executableProfileId: executableProfileIdSchema,
+  experienceRateCapability: gameplaySettingsCapabilitySchema,
+  experienceShareCapability: gameplaySettingsCapabilitySchema,
   generation: canonicalGenerationSchema,
   hasExperienceRate: z.boolean(),
   hasExperienceShare: z.boolean(),
   hasLevelCap: z.boolean(),
-  packageVersion: packageVersionSchema,
+  levelCapCapability: gameplaySettingsCapabilitySchema,
+  supportedGameVersion: supportedGameVersionSchema,
   titleId: titleIdSchema,
   values: gameplaySettingsValuesSchema,
 });
@@ -58,6 +66,7 @@ export const getGameplaySettingsRequestSchema = z.strictObject({
 });
 
 export const getGameplaySettingsResponseSchema = z.strictObject({
+  detail: z.string().nullable(),
   snapshot: gameplaySettingsSnapshotSchema.nullable(),
   state: gameplaySettingsStateSchema,
 });
@@ -104,6 +113,9 @@ export const applyGameplaySettingsUpdateResponseSchema = z.strictObject({
 });
 
 export type GameplaySettingsState = z.infer<typeof gameplaySettingsStateSchema>;
+export type GameplaySettingsCapability = z.infer<
+  typeof gameplaySettingsCapabilitySchema
+>;
 export type GameplaySettingsValues = z.infer<
   typeof gameplaySettingsValuesSchema
 >;

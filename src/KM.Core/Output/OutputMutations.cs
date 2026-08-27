@@ -28,9 +28,11 @@ public sealed record OutputMutation
         OutputFileState plannedPostimage,
         ImmutableArray<OwnedTarget> ownershipClaims,
         string? ownershipOutputMode,
+        OwnershipOwnerId? ownershipActor,
         bool? restoredFileDeleteEligibility,
         OutputRuntimeMutableDescriptor? runtimeMutableDescriptor,
-        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority)
+        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority,
+        OutputVerifiedBaseDeleteAuthority? verifiedBaseDeleteAuthority)
     {
         Kind = kind;
         Path = path;
@@ -39,9 +41,11 @@ public sealed record OutputMutation
         PlannedPostimage = plannedPostimage;
         OwnershipClaims = ownershipClaims;
         OwnershipOutputMode = ownershipOutputMode;
+        OwnershipActor = ownershipActor;
         RestoredFileDeleteEligibility = restoredFileDeleteEligibility;
         RuntimeMutableDescriptor = runtimeMutableDescriptor;
         LegacyAdoptionDeleteAuthority = legacyAdoptionDeleteAuthority;
+        VerifiedBaseDeleteAuthority = verifiedBaseDeleteAuthority;
     }
 
     public OutputMutationKind Kind { get; }
@@ -63,6 +67,12 @@ public sealed record OutputMutation
     public string? OwnershipOutputMode { get; }
 
     /// <summary>
+    /// Optional owner authorized to add or release only its own claims during
+    /// one ordinary static composed write. Foreign claims remain immutable.
+    /// </summary>
+    public OwnershipOwnerId? OwnershipActor { get; }
+
+    /// <summary>
     /// A checkpoint-only eligibility value carried through the durable journal.
     /// Ordinary callers cannot assert cleanup provenance through this field.
     /// </summary>
@@ -80,12 +90,19 @@ public sealed record OutputMutation
     /// </summary>
     public OutputLegacyAdoptionDeleteAuthority? LegacyAdoptionDeleteAuthority { get; }
 
+    /// <summary>
+    /// Explicit authority for removing a shared static output only after a
+    /// game-specific verifier proved that removing it exposes the held base file.
+    /// </summary>
+    public OutputVerifiedBaseDeleteAuthority? VerifiedBaseDeleteAuthority { get; }
+
     public static OutputMutation Write(
         RelativeOutputPath path,
         ReadOnlyMemory<byte> postimage,
         OutputFileState expectedPreimage,
         IEnumerable<OwnedTarget> ownershipClaims,
-        string? ownershipOutputMode = null)
+        string? ownershipOutputMode = null,
+        OwnershipOwnerId? ownershipActor = null)
     {
         return CreateWrite(
             path,
@@ -93,9 +110,11 @@ public sealed record OutputMutation
             expectedPreimage,
             ownershipClaims,
             ownershipOutputMode,
+            ownershipActor,
             restoredFileDeleteEligibility: null,
             runtimeMutableDescriptor: null,
-            legacyAdoptionDeleteAuthority: null);
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
     }
 
     internal static OutputMutation WriteCheckpointRestore(
@@ -112,9 +131,11 @@ public sealed record OutputMutation
             expectedPreimage,
             ownershipClaims,
             ownershipOutputMode,
+            ownershipActor: null,
             restoredFileDeleteEligibility,
             runtimeMutableDescriptor: null,
-            legacyAdoptionDeleteAuthority: null);
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
     }
 
     public static OutputMutation WriteRuntimeMutableBootstrap(
@@ -145,9 +166,11 @@ public sealed record OutputMutation
             expectedPreimage,
             ownershipClaims,
             ownershipOutputMode,
+            ownershipActor: null,
             restoredFileDeleteEligibility: null,
             descriptor,
-            legacyAdoptionDeleteAuthority: null);
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
     }
 
     public static OutputMutation WriteRuntimeMutableTransition(
@@ -180,9 +203,11 @@ public sealed record OutputMutation
             expectedPreimage,
             ownershipClaims,
             ownershipOutputMode,
+            ownershipActor: null,
             restoredFileDeleteEligibility: null,
             descriptor,
-            legacyAdoptionDeleteAuthority: null);
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
     }
 
     private static OutputMutation CreateWrite(
@@ -191,9 +216,11 @@ public sealed record OutputMutation
         OutputFileState expectedPreimage,
         IEnumerable<OwnedTarget> ownershipClaims,
         string? ownershipOutputMode,
+        OwnershipOwnerId? ownershipActor,
         bool? restoredFileDeleteEligibility,
         OutputRuntimeMutableDescriptor? runtimeMutableDescriptor,
-        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority)
+        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority,
+        OutputVerifiedBaseDeleteAuthority? verifiedBaseDeleteAuthority)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(expectedPreimage);
@@ -220,9 +247,11 @@ public sealed record OutputMutation
             plannedPostimage,
             ValidateOwnership(path, ownershipClaims, plannedPostimage.LengthBytes),
             ValidateOptionalOutputMode(ownershipOutputMode),
+            ownershipActor,
             restoredFileDeleteEligibility,
             runtimeMutableDescriptor,
-            legacyAdoptionDeleteAuthority);
+            legacyAdoptionDeleteAuthority,
+            verifiedBaseDeleteAuthority);
     }
 
     public static OutputMutation Delete(
@@ -237,7 +266,8 @@ public sealed record OutputMutation
             ownershipClaims,
             ownershipOutputMode,
             runtimeMutableDescriptor: null,
-            legacyAdoptionDeleteAuthority: null);
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
     }
 
     public static OutputMutation DeleteLegacyAdoption(
@@ -253,7 +283,25 @@ public sealed record OutputMutation
             ownershipClaims,
             authority.OutputMode,
             runtimeMutableDescriptor: null,
-            legacyAdoptionDeleteAuthority: authority);
+            legacyAdoptionDeleteAuthority: authority,
+            verifiedBaseDeleteAuthority: null);
+    }
+
+    public static OutputMutation DeleteVerifiedBase(
+        RelativeOutputPath path,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        OutputVerifiedBaseDeleteAuthority authority)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        return CreateDelete(
+            path,
+            expectedPreimage,
+            ownershipClaims,
+            authority.OutputMode,
+            runtimeMutableDescriptor: null,
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: authority);
     }
 
     public static OutputMutation DeleteRuntimeMutable(
@@ -284,7 +332,8 @@ public sealed record OutputMutation
             ownershipClaims,
             ownershipOutputMode,
             descriptor,
-            legacyAdoptionDeleteAuthority: null);
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
     }
 
     private static OutputMutation CreateDelete(
@@ -293,7 +342,8 @@ public sealed record OutputMutation
         IEnumerable<OwnedTarget> ownershipClaims,
         string? ownershipOutputMode,
         OutputRuntimeMutableDescriptor? runtimeMutableDescriptor,
-        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority)
+        OutputLegacyAdoptionDeleteAuthority? legacyAdoptionDeleteAuthority,
+        OutputVerifiedBaseDeleteAuthority? verifiedBaseDeleteAuthority)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(expectedPreimage);
@@ -310,9 +360,11 @@ public sealed record OutputMutation
             OutputFileState.Missing,
             ValidateOwnership(path, ownershipClaims, expectedPreimage.LengthBytes),
             ValidateOptionalOutputMode(ownershipOutputMode),
+            ownershipActor: null,
             restoredFileDeleteEligibility: null,
             runtimeMutableDescriptor,
-            legacyAdoptionDeleteAuthority);
+            legacyAdoptionDeleteAuthority,
+            verifiedBaseDeleteAuthority);
     }
 
     private static OutputFileState ComputeState(ReadOnlySpan<byte> bytes)
@@ -458,6 +510,99 @@ public sealed record OutputLegacyAdoptionDeleteAuthority
 
 }
 
+public sealed record OutputVerifiedBaseDeleteAuthority
+{
+    public OutputVerifiedBaseDeleteAuthority(
+        ProjectId projectId,
+        GameFamily gameFamily,
+        OwnershipOwnerId actingOwnerId,
+        string outputMode,
+        RelativeOutputPath target,
+        OutputFileState reviewedPreimage,
+        OutputFileState verifiedBaseState,
+        IEnumerable<OwnedTarget> ownershipClaims)
+    {
+        _ = SemanticContractGuards.StableId(projectId.Value, nameof(projectId));
+        ProjectId = projectId;
+        GameFamily = SemanticContractGuards.DefinedEnum(gameFamily, nameof(gameFamily));
+        ArgumentNullException.ThrowIfNull(actingOwnerId);
+        _ = SemanticContractGuards.StableId(actingOwnerId.Value, nameof(actingOwnerId));
+        ActingOwnerId = actingOwnerId;
+        OutputMode = SemanticContractGuards.ContractKey(outputMode, nameof(outputMode));
+        Target = target ?? throw new ArgumentNullException(nameof(target));
+        ReviewedPreimage = reviewedPreimage ?? throw new ArgumentNullException(nameof(reviewedPreimage));
+        VerifiedBaseState = verifiedBaseState ?? throw new ArgumentNullException(nameof(verifiedBaseState));
+        if (!ReviewedPreimage.Exists || !VerifiedBaseState.Exists)
+        {
+            throw new ArgumentException(
+                "Verified-base deletion authority requires existing reviewed output and base states.");
+        }
+
+        ArgumentNullException.ThrowIfNull(ownershipClaims);
+        var claims = ownershipClaims.ToImmutableArray();
+        if (claims.IsEmpty
+            || claims.Length > OutputLimits.MaximumOwnershipClaimsPerMutation
+            || claims.Any(claim => claim is null
+                                   || claim.GameFamily != GameFamily
+                                   || claim.Address.File != Target)
+            || !claims.Any(claim => claim.OwnerId == ActingOwnerId
+                                    && !OutputCreatorProvenance.IsClaim(claim))
+            || claims.Any(claim => claim.OwnerId != ActingOwnerId
+                                   && !OutputCreatorProvenance.IsClaim(claim))
+            || claims.Distinct().Count() != claims.Length)
+        {
+            throw new ArgumentException(
+                "Verified-base deletion authority requires one acting editor and provenance-only foreign claims.",
+                nameof(ownershipClaims));
+        }
+
+        OwnershipClaims = claims;
+    }
+
+    public ProjectId ProjectId { get; }
+
+    public GameFamily GameFamily { get; }
+
+    public OwnershipOwnerId ActingOwnerId { get; }
+
+    public string OutputMode { get; }
+
+    public RelativeOutputPath Target { get; }
+
+    public OutputFileState ReviewedPreimage { get; }
+
+    public OutputFileState VerifiedBaseState { get; }
+
+    public ImmutableArray<OwnedTarget> OwnershipClaims { get; }
+
+    internal void ValidateBinding(
+        ProjectId projectId,
+        GameFamily gameFamily,
+        string outputMode,
+        OutputMutationKind kind,
+        RelativeOutputPath target,
+        OutputFileState expectedPreimage,
+        IReadOnlyList<OwnedTarget> ownershipClaims)
+    {
+        if (ProjectId != projectId
+            || GameFamily != gameFamily
+            || !string.Equals(OutputMode, outputMode, StringComparison.Ordinal)
+            || kind != OutputMutationKind.Delete
+            || Target != target
+            || ReviewedPreimage != expectedPreimage
+            || ownershipClaims.Count != OwnershipClaims.Length
+            || !OwnershipClaims.All(ownershipClaims.Contains)
+            || !ownershipClaims.Any(claim => claim.OwnerId == ActingOwnerId
+                                              && !OutputCreatorProvenance.IsClaim(claim))
+            || ownershipClaims.Any(claim => claim.OwnerId != ActingOwnerId
+                                             && !OutputCreatorProvenance.IsClaim(claim)))
+        {
+            throw new ArgumentException(
+                "Verified-base deletion authority does not match its apply binding.");
+        }
+    }
+}
+
 public enum OutputApplyOriginKind
 {
     Workflow = 1,
@@ -585,7 +730,8 @@ public sealed record OutputApplyPlan
         IEnumerable<OutputApplyOrigin> origins,
         IEnumerable<OutputMutation> mutations,
         IEnumerable<OutputReadDependency>? readDependencies = null,
-        IEnumerable<OutputDirectoryMembershipDependency>? directoryMembershipDependencies = null)
+        IEnumerable<OutputDirectoryMembershipDependency>? directoryMembershipDependencies = null,
+        OutputStateRevision? ownershipInventoryRevision = null)
     {
         _ = SemanticContractGuards.StableId(projectId.Value, nameof(projectId));
         ProjectId = projectId;
@@ -604,6 +750,43 @@ public sealed record OutputApplyPlan
             directoryMembershipDependencies,
             dependency => dependency.Directory.CanonicalKey,
             nameof(directoryMembershipDependencies));
+        if (ownershipInventoryRevision is { } revision
+            && string.IsNullOrWhiteSpace(revision.Value))
+        {
+            throw new ArgumentException(
+                "An ownership inventory revision dependency must be an exact non-empty revision.",
+                nameof(ownershipInventoryRevision));
+        }
+
+        var ownershipActors = Mutations
+            .Select(mutation => mutation.OwnershipActor)
+            .Where(actor => actor is not null)
+            .Select(actor => actor!)
+            .Concat(Mutations
+                .Select(mutation => mutation.VerifiedBaseDeleteAuthority?.ActingOwnerId)
+                .Where(actor => actor is not null)
+                .Select(actor => actor!))
+            .Distinct()
+            .ToArray();
+        if (ownershipActors.Any(actor => !Origins.Any(origin =>
+                origin.Kind == OutputApplyOriginKind.Workflow
+                && string.Equals(origin.Id, actor.Value, StringComparison.Ordinal))))
+        {
+            throw new ArgumentException(
+                "Every ownership actor transition requires a matching workflow authority origin.",
+                nameof(origins));
+        }
+
+        if (ownershipInventoryRevision is null
+            && (ownershipActors.Length > 0
+                || Mutations.Any(mutation => mutation.VerifiedBaseDeleteAuthority is not null)))
+        {
+            throw new ArgumentException(
+                "Ownership transitions and verified-base cleanup require the exact reviewed ownership inventory revision.",
+                nameof(ownershipInventoryRevision));
+        }
+
+        OwnershipInventoryRevision = ownershipInventoryRevision;
     }
 
     public ProjectId ProjectId { get; }
@@ -621,6 +804,12 @@ public sealed record OutputApplyPlan
     public ImmutableArray<OutputReadDependency> ReadDependencies { get; }
 
     public ImmutableArray<OutputDirectoryMembershipDependency> DirectoryMembershipDependencies { get; }
+
+    /// <summary>
+    /// Optional optimistic-concurrency dependency for the exact ownership
+    /// inventory used while composing this plan's ownership claims.
+    /// </summary>
+    public OutputStateRevision? OwnershipInventoryRevision { get; }
 
     private static ImmutableArray<OutputApplyOrigin> ValidateOrigins(IEnumerable<OutputApplyOrigin> origins)
     {
@@ -699,6 +888,17 @@ public sealed record OutputApplyPlan
                 }
             }
 
+            if (mutation.OwnershipActor is not null
+                && (mutation.Kind != OutputMutationKind.Write
+                    || mutation.RuntimeMutableDescriptor is not null
+                    || mutation.RestoredFileDeleteEligibility.HasValue
+                    || mutation.LegacyAdoptionDeleteAuthority is not null))
+            {
+                throw new ArgumentException(
+                    "An ownership actor is valid only for an ordinary static composed write.",
+                    nameof(mutations));
+            }
+
             if (mutation.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
             {
                 legacyAdoption.ValidateBinding(
@@ -715,6 +915,28 @@ public sealed record OutputApplyPlan
                 {
                     throw new ArgumentException(
                         "Legacy output deletion authority cannot be combined with another mutation authority.",
+                        nameof(mutations));
+                }
+            }
+
+            if (mutation.VerifiedBaseDeleteAuthority is { } verifiedBaseDelete)
+            {
+                verifiedBaseDelete.ValidateBinding(
+                    projectId,
+                    gameFamily,
+                    outputMode,
+                    mutation.Kind,
+                    mutation.Path,
+                    mutation.ExpectedPreimage,
+                    mutation.OwnershipClaims);
+                if (!string.Equals(mutation.OwnershipOutputMode, outputMode, StringComparison.Ordinal)
+                    || mutation.RuntimeMutableDescriptor is not null
+                    || mutation.RestoredFileDeleteEligibility.HasValue
+                    || mutation.LegacyAdoptionDeleteAuthority is not null
+                    || mutation.OwnershipActor is not null)
+                {
+                    throw new ArgumentException(
+                        "Verified-base deletion authority cannot be combined with another mutation authority.",
                         nameof(mutations));
                 }
             }

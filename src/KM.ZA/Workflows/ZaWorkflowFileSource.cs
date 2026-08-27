@@ -1210,6 +1210,7 @@ internal sealed class ZaWorkflowFileSource
                 return new ZaStandaloneOutputMutation(
                     relativePath,
                     mutation.Bytes?.ToArray(),
+                    mutation.DeleteFallbackBytes?.ToArray(),
                     mutation.ApplyContext);
             })
             .ToArray();
@@ -1265,6 +1266,7 @@ internal sealed class ZaWorkflowFileSource
                         outputMode,
                         isolateTrinityModManagerRomFs),
                     write.Bytes,
+                    DeleteFallbackBytes: null,
                     write.ApplyContext ?? applyContext))
                 .ToList();
             mutations.AddRange(normalizedDeletes.Select(delete =>
@@ -1275,11 +1277,13 @@ internal sealed class ZaWorkflowFileSource
                         outputMode,
                         isolateTrinityModManagerRomFs),
                     Bytes: null,
+                    DeleteFallbackBytes: null,
                     applyContext)));
             mutations.AddRange(normalizedOutputMutations.Select(mutation =>
                 new ZaWorkflowOutputMutation(
                     ResolveStandaloneOutputPath(paths, mutation.RelativePath),
                     mutation.Bytes,
+                    mutation.DeleteFallbackBytes,
                     mutation.ApplyContext ?? applyContext)));
             var hasRomFsMutations = normalizedWrites.Length > 0 || normalizedDeletes.Length > 0;
             if (outputMode == ZaOutputMode.Standalone && hasRomFsMutations)
@@ -1314,6 +1318,7 @@ internal sealed class ZaWorkflowFileSource
                 mutations.Add(new ZaWorkflowOutputMutation(
                     ResolveOutputPath(paths, DescriptorVirtualPath, ZaOutputMode.Standalone),
                     deleteStandaloneDescriptor ? null : descriptorBytes,
+                    DeleteFallbackBytes: null,
                     applyContext));
             }
             else if (reviewedStandaloneDescriptorBytes is not null || deleteStandaloneDescriptor)
@@ -1689,6 +1694,22 @@ internal sealed class ZaWorkflowFileSource
             preservesUnownedData: true,
             requiresPreimage: true);
         var coordinatorOptions = new OutputTransactionCoordinatorOptions();
+        using var verifiedBaseMainLease = OpenVerifiedBaseMainLeaseIfRequired(
+            paths,
+            outputRoot,
+            mutations,
+            coordinatorOptions.MaximumWriteBytesPerMutation);
+        var verifiedBaseMain = verifiedBaseMainLease is null
+            ? null
+            : ReadVerifiedBaseMain(verifiedBaseMainLease);
+        var verifiedBaseMainState = verifiedBaseMain is null
+            ? null
+            : OutputFileState.Existing(
+                Convert.ToHexStringLower(SHA256.HashData(verifiedBaseMain)),
+                verifiedBaseMain.LongLength);
+        var coordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
+        var projectId = ProjectIdentity.FromPaths(paths);
+        var outputModeKey = ToOutputModeKey(outputMode);
         var membershipDependencies = directoryMembershipDependencies?.ToArray()
             ?? [];
         var reviewedPreimages = revalidateReviewedState is null
@@ -1723,6 +1744,12 @@ internal sealed class ZaWorkflowFileSource
             }
         }
 
+        var ownershipSnapshot = coordinator
+            .GetOwnershipInventorySnapshotAsync()
+            .GetAwaiter()
+            .GetResult();
+        var inventory = ownershipSnapshot.Inventory;
+
         var outputMutations = new List<OutputMutation>(mutations.Count);
         long plannedWriteBytes = 0;
         long plannedBackupBytes = 0;
@@ -1736,7 +1763,9 @@ internal sealed class ZaWorkflowFileSource
             }
 
             var relativePath = new RelativeOutputPath(relativePathValue);
-            if (mutation.Bytes?.LongLength > coordinatorOptions.MaximumWriteBytesPerMutation)
+            if (mutation.Bytes?.LongLength > coordinatorOptions.MaximumWriteBytesPerMutation
+                || mutation.DeleteFallbackBytes?.LongLength
+                    > coordinatorOptions.MaximumWriteBytesPerMutation)
             {
                 throw new OutputLimitExceededException(
                     "A Pokemon Legends Z-A output target exceeds the configured write limit.");
@@ -1759,30 +1788,131 @@ internal sealed class ZaWorkflowFileSource
                 new OwnedTargetAddress(relativePath),
                 mutation.ApplyContext?.OwnerId ?? defaultOwnerId,
                 preservationRule);
-            if (mutation.Bytes is null)
+            var ownedRecord = inventory.Files.FirstOrDefault(record => record.Path == relativePath);
+            var isComposedExecutable = IsComposedExecutablePath(relativePath);
+            var ownershipClaims = new[] { ownership };
+            if (isComposedExecutable && ownedRecord is not null)
             {
-                if (expectedPreimage.Exists)
+                ValidateComposedExecutableOwnership(
+                    ownedRecord,
+                    projectId,
+                    GameFamily.LegendsZA,
+                    outputModeKey,
+                    expectedPreimage,
+                    relativePath);
+                ownershipClaims = ownedRecord.Claims
+                    .Where(claim => claim.OwnerId != ownership.OwnerId)
+                    .Append(ownership)
+                    .Distinct()
+                    .ToArray();
+            }
+
+            var bytes = mutation.Bytes;
+            if (bytes is null && expectedPreimage.Exists)
+            {
+                if (isComposedExecutable)
+                {
+                    var remainingClaims = ownedRecord is null
+                        ? []
+                        : ownedRecord.Claims
+                            .Where(claim => claim.OwnerId != ownership.OwnerId)
+                            .ToArray();
+                    var activeRemainingClaims = remainingClaims
+                        .Where(claim => !OutputCreatorProvenance.IsClaim(claim))
+                        .ToArray();
+                    var canDelete = ownedRecord is not null
+                        && activeRemainingClaims.Length == 0
+                        && remainingClaims.Length == 0
+                        && ownedRecord.FileDeleteEligible
+                        && ownedRecord.Claims.Any(claim =>
+                            claim.Address.ScopeKind == OwnedTargetScopeKind.File);
+                    if (canDelete)
+                    {
+                        plannedBackupBytes = checked(
+                            plannedBackupBytes + expectedPreimage.LengthBytes);
+                        outputMutations.Add(OutputMutation.Delete(
+                            relativePath,
+                            expectedPreimage,
+                            ownedRecord!.Claims,
+                            outputModeKey));
+                        EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+                        continue;
+                    }
+
+                    var canDeleteVerifiedBase = ownedRecord is not null
+                        && activeRemainingClaims.Length == 0
+                        && remainingClaims.Length > 0
+                        && remainingClaims.All(OutputCreatorProvenance.IsClaim)
+                        && ownedRecord.FileDeleteEligible
+                        && mutation.DeleteFallbackBytes is { } verifiedFallback
+                        && verifiedBaseMain is not null
+                        && verifiedBaseMainState is not null
+                        && verifiedFallback.AsSpan().SequenceEqual(verifiedBaseMain);
+                    if (canDeleteVerifiedBase)
+                    {
+                        var authority = new OutputVerifiedBaseDeleteAuthority(
+                            projectId,
+                            GameFamily.LegendsZA,
+                            ownership.OwnerId,
+                            outputModeKey,
+                            relativePath,
+                            expectedPreimage,
+                            verifiedBaseMainState!,
+                            ownedRecord!.Claims);
+                        plannedBackupBytes = checked(
+                            plannedBackupBytes + expectedPreimage.LengthBytes);
+                        outputMutations.Add(OutputMutation.DeleteVerifiedBase(
+                            relativePath,
+                            expectedPreimage,
+                            ownedRecord.Claims,
+                            authority));
+                        EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+                        continue;
+                    }
+
+                    bytes = mutation.DeleteFallbackBytes
+                        ?? throw new OutputOwnershipConflictException(relativePath);
+                    if (remainingClaims.Length > 0)
+                    {
+                        ownershipClaims = ownedRecord!.FileDeleteEligible
+                            && !remainingClaims.Any(claim =>
+                                claim.Address.ScopeKind == OwnedTargetScopeKind.File
+                                && !OutputCreatorProvenance.IsClaim(claim))
+                            ? remainingClaims
+                                .Append(OutputCreatorProvenance.Create(
+                                    GameFamily.LegendsZA,
+                                    relativePath))
+                                .Distinct()
+                                .ToArray()
+                            : remainingClaims;
+                    }
+                }
+                else
                 {
                     plannedBackupBytes = checked(plannedBackupBytes + expectedPreimage.LengthBytes);
                     outputMutations.Add(OutputMutation.Delete(
                         relativePath,
                         expectedPreimage,
-                        [ownership]));
+                        [ownership],
+                        outputModeKey));
                     EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+                    continue;
                 }
-
+            }
+            else if (bytes is null)
+            {
                 continue;
             }
 
-            var plannedHash = Convert.ToHexStringLower(SHA256.HashData(mutation.Bytes));
+            var plannedHash = Convert.ToHexStringLower(SHA256.HashData(bytes));
             if (expectedPreimage.Exists
-                && expectedPreimage.LengthBytes == mutation.Bytes.LongLength
+                && expectedPreimage.LengthBytes == bytes.LongLength
                 && string.Equals(expectedPreimage.Sha256, plannedHash, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var nextWriteBytes = checked(plannedWriteBytes + mutation.Bytes.LongLength);
+            var nextWriteBytes = checked(plannedWriteBytes + bytes.LongLength);
             if (nextWriteBytes > coordinatorOptions.MaximumWriteBytesPerApply)
             {
                 throw new OutputLimitExceededException(
@@ -1800,18 +1930,19 @@ internal sealed class ZaWorkflowFileSource
             plannedBackupBytes = nextBackupBytes;
             outputMutations.Add(OutputMutation.Write(
                 relativePath,
-                mutation.Bytes,
+                bytes,
                 expectedPreimage,
-                [ownership]));
+                ownershipClaims,
+                outputModeKey,
+                ownershipActor: isComposedExecutable ? ownership.OwnerId : null));
             EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
         }
 
         if (outputMutations.Count == 0)
         {
-            var validationCoordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
             foreach (var dependency in membershipDependencies)
             {
-                var current = validationCoordinator
+                var current = coordinator
                     .CaptureDirectoryMembershipAsync(dependency.Directory)
                     .GetAwaiter()
                     .GetResult();
@@ -1835,17 +1966,29 @@ internal sealed class ZaWorkflowFileSource
             .Where(mutationContext => mutationContext is not null)
             .SelectMany(mutationContext => mutationContext!.Origins)
             .Concat(context.Origins)
+            .Concat(outputMutations
+                .Select(mutation => mutation.OwnershipActor)
+                .Where(actor => actor is not null)
+                .Select(actor => new OutputApplyOrigin(
+                    OutputApplyOriginKind.Workflow,
+                    actor!.Value)))
+            .Concat(outputMutations
+                .Select(mutation => mutation.VerifiedBaseDeleteAuthority?.ActingOwnerId)
+                .Where(actor => actor is not null)
+                .Select(actor => new OutputApplyOrigin(
+                    OutputApplyOriginKind.Workflow,
+                    actor!.Value)))
             .Distinct()
             .ToArray();
         var plan = new OutputApplyPlan(
-            ProjectIdentity.FromPaths(paths),
+            projectId,
             GameFamily.LegendsZA,
-            ToOutputModeKey(outputMode),
+            outputModeKey,
             context.SemanticReviewHash,
             origins,
             outputMutations,
-            directoryMembershipDependencies: membershipDependencies);
-        var coordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
+            directoryMembershipDependencies: membershipDependencies,
+            ownershipInventoryRevision: ownershipSnapshot.Revision);
         var result = coordinator.ApplyAsync(plan).GetAwaiter().GetResult();
         if (result.Outcome != OutputApplyOutcome.Committed)
         {
@@ -1853,6 +1996,94 @@ internal sealed class ZaWorkflowFileSource
         }
 
         return result;
+    }
+
+    private static bool IsComposedExecutablePath(RelativeOutputPath path)
+    {
+        return string.Equals(path.CanonicalKey, "EXEFS/MAIN", StringComparison.Ordinal);
+    }
+
+    private static FileStream? OpenVerifiedBaseMainLeaseIfRequired(
+        ProjectPaths paths,
+        string outputRoot,
+        IReadOnlyList<ZaWorkflowOutputMutation> mutations,
+        long maximumBytes)
+    {
+        var requiresBase = mutations.Any(mutation =>
+        {
+            if (mutation.Bytes is not null || mutation.DeleteFallbackBytes is null)
+            {
+                return false;
+            }
+
+            var relative = Path.GetRelativePath(outputRoot, Path.GetFullPath(mutation.TargetPath))
+                .Replace(Path.DirectorySeparatorChar, '/');
+            return !PathContainment.IsOutsideRoot(relative)
+                && IsComposedExecutablePath(new RelativeOutputPath(relative));
+        });
+        if (!requiresBase)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+        {
+            throw new InvalidOperationException(
+                "Composed Pokemon Legends Z-A executable cleanup requires Base ExeFS main.");
+        }
+
+        var baseRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.BaseExeFsPath));
+        var baseMainPath = Path.GetFullPath(Path.Combine(baseRoot, "main"));
+        var relativeBasePath = Path.GetRelativePath(baseRoot, baseMainPath);
+        if (PathContainment.IsOutsideRoot(relativeBasePath)
+            || !File.Exists(baseMainPath)
+            || Directory.Exists(baseMainPath))
+        {
+            throw new IOException(
+                "Composed Pokemon Legends Z-A executable cleanup requires a physical Base ExeFS main.");
+        }
+
+        var stream = new FileStream(
+            baseMainPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
+        if (stream.Length <= 0 || stream.Length > maximumBytes)
+        {
+            stream.Dispose();
+            throw new OutputLimitExceededException(
+                "Base ExeFS main exceeds the configured Pokemon Legends Z-A executable limit.");
+        }
+
+        return stream;
+    }
+
+    private static byte[] ReadVerifiedBaseMain(FileStream stream)
+    {
+        var bytes = new byte[checked((int)stream.Length)];
+        stream.Position = 0;
+        stream.ReadExactly(bytes);
+        stream.Position = 0;
+        return bytes;
+    }
+
+    private static void ValidateComposedExecutableOwnership(
+        OutputOwnershipRecord owned,
+        ProjectId projectId,
+        GameFamily gameFamily,
+        string outputMode,
+        OutputFileState expectedPreimage,
+        RelativeOutputPath relativePath)
+    {
+        if (owned.ProjectId != projectId
+            || owned.GameFamily != gameFamily
+            || owned.CurrentState != expectedPreimage
+            || !string.Equals(owned.OutputMode, outputMode, StringComparison.Ordinal))
+        {
+            throw new OutputOwnershipConflictException(relativePath);
+        }
     }
 
     private static IReadOnlyDictionary<string, OutputFileState> CapturePreparedPreimages(
@@ -2478,13 +2709,17 @@ internal sealed class ZaWorkflowFileSource
                 EnsureReviewedTarget(ToOutputRelativePath(write.VirtualPath, outputMode));
                 romFsMutations[write.VirtualPath] = new DeferredMutation(
                     write.Bytes.ToArray(),
+                    DeleteFallbackBytes: null,
                     write.ApplyContext ?? operationContext);
             }
 
             foreach (var delete in deletes)
             {
                 EnsureReviewedTarget(ToOutputRelativePath(delete, outputMode));
-                romFsMutations[delete] = new DeferredMutation(null, operationContext);
+                romFsMutations[delete] = new DeferredMutation(
+                    Bytes: null,
+                    DeleteFallbackBytes: null,
+                    operationContext);
             }
 
             foreach (var mutation in outputMutations)
@@ -2492,6 +2727,7 @@ internal sealed class ZaWorkflowFileSource
                 EnsureReviewedTarget(mutation.RelativePath);
                 standaloneOutputMutations[mutation.RelativePath] = new DeferredMutation(
                     mutation.Bytes?.ToArray(),
+                    mutation.DeleteFallbackBytes?.ToArray(),
                     mutation.ApplyContext ?? operationContext);
             }
 
@@ -2532,6 +2768,7 @@ internal sealed class ZaWorkflowFileSource
                     .Select(entry => new ZaStandaloneOutputMutation(
                         entry.Key,
                         entry.Value.Bytes,
+                        entry.Value.DeleteFallbackBytes,
                         entry.Value.ApplyContext))
                     .ToArray();
                 var result = ApplyBatchCoreLocked(
@@ -2611,6 +2848,7 @@ internal sealed class ZaWorkflowFileSource
 
         private sealed record DeferredMutation(
             byte[]? Bytes,
+            byte[]? DeleteFallbackBytes,
             ZaOutputApplyContext? ApplyContext);
     }
 
@@ -2680,6 +2918,7 @@ internal sealed record ZaWorkflowFileWrite(
 internal sealed record ZaStandaloneOutputMutation(
     string RelativePath,
     byte[]? Bytes,
+    byte[]? DeleteFallbackBytes = null,
     ZaOutputApplyContext? ApplyContext = null);
 
 internal sealed record ZaStandaloneMixedBatch(
@@ -2692,6 +2931,7 @@ internal sealed record ZaStandaloneMixedBatch(
 internal sealed record ZaWorkflowOutputMutation(
     string TargetPath,
     byte[]? Bytes,
+    byte[]? DeleteFallbackBytes,
     ZaOutputApplyContext? ApplyContext = null);
 
 internal sealed record ZaOutputApplyContext(

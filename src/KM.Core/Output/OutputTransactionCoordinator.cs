@@ -1743,6 +1743,17 @@ public sealed class OutputTransactionCoordinator
     {
         await ValidatePlanDependenciesAsync(plan, cancellationToken).ConfigureAwait(false);
         var inventoryAtStart = await ReadInventoryAsync(cancellationToken).ConfigureAwait(false);
+        if (plan.OwnershipInventoryRevision is { } expectedInventoryRevision)
+        {
+            var actualInventoryRevision = ComputeInventoryRevision(inventoryAtStart);
+            if (expectedInventoryRevision != actualInventoryRevision)
+            {
+                throw new OutputStateRevisionConflictException(
+                    expectedInventoryRevision,
+                    actualInventoryRevision);
+            }
+        }
+
         var inventoryByPath = inventoryAtStart.Files.ToDictionary(
             record => record.Path.CanonicalKey,
             StringComparer.Ordinal);
@@ -1777,6 +1788,34 @@ public sealed class OutputTransactionCoordinator
                 }
             }
 
+            var verifiedBaseDeleteAuthorized = false;
+            if (mutation.VerifiedBaseDeleteAuthority is { } verifiedBaseDelete)
+            {
+                verifiedBaseDelete.ValidateBinding(
+                    plan.ProjectId,
+                    plan.GameFamily,
+                    plan.OutputMode,
+                    mutation.Kind,
+                    mutation.Path,
+                    mutation.ExpectedPreimage,
+                    mutation.OwnershipClaims);
+                verifiedBaseDeleteAuthorized = hasOwnedRecord
+                    && owned!.RuntimeMutableDescriptor is null
+                    && owned.FileDeleteEligible
+                    && owned.CurrentState == mutation.ExpectedPreimage
+                    && OwnershipClaimsMatchExactly(owned.Claims, mutation.OwnershipClaims)
+                    && owned.Claims.Any(claim =>
+                        claim.OwnerId == verifiedBaseDelete.ActingOwnerId
+                        && !OutputCreatorProvenance.IsClaim(claim))
+                    && owned.Claims.All(claim =>
+                        claim.OwnerId == verifiedBaseDelete.ActingOwnerId
+                        || OutputCreatorProvenance.IsClaim(claim));
+                if (!verifiedBaseDeleteAuthorized)
+                {
+                    throw new OutputOwnershipConflictException(mutation.Path);
+                }
+            }
+
             if (mutation.RuntimeMutableDescriptor is { } runtimeMutable)
             {
                 if (!hasOwnedRecord)
@@ -1805,15 +1844,58 @@ public sealed class OutputTransactionCoordinator
                 throw new OutputOwnershipConflictException(mutation.Path);
             }
 
+            var checkpointRestoreWrite = mutation.Kind == OutputMutationKind.Write
+                && mutation.RestoredFileDeleteEligibility.HasValue;
+            if (hasOwnedRecord
+                && mutation.Kind == OutputMutationKind.Write
+                && mutation.RuntimeMutableDescriptor is null
+                && !checkpointRestoreWrite
+                && !IsAuthorizedStaticOwnershipTransition(
+                    owned!.Claims,
+                    mutation.OwnershipClaims,
+                    mutation.OwnershipActor,
+                    owned.FileDeleteEligible))
+            {
+                throw new OutputOwnershipConflictException(mutation.Path);
+            }
+
+            if (hasOwnedRecord
+                && owned!.FileDeleteEligible
+                && mutation.Kind == OutputMutationKind.Write
+                && mutation.RuntimeMutableDescriptor is null
+                && !checkpointRestoreWrite
+                && !HasWholeFileOwnership(mutation.OwnershipClaims))
+            {
+                throw new OutputOwnershipConflictException(mutation.Path);
+            }
+
+            if (!hasOwnedRecord
+                && mutation.Kind == OutputMutationKind.Write
+                && mutation.OwnershipActor is { } creatingActor
+                && mutation.OwnershipClaims.Any(claim => claim.OwnerId != creatingActor))
+            {
+                throw new OutputOwnershipConflictException(mutation.Path);
+            }
+
+            if (!hasOwnedRecord
+                && mutation.Kind == OutputMutationKind.Write
+                && mutation.OwnershipClaims.Any(OutputCreatorProvenance.IsClaim))
+            {
+                throw new OutputOwnershipConflictException(mutation.Path);
+            }
+
             var ordinaryDeleteAuthorized = hasOwnedRecord
                 && owned!.FileDeleteEligible
                 && HasWholeFileOwnership(owned.Claims)
                 && HasWholeFileOwnership(mutation.OwnershipClaims)
                 && (mutation.RuntimeMutableDescriptor is not null
-                    || owned.CurrentState == mutation.ExpectedPreimage);
+                    || owned.CurrentState == mutation.ExpectedPreimage
+                    && HasSingleOwnershipActor(owned.Claims)
+                    && OwnershipClaimsMatchExactly(owned.Claims, mutation.OwnershipClaims));
             if (mutation.Kind == OutputMutationKind.Delete
                 && !ordinaryDeleteAuthorized
-                && !legacyAdoptionAuthorized)
+                && !legacyAdoptionAuthorized
+                && !verifiedBaseDeleteAuthorized)
             {
                 throw new OutputOwnershipConflictException(mutation.Path);
             }
@@ -2607,6 +2689,97 @@ public sealed class OutputTransactionCoordinator
     private static bool HasWholeFileOwnership(IEnumerable<OwnedTarget> claims)
     {
         return claims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File);
+    }
+
+    private static bool RetainsEveryOwnershipClaim(
+        IReadOnlyCollection<OwnedTarget> currentClaims,
+        IReadOnlyCollection<OwnedTarget> proposedClaims)
+    {
+        return currentClaims.All(proposedClaims.Contains);
+    }
+
+    private static bool IsAuthorizedStaticOwnershipTransition(
+        IReadOnlyCollection<OwnedTarget> currentClaims,
+        IReadOnlyCollection<OwnedTarget> proposedClaims,
+        OwnershipOwnerId? actor,
+        bool fileDeleteEligible)
+    {
+        if (actor is null)
+        {
+            return RetainsEveryOwnershipClaim(currentClaims, proposedClaims)
+                && proposedClaims
+                    .Where(claim => !currentClaims.Contains(claim))
+                    .All(claim => !OutputCreatorProvenance.IsClaim(claim));
+        }
+
+        if (!currentClaims.Any(claim => claim.OwnerId == actor)
+            && !proposedClaims.Any(claim => claim.OwnerId == actor))
+        {
+            return false;
+        }
+
+        var removedClaims = currentClaims
+            .Where(claim => !proposedClaims.Contains(claim))
+            .ToArray();
+        var addedClaims = proposedClaims
+            .Where(claim => !currentClaims.Contains(claim))
+            .ToArray();
+        if (!removedClaims.All(claim => claim.OwnerId == actor))
+        {
+            return false;
+        }
+
+        var addedProvenance = addedClaims
+            .Where(OutputCreatorProvenance.IsClaim)
+            .ToArray();
+        if (addedProvenance.Length > 1
+            || addedClaims.Any(claim => claim.OwnerId != actor
+                                        && !OutputCreatorProvenance.IsClaim(claim)))
+        {
+            return false;
+        }
+
+        if (addedProvenance.Length == 0)
+        {
+            return true;
+        }
+
+        var releasedWholeFileClaim = removedClaims.FirstOrDefault(claim =>
+            claim.OwnerId == actor
+            && claim.Address.ScopeKind == OwnedTargetScopeKind.File);
+        if (releasedWholeFileClaim is not null)
+        {
+            return addedProvenance[0].GameFamily == releasedWholeFileClaim.GameFamily
+                && addedProvenance[0].Address.File == releasedWholeFileClaim.Address.File;
+        }
+
+        return fileDeleteEligible
+            && !currentClaims.Any(claim =>
+                claim.Address.ScopeKind == OwnedTargetScopeKind.File)
+            && (proposedClaims.Any(claim =>
+                    claim.OwnerId == actor
+                    && !OutputCreatorProvenance.IsClaim(claim))
+                || removedClaims.Any(claim => claim.OwnerId == actor)
+                && proposedClaims.Any(claim =>
+                    claim.OwnerId != actor
+                    && !OutputCreatorProvenance.IsClaim(claim)));
+    }
+
+    private static bool HasSingleOwnershipActor(IReadOnlyCollection<OwnedTarget> claims)
+    {
+        return claims
+            .Select(claim => claim.OwnerId)
+            .Distinct()
+            .Take(2)
+            .Count() == 1;
+    }
+
+    private static bool OwnershipClaimsMatchExactly(
+        IReadOnlyCollection<OwnedTarget> currentClaims,
+        IReadOnlyCollection<OwnedTarget> proposedClaims)
+    {
+        return currentClaims.Count == proposedClaims.Count
+            && RetainsEveryOwnershipClaim(currentClaims, proposedClaims);
     }
 
     private static bool LegacyAdoptionMatchesOwnedRecord(

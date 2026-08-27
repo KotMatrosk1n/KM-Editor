@@ -8,7 +8,9 @@ using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
@@ -2205,6 +2207,12 @@ internal sealed class ZaPokemonEditSessionService
                         write.TargetRelativePath,
                         ZaExeFsReservedRegionLedger.ExeFsMainPath,
                         StringComparison.OrdinalIgnoreCase));
+                var executableOutputContext = new ZaOutputApplyContext(
+                    OutputReviewFingerprint.FromChangePlan(currentPlan),
+                    new OwnershipOwnerId("workflow.za.dex-layout"),
+                    [new OutputApplyOrigin(
+                        OutputApplyOriginKind.Workflow,
+                        ZaEditSessionSupport.PokemonDomain)]);
                 ZaWorkflowFileSource.ApplyHybridMixedBatch(
                     paths,
                     outputMode,
@@ -2322,7 +2330,9 @@ internal sealed class ZaPokemonEditSessionService
                             Array.Empty<string>(),
                             [new ZaStandaloneOutputMutation(
                                 ZaExeFsReservedRegionLedger.ExeFsMainPath,
-                                mainOutputBytes)]);
+                                mainOutputBytes,
+                                DeleteFallbackBytes: mainOutputBytes is null ? baseMainBytes : null,
+                                ApplyContext: executableOutputContext)]);
                     },
                     revalidateReviewedState: () =>
                         ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(

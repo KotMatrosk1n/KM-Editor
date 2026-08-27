@@ -609,8 +609,14 @@ public sealed class SwShFpsPatchService
 
             var reviewedPreimage = ToOutputFileState(current);
             var mutation = restored.SequenceEqual(baseBytes)
-                ? SwShOutputFileMutation.DeleteLegacyAdoption(ExeFsMainPath, reviewedPreimage)
-                : SwShOutputFileMutation.Write(ExeFsMainPath, restored, reviewedPreimage);
+                ? SwShOutputFileMutation.DeleteComposed(
+                    ExeFsMainPath,
+                    reviewedPreimage,
+                    restored)
+                : SwShOutputFileMutation.WriteComposed(
+                    ExeFsMainPath,
+                    restored,
+                    reviewedPreimage);
             if (TryApplyOutputMutation(
                     paths,
                     mutation,
@@ -1860,9 +1866,12 @@ public sealed class SwShFpsPatchService
         ICollection<ValidationDiagnostic> diagnostics,
         ICollection<ProjectFileReference> writtenFiles)
     {
+        var mutation = string.Equals(relativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
+            ? SwShOutputFileMutation.WriteComposed(relativePath, contents, reviewedPreimage)
+            : SwShOutputFileMutation.Write(relativePath, contents, reviewedPreimage);
         if (TryApplyOutputMutation(
                 paths,
-                SwShOutputFileMutation.Write(relativePath, contents, reviewedPreimage),
+                mutation,
                 "tool.sword-shield.60fps-install",
                 diagnostics))
         {

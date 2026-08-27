@@ -14,7 +14,6 @@ public enum GameplaySettingsStateDto
 {
     Missing,
     Ready,
-    Repairable,
     Incomplete,
     Unmanaged,
     Conflict,
@@ -28,21 +27,30 @@ public sealed record GameplaySettingsValuesDto(
     bool LevelCapEnabled,
     byte LevelCap);
 
+public sealed record GameplaySettingCapabilityDto(
+    bool Available,
+    string ReasonCode,
+    string ScopeCode);
+
 public sealed record GameplaySettingsSnapshotDto(
     string TitleId,
-    string BundleId,
-    string PackageVersion,
+    string ExecutableProfileId,
+    string SupportedGameVersion,
     string Generation,
     bool HasExperienceShare,
     bool HasExperienceRate,
     bool HasLevelCap,
+    GameplaySettingCapabilityDto ExperienceShareCapability,
+    GameplaySettingCapabilityDto ExperienceRateCapability,
+    GameplaySettingCapabilityDto LevelCapCapability,
     GameplaySettingsValuesDto Values);
 
 public sealed record GetGameplaySettingsRequest(OutputScopeDto Scope);
 
 public sealed record GetGameplaySettingsResponse(
     GameplaySettingsStateDto State,
-    GameplaySettingsSnapshotDto? Snapshot);
+    GameplaySettingsSnapshotDto? Snapshot,
+    string? Detail = null);
 
 public sealed record PreviewGameplaySettingsUpdateRequest(
     OutputScopeDto Scope,

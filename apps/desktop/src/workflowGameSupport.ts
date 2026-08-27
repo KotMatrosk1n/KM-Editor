@@ -65,8 +65,10 @@ export type WorkflowNavigationGroup = {
     | 'economy'
     | 'tools'
     | 'hooks'
-    | 'advancedEditors';
+    | 'advancedEditors'
+    | 'betaEditors';
   label: string;
+  labelKey?: string;
   sectionIds: WorkbenchSection[];
 };
 
@@ -118,6 +120,12 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'hyperspaceBypass',
       'dynamaxAdventures'
     ]
+  },
+  {
+    id: 'betaEditors',
+    label: 'Beta Editors',
+    labelKey: 'workbench.navigation.betaEditors',
+    sectionIds: ['gameplaySettings']
   }
 ];
 
@@ -126,6 +134,10 @@ export function canAccessWorkflowSectionForHealth(
   canOpenReadOnlyWorkflows: boolean,
   canOpenEditableWorkflows: boolean
 ) {
+  if (section === 'gameplaySettings') {
+    return true;
+  }
+
   return (
     canOpenEditableWorkflows ||
     (canOpenReadOnlyWorkflows && readOnlyViewerSectionIds.has(section))
@@ -339,6 +351,8 @@ export function getLoadedWorkflowStateForSection(
       return state.flagworkSaveWorkflow !== null;
     case 'giftPokemon':
       return state.giftPokemonWorkflow !== null;
+    case 'gameplaySettings':
+      return true;
     case 'gymUniformRemoval':
       return state.gymUniformRemovalWorkflow !== null;
     case 'hyperTraining':
