@@ -111,6 +111,8 @@ public static class OutputReviewFingerprint
                     runtimeMutable.MinimumGeneration?.ToString(
                         "X16",
                         System.Globalization.CultureInfo.InvariantCulture));
+                AppendNullableText(hash, budget, runtimeMutable.SemanticIdentity);
+                AppendNullableText(hash, budget, runtimeMutable.PreviousSemanticIdentity);
             }
             else
             {

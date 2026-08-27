@@ -490,6 +490,10 @@ import {
   type GameplaySettingsProjectBridgeApi,
 } from "./gameplaySettingsProjectBridge";
 import {
+  createInGameSettingsPackageProjectBridgeApi,
+  type InGameSettingsPackageProjectBridgeApi,
+} from "./inGameSettingsPackageProjectBridge";
+import {
   createChangeSetProjectBridgeApi,
   type ChangeSetProjectBridgeApi,
 } from "./changeSetProjectBridge";
@@ -923,6 +927,7 @@ export type ProjectBridge = {
   WorkspacePersonalStateProjectBridgeApi &
   OutputSafetyProjectBridgeApi &
   GameplaySettingsProjectBridgeApi &
+  InGameSettingsPackageProjectBridgeApi &
   ChangeSetProjectBridgeApi &
   SemanticExploreProjectBridgeApi &
   BalanceLabProjectBridgeApi &
@@ -1942,6 +1947,7 @@ export function createProjectBridge(
     ...createWorkspacePersonalStateProjectBridgeApi(transport),
     ...createOutputSafetyProjectBridgeApi(transport),
     ...createGameplaySettingsProjectBridgeApi(transport),
+    ...createInGameSettingsPackageProjectBridgeApi(transport),
     ...createChangeSetProjectBridgeApi(transport),
     ...createSemanticExploreProjectBridgeApi(transport),
     ...createBalanceLabProjectBridgeApi(transport),

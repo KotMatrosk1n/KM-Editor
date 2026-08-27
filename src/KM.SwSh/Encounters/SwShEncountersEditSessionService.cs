@@ -84,7 +84,6 @@ public sealed class SwShEncountersEditSessionService
             slotRecord,
             field,
             value,
-            validateCurrentLevelPair: true,
             diagnostics: diagnostics);
         if (pendingEdit is null)
         {
@@ -92,9 +91,19 @@ public sealed class SwShEncountersEditSessionService
         }
 
         var updatedSession = ReplacePendingEncounterEdit(currentSession, pendingEdit);
+        var projectedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        ValidatePendingLevelPairs(
+            loadedWorkflow,
+            projectedWorkflow,
+            updatedSession.PendingEdits,
+            diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
+        }
 
         return new SwShEncountersEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            projectedWorkflow,
             updatedSession,
             diagnostics);
     }
@@ -162,7 +171,6 @@ public sealed class SwShEncountersEditSessionService
                 slotRecord,
                 update.Field,
                 update.Value,
-                validateCurrentLevelPair: false,
                 diagnostics: diagnostics);
             if (pendingEdit is null)
             {
@@ -173,7 +181,11 @@ public sealed class SwShEncountersEditSessionService
             effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
-        ValidatePendingLevelPairs(loadedWorkflow, updatedSession.PendingEdits, diagnostics);
+        ValidatePendingLevelPairs(
+            loadedWorkflow,
+            effectiveWorkflow,
+            updatedSession.PendingEdits,
+            diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
@@ -196,10 +208,10 @@ public sealed class SwShEncountersEditSessionService
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditEncounters(project, workflow, diagnostics);
-        ValidatePendingLevelPairs(workflow, session.PendingEdits, diagnostics);
-        ValidateEncounterProbabilityTotals(workflowWithPendingEdits, session.PendingEdits, diagnostics);
-        ValidateNoEmptyWeightedSlots(workflowWithPendingEdits, session.PendingEdits, diagnostics);
-        ValidateEmptySlotForms(workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidatePendingLevelPairs(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidateEncounterProbabilityTotals(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidateNoEmptyWeightedSlots(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidateEmptySlotForms(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
 
         foreach (var edit in session.PendingEdits)
         {
@@ -484,111 +496,88 @@ public sealed class SwShEncountersEditSessionService
     }
 
     private static void ValidatePendingLevelPairs(
-        SwShEncountersWorkflow workflow,
+        SwShEncountersWorkflow sourceWorkflow,
+        SwShEncountersWorkflow projectedWorkflow,
         IEnumerable<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var levels = workflow.Tables.ToDictionary(
-            table => table.TableId,
-            table =>
-            {
-                var firstSlot = table.Slots.FirstOrDefault();
-                return new EncounterTableLevelState(table, firstSlot?.LevelMin ?? 0, firstSlot?.LevelMax ?? 0);
-            },
-            StringComparer.Ordinal);
-
-        foreach (var edit in edits.Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal)))
+        foreach (var (sourceTable, projectedTable) in GetTouchedEncounterTablePairs(
+                     sourceWorkflow,
+                     projectedWorkflow,
+                     edits))
         {
-            if (!SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
-                || !levels.TryGetValue(tableId, out var current)
-                || TryParseValue(edit.Field, edit.NewValue, new List<ValidationDiagnostic>()) is not { } value)
+            var sourceLevels = GetEncounterTableLevelState(sourceTable);
+            var projectedLevels = GetEncounterTableLevelState(projectedTable);
+            var sourceViolation = Math.Max(0, sourceLevels.LevelMin - sourceLevels.LevelMax);
+            var projectedViolation = Math.Max(0, projectedLevels.LevelMin - projectedLevels.LevelMax);
+            if (projectedViolation <= sourceViolation)
             {
                 continue;
             }
 
-            levels[tableId] = edit.Field switch
-            {
-                SwShEncountersWorkflowService.LevelMinField => current with { LevelMin = value },
-                SwShEncountersWorkflowService.LevelMaxField => current with { LevelMax = value },
-                _ => current,
-            };
-        }
-
-        foreach (var pair in levels.Where(pair => pair.Value.LevelMin > pair.Value.LevelMax))
-        {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter table {FormatEncounterTableContext(pair.Value.Table)} has minimum level {pair.Value.LevelMin} greater than maximum level {pair.Value.LevelMax}.",
+                $"Encounter table {FormatEncounterTableContext(projectedTable)} has minimum level {projectedLevels.LevelMin} greater than maximum level {projectedLevels.LevelMax}. Pending edits increase the invalid level gap from {sourceViolation} to {projectedViolation}.",
                 field: "level",
                 expected: "Min level less than or equal to max level"));
         }
     }
 
     private static void ValidateEncounterProbabilityTotals(
-        SwShEncountersWorkflow workflow,
+        SwShEncountersWorkflow sourceWorkflow,
+        SwShEncountersWorkflow projectedWorkflow,
         IEnumerable<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var touchedTableIds = edits
-            .Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal))
-            .Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
-                ? tableId
-                : null)
-            .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var tableId in touchedTableIds)
+        foreach (var (sourceTable, projectedTable) in GetTouchedEncounterTablePairs(
+                     sourceWorkflow,
+                     projectedWorkflow,
+                     edits))
         {
-            var table = workflow.Tables.FirstOrDefault(candidate =>
-                string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
-            if (table is null)
-            {
-                continue;
-            }
-
-            var totalProbability = table.Slots.Sum(slot => slot.Weight);
-            if (totalProbability == 100)
+            var sourceTotal = sourceTable.Slots.Sum(slot => slot.Weight);
+            var projectedTotal = projectedTable.Slots.Sum(slot => slot.Weight);
+            var sourceDeviation = Math.Abs(sourceTotal - 100);
+            var projectedDeviation = Math.Abs(projectedTotal - 100);
+            if (projectedDeviation <= sourceDeviation)
             {
                 continue;
             }
 
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter table {FormatEncounterTableContext(table)} has probabilities totaling {totalProbability}, but they must total 100.",
+                $"Encounter table {FormatEncounterTableContext(projectedTable)} has probabilities totaling {projectedTotal}, but they must total 100. Pending edits increase the difference from the source total of {sourceTotal}.",
                 field: SwShEncountersWorkflowService.ProbabilityField,
                 expected: "Slot probabilities total exactly 100"));
         }
     }
 
     private static void ValidateNoEmptyWeightedSlots(
-        SwShEncountersWorkflow workflow,
+        SwShEncountersWorkflow sourceWorkflow,
+        SwShEncountersWorkflow projectedWorkflow,
         IEnumerable<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var touchedTableIds = edits
-            .Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal))
-            .Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
-                ? tableId
-                : null)
-            .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var tableId in touchedTableIds)
+        foreach (var (sourceTable, projectedTable) in GetTouchedEncounterTablePairs(
+                     sourceWorkflow,
+                     projectedWorkflow,
+                     edits))
         {
-            var table = workflow.Tables.FirstOrDefault(candidate =>
-                string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
-            if (table is null)
-            {
-                continue;
-            }
+            var sourceSlots = sourceTable.Slots.ToDictionary(slot => slot.Slot);
 
-            foreach (var slot in table.Slots.Where(slot => slot.SpeciesId == 0 && slot.Weight > 0))
+            foreach (var slot in projectedTable.Slots.Where(slot => slot.SpeciesId == 0 && slot.Weight > 0))
             {
+                var sourceWeight = sourceSlots.TryGetValue(slot.Slot, out var sourceSlot)
+                    && sourceSlot.SpeciesId == 0
+                        ? sourceSlot.Weight
+                        : 0;
+                if (slot.Weight <= sourceWeight)
+                {
+                    continue;
+                }
+
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Encounter table {FormatEncounterTableContext(table)} slot {slot.Slot} is empty but has {slot.Weight}% probability.",
+                    $"Encounter table {FormatEncounterTableContext(projectedTable)} slot {slot.Slot} is empty but has {slot.Weight}% probability. Pending edits increase its empty-slot probability from {sourceWeight}%.",
                     field: SwShEncountersWorkflowService.SpeciesIdField,
                     expected: "Empty encounter slots must remain at 0% probability"));
             }
@@ -596,37 +585,66 @@ public sealed class SwShEncountersEditSessionService
     }
 
     private static void ValidateEmptySlotForms(
-        SwShEncountersWorkflow workflow,
+        SwShEncountersWorkflow sourceWorkflow,
+        SwShEncountersWorkflow projectedWorkflow,
         IEnumerable<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        foreach (var (sourceTable, projectedTable) in GetTouchedEncounterTablePairs(
+                     sourceWorkflow,
+                     projectedWorkflow,
+                     edits))
+        {
+            var sourceSlots = sourceTable.Slots.ToDictionary(slot => slot.Slot);
+
+            foreach (var slot in projectedTable.Slots.Where(slot => slot.SpeciesId == 0 && slot.Form != 0))
+            {
+                if (sourceSlots.TryGetValue(slot.Slot, out var sourceSlot)
+                    && sourceSlot.SpeciesId == 0
+                    && sourceSlot.Form != 0)
+                {
+                    continue;
+                }
+
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Encounter table {FormatEncounterTableContext(projectedTable)} slot {slot.Slot} is empty but still uses form {slot.Form}. Pending edits introduce an invalid empty-slot form.",
+                    field: SwShEncountersWorkflowService.FormField,
+                    expected: "Empty encounter slots must use form 0"));
+            }
+        }
+    }
+
+    private static IEnumerable<(SwShEncounterTableRecord Source, SwShEncounterTableRecord Projected)>
+        GetTouchedEncounterTablePairs(
+            SwShEncountersWorkflow sourceWorkflow,
+            SwShEncountersWorkflow projectedWorkflow,
+            IEnumerable<PendingEdit> edits)
+    {
+        var sourceTables = sourceWorkflow.Tables.ToDictionary(table => table.TableId, StringComparer.Ordinal);
+        var projectedTables = projectedWorkflow.Tables.ToDictionary(table => table.TableId, StringComparer.Ordinal);
         var touchedTableIds = edits
             .Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal))
             .Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
                 ? tableId
                 : null)
             .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+            .Distinct(StringComparer.Ordinal);
 
         foreach (var tableId in touchedTableIds)
         {
-            var table = workflow.Tables.FirstOrDefault(candidate =>
-                string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
-            if (table is null)
+            if (sourceTables.TryGetValue(tableId!, out var sourceTable)
+                && projectedTables.TryGetValue(tableId!, out var projectedTable))
             {
-                continue;
-            }
-
-            foreach (var slot in table.Slots.Where(slot => slot.SpeciesId == 0 && slot.Form != 0))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Encounter table {FormatEncounterTableContext(table)} slot {slot.Slot} is empty but still uses form {slot.Form}.",
-                    field: SwShEncountersWorkflowService.FormField,
-                    expected: "Empty encounter slots must use form 0"));
+                yield return (sourceTable, projectedTable);
             }
         }
+    }
+
+    private static EncounterTableLevelState GetEncounterTableLevelState(SwShEncounterTableRecord table)
+    {
+        var firstSlot = table.Slots.FirstOrDefault();
+        return new EncounterTableLevelState(firstSlot?.LevelMin ?? 0, firstSlot?.LevelMax ?? 0);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -635,7 +653,6 @@ public sealed class SwShEncountersEditSessionService
         SwShEncounterSlotRecord slot,
         string field,
         string value,
-        bool validateCurrentLevelPair,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
@@ -653,30 +670,6 @@ public sealed class SwShEncountersEditSessionService
 
         if (!ValidateSpeciesAvailability(workflow, normalizedField, parsedValue.Value, diagnostics))
         {
-            return null;
-        }
-
-        if (validateCurrentLevelPair
-            && normalizedField == SwShEncountersWorkflowService.LevelMinField
-            && parsedValue.Value > slot.LevelMax)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Encounter table {FormatEncounterSlotContext(table, slot)} cannot set minimum level to {parsedValue.Value} because the current maximum level is {slot.LevelMax}.",
-                field: normalizedField,
-                expected: "Min level less than or equal to max level"));
-            return null;
-        }
-
-        if (validateCurrentLevelPair
-            && normalizedField == SwShEncountersWorkflowService.LevelMaxField
-            && parsedValue.Value < slot.LevelMin)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Encounter table {FormatEncounterSlotContext(table, slot)} cannot set maximum level to {parsedValue.Value} because the current minimum level is {slot.LevelMin}.",
-                field: normalizedField,
-                expected: "Max level greater than or equal to min level"));
             return null;
         }
 
@@ -1165,8 +1158,5 @@ public sealed class SwShEncountersEditSessionService
             Expected: expected);
     }
 
-    private sealed record EncounterTableLevelState(
-        SwShEncounterTableRecord Table,
-        int LevelMin,
-        int LevelMax);
+    private sealed record EncounterTableLevelState(int LevelMin, int LevelMax);
 }

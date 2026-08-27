@@ -357,7 +357,8 @@ public sealed class OutputTransactionCoordinator
                                 ? OutputIntegrityClassification.KmOwnedStale
                                 : observation.State == owned.CurrentState
                                   || observation.IsOwnedAtOrAfter
-                                  && observation.Generation != runtimeMutable.MinimumGeneration
+                                  && (runtimeMutable.Kind == OutputRuntimeMutableKind.BooleanToggleListV1
+                                      || observation.Generation != runtimeMutable.MinimumGeneration)
                                     ? OutputIntegrityClassification.KmOwnedCurrent
                                     : OutputIntegrityClassification.Conflicted,
                             observation.State,
@@ -1826,15 +1827,9 @@ public sealed class OutputTransactionCoordinator
                     }
                 }
                 else if (owned!.RuntimeMutableDescriptor is not { } ownedRuntimeMutable
-                         || !ownedRuntimeMutable.HasSameIdentity(runtimeMutable)
-                         || ownedRuntimeMutable.MinimumGeneration is null
-                         || runtimeMutable.MinimumGeneration is { } mutationGeneration
-                         && ownedRuntimeMutable.MinimumGeneration is { } ownedGeneration
-                         && !OutputRuntimeMutableDescriptor.IsGenerationAtOrAfter(
-                             mutation.Kind == OutputMutationKind.Write
-                                 ? unchecked(mutationGeneration - 1)
-                                 : mutationGeneration,
-                             ownedGeneration))
+                         || !runtimeMutable.CanMutateOwnedDescriptor(
+                             ownedRuntimeMutable,
+                             mutation.Kind))
                 {
                     throw new OutputOwnershipConflictException(mutation.Path);
                 }
@@ -2482,7 +2477,7 @@ public sealed class OutputTransactionCoordinator
             }
 
             if (entry.Kind != OutputMutationKind.Write
-                || entry.RuntimeMutableDescriptor is not { MinimumGeneration: { } minimumGeneration } runtimeMutable)
+                || entry.RuntimeMutableDescriptor is not { } runtimeMutable)
             {
                 return await MarkRecoveryRequiredAsync(
                         journal,
@@ -2502,9 +2497,9 @@ public sealed class OutputTransactionCoordinator
                 {
                     State.Exists: true,
                     IsOwnedAtOrAfter: true,
-                    Generation: { } generation,
                 }
-                || generation == minimumGeneration)
+                || runtimeMutable.Kind == OutputRuntimeMutableKind.GameplaySettingsJournalV1
+                && observation.Generation == runtimeMutable.MinimumGeneration)
             {
                 return await MarkRecoveryRequiredAsync(
                         journal,
@@ -2517,10 +2512,8 @@ public sealed class OutputTransactionCoordinator
             finalizedEntries[index] = entry with
             {
                 Postimage = observation.State,
-                RuntimeMutableDescriptor = new OutputRuntimeMutableDescriptor(
-                    runtimeMutable.Kind,
-                    runtimeMutable.TitleId,
-                    generation),
+                RuntimeMutableDescriptor = runtimeMutable.WithObservedGeneration(
+                    observation.Generation),
             };
         }
 
@@ -2634,7 +2627,7 @@ public sealed class OutputTransactionCoordinator
                     fileDeleteEligible,
                     journal.TransactionId,
                     completedAtUtc,
-                    entry.RuntimeMutableDescriptor);
+                    entry.RuntimeMutableDescriptor?.AsOwnershipDescriptor());
             }
             else
             {
@@ -3231,10 +3224,9 @@ public sealed class OutputTransactionCoordinator
             {
                 State.Exists: true,
                 IsOwnedAtOrAfter: true,
-                Generation: { } observedGeneration,
             }
-                && entry.RuntimeMutableDescriptor?.MinimumGeneration is { } minimumGeneration
-                && observedGeneration != minimumGeneration;
+                && (entry.RuntimeMutableDescriptor?.Kind == OutputRuntimeMutableKind.BooleanToggleListV1
+                    || runtimeObservation.Generation != entry.RuntimeMutableDescriptor?.MinimumGeneration);
 
             var stagePath = entry.StageFileName is null
                 ? null
@@ -3573,8 +3565,7 @@ public sealed class OutputTransactionCoordinator
                 var mutableState = entry.Kind == OutputMutationKind.Write
                     ? entry.Postimage
                     : entry.Preimage;
-                if (mutableState.LengthBytes != GameplaySettingsJournal.JournalSize
-                    || entry.Kind == OutputMutationKind.Write && runtimeMutable.MinimumGeneration is null
+                if (!runtimeMutable.IsValidStateMetadata(mutableState, entry.Kind)
                     || entry.RestoredFileDeleteEligibility.HasValue
                     || !HasWholeFileOwnership(entry.OwnershipClaims))
                 {
@@ -3904,9 +3895,9 @@ public sealed class OutputTransactionCoordinator
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
-                bufferSize: GameplaySettingsJournal.JournalSize,
+                bufferSize: Math.Min(descriptor.MaximumObservedBytes, 16 * 1024),
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            if (stream.Length != GameplaySettingsJournal.JournalSize)
+            if (stream.Length is < 1 || stream.Length > descriptor.MaximumObservedBytes)
             {
                 var invalidState = await ComputeStreamStateAsync(
                         stream,
@@ -3920,12 +3911,12 @@ public sealed class OutputTransactionCoordinator
                     Generation: null);
             }
 
-            var bytes = new byte[GameplaySettingsJournal.JournalSize];
+            var bytes = new byte[checked((int)stream.Length)];
             await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
             var state = OutputFileState.Existing(
                 Convert.ToHexStringLower(SHA256.HashData(bytes)),
                 bytes.Length);
-            var isOwnedAtOrAfter = descriptor.IsOwnedAtOrAfter(bytes, gameFamily, out var generation);
+            var isOwnedAtOrAfter = descriptor.IsSemanticallyOwned(bytes, gameFamily, out var generation);
             paths.ValidateTarget(relativePath);
             return new RuntimeMutableTargetObservation(
                 state,
@@ -4321,6 +4312,8 @@ public sealed class OutputTransactionCoordinator
         tokens.Add(descriptor.MinimumGeneration?.ToString(
             "X16",
             System.Globalization.CultureInfo.InvariantCulture));
+        tokens.Add(descriptor.SemanticIdentity);
+        tokens.Add(descriptor.PreviousSemanticIdentity);
     }
 
     private static OutputStateRevision ComputeIntegrityRevision(
@@ -4460,6 +4453,8 @@ public sealed class OutputTransactionCoordinator
             yield return entry.RuntimeMutableDescriptor?.MinimumGeneration?.ToString(
                 "X16",
                 System.Globalization.CultureInfo.InvariantCulture);
+            yield return entry.RuntimeMutableDescriptor?.SemanticIdentity;
+            yield return entry.RuntimeMutableDescriptor?.PreviousSemanticIdentity;
             if (entry.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
             {
                 yield return "legacy-adoption-delete";

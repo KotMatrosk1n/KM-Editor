@@ -14,14 +14,21 @@ import {
   gameplaySettingsExperienceRateStepBasisPoints,
   gameplaySettingsMaximumExperienceRateBasisPoints
 } from '../../bridge/gameplaySettingsContracts';
+import type { InGameSettingsPackageState } from '../../bridge/inGameSettingsPackageContracts';
 import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import { useLocalization } from '../../localization';
 import './GameplaySettingsSection.css';
+import { InGameSettingsPackagePanel } from './InGameSettingsPackagePanel';
 
 type GameplaySettingsBridge = Pick<
   ProjectBridge,
-  'applyGameplaySettingsUpdate' | 'getGameplaySettings' | 'previewGameplaySettingsUpdate'
+  | 'applyGameplaySettingsUpdate'
+  | 'applyInGameSettingsPackage'
+  | 'getGameplaySettings'
+  | 'inspectInGameSettingsPackage'
+  | 'previewGameplaySettingsUpdate'
+  | 'previewInGameSettingsPackage'
 >;
 
 type GameplaySettingsSectionProps = {
@@ -87,6 +94,9 @@ export function GameplaySettingsSection({
   const [busy, setBusy] = useState<'apply' | 'load' | 'preview' | null>(null);
   const [messageKey, setMessageKey] = useState<string | null>(null);
   const [betaAcknowledged, setBetaAcknowledged] = useState(false);
+  const [inGamePackageDirty, setInGamePackageDirty] = useState(false);
+  const [inGamePackageState, setInGamePackageState] =
+    useState<InGameSettingsPackageState | null>(null);
   const actionGenerationRef = useRef(0);
   const draftGenerationRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -160,6 +170,8 @@ export function GameplaySettingsSection({
     previewRequestGenerationRef.current += 1;
     endApplyGuard();
     setBetaAcknowledged(false);
+    setInGamePackageDirty(false);
+    setInGamePackageState(null);
   }, [endApplyGuard, scopeKey]);
 
   const reportError = useCallback(
@@ -240,12 +252,18 @@ export function GameplaySettingsSection({
     [draft, snapshot]
   );
   const hasProtectedDraft = hasChanges || preview !== null;
+  const hasProtectedEditorState = hasProtectedDraft || inGamePackageDirty;
   useEffect(() => {
-    onDirtyChange?.(hasProtectedDraft);
+    onDirtyChange?.(hasProtectedEditorState);
     return () => onDirtyChange?.(false);
-  }, [hasProtectedDraft, onDirtyChange]);
+  }, [hasProtectedEditorState, onDirtyChange]);
   const editorIsReady = Boolean(
     stableScope && loadState && isEditableState(loadState.state) && snapshot && draft
+  );
+  const staticEditorLockedByPackage = Boolean(
+    stableScope &&
+      inGamePackageState !== 'unavailable' &&
+      inGamePackageState !== 'notInstalled'
   );
   const unavailableReason = stableScope
     ? loadState?.state ?? (busy === 'load' ? 'loading' : 'not-loaded')
@@ -265,9 +283,29 @@ export function GameplaySettingsSection({
     snapshot?.hasLevelCap,
     unavailableReason
   );
-  const canEditExperienceShare = editorIsReady && experienceShareCapability.available;
-  const canEditExperienceRate = editorIsReady && experienceRateCapability.available;
-  const canEditLevelCap = editorIsReady && levelCapCapability.available;
+  const canEditExperienceShare =
+    editorIsReady && !staticEditorLockedByPackage && experienceShareCapability.available;
+  const canEditExperienceRate =
+    editorIsReady && !staticEditorLockedByPackage && experienceRateCapability.available;
+  const canEditLevelCap =
+    editorIsReady && !staticEditorLockedByPackage && levelCapCapability.available;
+  const staticSettingsAreVanilla = Boolean(
+    editorIsReady &&
+      snapshot &&
+      draft &&
+      sameValues(snapshot.values, fallbackValues) &&
+      sameValues(draft, fallbackValues) &&
+      preview === null
+  );
+
+  useEffect(() => {
+    if (!staticEditorLockedByPackage) return;
+    draftGenerationRef.current += 1;
+    previewRequestGenerationRef.current += 1;
+    setDraft(snapshot?.values ?? null);
+    setPreview(null);
+    setBetaAcknowledged(false);
+  }, [snapshot, staticEditorLockedByPackage]);
 
   const updateDraft = useCallback((next: GameplaySettingsValues) => {
     draftGenerationRef.current += 1;
@@ -309,7 +347,8 @@ export function GameplaySettingsSection({
       !draft ||
       !hasChanges ||
       !betaAcknowledged ||
-      !canApply
+      !canApply ||
+      staticEditorLockedByPackage
     ) return;
     const requestScopeKey = scopeKey;
     const requestGeneration = ++previewRequestGenerationRef.current;
@@ -369,7 +408,8 @@ export function GameplaySettingsSection({
     reportError,
     scopeKey,
     snapshot,
-    stableScope
+    stableScope,
+    staticEditorLockedByPackage
   ]);
 
   useEffect(() => {
@@ -408,7 +448,13 @@ export function GameplaySettingsSection({
 
   const apply = useCallback(async () => {
     const requestScope = stableScope;
-    if (!requestScope || !preview || !canApply || !betaAcknowledged) return;
+    if (
+      !requestScope ||
+      !preview ||
+      !canApply ||
+      !betaAcknowledged ||
+      staticEditorLockedByPackage
+    ) return;
     if (isGameplaySettingsPreviewExpired(preview)) {
       setPreview(null);
       setMessageKey('gameplaySettings.diagnostic.reviewExpired');
@@ -517,7 +563,8 @@ export function GameplaySettingsSection({
     preview,
     reportError,
     scopeKey,
-    stableScope
+    stableScope,
+    staticEditorLockedByPackage
   ]);
 
   const reset = useCallback(() => {
@@ -613,6 +660,29 @@ export function GameplaySettingsSection({
             })}
           </span>
           <span>{t('gameplaySettings.generation', { generation: snapshot.generation })}</span>
+        </div>
+      ) : null}
+
+      {staticEditorLockedByPackage ? (
+        <div className="gameplay-settings__warning" role="status">
+          <strong>
+            {t(
+              inGamePackageState === 'installed' || inGamePackageState === 'upgradeAvailable'
+                ? 'gameplaySettings.inGamePackage.staticLockInstalledTitle'
+                : inGamePackageState === null
+                  ? 'gameplaySettings.inGamePackage.staticLockCheckingTitle'
+                  : 'gameplaySettings.inGamePackage.staticLockAttentionTitle'
+            )}
+          </strong>
+          <p>
+            {t(
+              inGamePackageState === 'installed' || inGamePackageState === 'upgradeAvailable'
+                ? 'gameplaySettings.inGamePackage.staticLockInstalledDescription'
+                : inGamePackageState === null
+                  ? 'gameplaySettings.inGamePackage.staticLockCheckingDescription'
+                  : 'gameplaySettings.inGamePackage.staticLockAttentionDescription'
+            )}
+          </p>
         </div>
       ) : null}
 
@@ -714,7 +784,7 @@ export function GameplaySettingsSection({
       <label className="gameplay-settings__acknowledgement">
         <input
           checked={betaAcknowledged}
-          disabled={!editorIsReady || busy !== null}
+          disabled={!editorIsReady || busy !== null || staticEditorLockedByPackage}
           onChange={(event) => {
             const isAcknowledged = event.currentTarget.checked;
             setBetaAcknowledged(isAcknowledged);
@@ -730,7 +800,7 @@ export function GameplaySettingsSection({
       <div className="gameplay-settings__actions">
         <button
           className="secondary-button"
-          disabled={busy !== null || !canSetVanillaValues}
+          disabled={busy !== null || staticEditorLockedByPackage || !canSetVanillaValues}
           onClick={setVanillaValues}
           type="button"
         >
@@ -751,7 +821,8 @@ export function GameplaySettingsSection({
             !canApply ||
             !hasChanges ||
             !betaAcknowledged ||
-            !editorIsReady
+            !editorIsReady ||
+            staticEditorLockedByPackage
           }
           onClick={(event) => {
             focusReviewOnCompletionRef.current = event.detail === 0;
@@ -807,6 +878,7 @@ export function GameplaySettingsSection({
                 busy !== null ||
                 !canApply ||
                 !betaAcknowledged ||
+                staticEditorLockedByPackage ||
                 isGameplaySettingsPreviewExpired(preview)
               }
               onClick={() => void apply()}
@@ -818,6 +890,23 @@ export function GameplaySettingsSection({
             </button>
           </div>
         </div>
+      ) : null}
+
+      {stableScope ? (
+        <InGameSettingsPackagePanel
+          armCriticalWriteGuard={armCriticalWriteGuard}
+          bridge={bridge}
+          canApply={canApply}
+          onApplied={onApplied}
+          onApplyBusyChange={onApplyBusyChange}
+          onDirtyChange={setInGamePackageDirty}
+          onError={onError}
+          onRecoveryRequired={onRecoveryRequired}
+          onStateChange={setInGamePackageState}
+          scope={stableScope}
+          staticEditorBusy={busy !== null || hasProtectedDraft}
+          staticSettingsAreVanilla={staticSettingsAreVanilla}
+        />
       ) : null}
     </section>
   );

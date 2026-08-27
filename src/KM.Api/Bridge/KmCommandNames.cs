@@ -225,6 +225,9 @@ public static class KmCommandNames
     public const string GetGameplaySettings = "gameplaySettings.get";
     public const string PreviewGameplaySettingsUpdate = "gameplaySettings.update.preview";
     public const string ApplyGameplaySettingsUpdate = "gameplaySettings.update.apply";
+    public const string InspectInGameSettingsPackage = "inGameSettingsPackage.inspect";
+    public const string PreviewInGameSettingsPackage = "inGameSettingsPackage.preview";
+    public const string ApplyInGameSettingsPackage = "inGameSettingsPackage.apply";
     public const string ReconcileOutputRecovery = "output.recovery.reconcile";
     public const string ScanOutputIntegrity = "output.integrity.scan";
     public const string PreviewOutputCleanup = "output.cleanup.preview";

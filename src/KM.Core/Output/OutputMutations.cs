@@ -210,6 +210,78 @@ public sealed record OutputMutation
             verifiedBaseDeleteAuthority: null);
     }
 
+    public static OutputMutation WriteRuntimeMutableToggleBootstrap(
+        RelativeOutputPath path,
+        ReadOnlyMemory<byte> postimage,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        GameFamily gameFamily,
+        ulong titleId,
+        string? ownershipOutputMode = null)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreimage);
+        if (expectedPreimage.Exists)
+        {
+            throw new ArgumentException(
+                "A runtime-mutable cheat selection bootstrap requires a missing reviewed preimage.",
+                nameof(expectedPreimage));
+        }
+
+        var descriptor = OutputRuntimeMutableDescriptor.ValidateToggleBootstrap(
+            path,
+            gameFamily,
+            titleId,
+            postimage.Span);
+        return CreateWrite(
+            path,
+            postimage,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            ownershipActor: null,
+            restoredFileDeleteEligibility: null,
+            descriptor,
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
+    }
+
+    public static OutputMutation WriteRuntimeMutableToggleTransition(
+        RelativeOutputPath path,
+        ReadOnlyMemory<byte> reviewedPreimage,
+        ReadOnlyMemory<byte> postimage,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        GameFamily gameFamily,
+        ulong titleId,
+        string? ownershipOutputMode = null)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreimage);
+        if (!expectedPreimage.Exists || ComputeState(reviewedPreimage.Span) != expectedPreimage)
+        {
+            throw new ArgumentException(
+                "A runtime-mutable cheat selection update requires the exact reviewed preimage bytes.",
+                nameof(reviewedPreimage));
+        }
+
+        var descriptor = OutputRuntimeMutableDescriptor.ValidateToggleTransition(
+            path,
+            gameFamily,
+            titleId,
+            reviewedPreimage.Span,
+            postimage.Span);
+        return CreateWrite(
+            path,
+            postimage,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            ownershipActor: null,
+            restoredFileDeleteEligibility: null,
+            descriptor,
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
+    }
+
     private static OutputMutation CreateWrite(
         RelativeOutputPath path,
         ReadOnlyMemory<byte> postimage,
@@ -322,6 +394,38 @@ public sealed record OutputMutation
         }
 
         var descriptor = OutputRuntimeMutableDescriptor.ValidateExplicitDeletion(
+            path,
+            gameFamily,
+            titleId,
+            reviewedPreimage.Span);
+        return CreateDelete(
+            path,
+            expectedPreimage,
+            ownershipClaims,
+            ownershipOutputMode,
+            descriptor,
+            legacyAdoptionDeleteAuthority: null,
+            verifiedBaseDeleteAuthority: null);
+    }
+
+    public static OutputMutation DeleteRuntimeMutableToggle(
+        RelativeOutputPath path,
+        ReadOnlyMemory<byte> reviewedPreimage,
+        OutputFileState expectedPreimage,
+        IEnumerable<OwnedTarget> ownershipClaims,
+        GameFamily gameFamily,
+        ulong titleId,
+        string? ownershipOutputMode = null)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreimage);
+        if (!expectedPreimage.Exists || ComputeState(reviewedPreimage.Span) != expectedPreimage)
+        {
+            throw new ArgumentException(
+                "A runtime-mutable cheat selection delete requires the exact reviewed preimage bytes.",
+                nameof(reviewedPreimage));
+        }
+
+        var descriptor = OutputRuntimeMutableDescriptor.ValidateToggleDeletion(
             path,
             gameFamily,
             titleId,
@@ -876,8 +980,7 @@ public sealed record OutputApplyPlan
                 var state = mutation.Kind == OutputMutationKind.Write
                     ? mutation.PlannedPostimage
                     : mutation.ExpectedPreimage;
-                if (state.LengthBytes != GameplaySettingsJournal.JournalSize
-                    || mutation.Kind == OutputMutationKind.Write && runtimeMutable.MinimumGeneration is null
+                if (!runtimeMutable.IsValidStateMetadata(state, mutation.Kind)
                     || mutation.RestoredFileDeleteEligibility.HasValue
                     || !mutation.OwnershipClaims.Any(
                         claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))

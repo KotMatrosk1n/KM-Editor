@@ -50,6 +50,7 @@
 .gameplay-settings__review > p,
 .gameplay-settings__empty p,
 .gameplay-settings__setup p,
+.gameplay-settings__warning p,
 .gameplay-settings__beta-notice p {
   color: var(--color-text-muted);
   margin: 0.35rem 0 0;

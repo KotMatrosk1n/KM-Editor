@@ -19,6 +19,9 @@ public static class BridgeErrorCodes
     public const string GameplaySettingsUnavailable = "KM-GAMEPLAY-SETTINGS-UNAVAILABLE";
     public const string GameplaySettingsStateStale = "KM-GAMEPLAY-SETTINGS-STATE-STALE";
     public const string GameplaySettingsReviewExpired = "KM-GAMEPLAY-SETTINGS-REVIEW-EXPIRED";
+    public const string InGameSettingsPackageUnavailable = "KM-IN-GAME-SETTINGS-PACKAGE-UNAVAILABLE";
+    public const string InGameSettingsPackageStateStale = "KM-IN-GAME-SETTINGS-PACKAGE-STATE-STALE";
+    public const string InGameSettingsPackageReviewExpired = "KM-IN-GAME-SETTINGS-PACKAGE-REVIEW-EXPIRED";
     public const string ProjectRelocationMismatch = "KM-PROJECT-RELOCATION-MISMATCH";
     public const string ProjectRelocationConflict = "KM-PROJECT-RELOCATION-CONFLICT";
     public const string MissingCommand = "KM-BRIDGE-MISSING-COMMAND";

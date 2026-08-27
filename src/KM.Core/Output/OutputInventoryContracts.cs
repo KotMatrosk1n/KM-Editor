@@ -89,8 +89,10 @@ public sealed record OutputOwnershipRecord
         if (runtimeMutableDescriptor is not null)
         {
             runtimeMutableDescriptor.ValidateIdentity(path, GameFamily);
-            if (runtimeMutableDescriptor.MinimumGeneration is null
-                || currentState.LengthBytes != GameplaySettingsJournal.JournalSize
+            if (!runtimeMutableDescriptor.IsValidStateMetadata(
+                    currentState,
+                    OutputMutationKind.Write)
+                || runtimeMutableDescriptor.PreviousSemanticIdentity is not null
                 || !Claims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))
             {
                 throw new ArgumentException(

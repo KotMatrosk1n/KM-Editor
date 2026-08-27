@@ -47,6 +47,19 @@ public static class GameplayBundleDeploymentPlanner
                 [CreateWholeFileClaim(path, gameFamily)]));
         }
 
+        foreach (var component in bundle.RuntimeMutableComponents
+                     .OrderBy(component => component.Key, StringComparer.Ordinal))
+        {
+            var path = new RelativeOutputPath(component.Key);
+            mutations.Add(OutputMutation.WriteRuntimeMutableToggleBootstrap(
+                path,
+                component.Value.AsMemory(),
+                reviewedByPath[path.CanonicalKey],
+                [CreateWholeFileClaim(path, gameFamily)],
+                gameFamily,
+                bundle.Manifest.TitleId));
+        }
+
         var manifestPath = new RelativeOutputPath(
             $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest");
         mutations.Add(OutputMutation.Write(

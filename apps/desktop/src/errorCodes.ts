@@ -101,6 +101,12 @@ export const gameplaySettingsErrorCodes = {
   unavailable: "KM-GAMEPLAY-SETTINGS-UNAVAILABLE",
 } as const satisfies Record<string, KmErrorCode>;
 
+export const inGameSettingsPackageErrorCodes = {
+  reviewExpired: "KM-IN-GAME-SETTINGS-PACKAGE-REVIEW-EXPIRED",
+  stateStale: "KM-IN-GAME-SETTINGS-PACKAGE-STATE-STALE",
+  unavailable: "KM-IN-GAME-SETTINGS-PACKAGE-UNAVAILABLE",
+} as const satisfies Record<string, KmErrorCode>;
+
 export const swshBattleCafeRewardsDiagnosticCodes = {
   applied: "KM-SWSH-BATTLE-CAFE-APPLIED",
   draftStaged: "KM-SWSH-BATTLE-CAFE-DRAFT-STAGED",

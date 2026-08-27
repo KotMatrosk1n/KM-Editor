@@ -67,9 +67,12 @@ import {
 } from './svEncounterTables';
 import {
   applyTrainerWorkflowDelta,
+  canonicalizeTrainerPartySlotDrafts,
+  createTrainerPartySourceSpeciesIndex,
   isTrainerSlotOccupiedForMaxIvs,
   orderTrainerFieldUpdates,
   reconcileTrainerSlotMaxIvDrafts,
+  removeTrainerPendingEditWithDependencies,
   trainerSlotNeedsMaxIvDraft
 } from './features/trainers/trainerBatchUpdates';
 import {
@@ -273,6 +276,7 @@ import {
   type NativeUpdate
 } from './desktopServices';
 import {
+  createCacheWarmupProgressSnapshot,
   maxConsecutiveNoProgressWarmupAttempts,
   updateWarmupNoProgressBudget
 } from './cacheWarmupPolicy';
@@ -473,6 +477,7 @@ import {
 } from './features/output-safety/useOutputSafetyController';
 import {
   type ApplyProjectRelocationResponse,
+  type OutputRecoveryStatus,
   type OutputSafetyScope
 } from './bridge/outputSafetyContracts';
 import {
@@ -530,11 +535,13 @@ import { AnalysisLoadingSettings } from './features/workbench/AnalysisLoadingSet
 import { AnalysisPreparationPanel } from './features/workbench/AnalysisPreparationPanel';
 import {
   createAnalysisPreparationProgress,
+  observeOutputRecoveryRevision,
   preparationProgressFromQueryStatuses,
   readAnalysisLoadingMode,
   writeAnalysisLoadingMode,
   type AnalysisLoadingMode,
-  type AnalysisPreparationProgress
+  type AnalysisPreparationProgress,
+  type ObservedOutputRecoveryRevision
 } from './features/workbench/analysisPreparation';
 import { useAnalysisPreparation } from './features/workbench/useAnalysisPreparation';
 import {
@@ -3416,42 +3423,64 @@ export function App({
     scope: outputSafetyScope
   });
   const outputRecoveryRevision = outputSafety.recoveryStatus?.revision ?? null;
-  const observedSemanticOutputRevisionRef = useRef(outputRecoveryRevision);
+  const observedSemanticOutputRevisionRef = useRef<ObservedOutputRecoveryRevision>({
+    revision: null,
+    scopeKey: null
+  });
   useEffect(() => {
-    if (observedSemanticOutputRevisionRef.current === outputRecoveryRevision) {
-      return;
-    }
-    observedSemanticOutputRevisionRef.current = outputRecoveryRevision;
-    if (outputRecoveryRevision !== null) {
+    const observation = observeOutputRecoveryRevision(
+      observedSemanticOutputRevisionRef.current,
+      outputSafetyScope?.projectId ?? null,
+      outputRecoveryRevision
+    );
+    observedSemanticOutputRevisionRef.current = observation.next;
+    if (observation.shouldInvalidateAnalysis) {
       semanticExploreController.invalidate();
       projectSourceRevision.refresh();
     }
   }, [
     outputRecoveryRevision,
+    outputSafetyScope?.projectId,
     projectSourceRevision.refresh,
     semanticExploreController.invalidate
   ]);
   const notifySemanticOutputMutation = useCallback(async () => {
+    let refreshedRecovery: OutputRecoveryStatus | null = null;
     try {
-      await outputSafety.notifyOutputMutation();
+      refreshedRecovery = await outputSafety.notifyOutputMutation();
     } finally {
+      if (refreshedRecovery && outputSafetyScope?.projectId) {
+        observedSemanticOutputRevisionRef.current = {
+          revision: refreshedRecovery.revision,
+          scopeKey: outputSafetyScope.projectId
+        };
+      }
       semanticExploreController.invalidate();
       projectSourceRevision.refresh();
     }
   }, [
     outputSafety.notifyOutputMutation,
+    outputSafetyScope?.projectId,
     projectSourceRevision.refresh,
     semanticExploreController.invalidate
   ]);
   const notifySemanticOutputFailure = useCallback(async (error: unknown) => {
+    let refreshedRecovery: OutputRecoveryStatus | null = null;
     try {
-      await outputSafety.notifyOutputFailure(error);
+      refreshedRecovery = await outputSafety.notifyOutputFailure(error);
     } finally {
+      if (refreshedRecovery && outputSafetyScope?.projectId) {
+        observedSemanticOutputRevisionRef.current = {
+          revision: refreshedRecovery.revision,
+          scopeKey: outputSafetyScope.projectId
+        };
+      }
       semanticExploreController.invalidate();
       projectSourceRevision.refresh();
     }
   }, [
     outputSafety.notifyOutputFailure,
+    outputSafetyScope?.projectId,
     projectSourceRevision.refresh,
     semanticExploreController.invalidate
   ]);
@@ -3603,8 +3632,11 @@ export function App({
     writeAnalysisLoadingMode(nextMode);
   }, []);
   const analysisPreparationScopeKey =
-    activeProjectId && selectedGame
-      ? `${activeProjectId}:${selectedGame}:${projectSourceRevision.sourceObservationToken ?? 'pending'}`
+    activeProjectId &&
+    selectedGame &&
+    projectSourceRevision.status === 'ready' &&
+    projectSourceRevision.sourceObservationToken
+      ? `${activeProjectId}:${selectedGame}:${projectSourceRevision.sourceObservationToken}`
       : null;
   const semanticPreparationProgress = !activeProjectId
     ? createAnalysisPreparationProgress('semanticProject', 'waiting')
@@ -3613,7 +3645,7 @@ export function App({
         semanticExploreScope ? semanticExploreController.capabilities.status : 'idle'
       ]);
   const analysisPreparation = useAnalysisPreparation({
-    deferBackgroundWork: isBusy || isSvCacheWarming || hasCriticalWriteOperation,
+    deferBackgroundWork: isBusy || hasCriticalWriteOperation,
     mode: analysisLoadingMode,
     scopeKey: analysisPreparationScopeKey,
     semanticProgress: semanticPreparationProgress
@@ -3681,6 +3713,27 @@ export function App({
     sessionId: string;
     valuesByMoveId: MoveBaselineValuesByMoveId;
   } | null>(null);
+  const loadedTrainerSourceSpeciesBySlotRef = useRef<ReadonlyMap<string, number>>(new Map());
+  const trainerEditBaselineRef = useRef<{
+    sessionId: string;
+    sourceSpeciesBySlot: ReadonlyMap<string, number>;
+  } | null>(null);
+  const ensureTrainerEditBaseline = useCallback(
+    (session: EditSession | null, workflow: TrainersWorkflow) => {
+      if (!session || trainerEditBaselineRef.current?.sessionId === session.sessionId) {
+        return;
+      }
+
+      trainerEditBaselineRef.current = {
+        sessionId: session.sessionId,
+        sourceSpeciesBySlot:
+          loadedTrainerSourceSpeciesBySlotRef.current.size > 0
+            ? loadedTrainerSourceSpeciesBySlotRef.current
+            : createTrainerPartySourceSpeciesIndex(workflow)
+      };
+    },
+    []
+  );
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
   const swShPlacementCatalogRevisionRef = useRef<string | null>(null);
@@ -4430,6 +4483,8 @@ export function App({
   const clearLoadedWorkflowData = useCallback(() => {
     workflowLoadGenerationRef.current.invalidateAll();
     lazyWorkflowRetryCountRef.current.clear();
+    loadedTrainerSourceSpeciesBySlotRef.current = new Map();
+    trainerEditBaselineRef.current = null;
     workflowRecencyRef.current = [];
     resetLoadedWorkflowData();
     setSvModMergerWorkflow(null);
@@ -4518,6 +4573,7 @@ export function App({
     editSessionMutationQueueRef.current = Promise.resolve();
     pendingEditSessionMutationTokensRef.current.clear();
     setIsEditSessionMutating(false);
+    trainerEditBaselineRef.current = null;
     editSessionRef.current = null;
     clearVisibleChangePlanRefs();
     setEditSession(null);
@@ -9025,7 +9081,11 @@ export function App({
       'trainers',
       setIsTrainersLoading,
       () => bridge.loadTrainersWorkflow({ paths }),
-      (response) => setTrainersWorkflow(response.workflow),
+      (response) => {
+        loadedTrainerSourceSpeciesBySlotRef.current =
+          createTrainerPartySourceSpeciesIndex(response.workflow);
+        setTrainersWorkflow(response.workflow);
+      },
       () => canCommitGameTextWorkflow(paths.gameTextLanguage)
     );
   };
@@ -12574,7 +12634,13 @@ export function App({
         return;
       }
 
-      const nextPendingEdits = editSession.pendingEdits.filter((_, index) => index !== editIndex);
+      const nextPendingEdits = removeTrainerPendingEditWithDependencies(
+        editSession.pendingEdits,
+        editIndex,
+        trainerEditBaselineRef.current?.sessionId === editSession.sessionId
+          ? trainerEditBaselineRef.current.sourceSpeciesBySlot
+          : loadedTrainerSourceSpeciesBySlotRef.current
+      );
       const mutationToken = editSessionMutationTokenRef.current + 1;
       editSessionMutationTokenRef.current = mutationToken;
       pendingEditSessionMutationTokensRef.current.add(mutationToken);
@@ -13342,6 +13408,7 @@ export function App({
             if (!incomingWorkflow) {
               throw new Error('The Trainers workflow must be loaded before staging edits.');
             }
+            ensureTrainerEditBaseline(session, incomingWorkflow);
             const response = await bridge.updateTrainerFields({
               paths,
               session,
@@ -14217,6 +14284,7 @@ export function App({
           if (!incomingWorkflow) {
             throw new Error('The Trainers workflow must be loaded before staging edits.');
           }
+          ensureTrainerEditBaseline(session, incomingWorkflow);
           const updateResponse = await bridge.updateTrainerField({
             field,
             paths: createProjectPaths(draftPaths),
@@ -14277,6 +14345,7 @@ export function App({
           if (!incomingWorkflow) {
             throw new Error('The Trainers workflow must be loaded before staging edits.');
           }
+          ensureTrainerEditBaseline(session, incomingWorkflow);
           let nextSession = session;
           let nextWorkflow = incomingWorkflow;
           let nextDiagnostics: ApiDiagnostic[] = [];
@@ -14451,6 +14520,11 @@ export function App({
 
       const response = await runEditSessionMutation(
         async (session) => {
+          const incomingWorkflow = useWorkbenchStore.getState().trainersWorkflow;
+          if (!incomingWorkflow) {
+            throw new Error('The Trainers workflow must be loaded before staging edits.');
+          }
+          ensureTrainerEditBaseline(session, incomingWorkflow);
           const previewResponse = await bridge.previewRowClipboardPaste({
             envelope,
             mode,
@@ -17239,6 +17313,8 @@ export function App({
         async () => {
           const response = await bridge.loadTrainersWorkflow({ paths });
           if (canCommitRefresh()) {
+            loadedTrainerSourceSpeciesBySlotRef.current =
+              createTrainerPartySourceSpeciesIndex(response.workflow);
             setTrainersWorkflow(response.workflow);
           }
         }
@@ -18165,6 +18241,28 @@ export function App({
                   snapshot={analysisPreparation.snapshot}
                 />
               ) : null}
+              cachePreparation={
+                activeProjectId &&
+                isProjectCacheGame(selectedGame) ? (
+                  <SvCacheProgressPanel
+                    cacheTitle={
+                      isSwordShieldGame(selectedGame)
+                        ? t('settings.cache.swsh.title')
+                        : getTrinityCacheTitle(selectedGame)
+                    }
+                    isWarming={isSvCacheWarming}
+                    selectedGame={selectedGame}
+                    sourceState={
+                      !health
+                        ? 'checking'
+                        : hasValidProjectCacheSource(selectedGame, health)
+                          ? 'ready'
+                          : 'setupRequired'
+                    }
+                    status={svCacheStatus}
+                  />
+                ) : null
+              }
               balanceLab={
                 semanticExploreScope ? (
                   <BalanceLabRuntime
@@ -20408,12 +20506,12 @@ function HealthSection({
   const visiblePathFields = pathFields.filter((pathField) =>
     isProjectPathFieldVisible(pathField, selectedGame)
   );
-  const canShowSvCacheProgress = Boolean(
-    health &&
-      isProjectCacheGame(selectedGame) &&
-      hasValidProjectCacheSource(selectedGame, health) &&
-      svCacheStatus
-  );
+  const canShowSvCacheProgress = isProjectCacheGame(selectedGame);
+  const cacheSourceState: CacheProgressSourceState = !health
+    ? 'checking'
+    : hasValidProjectCacheSource(selectedGame, health)
+      ? 'ready'
+      : 'setupRequired';
   const cacheTitle = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.title')
     : getTrinityCacheTitle(selectedGame);
@@ -20563,11 +20661,12 @@ function HealthSection({
           ) : null}
         </div>
 
-        {canShowSvCacheProgress && svCacheStatus ? (
+        {canShowSvCacheProgress ? (
           <SvCacheProgressPanel
             cacheTitle={cacheTitle}
             isWarming={isSvCacheWarming}
             selectedGame={selectedGame}
+            sourceState={cacheSourceState}
             status={svCacheStatus}
           />
         ) : null}
@@ -20616,41 +20715,64 @@ function SvCacheProgressPanel({
   cacheTitle,
   isWarming,
   selectedGame,
+  sourceState,
   status
 }: {
   cacheTitle: string;
   isWarming: boolean;
   selectedGame: ProjectGame;
-  status: TrinityCacheStatus;
+  sourceState: CacheProgressSourceState;
+  status: TrinityCacheStatus | null;
 }) {
   const { formatLocale, t, translateLiteral } = useLocalization();
-  const isMinimal = status.settings.mode === 'minimal';
+  const effectiveStatus = sourceState === 'ready' ? status : null;
+  const isChecking =
+    sourceState === 'checking' || (sourceState === 'ready' && status === null);
+  const isSetupRequired = sourceState === 'setupRequired';
+  const isMinimal = effectiveStatus?.settings.mode === 'minimal';
   const isSwordShieldCache = isSwordShieldGame(selectedGame);
-  const percent = Math.max(0, Math.min(100, status.progressPercent));
+  const progress = createCacheWarmupProgressSnapshot(
+    effectiveStatus?.warmupCompleted ?? 0,
+    effectiveStatus?.warmupTotal ?? 0
+  );
+  const {
+    completedUnitCount,
+    isReady,
+    percent,
+    totalUnitCount
+  } = progress;
   const isSessionOnlyReady =
-    isSwordShieldCache && !isMinimal && percent >= 100 && status.cacheSizeBytes === 0;
-  const phaseLabel = isMinimal
-    ? 'Off'
-    : isWarming
-      ? 'Building'
-      : percent >= 100
-        ? 'Ready'
-        : status.warmupCompleted > 0
-          ? 'Partially built'
-          : 'Ready to build';
-  const message = isSwordShieldCache
-    ? isMinimal
-      ? t('settings.cache.swsh.status.off')
-      : isWarming
-        ? t('settings.cache.swsh.status.building')
-        : isSessionOnlyReady
-          ? t('settings.cache.swsh.status.readySessionOnly')
-          : percent >= 100
-            ? t('settings.cache.swsh.status.ready')
-            : t('settings.cache.swsh.status.readyToBuild')
-    : isMinimal
-      ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
-      : status.message;
+    isSwordShieldCache && !isMinimal && isReady && effectiveStatus?.cacheSizeBytes === 0;
+  const phaseLabel = isSetupRequired
+    ? 'Setup required'
+    : isChecking
+      ? 'Checking'
+      : isMinimal
+        ? 'Off'
+        : isWarming
+          ? 'Building'
+          : isReady
+            ? 'Ready'
+            : completedUnitCount > 0
+              ? 'Partially built'
+              : 'Ready to build';
+  const message = isSetupRequired
+    ? `Complete the required ${cacheTitle} source path in Project Setup.`
+    : isChecking
+      ? `Reading the current ${cacheTitle} status...`
+      : isSwordShieldCache
+        ? isMinimal
+          ? t('settings.cache.swsh.status.off')
+          : isWarming
+            ? t('settings.cache.swsh.status.building')
+            : isSessionOnlyReady
+              ? t('settings.cache.swsh.status.readySessionOnly')
+              : isReady
+                ? t('settings.cache.swsh.status.ready')
+                : t('settings.cache.swsh.status.readyToBuild')
+        : isMinimal
+          ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
+          : effectiveStatus!.message;
 
   return (
     <div className="sv-cache-progress-panel" role="status">
@@ -20667,6 +20789,11 @@ function SvCacheProgressPanel({
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={percent}
+          aria-valuetext={isSetupRequired
+            ? `${cacheTitle} setup required`
+            : isChecking
+              ? `Checking ${cacheTitle} status`
+              : `${completedUnitCount} of ${totalUnitCount}`}
           className="work-progress-track"
           role="progressbar"
         >
@@ -20676,25 +20803,37 @@ function SvCacheProgressPanel({
       <dl className="work-progress-detail">
         <div>
           <dt>Mode</dt>
-          <dd>{formatSvCacheModeLabel(status.settings.mode)}</dd>
+          <dd>
+            {isSetupRequired
+              ? 'Setup required'
+              : effectiveStatus
+                ? formatSvCacheModeLabel(effectiveStatus.settings.mode)
+                : 'Checking'}
+          </dd>
         </div>
         {!isMinimal ? (
           <div>
             <dt>Progress</dt>
             <dd>
-              {percent}% ({status.warmupCompleted} of {status.warmupTotal})
+              {isSetupRequired
+                ? 'Waiting for Project Setup'
+                : isChecking
+                  ? 'Checking'
+                  : `${percent}% (${completedUnitCount} of ${totalUnitCount})`}
             </dd>
           </div>
         ) : null}
         <div>
           <dt>{t('settings.cache.size.label')}</dt>
           <dd>
-            {formatCacheSizeLabel(
-              status.cacheSizeBytes,
-              formatLocale,
-              t('settings.cache.size.none'),
-              translateLiteral('Unavailable')
-            )}
+            {effectiveStatus
+              ? formatCacheSizeLabel(
+                  effectiveStatus.cacheSizeBytes,
+                  formatLocale,
+                  t('settings.cache.size.none'),
+                  translateLiteral('Unavailable')
+                )
+              : translateLiteral('Unavailable')}
           </dd>
         </div>
       </dl>
@@ -20702,6 +20841,8 @@ function SvCacheProgressPanel({
     </div>
   );
 }
+
+type CacheProgressSourceState = 'checking' | 'ready' | 'setupRequired';
 
 type ItemsSectionProps = {
   editSession: EditSession | null;
@@ -28766,13 +28907,43 @@ function SelectedTrainerPanel({
         : {},
     [defaultContextualPokemonFields, selectedPokemon]
   );
+  const canonicalPokemonDraftsByTrainerSlot = useMemo(() => {
+    if (!trainer) {
+      return pokemonDraftsByTrainerSlot;
+    }
+
+    const canonicalRecords = { ...pokemonDraftsByTrainerSlot };
+    for (const pokemon of trainer.team) {
+      const recordKey = `${trainer.trainerId}:${pokemon.slot}`;
+      const storedDrafts = canonicalRecords[recordKey];
+      if (!storedDrafts) {
+        continue;
+      }
+
+      const defaults = createTrainerDrafts(defaultContextualPokemonFields, (field) =>
+        getEditablePokemonFieldValue(pokemon, field)
+      );
+      const canonicalDrafts = canonicalizeTrainerPartySlotDrafts(
+        { ...defaults, ...storedDrafts },
+        defaults,
+        pokemon.speciesId
+      );
+      if (areFieldDraftsEqual(canonicalDrafts, defaults)) {
+        delete canonicalRecords[recordKey];
+      } else {
+        canonicalRecords[recordKey] = canonicalDrafts;
+      }
+    }
+
+    return canonicalRecords;
+  }, [defaultContextualPokemonFields, pokemonDraftsByTrainerSlot, trainer]);
   const selectedPokemonDraftKey =
     trainer && selectedPokemon ? `${trainer.trainerId}:${selectedPokemon.slot}` : null;
   const trainerDrafts = trainer
     ? trainerDraftsByTrainerId[trainer.trainerId.toString()] ?? trainerDraftDefaults
     : {};
   const pokemonDrafts = selectedPokemonDraftKey
-    ? pokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
+    ? canonicalPokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
     : {};
   const projectedSelectedPokemonSpeciesId = selectedPokemon
     ? (getProjectedTrainerPokemonFieldValue(
@@ -28880,8 +29051,8 @@ function SelectedTrainerPanel({
     [pokemonFields, selectedPokemonFormOptionContext]
   );
   const projectedTrainerHighestLevel = useMemo(
-    () => getProjectedTrainerHighestLevel(trainer, pokemonFields, pokemonDraftsByTrainerSlot),
-    [pokemonDraftsByTrainerSlot, pokemonFields, trainer]
+    () => getProjectedTrainerHighestLevel(trainer, pokemonFields, canonicalPokemonDraftsByTrainerSlot),
+    [canonicalPokemonDraftsByTrainerSlot, pokemonFields, trainer]
   );
   const contextualTrainerFields = useMemo(
     () =>
@@ -28913,7 +29084,7 @@ function SelectedTrainerPanel({
     }
     return {
       partyBySlot: Object.fromEntries(
-        Object.entries(pokemonDraftsByTrainerSlot)
+        Object.entries(canonicalPokemonDraftsByTrainerSlot)
           .filter(([key]) => key.startsWith(trainerPartyDraftPrefix))
           .map(([key, fields]) => [
             key.slice(trainerPartyDraftPrefix.length),
@@ -28925,7 +29096,7 @@ function SelectedTrainerPanel({
       }
     };
   }, [
-    pokemonDraftsByTrainerSlot,
+    canonicalPokemonDraftsByTrainerSlot,
     trainerDraftRecordKey,
     trainerDraftsByTrainerId,
     trainerPartyDraftPrefix
@@ -28949,17 +29120,31 @@ function SelectedTrainerPanel({
             ([key]) => !key.startsWith(trainerPartyDraftPrefix)
           )
         );
-        if (payload) {
+        if (payload && trainer) {
           for (const [slot, fields] of Object.entries(payload.partyBySlot)) {
-            if (Object.keys(fields).length > 0) {
-              nextDrafts[`${trainerPartyDraftPrefix}${slot}`] = { ...fields };
+            const slotNumber = /^\d+$/u.test(slot) ? Number.parseInt(slot, 10) : -1;
+            const pokemon = trainer.team.find((candidate) => candidate.slot === slotNumber);
+            if (!pokemon || Object.keys(fields).length === 0) {
+              continue;
+            }
+
+            const defaults = createTrainerDrafts(defaultContextualPokemonFields, (field) =>
+              getEditablePokemonFieldValue(pokemon, field)
+            );
+            const canonicalDrafts = canonicalizeTrainerPartySlotDrafts(
+              { ...defaults, ...fields },
+              defaults,
+              pokemon.speciesId
+            );
+            if (!areFieldDraftsEqual(canonicalDrafts, defaults)) {
+              nextDrafts[`${trainerPartyDraftPrefix}${slot}`] = canonicalDrafts;
             }
           }
         }
         return nextDrafts;
       });
     },
-    [trainerDraftRecordKey, trainerPartyDraftPrefix]
+    [defaultContextualPokemonFields, trainer, trainerDraftRecordKey, trainerPartyDraftPrefix]
   );
   const trainerDurableDraft = useBoundOrdinaryEditorDraft({
     adapter: ordinaryTrainerDraftAdapter,
@@ -28984,22 +29169,34 @@ function SelectedTrainerPanel({
   );
   const rebaseTrainerDraft = useCallback(
     (stalePayload: OrdinaryTrainerDraftPayload): OrdinaryTrainerDraftPayload => {
-      const currentSlots = new Set(
-        (trainer?.team ?? []).map((pokemon) => pokemon.slot.toString())
-      );
+      const partyBySlot: OrdinaryTrainerDraftPayload['partyBySlot'] = {};
+      for (const pokemon of trainer?.team ?? []) {
+        const slot = pokemon.slot.toString();
+        const fields = stalePayload.partyBySlot[slot];
+        if (!fields) {
+          continue;
+        }
+
+        const defaults = createTrainerDrafts(defaultContextualPokemonFields, (field) =>
+          getEditablePokemonFieldValue(pokemon, field)
+        );
+        const writableFields = Object.fromEntries(
+          Object.entries(fields).filter(([field]) =>
+            writableTrainerPokemonFieldNames.has(field)
+          )
+        );
+        const canonicalDrafts = canonicalizeTrainerPartySlotDrafts(
+          { ...defaults, ...writableFields },
+          defaults,
+          pokemon.speciesId
+        );
+        if (!areFieldDraftsEqual(canonicalDrafts, defaults)) {
+          partyBySlot[slot] = canonicalDrafts;
+        }
+      }
+
       return {
-        partyBySlot: Object.fromEntries(
-          Object.entries(stalePayload.partyBySlot)
-            .filter(([slot]) => currentSlots.has(slot))
-            .map(([slot, fields]) => [
-              slot,
-              Object.fromEntries(
-                Object.entries(fields).filter(([field]) =>
-                  writableTrainerPokemonFieldNames.has(field)
-                )
-              )
-            ])
-        ),
+        partyBySlot,
         trainerFields: Object.fromEntries(
           Object.entries(stalePayload.trainerFields).filter(([field]) =>
             writableTrainerFieldNames.has(field)
@@ -29007,7 +29204,12 @@ function SelectedTrainerPanel({
         )
       };
     },
-    [trainer, writableTrainerFieldNames, writableTrainerPokemonFieldNames]
+    [
+      defaultContextualPokemonFields,
+      trainer,
+      writableTrainerFieldNames,
+      writableTrainerPokemonFieldNames
+    ]
   );
   const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const canToggleAiFlags =
@@ -29090,7 +29292,7 @@ function SelectedTrainerPanel({
       return false;
     }
 
-    return trainer.team.some(
+    return selectedPokemon.speciesId <= 0 && trainer.team.some(
       (pokemon) => pokemon.slot < selectedPokemon.slot && pokemon.speciesId === 0
     );
   }, [selectedPokemon, trainer]);
@@ -29103,7 +29305,7 @@ function SelectedTrainerPanel({
   const contextMenuPokemonDrafts =
     contextMenuPokemonDraftKey === null
       ? undefined
-      : pokemonDraftsByTrainerSlot[contextMenuPokemonDraftKey];
+      : canonicalPokemonDraftsByTrainerSlot[contextMenuPokemonDraftKey];
   const contextMenuPokemonValues =
     contextMenuPokemon === null
       ? null
@@ -29115,6 +29317,7 @@ function SelectedTrainerPanel({
   const contextMenuTargetBlockedByPreviousSlot = Boolean(
     trainer &&
       contextMenuPokemon &&
+      contextMenuPokemon.speciesId <= 0 &&
       trainer.team.some(
         (pokemon) => pokemon.slot < contextMenuPokemon.slot && pokemon.speciesId === 0
       )
@@ -29224,18 +29427,18 @@ function SelectedTrainerPanel({
       createTrainerMaxIvUpdates(
         trainer,
         contextualPokemonFields,
-        pokemonDraftsByTrainerSlot
+        canonicalPokemonDraftsByTrainerSlot
       ),
-    [contextualPokemonFields, pokemonDraftsByTrainerSlot, trainer]
+    [canonicalPokemonDraftsByTrainerSlot, contextualPokemonFields, trainer]
   );
   const hasTrainerMaxIvDraftChanges = useMemo(
     () =>
       hasTrainerNonMaxIvDrafts(
-        pokemonDraftsByTrainerSlot,
+        canonicalPokemonDraftsByTrainerSlot,
         trainer,
         contextualPokemonFields
       ),
-    [contextualPokemonFields, pokemonDraftsByTrainerSlot, trainer]
+    [canonicalPokemonDraftsByTrainerSlot, contextualPokemonFields, trainer]
   );
   const canMaxTrainerIvs =
     trainer !== null &&
@@ -29247,7 +29450,7 @@ function SelectedTrainerPanel({
   useRegisterEditorDraftDirty(
     'trainers',
     countFieldDraftRecords(trainerDraftsByTrainerId) > 0 ||
-      countFieldDraftRecords(pokemonDraftsByTrainerSlot) > 0
+      countFieldDraftRecords(canonicalPokemonDraftsByTrainerSlot) > 0
   );
 
   const closePartySlotContextMenu = useCallback(() => {
@@ -29287,14 +29490,28 @@ function SelectedTrainerPanel({
   }, [trainer, trainerDraftDefaults]);
 
   useEffect(() => {
-    if (!selectedPokemonDraftKey) {
+    if (!selectedPokemonDraftKey || !selectedPokemon) {
       return;
     }
 
-    setPokemonDraftsByTrainerSlot((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, selectedPokemonDraftKey, pokemonDraftDefaults)
-    );
-  }, [pokemonDraftDefaults, selectedPokemonDraftKey]);
+    setPokemonDraftsByTrainerSlot((currentDrafts) => {
+      const storedDrafts = currentDrafts[selectedPokemonDraftKey];
+      if (!storedDrafts) {
+        return currentDrafts;
+      }
+
+      return setFieldDraftRecord(
+        currentDrafts,
+        selectedPokemonDraftKey,
+        canonicalizeTrainerPartySlotDrafts(
+          { ...pokemonDraftDefaults, ...storedDrafts },
+          pokemonDraftDefaults,
+          selectedPokemon.speciesId
+        ),
+        pokemonDraftDefaults
+      );
+    });
+  }, [pokemonDraftDefaults, selectedPokemon, selectedPokemonDraftKey]);
 
   const stageTrainerDrafts = async () => {
     if (!trainer) {
@@ -29827,7 +30044,9 @@ function SelectedTrainerPanel({
               <div className="trainer-party-card-grid" aria-label="Trainer party Pokemon">
                 {trainer.team.map((pokemon) => {
                   const cardDrafts =
-                    pokemonDraftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {};
+                    canonicalPokemonDraftsByTrainerSlot[
+                      `${trainer.trainerId}:${pokemon.slot}`
+                    ] ?? {};
                   const hasCardDrafts = Object.keys(cardDrafts).length > 0;
                   const projectedPokemon = getProjectedTrainerPokemonCardIdentity(
                     pokemon,
@@ -30157,7 +30376,11 @@ function SelectedTrainerPanel({
                                   setFieldDraftRecord(
                                     currentDrafts,
                                     selectedPokemonDraftKey,
-                                    nextDrafts,
+                                    canonicalizeTrainerPartySlotDrafts(
+                                      nextDrafts,
+                                      pokemonDraftDefaults,
+                                      selectedPokemon.speciesId
+                                    ),
                                     pokemonDraftDefaults
                                   )
                                 );
@@ -30784,7 +31007,11 @@ function getProjectedTrainerHighestLevel(
 
   return Math.max(
     ...trainer.team.map((pokemon) => {
-      const drafts = draftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {};
+      const drafts = canonicalizeTrainerPokemonDrafts(
+        pokemon,
+        fields,
+        draftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {}
+      );
       const speciesId =
         getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName) ??
         pokemon.speciesId;
@@ -30817,7 +31044,11 @@ function createTrainerMaxIvUpdates(
 
   return trainer.team
     .filter((pokemon) => {
-      const drafts = draftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {};
+      const drafts = canonicalizeTrainerPokemonDrafts(
+        pokemon,
+        fields,
+        draftsByTrainerSlot[`${trainer.trainerId}:${pokemon.slot}`] ?? {}
+      );
       return (
         pokemon.speciesId > 0 &&
         isProjectedTrainerPokemonSlotOccupied(pokemon, fields, drafts)
@@ -30847,17 +31078,28 @@ function reconcileTrainerMaxIvDrafts(
 
   for (const pokemon of trainer.team) {
     const recordKey = `${trainer.trainerId}:${pokemon.slot}`;
-    const currentDrafts = nextRecords[recordKey];
-    if (
-      !currentDrafts ||
-      !isProjectedTrainerPokemonSlotOccupied(pokemon, fields, currentDrafts)
-    ) {
+    const storedDrafts = nextRecords[recordKey];
+    if (!storedDrafts) {
       continue;
     }
 
     const currentDefaults = createTrainerDrafts(fields, (field) =>
       getEditablePokemonFieldValue(pokemon, field)
     );
+    const currentDrafts = canonicalizeTrainerPartySlotDrafts(
+      { ...currentDefaults, ...storedDrafts },
+      currentDefaults,
+      pokemon.speciesId
+    );
+    if (!isProjectedTrainerPokemonSlotOccupied(pokemon, fields, currentDrafts)) {
+      nextRecords = setFieldDraftRecord(
+        nextRecords,
+        recordKey,
+        currentDrafts,
+        currentDefaults
+      );
+      continue;
+    }
     const { defaults: nextDefaults, drafts: nextDrafts } =
       reconcileTrainerSlotMaxIvDrafts(
         currentDrafts,
@@ -30886,10 +31128,12 @@ function hasTrainerNonMaxIvDrafts(
 
   return trainer.team
     .some((pokemon) => {
-      const drafts = records[`${trainer.trainerId}:${pokemon.slot}`];
-      if (drafts === undefined) {
+      const storedDrafts = records[`${trainer.trainerId}:${pokemon.slot}`];
+      if (storedDrafts === undefined) {
         return false;
       }
+
+      const drafts = canonicalizeTrainerPokemonDrafts(pokemon, fields, storedDrafts);
 
       return trainerSlotNeedsMaxIvDraft(
         pokemon.speciesId,
@@ -30909,6 +31153,21 @@ function isProjectedTrainerPokemonSlotOccupied(
   return isTrainerSlotOccupiedForMaxIvs(
     pokemon.speciesId,
     getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName)
+  );
+}
+
+function canonicalizeTrainerPokemonDrafts(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts: Readonly<Record<string, string>>
+) {
+  const defaults = createTrainerDrafts(fields, (field) =>
+    getEditablePokemonFieldValue(pokemon, field)
+  );
+  return canonicalizeTrainerPartySlotDrafts(
+    { ...defaults, ...drafts },
+    defaults,
+    pokemon.speciesId
   );
 }
 

@@ -51,6 +51,10 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<OutputCheckpointCoverageDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<GameplaySettingsStateDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GameplaySettingsApplyOutcomeDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageStateDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageOperationDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageTargetOperationDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageApplyOutcomeDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<EncounterCompatibilityPolicyDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<FashionCatalogFileDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<ProjectRelocationDocumentStatusDto>(JsonNamingPolicy.CamelCase));

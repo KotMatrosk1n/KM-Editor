@@ -47,6 +47,7 @@ internal sealed class SvTrainersEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = trainersWorkflowService.Load(project);
+        currentSession = CanonicalizePendingTrainerEdits(loadedWorkflow, currentSession);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -78,16 +79,31 @@ internal sealed class SvTrainersEditSessionService
             return new SvTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = NormalizeSourceEquivalentTrainerEdits(
+        var sourcePokemonSlotOccupied = IsSourcePokemonSlotOccupied(loadedWorkflow, pendingEdit);
+        var updatedSession = CanonicalizePendingTrainerEdits(
             loadedWorkflow,
             ReplacePendingTrainerEdit(
                 currentSession,
                 pendingEdit,
-                IsSourcePokemonSlotOccupied(loadedWorkflow, pendingEdit)));
-        return new SvTrainersEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
-            updatedSession,
-            diagnostics);
+                sourcePokemonSlotOccupied));
+        if (IsNewPokemonAdditionDiscarded(
+                pendingEdit,
+                sourcePokemonSlotOccupied,
+                updatedSession))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Trainer Pokemon slots must be filled in order. Fill the previous slot before adding this Pokemon.",
+                SvEditSessionSupport.TrainersDomain,
+                field: SvTrainersWorkflowService.SpeciesIdField,
+                expected: "Contiguous trainer Pokemon slots"));
+            return new SvTrainersEditResult(workflow, currentSession, diagnostics);
+        }
+        var projectedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        ValidateFinalTeamOrder(loadedWorkflow, projectedWorkflow, updatedSession.PendingEdits, diagnostics);
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? new SvTrainersEditResult(workflow, currentSession, diagnostics)
+            : new SvTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public SvTrainersEditResult UpdateFields(
@@ -101,6 +117,7 @@ internal sealed class SvTrainersEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = trainersWorkflowService.Load(project);
+        currentSession = CanonicalizePendingTrainerEdits(loadedWorkflow, currentSession);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -117,7 +134,7 @@ internal sealed class SvTrainersEditSessionService
         var updatedSession = currentSession;
         var effectiveWorkflow = workflow;
         foreach (var update in TrainerFieldUpdateOrdering.IdentityFirst(
-                     updates,
+                     RemoveDependentsOfBatchClears(updates),
                      static update => update.Field,
                      SvTrainersWorkflowService.SpeciesIdField,
                      SvTrainersWorkflowService.FormField))
@@ -169,12 +186,12 @@ internal sealed class SvTrainersEditSessionService
             return new SvTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
-        updatedSession = NormalizeSourceEquivalentTrainerEdits(loadedWorkflow, updatedSession);
-
-        return new SvTrainersEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
-            updatedSession,
-            diagnostics);
+        updatedSession = CanonicalizePendingTrainerEdits(loadedWorkflow, updatedSession);
+        var projectedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        ValidateFinalTeamOrder(loadedWorkflow, projectedWorkflow, updatedSession.PendingEdits, diagnostics);
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? new SvTrainersEditResult(workflow, currentSession, diagnostics)
+            : new SvTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -193,7 +210,7 @@ internal sealed class SvTrainersEditSessionService
             SvEditSessionSupport.TrainersDomain,
             diagnostics);
 
-        var effectiveSession = NormalizeSourceEquivalentTrainerEdits(workflow, session);
+        var effectiveSession = CanonicalizePendingTrainerEdits(workflow, session);
         var effectiveWorkflow = workflow;
         foreach (var edit in effectiveSession.PendingEdits)
         {
@@ -204,6 +221,8 @@ internal sealed class SvTrainersEditSessionService
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
             }
         }
+
+        ValidateFinalTeamOrder(workflow, effectiveWorkflow, effectiveSession.PendingEdits, diagnostics);
 
         if (effectiveSession.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -262,10 +281,8 @@ internal sealed class SvTrainersEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session, outputMode);
-        var effectiveSession = currentPlan.EffectivePendingEdits is { } effectivePendingEdits
-            ? session with { PendingEdits = effectivePendingEdits }
-            : session;
+        var effectiveSession = Validate(paths, session).Session;
+        var currentPlan = CreateChangePlan(paths, effectiveSession, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -306,11 +323,6 @@ internal sealed class SvTrainersEditSessionService
             foreach (var edit in effectiveSession.PendingEdits)
             {
                 ApplyEdit(rows, edit, moveResolver, diagnostics);
-            }
-
-            foreach (var row in rows)
-            {
-                row.NormalizeEmptyPokemon();
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -408,15 +420,6 @@ internal sealed class SvTrainersEditSessionService
                 return null;
             }
 
-            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-            ValidateTeamOrder(
-                OverlayTrainerPokemon(trainer, slot.Value, normalizedField, parsedValue.Value),
-                diagnostics);
-            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) != errorCount)
-            {
-                return null;
-            }
-
             return SvEditSessionSupport.CreatePendingEdit(
                 SvEditSessionSupport.TrainersDomain,
                 $"Set {trainer.Name} slot {slot.Value} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -487,38 +490,66 @@ internal sealed class SvTrainersEditSessionService
         return session with { PendingEdits = pendingEdits };
     }
 
-    private static EditSession NormalizeSourceEquivalentTrainerEdits(
+    private static EditSession CanonicalizePendingTrainerEdits(
         SvTrainersWorkflow sourceWorkflow,
         EditSession session)
     {
-        var normalizedSession = session;
-        foreach (var edit in session.PendingEdits.Where(edit => string.Equals(
-                     edit.Domain,
-                     SvEditSessionSupport.TrainersDomain,
-                     StringComparison.Ordinal)))
-        {
-            if (int.TryParse(
-                    edit.NewValue,
-                    NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture,
-                    out var value)
-                && GetSourceTrainerFieldValue(sourceWorkflow, edit) == value)
-            {
-                normalizedSession = RemoveExactPendingTrainerEdit(normalizedSession, edit);
-            }
-        }
+        var canonicalSession = TrainerPendingEditCanonicalizer.Canonicalize(
+            session,
+            SvEditSessionSupport.TrainersDomain,
+            SvTrainersWorkflowService.SpeciesIdField,
+            SvTrainersWorkflowService.FormField,
+            IsPokemonField,
+            ResolvePokemonSlotIdentity,
+            trainerId => ResolveSourceTrainerSlots(sourceWorkflow, trainerId),
+            edit => GetSourceTrainerFieldValue(sourceWorkflow, edit));
 
-        return normalizedSession;
-    }
-
-    private static EditSession RemoveExactPendingTrainerEdit(EditSession session, PendingEdit pendingEdit)
-    {
-        return session with
+        return canonicalSession with
         {
-            PendingEdits = session.PendingEdits
-                .Where(edit => !IsSameTrainerEdit(edit, pendingEdit))
+            PendingEdits = canonicalSession.PendingEdits
+                .Where(edit => !string.Equals(
+                        edit.Domain,
+                        SvEditSessionSupport.TrainersDomain,
+                        StringComparison.Ordinal)
+                    || !int.TryParse(
+                        edit.NewValue,
+                        NumberStyles.AllowLeadingSign,
+                        CultureInfo.InvariantCulture,
+                        out var value)
+                    || GetSourceTrainerFieldValue(sourceWorkflow, edit) != value)
                 .ToArray(),
         };
+    }
+
+    private static IReadOnlyList<SvTrainerFieldUpdate> RemoveDependentsOfBatchClears(
+        IReadOnlyList<SvTrainerFieldUpdate> updates)
+    {
+        var clearedSlots = updates
+            .Where(update => update.Slot is not null
+                && string.Equals(
+                    update.Field?.Trim(),
+                    SvTrainersWorkflowService.SpeciesIdField,
+                    StringComparison.Ordinal))
+            .GroupBy(update => (update.TrainerId, Slot: update.Slot!.Value))
+            .Select(group => group.Last())
+            .Where(update => int.TryParse(
+                update.Value,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out var speciesId)
+                && speciesId == 0)
+            .Select(update => (update.TrainerId, Slot: update.Slot!.Value))
+            .ToHashSet();
+
+        return updates
+            .Where(update => update.Slot is null
+                || !clearedSlots.Contains((update.TrainerId, update.Slot.Value))
+                || string.Equals(
+                    update.Field?.Trim(),
+                    SvTrainersWorkflowService.SpeciesIdField,
+                    StringComparison.Ordinal)
+                || !IsPokemonField(update.Field?.Trim()))
+            .ToArray();
     }
 
     private static int? GetSourceTrainerFieldValue(
@@ -598,11 +629,51 @@ internal sealed class SvTrainersEditSessionService
         SvTrainersWorkflow sourceWorkflow,
         PendingEdit pendingEdit)
     {
-        return TryParseTeamRecordId(pendingEdit.RecordId, out var trainerId, out var slot)
-            && sourceWorkflow.Trainers
-                .FirstOrDefault(candidate => candidate.TrainerId == trainerId)?
-                .Team.FirstOrDefault(candidate => candidate.Slot == slot)?
-                .SpeciesId > 0;
+        var identity = ResolvePokemonSlotIdentity(pendingEdit);
+        return identity is not null
+            && ResolveSourceTrainerSlots(sourceWorkflow, identity.Value.TrainerId)?
+                .GetValueOrDefault(identity.Value.Slot) == true;
+    }
+
+    private static bool IsNewPokemonAdditionDiscarded(
+        PendingEdit pendingEdit,
+        bool sourcePokemonSlotOccupied,
+        EditSession canonicalSession)
+    {
+        return !sourcePokemonSlotOccupied
+            && string.Equals(
+                pendingEdit.Field,
+                SvTrainersWorkflowService.SpeciesIdField,
+                StringComparison.Ordinal)
+            && int.TryParse(
+                pendingEdit.NewValue,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out var speciesId)
+            && speciesId > 0
+            && canonicalSession.PendingEdits.All(edit => !TargetsSameTrainerPokemonSlot(edit, pendingEdit)
+                || !string.Equals(
+                    edit.Field,
+                    SvTrainersWorkflowService.SpeciesIdField,
+                    StringComparison.Ordinal));
+    }
+
+    private static TrainerPokemonSlotIdentity? ResolvePokemonSlotIdentity(PendingEdit pendingEdit)
+    {
+        if (!TryParseTeamRecordId(pendingEdit.RecordId, out var trainerId, out var slot))
+        {
+            return null;
+        }
+
+        return new TrainerPokemonSlotIdentity(trainerId, slot);
+    }
+
+    private static IReadOnlyDictionary<int, bool>? ResolveSourceTrainerSlots(
+        SvTrainersWorkflow sourceWorkflow,
+        int trainerId)
+    {
+        var trainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+        return trainer?.Team.ToDictionary(pokemon => pokemon.Slot, pokemon => pokemon.SpeciesId > 0);
     }
 
     private static bool TargetsSameTrainerPokemonSlot(PendingEdit edit, PendingEdit candidate)
@@ -611,13 +682,6 @@ internal sealed class SvTrainersEditSessionService
             && string.Equals(candidate.Domain, SvEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
             && string.Equals(edit.RecordId, candidate.RecordId, StringComparison.Ordinal)
             && IsPokemonField(edit.Field);
-    }
-
-    private static bool IsSameTrainerEdit(PendingEdit candidate, PendingEdit pendingEdit)
-    {
-        return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
-            && string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
-            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
     }
 
     private static void ValidatePendingEdit(
@@ -719,12 +783,6 @@ internal sealed class SvTrainersEditSessionService
             return;
         }
 
-        if (parsedValue is not null && pokemonSlot is not null)
-        {
-            ValidateTeamOrder(
-                OverlayTrainerPokemon(trainer, pokemonSlot.Value, edit.Field, parsedValue.Value),
-                diagnostics);
-        }
     }
 
     private static SvTrainersWorkflow OverlayPendingEdits(SvTrainersWorkflow workflow, IEnumerable<PendingEdit> edits)
@@ -933,6 +991,59 @@ internal sealed class SvTrainersEditSessionService
         }
     }
 
+    private static void ValidateFinalTeamOrder(
+        SvTrainersWorkflow sourceWorkflow,
+        SvTrainersWorkflow projectedWorkflow,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var trainerIds = edits
+            .Where(edit => string.Equals(
+                edit.Field,
+                SvTrainersWorkflowService.SpeciesIdField,
+                StringComparison.Ordinal))
+            .Select(edit => TryParseTeamRecordId(edit.RecordId, out var trainerId, out _) ? trainerId : -1)
+            .Where(trainerId => trainerId >= 0)
+            .Distinct();
+
+        foreach (var trainerId in trainerIds)
+        {
+            var sourceTrainer = sourceWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+            var projectedTrainer = projectedWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+            if (sourceTrainer is not null
+                && projectedTrainer is not null
+                && GetTeamOrderViolations(projectedTrainer)
+                    .Except(GetTeamOrderViolations(sourceTrainer))
+                    .Any())
+            {
+                ValidateTeamOrder(projectedTrainer, diagnostics);
+            }
+        }
+    }
+
+    private static IReadOnlySet<(int EmptySlot, int OccupiedSlot)> GetTeamOrderViolations(
+        SvTrainerRecord trainer)
+    {
+        var violations = new HashSet<(int EmptySlot, int OccupiedSlot)>();
+        var emptySlots = new List<int>();
+        foreach (var pokemon in trainer.Team.OrderBy(candidate => candidate.Slot))
+        {
+            if (pokemon.SpeciesId <= 0)
+            {
+                emptySlots.Add(pokemon.Slot);
+            }
+            else
+            {
+                foreach (var emptySlot in emptySlots)
+                {
+                    violations.Add((emptySlot, pokemon.Slot));
+                }
+            }
+        }
+
+        return violations;
+    }
+
     private static SvTrainerRecord WithTeraTarget(SvTrainerRecord trainer)
     {
         return trainer with
@@ -983,6 +1094,13 @@ internal sealed class SvTrainersEditSessionService
                     SvEditSessionSupport.TrainersDomain,
                     field: "slot",
                     expected: "Existing source trainer Pokemon slot"));
+                return;
+            }
+
+            if (string.Equals(edit.Field, SvTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal)
+                && value == 0)
+            {
+                row.ClearPokemon(slot);
                 return;
             }
 
@@ -1336,14 +1454,16 @@ internal sealed class SvTrainersEditSessionService
             return pokemon;
         }
 
-        public void NormalizeEmptyPokemon()
+        public void ClearPokemon(int slot)
         {
-            Pokemon = Pokemon
-                .Take(MaximumPartySize)
-                .Concat(Enumerable.Repeat<PokemonRow?>(null, MaximumPartySize))
-                .Take(MaximumPartySize)
-                .Select(pokemon => pokemon is null || (int)pokemon.DevId == 0 ? null : pokemon)
-                .ToArray();
+            var slots = Pokemon.Take(MaximumPartySize).ToArray();
+            if (slots.Length < MaximumPartySize)
+            {
+                Array.Resize(ref slots, MaximumPartySize);
+            }
+
+            slots[slot] = null;
+            Pokemon = slots;
         }
 
         public Offset<global::trainer.TrdataMain> Write(FlatBufferBuilder builder)

@@ -322,32 +322,36 @@ internal static class ZaLabels
             return string.Create(CultureInfo.InvariantCulture, $"Hyperspace Trainer {number}");
         }
 
-        var mainMissionMatch = Regex.Match(
+        var storyEventMatch = Regex.Match(
             raw,
-            @"^Ev_m(?<mission>\d+)_(?<step>\d+)(?:_(?<variant>[a-z0-9_]+))?$",
+            @"^Ev_m(?<chapter>\d+)(?:_(?<tail>[a-z0-9_]+))?$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (mainMissionMatch.Success)
+        if (storyEventMatch.Success)
         {
-            var mission = mainMissionMatch.Groups["mission"].Value.PadLeft(2, '0');
-            var step = FormatNumberToken(mainMissionMatch.Groups["step"].Value);
-            var variant = mainMissionMatch.Groups["variant"].Success
-                ? $" {FormatTrainerTokenSequence(mainMissionMatch.Groups["variant"].Value)}"
-                : string.Empty;
-            return PrefixTrainerClass($"Mission {mission} Step {step}{variant}", trainerClass);
+            // Ev_mNN is a story chapter namespace. It is not the player-facing
+            // main-mission number, so never present it as one.
+            var chapter = FormatNumberToken(storyEventMatch.Groups["chapter"].Value);
+            var tail = FormatTrainerEventTail(storyEventMatch.Groups["tail"]);
+            return PrefixTrainerClass($"Story Chapter Event {chapter}{tail}", trainerClass);
         }
 
-        var sideMissionMatch = Regex.Match(
+        var sideEventMatch = Regex.Match(
             raw,
-            @"^Ev_sub_(?<mission>\d+)_(?<step>\d+)(?:_(?<variant>[a-z0-9_]+))?$",
+            @"^Ev_sub_(?<internalId>\d+)(?:_(?<tail>[a-z0-9_]+))?$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (sideMissionMatch.Success)
+        if (sideEventMatch.Success)
         {
-            var mission = FormatNumberToken(sideMissionMatch.Groups["mission"].Value);
-            var step = FormatNumberToken(sideMissionMatch.Groups["step"].Value);
-            var variant = sideMissionMatch.Groups["variant"].Success
-                ? $" {FormatTrainerTokenSequence(sideMissionMatch.Groups["variant"].Value)}"
-                : string.Empty;
-            return PrefixTrainerClass($"Side Mission {mission} Step {step}{variant}", trainerClass);
+            var internalIdToken = sideEventMatch.Groups["internalId"].Value;
+            var missionReference = int.TryParse(
+                    internalIdToken,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var internalId)
+                && ZaMissionCatalog.TryGetSideMissionByInternalId(internalId, out var mission)
+                    ? mission.DisplayReference
+                    : $"Side Mission Event (internal ID {FormatNumberToken(internalIdToken)})";
+            var tail = FormatTrainerEventTail(sideEventMatch.Groups["tail"]);
+            return PrefixTrainerClass($"{missionReference}{tail}", trainerClass);
         }
 
         var infiniteMatch = Regex.Match(
@@ -385,6 +389,31 @@ internal static class ZaLabels
             " ",
             value.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(FormatTrainerToken));
+    }
+
+    private static string FormatTrainerEventTail(Group tailGroup)
+    {
+        if (!tailGroup.Success || string.IsNullOrWhiteSpace(tailGroup.Value))
+        {
+            return string.Empty;
+        }
+
+        var tokens = tailGroup.Value.Split(
+            '_',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var prefix = int.TryParse(
+            tokens[0],
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out _)
+                ? " Step "
+                : " ";
+        return $"{prefix}{FormatTrainerTokenSequence(tailGroup.Value)}";
     }
 
     private static string FormatTrainerToken(string token)
