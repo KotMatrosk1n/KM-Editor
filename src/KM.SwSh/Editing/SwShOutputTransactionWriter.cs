@@ -10,7 +10,8 @@ namespace KM.SwSh.Editing;
 
 internal static class SwShOutputTransactionWriter
 {
-    internal const int MaximumFilesPerTransaction = OutputLimits.MaximumMutationsPerApply;
+    internal const int MaximumFilesPerTransaction = OutputLimits.StandardMaximumMutationsPerApply;
+    internal const int MaximumFpsPatchFilesPerTransaction = OutputLimits.MaximumMutationsPerApply;
 
     private const string OutputMode = "sword-shield-layered-output";
     private const string OutputOwner = "sword-shield-verified-editor";
@@ -18,6 +19,15 @@ internal static class SwShOutputTransactionWriter
     private const string ComposedExeFsMainPath = "exefs/main";
 
     private static readonly OutputTransactionCoordinatorOptions CoordinatorOptions = new()
+    {
+        MaximumMutationsPerApply = OutputLimits.StandardMaximumMutationsPerApply,
+        MaximumWriteBytesPerMutation = OutputLimits.MaximumWriteBytesPerMutation,
+        MaximumWriteBytesPerApply = OutputLimits.MaximumWriteBytesPerApply,
+        MaximumFingerprintFileBytes = OutputLimits.MaximumFingerprintFileBytes,
+        MaximumBackupBytesPerApply = OutputLimits.MaximumBackupBytesPerApply,
+    };
+
+    private static readonly OutputTransactionCoordinatorOptions FpsPatchCoordinatorOptions = new()
     {
         MaximumMutationsPerApply = OutputLimits.MaximumMutationsPerApply,
         MaximumWriteBytesPerMutation = OutputLimits.MaximumWriteBytesPerMutation,
@@ -84,6 +94,42 @@ internal static class SwShOutputTransactionWriter
         out OutputApplyResult? result,
         out SwShOutputTransactionFailure? failure)
     {
+        return TryApply(
+            paths,
+            requestedMutations,
+            operationId,
+            MaximumFilesPerTransaction,
+            CoordinatorOptions,
+            out result,
+            out failure);
+    }
+
+    internal static bool TryApplyFpsPatchBatch(
+        ProjectPaths paths,
+        IEnumerable<SwShOutputFileMutation> requestedMutations,
+        string operationId,
+        out OutputApplyResult? result,
+        out SwShOutputTransactionFailure? failure)
+    {
+        return TryApply(
+            paths,
+            requestedMutations,
+            operationId,
+            MaximumFpsPatchFilesPerTransaction,
+            FpsPatchCoordinatorOptions,
+            out result,
+            out failure);
+    }
+
+    private static bool TryApply(
+        ProjectPaths paths,
+        IEnumerable<SwShOutputFileMutation> requestedMutations,
+        string operationId,
+        int maximumFilesPerTransaction,
+        OutputTransactionCoordinatorOptions coordinatorOptions,
+        out OutputApplyResult? result,
+        out SwShOutputTransactionFailure? failure)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(requestedMutations);
 
@@ -113,13 +159,13 @@ internal static class SwShOutputTransactionWriter
         {
             var projectId = ProjectIdentity.FromPaths(stablePaths);
             var materialized = requestedMutations
-                .Take(MaximumFilesPerTransaction + 1)
+                .Take(maximumFilesPerTransaction + 1)
                 .ToArray();
-            if (materialized.Length > MaximumFilesPerTransaction)
+            if (materialized.Length > maximumFilesPerTransaction)
             {
                 failure = new SwShOutputTransactionFailure(
                     string.Empty,
-                    $"The output transaction cannot contain more than {MaximumFilesPerTransaction} files.");
+                    $"The output transaction cannot contain more than {maximumFilesPerTransaction} files.");
                 return false;
             }
 
@@ -140,7 +186,7 @@ internal static class SwShOutputTransactionWriter
 
             var coordinator = new OutputTransactionCoordinator(
                 stablePaths.OutputRootPath,
-                CoordinatorOptions);
+                coordinatorOptions);
             var hasComposedMutation = materialized.Any(requested =>
                 requested?.ComposesEffectivePreimage == true);
             var ownershipSnapshot = hasComposedMutation
@@ -433,7 +479,16 @@ internal static class SwShOutputTransactionWriter
                 result.Outcome == OutputApplyOutcome.RecoveryRequired
                     ? "Output recovery is required before another write can begin."
                     : "The output transaction did not commit and was rolled back.",
-                result.Receipt.OutcomeCode);
+                result.Receipt.OutcomeCode,
+                RecoveryRequired: result.Outcome == OutputApplyOutcome.RecoveryRequired);
+            return false;
+        }
+        catch (OutputRecoveryRequiredException exception)
+        {
+            failure = new SwShOutputTransactionFailure(
+                string.Empty,
+                exception.Message,
+                RecoveryRequired: true);
             return false;
         }
         catch (Exception exception) when (exception is
@@ -639,4 +694,5 @@ internal sealed record SwShOutputFileMutation(
 internal sealed record SwShOutputTransactionFailure(
     string RelativePath,
     string Message,
-    string? Code = null);
+    string? Code = null,
+    bool RecoveryRequired = false);

@@ -16,6 +16,16 @@ namespace KM.SwSh.FpsPatch;
 public sealed class SwShFpsPatchService
 {
     private const string Domain = "tool.60fpsPatch";
+    private const string ProjectUnavailableDiagnosticCode = "KM-SWSH-FPS-PROJECT-UNAVAILABLE";
+    private const string OutputRootUnavailableDiagnosticCode = "KM-SWSH-FPS-OUTPUT-ROOT-UNAVAILABLE";
+    private const string ManifestInvalidDiagnosticCode = "KM-SWSH-FPS-MANIFEST-INVALID";
+    private const string MainInputUnavailableDiagnosticCode = "KM-SWSH-FPS-MAIN-INPUT-UNAVAILABLE";
+    private const string MainRestoreBlockedDiagnosticCode = "KM-SWSH-FPS-MAIN-RESTORE-BLOCKED";
+    private const string ComponentInputUnavailableDiagnosticCode = "KM-SWSH-FPS-COMPONENT-INPUT-UNAVAILABLE";
+    private const string ComponentInputReadFailedDiagnosticCode = "KM-SWSH-FPS-COMPONENT-INPUT-READ-FAILED";
+    private const string ComponentInputInvalidDiagnosticCode = "KM-SWSH-FPS-COMPONENT-INPUT-INVALID";
+    private const string RestorePreflightBlockedDiagnosticCode = "KM-SWSH-FPS-RESTORE-PREFLIGHT-BLOCKED";
+    private const string OwnedOutputChangedDiagnosticCode = "KM-SWSH-FPS-OWNED-OUTPUT-CHANGED";
     private const string ExeFsMainPath = SwShExeFsPatchWorkflowService.ExeFsMainPath;
     private const string ManifestRelativePath = ".km-editor/60fps-patch-manifest.json";
     private const string SequenceRootInsideRomFs = "bin/battle/waza/sequence";
@@ -50,6 +60,8 @@ public sealed class SwShFpsPatchService
         "recoveryAnimation",
         "other",
     ];
+    private static readonly IReadOnlySet<string> AllAnimationTimingComponentIds =
+        SwShFpsPatchAnimationTimingComponents.All.ToHashSet(StringComparer.Ordinal);
     private static readonly string[] ExcludedBattleCameraDirectories =
     [
         "ballthrow",
@@ -234,13 +246,35 @@ public sealed class SwShFpsPatchService
         var diagnostics = new List<ValidationDiagnostic>();
         ValidateEditableProject(project, diagnostics);
 
+        var manifest = ReadManifestSnapshot(paths, diagnostics);
         var mainStatus = AnalyzeMain(paths, diagnostics);
-        var romFsStatus = AnalyzeRomFsOutputs(paths, diagnostics);
+        var globalApplyBlocked = !manifest.IsValid
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            || mainStatus.Kind is SwShFpsPatchMainKind.UnsupportedBuild
+                or SwShFpsPatchMainKind.GameMismatch
+                or SwShFpsPatchMainKind.Conflict;
+        var restorePreflight = PreflightFullRestore(paths, project, manifest);
+        var globalRestoreBlocked = restorePreflight.Diagnostics.Any(
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var romFsStatus = AnalyzeRomFsOutputs(
+            paths,
+            manifest.EnabledAnimationTimingComponentIds,
+            manifest.OwnedFileHashes,
+            diagnostics);
 
-        return CreateStatus(mainStatus, romFsStatus, diagnostics);
+        return CreateStatus(
+            mainStatus,
+            romFsStatus,
+            globalApplyBlocked,
+            globalRestoreBlocked,
+            restorePreflight.HasRemovableKmState,
+            restorePreflight.Diagnostics,
+            diagnostics);
     }
 
-    public SwShFpsPatchApplyResult Apply(ProjectPaths paths)
+    public SwShFpsPatchApplyResult Apply(
+        ProjectPaths paths,
+        IReadOnlyCollection<string>? enabledAnimationTimingComponentIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
@@ -248,6 +282,27 @@ public sealed class SwShFpsPatchService
         var diagnostics = new List<ValidationDiagnostic>();
         ValidateEditableProject(project, diagnostics);
         var writtenFiles = new List<ProjectFileReference>();
+        var enabledComponents = ResolveRequestedAnimationTimingComponents(
+            enabledAnimationTimingComponentIds,
+            "enabledAnimationTimingComponentIds",
+            diagnostics);
+        var manifest = ReadManifestSnapshot(paths, diagnostics);
+        if (!manifest.IsValid)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch cannot apply while its ownership manifest is invalid.",
+                file: ManifestRelativePath,
+                expected: "Valid version 1 or 2 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(paths, writtenFiles, diagnostics);
+        }
 
         if (!SwShOutputTransactionWriter.TryCapturePreimage(
                 paths,
@@ -262,51 +317,108 @@ public sealed class SwShFpsPatchService
         }
 
         var preparedMain = PrepareMainApply(paths, diagnostics);
-        var preparedRomFsFiles = PrepareRomFsApply(paths, diagnostics);
+        var preparedRomFsApply = PrepareRomFsApply(
+            paths,
+            enabledComponents,
+            manifest.OwnedFileHashes,
+            diagnostics);
+        var disabledComponents = AllAnimationTimingComponentIds
+            .Except(enabledComponents, StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+        var preparedRomFsDeletes = PrepareRomFsRestore(
+            paths,
+            disabledComponents,
+            manifest,
+            diagnostics);
+        var preparedLegacyDeletes = PrepareLegacyCleanupDeletes(paths, diagnostics);
+        var postTransactionOwnedHashes = BuildPostTransactionOwnedFileHashes(
+            paths,
+            manifest.OwnedFileHashes,
+            preparedRomFsApply.OwnedFileHashes,
+            preparedRomFsDeletes,
+            enabledComponents,
+            diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(paths, writtenFiles, diagnostics);
         }
 
+        var manifestMutation = PrepareManifestMutation(
+            paths,
+            CreateManifest(
+                exeFsMainPatched: true,
+                postTransactionOwnedHashes,
+                enabledComponents),
+            diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(paths, writtenFiles, diagnostics);
+        }
+
+        var mutations = new List<SwShOutputFileMutation>();
+        var committedFiles = new List<ProjectFileReference>();
         if (preparedMain is not null)
         {
-            WriteOutputFile(
-                paths,
+            mutations.Add(SwShOutputFileMutation.WriteComposed(
                 ExeFsMainPath,
                 preparedMain,
-                reviewedMainPreimage!,
-                diagnostics,
-                writtenFiles);
+                reviewedMainPreimage!));
+            committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
         }
 
-        foreach (var preparedFile in preparedRomFsFiles)
+        foreach (var preparedFile in preparedRomFsApply.Files)
         {
-            WriteOutputFile(
-                paths,
+            mutations.Add(SwShOutputFileMutation.Write(
                 preparedFile.RelativePath,
                 preparedFile.Contents,
-                preparedFile.ReviewedPreimage,
-                diagnostics,
-                writtenFiles);
+                preparedFile.ReviewedPreimage));
+            committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, preparedFile.RelativePath));
         }
 
-        RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
-        RemoveLegacyExcludedDemoSequenceOutputs(paths, diagnostics, writtenFiles);
-
-        if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        foreach (var preparedDelete in preparedRomFsDeletes.Concat(preparedLegacyDeletes))
         {
-            RefreshManifestSnapshot(paths, diagnostics);
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                writtenFiles.Count == 0
-                    ? "60FPS Patch was already installed."
-                    : string.Create(CultureInfo.InvariantCulture, $"60FPS Patch installed {writtenFiles.Count:N0} output file(s).")));
+            mutations.Add(SwShOutputFileMutation.DeleteLegacyAdoption(
+                preparedDelete.RelativePath,
+                preparedDelete.ReviewedPreimage));
+            committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, preparedDelete.RelativePath));
         }
+
+        if (manifestMutation is not null)
+        {
+            mutations.Add(manifestMutation);
+        }
+
+        if (!SwShOutputTransactionWriter.TryApplyFpsPatchBatch(
+                paths,
+                mutations,
+                "tool.sword-shield.60fps-install",
+                out var transactionResult,
+                out var failure))
+        {
+            diagnostics.Add(CreateOutputTransactionDiagnostic(
+                "60FPS Patch atomic output transaction failed",
+                failure));
+            return CreateApplyResult(
+                paths,
+                writtenFiles,
+                diagnostics,
+                recoveryRequired: transactionResult?.Outcome == OutputApplyOutcome.RecoveryRequired
+                    || failure?.RecoveryRequired == true);
+        }
+
+        writtenFiles.AddRange(committedFiles);
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            writtenFiles.Count == 0
+                ? "60FPS Patch was already installed."
+                : string.Create(CultureInfo.InvariantCulture, $"60FPS Patch installed {writtenFiles.Count:N0} output file(s).")));
 
         return CreateApplyResult(paths, writtenFiles, diagnostics);
     }
 
-    public SwShFpsPatchApplyResult Restore(ProjectPaths paths)
+    public SwShFpsPatchApplyResult Restore(
+        ProjectPaths paths,
+        IReadOnlyCollection<string>? animationTimingComponentIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
@@ -314,6 +426,16 @@ public sealed class SwShFpsPatchService
         var diagnostics = new List<ValidationDiagnostic>();
         ValidateEditableProject(project, diagnostics);
         var writtenFiles = new List<ProjectFileReference>();
+        var fullRestore = animationTimingComponentIds is null;
+        var restoredComponents = ResolveRequestedAnimationTimingComponents(
+            animationTimingComponentIds ?? SwShFpsPatchAnimationTimingComponents.All,
+            "animationTimingComponentIds",
+            diagnostics);
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(paths, writtenFiles, diagnostics);
+        }
 
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
@@ -321,29 +443,245 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch uninstall requires a configured Output Root.",
                 field: "outputRootPath",
-                expected: "Writable LayeredFS output directory"));
+                expected: "Writable LayeredFS output directory") with
+            {
+                Code = OutputRootUnavailableDiagnosticCode,
+            });
             return CreateApplyResult(paths, writtenFiles, diagnostics);
         }
 
-        RestoreMain(paths, diagnostics, writtenFiles);
-        RestoreRomFsFiles(paths, diagnostics, writtenFiles);
-        RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
-        RemoveLegacyExcludedDemoSequenceOutputs(paths, diagnostics, writtenFiles);
-        if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-        {
-            RefreshManifestSnapshot(paths, diagnostics);
-        }
-
-        if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        var previousManifest = ReadManifestSnapshot(paths, diagnostics);
+        if (!previousManifest.IsValid)
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                writtenFiles.Count == 0
-                    ? "60FPS Patch uninstall found no owned output files to remove."
-                    : string.Create(CultureInfo.InvariantCulture, $"60FPS Patch uninstalled {writtenFiles.Count:N0} owned output file(s).")));
+                DiagnosticSeverity.Error,
+                "60FPS Patch cannot restore while its ownership manifest is invalid.",
+                file: ManifestRelativePath,
+                expected: "Valid version 1 or 2 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
+            return CreateApplyResult(paths, writtenFiles, diagnostics);
         }
 
+        var preparedRomFsDeletes = PrepareRomFsRestore(
+            paths,
+            restoredComponents,
+            previousManifest,
+            diagnostics);
+        var preparedMainRestore = fullRestore
+            ? PrepareMainRestore(paths, diagnostics)
+            : null;
+        var preparedLegacyDeletes = fullRestore
+            ? PrepareLegacyCleanupDeletes(paths, diagnostics)
+            : [];
+        var remainingComponents = fullRestore
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : previousManifest.EnabledAnimationTimingComponentIds
+                .Except(restoredComponents, StringComparer.Ordinal)
+                .ToHashSet(StringComparer.Ordinal);
+        var postTransactionOwnedHashes = BuildPostTransactionOwnedFileHashes(
+            paths,
+            previousManifest.OwnedFileHashes,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            preparedRomFsDeletes,
+            remainingComponents,
+            diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(paths, writtenFiles, diagnostics);
+        }
+
+        var mainPatchedAfterRestore = !fullRestore
+            && (previousManifest.ExeFsMainPatched || HasInstalledMainOutput(paths));
+        var nextManifest = mainPatchedAfterRestore || postTransactionOwnedHashes.Count > 0
+            ? CreateManifest(
+                mainPatchedAfterRestore,
+                postTransactionOwnedHashes,
+                remainingComponents)
+            : null;
+        var manifestMutation = PrepareManifestMutation(
+            paths,
+            nextManifest,
+            diagnostics);
+        if (fullRestore)
+        {
+            var preparedPaths = preparedRomFsDeletes
+                .Concat(preparedLegacyDeletes)
+                .Select(prepared => prepared.RelativePath)
+                .ToList();
+            if (preparedMainRestore is not null)
+            {
+                preparedPaths.Add(preparedMainRestore.RelativePath);
+            }
+
+            if (manifestMutation is not null)
+            {
+                preparedPaths.Add(manifestMutation.RelativePath);
+            }
+
+            ValidatePreparedFullRestoreMutationSet(preparedPaths, diagnostics);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(paths, writtenFiles, diagnostics);
+        }
+
+        var mutations = new List<SwShOutputFileMutation>();
+        var committedFiles = new List<ProjectFileReference>();
+        if (preparedMainRestore is not null)
+        {
+            mutations.Add(preparedMainRestore);
+            committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
+        }
+
+        foreach (var preparedDelete in preparedRomFsDeletes.Concat(preparedLegacyDeletes))
+        {
+            mutations.Add(SwShOutputFileMutation.DeleteLegacyAdoption(
+                preparedDelete.RelativePath,
+                preparedDelete.ReviewedPreimage));
+            committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, preparedDelete.RelativePath));
+        }
+
+        if (manifestMutation is not null)
+        {
+            mutations.Add(manifestMutation);
+        }
+
+        if (!SwShOutputTransactionWriter.TryApplyFpsPatchBatch(
+                paths,
+                mutations,
+                "tool.sword-shield.60fps-restore",
+                out var transactionResult,
+                out var failure))
+        {
+            diagnostics.Add(CreateOutputTransactionDiagnostic(
+                "60FPS Patch atomic restore transaction failed",
+                failure));
+            return CreateApplyResult(
+                paths,
+                writtenFiles,
+                diagnostics,
+                recoveryRequired: transactionResult?.Outcome == OutputApplyOutcome.RecoveryRequired
+                    || failure?.RecoveryRequired == true);
+        }
+
+        writtenFiles.AddRange(committedFiles);
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            writtenFiles.Count == 0
+                ? "60FPS Patch restore found no matching owned output files to remove."
+                : string.Create(CultureInfo.InvariantCulture, $"60FPS Patch restored {writtenFiles.Count:N0} owned output file(s).")));
+
         return CreateApplyResult(paths, writtenFiles, diagnostics);
+    }
+
+    private FullRestorePreflight PreflightFullRestore(
+        ProjectPaths paths,
+        OpenedProject project,
+        FpsPatchManifestSnapshot manifest)
+    {
+        var diagnostics = new List<ValidationDiagnostic>();
+        ValidateEditableProject(project, diagnostics);
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch restore requires a configured Output Root.",
+                field: "outputRootPath",
+                expected: "Writable LayeredFS output directory") with
+            {
+                Code = OutputRootUnavailableDiagnosticCode,
+            });
+        }
+
+        if (!manifest.IsValid)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch cannot restore while its ownership manifest is invalid.",
+                file: ManifestRelativePath,
+                expected: "Valid version 1 or 2 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new FullRestorePreflight(diagnostics, HasRemovableKmState: false);
+        }
+
+        var restoredComponents = AllAnimationTimingComponentIds.ToHashSet(StringComparer.Ordinal);
+        var preparedRomFsDeletes = PrepareRomFsRestore(
+            paths,
+            restoredComponents,
+            manifest,
+            diagnostics);
+        var preparedMainRestore = PrepareMainRestore(paths, diagnostics);
+        var preparedLegacyDeletes = PrepareLegacyCleanupDeletes(paths, diagnostics);
+        _ = BuildPostTransactionOwnedFileHashes(
+            paths,
+            manifest.OwnedFileHashes,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            preparedRomFsDeletes,
+            new HashSet<string>(StringComparer.Ordinal),
+            diagnostics);
+        var manifestMutation = PrepareManifestMutation(paths, manifest: null, diagnostics);
+
+        var preparedPaths = preparedRomFsDeletes
+            .Concat(preparedLegacyDeletes)
+            .Select(prepared => prepared.RelativePath)
+            .ToList();
+        if (preparedMainRestore is not null)
+        {
+            preparedPaths.Add(preparedMainRestore.RelativePath);
+        }
+
+        if (manifestMutation is not null)
+        {
+            preparedPaths.Add(manifestMutation.RelativePath);
+        }
+
+        ValidatePreparedFullRestoreMutationSet(preparedPaths, diagnostics);
+        var hasErrors = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        return new FullRestorePreflight(
+            diagnostics,
+            HasRemovableKmState: !hasErrors && preparedPaths.Count > 0);
+    }
+
+    private static void ValidatePreparedFullRestoreMutationSet(
+        IReadOnlyCollection<string> preparedPaths,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var duplicatePath = preparedPaths
+            .GroupBy(NormalizeRelativePath, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1)?.Key;
+        if (duplicatePath is not null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch full restore prepared the same output target more than once.",
+                file: duplicatePath,
+                expected: "One prepared mutation per output target") with
+            {
+                Code = RestorePreflightBlockedDiagnosticCode,
+            });
+        }
+
+        if (preparedPaths.Count > SwShOutputTransactionWriter.MaximumFpsPatchFilesPerTransaction)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"60FPS Patch full restore requires {preparedPaths.Count:N0} output mutations, exceeding the verified {SwShOutputTransactionWriter.MaximumFpsPatchFilesPerTransaction:N0}-mutation limit."),
+                expected: $"At most {SwShOutputTransactionWriter.MaximumFpsPatchFilesPerTransaction:N0} prepared output mutations") with
+            {
+                Code = RestorePreflightBlockedDiagnosticCode,
+            });
+        }
     }
 
     private byte[]? PrepareMainApply(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
@@ -353,7 +691,12 @@ public sealed class SwShFpsPatchService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "60FPS Patch requires Base ExeFS and Output Root before it can install.",
-                expected: "Readable Base ExeFS and writable Output Root"));
+                expected: "Readable Base ExeFS and writable Output Root") with
+            {
+                Code = string.IsNullOrWhiteSpace(paths.BaseExeFsPath)
+                    ? MainInputUnavailableDiagnosticCode
+                    : OutputRootUnavailableDiagnosticCode,
+            });
             return null;
         }
 
@@ -364,7 +707,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find base exefs/main.",
                 file: ExeFsMainPath,
-                expected: "Readable Sword/Shield 1.3.2 exefs/main"));
+                expected: "Readable Sword/Shield 1.3.2 exefs/main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
             return null;
         }
 
@@ -385,7 +731,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not read exefs/main: {exception.Message}",
                 file: ExeFsMainPath,
-                expected: "Readable exefs/main"));
+                expected: "Readable exefs/main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -393,7 +742,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not read exefs/main: {exception.Message}",
                 file: ExeFsMainPath,
-                expected: "Readable exefs/main"));
+                expected: "Readable exefs/main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
         }
         catch (InvalidDataException exception)
         {
@@ -401,80 +753,59 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 exception.Message,
                 file: ExeFsMainPath,
-                expected: "Supported Sword/Shield 1.3.2 exefs/main with vanilla or KM 60FPS bytes"));
+                expected: "Supported Sword/Shield 1.3.2 exefs/main with vanilla or KM 60FPS bytes") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
         }
 
         return null;
     }
 
-    private IReadOnlyList<PreparedRomFsFile> PrepareRomFsApply(
+    private PreparedRomFsApply PrepareRomFsApply(
         ProjectPaths paths,
+        IReadOnlySet<string> enabledAnimationTimingComponentIds,
+        IReadOnlyDictionary<string, string> manifestHashes,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var preparedFiles = new List<PreparedRomFsFile>();
+        var ownedFileHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "60FPS Patch requires Base RomFS and Output Root before it can install.",
-                expected: "Readable Base RomFS and writable Output Root"));
-            return preparedFiles;
+                expected: "Readable Base RomFS and writable Output Root") with
+            {
+                Code = string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+                    ? ComponentInputUnavailableDiagnosticCode
+                    : OutputRootUnavailableDiagnosticCode,
+            });
+            return new PreparedRomFsApply(preparedFiles, ownedFileHashes);
         }
 
-        var manifestHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
-        var moveEffectFiles = EnumerateManagedBseqFiles(paths.BaseRomFsPath, diagnostics);
-        if (moveEffectFiles.Count != ExpectedManagedBseqFileCount)
+        foreach (var sourceFile in EnumerateManagedRomFsFiles(
+                     paths.BaseRomFsPath,
+                     diagnostics,
+                     enabledAnimationTimingComponentIds))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"60FPS Patch expected {ExpectedManagedBseqFileCount:N0} managed move-effect BSEQ files, but found {moveEffectFiles.Count:N0}."),
-                file: SequenceRootRelativePath,
-                expected: "Complete Sword/Shield Base RomFS move-effect sequence folder"));
-            return preparedFiles;
+            PrepareManagedRomFsFile(
+                paths,
+                sourceFile,
+                preparedFiles,
+                ownedFileHashes,
+                diagnostics,
+                manifestHashes);
         }
 
-        foreach (var sourceFile in moveEffectFiles)
-        {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
-        }
-
-        foreach (var sourceFile in EnumerateManagedBattleCameraFiles(paths.BaseRomFsPath, diagnostics))
-        {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
-        }
-
-        foreach (var sourceFile in EnumerateManagedBattleUiArchives(paths.BaseRomFsPath, diagnostics))
-        {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
-        }
-
-        foreach (var sourceFile in EnumerateManagedDemoBseqFiles(paths.BaseRomFsPath, diagnostics))
-        {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
-        }
-
-        foreach (var sourceFile in RequiredManagedBseqFiles)
-        {
-            PrepareManagedRomFsFile(paths, sourceFile.RelativePath, preparedFiles, diagnostics, manifestHashes);
-        }
-
-        foreach (var relativePath in RequiredManagedBattleModelAnimationFiles)
-        {
-            PrepareManagedRomFsFile(paths, relativePath, preparedFiles, diagnostics, manifestHashes);
-        }
-
-        PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics, manifestHashes);
-        PrepareManagedRomFsFile(paths, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath, preparedFiles, diagnostics, manifestHashes);
-
-        return preparedFiles;
+        return new PreparedRomFsApply(preparedFiles, ownedFileHashes);
     }
 
     private static void PrepareManagedRomFsFile(
         ProjectPaths paths,
         string relativePath,
         ICollection<PreparedRomFsFile> preparedFiles,
+        IDictionary<string, string> ownedFileHashes,
         ICollection<ValidationDiagnostic> diagnostics,
         IReadOnlyDictionary<string, string> manifestHashes)
     {
@@ -485,7 +816,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find a required Base RomFS file.",
                 file: relativePath,
-                expected: "Complete Sword/Shield Base RomFS"));
+                expected: "Complete Sword/Shield Base RomFS") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
             return;
         }
 
@@ -493,6 +827,7 @@ public sealed class SwShFpsPatchService
             paths,
             new ManagedRomFsFile(sourcePath, NormalizeRelativePath(relativePath)),
             preparedFiles,
+            ownedFileHashes,
             diagnostics,
             manifestHashes);
     }
@@ -501,6 +836,7 @@ public sealed class SwShFpsPatchService
         ProjectPaths paths,
         ManagedRomFsFile sourceFile,
         ICollection<PreparedRomFsFile> preparedFiles,
+        IDictionary<string, string> ownedFileHashes,
         ICollection<ValidationDiagnostic> diagnostics,
         IReadOnlyDictionary<string, string> manifestHashes)
     {
@@ -508,6 +844,7 @@ public sealed class SwShFpsPatchService
         {
             var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
             var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
+            var generatedHash = ComputeSha256(generated);
             var targetPath = ResolveOutputPath(paths.OutputRootPath!, sourceFile.RelativePath);
             if (targetPath is null)
             {
@@ -524,6 +861,7 @@ public sealed class SwShFpsPatchService
                 var existing = File.ReadAllBytes(targetPath);
                 if (existing.SequenceEqual(generated))
                 {
+                    ownedFileHashes[sourceFile.RelativePath] = generatedHash;
                     return;
                 }
 
@@ -542,6 +880,7 @@ public sealed class SwShFpsPatchService
                     sourceFile.RelativePath,
                     generated,
                     ToOutputFileState(existing)));
+                ownedFileHashes[sourceFile.RelativePath] = generatedHash;
                 return;
             }
 
@@ -549,6 +888,7 @@ public sealed class SwShFpsPatchService
                 sourceFile.RelativePath,
                 generated,
                 OutputFileState.Missing));
+            ownedFileHashes[sourceFile.RelativePath] = generatedHash;
         }
         catch (IOException exception)
         {
@@ -556,7 +896,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not read or stage a ROMFS file: {exception.Message}",
                 file: sourceFile.RelativePath,
-                expected: "Readable Base RomFS source and writable Output Root target"));
+                expected: "Readable Base RomFS source and writable Output Root target") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -564,7 +907,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not read or stage a ROMFS file: {exception.Message}",
                 file: sourceFile.RelativePath,
-                expected: "Readable Base RomFS source and writable Output Root target"));
+                expected: "Readable Base RomFS source and writable Output Root target") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
         }
         catch (InvalidDataException exception)
         {
@@ -572,29 +918,61 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 exception.Message,
                 file: sourceFile.RelativePath,
-                expected: "Valid Sword/Shield ROMFS file for 60FPS Patch conversion"));
+                expected: "Valid Sword/Shield ROMFS file for 60FPS Patch conversion") with
+            {
+                Code = ComponentInputInvalidDiagnosticCode,
+            });
         }
     }
 
-    private void RestoreMain(
+    private SwShOutputFileMutation? PrepareMainRestore(
         ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "60FPS Patch uninstall requires Base ExeFS and Output Root.",
-                expected: "Readable Base ExeFS and writable Output Root"));
-            return;
+                "60FPS Patch uninstall requires Output Root.",
+                field: "outputRootPath",
+                expected: "Writable LayeredFS output directory") with
+            {
+                Code = OutputRootUnavailableDiagnosticCode,
+            });
+            return null;
         }
 
-        var baseMainPath = Path.Combine(paths.BaseExeFsPath, "main");
         var outputMainPath = ResolveOutputPath(paths.OutputRootPath, ExeFsMainPath);
         if (outputMainPath is null || !File.Exists(outputMainPath))
         {
-            return;
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch needs Base ExeFS to restore an installed exefs/main.",
+                field: "baseExeFsPath",
+                expected: "Readable Base ExeFS folder") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
+            return null;
+        }
+
+        var baseMainPath = Path.Combine(paths.BaseExeFsPath, "main");
+        if (!File.Exists(baseMainPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find Base ExeFS main needed to restore the installed output.",
+                file: ExeFsMainPath,
+                expected: "Readable Sword/Shield 1.3.2 Base ExeFS main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
+            return null;
         }
 
         try
@@ -604,11 +982,11 @@ public sealed class SwShFpsPatchService
             var restored = SwShFpsMainPatcher.RestoreFromBase(current, baseBytes, paths.SelectedGame);
             if (restored.SequenceEqual(current))
             {
-                return;
+                return null;
             }
 
             var reviewedPreimage = ToOutputFileState(current);
-            var mutation = restored.SequenceEqual(baseBytes)
+            return restored.SequenceEqual(baseBytes)
                 ? SwShOutputFileMutation.DeleteComposed(
                     ExeFsMainPath,
                     reviewedPreimage,
@@ -617,14 +995,6 @@ public sealed class SwShFpsPatchService
                     ExeFsMainPath,
                     restored,
                     reviewedPreimage);
-            if (TryApplyOutputMutation(
-                    paths,
-                    mutation,
-                    "tool.sword-shield.60fps-uninstall-main",
-                    diagnostics))
-            {
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
-            }
         }
         catch (IOException exception)
         {
@@ -632,7 +1002,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not restore exefs/main: {exception.Message}",
                 file: ExeFsMainPath,
-                expected: "Readable base and output exefs/main"));
+                expected: "Readable base and output exefs/main") with
+            {
+                Code = MainRestoreBlockedDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -640,7 +1013,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not restore exefs/main: {exception.Message}",
                 file: ExeFsMainPath,
-                expected: "Readable base and output exefs/main"));
+                expected: "Readable base and output exefs/main") with
+            {
+                Code = MainRestoreBlockedDiagnosticCode,
+            });
         }
         catch (InvalidDataException exception)
         {
@@ -648,262 +1024,238 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 exception.Message,
                 file: ExeFsMainPath,
-                expected: "Output exefs/main containing KM-owned 60FPS bytes"));
+                expected: "Output exefs/main containing KM-owned 60FPS bytes") with
+            {
+                Code = MainRestoreBlockedDiagnosticCode,
+            });
         }
+
+        return null;
     }
 
-    private void RestoreRomFsFiles(
+    private static IReadOnlyList<PreparedRomFsDelete> PrepareRomFsRestore(
         ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
+        IReadOnlySet<string> animationTimingComponentIds,
+        FpsPatchManifestSnapshot manifest,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        var preparedDeletes = new List<PreparedRomFsDelete>();
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "60FPS Patch uninstall requires Base RomFS and Output Root.",
-                expected: "Readable Base RomFS and writable Output Root"));
-            return;
+                "Static animation timing restore requires Output Root.",
+                field: "outputRootPath",
+                expected: "Writable LayeredFS output directory") with
+            {
+                Code = OutputRootUnavailableDiagnosticCode,
+            });
+            return preparedDeletes;
         }
 
-        var manifestHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
-        foreach (var sourceFile in EnumerateManagedRomFsFiles(paths.BaseRomFsPath, diagnostics))
+        var candidates = new Dictionary<string, ManagedRomFsFile?>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
         {
-            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
-            if (targetPath is null || !File.Exists(targetPath))
+            foreach (var componentId in animationTimingComponentIds)
+            {
+                var ignoredInputDiagnostics = new List<ValidationDiagnostic>();
+                foreach (var sourceFile in EnumerateManagedRomFsFiles(
+                             paths.BaseRomFsPath,
+                             ignoredInputDiagnostics,
+                             new HashSet<string>(StringComparer.Ordinal) { componentId }))
+                {
+                    candidates[sourceFile.RelativePath] = sourceFile;
+                }
+            }
+        }
+
+        foreach (var relativePath in manifest.OwnedFileHashes.Keys)
+        {
+            if (TryGetAnimationTimingComponentId(relativePath, out var componentId)
+                && animationTimingComponentIds.Contains(componentId))
+            {
+                candidates.TryAdd(relativePath, null);
+            }
+        }
+
+        foreach (var (relativePath, sourceFile) in candidates)
+        {
+            var targetPath = ResolveOutputPath(paths.OutputRootPath, relativePath);
+            if (targetPath is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Static animation timing restore could not contain a managed output path.",
+                    file: relativePath,
+                    expected: "Output-root-contained managed ROMFS path") with
+                {
+                    Code = RestorePreflightBlockedDiagnosticCode,
+                });
+                continue;
+            }
+
+            if (!File.Exists(targetPath))
             {
                 continue;
             }
 
+            byte[] outputBytes;
             try
             {
-                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
-                var outputBytes = File.ReadAllBytes(targetPath);
-                if (!outputBytes.SequenceEqual(generated)
-                    && !MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes))
+                outputBytes = File.ReadAllBytes(targetPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Static animation timing restore could not preflight an output: {exception.Message}",
+                    file: relativePath,
+                    expected: "Readable managed ROMFS output") with
                 {
-                    diagnostics.Add(CreateDiagnostic(
-                        DiagnosticSeverity.Warning,
-                        "60FPS Patch left this ROMFS file in place because it no longer matches KM-owned 60FPS output.",
-                        file: sourceFile.RelativePath,
-                        expected: "Unmodified 60FPS Patch generated file"));
-                    continue;
-                }
+                    Code = RestorePreflightBlockedDiagnosticCode,
+                });
+                continue;
+            }
 
-                if (TryApplyOutputMutation(
-                        paths,
-                        SwShOutputFileMutation.DeleteLegacyAdoption(
-                            sourceFile.RelativePath,
-                            ToOutputFileState(outputBytes)),
-                        "tool.sword-shield.60fps-uninstall-romfs",
-                        diagnostics))
+            if (MatchesManifestOwnedOutput(relativePath, outputBytes, manifest.OwnedFileHashes))
+            {
+                preparedDeletes.Add(new PreparedRomFsDelete(relativePath, ToOutputFileState(outputBytes)));
+                continue;
+            }
+
+            if (sourceFile is not null)
+            {
+                try
                 {
-                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, sourceFile.RelativePath));
+                    var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
+                    var generated = ConvertManagedRomFsFile(relativePath, sourceBytes);
+                    if (outputBytes.SequenceEqual(generated))
+                    {
+                        preparedDeletes.Add(new PreparedRomFsDelete(relativePath, ToOutputFileState(outputBytes)));
+                        continue;
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    // Exact manifest ownership above remains sufficient when Base RomFS is unavailable or invalid.
                 }
             }
-            catch (IOException exception)
+
+            if (manifest.OwnedFileHashes.ContainsKey(relativePath))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a generated ROMFS file: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Deletable generated 60FPS Patch file"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a generated ROMFS file: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Deletable generated 60FPS Patch file"));
-            }
-            catch (InvalidDataException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    exception.Message,
-                    file: sourceFile.RelativePath,
-                    expected: "Valid SwSh BSEQ sequence file"));
+                    "A recorded KM-owned animation timing output changed and was preserved.",
+                    file: relativePath,
+                    expected: "Exact manifest-recorded KM-owned ROMFS file") with
+                {
+                    Code = OwnedOutputChangedDiagnosticCode,
+                });
             }
         }
+
+        return preparedDeletes
+            .DistinctBy(prepared => prepared.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(prepared => prepared.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
-    private static void RemoveLegacyTrainerThrowOutputs(
+    private static IReadOnlyList<PreparedRomFsDelete> PrepareLegacyCleanupDeletes(
         ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
+        ICollection<ValidationDiagnostic> diagnostics)
     {
+        var preparedDeletes = new List<PreparedRomFsDelete>();
         if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
-            return;
+            return preparedDeletes;
         }
 
         foreach (var sourceFile in EnumerateLegacyTrainerThrowFiles(paths.BaseRomFsPath, diagnostics))
         {
-            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
-            if (targetPath is null || !File.Exists(targetPath))
-            {
-                continue;
-            }
-
-            try
-            {
-                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = SwShFpsLegacyTrainerThrowCleanupPatcher.ConvertLegacyOutput(
+            PrepareLegacyGeneratedDelete(
+                paths,
+                sourceFile,
+                sourceBytes => SwShFpsLegacyTrainerThrowCleanupPatcher.ConvertLegacyOutput(
                     sourceFile.RelativePath,
-                    sourceBytes);
-                var outputBytes = File.ReadAllBytes(targetPath);
-                if (!outputBytes.SequenceEqual(generated))
-                {
-                    continue;
-                }
-
-                if (TryApplyOutputMutation(
-                        paths,
-                        SwShOutputFileMutation.DeleteLegacyAdoption(
-                            sourceFile.RelativePath,
-                            ToOutputFileState(outputBytes)),
-                        "tool.sword-shield.60fps-cleanup-legacy-trainer",
-                        diagnostics))
-                {
-                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, sourceFile.RelativePath));
-                }
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a legacy trainer throw output: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Deletable legacy 60FPS Patch trainer animation output"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a legacy trainer throw output: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Deletable legacy 60FPS Patch trainer animation output"));
-            }
-            catch (InvalidDataException)
-            {
-                // If the legacy conversion cannot be reproduced, leave the file in place.
-            }
+                    sourceBytes),
+                "legacy trainer throw",
+                preparedDeletes,
+                diagnostics);
         }
 
         foreach (var sourceFile in EnumerateLegacyTrainerBallThrowTimingFiles(paths.BaseRomFsPath, diagnostics))
         {
-            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
-            if (targetPath is null || !File.Exists(targetPath))
-            {
-                continue;
-            }
-
-            try
-            {
-                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = SwShFpsTrainerThrowPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
-                var outputBytes = File.ReadAllBytes(targetPath);
-                if (!outputBytes.SequenceEqual(generated))
-                {
-                    continue;
-                }
-
-                if (TryApplyOutputMutation(
-                        paths,
-                        SwShOutputFileMutation.DeleteLegacyAdoption(
-                            sourceFile.RelativePath,
-                            ToOutputFileState(outputBytes)),
-                        "tool.sword-shield.60fps-cleanup-legacy-ball-throw",
-                        diagnostics))
-                {
-                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, sourceFile.RelativePath));
-                }
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a legacy ball throw output: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Deletable legacy 60FPS Patch ball throw output"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a legacy ball throw output: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Deletable legacy 60FPS Patch ball throw output"));
-            }
-            catch (InvalidDataException)
-            {
-                // If the legacy conversion cannot be reproduced, leave the file in place.
-            }
-        }
-    }
-
-    private static void RemoveLegacyExcludedDemoSequenceOutputs(
-        ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
-    {
-        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            return;
+            PrepareLegacyGeneratedDelete(
+                paths,
+                sourceFile,
+                SwShFpsTrainerThrowPatcher.ConvertAnimationToHalfSpeed,
+                "legacy trainer ball throw",
+                preparedDeletes,
+                diagnostics);
         }
 
         foreach (var relativePath in ExcludedDemoSequenceBseqRelativePaths)
         {
             var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, relativePath);
-            var targetPath = ResolveOutputPath(paths.OutputRootPath, relativePath);
-            if (sourcePath is null || targetPath is null || !File.Exists(sourcePath) || !File.Exists(targetPath))
+            if (sourcePath is null || !File.Exists(sourcePath))
             {
                 continue;
             }
 
-            try
-            {
-                var sourceBytes = File.ReadAllBytes(sourcePath);
-                var generated = ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale);
-                var outputBytes = File.ReadAllBytes(targetPath);
-                if (!outputBytes.SequenceEqual(generated))
-                {
-                    continue;
-                }
+            PrepareLegacyGeneratedDelete(
+                paths,
+                new ManagedRomFsFile(sourcePath, relativePath),
+                sourceBytes => ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale),
+                "legacy excluded demo",
+                preparedDeletes,
+                diagnostics);
+        }
 
-                if (TryApplyOutputMutation(
-                        paths,
-                        SwShOutputFileMutation.DeleteLegacyAdoption(
-                            relativePath,
-                            ToOutputFileState(outputBytes)),
-                        "tool.sword-shield.60fps-cleanup-legacy-demo",
-                        diagnostics))
-                {
-                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, relativePath));
-                }
-            }
-            catch (IOException exception)
+        return preparedDeletes
+            .DistinctBy(prepared => prepared.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(prepared => prepared.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static void PrepareLegacyGeneratedDelete(
+        ProjectPaths paths,
+        ManagedRomFsFile sourceFile,
+        Func<byte[], byte[]> convert,
+        string description,
+        ICollection<PreparedRomFsDelete> preparedDeletes,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var targetPath = ResolveOutputPath(paths.OutputRootPath!, sourceFile.RelativePath);
+        if (targetPath is null || !File.Exists(targetPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var generated = convert(File.ReadAllBytes(sourceFile.SourcePath));
+            var output = File.ReadAllBytes(targetPath);
+            if (output.SequenceEqual(generated))
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a legacy excluded demo output: {exception.Message}",
-                    file: relativePath,
-                    expected: "Deletable legacy 60FPS Patch demo output"));
+                preparedDeletes.Add(new PreparedRomFsDelete(
+                    sourceFile.RelativePath,
+                    ToOutputFileState(output)));
             }
-            catch (UnauthorizedAccessException exception)
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not preflight a {description} output: {exception.Message}",
+                file: sourceFile.RelativePath,
+                expected: $"Readable {description} source and output") with
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a legacy excluded demo output: {exception.Message}",
-                    file: relativePath,
-                    expected: "Deletable legacy 60FPS Patch demo output"));
-            }
-            catch (InvalidDataException)
-            {
-                // If the legacy conversion cannot be reproduced, leave the file in place.
-            }
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
+        }
+        catch (InvalidDataException)
+        {
+            // If the historical conversion cannot be reproduced exactly, preserve the output.
         }
     }
 
@@ -915,7 +1267,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch requires Base ExeFS.",
                 field: "baseExeFsPath",
-                expected: "Readable Base ExeFS folder"));
+                expected: "Readable Base ExeFS folder") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
             return MainStatus.Empty;
         }
 
@@ -933,7 +1288,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not inspect exefs/main.",
                 file: ExeFsMainPath,
-                expected: "Readable base or output exefs/main"));
+                expected: "Readable base or output exefs/main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
             return MainStatus.Empty;
         }
 
@@ -946,7 +1304,10 @@ public sealed class SwShFpsPatchService
                     analysis.Kind == SwShFpsPatchMainKind.UnsupportedBuild ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
                     analysis.Message,
                     file: ExeFsMainPath,
-                    expected: "Supported Sword/Shield 1.3.2 exefs/main"));
+                    expected: "Supported Sword/Shield 1.3.2 exefs/main") with
+                {
+                    Code = MainInputUnavailableDiagnosticCode,
+                });
             }
 
             return new MainStatus(
@@ -962,7 +1323,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not inspect exefs/main: {exception.Message}",
                 file: ExeFsMainPath,
-                expected: "Readable exefs/main"));
+                expected: "Readable exefs/main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -970,34 +1334,102 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not inspect exefs/main: {exception.Message}",
                 file: ExeFsMainPath,
-                expected: "Readable exefs/main"));
+                expected: "Readable exefs/main") with
+            {
+                Code = MainInputUnavailableDiagnosticCode,
+            });
         }
 
         return MainStatus.Empty;
     }
 
-    private RomFsStatus AnalyzeRomFsOutputs(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
+    private RomFsStatus AnalyzeRomFsOutputs(
+        ProjectPaths paths,
+        IReadOnlySet<string> enabledAnimationTimingComponentIds,
+        IReadOnlyDictionary<string, string> manifestHashes,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+        var inputDiagnostics = SwShFpsPatchAnimationTimingComponents.All.ToDictionary(
+            componentId => componentId,
+            _ => new List<ValidationDiagnostic>(),
+            StringComparer.Ordinal);
+        var sourceFiles = new List<ManagedRomFsFile>();
+        foreach (var componentId in SwShFpsPatchAnimationTimingComponents.All)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "60FPS Patch requires Base RomFS.",
-                field: "baseRomFsPath",
-                expected: "Readable Base RomFS folder"));
-            return RomFsStatus.Empty;
+            var componentDiagnostics = inputDiagnostics[componentId];
+            if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
+            {
+                componentDiagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "This static animation timing component requires Base RomFS.",
+                    field: "baseRomFsPath",
+                    expected: "Readable Base RomFS folder") with
+                {
+                    Code = ComponentInputUnavailableDiagnosticCode,
+                });
+            }
+            else
+            {
+                sourceFiles.AddRange(EnumerateManagedRomFsFiles(
+                    paths.BaseRomFsPath,
+                    componentDiagnostics,
+                    new HashSet<string>(StringComparer.Ordinal) { componentId }));
+            }
+
+            if (enabledAnimationTimingComponentIds.Contains(componentId))
+            {
+                foreach (var diagnostic in componentDiagnostics)
+                {
+                    diagnostics.Add(diagnostic);
+                }
+            }
         }
 
-        var sourceFiles = EnumerateManagedRomFsFiles(paths.BaseRomFsPath, diagnostics);
-        var manifestHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
-        var inspectedFiles = new List<InspectedRomFsFile>(sourceFiles.Count);
+        var distinctSourceFiles = sourceFiles
+            .DistinctBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var preparedSources = new Dictionary<string, PreparedRomFsSource>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sourceFile in distinctSourceFiles)
+        {
+            var componentId = GetRomFsCategory(sourceFile.RelativePath);
+            try
+            {
+                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
+                preparedSources[sourceFile.RelativePath] = new PreparedRomFsSource(
+                    sourceBytes,
+                    ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                var diagnostic = CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"This static animation timing component could not inspect a required Base RomFS file: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Readable valid Sword/Shield Base RomFS input") with
+                {
+                    Code = exception is InvalidDataException
+                        ? ComponentInputInvalidDiagnosticCode
+                        : ComponentInputReadFailedDiagnosticCode,
+                };
+                inputDiagnostics[componentId].Add(diagnostic);
+                if (enabledAnimationTimingComponentIds.Contains(componentId))
+                {
+                    diagnostics.Add(diagnostic);
+                }
+            }
+        }
+
+        var inspectedFiles = new List<InspectedRomFsFile>(distinctSourceFiles.Length);
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
-            inspectedFiles.AddRange(sourceFiles.Select(sourceFile => new InspectedRomFsFile(
+            inspectedFiles.AddRange(distinctSourceFiles.Select(sourceFile => new InspectedRomFsFile(
                 sourceFile.RelativePath,
                 GetRomFsCategory(sourceFile.RelativePath),
                 ManagedRomFsFileState.NotInstalled)));
-            return CreateRomFsStatus(inspectedFiles);
+            return CreateRomFsStatus(
+                inspectedFiles,
+                enabledAnimationTimingComponentIds,
+                inputDiagnostics);
         }
 
         var reportedConflictDiagnosticCount = 0;
@@ -1013,25 +1445,31 @@ public sealed class SwShFpsPatchService
                     file: file,
                     expected: expected));
                 reportedConflictDiagnosticCount++;
-                return;
             }
-
-            omittedConflictDiagnosticCount++;
+            else
+            {
+                omittedConflictDiagnosticCount++;
+            }
         }
 
-        foreach (var sourceFile in sourceFiles)
+        foreach (var sourceFile in distinctSourceFiles)
         {
+            var componentId = GetRomFsCategory(sourceFile.RelativePath);
             var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
             if (targetPath is null)
             {
                 inspectedFiles.Add(new InspectedRomFsFile(
                     sourceFile.RelativePath,
-                    GetRomFsCategory(sourceFile.RelativePath),
+                    componentId,
                     ManagedRomFsFileState.Conflict));
-                AddConflictDiagnostic(
-                    "60FPS Patch could not resolve this managed ROMFS path inside Output Root.",
-                    sourceFile.RelativePath,
-                    "Output-root-contained managed ROMFS path");
+                if (enabledAnimationTimingComponentIds.Contains(componentId))
+                {
+                    AddConflictDiagnostic(
+                        "60FPS Patch could not resolve this managed ROMFS path inside Output Root.",
+                        sourceFile.RelativePath,
+                        "Output-root-contained managed ROMFS path");
+                }
+
                 continue;
             }
 
@@ -1039,67 +1477,108 @@ public sealed class SwShFpsPatchService
             {
                 inspectedFiles.Add(new InspectedRomFsFile(
                     sourceFile.RelativePath,
-                    GetRomFsCategory(sourceFile.RelativePath),
+                    componentId,
                     ManagedRomFsFileState.NotInstalled));
+                continue;
+            }
+
+            byte[] outputBytes;
+            try
+            {
+                outputBytes = File.ReadAllBytes(targetPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    componentId,
+                    ManagedRomFsFileState.Conflict));
+                if (enabledAnimationTimingComponentIds.Contains(componentId))
+                {
+                    AddConflictDiagnostic(
+                        $"60FPS Patch could not inspect this managed output: {exception.Message}",
+                        sourceFile.RelativePath,
+                        "Readable Output Root file");
+                }
+
+                continue;
+            }
+
+            if (!preparedSources.TryGetValue(sourceFile.RelativePath, out var preparedSource))
+            {
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    componentId,
+                    MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
+                        ? ManagedRomFsFileState.StaleOwned
+                        : ManagedRomFsFileState.Conflict));
+                continue;
+            }
+
+            var state = outputBytes.SequenceEqual(preparedSource.GeneratedBytes)
+                ? ManagedRomFsFileState.Patched
+                : outputBytes.SequenceEqual(preparedSource.SourceBytes)
+                    ? ManagedRomFsFileState.NotInstalled
+                    : MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
+                        ? ManagedRomFsFileState.StaleOwned
+                        : ManagedRomFsFileState.Conflict;
+            inspectedFiles.Add(new InspectedRomFsFile(sourceFile.RelativePath, componentId, state));
+            if (state == ManagedRomFsFileState.Conflict
+                && enabledAnimationTimingComponentIds.Contains(componentId))
+            {
+                AddConflictDiagnostic(
+                    "60FPS Patch will not overwrite this ROMFS file because it differs from Base RomFS, current KM output, and recorded KM-owned output.",
+                    sourceFile.RelativePath,
+                    "Vanilla, current KM-generated, or manifest-recorded KM-owned ROMFS file");
+            }
+        }
+
+        var visitedPaths = inspectedFiles
+            .Select(file => file.RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (relativePath, manifestHash) in manifestHashes)
+        {
+            if (visitedPaths.Contains(relativePath)
+                || !TryGetAnimationTimingComponentId(relativePath, out var componentId))
+            {
+                continue;
+            }
+
+            var targetPath = ResolveOutputPath(paths.OutputRootPath, relativePath);
+            if (targetPath is null || !File.Exists(targetPath))
+            {
                 continue;
             }
 
             try
             {
-                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
                 var outputBytes = File.ReadAllBytes(targetPath);
-                var state = outputBytes.SequenceEqual(generated)
-                    ? ManagedRomFsFileState.Patched
-                    : outputBytes.SequenceEqual(sourceBytes)
-                        ? ManagedRomFsFileState.NotInstalled
-                        : MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
-                            ? ManagedRomFsFileState.StaleOwned
-                            : ManagedRomFsFileState.Conflict;
-                inspectedFiles.Add(new InspectedRomFsFile(
-                    sourceFile.RelativePath,
-                    GetRomFsCategory(sourceFile.RelativePath),
-                    state));
-                if (state == ManagedRomFsFileState.Conflict)
+                var state = string.Equals(ComputeSha256(outputBytes), manifestHash, StringComparison.OrdinalIgnoreCase)
+                    ? ManagedRomFsFileState.StaleOwned
+                    : ManagedRomFsFileState.Conflict;
+                inspectedFiles.Add(new InspectedRomFsFile(relativePath, componentId, state));
+                if (state == ManagedRomFsFileState.Conflict
+                    && enabledAnimationTimingComponentIds.Contains(componentId))
                 {
                     AddConflictDiagnostic(
-                        "60FPS Patch will not overwrite this ROMFS file because it differs from Base RomFS, current KM output, and recorded KM-owned output.",
-                        sourceFile.RelativePath,
-                        "Vanilla, current KM-generated, or manifest-recorded KM-owned ROMFS file");
+                        "A recorded KM-owned animation timing output changed and will not be overwritten.",
+                        relativePath,
+                        "Exact manifest-recorded KM-owned ROMFS file");
                 }
             }
-            catch (IOException exception)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 inspectedFiles.Add(new InspectedRomFsFile(
-                    sourceFile.RelativePath,
-                    GetRomFsCategory(sourceFile.RelativePath),
+                    relativePath,
+                    componentId,
                     ManagedRomFsFileState.Conflict));
-                AddConflictDiagnostic(
-                    $"60FPS Patch could not inspect this managed ROMFS file: {exception.Message}",
-                    sourceFile.RelativePath,
-                    "Readable Base RomFS and Output Root files");
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                inspectedFiles.Add(new InspectedRomFsFile(
-                    sourceFile.RelativePath,
-                    GetRomFsCategory(sourceFile.RelativePath),
-                    ManagedRomFsFileState.Conflict));
-                AddConflictDiagnostic(
-                    $"60FPS Patch could not inspect this managed ROMFS file: {exception.Message}",
-                    sourceFile.RelativePath,
-                    "Readable Base RomFS and Output Root files");
-            }
-            catch (InvalidDataException exception)
-            {
-                inspectedFiles.Add(new InspectedRomFsFile(
-                    sourceFile.RelativePath,
-                    GetRomFsCategory(sourceFile.RelativePath),
-                    ManagedRomFsFileState.Conflict));
-                AddConflictDiagnostic(
-                    exception.Message,
-                    sourceFile.RelativePath,
-                    "Valid managed Sword/Shield ROMFS file");
+                if (enabledAnimationTimingComponentIds.Contains(componentId))
+                {
+                    AddConflictDiagnostic(
+                        $"60FPS Patch could not inspect a recorded owned output: {exception.Message}",
+                        relativePath,
+                        "Readable manifest-recorded KM-owned ROMFS file");
+                }
             }
         }
 
@@ -1113,17 +1592,26 @@ public sealed class SwShFpsPatchService
                 expected: "Resolve every reported managed ROMFS conflict before installing"));
         }
 
-        return CreateRomFsStatus(inspectedFiles);
+        return CreateRomFsStatus(
+            inspectedFiles,
+            enabledAnimationTimingComponentIds,
+            inputDiagnostics);
     }
 
-    private static RomFsStatus CreateRomFsStatus(IReadOnlyList<InspectedRomFsFile> files)
+    private static RomFsStatus CreateRomFsStatus(
+        IReadOnlyList<InspectedRomFsFile> files,
+        IReadOnlySet<string> enabledAnimationTimingComponentIds,
+        IReadOnlyDictionary<string, List<ValidationDiagnostic>> inputDiagnostics)
     {
-        var staleOwnedFiles = files
+        var enabledFiles = files
+            .Where(file => enabledAnimationTimingComponentIds.Contains(file.Category))
+            .ToArray();
+        var staleOwnedFiles = enabledFiles
             .Where(file => file.State == ManagedRomFsFileState.StaleOwned)
             .Select(file => file.RelativePath)
             .Take(MaximumReportedRomFsPaths)
             .ToArray();
-        var conflictingFiles = files
+        var conflictingFiles = enabledFiles
             .Where(file => file.State == ManagedRomFsFileState.Conflict)
             .Select(file => file.RelativePath)
             .Take(MaximumReportedRomFsPaths)
@@ -1141,15 +1629,34 @@ public sealed class SwShFpsPatchService
             })
             .Where(category => category.ManagedFileCount > 0)
             .ToArray();
+        var animationTimingComponents = SwShFpsPatchAnimationTimingComponents.All
+            .Select(componentId =>
+            {
+                var category = categories.FirstOrDefault(category => category.Category == componentId);
+                var componentDiagnostics = inputDiagnostics[componentId];
+                return new SwShFpsPatchAnimationTimingComponentStatus(
+                    componentId,
+                    enabledAnimationTimingComponentIds.Contains(componentId),
+                    componentDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                        ? "blocked"
+                        : "ready",
+                    componentDiagnostics.ToArray(),
+                    category?.ManagedFileCount ?? 0,
+                    category?.PatchedFileCount ?? 0,
+                    category?.StaleOwnedFileCount ?? 0,
+                    category?.ConflictingFileCount ?? 0);
+            })
+            .ToArray();
 
         return new RomFsStatus(
-            files.Count,
-            files.Count(file => file.State == ManagedRomFsFileState.Patched),
-            files.Count(file => file.State == ManagedRomFsFileState.StaleOwned),
-            files.Count(file => file.State == ManagedRomFsFileState.Conflict),
+            enabledFiles.Length,
+            enabledFiles.Count(file => file.State == ManagedRomFsFileState.Patched),
+            enabledFiles.Count(file => file.State == ManagedRomFsFileState.StaleOwned),
+            enabledFiles.Count(file => file.State == ManagedRomFsFileState.Conflict),
             staleOwnedFiles,
             conflictingFiles,
-            categories);
+            categories,
+            animationTimingComponents);
     }
 
     private static string GetRomFsCategory(string relativePath)
@@ -1189,9 +1696,33 @@ public sealed class SwShFpsPatchService
         return "other";
     }
 
+    private static bool TryGetAnimationTimingComponentId(
+        string relativePath,
+        out string componentId)
+    {
+        componentId = string.Empty;
+        if (!IsManagedRomFsPath(relativePath))
+        {
+            return false;
+        }
+
+        var category = GetRomFsCategory(relativePath);
+        if (!AllAnimationTimingComponentIds.Contains(category))
+        {
+            return false;
+        }
+
+        componentId = category;
+        return true;
+    }
+
     private SwShFpsPatchStatus CreateStatus(
         MainStatus mainStatus,
         RomFsStatus romFsStatus,
+        bool globalApplyBlocked,
+        bool globalRestoreBlocked,
+        bool hasRemovableKmState,
+        IReadOnlyList<ValidationDiagnostic> restoreDiagnostics,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         var hasErrors = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -1213,7 +1744,6 @@ public sealed class SwShFpsPatchService
         }
         else if (mainStatus.PatchedSiteCount == mainStatus.SiteCount
             && mainStatus.SiteCount > 0
-            && romFsStatus.ManagedFileCount > 0
             && romFsStatus.PatchedFileCount == romFsStatus.ManagedFileCount
             && romFsStatus.ConflictingFileCount == 0)
         {
@@ -1250,6 +1780,10 @@ public sealed class SwShFpsPatchService
         return new SwShFpsPatchStatus(
             status,
             message,
+            globalApplyBlocked,
+            globalRestoreBlocked,
+            hasRemovableKmState,
+            restoreDiagnostics,
             mainStatus.BuildId,
             mainStatus.DetectedGame,
             mainStatus.PatchedSiteCount,
@@ -1261,13 +1795,15 @@ public sealed class SwShFpsPatchService
             romFsStatus.StaleOwnedFiles,
             romFsStatus.ConflictingFiles,
             romFsStatus.Categories,
+            romFsStatus.AnimationTimingComponents,
             diagnostics);
     }
 
     private SwShFpsPatchApplyResult CreateApplyResult(
         ProjectPaths paths,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        bool recoveryRequired = false)
     {
         var statusDiagnostics = diagnostics.ToList();
         var status = Load(paths);
@@ -1285,54 +1821,105 @@ public sealed class SwShFpsPatchService
             new WriteManifest(applyId, appliedAt, Array.Empty<PlannedFileWrite>()),
             diagnostics);
 
-        return new SwShFpsPatchApplyResult(status, applyResult);
+        return new SwShFpsPatchApplyResult(status, applyResult, recoveryRequired);
     }
 
     private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedRomFsFiles(
         string baseRomFsPath,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? animationTimingComponentIds = null)
     {
-        var errorCountBeforeBseqScan = diagnostics.Count(
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var managedBseqFiles = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics);
-        var errorCountAfterBseqScan = diagnostics.Count(
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        if (managedBseqFiles.Count != ExpectedManagedBseqFileCount
-            && errorCountAfterBseqScan == errorCountBeforeBseqScan)
+        bool Includes(string componentId) => animationTimingComponentIds is null
+            || animationTimingComponentIds.Contains(componentId);
+
+        var files = new List<ManagedRomFsFile>();
+        if (Includes(SwShFpsPatchAnimationTimingComponents.BattleSequences))
         {
+            var errorCountBeforeBseqScan = diagnostics.Count(
+                diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            var managedBseqFiles = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics);
+            var errorCountAfterBseqScan = diagnostics.Count(
+                diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            if (managedBseqFiles.Count != ExpectedManagedBseqFileCount
+                && errorCountAfterBseqScan == errorCountBeforeBseqScan)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"60FPS Patch expected {ExpectedManagedBseqFileCount:N0} managed move-effect BSEQ files, but found {managedBseqFiles.Count:N0}."),
+                    file: SequenceRootRelativePath,
+                    expected: "Complete Sword/Shield Base RomFS move-effect sequence folder") with
+                {
+                    Code = ComponentInputUnavailableDiagnosticCode,
+                });
+            }
+
+            files.AddRange(managedBseqFiles);
+            foreach (var sourceFile in RequiredManagedBseqFiles)
+            {
+                AddRequiredManagedRomFsFile(baseRomFsPath, sourceFile.RelativePath, files, diagnostics);
+            }
+        }
+
+        if (Includes(SwShFpsPatchAnimationTimingComponents.BattleCameras))
+        {
+            files.AddRange(EnumerateManagedBattleCameraFiles(baseRomFsPath, diagnostics));
+        }
+
+        if (Includes(SwShFpsPatchAnimationTimingComponents.BattleInterface))
+        {
+            files.AddRange(EnumerateManagedBattleUiArchives(baseRomFsPath, diagnostics));
+        }
+
+        if (Includes(SwShFpsPatchAnimationTimingComponents.BattleModels))
+        {
+            foreach (var relativePath in RequiredManagedBattleModelAnimationFiles)
+            {
+                AddRequiredManagedRomFsFile(baseRomFsPath, relativePath, files, diagnostics);
+            }
+        }
+
+        if (Includes(SwShFpsPatchAnimationTimingComponents.OpeningAndDemos))
+        {
+            files.AddRange(EnumerateManagedDemoBseqFiles(baseRomFsPath, diagnostics));
+            AddRequiredManagedRomFsFile(
+                baseRomFsPath,
+                SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
+                files,
+                diagnostics);
+        }
+
+        if (Includes(SwShFpsPatchAnimationTimingComponents.RecoveryAnimation))
+        {
+            AddRequiredManagedRomFsFile(
+                baseRomFsPath,
+                SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
+                files,
+                diagnostics);
+        }
+
+        var includedComponentIds = animationTimingComponentIds ?? AllAnimationTimingComponentIds;
+        foreach (var componentId in includedComponentIds)
+        {
+            if (files.Any(file => string.Equals(
+                    GetRomFsCategory(file.RelativePath),
+                    componentId,
+                    StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"60FPS Patch expected {ExpectedManagedBseqFileCount:N0} managed move-effect BSEQ files, but found {managedBseqFiles.Count:N0}."),
-                file: SequenceRootRelativePath,
-                expected: "Complete Sword/Shield Base RomFS move-effect sequence folder"));
+                "This static animation timing component found no usable managed Base RomFS files.",
+                file: GetAnimationTimingComponentSourcePath(componentId),
+                expected: "At least one verified managed Base RomFS file for this component") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
         }
 
-        var files = managedBseqFiles.ToList();
-        files.AddRange(EnumerateManagedBattleCameraFiles(baseRomFsPath, diagnostics));
-        files.AddRange(EnumerateManagedBattleUiArchives(baseRomFsPath, diagnostics));
-        files.AddRange(EnumerateManagedDemoBseqFiles(baseRomFsPath, diagnostics));
-        foreach (var sourceFile in RequiredManagedBseqFiles)
-        {
-            AddRequiredManagedRomFsFile(baseRomFsPath, sourceFile.RelativePath, files, diagnostics);
-        }
-
-        foreach (var relativePath in RequiredManagedBattleModelAnimationFiles)
-        {
-            AddRequiredManagedRomFsFile(baseRomFsPath, relativePath, files, diagnostics);
-        }
-
-        AddRequiredManagedRomFsFile(
-            baseRomFsPath,
-            SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
-            files,
-            diagnostics);
-        AddRequiredManagedRomFsFile(
-            baseRomFsPath,
-            SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
-            files,
-            diagnostics);
         return files
             .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -1349,7 +1936,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find the move-effect sequence folder.",
                 file: SequenceRootRelativePath,
-                expected: "Sword/Shield Base RomFS move-effect sequence folder"));
+                expected: "Sword/Shield Base RomFS move-effect sequence folder") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
             return [];
         }
 
@@ -1370,7 +1960,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan BSEQ files: {exception.Message}",
                 file: SequenceRootRelativePath,
-                expected: "Readable move-effect sequence folder"));
+                expected: "Readable move-effect sequence folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
         catch (UnauthorizedAccessException exception)
@@ -1379,7 +1972,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan BSEQ files: {exception.Message}",
                 file: SequenceRootRelativePath,
-                expected: "Readable move-effect sequence folder"));
+                expected: "Readable move-effect sequence folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
     }
@@ -1401,7 +1997,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find the battle camera folder.",
                 file: BattleCameraRootRelativePath,
-                expected: "Sword/Shield Base RomFS battle camera folder"));
+                expected: "Sword/Shield Base RomFS battle camera folder") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
             return [];
         }
 
@@ -1426,7 +2025,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan battle camera files: {exception.Message}",
                 file: BattleCameraRootRelativePath,
-                expected: "Readable battle camera folder"));
+                expected: "Readable battle camera folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
         catch (UnauthorizedAccessException exception)
@@ -1435,7 +2037,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan battle camera files: {exception.Message}",
                 file: BattleCameraRootRelativePath,
-                expected: "Readable battle camera folder"));
+                expected: "Readable battle camera folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
     }
@@ -1451,7 +2056,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find the battle UI folder.",
                 file: BattleUiRootRelativePath,
-                expected: "Sword/Shield Base RomFS battle UI folder"));
+                expected: "Sword/Shield Base RomFS battle UI folder") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
             return [];
         }
 
@@ -1473,7 +2081,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan battle UI files: {exception.Message}",
                 file: BattleUiRootRelativePath,
-                expected: "Readable battle UI folder"));
+                expected: "Readable battle UI folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
         catch (UnauthorizedAccessException exception)
@@ -1482,7 +2093,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan battle UI files: {exception.Message}",
                 file: BattleUiRootRelativePath,
-                expected: "Readable battle UI folder"));
+                expected: "Readable battle UI folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
     }
@@ -1498,7 +2112,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find the demo sequence folder.",
                 file: DemoSequenceRootRelativePath,
-                expected: "Sword/Shield Base RomFS demo sequence folder"));
+                expected: "Sword/Shield Base RomFS demo sequence folder") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
             return [];
         }
 
@@ -1519,7 +2136,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan demo BSEQ files: {exception.Message}",
                 file: DemoSequenceRootRelativePath,
-                expected: "Readable demo sequence folder"));
+                expected: "Readable demo sequence folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
         catch (UnauthorizedAccessException exception)
@@ -1528,7 +2148,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 $"60FPS Patch could not scan demo BSEQ files: {exception.Message}",
                 file: DemoSequenceRootRelativePath,
-                expected: "Readable demo sequence folder"));
+                expected: "Readable demo sequence folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
             return [];
         }
     }
@@ -1546,7 +2169,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Error,
                 "60FPS Patch could not find a required Base RomFS file.",
                 file: relativePath,
-                expected: "Complete Sword/Shield Base RomFS"));
+                expected: "Complete Sword/Shield Base RomFS") with
+            {
+                Code = ComponentInputUnavailableDiagnosticCode,
+            });
             return;
         }
 
@@ -1648,7 +2274,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch could not scan legacy trainer throw files: {exception.Message}",
                 file: rootRelativePath,
-                expected: "Readable legacy trainer animation folder"));
+                expected: "Readable legacy trainer animation folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -1656,7 +2285,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch could not scan legacy trainer throw files: {exception.Message}",
                 file: rootRelativePath,
-                expected: "Readable legacy trainer animation folder"));
+                expected: "Readable legacy trainer animation folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
         }
     }
 
@@ -1698,7 +2330,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch could not scan legacy trainer ball throw files: {exception.Message}",
                 file: rootRelativePath,
-                expected: "Readable trainer animation folder"));
+                expected: "Readable trainer animation folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -1706,7 +2341,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch could not scan legacy trainer ball throw files: {exception.Message}",
                 file: rootRelativePath,
-                expected: "Readable trainer animation folder"));
+                expected: "Readable trainer animation folder") with
+            {
+                Code = ComponentInputReadFailedDiagnosticCode,
+            });
         }
     }
 
@@ -1854,52 +2492,11 @@ public sealed class SwShFpsPatchService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "60FPS Patch requires valid base paths and a valid Output Root.",
-                expected: "Editable project paths"));
+                expected: "Editable project paths") with
+            {
+                Code = ProjectUnavailableDiagnosticCode,
+            });
         }
-    }
-
-    private static void WriteOutputFile(
-        ProjectPaths paths,
-        string relativePath,
-        byte[] contents,
-        OutputFileState reviewedPreimage,
-        ICollection<ValidationDiagnostic> diagnostics,
-        ICollection<ProjectFileReference> writtenFiles)
-    {
-        var mutation = string.Equals(relativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
-            ? SwShOutputFileMutation.WriteComposed(relativePath, contents, reviewedPreimage)
-            : SwShOutputFileMutation.Write(relativePath, contents, reviewedPreimage);
-        if (TryApplyOutputMutation(
-                paths,
-                mutation,
-                "tool.sword-shield.60fps-install",
-                diagnostics))
-        {
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, relativePath));
-            return;
-        }
-    }
-
-    private static bool TryApplyOutputMutation(
-        ProjectPaths paths,
-        SwShOutputFileMutation mutation,
-        string operationId,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (SwShOutputTransactionWriter.TryApply(
-                paths,
-                [mutation],
-                operationId,
-                out _,
-                out var failure))
-        {
-            return true;
-        }
-
-        diagnostics.Add(CreateOutputTransactionDiagnostic(
-            "60FPS Patch output transaction failed",
-            failure));
-        return false;
     }
 
     private static ValidationDiagnostic CreateOutputTransactionDiagnostic(
@@ -1960,19 +2557,78 @@ public sealed class SwShFpsPatchService
         return Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
     }
 
+    private static string GetAnimationTimingComponentSourcePath(string componentId)
+    {
+        return componentId switch
+        {
+            SwShFpsPatchAnimationTimingComponents.BattleSequences => SequenceRootRelativePath,
+            SwShFpsPatchAnimationTimingComponents.BattleCameras => BattleCameraRootRelativePath,
+            SwShFpsPatchAnimationTimingComponents.BattleInterface => BattleUiRootRelativePath,
+            SwShFpsPatchAnimationTimingComponents.BattleModels => BattleModelAnimationRootRelativePath,
+            SwShFpsPatchAnimationTimingComponents.OpeningAndDemos => DemoSequenceRootRelativePath,
+            SwShFpsPatchAnimationTimingComponents.RecoveryAnimation =>
+                SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
+            _ => "romfs",
+        };
+    }
+
+    private static IReadOnlySet<string> ResolveRequestedAnimationTimingComponents(
+        IReadOnlyCollection<string>? componentIds,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (componentIds is null)
+        {
+            return AllAnimationTimingComponentIds.ToHashSet(StringComparer.Ordinal);
+        }
+
+        var resolved = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var componentId in componentIds)
+        {
+            if (string.IsNullOrWhiteSpace(componentId)
+                || !AllAnimationTimingComponentIds.Contains(componentId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "60FPS Patch received an unknown static animation timing component.",
+                    field: field,
+                    expected: string.Join(", ", SwShFpsPatchAnimationTimingComponents.All)));
+                continue;
+            }
+
+            if (!resolved.Add(componentId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"60FPS Patch received duplicate component id '{componentId}'.",
+                    field: field,
+                    expected: "Each static animation timing component listed at most once"));
+            }
+        }
+
+        return resolved;
+    }
+
     private static IReadOnlyDictionary<string, string> ReadManifestOwnedFileHashes(
+        ProjectPaths paths,
+        ICollection<ValidationDiagnostic>? diagnostics = null)
+    {
+        return ReadManifestSnapshot(paths, diagnostics).OwnedFileHashes;
+    }
+
+    private static FpsPatchManifestSnapshot ReadManifestSnapshot(
         ProjectPaths paths,
         ICollection<ValidationDiagnostic>? diagnostics = null)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            return FpsPatchManifestSnapshot.Missing;
         }
 
         var manifestPath = ResolveOutputPath(paths.OutputRootPath, ManifestRelativePath);
         if (manifestPath is null || !File.Exists(manifestPath))
         {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            return FpsPatchManifestSnapshot.Missing;
         }
 
         try
@@ -1980,9 +2636,37 @@ public sealed class SwShFpsPatchService
             var manifest = JsonSerializer.Deserialize<FpsPatchManifest>(
                 File.ReadAllText(manifestPath),
                 ManifestJsonOptions);
-            if (manifest is null || manifest.Version != 1 || manifest.RomFsFiles is null)
+            if (manifest is null
+                || manifest.Version is not (1 or 2)
+                || manifest.RomFsFiles is null)
             {
                 throw new InvalidDataException("60FPS Patch manifest has an unsupported layout.");
+            }
+
+            IReadOnlySet<string> enabledComponents;
+            if (manifest.Version == 1)
+            {
+                enabledComponents = AllAnimationTimingComponentIds.ToHashSet(StringComparer.Ordinal);
+            }
+            else
+            {
+                if (manifest.EnabledAnimationTimingComponentIds is null)
+                {
+                    throw new InvalidDataException("60FPS Patch manifest is missing its animation timing selection.");
+                }
+
+                var resolved = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var componentId in manifest.EnabledAnimationTimingComponentIds)
+                {
+                    if (string.IsNullOrWhiteSpace(componentId)
+                        || !AllAnimationTimingComponentIds.Contains(componentId)
+                        || !resolved.Add(componentId))
+                    {
+                        throw new InvalidDataException("60FPS Patch manifest contains an invalid animation timing selection.");
+                    }
+                }
+
+                enabledComponents = resolved;
             }
 
             var hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -2002,7 +2686,11 @@ public sealed class SwShFpsPatchService
                 hashes[relativePath] = hash;
             }
 
-            return hashes;
+            return new FpsPatchManifestSnapshot(
+                hashes,
+                enabledComponents,
+                manifest.ExeFsMainPatched,
+                IsValid: true);
         }
         catch (IOException exception)
         {
@@ -2010,7 +2698,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch manifest could not be read: {exception.Message}",
                 file: ManifestRelativePath,
-                expected: "Readable 60FPS Patch ownership manifest"));
+                expected: "Readable 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -2018,7 +2709,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch manifest could not be read: {exception.Message}",
                 file: ManifestRelativePath,
-                expected: "Readable 60FPS Patch ownership manifest"));
+                expected: "Readable 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
         }
         catch (JsonException exception)
         {
@@ -2026,7 +2720,10 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 $"60FPS Patch manifest could not be parsed: {exception.Message}",
                 file: ManifestRelativePath,
-                expected: "Valid 60FPS Patch ownership manifest"));
+                expected: "Valid 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
         }
         catch (InvalidDataException exception)
         {
@@ -2034,10 +2731,13 @@ public sealed class SwShFpsPatchService
                 DiagnosticSeverity.Warning,
                 exception.Message,
                 file: ManifestRelativePath,
-                expected: "Version 1 60FPS Patch ownership manifest"));
+                expected: "Version 1 or 2 60FPS Patch ownership manifest") with
+            {
+                Code = ManifestInvalidDiagnosticCode,
+            });
         }
 
-        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return FpsPatchManifestSnapshot.Invalid;
     }
 
     private static bool MatchesManifestOwnedOutput(
@@ -2049,166 +2749,128 @@ public sealed class SwShFpsPatchService
             && string.Equals(ComputeSha256(output), expectedHash, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void RefreshManifestSnapshot(
+    private static IReadOnlyDictionary<string, string> BuildPostTransactionOwnedFileHashes(
         ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            return;
-        }
-
-        var previousHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
-        var enumerationDiagnostics = new List<ValidationDiagnostic>();
-        var sourceFiles = EnumerateManagedRomFsFiles(paths.BaseRomFsPath, enumerationDiagnostics);
-        foreach (var diagnostic in enumerationDiagnostics)
-        {
-            diagnostics.Add(diagnostic);
-        }
-
-        if (enumerationDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-        {
-            return;
-        }
-
-        var ownedFiles = new List<FpsPatchManifestFile>();
-        foreach (var sourceFile in sourceFiles)
-        {
-            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
-            if (targetPath is null || !File.Exists(targetPath))
-            {
-                continue;
-            }
-
-            try
-            {
-                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
-                var output = File.ReadAllBytes(targetPath);
-                if (output.SequenceEqual(generated)
-                    || MatchesManifestOwnedOutput(sourceFile.RelativePath, output, previousHashes))
-                {
-                    ownedFiles.Add(new FpsPatchManifestFile(
-                        sourceFile.RelativePath,
-                        ComputeSha256(output)));
-                }
-            }
-            catch (IOException exception)
-            {
-                PreservePreviousManifestEntry(sourceFile.RelativePath, previousHashes, ownedFiles);
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not refresh ownership for a managed ROMFS file: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Readable managed ROMFS output"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                PreservePreviousManifestEntry(sourceFile.RelativePath, previousHashes, ownedFiles);
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not refresh ownership for a managed ROMFS file: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Readable managed ROMFS output"));
-            }
-            catch (InvalidDataException exception)
-            {
-                PreservePreviousManifestEntry(sourceFile.RelativePath, previousHashes, ownedFiles);
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    exception.Message,
-                    file: sourceFile.RelativePath,
-                    expected: "Valid managed Sword/Shield ROMFS output"));
-            }
-        }
-
-        PreserveUnvisitedManifestEntries(
-            paths,
-            sourceFiles
-                .Select(sourceFile => sourceFile.RelativePath)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase),
-            previousHashes,
-            ownedFiles,
-            diagnostics);
-
-        var mainPatched = HasInstalledMainOutput(paths);
-        if (!mainPatched && ownedFiles.Count == 0)
-        {
-            DeleteManifest(paths, diagnostics);
-            return;
-        }
-
-        WriteManifest(
-            paths,
-            new FpsPatchManifest(
-                Version: 1,
-                CreatedAt: DateTimeOffset.UtcNow,
-                ExeFsMainPatched: mainPatched,
-                RomFsFiles: ownedFiles
-                    .DistinctBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .ToArray()),
-            diagnostics);
-    }
-
-    private static void PreserveUnvisitedManifestEntries(
-        ProjectPaths paths,
-        IReadOnlySet<string> visitedPaths,
         IReadOnlyDictionary<string, string> previousHashes,
-        ICollection<FpsPatchManifestFile> ownedFiles,
+        IReadOnlyDictionary<string, string> selectedComponentHashes,
+        IReadOnlyList<PreparedRomFsDelete> preparedDeletes,
+        IReadOnlySet<string> retainedAnimationTimingComponentIds,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        var ownedHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (relativePath, previousHash) in previousHashes)
         {
-            if (visitedPaths.Contains(relativePath) || !IsManagedRomFsPath(relativePath))
+            if (!TryGetAnimationTimingComponentId(relativePath, out var componentId)
+                || !retainedAnimationTimingComponentIds.Contains(componentId))
             {
                 continue;
             }
 
             var targetPath = ResolveOutputPath(paths.OutputRootPath!, relativePath);
-            if (targetPath is null || !File.Exists(targetPath))
+            if (targetPath is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "60FPS Patch could not contain a recorded ownership path inside Output Root.",
+                    file: relativePath,
+                    expected: "Output-root-contained manifest-recorded ROMFS path"));
+                continue;
+            }
+
+            if (!File.Exists(targetPath))
             {
                 continue;
             }
 
             try
             {
-                var output = File.ReadAllBytes(targetPath);
-                if (string.Equals(ComputeSha256(output), previousHash, StringComparison.OrdinalIgnoreCase))
+                var currentHash = ComputeSha256(File.ReadAllBytes(targetPath));
+                ownedHashes[relativePath] = previousHash;
+                if (!string.Equals(currentHash, previousHash, StringComparison.OrdinalIgnoreCase))
                 {
-                    ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Warning,
+                        "A recorded KM-owned animation timing output changed and remains recorded but was preserved.",
+                        file: relativePath,
+                        expected: "Exact manifest-recorded KM-owned ROMFS file"));
                 }
             }
-            catch (IOException exception)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
                 diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not verify previously recorded ROMFS ownership: {exception.Message}",
+                    DiagnosticSeverity.Error,
+                    $"60FPS Patch could not preflight recorded ROMFS ownership: {exception.Message}",
                     file: relativePath,
-                    expected: "Readable previously recorded KM-owned ROMFS output"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not verify previously recorded ROMFS ownership: {exception.Message}",
-                    file: relativePath,
-                    expected: "Readable previously recorded KM-owned ROMFS output"));
+                    expected: "Readable manifest-recorded KM-owned ROMFS output"));
             }
         }
+
+        foreach (var (relativePath, hash) in selectedComponentHashes)
+        {
+            ownedHashes[relativePath] = hash;
+        }
+
+        foreach (var preparedDelete in preparedDeletes)
+        {
+            ownedHashes.Remove(preparedDelete.RelativePath);
+        }
+
+        return ownedHashes;
     }
 
-    private static void PreservePreviousManifestEntry(
-        string relativePath,
-        IReadOnlyDictionary<string, string> previousHashes,
-        ICollection<FpsPatchManifestFile> ownedFiles)
+    private static FpsPatchManifest CreateManifest(
+        bool exeFsMainPatched,
+        IReadOnlyDictionary<string, string> ownedFileHashes,
+        IReadOnlySet<string> enabledAnimationTimingComponentIds)
     {
-        if (previousHashes.TryGetValue(NormalizeRelativePath(relativePath), out var previousHash))
+        return new FpsPatchManifest(
+            Version: 2,
+            CreatedAt: DateTimeOffset.UtcNow,
+            ExeFsMainPatched: exeFsMainPatched,
+            RomFsFiles: ownedFileHashes
+                .Select(file => new FpsPatchManifestFile(file.Key, file.Value))
+                .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            EnabledAnimationTimingComponentIds: SwShFpsPatchAnimationTimingComponents.All
+                .Where(enabledAnimationTimingComponentIds.Contains)
+                .ToArray());
+    }
+
+    private static SwShOutputFileMutation? PrepareManifestMutation(
+        ProjectPaths paths,
+        FpsPatchManifest? manifest,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!SwShOutputTransactionWriter.TryCapturePreimage(
+                paths,
+                ManifestRelativePath,
+                out var reviewedPreimage,
+                out var captureFailure))
         {
-            ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch manifest could not be preflighted: {captureFailure?.Message ?? "Unknown output transaction error."}",
+                file: ManifestRelativePath,
+                expected: "Exact reviewed 60FPS Patch manifest preimage") with
+            {
+                Code = captureFailure?.Code ?? RestorePreflightBlockedDiagnosticCode,
+            });
+            return null;
         }
+
+        if (manifest is null)
+        {
+            return reviewedPreimage is { Exists: true }
+                ? SwShOutputFileMutation.DeleteLegacyAdoption(
+                    ManifestRelativePath,
+                    reviewedPreimage)
+                : null;
+        }
+
+        return SwShOutputFileMutation.Write(
+            ManifestRelativePath,
+            JsonSerializer.SerializeToUtf8Bytes(manifest, ManifestJsonOptions),
+            reviewedPreimage!);
     }
 
     private static bool HasInstalledMainOutput(ProjectPaths paths)
@@ -2235,80 +2897,6 @@ public sealed class SwShFpsPatchService
         catch (UnauthorizedAccessException)
         {
             return false;
-        }
-    }
-
-    private static void WriteManifest(
-        ProjectPaths paths,
-        FpsPatchManifest manifest,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (!SwShOutputTransactionWriter.TryApply(
-                paths,
-                [SwShOutputFileMutation.Write(
-                    ManifestRelativePath,
-                    JsonSerializer.SerializeToUtf8Bytes(manifest, ManifestJsonOptions))],
-                "tool.sword-shield.60fps-manifest-write",
-                out _,
-                out var failure))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"60FPS Patch manifest could not be written: {failure?.Message ?? "Unknown output transaction error."}",
-                file: ManifestRelativePath,
-                expected: "Coordinator-owned writable 60FPS Patch manifest") with
-            {
-                Code = failure?.Code,
-            });
-        }
-    }
-
-    private static void DeleteManifest(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            return;
-        }
-
-        if (!SwShOutputTransactionWriter.TryCapturePreimage(
-                paths,
-                ManifestRelativePath,
-                out var reviewedPreimage,
-                out var captureFailure))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"60FPS Patch manifest could not be reviewed for deletion: {captureFailure?.Message ?? "Unknown output transaction error."}",
-                file: ManifestRelativePath,
-                expected: "Exact reviewed 60FPS Patch manifest preimage") with
-            {
-                Code = captureFailure?.Code,
-            });
-            return;
-        }
-
-        if (reviewedPreimage is null || !reviewedPreimage.Exists)
-        {
-            return;
-        }
-
-        if (!SwShOutputTransactionWriter.TryApply(
-                paths,
-                [SwShOutputFileMutation.DeleteLegacyAdoption(
-                    ManifestRelativePath,
-                    reviewedPreimage)],
-                "tool.sword-shield.60fps-manifest-delete",
-                out _,
-                out var failure))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"60FPS Patch manifest could not be deleted: {failure?.Message ?? "Unknown output transaction error."}",
-                file: ManifestRelativePath,
-                expected: "Coordinator-owned deletable 60FPS Patch manifest") with
-            {
-                Code = failure?.Code,
-            });
         }
     }
 
@@ -2352,6 +2940,18 @@ public sealed class SwShFpsPatchService
         byte[] Contents,
         OutputFileState ReviewedPreimage);
 
+    private sealed record PreparedRomFsApply(
+        IReadOnlyList<PreparedRomFsFile> Files,
+        IReadOnlyDictionary<string, string> OwnedFileHashes);
+
+    private sealed record PreparedRomFsDelete(
+        string RelativePath,
+        OutputFileState ReviewedPreimage);
+
+    private sealed record PreparedRomFsSource(
+        byte[] SourceBytes,
+        byte[] GeneratedBytes);
+
     private enum ManagedRomFsFileState
     {
         NotInstalled,
@@ -2382,18 +2982,64 @@ public sealed class SwShFpsPatchService
         int ConflictingFileCount,
         IReadOnlyList<string> StaleOwnedFiles,
         IReadOnlyList<string> ConflictingFiles,
-        IReadOnlyList<SwShFpsPatchRomFsCategoryStatus> Categories)
+        IReadOnlyList<SwShFpsPatchRomFsCategoryStatus> Categories,
+        IReadOnlyList<SwShFpsPatchAnimationTimingComponentStatus> AnimationTimingComponents)
     {
-        public static RomFsStatus Empty { get; } = new(0, 0, 0, 0, [], [], []);
+        public static RomFsStatus CreateEmpty(IReadOnlySet<string> enabledAnimationTimingComponentIds)
+        {
+            return new RomFsStatus(
+                0,
+                0,
+                0,
+                0,
+                [],
+                [],
+                [],
+                SwShFpsPatchAnimationTimingComponents.All
+                    .Select(componentId => new SwShFpsPatchAnimationTimingComponentStatus(
+                        componentId,
+                        enabledAnimationTimingComponentIds.Contains(componentId),
+                        "blocked",
+                        [],
+                        0,
+                        0,
+                        0,
+                        0))
+                    .ToArray());
+        }
     }
 
     private sealed record FpsPatchManifest(
         int Version,
         DateTimeOffset CreatedAt,
         bool ExeFsMainPatched,
-        IReadOnlyList<FpsPatchManifestFile> RomFsFiles);
+        IReadOnlyList<FpsPatchManifestFile> RomFsFiles,
+        IReadOnlyList<string>? EnabledAnimationTimingComponentIds = null);
 
     private sealed record FpsPatchManifestFile(
         string RelativePath,
         string Sha256);
+
+    private sealed record FullRestorePreflight(
+        IReadOnlyList<ValidationDiagnostic> Diagnostics,
+        bool HasRemovableKmState);
+
+    private sealed record FpsPatchManifestSnapshot(
+        IReadOnlyDictionary<string, string> OwnedFileHashes,
+        IReadOnlySet<string> EnabledAnimationTimingComponentIds,
+        bool ExeFsMainPatched,
+        bool IsValid)
+    {
+        public static FpsPatchManifestSnapshot Missing { get; } = new(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            AllAnimationTimingComponentIds.ToHashSet(StringComparer.Ordinal),
+            ExeFsMainPatched: false,
+            IsValid: true);
+
+        public static FpsPatchManifestSnapshot Invalid { get; } = new(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.Ordinal),
+            ExeFsMainPatched: false,
+            IsValid: false);
+    }
 }

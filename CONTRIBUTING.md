@@ -53,6 +53,18 @@ Start the complete desktop development environment with `pnpm tauri:dev`. The ro
 
 Run `pnpm check` before submitting a change. It checks tracked workspace paths, builds the desktop app, and builds the .NET solution. Pull requests run those product builds and also compile the native desktop shell with locked Cargo dependencies.
 
+### Desktop interface contract
+
+Every new desktop editor, field, button, and composite control must use the shared KM interface
+theme. A feature stylesheet may control layout and density, but it must not replace shared control
+colors, native affordances, interaction feedback, or accessibility states with browser defaults,
+platform gray, inline styles, or hardcoded colors.
+
+The complete implementation rules and acceptance checklist are in the
+[desktop app contributor guide](apps/desktop/README.md#km-interface-contract). Desktop typecheck
+recursively enforces this contract across TSX and CSS, so run `pnpm typecheck` while developing UI
+changes rather than waiting for pull request validation.
+
 ## Make changes that are safe to review
 
 Keep pull requests focused. Explain the user impact and root cause for a fix, or the full user workflow for a feature.
@@ -87,6 +99,7 @@ Before opening a pull request, make sure:
 * Changed behavior was manually verified in the affected workflow.
 * Temporary files, diagnostics, and private data are absent from the diff.
 * Output ownership and cleanup behavior are explained when relevant.
+* New desktop UI follows the KM interface contract and passes its static control-theme checks.
 * User documentation is updated when the workflow changed.
 * The contribution is compatible with the project's [GPL 3.0 only license](LICENSE).
 

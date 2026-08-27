@@ -391,7 +391,7 @@ function TypeChartCellControl({
 
   return (
     <label
-      className={`type-chart-cell type-chart-cell-${option.className}`}
+      className={`type-chart-cell type-chart-cell-${option.className}${disabled ? ' type-chart-cell-disabled' : ''}`}
       title={label}
     >
       <span aria-hidden="true">{option.display}</span>

@@ -235,7 +235,10 @@ import {
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type NpcItemGiftSelection } from './bridge/npcItemGiftContracts';
 import { type BattleCafeRewardRowEdit } from './bridge/battleCafeRewardsContracts';
-import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
+import {
+  type FpsPatchAnimationTimingComponentId,
+  type FpsPatchStatus
+} from './bridge/fpsPatchContracts';
 import { type ProfanityFilterStatus } from './bridge/profanityFilterContracts';
 import {
   ProjectBridgeError,
@@ -293,6 +296,7 @@ import {
   toDesktopErrorDiagnostics,
   toProjectBridgeDiagnostics
 } from './uiErrorDiagnostics';
+import { formatDiagnosticMessage } from './diagnostics';
 import {
   clearLegacyProjectPathDraft,
   clearLegacyValidatedProjectPathCache,
@@ -359,6 +363,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from './components/workflowPanels';
+import { TechnicalDetails } from './features/workbench/AnalysisPresentation';
 import {
   EditorSessionActionsProvider,
   EditorSessionBar,
@@ -524,11 +529,12 @@ import {
 import { AnalysisLoadingSettings } from './features/workbench/AnalysisLoadingSettings';
 import { AnalysisPreparationPanel } from './features/workbench/AnalysisPreparationPanel';
 import {
-  preparationStateFromQueryStatus,
+  createAnalysisPreparationProgress,
+  preparationProgressFromQueryStatuses,
   readAnalysisLoadingMode,
   writeAnalysisLoadingMode,
   type AnalysisLoadingMode,
-  type AnalysisPreparationState
+  type AnalysisPreparationProgress
 } from './features/workbench/analysisPreparation';
 import { useAnalysisPreparation } from './features/workbench/useAnalysisPreparation';
 import {
@@ -3176,6 +3182,8 @@ export function App({
   const [isModMergerStaging, setIsModMergerStaging] = useState(false);
   const [isModMergerApplying, setIsModMergerApplying] = useState(false);
   const [fpsPatchStatus, setFpsPatchStatus] = useState<FpsPatchStatus | null>(null);
+  const [fpsPatchDesiredAnimationTimingComponentIds, setFpsPatchDesiredAnimationTimingComponentIds] =
+    useState<FpsPatchAnimationTimingComponentId[]>([]);
   const [isFpsPatchLoading, setIsFpsPatchLoading] = useState(false);
   const [isFpsPatchApplying, setIsFpsPatchApplying] = useState(false);
   const [profanityFilterStatus, setProfanityFilterStatus] =
@@ -3595,45 +3603,52 @@ export function App({
     writeAnalysisLoadingMode(nextMode);
   }, []);
   const analysisPreparationScopeKey =
-    activeProjectId && selectedGame && projectSourceRevision.sourceObservationToken
-      ? `${activeProjectId}:${selectedGame}:${projectSourceRevision.sourceObservationToken}`
+    activeProjectId && selectedGame
+      ? `${activeProjectId}:${selectedGame}:${projectSourceRevision.sourceObservationToken ?? 'pending'}`
       : null;
-  const semanticPreparationState: AnalysisPreparationState = !activeProjectId
-    ? 'waiting'
-    : projectSourceRevision.status === 'error'
-      ? 'error'
-      : projectSourceRevision.status !== 'ready' || !semanticExploreScope
-        ? 'loading'
-        : preparationStateFromQueryStatus(
-            semanticExploreController.capabilities.status
-          );
+  const semanticPreparationProgress = !activeProjectId
+    ? createAnalysisPreparationProgress('semanticProject', 'waiting')
+    : preparationProgressFromQueryStatuses('semanticProject', [
+        projectSourceRevision.status,
+        semanticExploreScope ? semanticExploreController.capabilities.status : 'idle'
+      ]);
   const analysisPreparation = useAnalysisPreparation({
     deferBackgroundWork: isBusy || isSvCacheWarming || hasCriticalWriteOperation,
     mode: analysisLoadingMode,
     scopeKey: analysisPreparationScopeKey,
-    semanticState: semanticPreparationState
+    semanticProgress: semanticPreparationProgress
   });
   const analysisPreloadTools: readonly WorkbenchToolId[] = analysisPreparation.preloadTools;
-  const reportAnalysisPreparationState = analysisPreparation.reportState;
+  const reportAnalysisPreparationProgress = analysisPreparation.reportProgress;
   const handleBalanceLabPreparationState = useCallback(
-    (state: AnalysisPreparationState) => reportAnalysisPreparationState('balanceLab', state),
-    [reportAnalysisPreparationState]
+    (progress: AnalysisPreparationProgress) => (
+      reportAnalysisPreparationProgress('balanceLab', progress)
+    ),
+    [reportAnalysisPreparationProgress]
   );
   const handleGuidedDesignPreparationState = useCallback(
-    (state: AnalysisPreparationState) => reportAnalysisPreparationState('guidedDesign', state),
-    [reportAnalysisPreparationState]
+    (progress: AnalysisPreparationProgress) => (
+      reportAnalysisPreparationProgress('guidedDesign', progress)
+    ),
+    [reportAnalysisPreparationProgress]
   );
   const handleSemanticMergePreparationState = useCallback(
-    (state: AnalysisPreparationState) => reportAnalysisPreparationState('semanticMerge', state),
-    [reportAnalysisPreparationState]
+    (progress: AnalysisPreparationProgress) => (
+      reportAnalysisPreparationProgress('semanticMerge', progress)
+    ),
+    [reportAnalysisPreparationProgress]
   );
   const handleGameModulesPreparationState = useCallback(
-    (state: AnalysisPreparationState) => reportAnalysisPreparationState('gameModules', state),
-    [reportAnalysisPreparationState]
+    (progress: AnalysisPreparationProgress) => (
+      reportAnalysisPreparationProgress('gameModules', progress)
+    ),
+    [reportAnalysisPreparationProgress]
   );
   const handleResearchLabPreparationState = useCallback(
-    (state: AnalysisPreparationState) => reportAnalysisPreparationState('researchLab', state),
-    [reportAnalysisPreparationState]
+    (progress: AnalysisPreparationProgress) => (
+      reportAnalysisPreparationProgress('researchLab', progress)
+    ),
+    [reportAnalysisPreparationProgress]
   );
   const handleRememberGameDumpDestination = useCallback(
     async (game: ProjectGame, destination: string) => {
@@ -4432,6 +4447,7 @@ export function App({
     setModMergerSelectedDirectory2Files(new Set());
     setModMergerResolutions({});
     setFpsPatchStatus(null);
+    setFpsPatchDesiredAnimationTimingComponentIds([]);
     setProfanityFilterStatus(null);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
@@ -12146,6 +12162,9 @@ export function App({
         paths: createProjectPaths(draftPaths)
       });
       setFpsPatchStatus(response.status);
+      setFpsPatchDesiredAnimationTimingComponentIds(
+        getEnabledFpsPatchAnimationTimingComponentIds(response.status)
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -12153,7 +12172,9 @@ export function App({
     }
   };
 
-  const handleApplyFpsPatch = async () => {
+  const handleApplyFpsPatch = async (
+    enabledAnimationTimingComponentIds: readonly FpsPatchAnimationTimingComponentId[]
+  ) => {
     if (!outputSafety.canApply) {
       return;
     }
@@ -12170,15 +12191,28 @@ export function App({
 
     try {
       const paths = createProjectPaths(draftPaths);
-      const response = await bridge.applyFpsPatch({ paths });
+      const response = await bridge.applyFpsPatch({
+        paths,
+        enabledAnimationTimingComponentIds: [...enabledAnimationTimingComponentIds]
+      });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
-      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
-      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+      const applySucceeded = !hasApplyErrors && !response.recoveryRequired;
+      if (applySucceeded) {
+        setFpsPatchDesiredAnimationTimingComponentIds(
+          getEnabledFpsPatchAnimationTimingComponentIds(response.status)
+        );
+      }
+      if (response.recoveryRequired) {
+        await notifySemanticOutputFailure(response.applyResult);
+      } else if (response.applyResult.writtenFiles.length > 0) {
+        await notifySemanticOutputMutation();
+      }
+      if (applySucceeded && response.applyResult.writtenFiles.length > 0) {
         setWorkProgress(createIndeterminateWorkProgress(
           'Applying 60FPS Patch',
           'Refreshing loaded editor data',
@@ -12216,12 +12250,22 @@ export function App({
       const response = await bridge.restoreFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
-      await notifySemanticOutputMutation();
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
-      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+      const restoreSucceeded = !hasApplyErrors && !response.recoveryRequired;
+      if (restoreSucceeded) {
+        setFpsPatchDesiredAnimationTimingComponentIds(
+          getEnabledFpsPatchAnimationTimingComponentIds(response.status)
+        );
+      }
+      if (response.recoveryRequired) {
+        await notifySemanticOutputFailure(response.applyResult);
+      } else if (response.applyResult.writtenFiles.length > 0) {
+        await notifySemanticOutputMutation();
+      }
+      if (restoreSucceeded && response.applyResult.writtenFiles.length > 0) {
         setWorkProgress(createIndeterminateWorkProgress(
           'Restoring 60FPS Patch',
           'Refreshing loaded editor data',
@@ -19570,9 +19614,11 @@ export function App({
           {activeSection === 'fpsPatch' ? (
             <FpsPatchSection
               canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)}
+              desiredAnimationTimingComponentIds={fpsPatchDesiredAnimationTimingComponentIds}
               isApplying={isFpsPatchApplying}
               isLoading={isFpsPatchLoading}
               onApply={handleApplyFpsPatch}
+              onDesiredAnimationTimingComponentIdsChange={setFpsPatchDesiredAnimationTimingComponentIds}
               onRefresh={handleLoadFpsPatch}
               onRestore={handleRestoreFpsPatch}
               outputRootPath={draftPaths.outputRootPath}
@@ -51052,20 +51098,78 @@ function StartingItemsSection({
   );
 }
 
+function FpsPatchDiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
+  const { t, translateLiteral } = useLocalization();
+
+  return (
+    <ul>
+      {diagnostics.map((diagnostic, index) => (
+        <li key={`${diagnostic.code ?? 'fps-patch'}-${index}`}>
+          <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
+          <TechnicalDetails summary={translateLiteral('Technical details')}>
+            <dl className="km-analysis-diagnostic-details">
+              {diagnostic.code ? (
+                <div>
+                  <dt>{t('analysisPresentation.controls.identifier')}</dt>
+                  <dd><code>{diagnostic.code}</code></dd>
+                </div>
+              ) : null}
+              {diagnostic.domain ? (
+                <div>
+                  <dt>{translateLiteral('Area')}</dt>
+                  <dd>{diagnostic.domain}</dd>
+                </div>
+              ) : null}
+              {diagnostic.field ? (
+                <div>
+                  <dt>{t('analysisPresentation.controls.field')}</dt>
+                  <dd>{diagnostic.field}</dd>
+                </div>
+              ) : null}
+              {diagnostic.file ? (
+                <div>
+                  <dt>{translateLiteral('File')}</dt>
+                  <dd><code>{diagnostic.file}</code></dd>
+                </div>
+              ) : null}
+              {diagnostic.expected ? (
+                <div>
+                  <dt>{translateLiteral('Expected')}</dt>
+                  <dd>{diagnostic.expected}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>{translateLiteral('Message')}</dt>
+                <dd>{diagnostic.message}</dd>
+              </div>
+            </dl>
+          </TechnicalDetails>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function FpsPatchSection({
   canApply,
+  desiredAnimationTimingComponentIds,
   isApplying,
   isLoading,
   onApply,
+  onDesiredAnimationTimingComponentIdsChange,
   onRefresh,
   onRestore,
   outputRootPath,
   status
 }: {
   canApply: boolean;
+  desiredAnimationTimingComponentIds: FpsPatchAnimationTimingComponentId[];
   isApplying: boolean;
   isLoading: boolean;
-  onApply: () => void;
+  onApply: (componentIds: readonly FpsPatchAnimationTimingComponentId[]) => void;
+  onDesiredAnimationTimingComponentIdsChange: (
+    componentIds: FpsPatchAnimationTimingComponentId[]
+  ) => void;
   onRefresh: () => void;
   onRestore: () => void;
   outputRootPath: string;
@@ -51075,55 +51179,111 @@ function FpsPatchSection({
   const isBusy = isLoading || isApplying;
   const statusKey = status?.status ?? 'unchecked';
   const statusLabel = t(`fpsPatch.state.${statusKey}`);
-  const hasInstallBlock = status
-    ? status.conflictingRomFsFileCount > 0 ||
-      status.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
-      status.status === 'blocked' ||
-      status.status === 'unsupported'
-    : false;
+  const desiredAnimationTimingComponentIdSet = new Set(
+    desiredAnimationTimingComponentIds
+  );
+  const desiredAnimationTimingComponents =
+    status?.animationTimingComponents.filter((component) =>
+      desiredAnimationTimingComponentIdSet.has(component.id)
+    ) ?? [];
+  const hasDesiredComponentInputBlock = desiredAnimationTimingComponents.some(
+    (component) => component.inputState === 'blocked'
+  );
+  const hasDesiredComponentConflict = desiredAnimationTimingComponents.some(
+    (component) => component.conflictingFileCount > 0
+  );
+  const hasInstallBlock = Boolean(
+    status?.globalApplyBlocked ||
+      hasDesiredComponentInputBlock ||
+      hasDesiredComponentConflict
+  );
   const safetyLabel = status
     ? hasInstallBlock
       ? t('technicalTool.safety.blocked')
       : t('technicalTool.safety.safe')
     : t('technicalTool.safety.notChecked');
-  const installedRomFsFileCount = status
+  const installedEnabledRomFsFileCount = status
     ? status.patchedRomFsFileCount + status.staleOwnedRomFsFileCount
     : 0;
+  const hasAnimationTimingConfigurationChanges = Boolean(
+    status?.animationTimingComponents.some(
+      (component) => isFpsPatchAnimationTimingComponentPending(
+        component,
+        desiredAnimationTimingComponentIdSet.has(component.id)
+      )
+    )
+  );
+  const hasDesiredAnimationTimingSelectionChanges = Boolean(
+    status?.animationTimingComponents.some(
+      (component) =>
+        component.enabled !== desiredAnimationTimingComponentIdSet.has(component.id)
+    )
+  );
+  useRegisterEditorDraftDirty('fpsPatch', hasDesiredAnimationTimingSelectionChanges);
+  const executableCoreNeedsApply = Boolean(
+    status && status.patchedMainSiteCount !== status.mainSiteCount
+  );
   const notInstalledRomFsFileCount = status
     ? Math.max(
         0,
         status.managedRomFsFileCount -
-          installedRomFsFileCount -
+          installedEnabledRomFsFileCount -
           status.conflictingRomFsFileCount
       )
     : 0;
   const canInstall = Boolean(
     canApply &&
       status &&
-      status.conflictingRomFsFileCount === 0 &&
-      ['notInstalled', 'partial', 'updateAvailable'].includes(status.status)
+      !hasInstallBlock &&
+      (executableCoreNeedsApply || hasAnimationTimingConfigurationChanges)
   );
   const canUninstall = Boolean(
     canApply &&
       status &&
-      (status.patchedMainSiteCount > 0 || installedRomFsFileCount > 0)
+      !status.globalRestoreBlocked &&
+      status.hasRemovableKmState
   );
   const installDisabledReason = !status
     ? t('fpsPatch.disabled.refreshFirst')
-    : status.status === 'installed'
-      ? t('fpsPatch.disabled.alreadyInstalled')
-      : hasInstallBlock
-        ? t('fpsPatch.disabled.resolveBlockers')
-        : !canApply
-          ? t('fpsPatch.disabled.projectNotEditable')
-          : null;
-  const uninstallDisabledReason = !status
-    ? t('fpsPatch.disabled.refreshFirst')
     : !canApply
       ? t('fpsPatch.disabled.projectNotEditable')
-      : !canUninstall
-      ? t('fpsPatch.disabled.noOwnedOutput')
-      : null;
+      : status.globalApplyBlocked
+        ? t('fpsPatch.disabled.resolveGlobalBlockers')
+        : hasDesiredComponentInputBlock
+          ? t('fpsPatch.disabled.selectedInputUnavailable')
+          : hasDesiredComponentConflict
+            ? t('fpsPatch.disabled.resolveBlockers')
+            : !executableCoreNeedsApply && !hasAnimationTimingConfigurationChanges
+              ? t('fpsPatch.disabled.alreadyInstalled')
+              : null;
+  const uninstallDisabledReason = !status
+    ? t('fpsPatch.disabled.refreshFirst')
+    : status.globalRestoreBlocked
+      ? t('fpsPatch.disabled.resolveRestoreBlockers')
+      : !canApply
+        ? t('fpsPatch.disabled.projectNotEditable')
+        : !canUninstall
+          ? t('fpsPatch.disabled.noOwnedOutput')
+          : null;
+
+  const handleDesiredAnimationTimingChange = (
+    componentId: FpsPatchAnimationTimingComponentId,
+    shouldEnable: boolean
+  ) => {
+    if (!status) {
+      return;
+    }
+
+    onDesiredAnimationTimingComponentIdsChange(
+      status.animationTimingComponents
+        .filter((component) =>
+          component.id === componentId
+            ? shouldEnable
+            : desiredAnimationTimingComponentIdSet.has(component.id)
+        )
+        .map((component) => component.id)
+    );
+  };
 
   return (
     <>
@@ -51224,37 +51384,137 @@ function FpsPatchSection({
           </article>
         </div>
 
-        {status && status.romFsCategories.length > 0 ? (
-          <section className="technical-tool-component-section" aria-labelledby="fps-patch-components-heading">
+        {status && status.animationTimingComponents.length > 0 ? (
+          <section
+            className="technical-tool-component-section fps-patch-animation-timing-section"
+            aria-labelledby="fps-patch-animation-timing-heading"
+          >
             <div>
-              <h3 id="fps-patch-components-heading">{t('fpsPatch.components.title')}</h3>
-              <p>{t('fpsPatch.components.description')}</p>
+              <h3 id="fps-patch-animation-timing-heading">
+                {t('fpsPatch.animationTiming.title')}
+              </h3>
+              <p>{t('fpsPatch.animationTiming.description')}</p>
             </div>
-            <div
-              aria-labelledby="fps-patch-components-heading"
-              className="technical-tool-component-table"
-              role="table"
-            >
-              <div className="technical-tool-component-row technical-tool-component-header" role="row">
-                <span role="columnheader">{t('fpsPatch.components.component')}</span>
-                <span role="columnheader">{t('fpsPatch.components.managed')}</span>
-                <span role="columnheader">{t('fpsPatch.components.current')}</span>
-                <span role="columnheader">{t('fpsPatch.components.refresh')}</span>
-                <span role="columnheader">{translateLiteral('Conflicts')}</span>
-              </div>
-              {status.romFsCategories.map((category) => (
-                <div className="technical-tool-component-row" key={category.category} role="row">
-                  <span className="technical-tool-component-name" role="cell">
-                    <strong>{t(`fpsPatch.category.${category.category}.label`)}</strong>
-                    <small>{t(`fpsPatch.category.${category.category}.detail`)}</small>
-                  </span>
-                  <span data-localization-ignore="true" role="cell">{category.managedFileCount.toLocaleString(formatLocale)}</span>
-                  <span data-localization-ignore="true" role="cell">{category.patchedFileCount.toLocaleString(formatLocale)}</span>
-                  <span data-localization-ignore="true" role="cell">{category.staleOwnedFileCount.toLocaleString(formatLocale)}</span>
-                  <span data-localization-ignore="true" role="cell">{category.conflictingFileCount.toLocaleString(formatLocale)}</span>
-                </div>
-              ))}
+            <p className="fps-patch-animation-timing-scope">
+              <ShieldCheck aria-hidden="true" size={16} />
+              <span>{t('fpsPatch.animationTiming.scope')}</span>
+            </p>
+            <div className="fps-patch-animation-timing-grid">
+              {status.animationTimingComponents.map((component) => {
+                const currentStateKey = getFpsPatchAnimationTimingCurrentStateKey(component);
+                const desiredState = desiredAnimationTimingComponentIdSet.has(component.id)
+                  ? 'synchronized'
+                  : 'removeKmTiming';
+
+                return (
+                  <article
+                    aria-labelledby={`fps-patch-${component.id}-heading`}
+                    className={`fps-patch-animation-timing-card ${
+                      component.inputState === 'blocked'
+                        ? 'fps-patch-animation-timing-card-input-blocked'
+                        : ''
+                    }`}
+                    key={component.id}
+                  >
+                    <div className="fps-patch-animation-timing-card-heading">
+                      <h4 id={`fps-patch-${component.id}-heading`}>
+                        {t(`fpsPatch.category.${component.id}.label`)}
+                      </h4>
+                      <p>{t(`fpsPatch.category.${component.id}.detail`)}</p>
+                    </div>
+                    <div className="fps-patch-animation-timing-state-row">
+                      <div>
+                        <span>{t('fpsPatch.animationTiming.current')}</span>
+                        <span
+                          className={`status-pill ${getFpsPatchAnimationTimingStatusClassName(currentStateKey)}`}
+                        >
+                          {t(`fpsPatch.animationTiming.state.${currentStateKey}`)}
+                        </span>
+                      </div>
+                      <label htmlFor={`fps-patch-${component.id}-desired`}>
+                        <span>{t('fpsPatch.animationTiming.desired')}</span>
+                        <select
+                          className="km-select-control"
+                          disabled={isBusy || status.status === 'unsupported'}
+                          id={`fps-patch-${component.id}-desired`}
+                          onChange={(event) =>
+                            handleDesiredAnimationTimingChange(
+                              component.id,
+                              event.target.value === 'synchronized'
+                            )
+                          }
+                          value={desiredState}
+                        >
+                          <option
+                            disabled={component.inputState === 'blocked'}
+                            value="synchronized"
+                          >
+                            {t('fpsPatch.animationTiming.desiredState.synchronized')}
+                          </option>
+                          <option value="removeKmTiming">
+                            {t('fpsPatch.animationTiming.desiredState.removeKmTiming')}
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+                    {component.inputState === 'blocked' ? (
+                      <details className="fps-patch-animation-timing-input-warning">
+                        <summary>
+                          <AlertTriangle aria-hidden="true" size={16} />
+                          <strong>{t('fpsPatch.animationTiming.inputUnavailable')}</strong>
+                          <span
+                            className="fps-patch-animation-timing-input-count"
+                            data-localization-ignore="true"
+                          >
+                            {component.inputDiagnostics.length}
+                          </span>
+                          <ChevronDown
+                            aria-hidden="true"
+                            className="fps-patch-animation-timing-input-chevron"
+                            size={16}
+                          />
+                        </summary>
+                        {component.inputDiagnostics.length > 0 ? (
+                          <FpsPatchDiagnosticList diagnostics={component.inputDiagnostics} />
+                        ) : null}
+                      </details>
+                    ) : null}
+                    <dl className="fps-patch-animation-timing-counts">
+                      <div>
+                        <dt>{t('fpsPatch.animationTiming.files.verified')}</dt>
+                        <dd data-localization-ignore="true">
+                          {component.managedFileCount.toLocaleString(formatLocale)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('fpsPatch.animationTiming.files.current')}</dt>
+                        <dd data-localization-ignore="true">
+                          {component.patchedFileCount.toLocaleString(formatLocale)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('fpsPatch.animationTiming.files.earlier')}</dt>
+                        <dd data-localization-ignore="true">
+                          {component.staleOwnedFileCount.toLocaleString(formatLocale)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('fpsPatch.animationTiming.files.conflicts')}</dt>
+                        <dd data-localization-ignore="true">
+                          {component.conflictingFileCount.toLocaleString(formatLocale)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                );
+              })}
             </div>
+            {hasAnimationTimingConfigurationChanges ? (
+              <p aria-live="polite" className="fps-patch-animation-timing-pending">
+                <RefreshCw aria-hidden="true" size={16} />
+                <span>{t('fpsPatch.animationTiming.pending')}</span>
+              </p>
+            ) : null}
           </section>
         ) : null}
 
@@ -51279,7 +51539,14 @@ function FpsPatchSection({
         ) : null}
 
         {status && status.conflictingRomFsFileCount > 0 ? (
-          <section className="technical-tool-notice technical-tool-notice-error" aria-labelledby="fps-patch-conflicts-heading">
+          <section
+            aria-labelledby="fps-patch-conflicts-heading"
+            className={`technical-tool-notice ${
+              hasDesiredComponentConflict
+                ? 'technical-tool-notice-error'
+                : 'technical-tool-notice-info'
+            }`}
+          >
             <div className="technical-tool-notice-heading">
               <AlertTriangle aria-hidden="true" size={18} />
               <div>
@@ -51336,7 +51603,7 @@ function FpsPatchSection({
             aria-busy={isApplying || undefined}
             className="primary-button"
             disabled={!canInstall || isBusy}
-            onClick={onApply}
+            onClick={() => onApply(desiredAnimationTimingComponentIds)}
             title={t('fpsPatch.actions.installHelp')}
             type="button"
           >
@@ -51373,6 +51640,47 @@ function FpsPatchSection({
             ) : null}
           </div>
         ) : null}
+        {status && status.restoreDiagnostics.length > 0 ? (
+          <details
+            className={`fps-patch-animation-timing-input-warning fps-patch-restore-diagnostics ${
+              status.globalRestoreBlocked
+                ? 'fps-patch-restore-diagnostics-blocked'
+                : 'fps-patch-restore-diagnostics-warning'
+            }`}
+          >
+            <summary>
+              <AlertTriangle aria-hidden="true" size={16} />
+              <span className="fps-patch-restore-diagnostics-heading">
+                <strong>
+                  {t(
+                    status.globalRestoreBlocked
+                      ? 'fpsPatch.restoreDiagnostics.blockedTitle'
+                      : 'fpsPatch.restoreDiagnostics.warningTitle'
+                  )}
+                </strong>
+                <small>
+                  {t(
+                    status.globalRestoreBlocked
+                      ? 'fpsPatch.restoreDiagnostics.blockedDescription'
+                      : 'fpsPatch.restoreDiagnostics.warningDescription'
+                  )}
+                </small>
+              </span>
+              <span
+                className="fps-patch-animation-timing-input-count"
+                data-localization-ignore="true"
+              >
+                {status.restoreDiagnostics.length}
+              </span>
+              <ChevronDown
+                aria-hidden="true"
+                className="fps-patch-animation-timing-input-chevron"
+                size={16}
+              />
+            </summary>
+            <FpsPatchDiagnosticList diagnostics={status.restoreDiagnostics} />
+          </details>
+        ) : null}
       </section>
 
       {status && status.diagnostics.length > 0 ? (
@@ -51380,6 +51688,88 @@ function FpsPatchSection({
       ) : null}
     </>
   );
+}
+
+type FpsPatchAnimationTimingCurrentState =
+  | 'conflict'
+  | 'earlierKm'
+  | 'partial'
+  | 'synchronized'
+  | 'unavailable'
+  | 'vanilla';
+
+function getEnabledFpsPatchAnimationTimingComponentIds(
+  status: FpsPatchStatus
+): FpsPatchAnimationTimingComponentId[] {
+  return status.animationTimingComponents
+    .filter((component) => component.enabled)
+    .map((component) => component.id);
+}
+
+function isFpsPatchAnimationTimingComponentPending(
+  component: FpsPatchStatus['animationTimingComponents'][number],
+  desiredEnabled: boolean
+) {
+  if (!desiredEnabled) {
+    return (
+      component.enabled ||
+      component.patchedFileCount > 0 ||
+      component.staleOwnedFileCount > 0
+    );
+  }
+
+  return (
+    !component.enabled ||
+    component.inputState === 'blocked' ||
+    component.managedFileCount === 0 ||
+    component.patchedFileCount !== component.managedFileCount ||
+    component.staleOwnedFileCount > 0
+  );
+}
+
+function getFpsPatchAnimationTimingCurrentStateKey(
+  component: FpsPatchStatus['animationTimingComponents'][number]
+): FpsPatchAnimationTimingCurrentState {
+  if (component.conflictingFileCount > 0) {
+    return 'conflict';
+  }
+
+  if (component.staleOwnedFileCount > 0) {
+    return component.staleOwnedFileCount === component.managedFileCount
+      ? 'earlierKm'
+      : 'partial';
+  }
+
+  if (
+    component.managedFileCount > 0 &&
+    component.patchedFileCount === component.managedFileCount
+  ) {
+    return 'synchronized';
+  }
+
+  if (component.patchedFileCount > 0) {
+    return 'partial';
+  }
+
+  return component.managedFileCount === 0 ? 'unavailable' : 'vanilla';
+}
+
+function getFpsPatchAnimationTimingStatusClassName(
+  state: FpsPatchAnimationTimingCurrentState
+) {
+  switch (state) {
+    case 'synchronized':
+      return 'status-ready';
+    case 'conflict':
+      return 'status-blocked';
+    case 'vanilla':
+      return 'status-pill-info';
+    case 'earlierKm':
+    case 'partial':
+    case 'unavailable':
+    default:
+      return 'status-warning';
+  }
 }
 
 function getFpsPatchStatusClassName(status: string) {

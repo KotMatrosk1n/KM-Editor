@@ -20,8 +20,9 @@ import type {
 import { GuidedDesignSection } from './GuidedDesignSection';
 import { useGuidedDesignController } from './useGuidedDesignController';
 import {
-  preparationStateFromQueryStatus,
-  type AnalysisPreparationState
+  createAnalysisPreparationProgress,
+  preparationProgressFromQueryStatuses,
+  type AnalysisPreparationProgress
 } from '../workbench/analysisPreparation';
 
 export type GuidedDesignRuntimeProps = {
@@ -40,7 +41,7 @@ export type GuidedDesignRuntimeProps = {
   ) => Promise<GuidedDesignImportResponse>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenChanges: () => void;
-  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
+  onPreparationStateChange?: (progress: AnalysisPreparationProgress) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -76,7 +77,10 @@ export function GuidedDesignRuntime({
   useEffect(() => {
     if (!revision) {
       onPreparationStateChange?.(
-        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        createAnalysisPreparationProgress(
+          'guidedDesign',
+          capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        )
       );
     }
   }, [capabilityStatus, onPreparationStateChange, revision]);
@@ -177,7 +181,7 @@ function GuidedDesignReadyRuntime({
   ]);
   useEffect(() => {
     onPreparationStateChange?.(
-      preparationStateFromQueryStatus(controller.capabilities.status)
+      preparationProgressFromQueryStatuses('guidedDesign', [controller.capabilities.status])
     );
   }, [controller.capabilities.status, onPreparationStateChange]);
 

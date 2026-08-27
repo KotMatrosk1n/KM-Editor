@@ -7,6 +7,10 @@ import type {
   TrainerPoolRecord,
   TrainerPoolsWorkflow
 } from '../../bridge/trainerPoolsContracts';
+import {
+  FocusedEditorMetrics,
+  FocusedEditorWorkspace
+} from '../../components/FocusedEditorWorkspace';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 
@@ -92,31 +96,37 @@ export function TrainerPoolsSection({
 
   if (!workflow) {
     return (
-      <section aria-labelledby="trainer-pools-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <ArrowLeftRight aria-hidden="true" size={18} />
-          <h2 id="trainer-pools-heading">{t('trainerPools.title')}</h2>
-        </div>
-        <p className="empty-copy">{t('trainerPools.empty')}</p>
-      </section>
+      <FocusedEditorWorkspace className="trainer-pools-workspace">
+        <section aria-labelledby="trainer-pools-heading" className="panel wide-panel">
+          <div className="panel-heading">
+            <ArrowLeftRight aria-hidden="true" size={18} />
+            <h2 id="trainer-pools-heading">{t('trainerPools.title')}</h2>
+          </div>
+          <p className="empty-copy focused-editor-readable-copy">
+            {t('trainerPools.empty')}
+          </p>
+        </section>
+      </FocusedEditorWorkspace>
     );
   }
 
   return (
-    <div className="workflow-panel-stack trainer-pools-workspace">
+    <FocusedEditorWorkspace className="trainer-pools-workspace">
       <section aria-labelledby="trainer-pools-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ArrowLeftRight aria-hidden="true" size={18} />
           <h2 id="trainer-pools-heading">{t('trainerPools.title')}</h2>
           <span className="status-badge ready">{t('trainerPools.fixedCountBadge')}</span>
         </div>
-        <p className="section-copy">{t('trainerPools.description')}</p>
-        <div className="metrics-grid compact-metrics">
+        <p className="section-copy focused-editor-readable-copy">
+          {t('trainerPools.description')}
+        </p>
+        <FocusedEditorMetrics>
           <Metric label={t('trainerPools.metrics.logicalPools')} value={String(workflow.stats.logicalPoolCount)} />
           <Metric label={t('trainerPools.metrics.physicalMirrors')} value={String(workflow.stats.physicalMirrorCount)} />
           <Metric label={t('trainerPools.metrics.members')} value={String(workflow.stats.memberReferenceCount)} />
           <Metric label={t('trainerPools.metrics.dormantMirrors')} value={String(workflow.stats.dormantPhysicalMirrorCount)} />
-        </div>
+        </FocusedEditorMetrics>
       </section>
 
       <section aria-labelledby="trainer-pools-swap-heading" className="panel wide-panel">
@@ -156,7 +166,9 @@ export function TrainerPoolsSection({
               : t('trainerPools.swap.instructions')}
           </span>
         </div>
-        <p className="field-hint">{t('trainerPools.swap.preservation')}</p>
+        <p className="field-hint focused-editor-readable-copy">
+          {t('trainerPools.swap.preservation')}
+        </p>
         {hasPendingSwap ? (
           <p className="field-warning" role="status">
             {t('trainerPools.swap.pendingBlocked')}
@@ -206,7 +218,7 @@ export function TrainerPoolsSection({
       </section>
 
       <DiagnosticsSection diagnostics={workflow.diagnostics} />
-    </div>
+    </FocusedEditorWorkspace>
   );
 }
 

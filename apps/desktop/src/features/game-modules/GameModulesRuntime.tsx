@@ -17,8 +17,9 @@ import type {
 import { GameModulesSection } from './GameModulesSection';
 import { useGameModuleController } from './useGameModuleController';
 import {
-  preparationStateFromQueryStatus,
-  type AnalysisPreparationState
+  createAnalysisPreparationProgress,
+  preparationProgressFromQueryStatuses,
+  type AnalysisPreparationProgress
 } from '../workbench/analysisPreparation';
 import './gameModules.css';
 
@@ -31,7 +32,7 @@ export type GameModulesRuntimeProps = {
   onEnsureCapabilities: () => Promise<void>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenSection: (section: WorkbenchSection) => void;
-  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
+  onPreparationStateChange?: (progress: AnalysisPreparationProgress) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -62,7 +63,10 @@ export default function GameModulesRuntime({
   useEffect(() => {
     if (!revision) {
       onPreparationStateChange?.(
-        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        createAnalysisPreparationProgress(
+          'gameModules',
+          capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        )
       );
     }
   }, [capabilityStatus, onPreparationStateChange, revision]);
@@ -137,7 +141,7 @@ function GameModulesReadyRuntime({
   });
   useEffect(() => {
     onPreparationStateChange?.(
-      preparationStateFromQueryStatus(controller.capabilities.status)
+      preparationProgressFromQueryStatuses('gameModules', [controller.capabilities.status])
     );
   }, [controller.capabilities.status, onPreparationStateChange]);
   return (

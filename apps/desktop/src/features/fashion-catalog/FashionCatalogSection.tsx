@@ -16,6 +16,10 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import {
+  FocusedEditorMetrics,
+  FocusedEditorWorkspace
+} from '../../components/FocusedEditorWorkspace';
 import { useLocalization } from '../../localization';
 import './FashionCatalogSection.css';
 
@@ -156,13 +160,17 @@ export function FashionCatalogSection({
 
   if (!workflow) {
     return (
-      <section aria-labelledby="fashion-catalog-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <Palette aria-hidden="true" size={18} />
-          <h2 id="fashion-catalog-heading">{t('fashionCatalog.title')}</h2>
-        </div>
-        <p className="empty-copy">{t('fashionCatalog.empty')}</p>
-      </section>
+      <FocusedEditorWorkspace className="fashion-catalog-workspace">
+        <section aria-labelledby="fashion-catalog-heading" className="panel wide-panel">
+          <div className="panel-heading">
+            <Palette aria-hidden="true" size={18} />
+            <h2 id="fashion-catalog-heading">{t('fashionCatalog.title')}</h2>
+          </div>
+          <p className="empty-copy focused-editor-readable-copy">
+            {t('fashionCatalog.empty')}
+          </p>
+        </section>
+      </FocusedEditorWorkspace>
     );
   }
 
@@ -236,23 +244,27 @@ export function FashionCatalogSection({
   };
 
   return (
-    <div className="fashion-catalog-workspace workflow-panel-stack">
+    <FocusedEditorWorkspace className="fashion-catalog-workspace">
       <section aria-labelledby="fashion-catalog-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Palette aria-hidden="true" size={18} />
           <h2 id="fashion-catalog-heading">{t('fashionCatalog.title')}</h2>
           <span className="status-badge ready">{t('fashionCatalog.dataOnlyBadge')}</span>
         </div>
-        <p className="section-copy">{t('fashionCatalog.description')}</p>
-        <p className="field-hint">{t('fashionCatalog.shopScope')}</p>
-        <div className="metrics-grid compact-metrics">
+        <p className="section-copy focused-editor-readable-copy">
+          {t('fashionCatalog.description')}
+        </p>
+        <p className="field-hint focused-editor-readable-copy">
+          {t('fashionCatalog.shopScope')}
+        </p>
+        <FocusedEditorMetrics>
           <Metric label={t('fashionCatalog.metrics.items')} value={String(workflow.stats.dressUpItemCount)} />
           <Metric label={t('fashionCatalog.metrics.groups')} value={String(workflow.stats.dressUpGroupCount)} />
           <Metric label={t('fashionCatalog.metrics.hair')} value={String(workflow.stats.hairAndMakeupCount)} />
           <Metric label={t('fashionCatalog.metrics.dressUpLineups')} value={String(workflow.stats.dressUpLineupEntryCount)} />
           <Metric label={t('fashionCatalog.metrics.hairLineups')} value={String(workflow.stats.hairAndMakeupLineupEntryCount)} />
           <Metric label={t('fashionCatalog.metrics.staged')} value={String(pendingCount)} />
-        </div>
+        </FocusedEditorMetrics>
       </section>
 
       <section aria-labelledby="fashion-catalog-editor-heading" className="panel wide-panel">
@@ -260,7 +272,9 @@ export function FashionCatalogSection({
           <ShieldCheck aria-hidden="true" size={18} />
           <h2 id="fashion-catalog-editor-heading">{t('fashionCatalog.editor.title')}</h2>
         </div>
-        <p className="field-hint">{t('fashionCatalog.editor.safety')}</p>
+        <p className="field-hint focused-editor-readable-copy">
+          {t('fashionCatalog.editor.safety')}
+        </p>
         <div aria-label={t('fashionCatalog.tabs.label')} className="fashion-catalog-tabs" role="tablist">
           {catalogFiles.map((file) => (
             <button
@@ -354,6 +368,7 @@ export function FashionCatalogSection({
                   {t('fashionCatalog.editor.field')}
                 </label>
                 <select
+                  className="km-select-control"
                   id="fashion-catalog-field"
                   onChange={(event) => setSelectedField(event.target.value)}
                   value={field.field}
@@ -379,6 +394,7 @@ export function FashionCatalogSection({
                       {t('fashionCatalog.editor.value')}
                     </label>
                     <select
+                      className="km-select-control"
                       id="fashion-catalog-value"
                       onChange={(event) => setDraftValue(event.target.value)}
                       value={filteredOptions.includes(draftValue) ? draftValue : ''}
@@ -453,7 +469,7 @@ export function FashionCatalogSection({
         output={panelOutput}
         workflowDiagnostics={workflow.diagnostics}
       />
-    </div>
+    </FocusedEditorWorkspace>
   );
 }
 

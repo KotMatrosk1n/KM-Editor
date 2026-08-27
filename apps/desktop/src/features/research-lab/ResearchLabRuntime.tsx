@@ -17,8 +17,9 @@ import { ResearchLabSection } from './ResearchLabSection';
 import { useResearchLabController } from './useResearchLabController';
 import './researchLab.css';
 import {
-  preparationStateFromQueryStatus,
-  type AnalysisPreparationState
+  createAnalysisPreparationProgress,
+  preparationProgressFromQueryStatuses,
+  type AnalysisPreparationProgress
 } from '../workbench/analysisPreparation';
 
 export type ResearchLabRuntimeProps = {
@@ -29,7 +30,7 @@ export type ResearchLabRuntimeProps = {
   onEnsureCapabilities: () => Promise<void>;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onPickSource: (slot: 0 | 1) => Promise<string | null>;
-  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
+  onPreparationStateChange?: (progress: AnalysisPreparationProgress) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -57,7 +58,10 @@ export default function ResearchLabRuntime({
   useEffect(() => {
     if (!revision) {
       onPreparationStateChange?.(
-        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        createAnalysisPreparationProgress(
+          'researchLab',
+          capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        )
       );
     }
   }, [capabilityStatus, onPreparationStateChange, revision]);
@@ -145,14 +149,11 @@ function ResearchLabReadyRuntime({
     controller.loadAnnotations
   ]);
   useEffect(() => {
-    const capabilityState = preparationStateFromQueryStatus(controller.capabilities.status);
-    const annotationState = preparationStateFromQueryStatus(controller.annotations.status);
     onPreparationStateChange?.(
-      capabilityState === 'error' || annotationState === 'error'
-        ? 'error'
-        : capabilityState === 'ready' && annotationState === 'ready'
-          ? 'ready'
-          : 'loading'
+      preparationProgressFromQueryStatuses('researchLab', [
+        controller.capabilities.status,
+        controller.annotations.status
+      ])
     );
   }, [
     controller.annotations.status,

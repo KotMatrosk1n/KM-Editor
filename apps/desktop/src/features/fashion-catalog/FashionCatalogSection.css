@@ -1,15 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 .fashion-catalog-workspace {
-  display: grid;
-  gap: var(--km-panel-gap);
-}
-
-.fashion-catalog-workspace .metrics-grid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  margin-top: 1rem;
+  align-content: start;
 }
 
 .fashion-catalog-tabs {
@@ -84,7 +76,7 @@
 .fashion-catalog-workspace .search-field input,
 .fashion-catalog-field-editor input,
 .fashion-catalog-field-editor select {
-  background: var(--color-control);
+  background-color: var(--color-control);
   border: 1px solid var(--color-control-border);
   border-radius: 0.55rem;
   color: var(--color-text);
@@ -219,7 +211,7 @@
   color: var(--color-danger);
 }
 
-@media (max-width: 900px) {
+@container km-focused-editor (max-width: 56rem) {
   .fashion-catalog-editor-grid {
     grid-template-columns: minmax(0, 1fr);
   }

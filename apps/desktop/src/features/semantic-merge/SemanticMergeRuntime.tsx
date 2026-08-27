@@ -23,8 +23,9 @@ import type { ExpectedImportedScalarEdit } from '../change-sets/useChangeSetWork
 import { SemanticMergeSection } from './SemanticMergeSection';
 import { useSemanticMergeController } from './useSemanticMergeController';
 import {
-  preparationStateFromQueryStatus,
-  type AnalysisPreparationState
+  createAnalysisPreparationProgress,
+  preparationProgressFromQueryStatuses,
+  type AnalysisPreparationProgress
 } from '../workbench/analysisPreparation';
 
 export type SemanticMergeChangeSetOption = {
@@ -63,7 +64,7 @@ export type SemanticMergeRuntimeProps = {
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onOpenChanges: () => void;
   onPickSource: (slot: 'a' | 'b') => Promise<string | null>;
-  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
+  onPreparationStateChange?: (progress: AnalysisPreparationProgress) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -100,7 +101,10 @@ export function SemanticMergeRuntime({
   useEffect(() => {
     if (!revision) {
       onPreparationStateChange?.(
-        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        createAnalysisPreparationProgress(
+          'semanticMerge',
+          capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        )
       );
     }
   }, [capabilityStatus, onPreparationStateChange, revision]);
@@ -208,7 +212,7 @@ function SemanticMergeReadyRuntime({
   ]);
   useEffect(() => {
     onPreparationStateChange?.(
-      preparationStateFromQueryStatus(controller.capabilities.status)
+      preparationProgressFromQueryStatuses('semanticMerge', [controller.capabilities.status])
     );
   }, [controller.capabilities.status, onPreparationStateChange]);
 
