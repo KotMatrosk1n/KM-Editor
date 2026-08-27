@@ -3,7 +3,9 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.Semantics;
 using KM.ZA.ExeFs;
 using KM.ZA.Workflows;
 
@@ -294,6 +296,10 @@ public sealed class ZaTypeChartEditSessionService
             ReviewedPlanMatchesCurrentPlan(
                 reviewedPlan,
                 CreateChangePlan(paths, session, outputMode));
+        var outputContext = new ZaOutputApplyContext(
+            OutputReviewFingerprint.FromChangePlan(currentPlan),
+            new OwnershipOwnerId("workflow.za.type-chart"),
+            [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, TypeChartEditDomain)]);
         var pendingEdit = session.PendingEdits.Single();
         if (IsUninstallEdit(pendingEdit))
         {
@@ -301,6 +307,7 @@ public sealed class ZaTypeChartEditSessionService
                 paths,
                 writtenFiles,
                 diagnostics,
+                outputContext,
                 revalidateReviewedState);
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
@@ -316,6 +323,7 @@ public sealed class ZaTypeChartEditSessionService
             values,
             writtenFiles,
             diagnostics,
+            outputContext,
             revalidateReviewedState);
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
@@ -325,6 +333,7 @@ public sealed class ZaTypeChartEditSessionService
         IReadOnlyList<int> values,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics,
+        ZaOutputApplyContext outputContext,
         Func<bool> revalidateReviewedState)
     {
         var project = projectWorkspaceService.Open(paths);
@@ -358,7 +367,10 @@ public sealed class ZaTypeChartEditSessionService
                     return new ZaStandaloneMixedBatch(
                         Array.Empty<ZaWorkflowFileWrite>(),
                         Array.Empty<string>(),
-                        [new ZaStandaloneOutputMutation(ZaTypeChartWorkflowService.ExeFsMainPath, output)]);
+                        [new ZaStandaloneOutputMutation(
+                            ZaTypeChartWorkflowService.ExeFsMainPath,
+                            output,
+                            ApplyContext: outputContext)]);
                 },
                 revalidateReviewedState: revalidateReviewedState);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
@@ -396,6 +408,7 @@ public sealed class ZaTypeChartEditSessionService
         ProjectPaths paths,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics,
+        ZaOutputApplyContext outputContext,
         Func<bool> revalidateReviewedState)
     {
         var targetPath = ResolveOutputPath(paths, diagnostics);
@@ -455,7 +468,9 @@ public sealed class ZaTypeChartEditSessionService
                         Array.Empty<string>(),
                         [new ZaStandaloneOutputMutation(
                             ZaTypeChartWorkflowService.ExeFsMainPath,
-                            outputBytes)]);
+                            outputBytes,
+                            DeleteFallbackBytes: outputBytes is null ? baseBytes : null,
+                            ApplyContext: outputContext)]);
                 },
                 revalidateReviewedState: revalidateReviewedState);
 

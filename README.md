@@ -27,6 +27,8 @@ Supported Items, Moves, Pokémon, Trainers, and Text drafts are saved privately 
 
 Game-specific workflows include Sword and Shield Max Lair route planning and Battle Cafe rewards, Scarlet and Violet TM Machine controls and existing-cell Habitat Coordinates, and Legends Z-A Trainer Pools, trainer name and class actions, and Fashion Catalog editing. Each workflow exposes only the records, values, and source layouts it can verify.
 
+Beta Gameplay Settings provides exact-build Experience Share, Experience Rate, and bounded Level Cap controls for the supported Sword and Shield 1.3.2, Scarlet and Violet 4.0.0, and Legends Z-A 2.0.2 executables. Changes use a guarded review and apply flow, preserve compatible executable edits, and can restore the verified vanilla values. Each control states the exact award paths it affects; unlisted sources such as candies and scripted awards keep their original behavior.
+
 Workbench adds project navigation, recents, pins, bookmarks, saved views, notes, output profiles, and capability discovery. Its read-only tools can search supported Items, Pokémon, and Moves records, compare project layers, study balance data, inspect supported game systems, and compare user-selected dumps without changing game output. Shared analysis data can prepare in the background, and previously opened analysis tools and their internal tabs remain ready while you move through the workspace.
 
 Guided Design builds bounded proposals from exact targets, constraints, pins, and deterministic seeds. Semantic Merge can compare supported Sword and Shield item, Pokémon personal, and move fields from two user-owned mods, resolve field-level choices, and create portable recipes without writing output directly.

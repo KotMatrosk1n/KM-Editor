@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using KM.Core.Output;
 using KM.Core.Projects;
 using KM.Core.Semantics;
+using KM.SwSh.ExeFs;
 
 namespace KM.SwSh.Editing;
 
@@ -14,6 +15,7 @@ internal static class SwShOutputTransactionWriter
     private const string OutputMode = "sword-shield-layered-output";
     private const string OutputOwner = "sword-shield-verified-editor";
     private const string PreservationRule = "verified-whole-file-postimage";
+    private const string ComposedExeFsMainPath = "exefs/main";
 
     private static readonly OutputTransactionCoordinatorOptions CoordinatorOptions = new()
     {
@@ -121,6 +123,34 @@ internal static class SwShOutputTransactionWriter
                 return false;
             }
 
+            var requiresVerifiedBaseMain = materialized.Any(requested =>
+                requested is
+                {
+                    Kind: OutputMutationKind.Delete,
+                    ComposesEffectivePreimage: true,
+                }
+                && (requested.AllowLegacyAdoption
+                    || requested.DeleteFallbackContents is not null));
+            using var baseMainLease = requiresVerifiedBaseMain
+                ? OpenVerifiedBaseMainLease(stablePaths)
+                : null;
+            var verifiedBaseMain = baseMainLease is null
+                ? null
+                : ReadBoundedContents(baseMainLease, "Base ExeFS main");
+
+            var coordinator = new OutputTransactionCoordinator(
+                stablePaths.OutputRootPath,
+                CoordinatorOptions);
+            var hasComposedMutation = materialized.Any(requested =>
+                requested?.ComposesEffectivePreimage == true);
+            var ownershipSnapshot = hasComposedMutation
+                ? coordinator.GetOwnershipInventorySnapshotAsync()
+                    .GetAwaiter()
+                    .GetResult()
+                : null;
+            var ownershipByPath = ownershipSnapshot?.Inventory.Files.ToDictionary(
+                record => record.Path.CanonicalKey,
+                StringComparer.Ordinal);
             var mutations = new List<OutputMutation>(materialized.Length);
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var requested in materialized)
@@ -134,6 +164,18 @@ internal static class SwShOutputTransactionWriter
                 }
 
                 var relativePath = new RelativeOutputPath(requested.RelativePath);
+                if (requested.ComposesEffectivePreimage
+                    && !string.Equals(
+                        relativePath.CanonicalKey,
+                        new RelativeOutputPath(ComposedExeFsMainPath).CanonicalKey,
+                        StringComparison.Ordinal))
+                {
+                    failure = new SwShOutputTransactionFailure(
+                        relativePath.Value,
+                        "Composed output writes are restricted to the verified effective exefs/main target.");
+                    return false;
+                }
+
                 if (!seen.Add(relativePath.CanonicalKey))
                 {
                     failure = new SwShOutputTransactionFailure(
@@ -173,12 +215,132 @@ internal static class SwShOutputTransactionWriter
                         schemaVersion: 1,
                         preservesUnownedData: true,
                         requiresPreimage: true));
+                OutputOwnershipRecord? existingOwnership = null;
+                IReadOnlyCollection<OwnedTarget> ownershipClaims = [ownership];
+                if (requested.ComposesEffectivePreimage
+                    && ownershipByPath is not null
+                    && ownershipByPath.TryGetValue(relativePath.CanonicalKey, out existingOwnership))
+                {
+                    if (existingOwnership.ProjectId != projectId
+                        || existingOwnership.GameFamily != GameFamily.SwordShield
+                        || !string.Equals(existingOwnership.OutputMode, OutputMode, StringComparison.Ordinal))
+                    {
+                        failure = new SwShOutputTransactionFailure(
+                            relativePath.Value,
+                            "The composed output target is owned by a different project or output scope.");
+                        return false;
+                    }
+
+                    if (existingOwnership.CurrentState != expectedPreimage)
+                    {
+                        failure = new SwShOutputTransactionFailure(
+                            relativePath.Value,
+                            "The composed output ownership record does not match the reviewed effective preimage.");
+                        return false;
+                    }
+
+                    ownershipClaims = existingOwnership.Claims
+                        .Append(ownership)
+                        .Distinct()
+                        .ToArray();
+                }
+
                 if (requested.Kind == OutputMutationKind.Delete)
                 {
                     if (expectedPreimage.Exists)
                     {
-                        if (requested.AllowLegacyAdoption)
+                        if (requested.ComposesEffectivePreimage
+                            && existingOwnership is not null)
                         {
+                            var foreignClaims = existingOwnership.Claims
+                                .Where(claim => claim.OwnerId != ownership.OwnerId)
+                                .ToArray();
+                            var activeForeignClaims = foreignClaims
+                                .Where(claim => !OutputCreatorProvenance.IsClaim(claim))
+                                .ToArray();
+                            var canDeleteExactOwnedFile = activeForeignClaims.Length == 0
+                                && foreignClaims.Length == 0
+                                && existingOwnership.FileDeleteEligible
+                                && existingOwnership.Claims.Any(claim =>
+                                    claim.Address.ScopeKind == OwnedTargetScopeKind.File);
+                            if (canDeleteExactOwnedFile)
+                            {
+                                mutations.Add(OutputMutation.Delete(
+                                    relativePath,
+                                    expectedPreimage,
+                                    existingOwnership.Claims));
+                            }
+                            else if (activeForeignClaims.Length == 0
+                                     && foreignClaims.Length > 0
+                                     && foreignClaims.All(OutputCreatorProvenance.IsClaim)
+                                     && existingOwnership.FileDeleteEligible
+                                     && requested.DeleteFallbackContents is { } verifiedFallback
+                                     && verifiedBaseMain is not null
+                                     && verifiedFallback.AsSpan().SequenceEqual(verifiedBaseMain))
+                            {
+                                var baseState = OutputFileState.Existing(
+                                    Convert.ToHexStringLower(SHA256.HashData(verifiedBaseMain)),
+                                    verifiedBaseMain.LongLength);
+                                var authority = new OutputVerifiedBaseDeleteAuthority(
+                                    projectId,
+                                    GameFamily.SwordShield,
+                                    ownership.OwnerId,
+                                    OutputMode,
+                                    relativePath,
+                                    expectedPreimage,
+                                    baseState,
+                                    existingOwnership.Claims);
+                                mutations.Add(OutputMutation.DeleteVerifiedBase(
+                                    relativePath,
+                                    expectedPreimage,
+                                    existingOwnership.Claims,
+                                    authority));
+                            }
+                            else
+                            {
+                                if (requested.DeleteFallbackContents is null)
+                                {
+                                    failure = new SwShOutputTransactionFailure(
+                                        relativePath.Value,
+                                        "A composed delete requires exact restored fallback contents when the file has retained ownership claims.");
+                                    return false;
+                                }
+
+                                var retainedClaims = foreignClaims.Length > 0
+                                    ? RetainCreatorProvenanceWhenRequired(
+                                        existingOwnership,
+                                        foreignClaims,
+                                        ownership)
+                                    : existingOwnership.Claims;
+                                var fallbackState = OutputFileState.Existing(
+                                    Convert.ToHexStringLower(SHA256.HashData(requested.DeleteFallbackContents)),
+                                    requested.DeleteFallbackContents.LongLength);
+                                if (fallbackState != expectedPreimage)
+                                {
+                                    mutations.Add(OutputMutation.Write(
+                                        relativePath,
+                                        requested.DeleteFallbackContents,
+                                        expectedPreimage,
+                                        retainedClaims,
+                                        ownershipActor: ownership.OwnerId));
+                                }
+                            }
+                        }
+                        else if (requested.AllowLegacyAdoption)
+                        {
+                            if (requested.ComposesEffectivePreimage
+                                && (requested.DeleteFallbackContents is null
+                                    || verifiedBaseMain is null
+                                    || !SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(
+                                        requested.DeleteFallbackContents,
+                                        verifiedBaseMain)))
+                            {
+                                failure = new SwShOutputTransactionFailure(
+                                    relativePath.Value,
+                                    "An unmanaged composed exefs/main can be deleted only after its restored candidate matches the held Base ExeFS main.");
+                                return false;
+                            }
+
                             var adoptionAuthority = new OutputLegacyAdoptionDeleteAuthority(
                                 projectId,
                                 GameFamily.SwordShield,
@@ -222,7 +384,10 @@ internal static class SwShOutputTransactionWriter
                         relativePath,
                         requested.Contents,
                         expectedPreimage,
-                        [ownership]));
+                        ownershipClaims,
+                        ownershipActor: requested.ComposesEffectivePreimage
+                            ? ownership.OwnerId
+                            : null));
                 }
             }
 
@@ -231,16 +396,30 @@ internal static class SwShOutputTransactionWriter
                 return true;
             }
 
+            var origins = mutations
+                .Select(mutation => mutation.OwnershipActor)
+                .Where(actor => actor is not null)
+                .Select(actor => new OutputApplyOrigin(
+                    OutputApplyOriginKind.Workflow,
+                    actor!.Value))
+                .Concat(mutations
+                    .Select(mutation => mutation.VerifiedBaseDeleteAuthority?.ActingOwnerId)
+                    .Where(actor => actor is not null)
+                    .Select(actor => new OutputApplyOrigin(
+                        OutputApplyOriginKind.Workflow,
+                        actor!.Value)))
+                .Append(new OutputApplyOrigin(OutputApplyOriginKind.Workflow, operationId))
+                .Distinct()
+                .ToArray();
             var plan = new OutputApplyPlan(
                 projectId,
                 GameFamily.SwordShield,
                 OutputMode,
                 OutputReviewFingerprint.FromMutations(mutations),
-                [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, operationId)],
-                mutations);
-            result = new OutputTransactionCoordinator(
-                    stablePaths.OutputRootPath,
-                    CoordinatorOptions)
+                origins,
+                mutations,
+                ownershipInventoryRevision: ownershipSnapshot?.Revision);
+            result = coordinator
                 .ApplyAsync(plan)
                 .GetAwaiter()
                 .GetResult();
@@ -302,6 +481,67 @@ internal static class SwShOutputTransactionWriter
             Convert.ToHexStringLower(hash.GetHashAndReset()),
             stream.Length);
     }
+
+    private static FileStream OpenVerifiedBaseMainLease(ProjectPaths paths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+        {
+            throw new IOException(
+                "Base ExeFS is required to verify an unmanaged composed exefs/main restoration.");
+        }
+
+        var baseMainPath = SwShOutputRollbackScope.ResolvePhysicalContainedPath(
+            paths.BaseExeFsPath,
+            "main");
+        if (baseMainPath is null || Directory.Exists(baseMainPath) || !File.Exists(baseMainPath))
+        {
+            throw new IOException(
+                "Base ExeFS main is not a safe physical file inside the configured base root.");
+        }
+
+        return new FileStream(
+            baseMainPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+    }
+
+    private static byte[] ReadBoundedContents(FileStream stream, string label)
+    {
+        if (stream.Length <= 0
+            || stream.Length > CoordinatorOptions.MaximumWriteBytesPerMutation
+            || stream.Length > int.MaxValue)
+        {
+            throw new OutputLimitExceededException($"{label} exceeds the configured file limit.");
+        }
+
+        var contents = new byte[checked((int)stream.Length)];
+        stream.Position = 0;
+        stream.ReadExactly(contents);
+        stream.Position = 0;
+        return contents;
+    }
+
+    private static IReadOnlyCollection<OwnedTarget> RetainCreatorProvenanceWhenRequired(
+        OutputOwnershipRecord existingOwnership,
+        IReadOnlyCollection<OwnedTarget> foreignClaims,
+        OwnedTarget ownership)
+    {
+        if (!existingOwnership.FileDeleteEligible
+            || foreignClaims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))
+        {
+            return foreignClaims;
+        }
+
+        return foreignClaims
+            .Append(OutputCreatorProvenance.Create(
+                GameFamily.SwordShield,
+                ownership.Address.File))
+            .Distinct()
+            .ToArray();
+    }
 }
 
 internal sealed record SwShOutputFileMutation(
@@ -309,7 +549,9 @@ internal sealed record SwShOutputFileMutation(
     string RelativePath,
     byte[]? Contents,
     OutputFileState? ReviewedPreimage = null,
-    bool AllowLegacyAdoption = false)
+    bool AllowLegacyAdoption = false,
+    bool ComposesEffectivePreimage = false,
+    byte[]? DeleteFallbackContents = null)
 {
     public static SwShOutputFileMutation Write(string relativePath, byte[] contents)
     {
@@ -329,6 +571,21 @@ internal sealed record SwShOutputFileMutation(
             relativePath,
             contents,
             reviewedPreimage);
+    }
+
+    public static SwShOutputFileMutation WriteComposed(
+        string relativePath,
+        byte[] contents,
+        OutputFileState reviewedPreimage)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        ArgumentNullException.ThrowIfNull(reviewedPreimage);
+        return new SwShOutputFileMutation(
+            OutputMutationKind.Write,
+            relativePath,
+            contents,
+            reviewedPreimage,
+            ComposesEffectivePreimage: true);
     }
 
     public static SwShOutputFileMutation Delete(string relativePath)
@@ -359,6 +616,23 @@ internal sealed record SwShOutputFileMutation(
             Contents: null,
             reviewedPreimage,
             AllowLegacyAdoption: true);
+    }
+
+    public static SwShOutputFileMutation DeleteComposed(
+        string relativePath,
+        OutputFileState reviewedPreimage,
+        byte[] restoredFallbackContents)
+    {
+        ArgumentNullException.ThrowIfNull(reviewedPreimage);
+        ArgumentNullException.ThrowIfNull(restoredFallbackContents);
+        return new SwShOutputFileMutation(
+            OutputMutationKind.Delete,
+            relativePath,
+            Contents: null,
+            reviewedPreimage,
+            AllowLegacyAdoption: true,
+            ComposesEffectivePreimage: true,
+            DeleteFallbackContents: restoredFallbackContents);
     }
 }
 

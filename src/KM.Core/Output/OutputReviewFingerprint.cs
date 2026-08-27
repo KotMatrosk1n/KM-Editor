@@ -81,7 +81,7 @@ public static class OutputReviewFingerprint
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var budget = new FramingBudget(MaximumFramedTextBytes);
-        AppendText(hash, budget, "km-output-mutations-v4");
+        AppendText(hash, budget, "km-output-mutations-v7");
         AppendInt32(hash, materialized.Length);
         foreach (var mutation in materialized)
         {
@@ -95,6 +95,7 @@ public static class OutputReviewFingerprint
             AppendState(hash, budget, mutation.ExpectedPreimage);
             AppendState(hash, budget, mutation.PlannedPostimage);
             AppendNullableText(hash, budget, mutation.OwnershipOutputMode);
+            AppendNullableText(hash, budget, mutation.OwnershipActor?.Value);
             AppendNullableBoolean(hash, mutation.RestoredFileDeleteEligibility);
             if (mutation.RuntimeMutableDescriptor is { } runtimeMutable)
             {
@@ -129,6 +130,27 @@ public static class OutputReviewFingerprint
                 AppendBoolean(hash, legacyAdoption.PreservationRule.PreservesUnownedData);
                 AppendBoolean(hash, legacyAdoption.PreservationRule.RequiresPreimage);
                 AppendState(hash, budget, legacyAdoption.ReviewedPreimage);
+            }
+            else
+            {
+                AppendBoolean(hash, false);
+            }
+
+            if (mutation.VerifiedBaseDeleteAuthority is { } verifiedBaseDelete)
+            {
+                AppendBoolean(hash, true);
+                AppendText(hash, budget, verifiedBaseDelete.ProjectId.Value);
+                AppendInt32(hash, (int)verifiedBaseDelete.GameFamily);
+                AppendText(hash, budget, verifiedBaseDelete.ActingOwnerId.Value);
+                AppendText(hash, budget, verifiedBaseDelete.OutputMode);
+                AppendText(hash, budget, verifiedBaseDelete.Target.CanonicalKey);
+                AppendState(hash, budget, verifiedBaseDelete.ReviewedPreimage);
+                AppendState(hash, budget, verifiedBaseDelete.VerifiedBaseState);
+                AppendInt32(hash, verifiedBaseDelete.OwnershipClaims.Length);
+                foreach (var claim in verifiedBaseDelete.OwnershipClaims)
+                {
+                    AppendOwnership(hash, budget, claim);
+                }
             }
             else
             {

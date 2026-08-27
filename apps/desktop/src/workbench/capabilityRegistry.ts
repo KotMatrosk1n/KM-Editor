@@ -13,6 +13,7 @@ import {
   Download,
   Dumbbell,
   Flower2,
+  FlaskConical,
   Gem,
   Gift,
   GitMerge,
@@ -488,6 +489,17 @@ export const workbenchCapabilityRegistry = [
     id: 'gameDump',
     label: 'Game Dump',
     maturity: 'utility',
+    showInWorkflowDashboard: false,
+    standalone: true
+  }),
+  workflow({
+    description:
+      'Review and write build-guarded gameplay changes to the selected game executable.',
+    games: allGames,
+    icon: FlaskConical,
+    id: 'gameplaySettings',
+    label: 'Gameplay Settings',
+    maturity: 'mixed',
     showInWorkflowDashboard: false,
     standalone: true
   }),

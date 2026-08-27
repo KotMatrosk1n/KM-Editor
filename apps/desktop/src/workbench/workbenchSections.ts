@@ -50,6 +50,7 @@ export const workbenchSections = [
   'profanityFilter',
   'randomizer',
   'gameDump',
+  'gameplaySettings',
   'changes',
   'settings'
 ] as const;

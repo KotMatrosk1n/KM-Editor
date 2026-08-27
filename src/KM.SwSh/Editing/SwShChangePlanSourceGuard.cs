@@ -18,6 +18,7 @@ public static class SwShChangePlanSourceGuard
     private const string OutputOwner = "sword-shield-verified-editor";
     private const string OutputPreservationRule = "verified-whole-file-postimage";
     private const string OutputOrigin = "workflow.sword-shield.change-plan";
+    private const string ComposedExeFsMainPath = "exefs/main";
 
     public static ChangePlan Capture(ProjectPaths paths, ChangePlan plan)
     {
@@ -974,6 +975,38 @@ public static class SwShChangePlanSourceGuard
             };
 
             var projectId = ProjectIdentity.FromPaths(SourcePaths);
+            var outputCoordinator = new OutputTransactionCoordinator(SourcePaths.OutputRootPath!);
+            OutputOwnershipInventorySnapshot? ownershipSnapshot = null;
+            if (changedTargets.Any(IsComposedExeFsMainPath))
+            {
+                try
+                {
+                    ownershipSnapshot = outputCoordinator
+                        .GetOwnershipInventorySnapshotAsync()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (Exception exception) when (exception is
+                    OutputCoordinatorException or
+                    IOException or
+                    UnauthorizedAccessException or
+                    InvalidOperationException)
+                {
+                    diagnostics.Add(CreateReadDiagnostic(
+                        ComposedExeFsMainPath,
+                        $"Verified exefs/main ownership could not be captured before composition: {SanitizeDiagnosticText(exception.Message, snapshotRootPath)}"));
+                    return result with
+                    {
+                        WrittenFiles = Array.Empty<ProjectFileReference>(),
+                        Diagnostics = diagnostics,
+                    };
+                }
+            }
+
+            var ownershipByPath = ownershipSnapshot?.Inventory.Files.ToDictionary(
+                record => record.Path.CanonicalKey,
+                StringComparer.Ordinal);
+            var retainedNoOpTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var mutations = new List<OutputMutation>(changedTargets.Count);
             foreach (var relativePath in changedTargets.Order(StringComparer.Ordinal))
             {
@@ -1030,13 +1063,148 @@ public static class SwShChangePlanSourceGuard
                             schemaVersion: 1,
                             preservesUnownedData: true,
                             requiresPreimage: true));
+                    var isComposedExeFsMain = IsComposedExeFsMainPath(relativePath);
+                    OutputOwnershipRecord? existingOwnership = null;
+                    IReadOnlyCollection<OwnedTarget> ownershipClaims = [ownership];
+                    if (isComposedExeFsMain
+                        && ownershipByPath is not null
+                        && ownershipByPath.TryGetValue(path.CanonicalKey, out existingOwnership))
+                    {
+                        if (existingOwnership.ProjectId != projectId
+                            || existingOwnership.GameFamily != GameFamily.SwordShield
+                            || !string.Equals(existingOwnership.OutputMode, OutputMode, StringComparison.Ordinal))
+                        {
+                            diagnostics.Add(CreateReadDiagnostic(
+                                relativePath,
+                                "Verified exefs/main composition found ownership from a different project or output scope."));
+                            return result with
+                            {
+                                WrittenFiles = Array.Empty<ProjectFileReference>(),
+                                Diagnostics = diagnostics,
+                            };
+                        }
+
+                        if (existingOwnership.CurrentState != expectedPreimage)
+                        {
+                            diagnostics.Add(CreateStaleDiagnostic(
+                                relativePath,
+                                "Verified exefs/main ownership no longer matches the exact effective preimage."));
+                            return result with
+                            {
+                                WrittenFiles = Array.Empty<ProjectFileReference>(),
+                                Diagnostics = diagnostics,
+                            };
+                        }
+
+                        ownershipClaims = existingOwnership.Claims
+                            .Append(ownership)
+                            .Distinct()
+                            .ToArray();
+                    }
+
                     if (File.Exists(snapshotPath))
                     {
                         mutations.Add(OutputMutation.Write(
                             path,
                             File.ReadAllBytes(snapshotPath),
                             expectedPreimage,
-                            [ownership]));
+                            ownershipClaims,
+                            ownershipActor: isComposedExeFsMain
+                                ? ownership.OwnerId
+                                : null));
+                    }
+                    else if (isComposedExeFsMain && existingOwnership is not null)
+                    {
+                        var foreignClaims = existingOwnership.Claims
+                            .Where(claim => claim.OwnerId != ownership.OwnerId)
+                            .ToArray();
+                        var activeForeignClaims = foreignClaims
+                            .Where(claim => !OutputCreatorProvenance.IsClaim(claim))
+                            .ToArray();
+                        var canDeleteExactOwnedFile = activeForeignClaims.Length == 0
+                            && foreignClaims.Length == 0
+                            && existingOwnership.FileDeleteEligible
+                            && existingOwnership.Claims.Any(claim =>
+                                claim.Address.ScopeKind == OwnedTargetScopeKind.File);
+                        if (canDeleteExactOwnedFile)
+                        {
+                            mutations.Add(OutputMutation.Delete(
+                                path,
+                                expectedPreimage,
+                                existingOwnership.Claims));
+                        }
+                        else if (activeForeignClaims.Length > 0)
+                        {
+                            diagnostics.Add(CreateReadDiagnostic(
+                                relativePath,
+                                "Verified exefs/main composition refused to remove a target that still has ownership claims from another editor."));
+                            return result with
+                            {
+                                WrittenFiles = Array.Empty<ProjectFileReference>(),
+                                Diagnostics = diagnostics,
+                            };
+                        }
+                        else if (!TryReadVerifiedBaseSource(relativePath, out var restoredFallback))
+                        {
+                            diagnostics.Add(CreateReadDiagnostic(
+                                relativePath,
+                                "Verified exefs/main composition requires the held vanilla base source before a retained-claim delete can become a fallback write."));
+                            return result with
+                            {
+                                WrittenFiles = Array.Empty<ProjectFileReference>(),
+                                Diagnostics = diagnostics,
+                            };
+                        }
+                        else if (foreignClaims.Length > 0)
+                        {
+                            var baseState = OutputFileState.Existing(
+                                Convert.ToHexStringLower(SHA256.HashData(restoredFallback)),
+                                restoredFallback.LongLength);
+                            var authority = new OutputVerifiedBaseDeleteAuthority(
+                                projectId,
+                                GameFamily.SwordShield,
+                                ownership.OwnerId,
+                                OutputMode,
+                                path,
+                                expectedPreimage,
+                                baseState,
+                                existingOwnership.Claims);
+                            mutations.Add(OutputMutation.DeleteVerifiedBase(
+                                path,
+                                expectedPreimage,
+                                existingOwnership.Claims,
+                                authority));
+                        }
+                        else
+                        {
+                            var fallbackState = OutputFileState.Existing(
+                                Convert.ToHexStringLower(SHA256.HashData(restoredFallback)),
+                                restoredFallback.LongLength);
+                            if (fallbackState == expectedPreimage)
+                            {
+                                retainedNoOpTargets.Add(relativePath);
+                            }
+                            else
+                            {
+                                mutations.Add(OutputMutation.Write(
+                                    path,
+                                    restoredFallback,
+                                    expectedPreimage,
+                                    existingOwnership.Claims,
+                                    ownershipActor: ownership.OwnerId));
+                            }
+                        }
+                    }
+                    else if (isComposedExeFsMain)
+                    {
+                        diagnostics.Add(CreateReadDiagnostic(
+                            relativePath,
+                            "Verified exefs/main composition refused to delete an unmanaged executable without an ownership-backed restoration proof."));
+                        return result with
+                        {
+                            WrittenFiles = Array.Empty<ProjectFileReference>(),
+                            Diagnostics = diagnostics,
+                        };
                     }
                     else
                     {
@@ -1072,6 +1240,17 @@ public static class SwShChangePlanSourceGuard
                 }
             }
 
+            if (retainedNoOpTargets.Count > 0)
+            {
+                result = result with
+                {
+                    WrittenFiles = result.WrittenFiles
+                        .Where(file => !retainedNoOpTargets.Contains(
+                            NormalizeRelativePath(file.RelativePath)))
+                        .ToArray(),
+                };
+            }
+
             if (mutations.Count == 0)
             {
                 return result;
@@ -1086,14 +1265,30 @@ public static class SwShChangePlanSourceGuard
                     beforePromotion?.Invoke(index, mutation.Path.Value);
                 }
 
+                var origins = mutations
+                    .Select(mutation => mutation.OwnershipActor)
+                    .Where(actor => actor is not null)
+                    .Select(actor => new OutputApplyOrigin(
+                        OutputApplyOriginKind.Workflow,
+                        actor!.Value))
+                    .Concat(mutations
+                        .Select(mutation => mutation.VerifiedBaseDeleteAuthority?.ActingOwnerId)
+                        .Where(actor => actor is not null)
+                        .Select(actor => new OutputApplyOrigin(
+                            OutputApplyOriginKind.Workflow,
+                            actor!.Value)))
+                    .Append(new OutputApplyOrigin(OutputApplyOriginKind.Workflow, OutputOrigin))
+                    .Distinct()
+                    .ToArray();
                 var plan = new OutputApplyPlan(
                     projectId,
                     GameFamily.SwordShield,
                     OutputMode,
                     OutputReviewFingerprint.FromChangePlan(CurrentPlan),
-                    [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, OutputOrigin)],
-                    mutations);
-                var outputResult = new OutputTransactionCoordinator(SourcePaths.OutputRootPath!)
+                    origins,
+                    mutations,
+                    ownershipInventoryRevision: ownershipSnapshot?.Revision);
+                var outputResult = outputCoordinator
                     .ApplyAsync(plan)
                     .GetAwaiter()
                     .GetResult();
@@ -1146,6 +1341,25 @@ public static class SwShChangePlanSourceGuard
             DisposeStreams(sourceStreams.Values);
             sourceStreams.Clear();
             TryDeleteSnapshotDirectory(snapshotRootPath);
+        }
+
+        private bool TryReadVerifiedBaseSource(string relativePath, out byte[] contents)
+        {
+            var identity = new SourceIdentity(
+                ProjectFileLayer.Base,
+                NormalizeRelativePath(relativePath));
+            if (!sourceStreams.TryGetValue(identity, out var stream)
+                || stream.Length > int.MaxValue)
+            {
+                contents = [];
+                return false;
+            }
+
+            contents = new byte[checked((int)stream.Length)];
+            stream.Position = 0;
+            stream.ReadExactly(contents);
+            stream.Position = 0;
+            return true;
         }
 
         private bool OutputPreimageMatches(string relativePath, string targetPath)
@@ -1225,6 +1439,14 @@ public static class SwShChangePlanSourceGuard
             ObjectDisposedException.ThrowIf(disposed, this);
         }
 
+    }
+
+    private static bool IsComposedExeFsMainPath(string relativePath)
+    {
+        return string.Equals(
+            NormalizeRelativePath(relativePath),
+            ComposedExeFsMainPath,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSafeRelativePath(string relativePath)

@@ -1048,9 +1048,27 @@ internal sealed class SvWorkflowFileSource
 
         var outputRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.OutputRootPath));
         var coordinatorOptions = new OutputTransactionCoordinatorOptions();
+        using var verifiedBaseMainLease = OpenVerifiedBaseMainLeaseIfRequired(
+            paths,
+            outputRoot,
+            mutations,
+            coordinatorOptions.MaximumWriteBytesPerMutation);
+        var verifiedBaseMain = verifiedBaseMainLease is null
+            ? null
+            : ReadVerifiedBaseMain(verifiedBaseMainLease);
+        var verifiedBaseMainState = verifiedBaseMain is null
+            ? null
+            : OutputFileState.Existing(
+                Convert.ToHexStringLower(SHA256.HashData(verifiedBaseMain)),
+                verifiedBaseMain.LongLength);
         var coordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
         var projectId = ProjectIdentity.FromPaths(paths);
-        var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
+        var outputModeKey = ToOutputModeKey(outputMode);
+        var ownershipSnapshot = coordinator
+            .GetOwnershipInventorySnapshotAsync()
+            .GetAwaiter()
+            .GetResult();
+        var inventory = ownershipSnapshot.Inventory;
         var defaultOwnerId = applyContext?.OwnerId ?? new OwnershipOwnerId("workflow.sv.output");
         var defaultPreservationRule = applyContext?.PreservationRule
             ?? new PreservationRuleDescriptor(
@@ -1090,14 +1108,43 @@ internal sealed class SvWorkflowFileSource
                 new OwnedTargetAddress(relativePath),
                 context?.OwnerId ?? defaultOwnerId,
                 context?.PreservationRule ?? defaultPreservationRule);
+            var ownedRecord = inventory.Files.FirstOrDefault(record => record.Path == relativePath);
+            var isComposedExecutable = IsComposedExecutablePath(relativePath);
+            var ownershipClaims = new[] { ownership };
+            if (isComposedExecutable && ownedRecord is not null)
+            {
+                ValidateComposedExecutableOwnership(
+                    ownedRecord,
+                    projectId,
+                    GameFamily.ScarletViolet,
+                    outputModeKey,
+                    expectedPreimage,
+                    relativePath);
+                ownershipClaims = ownedRecord.Claims
+                    .Where(claim => claim.OwnerId != ownership.OwnerId)
+                    .Append(ownership)
+                    .Distinct()
+                    .ToArray();
+            }
+
             var bytes = mutation.Bytes;
             if (bytes is null && expectedPreimage.Exists)
             {
-                var owned = inventory.Files.FirstOrDefault(record =>
-                    record.Path == relativePath
-                    && record.ProjectId == projectId
-                    && record.GameFamily == GameFamily.ScarletViolet);
+                var owned = isComposedExecutable
+                    ? ownedRecord
+                    : inventory.Files.FirstOrDefault(record =>
+                        record.Path == relativePath
+                        && record.ProjectId == projectId
+                        && record.GameFamily == GameFamily.ScarletViolet);
+                var remainingClaims = isComposedExecutable && owned is not null
+                    ? owned.Claims.Where(claim => claim.OwnerId != ownership.OwnerId).ToArray()
+                    : [];
+                var activeRemainingClaims = remainingClaims
+                    .Where(claim => !OutputCreatorProvenance.IsClaim(claim))
+                    .ToArray();
                 var canDelete = owned is not null
+                    && (!isComposedExecutable || activeRemainingClaims.Length == 0
+                        && remainingClaims.Length == 0)
                     && owned.FileDeleteEligible
                     && owned.Claims.Any(claim =>
                         claim.Address.ScopeKind == OwnedTargetScopeKind.File);
@@ -1107,14 +1154,59 @@ internal sealed class SvWorkflowFileSource
                     outputMutations.Add(OutputMutation.Delete(
                         relativePath,
                         expectedPreimage,
-                        [ownership],
-                        ToOutputModeKey(outputMode)));
+                        isComposedExecutable ? owned!.Claims : [ownership],
+                        outputModeKey));
+                    EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
+                    continue;
+                }
+
+                var canDeleteVerifiedBase = isComposedExecutable
+                    && owned is not null
+                    && activeRemainingClaims.Length == 0
+                    && remainingClaims.Length > 0
+                    && remainingClaims.All(OutputCreatorProvenance.IsClaim)
+                    && owned.FileDeleteEligible
+                    && mutation.DeleteFallbackBytes is { } verifiedFallback
+                    && verifiedBaseMain is not null
+                    && verifiedBaseMainState is not null
+                    && verifiedFallback.AsSpan().SequenceEqual(verifiedBaseMain);
+                if (canDeleteVerifiedBase)
+                {
+                    var authority = new OutputVerifiedBaseDeleteAuthority(
+                        projectId,
+                        GameFamily.ScarletViolet,
+                        ownership.OwnerId,
+                        outputModeKey,
+                        relativePath,
+                        expectedPreimage,
+                        verifiedBaseMainState!,
+                        owned!.Claims);
+                    plannedBackupBytes = checked(plannedBackupBytes + expectedPreimage.LengthBytes);
+                    outputMutations.Add(OutputMutation.DeleteVerifiedBase(
+                        relativePath,
+                        expectedPreimage,
+                        owned.Claims,
+                        authority));
                     EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
                     continue;
                 }
 
                 bytes = mutation.DeleteFallbackBytes
                     ?? throw new OutputOwnershipConflictException(relativePath);
+                if (isComposedExecutable && remainingClaims.Length > 0)
+                {
+                    ownershipClaims = owned!.FileDeleteEligible
+                        && !remainingClaims.Any(claim =>
+                            claim.Address.ScopeKind == OwnedTargetScopeKind.File
+                            && !OutputCreatorProvenance.IsClaim(claim))
+                        ? remainingClaims
+                            .Append(OutputCreatorProvenance.Create(
+                                GameFamily.ScarletViolet,
+                                relativePath))
+                            .Distinct()
+                            .ToArray()
+                        : remainingClaims;
+                }
             }
             else if (bytes is null)
             {
@@ -1149,8 +1241,9 @@ internal sealed class SvWorkflowFileSource
                 relativePath,
                 bytes,
                 expectedPreimage,
-                [ownership],
-                ToOutputModeKey(outputMode)));
+                ownershipClaims,
+                outputModeKey,
+                ownershipActor: isComposedExecutable ? ownership.OwnerId : null));
             EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
         }
 
@@ -1183,6 +1276,18 @@ internal sealed class SvWorkflowFileSource
             .Where(context => context is not null)
             .SelectMany(context => context!.Origins)
             .Concat(contextForPlan.Origins)
+            .Concat(outputMutations
+                .Select(mutation => mutation.OwnershipActor)
+                .Where(actor => actor is not null)
+                .Select(actor => new OutputApplyOrigin(
+                    OutputApplyOriginKind.Workflow,
+                    actor!.Value)))
+            .Concat(outputMutations
+                .Select(mutation => mutation.VerifiedBaseDeleteAuthority?.ActingOwnerId)
+                .Where(actor => actor is not null)
+                .Select(actor => new OutputApplyOrigin(
+                    OutputApplyOriginKind.Workflow,
+                    actor!.Value)))
             .Distinct()
             .ToArray();
         var plan = new OutputApplyPlan(
@@ -1192,7 +1297,8 @@ internal sealed class SvWorkflowFileSource
             contextForPlan.SemanticReviewHash,
             origins,
             outputMutations,
-            directoryMembershipDependencies: membershipDependencies);
+            directoryMembershipDependencies: membershipDependencies,
+            ownershipInventoryRevision: ownershipSnapshot.Revision);
         var result = coordinator.ApplyAsync(plan).GetAwaiter().GetResult();
         if (result.Outcome != OutputApplyOutcome.Committed)
         {
@@ -1200,6 +1306,94 @@ internal sealed class SvWorkflowFileSource
         }
 
         return result;
+    }
+
+    private static bool IsComposedExecutablePath(RelativeOutputPath path)
+    {
+        return string.Equals(path.CanonicalKey, "EXEFS/MAIN", StringComparison.Ordinal);
+    }
+
+    private static FileStream? OpenVerifiedBaseMainLeaseIfRequired(
+        ProjectPaths paths,
+        string outputRoot,
+        IReadOnlyList<SvWorkflowOutputMutation> mutations,
+        long maximumBytes)
+    {
+        var requiresBase = mutations.Any(mutation =>
+        {
+            if (mutation.Bytes is not null || mutation.DeleteFallbackBytes is null)
+            {
+                return false;
+            }
+
+            var relative = Path.GetRelativePath(outputRoot, Path.GetFullPath(mutation.TargetPath))
+                .Replace(Path.DirectorySeparatorChar, '/');
+            return !PathContainment.IsOutsideRoot(relative)
+                && IsComposedExecutablePath(new RelativeOutputPath(relative));
+        });
+        if (!requiresBase)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+        {
+            throw new InvalidOperationException(
+                "Composed Scarlet/Violet executable cleanup requires Base ExeFS main.");
+        }
+
+        var baseRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.BaseExeFsPath));
+        var baseMainPath = Path.GetFullPath(Path.Combine(baseRoot, "main"));
+        var relativeBasePath = Path.GetRelativePath(baseRoot, baseMainPath);
+        if (PathContainment.IsOutsideRoot(relativeBasePath)
+            || !File.Exists(baseMainPath)
+            || Directory.Exists(baseMainPath))
+        {
+            throw new IOException(
+                "Composed Scarlet/Violet executable cleanup requires a physical Base ExeFS main.");
+        }
+
+        var stream = new FileStream(
+            baseMainPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
+        if (stream.Length <= 0 || stream.Length > maximumBytes)
+        {
+            stream.Dispose();
+            throw new OutputLimitExceededException(
+                "Base ExeFS main exceeds the configured Scarlet/Violet executable limit.");
+        }
+
+        return stream;
+    }
+
+    private static byte[] ReadVerifiedBaseMain(FileStream stream)
+    {
+        var bytes = new byte[checked((int)stream.Length)];
+        stream.Position = 0;
+        stream.ReadExactly(bytes);
+        stream.Position = 0;
+        return bytes;
+    }
+
+    private static void ValidateComposedExecutableOwnership(
+        OutputOwnershipRecord owned,
+        ProjectId projectId,
+        GameFamily gameFamily,
+        string outputMode,
+        OutputFileState expectedPreimage,
+        RelativeOutputPath relativePath)
+    {
+        if (owned.ProjectId != projectId
+            || owned.GameFamily != gameFamily
+            || owned.CurrentState != expectedPreimage
+            || !string.Equals(owned.OutputMode, outputMode, StringComparison.Ordinal))
+        {
+            throw new OutputOwnershipConflictException(relativePath);
+        }
     }
 
     private static void EnsureMutationCountWithinLimit(

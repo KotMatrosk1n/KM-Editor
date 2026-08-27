@@ -26,6 +26,7 @@ export type AppSidebarProps = {
   appVersion: string;
   availableWorkflowSectionIds: ReadonlySet<WorkbenchSection>;
   canShowEditableWorkflowNavigation: boolean;
+  canShowGameplaySettingsNavigation: boolean;
   canShowWorkflowNavigation: boolean;
   expandedWorkflowGroups: ReadonlySet<WorkflowNavigationGroup['id']>;
   hasAvailableUpdate: boolean;
@@ -47,6 +48,7 @@ export function AppSidebar({
   appVersion,
   availableWorkflowSectionIds,
   canShowEditableWorkflowNavigation,
+  canShowGameplaySettingsNavigation,
   canShowWorkflowNavigation,
   expandedWorkflowGroups,
   hasAvailableUpdate,
@@ -128,15 +130,18 @@ export function AppSidebar({
             );
           })}
 
-          {canShowWorkflowNavigation
+          {canShowWorkflowNavigation || canShowGameplaySettingsNavigation
             ? workflowNavigationGroups.map((group) => {
                 const visibleSectionIds = group.sectionIds.filter(
                   (sectionId) =>
-                    canAccessWorkflowSectionForHealth(
-                      sectionId,
-                      canShowWorkflowNavigation,
-                      canShowEditableWorkflowNavigation
-                    ) &&
+                    (sectionId === 'gameplaySettings'
+                      ? canShowGameplaySettingsNavigation
+                      : canShowWorkflowNavigation &&
+                        canAccessWorkflowSectionForHealth(
+                          sectionId,
+                          canShowWorkflowNavigation,
+                          canShowEditableWorkflowNavigation
+                        )) &&
                     isWorkflowNavigationVisibleForGame(
                       sectionId,
                       selectedGame,
@@ -146,6 +151,9 @@ export function AppSidebar({
                 if (visibleSectionIds.length === 0) {
                   return null;
                 }
+                const groupLabel = group.labelKey
+                  ? t(group.labelKey)
+                  : translateLiteral(group.label);
 
                 const hasActiveSection = visibleSectionIds.includes(activeSection);
                 const isExpanded =
@@ -159,14 +167,14 @@ export function AppSidebar({
                   >
                     <button
                       aria-expanded={isExpanded}
-                      aria-label={translateLiteral(group.label)}
+                      aria-label={groupLabel}
                       className="nav-group-button"
                       onClick={() => onToggleWorkflowGroup(group.id)}
-                      title={isSidebarCompact ? translateLiteral(group.label) : undefined}
+                      title={isSidebarCompact ? groupLabel : undefined}
                       type="button"
                     >
                       <Layers aria-hidden="true" size={16} />
-                      <span>{group.label}</span>
+                      <span>{groupLabel}</span>
                     </button>
                     {isExpanded ? (
                       <div className="nav-group-items">
@@ -174,24 +182,27 @@ export function AppSidebar({
                           const section = getWorkbenchCapabilityRegistration(sectionId);
                           const Icon = section.icon;
                           const isActive = activeSection === section.id;
+                          const sectionLabel = section.id === 'gameplaySettings'
+                            ? t(getWorkbenchSectionLabelKey(section.id))
+                            : translateLiteral(section.label);
 
                           return (
                             <button
                               aria-current={isActive ? 'page' : undefined}
-                              aria-label={section.label}
+                              aria-label={sectionLabel}
                               className="nav-button nav-child-button"
                               disabled={navigationDisabled}
                               key={section.id}
                               onClick={() => onNavigate(section.id)}
                               title={
                                 isSidebarCompact
-                                  ? translateLiteral(section.label)
+                                  ? sectionLabel
                                   : undefined
                               }
                               type="button"
                             >
                               <Icon aria-hidden="true" size={16} />
-                              <span>{section.label}</span>
+                              <span>{sectionLabel}</span>
                             </button>
                           );
                         })}

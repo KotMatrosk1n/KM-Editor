@@ -47,19 +47,30 @@ export function createCapabilityDiscoveryViewModels(options: {
       const isWorkflow =
         registration.navigationKind === 'workflow' ||
         registration.navigationKind === 'hidden';
-      const resolved = isWorkflow
-        ? resolveWorkflowStatus(
-            registration.maturity,
-            workflow,
-            options.health,
-            standaloneWorkflowSectionIds.has(registration.id)
-          )
-        : {
+      const resolved = registration.id === 'gameplaySettings'
+        ? {
             reason: null,
             reasonKey: null,
-            status: 'available' as const,
-            statusKey: 'workbench.capability.status.available'
-          };
+            status: options.health?.canOpenEditableWorkflows
+              ? 'editable' as const
+              : 'available' as const,
+            statusKey: options.health?.canOpenEditableWorkflows
+              ? 'workbench.capability.status.editable'
+              : 'workbench.capability.status.available'
+          }
+        : isWorkflow
+          ? resolveWorkflowStatus(
+              registration.maturity,
+              workflow,
+              options.health,
+              standaloneWorkflowSectionIds.has(registration.id)
+            )
+          : {
+              reason: null,
+              reasonKey: null,
+              status: 'available' as const,
+              statusKey: 'workbench.capability.status.available'
+            };
       return {
         capabilityKinds: registration.capabilityKinds,
         descriptionKey: getWorkbenchSectionDescriptionKey(registration.id),

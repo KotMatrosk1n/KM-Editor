@@ -121,6 +121,7 @@ const registrations = {
   profanityFilter: operationScoped('profanityFilter'),
   randomizer: operationScoped('randomizer'),
   gameDump: operationScoped('gameDump'),
+  gameplaySettings: operationScoped('gameplaySettings'),
   changes: notRecordScoped('changes'),
   settings: operationScoped('settings')
 } as const satisfies Readonly<Record<WorkbenchSection, WorkbenchRecordIdentityRegistration>>;

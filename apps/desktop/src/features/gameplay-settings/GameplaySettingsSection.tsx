@@ -1,112 +1,128 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlaskConical, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ApplyGameplaySettingsUpdateResponse,
+  GameplaySettingsCapability,
   GameplaySettingsSnapshot,
   GameplaySettingsState,
   GameplaySettingsValues,
-  PreviewGameplaySettingsUpdateResponse,
-} from "../../bridge/gameplaySettingsContracts";
+  PreviewGameplaySettingsUpdateResponse
+} from '../../bridge/gameplaySettingsContracts';
 import {
   gameplaySettingsExperienceRateStepBasisPoints,
-  gameplaySettingsMaximumExperienceRateBasisPoints,
-} from "../../bridge/gameplaySettingsContracts";
-import type { OutputSafetyScope } from "../../bridge/outputSafetyContracts";
-import type { ProjectBridge } from "../../bridge/projectBridge";
-import { useLocalization } from "../../localization";
-import "./GameplaySettingsSection.css";
+  gameplaySettingsMaximumExperienceRateBasisPoints
+} from '../../bridge/gameplaySettingsContracts';
+import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
+import type { ProjectBridge } from '../../bridge/projectBridge';
+import { useLocalization } from '../../localization';
+import './GameplaySettingsSection.css';
 
 type GameplaySettingsBridge = Pick<
   ProjectBridge,
-  | "applyGameplaySettingsUpdate"
-  | "getGameplaySettings"
-  | "previewGameplaySettingsUpdate"
+  'applyGameplaySettingsUpdate' | 'getGameplaySettings' | 'previewGameplaySettingsUpdate'
 >;
 
 type GameplaySettingsSectionProps = {
   armCriticalWriteGuard: () => Promise<boolean>;
   bridge: GameplaySettingsBridge;
   canApply?: boolean;
-  hideWhenUnavailable?: boolean;
   onApplied?: (scope: OutputSafetyScope) => Promise<void> | void;
   onApplyBusyChange?: (isBusy: boolean) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
   onError?: (
     error: unknown,
-    operation: "apply" | "load" | "preview",
-    scope: OutputSafetyScope,
+    operation: 'apply' | 'load' | 'preview',
+    scope: OutputSafetyScope
   ) => Promise<void> | void;
-  scope: OutputSafetyScope;
+  onOpenProjectSetup?: () => void;
+  onRecoveryRequired?: (scope: OutputSafetyScope) => Promise<void> | void;
+  scope: OutputSafetyScope | null;
 };
 
 type LoadState = {
+  detail?: string | null;
   snapshot: GameplaySettingsSnapshot | null;
   state: GameplaySettingsState;
 };
 
-type GameplaySettingsLoadMode = "applyRefresh" | "standalone";
+type GameplaySettingsLoadMode = 'applyRefresh' | 'standalone';
 
 const rateChoices = Array.from(
   {
     length:
       gameplaySettingsMaximumExperienceRateBasisPoints /
         gameplaySettingsExperienceRateStepBasisPoints +
-      1,
+      1
   },
-  (_, index) => index * gameplaySettingsExperienceRateStepBasisPoints,
+  (_, index) => index * gameplaySettingsExperienceRateStepBasisPoints
 );
 
-export const gameplaySettingsGuardFailureMessageKey = "gameplaySettings.error";
+const fallbackValues: GameplaySettingsValues = {
+  experienceRateBasisPoints: 10_000,
+  experienceShareEnabled: true,
+  levelCap: 100,
+  levelCapEnabled: false
+};
+
+export const gameplaySettingsGuardFailureMessageKey = 'gameplaySettings.error';
 
 export function GameplaySettingsSection({
   armCriticalWriteGuard,
   bridge,
   canApply = true,
-  hideWhenUnavailable = false,
   onApplied,
   onApplyBusyChange,
+  onDirtyChange,
   onError,
-  scope,
+  onOpenProjectSetup,
+  onRecoveryRequired,
+  scope
 }: GameplaySettingsSectionProps) {
   const { t } = useLocalization();
   const [loadState, setLoadState] = useState<LoadState | null>(null);
   const [draft, setDraft] = useState<GameplaySettingsValues | null>(null);
-  const [preview, setPreview] =
-    useState<PreviewGameplaySettingsUpdateResponse | null>(null);
-  const [busy, setBusy] = useState<"apply" | "load" | "preview" | null>("load");
+  const [preview, setPreview] = useState<PreviewGameplaySettingsUpdateResponse | null>(null);
+  const [busy, setBusy] = useState<'apply' | 'load' | 'preview' | null>(null);
   const [messageKey, setMessageKey] = useState<string | null>(null);
+  const [betaAcknowledged, setBetaAcknowledged] = useState(false);
   const actionGenerationRef = useRef(0);
+  const draftGenerationRef = useRef(0);
   const isMountedRef = useRef(true);
+  const loadRequestGenerationRef = useRef(0);
+  const previewRequestGenerationRef = useRef(0);
   const armCriticalWriteGuardRef = useRef(armCriticalWriteGuard);
   armCriticalWriteGuardRef.current = armCriticalWriteGuard;
   const onApplyBusyChangeRef = useRef(onApplyBusyChange);
   onApplyBusyChangeRef.current = onApplyBusyChange;
-  const applyGuardControllerRef = useRef<GameplaySettingsApplyGuardController | null>(
-    null,
-  );
+  const applyGuardControllerRef = useRef<GameplaySettingsApplyGuardController | null>(null);
+  const focusReviewOnCompletionRef = useRef(false);
+  const reviewRegionRef = useRef<HTMLDivElement | null>(null);
   if (applyGuardControllerRef.current === null) {
     applyGuardControllerRef.current = createGameplaySettingsApplyGuardController(
       () => armCriticalWriteGuardRef.current,
-      () => onApplyBusyChangeRef.current,
+      () => onApplyBusyChangeRef.current
     );
   }
-  const stableScope = useMemo<OutputSafetyScope>(
-    () => copyGameplaySettingsScope(scope),
+
+  const stableScope = useMemo<OutputSafetyScope | null>(
+    () => (hasGameplaySettingsOutputScope(scope) ? copyGameplaySettingsScope(scope) : null),
     [
-      scope.paths.baseExeFsPath,
-      scope.paths.baseRomFsPath,
-      scope.paths.gameTextLanguage,
-      scope.paths.outputRootPath,
-      scope.paths.pokemonLegendsZASupportFolderPath,
-      scope.paths.saveFilePath,
-      scope.paths.scarletVioletSupportFolderPath,
-      scope.paths.selectedGame,
-      scope.projectId,
-    ],
+      scope?.paths.baseExeFsPath,
+      scope?.paths.baseRomFsPath,
+      scope?.paths.gameTextLanguage,
+      scope?.paths.outputRootPath,
+      scope?.paths.pokemonLegendsZASupportFolderPath,
+      scope?.paths.saveFilePath,
+      scope?.paths.scarletVioletSupportFolderPath,
+      scope?.paths.selectedGame,
+      scope?.projectId
+    ]
   );
   const scopeKey = useMemo(
-    () => gameplaySettingsScopeKey(stableScope),
-    [stableScope],
+    () => (stableScope ? gameplaySettingsScopeKey(stableScope) : 'project-setup-required'),
+    [stableScope]
   );
   const scopeKeyRef = useRef(scopeKey);
   scopeKeyRef.current = scopeKey;
@@ -122,7 +138,7 @@ export function GameplaySettingsSection({
       isMountedRef.current &&
       actionGenerationRef.current === generation &&
       scopeKeyRef.current === requestScopeKey,
-    [],
+    []
   );
 
   useEffect(() => {
@@ -130,122 +146,278 @@ export function GameplaySettingsSection({
     return () => {
       isMountedRef.current = false;
       actionGenerationRef.current += 1;
+      draftGenerationRef.current += 1;
+      loadRequestGenerationRef.current += 1;
+      previewRequestGenerationRef.current += 1;
       endApplyGuard();
     };
   }, [endApplyGuard]);
 
   useEffect(() => {
     actionGenerationRef.current += 1;
+    draftGenerationRef.current += 1;
+    loadRequestGenerationRef.current += 1;
+    previewRequestGenerationRef.current += 1;
     endApplyGuard();
+    setBetaAcknowledged(false);
   }, [endApplyGuard, scopeKey]);
 
   const reportError = useCallback(
-    async (
-      error: unknown,
-      operation: "apply" | "load" | "preview",
-    ) => {
-      setMessageKey("gameplaySettings.error");
-      await onError?.(error, operation, stableScope);
+    async (error: unknown, operation: 'apply' | 'load' | 'preview') => {
+      setMessageKey('gameplaySettings.error');
+      if (stableScope) {
+        await onError?.(error, operation, stableScope);
+      }
     },
-    [onError, stableScope],
+    [onError, stableScope]
   );
 
-  const load = useCallback(async (
-    mode: GameplaySettingsLoadMode = "standalone",
-  ): Promise<boolean> => {
-    const ownsBusy = gameplaySettingsLoadOwnsBusy(mode);
-    const requestScopeKey = scopeKey;
-    if (ownsBusy) {
-      setBusy("load");
-    }
-    setMessageKey(null);
-    setPreview(null);
-    setLoadState(null);
-    setDraft(null);
-    try {
-      const response = await bridge.getGameplaySettings({
-        scope: stableScope,
-      });
-      if (scopeKeyRef.current !== requestScopeKey) return false;
-      setLoadState(response);
-      setDraft(response.snapshot?.values ?? null);
-      return true;
-    } catch (error) {
-      if (scopeKeyRef.current !== requestScopeKey) return false;
-      await reportError(error, "load");
-      return false;
-    } finally {
-      if (ownsBusy && scopeKeyRef.current === requestScopeKey) {
+  const load = useCallback(
+    async (mode: GameplaySettingsLoadMode = 'standalone'): Promise<boolean> => {
+      const requestScope = stableScope;
+      const requestGeneration = ++loadRequestGenerationRef.current;
+      draftGenerationRef.current += 1;
+      previewRequestGenerationRef.current += 1;
+      if (!requestScope) {
         setBusy(null);
+        setLoadState(null);
+        setDraft(null);
+        setPreview(null);
+        setMessageKey(null);
+        return false;
       }
-    }
-  }, [bridge, reportError, scopeKey, stableScope]);
+
+      const ownsBusy = gameplaySettingsLoadOwnsBusy(mode);
+      const requestScopeKey = scopeKey;
+      if (ownsBusy) {
+        setBusy('load');
+      }
+      setMessageKey(null);
+      setPreview(null);
+      setLoadState(null);
+      setDraft(null);
+      try {
+        const response = await bridge.getGameplaySettings({ scope: requestScope });
+        if (
+          scopeKeyRef.current !== requestScopeKey ||
+          loadRequestGenerationRef.current !== requestGeneration
+        ) {
+          return false;
+        }
+        setLoadState(response);
+        setDraft(response.snapshot?.values ?? null);
+        return true;
+      } catch (error) {
+        if (
+          scopeKeyRef.current !== requestScopeKey ||
+          loadRequestGenerationRef.current !== requestGeneration
+        ) {
+          return false;
+        }
+        await reportError(error, 'load');
+        return false;
+      } finally {
+        if (
+          ownsBusy &&
+          scopeKeyRef.current === requestScopeKey &&
+          loadRequestGenerationRef.current === requestGeneration
+        ) {
+          setBusy(null);
+        }
+      }
+    },
+    [bridge, reportError, scopeKey, stableScope]
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const snapshot = loadState?.snapshot ?? null;
+  const shownValues = draft ?? snapshot?.values ?? fallbackValues;
   const hasChanges = useMemo(
-    () =>
-      snapshot !== null &&
-      draft !== null &&
-      !sameValues(snapshot.values, draft),
-    [draft, snapshot],
+    () => snapshot !== null && draft !== null && !sameValues(snapshot.values, draft),
+    [draft, snapshot]
   );
+  const hasProtectedDraft = hasChanges || preview !== null;
+  useEffect(() => {
+    onDirtyChange?.(hasProtectedDraft);
+    return () => onDirtyChange?.(false);
+  }, [hasProtectedDraft, onDirtyChange]);
+  const editorIsReady = Boolean(
+    stableScope && loadState && isEditableState(loadState.state) && snapshot && draft
+  );
+  const unavailableReason = stableScope
+    ? loadState?.state ?? (busy === 'load' ? 'loading' : 'not-loaded')
+    : 'project-setup-required';
+  const experienceShareCapability = capabilityForDisplay(
+    snapshot?.experienceShareCapability,
+    snapshot?.hasExperienceShare,
+    unavailableReason
+  );
+  const experienceRateCapability = capabilityForDisplay(
+    snapshot?.experienceRateCapability,
+    snapshot?.hasExperienceRate,
+    unavailableReason
+  );
+  const levelCapCapability = capabilityForDisplay(
+    snapshot?.levelCapCapability,
+    snapshot?.hasLevelCap,
+    unavailableReason
+  );
+  const canEditExperienceShare = editorIsReady && experienceShareCapability.available;
+  const canEditExperienceRate = editorIsReady && experienceRateCapability.available;
+  const canEditLevelCap = editorIsReady && levelCapCapability.available;
 
   const updateDraft = useCallback((next: GameplaySettingsValues) => {
+    draftGenerationRef.current += 1;
+    previewRequestGenerationRef.current += 1;
     setDraft(next);
     setPreview(null);
     setMessageKey(null);
   }, []);
 
+  const vanillaDraft = useMemo(
+    () =>
+      draft
+        ? getAvailableVanillaGameplaySettingsValues(draft, {
+            experienceRate: experienceRateCapability.available,
+            experienceShare: experienceShareCapability.available,
+            levelCap: levelCapCapability.available
+          })
+        : null,
+    [
+      draft,
+      experienceRateCapability.available,
+      experienceShareCapability.available,
+      levelCapCapability.available
+    ]
+  );
+  const canSetVanillaValues = Boolean(
+    editorIsReady && vanillaDraft && draft && !sameValues(vanillaDraft, draft)
+  );
+  const setVanillaValues = useCallback(() => {
+    if (!vanillaDraft || !editorIsReady) return;
+    updateDraft(vanillaDraft);
+  }, [editorIsReady, updateDraft, vanillaDraft]);
+
   const review = useCallback(async () => {
-    if (!snapshot || !draft || !hasChanges) return;
+    const requestScope = stableScope;
+    if (
+      !requestScope ||
+      !snapshot ||
+      !draft ||
+      !hasChanges ||
+      !betaAcknowledged ||
+      !canApply
+    ) return;
     const requestScopeKey = scopeKey;
-    setBusy("preview");
+    const requestGeneration = ++previewRequestGenerationRef.current;
+    const requestDraftGeneration = draftGenerationRef.current;
+    setBusy('preview');
     setMessageKey(null);
     try {
       const response = await bridge.previewGameplaySettingsUpdate({
         expectedGeneration: snapshot.generation,
         experienceRateBasisPoints:
-          draft.experienceRateBasisPoints ===
-          snapshot.values.experienceRateBasisPoints
+          draft.experienceRateBasisPoints === snapshot.values.experienceRateBasisPoints
             ? undefined
             : draft.experienceRateBasisPoints,
         experienceShareEnabled:
-          draft.experienceShareEnabled ===
-          snapshot.values.experienceShareEnabled
+          draft.experienceShareEnabled === snapshot.values.experienceShareEnabled
             ? undefined
             : draft.experienceShareEnabled,
-        levelCap:
-          draft.levelCap === snapshot.values.levelCap
-            ? undefined
-            : draft.levelCap,
+        levelCap: draft.levelCap === snapshot.values.levelCap ? undefined : draft.levelCap,
         levelCapEnabled:
           draft.levelCapEnabled === snapshot.values.levelCapEnabled
             ? undefined
             : draft.levelCapEnabled,
-        scope: stableScope,
+        scope: requestScope
       });
-      if (scopeKeyRef.current !== requestScopeKey) return;
+      if (
+        scopeKeyRef.current !== requestScopeKey ||
+        previewRequestGenerationRef.current !== requestGeneration ||
+        draftGenerationRef.current !== requestDraftGeneration
+      ) {
+        return;
+      }
       setPreview(response);
     } catch (error) {
-      if (scopeKeyRef.current !== requestScopeKey) return;
-      await reportError(error, "preview");
+      if (
+        scopeKeyRef.current !== requestScopeKey ||
+        previewRequestGenerationRef.current !== requestGeneration ||
+        draftGenerationRef.current !== requestDraftGeneration
+      ) {
+        return;
+      }
+      await reportError(error, 'preview');
     } finally {
-      if (scopeKeyRef.current === requestScopeKey) {
+      if (
+        scopeKeyRef.current === requestScopeKey &&
+        previewRequestGenerationRef.current === requestGeneration &&
+        draftGenerationRef.current === requestDraftGeneration
+      ) {
         setBusy(null);
       }
     }
-  }, [bridge, draft, hasChanges, reportError, scopeKey, snapshot, stableScope]);
+  }, [
+    betaAcknowledged,
+    bridge,
+    canApply,
+    draft,
+    hasChanges,
+    reportError,
+    scopeKey,
+    snapshot,
+    stableScope
+  ]);
+
+  useEffect(() => {
+    if (!preview) return;
+    let timer: number | null = null;
+    let disposed = false;
+    const expiresAt = Date.parse(preview.expiresAtUtc);
+    const expireReview = () => {
+      if (disposed) return;
+      setPreview(null);
+      setMessageKey('gameplaySettings.diagnostic.reviewExpired');
+    };
+    const scheduleExpiryCheck = () => {
+      const remaining = expiresAt - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) {
+        expireReview();
+        return;
+      }
+      timer = window.setTimeout(scheduleExpiryCheck, Math.min(remaining, 60_000));
+    };
+
+    scheduleExpiryCheck();
+    return () => {
+      disposed = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [preview]);
+
+  useEffect(() => {
+    if (!preview || !focusReviewOnCompletionRef.current) return;
+    focusReviewOnCompletionRef.current = false;
+    reviewRegionRef.current?.focus();
+  }, [preview]);
 
   const apply = useCallback(async () => {
-    if (!preview || !canApply) return;
+    const requestScope = stableScope;
+    if (!requestScope || !preview || !canApply || !betaAcknowledged) return;
+    if (isGameplaySettingsPreviewExpired(preview)) {
+      setPreview(null);
+      setMessageKey('gameplaySettings.diagnostic.reviewExpired');
+      return;
+    }
     const requestScopeKey = scopeKey;
     actionGenerationRef.current += 1;
     const generation = actionGenerationRef.current;
-    setBusy("apply");
+    setBusy('apply');
     setMessageKey(null);
     try {
       const didArmCriticalWriteGuard = await beginApplyGuard(generation);
@@ -259,47 +431,72 @@ export function GameplaySettingsSection({
         }
         return;
       }
+      if (isGameplaySettingsPreviewExpired(preview)) {
+        setPreview(null);
+        setMessageKey('gameplaySettings.diagnostic.reviewExpired');
+        return;
+      }
 
       const response = await bridge.applyGameplaySettingsUpdate({
         reviewId: preview.reviewId,
-        scope: stableScope,
+        scope: requestScope
       });
       if (!isCurrentApply(generation, requestScopeKey)) return;
       setPreview(null);
       const disposition = getGameplaySettingsApplyDisposition(response);
-      if (disposition === "committed") {
-        let hasCurrentSnapshot = response.snapshot !== null;
+      if (disposition === 'committed') {
         if (response.snapshot) {
-          setLoadState({ state: "ready", snapshot: response.snapshot });
+          draftGenerationRef.current += 1;
+          previewRequestGenerationRef.current += 1;
+          setLoadState({ state: 'ready', snapshot: response.snapshot });
           setDraft(response.snapshot.values);
         } else {
-          hasCurrentSnapshot = await load("applyRefresh");
-        }
-        if (
-          hasCurrentSnapshot &&
-          isCurrentApply(generation, requestScopeKey)
-        ) {
-          setMessageKey("gameplaySettings.applied");
-        }
-        if (!isCurrentApply(generation, requestScopeKey)) return;
-        try {
-          await onApplied?.(stableScope);
-        } catch (error) {
-          if (isCurrentApply(generation, requestScopeKey)) {
-            await reportError(error, "load");
+          try {
+            await load('applyRefresh');
+          } catch {
+            // The durable commit is authoritative even if refreshing its display fails.
           }
         }
-      } else if (disposition === "rolledBack") {
-        const didReload = await load("applyRefresh");
+        if (!isCurrentApply(generation, requestScopeKey)) return;
+        setMessageKey('gameplaySettings.applied');
+        try {
+          await onApplied?.(requestScope);
+        } catch (error) {
+          if (isCurrentApply(generation, requestScopeKey)) {
+            try {
+              await onError?.(error, 'load', requestScope);
+            } catch {
+              // A failed follow-up notification cannot change the committed outcome.
+            }
+            setMessageKey('gameplaySettings.applied');
+          }
+        }
+      } else if (disposition === 'rolledBack') {
+        const didReload = await load('applyRefresh');
         if (didReload && isCurrentApply(generation, requestScopeKey)) {
-          setMessageKey("gameplaySettings.rolledBack");
+          setMessageKey('gameplaySettings.rolledBack');
         }
       } else {
-        setMessageKey("gameplaySettings.recoveryRequired");
+        draftGenerationRef.current += 1;
+        loadRequestGenerationRef.current += 1;
+        previewRequestGenerationRef.current += 1;
+        setLoadState({ state: 'conflict', snapshot: null });
+        setDraft(null);
+        setBetaAcknowledged(false);
+        setMessageKey('gameplaySettings.recoveryRequired');
+        try {
+          await onRecoveryRequired?.(requestScope);
+        } catch (error) {
+          if (isCurrentApply(generation, requestScopeKey)) {
+            await reportError(error, 'apply');
+            setMessageKey('gameplaySettings.recoveryRequired');
+          }
+        }
       }
     } catch (error) {
       if (!isCurrentApply(generation, requestScopeKey)) return;
-      await reportError(error, "apply");
+      setPreview(null);
+      await reportError(error, 'apply');
     } finally {
       endApplyGuard(generation);
       if (isCurrentApply(generation, requestScopeKey)) {
@@ -308,63 +505,89 @@ export function GameplaySettingsSection({
     }
   }, [
     beginApplyGuard,
+    betaAcknowledged,
     bridge,
     canApply,
     endApplyGuard,
     isCurrentApply,
     load,
     onApplied,
+    onError,
+    onRecoveryRequired,
     preview,
     reportError,
     scopeKey,
-    stableScope,
+    stableScope
   ]);
 
   const reset = useCallback(() => {
     if (!snapshot) return;
+    draftGenerationRef.current += 1;
+    previewRequestGenerationRef.current += 1;
     setDraft(snapshot.values);
     setPreview(null);
     setMessageKey(null);
   }, [snapshot]);
 
-  if (!shouldRenderGameplaySettings(hideWhenUnavailable, loadState?.state ?? null)) {
-    return null;
-  }
-
   return (
     <section
-      className="gameplay-settings"
       aria-labelledby="gameplay-settings-title"
+      className="panel wide-panel gameplay-settings"
     >
       <header className="gameplay-settings__header">
-        <div>
-          <h2 id="gameplay-settings-title">{t("gameplaySettings.title")}</h2>
-          <p>{t("gameplaySettings.description")}</p>
+        <div className="gameplay-settings__heading">
+          <FlaskConical aria-hidden="true" size={20} />
+          <div>
+            <div className="gameplay-settings__title-row">
+              <h2 id="gameplay-settings-title">{t('gameplaySettings.title')}</h2>
+              <span className="gameplay-settings__beta-badge">{t('gameplaySettings.betaBadge')}</span>
+            </div>
+            <p>{t('gameplaySettings.description')}</p>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={busy !== null}
-        >
-          {busy === "load"
-            ? t("gameplaySettings.loading")
-            : t("gameplaySettings.refresh")}
-        </button>
+        {stableScope ? (
+          <button
+            className="secondary-button"
+            disabled={busy !== null || hasProtectedDraft}
+            onClick={() => void load()}
+            type="button"
+          >
+            {busy === 'load'
+              ? t('gameplaySettings.loading')
+              : t('gameplaySettings.refresh')}
+          </button>
+        ) : null}
       </header>
 
+      <div className="gameplay-settings__beta-notice" role="note">
+        <ShieldAlert aria-hidden="true" size={20} />
+        <div>
+          <strong>{t('gameplaySettings.betaNoticeTitle')}</strong>
+          <p>{t('gameplaySettings.betaNoticeDescription')}</p>
+        </div>
+      </div>
+
+      {!stableScope ? (
+        <div className="gameplay-settings__setup" role="status">
+          <div>
+            <h3>{t('gameplaySettings.projectSetupTitle')}</h3>
+            <p>{t('gameplaySettings.projectSetupDescription')}</p>
+          </div>
+          <button className="primary-button" onClick={onOpenProjectSetup} type="button">
+            {t('gameplaySettings.openProjectSetup')}
+          </button>
+        </div>
+      ) : null}
+
       {messageKey ? (
-        <p
-          className="gameplay-settings__message"
-          role="status"
-          aria-live="polite"
-        >
+        <p className="gameplay-settings__message" role="status" aria-live="polite">
           {t(messageKey)}
         </p>
       ) : null}
 
-      {busy === "load" && loadState === null ? (
+      {busy === 'load' && loadState === null ? (
         <p className="gameplay-settings__empty" role="status">
-          {t("gameplaySettings.loading")}
+          {t('gameplaySettings.loading')}
         </p>
       ) : null}
 
@@ -372,203 +595,324 @@ export function GameplaySettingsSection({
         <div className="gameplay-settings__empty" role="status">
           <h3>{t(`gameplaySettings.state.${loadState.state}.title`)}</h3>
           <p>{t(`gameplaySettings.state.${loadState.state}.description`)}</p>
+          {loadState.detail ? <p>{loadState.detail}</p> : null}
         </div>
       ) : null}
 
-      {snapshot && draft && loadState && isEditableState(loadState.state) ? (
-        <>
-          <div
-            className="gameplay-settings__identity"
-            aria-label={t("gameplaySettings.package")}
-          >
+      {snapshot ? (
+        <div
+          className="gameplay-settings__identity"
+          aria-label={t('gameplaySettings.executableProfile')}
+        >
+          <strong>{t('gameplaySettings.executableProfile')}</strong>
+          <span>{snapshot.executableProfileId}</span>
+          <span>{t('gameplaySettings.titleId', { value: snapshot.titleId })}</span>
+          <span>
+            {t('gameplaySettings.supportedGameVersion', {
+              version: snapshot.supportedGameVersion
+            })}
+          </span>
+          <span>{t('gameplaySettings.generation', { generation: snapshot.generation })}</span>
+        </div>
+      ) : null}
+
+      <div className="gameplay-settings__controls">
+        <div
+          className={`gameplay-settings__control-card${canEditExperienceShare ? '' : ' gameplay-settings__control-card--unavailable'}`}
+        >
+          <label className="gameplay-settings__toggle">
+            <input
+              checked={shownValues.experienceShareEnabled}
+              disabled={busy !== null || !canEditExperienceShare}
+              onChange={(event) =>
+                updateDraft({
+                  ...shownValues,
+                  experienceShareEnabled: event.currentTarget.checked
+                })
+              }
+              type="checkbox"
+            />
             <span>
-              {t("gameplaySettings.packageVersion", {
-                version: snapshot.packageVersion,
-              })}
+              <strong>{t('gameplaySettings.experienceShare')}</strong>
+              <small>{t('gameplaySettings.experienceShareHelp')}</small>
             </span>
+          </label>
+          <CapabilityDetails capability={experienceShareCapability} t={t} />
+        </div>
+
+        <div
+          className={`gameplay-settings__control-card${canEditExperienceRate ? '' : ' gameplay-settings__control-card--unavailable'}`}
+        >
+          <label className="gameplay-settings__field">
             <span>
-              {t("gameplaySettings.generation", {
-                generation: snapshot.generation,
-              })}
+              <strong>{t('gameplaySettings.experienceRate')}</strong>
+              <small>{t('gameplaySettings.experienceRateHelp')}</small>
             </span>
+            <select
+              disabled={busy !== null || !canEditExperienceRate}
+              onChange={(event) =>
+                updateDraft({
+                  ...shownValues,
+                  experienceRateBasisPoints: Number(event.currentTarget.value)
+                })
+              }
+              value={shownValues.experienceRateBasisPoints}
+            >
+              {rateChoices.map((value) => (
+                <option key={value} value={value}>
+                  {t('gameplaySettings.percent', { value: value / 100 })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <CapabilityDetails capability={experienceRateCapability} t={t} />
+        </div>
+
+        <div
+          className={`gameplay-settings__control-card${canEditLevelCap ? '' : ' gameplay-settings__control-card--unavailable'}`}
+        >
+          <div className="gameplay-settings__cap">
+            <label className="gameplay-settings__toggle">
+              <input
+                checked={shownValues.levelCapEnabled}
+                disabled={busy !== null || !canEditLevelCap}
+                onChange={(event) =>
+                  updateDraft({
+                    ...shownValues,
+                    levelCap: event.currentTarget.checked ? shownValues.levelCap : 100,
+                    levelCapEnabled: event.currentTarget.checked
+                  })
+                }
+                type="checkbox"
+              />
+              <span>
+                <strong>{t('gameplaySettings.levelCap')}</strong>
+                <small>{t('gameplaySettings.levelCapHelp')}</small>
+              </span>
+            </label>
+            <label className="gameplay-settings__field gameplay-settings__field--compact">
+              <span>{t('gameplaySettings.level')}</span>
+              <select
+                disabled={busy !== null || !canEditLevelCap || !shownValues.levelCapEnabled}
+                onChange={(event) =>
+                  updateDraft({ ...shownValues, levelCap: Number(event.currentTarget.value) })
+                }
+                value={shownValues.levelCap}
+              >
+                {Array.from({ length: 100 }, (_, index) => index + 1).map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+          <CapabilityDetails capability={levelCapCapability} t={t} />
+        </div>
+      </div>
 
-          {loadState.state === "repairable" ? (
-            <p className="gameplay-settings__warning" role="status">
-              {t("gameplaySettings.state.repairable.description")}
-            </p>
-          ) : null}
+      <label className="gameplay-settings__acknowledgement">
+        <input
+          checked={betaAcknowledged}
+          disabled={!editorIsReady || busy !== null}
+          onChange={(event) => {
+            const isAcknowledged = event.currentTarget.checked;
+            setBetaAcknowledged(isAcknowledged);
+            if (!isAcknowledged) {
+              setPreview(null);
+            }
+          }}
+          type="checkbox"
+        />
+        <span>{t('gameplaySettings.betaAcknowledgement')}</span>
+      </label>
 
-          <div className="gameplay-settings__controls">
-            {snapshot.hasExperienceShare ? (
-              <label className="gameplay-settings__toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.experienceShareEnabled}
-                  onChange={(event) =>
-                    updateDraft({
-                      ...draft,
-                      experienceShareEnabled: event.currentTarget.checked,
-                    })
-                  }
-                  disabled={busy !== null}
-                />
-                <span>
-                  <strong>{t("gameplaySettings.experienceShare")}</strong>
-                  <small>{t("gameplaySettings.experienceShareHelp")}</small>
-                </span>
-              </label>
-            ) : null}
+      <div className="gameplay-settings__actions">
+        <button
+          className="secondary-button"
+          disabled={busy !== null || !canSetVanillaValues}
+          onClick={setVanillaValues}
+          type="button"
+        >
+          {t('gameplaySettings.setVanillaValues')}
+        </button>
+        <button
+          className="secondary-button"
+          disabled={busy !== null || !hasChanges}
+          onClick={reset}
+          type="button"
+        >
+          {t('gameplaySettings.resetDraft')}
+        </button>
+        <button
+          className="primary-button"
+          disabled={
+            busy !== null ||
+            !canApply ||
+            !hasChanges ||
+            !betaAcknowledged ||
+            !editorIsReady
+          }
+          onClick={(event) => {
+            focusReviewOnCompletionRef.current = event.detail === 0;
+            void review();
+          }}
+          type="button"
+        >
+          {busy === 'preview'
+            ? t('gameplaySettings.reviewing')
+            : t('gameplaySettings.review')}
+        </button>
+      </div>
 
-            {snapshot.hasExperienceRate ? (
-              <label className="gameplay-settings__field">
-                <span>
-                  <strong>{t("gameplaySettings.experienceRate")}</strong>
-                  <small>{t("gameplaySettings.experienceRateHelp")}</small>
-                </span>
-                <select
-                  value={draft.experienceRateBasisPoints}
-                  onChange={(event) =>
-                    updateDraft({
-                      ...draft,
-                      experienceRateBasisPoints: Number(
-                        event.currentTarget.value,
-                      ),
-                    })
-                  }
-                  disabled={busy !== null}
-                >
-                  {rateChoices.map((value) => (
-                    <option key={value} value={value}>
-                      {t("gameplaySettings.percent", { value: value / 100 })}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
+      <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
+        {preview ? t('gameplaySettings.reviewReady') : ''}
+      </p>
 
-            {snapshot.hasLevelCap ? (
-              <div className="gameplay-settings__cap">
-                <label className="gameplay-settings__toggle">
-                  <input
-                    type="checkbox"
-                    checked={draft.levelCapEnabled}
-                    onChange={(event) =>
-                      updateDraft({
-                        ...draft,
-                        levelCap: event.currentTarget.checked
-                          ? draft.levelCap
-                          : 100,
-                        levelCapEnabled: event.currentTarget.checked,
-                      })
-                    }
-                    disabled={busy !== null}
-                  />
-                  <span>
-                    <strong>{t("gameplaySettings.levelCap")}</strong>
-                    <small>{t("gameplaySettings.levelCapHelp")}</small>
-                  </span>
-                </label>
-                <label className="gameplay-settings__field gameplay-settings__field--compact">
-                  <span>{t("gameplaySettings.level")}</span>
-                  <select
-                    value={draft.levelCap}
-                    onChange={(event) =>
-                      updateDraft({
-                        ...draft,
-                        levelCap: Number(event.currentTarget.value),
-                      })
-                    }
-                    disabled={busy !== null || !draft.levelCapEnabled}
-                  >
-                    {Array.from({ length: 100 }, (_, index) => index + 1).map(
-                      (level) => (
-                        <option key={level} value={level}>
-                          {level}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </label>
+      {preview ? (
+        <div
+          aria-labelledby="gameplay-settings-review-title"
+          className="gameplay-settings__review"
+          ref={reviewRegionRef}
+          role="region"
+          tabIndex={-1}
+        >
+          <h3 id="gameplay-settings-review-title">{t('gameplaySettings.reviewTitle')}</h3>
+          <p>{t('gameplaySettings.reviewDescription')}</p>
+          <dl>
+            {changedRows(preview.before.values, preview.after.values).map((row) => (
+              <div key={row.key}>
+                <dt>{t(`gameplaySettings.${row.key}`)}</dt>
+                <dd>
+                  {formatValue(row.key, row.before, t)}
+                  <span aria-hidden="true"> {'>'} </span>
+                  <span className="sr-only">{t('gameplaySettings.changesTo')}</span>
+                  {formatValue(row.key, row.after, t)}
+                </dd>
               </div>
-            ) : null}
-          </div>
-
+            ))}
+          </dl>
           <div className="gameplay-settings__actions">
             <button
+              className="secondary-button"
+              disabled={busy !== null}
+              onClick={() => setPreview(null)}
               type="button"
-              onClick={reset}
-              disabled={busy !== null || !hasChanges}
             >
-              {t("gameplaySettings.resetDraft")}
+              {t('gameplaySettings.cancelReview')}
             </button>
             <button
+              className="primary-button"
+              disabled={
+                busy !== null ||
+                !canApply ||
+                !betaAcknowledged ||
+                isGameplaySettingsPreviewExpired(preview)
+              }
+              onClick={() => void apply()}
               type="button"
-              className="primary"
-              onClick={() => void review()}
-              disabled={busy !== null || !hasChanges}
             >
-              {busy === "preview"
-                ? t("gameplaySettings.reviewing")
-                : t("gameplaySettings.review")}
+              {busy === 'apply'
+                ? t('gameplaySettings.applying')
+                : t('gameplaySettings.apply')}
             </button>
           </div>
-
-          {preview ? (
-            <div
-              className="gameplay-settings__review"
-              aria-labelledby="gameplay-settings-review-title"
-            >
-              <h3 id="gameplay-settings-review-title">
-                {t("gameplaySettings.reviewTitle")}
-              </h3>
-              <p>{t("gameplaySettings.reviewDescription")}</p>
-              <dl>
-                {changedRows(preview.before.values, preview.after.values).map(
-                  (row) => (
-                    <div key={row.key}>
-                      <dt>{t(`gameplaySettings.${row.key}`)}</dt>
-                      <dd>
-                        {formatValue(row.key, row.before, t)}
-                        <span aria-hidden="true"> {">"} </span>
-                        <span className="sr-only">
-                          {t("gameplaySettings.changesTo")}
-                        </span>
-                        {formatValue(row.key, row.after, t)}
-                      </dd>
-                    </div>
-                  ),
-                )}
-              </dl>
-              <div className="gameplay-settings__actions">
-                <button
-                  type="button"
-                  onClick={() => setPreview(null)}
-                  disabled={busy !== null}
-                >
-                  {t("gameplaySettings.cancelReview")}
-                </button>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => void apply()}
-                  disabled={busy !== null || !canApply}
-                >
-                  {busy === "apply"
-                    ? t("gameplaySettings.applying")
-                    : t("gameplaySettings.apply")}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </>
+        </div>
       ) : null}
     </section>
   );
 }
 
+function CapabilityDetails({
+  capability,
+  t
+}: {
+  capability: GameplaySettingsCapability;
+  t: (key: string, values?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="gameplay-settings__capability">
+      <span
+        className={`gameplay-settings__availability gameplay-settings__availability--${capability.available ? 'available' : 'unavailable'}`}
+      >
+        {t(
+          capability.available
+            ? 'gameplaySettings.capabilityAvailable'
+            : 'gameplaySettings.capabilityUnavailable'
+        )}
+      </span>
+      {capability.scopeCode.trim() ? (
+        <p>
+          <strong>{t('gameplaySettings.capabilityScope')}</strong>
+          <span>{t(capabilityScopeMessageKey(capability.scopeCode))}</span>
+        </p>
+      ) : null}
+      {!capability.available ? (
+        <p>
+          <strong>{t('gameplaySettings.capabilityReason')}</strong>
+          <span>{t(capabilityReasonMessageKey(capability.reasonCode))}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function capabilityScopeMessageKey(scopeCode: string) {
+  switch (scopeCode) {
+    case 'sv-exp-share-normal-battle-nonparticipants':
+      return 'gameplaySettings.capabilityScope.svExperienceShare';
+    case 'sv-exp-rate-normal-battle-calculator':
+      return 'gameplaySettings.capabilityScope.svExperienceRate';
+    case 'swsh-exp-share-battle-catch-decision':
+      return 'gameplaySettings.capabilityScope.swshExperienceShare';
+    case 'swsh-exp-rate-battle-catch-final-award':
+      return 'gameplaySettings.capabilityScope.swshExperienceRate';
+    case 'za-exp-share-two-battle-award-builders':
+      return 'gameplaySettings.capabilityScope.zaExperienceShare';
+    case 'za-exp-rate-two-battle-award-paths':
+      return 'gameplaySettings.capabilityScope.zaExperienceRate';
+    case 'sv-level-cap-normal-battle-award':
+      return 'gameplaySettings.capabilityScope.svLevelCap';
+    case 'swsh-level-cap-battle-catch-final-award':
+      return 'gameplaySettings.capabilityScope.swshLevelCap';
+    case 'za-level-cap-two-battle-award-paths':
+      return 'gameplaySettings.capabilityScope.zaLevelCap';
+    case 'comprehensive-level-cap-unavailable':
+      return 'gameplaySettings.capabilityScope.levelCapUnavailable';
+    default:
+      return 'gameplaySettings.capabilityScope.generic';
+  }
+}
+
+function capabilityReasonMessageKey(reasonCode: string) {
+  switch (reasonCode) {
+    case 'unavailable-incomplete-recipient-and-source-contracts':
+      return 'gameplaySettings.capabilityReason.incompleteContracts';
+    case 'project-setup-required':
+      return 'gameplaySettings.capabilityReason.projectSetup';
+    case 'loading':
+      return 'gameplaySettings.capabilityReason.loading';
+    default:
+      return 'gameplaySettings.capabilityReason.generic';
+  }
+}
+
+function capabilityForDisplay(
+  capability: GameplaySettingsCapability | undefined,
+  legacyAvailable: boolean | undefined,
+  fallbackReason: string
+): GameplaySettingsCapability {
+  if (!capability) {
+    return { available: false, reasonCode: fallbackReason, scopeCode: '' };
+  }
+  if (capability.available && legacyAvailable === false) {
+    return { ...capability, available: false, reasonCode: 'profile-field-unavailable' };
+  }
+  return capability;
+}
+
 export async function tryArmGameplaySettingsWriteGuard(
-  armCriticalWriteGuard: () => Promise<boolean>,
+  armCriticalWriteGuard: () => Promise<boolean>
 ): Promise<boolean> {
   try {
     return await armCriticalWriteGuard();
@@ -577,15 +921,13 @@ export async function tryArmGameplaySettingsWriteGuard(
   }
 }
 
-export function gameplaySettingsLoadOwnsBusy(
-  mode: GameplaySettingsLoadMode,
-): boolean {
-  return mode === "standalone";
+export function gameplaySettingsLoadOwnsBusy(mode: GameplaySettingsLoadMode): boolean {
+  return mode === 'standalone';
 }
 
 export function getGameplaySettingsApplyDisposition(
-  response: Pick<ApplyGameplaySettingsUpdateResponse, "outcome">,
-): ApplyGameplaySettingsUpdateResponse["outcome"] {
+  response: Pick<ApplyGameplaySettingsUpdateResponse, 'outcome'>
+): ApplyGameplaySettingsUpdateResponse['outcome'] {
   return response.outcome;
 }
 
@@ -597,7 +939,7 @@ export type GameplaySettingsApplyGuardController = {
 
 export function createGameplaySettingsApplyGuardController(
   readArmCriticalWriteGuard: () => () => Promise<boolean>,
-  readOnApplyBusyChange: () => ((isBusy: boolean) => void) | undefined,
+  readOnApplyBusyChange: () => ((isBusy: boolean) => void) | undefined
 ): GameplaySettingsApplyGuardController {
   let activeGeneration: number | null = null;
   return {
@@ -618,42 +960,40 @@ export function createGameplaySettingsApplyGuardController(
     },
     isActive(generation) {
       return activeGeneration === generation;
-    },
+    }
   };
 }
 
 export function hasGameplaySettingsOutputScope(
-  scope: OutputSafetyScope | null,
+  scope: OutputSafetyScope | null
 ): scope is OutputSafetyScope {
   return Boolean(
-    scope?.paths.outputRootPath?.trim() && scope.paths.selectedGame,
+    scope?.paths.baseExeFsPath?.trim() &&
+      scope.paths.outputRootPath?.trim() &&
+      scope.paths.selectedGame
   );
 }
 
 export function shouldRenderGameplaySettings(
-  hideWhenUnavailable: boolean,
-  state: GameplaySettingsState | null,
+  _hideWhenUnavailable: boolean,
+  _state: GameplaySettingsState | null
 ) {
-  return !hideWhenUnavailable || (state !== null && isEditableState(state));
+  return true;
 }
 
-export function copyGameplaySettingsScope(
-  scope: OutputSafetyScope,
-): OutputSafetyScope {
+export function copyGameplaySettingsScope(scope: OutputSafetyScope): OutputSafetyScope {
   return {
     paths: {
       baseExeFsPath: scope.paths.baseExeFsPath,
       baseRomFsPath: scope.paths.baseRomFsPath,
       gameTextLanguage: scope.paths.gameTextLanguage,
       outputRootPath: scope.paths.outputRootPath,
-      pokemonLegendsZASupportFolderPath:
-        scope.paths.pokemonLegendsZASupportFolderPath,
+      pokemonLegendsZASupportFolderPath: scope.paths.pokemonLegendsZASupportFolderPath,
       saveFilePath: scope.paths.saveFilePath,
-      scarletVioletSupportFolderPath:
-        scope.paths.scarletVioletSupportFolderPath,
-      selectedGame: scope.paths.selectedGame,
+      scarletVioletSupportFolderPath: scope.paths.scarletVioletSupportFolderPath,
+      selectedGame: scope.paths.selectedGame
     },
-    projectId: scope.projectId,
+    projectId: scope.projectId
   };
 }
 
@@ -661,14 +1001,39 @@ export function gameplaySettingsScopeKey(scope: OutputSafetyScope) {
   return JSON.stringify(copyGameplaySettingsScope(scope));
 }
 
-function isEditableState(state: GameplaySettingsState) {
-  return state === "ready" || state === "repairable";
+export function isGameplaySettingsPreviewExpired(
+  preview: Pick<PreviewGameplaySettingsUpdateResponse, 'expiresAtUtc'>,
+  now = Date.now()
+) {
+  const expiresAt = Date.parse(preview.expiresAtUtc);
+  return !Number.isFinite(expiresAt) || expiresAt <= now;
 }
 
-function sameValues(
-  left: GameplaySettingsValues,
-  right: GameplaySettingsValues,
-) {
+export function getAvailableVanillaGameplaySettingsValues(
+  current: GameplaySettingsValues,
+  availability: {
+    experienceRate: boolean;
+    experienceShare: boolean;
+    levelCap: boolean;
+  }
+): GameplaySettingsValues {
+  return {
+    experienceRateBasisPoints: availability.experienceRate
+      ? 10_000
+      : current.experienceRateBasisPoints,
+    experienceShareEnabled: availability.experienceShare
+      ? true
+      : current.experienceShareEnabled,
+    levelCap: availability.levelCap ? 100 : current.levelCap,
+    levelCapEnabled: availability.levelCap ? false : current.levelCapEnabled
+  };
+}
+
+function isEditableState(state: GameplaySettingsState) {
+  return state === 'ready';
+}
+
+function sameValues(left: GameplaySettingsValues, right: GameplaySettingsValues) {
   return (
     left.experienceShareEnabled === right.experienceShareEnabled &&
     left.experienceRateBasisPoints === right.experienceRateBasisPoints &&
@@ -680,51 +1045,45 @@ function sameValues(
 type ChangedRow = {
   after: boolean | number;
   before: boolean | number;
-  key: "experienceRate" | "experienceShare" | "levelCap";
+  key: 'experienceRate' | 'experienceShare' | 'levelCap';
 };
 
-function changedRows(
-  before: GameplaySettingsValues,
-  after: GameplaySettingsValues,
-): ChangedRow[] {
+function changedRows(before: GameplaySettingsValues, after: GameplaySettingsValues): ChangedRow[] {
   const rows: ChangedRow[] = [];
   if (before.experienceShareEnabled !== after.experienceShareEnabled) {
     rows.push({
-      key: "experienceShare",
+      key: 'experienceShare',
       before: before.experienceShareEnabled,
-      after: after.experienceShareEnabled,
+      after: after.experienceShareEnabled
     });
   }
   if (before.experienceRateBasisPoints !== after.experienceRateBasisPoints) {
     rows.push({
-      key: "experienceRate",
+      key: 'experienceRate',
       before: before.experienceRateBasisPoints,
-      after: after.experienceRateBasisPoints,
+      after: after.experienceRateBasisPoints
     });
   }
-  if (
-    before.levelCapEnabled !== after.levelCapEnabled ||
-    before.levelCap !== after.levelCap
-  ) {
+  if (before.levelCapEnabled !== after.levelCapEnabled || before.levelCap !== after.levelCap) {
     rows.push({
-      key: "levelCap",
+      key: 'levelCap',
       before: before.levelCapEnabled ? before.levelCap : false,
-      after: after.levelCapEnabled ? after.levelCap : false,
+      after: after.levelCapEnabled ? after.levelCap : false
     });
   }
   return rows;
 }
 
 function formatValue(
-  key: ChangedRow["key"],
+  key: ChangedRow['key'],
   value: boolean | number,
-  t: (key: string, values?: Record<string, string | number>) => string,
+  t: (key: string, values?: Record<string, string | number>) => string
 ) {
-  if (typeof value === "boolean") {
-    return t(value ? "gameplaySettings.on" : "gameplaySettings.off");
+  if (typeof value === 'boolean') {
+    return t(value ? 'gameplaySettings.on' : 'gameplaySettings.off');
   }
-  if (key === "experienceRate") {
-    return t("gameplaySettings.percent", { value: value / 100 });
+  if (key === 'experienceRate') {
+    return t('gameplaySettings.percent', { value: value / 100 });
   }
   return String(value);
 }

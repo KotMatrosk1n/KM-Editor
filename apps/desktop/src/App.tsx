@@ -458,8 +458,7 @@ import { getIvScreenPendingOperation } from './features/iv-screen/ivScreenPendin
 import { canStageAdvancedEditorAction } from './features/advanced-editors/stageActionGuard';
 import {
   GameplaySettingsSection,
-  gameplaySettingsScopeKey,
-  hasGameplaySettingsOutputScope
+  gameplaySettingsScopeKey
 } from './features/gameplay-settings/GameplaySettingsSection';
 import { OutputSafetyPanel } from './features/output-safety/OutputSafetyPanel';
 import { ProjectRelocationPanel } from './features/output-safety/ProjectRelocationPanel';
@@ -4036,6 +4035,10 @@ export function App({
     },
     []
   );
+  const handleGameplaySettingsDirtyChange = useCallback(
+    (isDirty: boolean) => registerEditorDraftDirty('gameplaySettings', isDirty),
+    [registerEditorDraftDirty]
+  );
   const handleGameplaySettingsApplied = useCallback(
     async (scope: OutputSafetyScope) => {
       if (!gameplaySettingsScopeIsCurrent(scope)) return;
@@ -4080,6 +4083,36 @@ export function App({
       gameplaySettingsScopeIsCurrent,
       notifySemanticOutputFailure,
       setBridgeDiagnostics
+    ]
+  );
+  const handleGameplaySettingsRecoveryRequired = useCallback(
+    async (scope: OutputSafetyScope) => {
+      if (!gameplaySettingsScopeIsCurrent(scope)) return;
+      invalidateEditSessionReview();
+      clearVisibleChangePlanRefs();
+      setChangePlan(null);
+      setApplyResult(null);
+      setEditValidationDiagnostics([]);
+      setValidatedEditSessionSignature(null);
+      setChangePlanSessionSignature(null);
+      clearScopedEditorPanelState();
+      clearDynamaxAdventurePanelState();
+      setBridgeDiagnostics([]);
+      await notifySemanticOutputFailure(
+        new Error('Gameplay settings output requires recovery.')
+      );
+    },
+    [
+      clearDynamaxAdventurePanelState,
+      clearScopedEditorPanelState,
+      clearVisibleChangePlanRefs,
+      gameplaySettingsScopeIsCurrent,
+      invalidateEditSessionReview,
+      notifySemanticOutputFailure,
+      setApplyResult,
+      setBridgeDiagnostics,
+      setChangePlan,
+      setEditValidationDiagnostics
     ]
   );
 
@@ -17935,6 +17968,10 @@ export function App({
 
   const canShowWorkflowNavigation = Boolean(health?.canOpenReadOnlyWorkflows);
   const canShowEditableWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
+  const canShowGameplaySettingsNavigation = isWorkflowSupportedForGame(
+    'gameplaySettings',
+    selectedGame
+  );
 
   return (
     <DiagnosticNavigationProvider
@@ -17959,6 +17996,7 @@ export function App({
         appVersion={appVersion}
         availableWorkflowSectionIds={availableWorkflowSectionIds}
         canShowEditableWorkflowNavigation={canShowEditableWorkflowNavigation}
+        canShowGameplaySettingsNavigation={canShowGameplaySettingsNavigation}
         canShowWorkflowNavigation={canShowWorkflowNavigation}
         expandedWorkflowGroups={expandedWorkflowGroups}
         hasAvailableUpdate={availableUpdate !== null}
@@ -19661,6 +19699,20 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'gameplaySettings' ? (
+            <GameplaySettingsSection
+              armCriticalWriteGuard={armCriticalWriteGuard}
+              bridge={bridge}
+              canApply={outputSafety.canApply}
+              onApplied={handleGameplaySettingsApplied}
+              onApplyBusyChange={handleGameplaySettingsApplyingChange}
+              onDirtyChange={handleGameplaySettingsDirtyChange}
+              onError={handleGameplaySettingsError}
+              onOpenProjectSetup={() => void handleNavigateSection('health')}
+              onRecoveryRequired={handleGameplaySettingsRecoveryRequired}
+              scope={outputSafetyScope}
+            />
+          ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection
               applyResult={applyResult}
@@ -19748,20 +19800,6 @@ export function App({
               )}
               appVersion={appVersion}
               availableUpdateKind={availableUpdate?.kind ?? null}
-              gameplaySettings={
-                hasGameplaySettingsOutputScope(outputSafetyScope) ? (
-                  <GameplaySettingsSection
-                    armCriticalWriteGuard={armCriticalWriteGuard}
-                    bridge={bridge}
-                    canApply={outputSafety.canApply}
-                    hideWhenUnavailable
-                    onApplied={handleGameplaySettingsApplied}
-                    onApplyBusyChange={handleGameplaySettingsApplyingChange}
-                    onError={handleGameplaySettingsError}
-                    scope={outputSafetyScope}
-                  />
-                ) : null
-              }
               personalizationSettings={
                 <PersonalizationSettingsPanel
                   onReplayWhatChanged={() => setIsWhatChangedTourOpen(true)}
@@ -52841,7 +52879,6 @@ function SettingsSection({
   analysisLoadingSettings,
   appVersion,
   availableUpdateKind,
-  gameplaySettings,
   personalizationSettings,
   editorLayout,
   isSvCacheClearing,
@@ -52864,7 +52901,6 @@ function SettingsSection({
   analysisLoadingSettings: ReactNode;
   appVersion: string;
   availableUpdateKind: AvailableUpdate['kind'] | null;
-  gameplaySettings: ReactNode;
   personalizationSettings: ReactNode;
   editorLayout: EditorLayoutPreference;
   isSvCacheClearing: boolean;
@@ -53015,8 +53051,6 @@ function SettingsSection({
           ]}
         />
       </div>
-
-      {gameplaySettings}
 
       <section aria-labelledby="layout-settings-heading" className="settings-subsection">
         <div className="settings-subsection-heading">
