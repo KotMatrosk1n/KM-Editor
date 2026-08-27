@@ -25,7 +25,7 @@ Useful names, sprites, selectors, filters, and game-aware controls make it easie
 
 Supported Items, Moves, Pokémon, Trainers, and Text drafts are saved privately with the project and tied to the source revision they came from. Workbench record tabs protect unfinished drafts, while guarded row copy and paste is available for supported Pokémon learnset rows, encounter slots, and trainer party members in each game family.
 
-Game-specific workflows include Sword and Shield Max Lair route planning and Battle Cafe rewards, Scarlet and Violet TM Machine controls and existing-cell Habitat Coordinates, and Legends Z-A Trainer Pools, trainer name and class actions, and Fashion Catalog editing. Each workflow exposes only the records, values, and source layouts it can verify.
+Game-specific workflows include Sword and Shield Max Lair route planning, Battle Cafe rewards, and independently selectable verified 60FPS animation timing groups; Scarlet and Violet TM Machine controls and existing-cell Habitat Coordinates; and Legends Z-A Trainer Pools, trainer name and class actions, and Fashion Catalog editing. Each workflow exposes only the records, values, and source layouts it can verify.
 
 Beta Gameplay Settings provides exact-build Experience Share, Experience Rate, and bounded Level Cap controls for the supported Sword and Shield 1.3.2, Scarlet and Violet 4.0.0, and Legends Z-A 2.0.2 executables. Changes use a guarded review and apply flow, preserve compatible executable edits, and can restore the verified vanilla values. Each control states the exact award paths it affects; unlisted sources such as candies and scripted awards keep their original behavior.
 

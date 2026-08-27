@@ -296,6 +296,17 @@
   outline-offset: 2px;
 }
 
+.change-set-enabled-toggle input:disabled + span {
+  background: color-mix(in srgb, var(--color-control) 76%, var(--color-surface-muted));
+  border-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.change-set-enabled-toggle input:disabled + span::after {
+  background: var(--color-text-muted);
+}
+
 .change-set-select {
   display: flex;
   flex: 1 1 auto;

@@ -21,8 +21,9 @@ import {
   type BalanceLabLayer
 } from './useBalanceLabController';
 import {
-  preparationStateFromQueryStatus,
-  type AnalysisPreparationState
+  createAnalysisPreparationProgress,
+  preparationProgressFromQueryStatuses,
+  type AnalysisPreparationProgress
 } from '../workbench/analysisPreparation';
 
 export type BalanceLabRuntimeProps = {
@@ -32,7 +33,7 @@ export type BalanceLabRuntimeProps = {
   capabilityStatus: SemanticQueryStatus;
   onEnsureCapabilities: () => Promise<void>;
   onNavigateFinding: (record: SemanticExploreRecordRef) => void;
-  onPreparationStateChange?: (state: AnalysisPreparationState) => void;
+  onPreparationStateChange?: (progress: AnalysisPreparationProgress) => void;
   onRefreshCapabilities: () => Promise<void>;
   onStaleRevision: () => void;
   revision: SemanticExploreRevision | null;
@@ -61,7 +62,10 @@ export function BalanceLabRuntime({
   useEffect(() => {
     if (!revision) {
       onPreparationStateChange?.(
-        capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        createAnalysisPreparationProgress(
+          'balanceLab',
+          capabilityStatus === 'error' || capabilityStatus === 'ready' ? 'error' : 'loading'
+        )
       );
     }
   }, [capabilityStatus, onPreparationStateChange, revision]);
@@ -127,7 +131,9 @@ function BalanceLabReadyRuntime({
     scope
   });
   useEffect(() => {
-    onPreparationStateChange?.(preparationStateFromQueryStatus(controller.result.status));
+    onPreparationStateChange?.(
+      preparationProgressFromQueryStatuses('balanceLab', [controller.result.status])
+    );
   }, [controller.result.status, onPreparationStateChange]);
   return (
     <BalanceLabSection

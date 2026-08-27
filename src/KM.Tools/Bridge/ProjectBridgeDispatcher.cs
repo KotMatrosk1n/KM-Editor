@@ -4815,10 +4815,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<ApplyFpsPatchRequest>(requestJson);
         var result = ExecuteExclusiveOutputOperation(
             request.Payload.Paths,
-            () => fpsPatchService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
+            () => fpsPatchService.Apply(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                request.Payload.EnabledAnimationTimingComponentIds));
         var response = new ApplyFpsPatchResponse(
             ToDto(result.Status),
-            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+            EditSessionBridgeMapper.ToDto(result.ApplyResult),
+            result.RecoveryRequired);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -4828,10 +4831,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<RestoreFpsPatchRequest>(requestJson);
         var result = ExecuteExclusiveOutputOperation(
             request.Payload.Paths,
-            () => fpsPatchService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
+            () => fpsPatchService.Restore(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                request.Payload.AnimationTimingComponentIds));
         var response = new RestoreFpsPatchResponse(
             ToDto(result.Status),
-            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+            EditSessionBridgeMapper.ToDto(result.ApplyResult),
+            result.RecoveryRequired);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -7289,6 +7295,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return new FpsPatchStatusDto(
             status.Status,
             status.Message,
+            status.GlobalApplyBlocked,
+            status.GlobalRestoreBlocked,
+            status.HasRemovableKmState,
+            status.RestoreDiagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
             status.BuildId,
             status.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(status.DetectedGame.Value),
             status.PatchedMainSiteCount,
@@ -7306,6 +7316,17 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     category.PatchedFileCount,
                     category.StaleOwnedFileCount,
                     category.ConflictingFileCount))
+                .ToArray(),
+            status.AnimationTimingComponents
+                .Select(component => new FpsPatchAnimationTimingComponentStatusDto(
+                    component.Id,
+                    component.Enabled,
+                    component.InputState,
+                    component.InputDiagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+                    component.ManagedFileCount,
+                    component.PatchedFileCount,
+                    component.StaleOwnedFileCount,
+                    component.ConflictingFileCount))
                 .ToArray(),
             status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }

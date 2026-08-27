@@ -16,19 +16,46 @@ export const analysisSystemIds = ['semanticProject', ...analysisToolIds] as cons
 export type AnalysisSystemId = (typeof analysisSystemIds)[number];
 export type AnalysisPreparationState = 'waiting' | 'loading' | 'ready' | 'error';
 
-export type AnalysisPreparationStates = Record<
+export type AnalysisPreparationProgress = {
+  completedUnitCount: number;
+  state: AnalysisPreparationState;
+  totalUnitCount: number;
+};
+
+export type AnalysisPreparationProgressBySystem = Record<
   AnalysisSystemId,
-  AnalysisPreparationState
+  AnalysisPreparationProgress
 >;
 
+export type AnalysisPreparationScopeState = {
+  preloadTools: readonly AnalysisToolId[];
+  progressBySystem: AnalysisPreparationProgressBySystem;
+  scopeKey: string | null;
+};
+
 export type AnalysisPreparationSnapshot = {
-  completedCount: number;
+  completedUnitCount: number;
   errorCount: number;
   percent: number;
   readyCount: number;
-  states: AnalysisPreparationStates;
+  progressBySystem: AnalysisPreparationProgressBySystem;
+  states: Record<AnalysisSystemId, AnalysisPreparationState>;
   targetCount: number;
   targetSystems: readonly AnalysisSystemId[];
+  totalUnitCount: number;
+};
+
+// Each unit is one real asynchronous preparation operation already exposed by the
+// owning controller. Project analysis measures source observation and index
+// capability materialization. Research Lab measures capabilities and annotations.
+// The remaining tools each have one required initial query.
+export const analysisPreparationUnitCounts: Readonly<Record<AnalysisSystemId, number>> = {
+  balanceLab: 1,
+  gameModules: 1,
+  guidedDesign: 1,
+  researchLab: 2,
+  semanticMerge: 1,
+  semanticProject: 2
 };
 
 const analysisLoadingModeStorageKey = 'km-editor.analysis-loading-mode.v1';
@@ -65,7 +92,7 @@ export function nextAnalysisPreloadTool(options: {
   mode: AnalysisLoadingMode;
   preloadTools: readonly AnalysisToolId[];
   semanticState: AnalysisPreparationState;
-  states: AnalysisPreparationStates;
+  states: Record<AnalysisSystemId, AnalysisPreparationState>;
 }): AnalysisToolId | null {
   if (options.semanticState !== 'ready') return null;
   const order = analysisPreloadOrder(options.mode);
@@ -79,48 +106,139 @@ export function nextAnalysisPreloadTool(options: {
   return order[nextIndex] ?? null;
 }
 
-export function emptyAnalysisPreparationStates(): AnalysisPreparationStates {
+export function createAnalysisPreparationProgress(
+  system: AnalysisSystemId,
+  state: AnalysisPreparationState,
+  completedUnitCount = state === 'ready' ? analysisPreparationUnitCounts[system] : 0
+): AnalysisPreparationProgress {
+  const totalUnitCount = analysisPreparationUnitCounts[system];
+  if (!Number.isInteger(completedUnitCount) || completedUnitCount < 0) {
+    throw new RangeError('Analysis preparation progress must be a nonnegative integer.');
+  }
+  const boundedCompletedUnitCount = Math.min(totalUnitCount, completedUnitCount);
+  if (state === 'ready' && boundedCompletedUnitCount !== totalUnitCount) {
+    throw new RangeError('Ready analysis preparation must include every required operation.');
+  }
   return {
-    balanceLab: 'waiting',
-    gameModules: 'waiting',
-    guidedDesign: 'waiting',
-    researchLab: 'waiting',
-    semanticMerge: 'waiting',
-    semanticProject: 'waiting'
+    completedUnitCount: boundedCompletedUnitCount,
+    state,
+    totalUnitCount
   };
+}
+
+export function preparationProgressFromQueryStatuses(
+  system: AnalysisSystemId,
+  statuses: readonly ('idle' | 'loading' | 'ready' | 'error')[]
+): AnalysisPreparationProgress {
+  const totalUnitCount = analysisPreparationUnitCounts[system];
+  if (statuses.length !== totalUnitCount) {
+    throw new RangeError(
+      `${system} preparation requires ${totalUnitCount} measured query statuses.`
+    );
+  }
+  const completedUnitCount = statuses.filter((status) => status === 'ready').length;
+  const state: AnalysisPreparationState = statuses.some((status) => status === 'error')
+    ? 'error'
+    : completedUnitCount === totalUnitCount
+      ? 'ready'
+      : 'loading';
+  return { completedUnitCount, state, totalUnitCount };
+}
+
+export function mergeAnalysisPreparationProgress(
+  current: AnalysisPreparationProgress,
+  next: AnalysisPreparationProgress
+): AnalysisPreparationProgress {
+  if (current.totalUnitCount !== next.totalUnitCount) {
+    throw new RangeError('Analysis preparation progress totals cannot change within a project revision.');
+  }
+  return {
+    completedUnitCount: Math.max(current.completedUnitCount, next.completedUnitCount),
+    state: current.state === 'ready' && next.state === 'loading'
+      ? 'ready'
+      : next.state,
+    totalUnitCount: current.totalUnitCount
+  };
+}
+
+export function emptyAnalysisPreparationProgress(): AnalysisPreparationProgressBySystem {
+  return {
+    balanceLab: createAnalysisPreparationProgress('balanceLab', 'waiting'),
+    gameModules: createAnalysisPreparationProgress('gameModules', 'waiting'),
+    guidedDesign: createAnalysisPreparationProgress('guidedDesign', 'waiting'),
+    researchLab: createAnalysisPreparationProgress('researchLab', 'waiting'),
+    semanticMerge: createAnalysisPreparationProgress('semanticMerge', 'waiting'),
+    semanticProject: createAnalysisPreparationProgress('semanticProject', 'waiting')
+  };
+}
+
+export function createAnalysisPreparationScopeState(options: {
+  scopeKey: string | null;
+  semanticProgress: AnalysisPreparationProgress;
+}): AnalysisPreparationScopeState {
+  return {
+    preloadTools: [],
+    progressBySystem: {
+      ...emptyAnalysisPreparationProgress(),
+      semanticProject: options.scopeKey
+        ? options.semanticProgress
+        : createAnalysisPreparationProgress('semanticProject', 'waiting')
+    },
+    scopeKey: options.scopeKey
+  };
+}
+
+export function resolveAnalysisPreparationScopeState(
+  current: AnalysisPreparationScopeState,
+  options: {
+    scopeKey: string | null;
+    semanticProgress: AnalysisPreparationProgress;
+  }
+): AnalysisPreparationScopeState {
+  return current.scopeKey === options.scopeKey
+    ? current
+    : createAnalysisPreparationScopeState(options);
 }
 
 export function createAnalysisPreparationSnapshot(options: {
   mode: AnalysisLoadingMode;
-  states: AnalysisPreparationStates;
+  progressBySystem: AnalysisPreparationProgressBySystem;
 }): AnalysisPreparationSnapshot {
   const targetSystems: readonly AnalysisSystemId[] = [
     'semanticProject',
     ...analysisPreloadOrder(options.mode)
   ];
-  const completedCount = targetSystems.filter((system) => (
-    options.states[system] === 'ready' || options.states[system] === 'error'
-  )).length;
   const readyCount = targetSystems.filter(
-    (system) => options.states[system] === 'ready'
+    (system) => options.progressBySystem[system].state === 'ready'
   ).length;
   const errorCount = targetSystems.filter(
-    (system) => options.states[system] === 'error'
+    (system) => options.progressBySystem[system].state === 'error'
   ).length;
   const targetCount = targetSystems.length;
+  const completedUnitCount = targetSystems.reduce(
+    (total, system) => total + options.progressBySystem[system].completedUnitCount,
+    0
+  );
+  const totalUnitCount = targetSystems.reduce(
+    (total, system) => total + options.progressBySystem[system].totalUnitCount,
+    0
+  );
+  const allRequiredToolsReady = readyCount === targetCount &&
+    completedUnitCount === totalUnitCount;
+  const measuredPercent = totalUnitCount === 0
+    ? 100
+    : Math.floor((completedUnitCount / totalUnitCount) * 100);
   return {
-    completedCount,
+    completedUnitCount,
     errorCount,
-    percent: targetCount === 0 ? 100 : Math.round((completedCount / targetCount) * 100),
+    percent: allRequiredToolsReady ? 100 : Math.min(99, measuredPercent),
+    progressBySystem: options.progressBySystem,
     readyCount,
-    states: options.states,
+    states: Object.fromEntries(analysisSystemIds.map((system) => (
+      [system, options.progressBySystem[system].state]
+    ))) as Record<AnalysisSystemId, AnalysisPreparationState>,
     targetCount,
-    targetSystems
+    targetSystems,
+    totalUnitCount
   };
-}
-
-export function preparationStateFromQueryStatus(
-  status: 'idle' | 'loading' | 'ready' | 'error'
-): AnalysisPreparationState {
-  return status === 'idle' ? 'loading' : status;
 }

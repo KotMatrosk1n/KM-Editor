@@ -20,7 +20,7 @@ export function AnalysisPreparationPanel({
 }) {
   const { t } = useLocalization();
   const titleId = useId();
-  const isReady = snapshot.completedCount === snapshot.targetCount && snapshot.errorCount === 0;
+  const isReady = snapshot.readyCount === snapshot.targetCount && snapshot.errorCount === 0;
   const hasError = snapshot.errorCount > 0;
   const phase = hasError ? 'error' : isReady ? 'ready' : 'preparing';
   const targetedTools = new Set<AnalysisSystemId>([
@@ -44,6 +44,11 @@ export function AnalysisPreparationPanel({
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={snapshot.percent}
+        aria-valuetext={t('analysisPreparation.summary', {
+          completed: snapshot.completedUnitCount,
+          percent: snapshot.percent,
+          total: snapshot.totalUnitCount
+        })}
         className="work-progress-track"
         role="progressbar"
       >
@@ -51,13 +56,15 @@ export function AnalysisPreparationPanel({
       </div>
       <p className="analysis-preparation-summary">
         {t('analysisPreparation.summary', {
-          completed: snapshot.readyCount,
-          total: snapshot.targetCount
+          completed: snapshot.completedUnitCount,
+          percent: snapshot.percent,
+          total: snapshot.totalUnitCount
         })}
       </p>
       <ul className="analysis-preparation-systems">
         {analysisSystemIds.map((system) => {
           const isTargeted = targetedTools.has(system);
+          const progress = snapshot.progressBySystem[system];
           const state = !isTargeted && snapshot.states[system] === 'waiting'
             ? 'onDemand'
             : snapshot.states[system];
@@ -73,7 +80,12 @@ export function AnalysisPreparationPanel({
                 <Clock3 aria-hidden="true" size={15} />
               )}
               <span>{t(`analysisPreparation.system.${system}`)}</span>
-              <small>{t(`analysisPreparation.state.${state}`)}</small>
+              <small>
+                {t(`analysisPreparation.state.${state}`)}
+                {isTargeted && state !== 'onDemand'
+                  ? ` (${progress.completedUnitCount}/${progress.totalUnitCount})`
+                  : null}
+              </small>
             </li>
           );
         })}

@@ -455,11 +455,6 @@ public sealed class GameplaySettingsApplicationService
             .ConfigureAwait(false);
         var inventory = inventorySnapshot.Inventory;
         var ownership = inventory.Files.FirstOrDefault(record => record.Path == MainPath);
-        if (outputExists && ownership is null)
-        {
-            return LoadedState.Unavailable(game, titleId, GameplaySettingsStateDto.Unmanaged);
-        }
-
         if (ownership is not null
             && (ownership.ProjectId != context.ProjectId
                 || ownership.GameFamily != context.GameFamily
@@ -473,6 +468,33 @@ public sealed class GameplaySettingsApplicationService
         var result = AnalyzeForGame(game, baseBytes, currentBytes);
         if (result.State != GameplaySettingsStateDto.Ready || result.Analysis is null)
         {
+            // A pre-existing output is safe to compose only when the exact-build
+            // analyzer recognizes the complete effective image. A later reviewed
+            // write records bounded, non-delete-eligible ownership; an unknown
+            // image remains unmanaged and is never overwritten.
+            if (outputExists && ownership is null)
+            {
+                // Preserve the clean-base diagnostic when the project itself is
+                // unsupported or corrupt. "Unmanaged" describes only a valid
+                // project whose pre-existing effective executable is unknown.
+                var baseResult = AnalyzeForGame(game, baseBytes, baseBytes);
+                if (baseResult.State != GameplaySettingsStateDto.Ready
+                    || baseResult.Analysis is null)
+                {
+                    return LoadedState.Unavailable(
+                        game,
+                        titleId,
+                        baseResult.State,
+                        baseResult.Detail);
+                }
+
+                return LoadedState.Unavailable(
+                    game,
+                    titleId,
+                    GameplaySettingsStateDto.Unmanaged,
+                    result.Detail);
+            }
+
             return LoadedState.Unavailable(game, titleId, result.State, result.Detail);
         }
 

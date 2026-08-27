@@ -33,6 +33,13 @@ public enum GameplayDeferredFeatureState
     NotApplicable,
 }
 
+public enum GameplayDeferredFeatureProductDeliveryState
+{
+    NotDelivered,
+    Delivered,
+    NotApplicable,
+}
+
 public sealed record GameplayDeferredFeatureAssessment(
     GameplayDeferredFeatureId Feature,
     GameplayDeferredFeatureState State,
@@ -40,17 +47,54 @@ public sealed record GameplayDeferredFeatureAssessment(
     string FailClosedBehavior,
     IReadOnlyList<string> MissingProof)
 {
+    public GameplayDeferredFeatureProductDeliveryState ProductDeliveryState { get; init; } =
+        State == GameplayDeferredFeatureState.NotApplicable
+            ? GameplayDeferredFeatureProductDeliveryState.NotApplicable
+            : GameplayDeferredFeatureProductDeliveryState.NotDelivered;
+
+    public string? ProductSurfaceId { get; init; }
+
+    public string? EffectScopeId { get; init; }
+
     public bool CanExposeControl => State == GameplayDeferredFeatureState.Implemented;
 }
 
 /// <summary>
 /// Exhaustive fail-closed inventory for gameplay and presentation controls that are not part of
-/// the initial settings schema. A feature stays absent from generated packages and the settings UI
-/// until its title-specific entry is replaced by an implemented assessment.
+/// the initial native settings schema. Native package exposure remains separate from bounded
+/// delivery through an existing product editor. A delivered product scope does not mark the wider
+/// feature or its native runtime control implemented.
 /// </summary>
 public static class GameplayDeferredFeatureCatalog
 {
     private const string OmitControl = "control-omitted-and-no-writer";
+
+    private static readonly IReadOnlySet<(
+        GameplaySettingsFamily Family,
+        GameplayDeferredFeatureId Feature,
+        string ProductSurfaceId,
+        string EffectScopeId)> KnownProductDeliveries = new HashSet<(
+            GameplaySettingsFamily Family,
+            GameplayDeferredFeatureId Feature,
+            string ProductSurfaceId,
+            string EffectScopeId)>
+        {
+            (
+                GameplaySettingsFamily.SwordShield,
+                GameplayDeferredFeatureId.StaticAnimationControls,
+                "fpsPatch",
+                "selectable-verified-romfs-animation-timing-groups"),
+            (
+                GameplaySettingsFamily.SwordShield,
+                GameplayDeferredFeatureId.StatusPresentationControls,
+                "ivScreen",
+                "raw-iv-summary-graph"),
+            (
+                GameplaySettingsFamily.LegendsZA,
+                GameplayDeferredFeatureId.SpawnPopulationControls,
+                "encounters",
+                "serialized-slot-weight-and-count-fields"),
+        };
 
     private static readonly IReadOnlyList<GameplayDeferredFeatureAssessment> ScarletViolet = Create(
         GameplaySettingsFamily.ScarletViolet,
@@ -133,9 +177,14 @@ public static class GameplayDeferredFeatureCatalog
 
     private static readonly IReadOnlyList<GameplayDeferredFeatureAssessment> SwordShield = Create(
         GameplaySettingsFamily.SwordShield,
-        Gate(GameplayDeferredFeatureId.StaticAnimationControls, "swsh-static-animation-proof-missing",
-            "swsh-animation-asset-and-consumer-map",
-            "swsh-animation-noop-roundtrip-and-runtime-canary"),
+        DeliveredProductGate(
+            GameplayDeferredFeatureId.StaticAnimationControls,
+            "fpsPatch",
+            "selectable-verified-romfs-animation-timing-groups",
+            "swsh-static-animation-proof-missing",
+            "swsh-uncovered-animation-asset-and-consumer-map",
+            "swsh-native-animation-control-binding",
+            "swsh-animation-runtime-presentation-canary"),
         Gate(GameplayDeferredFeatureId.StaticLodControls, "swsh-static-lod-proof-missing",
             "swsh-lod-asset-and-consumer-map",
             "swsh-lod-streaming-and-display-canary"),
@@ -154,7 +203,11 @@ public static class GameplayDeferredFeatureCatalog
         Gate(GameplayDeferredFeatureId.MapPresentationControls, "swsh-map-presentation-proof-missing",
             "swsh-map-table-layout-texture-message-join",
             "swsh-base-wild-area-dlc-render-canary"),
-        Gate(GameplayDeferredFeatureId.StatusPresentationControls, "swsh-status-presentation-proof-missing",
+        DeliveredProductGate(
+            GameplayDeferredFeatureId.StatusPresentationControls,
+            "ivScreen",
+            "raw-iv-summary-graph",
+            "swsh-status-presentation-proof-missing",
             "swsh-status-layout-and-getter-map",
             "swsh-status-language-and-navigation-canary"),
         NotApplicable(GameplayDeferredFeatureId.AutoBattleEvs, "swsh-auto-battle-ev-not-applicable"),
@@ -203,7 +256,11 @@ public static class GameplayDeferredFeatureCatalog
         Gate(GameplayDeferredFeatureId.StaticColorControls, "za-static-color-proof-missing",
             "za-color-asset-and-consumer-map",
             "za-color-handheld-docked-canary"),
-        Gate(GameplayDeferredFeatureId.SpawnPopulationControls, "za-spawn-population-proof-missing",
+        DeliveredProductGate(
+            GameplayDeferredFeatureId.SpawnPopulationControls,
+            "encounters",
+            "serialized-slot-weight-and-count-fields",
+            "za-spawn-population-proof-missing",
             "za-serialized-count-to-live-actor-map",
             "za-sewer-zone-streaming-suspend-canary"),
         Gate(GameplayDeferredFeatureId.SummaryUiControls, "za-summary-ui-proof-missing",
@@ -279,6 +336,26 @@ public static class GameplayDeferredFeatureCatalog
             Array.AsReadOnly(missingProof.ToArray()));
     }
 
+    private static GameplayDeferredFeatureAssessment DeliveredProductGate(
+        GameplayDeferredFeatureId feature,
+        string productSurfaceId,
+        string effectScopeId,
+        string reasonCode,
+        params string[] missingProof)
+    {
+        return new GameplayDeferredFeatureAssessment(
+            feature,
+            GameplayDeferredFeatureState.ProofGated,
+            reasonCode,
+            OmitControl,
+            Array.AsReadOnly(missingProof.ToArray()))
+        {
+            ProductDeliveryState = GameplayDeferredFeatureProductDeliveryState.Delivered,
+            ProductSurfaceId = productSurfaceId,
+            EffectScopeId = effectScopeId,
+        };
+    }
+
     private static GameplayDeferredFeatureAssessment NotApplicable(
         GameplayDeferredFeatureId feature,
         string reasonCode)
@@ -295,13 +372,31 @@ public static class GameplayDeferredFeatureCatalog
         GameplaySettingsFamily family,
         params GameplayDeferredFeatureAssessment[] entries)
     {
-        var expectedCount = Enum.GetValues<GameplayDeferredFeatureId>().Length;
-        if (entries.Length != expectedCount
-            || entries.Select(entry => entry.Feature).Distinct().Count() != expectedCount
+        var expectedFeatures = Enum.GetValues<GameplayDeferredFeatureId>();
+        var actualFeatures = entries
+            .Select(entry => entry.Feature)
+            .ToHashSet();
+        var actualProductDeliveries = entries
+            .Where(entry => entry.ProductDeliveryState == GameplayDeferredFeatureProductDeliveryState.Delivered)
+            .Select(entry => (
+                Family: family,
+                entry.Feature,
+                ProductSurfaceId: entry.ProductSurfaceId!,
+                EffectScopeId: entry.EffectScopeId!))
+            .ToHashSet();
+        var expectedProductDeliveries = KnownProductDeliveries
+            .Where(delivery => delivery.Family == family)
+            .ToHashSet();
+        if (entries.Length != expectedFeatures.Length
+            || !actualFeatures.SetEquals(expectedFeatures)
+            || !actualProductDeliveries.SetEquals(expectedProductDeliveries)
             || entries.Any(entry => entry.CanExposeControl)
+            || entries.Any(entry => !HasValidProductDelivery(family, entry))
             || entries.Any(entry => entry.State == GameplayDeferredFeatureState.ProofGated
                 && entry.MissingProof.Count == 0)
             || entries.Any(entry => entry.MissingProof.Count > 8)
+            || entries.Any(entry => !IsStableToken(entry.ReasonCode)
+                || !IsStableToken(entry.FailClosedBehavior))
             || entries.SelectMany(entry => entry.MissingProof)
                 .Any(proof => !IsStableToken(proof)))
         {
@@ -310,6 +405,37 @@ public static class GameplayDeferredFeatureCatalog
         }
 
         return Array.AsReadOnly(entries);
+    }
+
+    private static bool HasValidProductDelivery(
+        GameplaySettingsFamily family,
+        GameplayDeferredFeatureAssessment entry)
+    {
+        var hasSurface = entry.ProductSurfaceId is not null;
+        var hasScope = entry.EffectScopeId is not null;
+        return entry.ProductDeliveryState switch
+        {
+            GameplayDeferredFeatureProductDeliveryState.Delivered =>
+                entry.State != GameplayDeferredFeatureState.NotApplicable
+                && hasSurface
+                && hasScope
+                && IsStableToken(entry.ProductSurfaceId!)
+                && IsStableToken(entry.EffectScopeId!)
+                && KnownProductDeliveries.Contains((
+                    family,
+                    entry.Feature,
+                    entry.ProductSurfaceId!,
+                    entry.EffectScopeId!)),
+            GameplayDeferredFeatureProductDeliveryState.NotDelivered =>
+                entry.State != GameplayDeferredFeatureState.NotApplicable
+                && !hasSurface
+                && !hasScope,
+            GameplayDeferredFeatureProductDeliveryState.NotApplicable =>
+                entry.State == GameplayDeferredFeatureState.NotApplicable
+                && !hasSurface
+                && !hasScope,
+            _ => false,
+        };
     }
 
     private static bool IsStableToken(string value)
