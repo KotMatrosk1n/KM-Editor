@@ -33,6 +33,16 @@ export type AnalysisPreparationScopeState = {
   scopeKey: string | null;
 };
 
+export type ObservedOutputRecoveryRevision = {
+  revision: string | null;
+  scopeKey: string | null;
+};
+
+export type OutputRecoveryRevisionObservation = {
+  next: ObservedOutputRecoveryRevision;
+  shouldInvalidateAnalysis: boolean;
+};
+
 export type AnalysisPreparationSnapshot = {
   completedUnitCount: number;
   errorCount: number;
@@ -59,6 +69,38 @@ export const analysisPreparationUnitCounts: Readonly<Record<AnalysisSystemId, nu
 };
 
 const analysisLoadingModeStorageKey = 'km-editor.analysis-loading-mode.v1';
+
+export function observeOutputRecoveryRevision(
+  current: ObservedOutputRecoveryRevision,
+  scopeKey: string | null,
+  revision: string | null
+): OutputRecoveryRevisionObservation {
+  if (scopeKey === null) {
+    return {
+      next: { revision: null, scopeKey: null },
+      shouldInvalidateAnalysis: false
+    };
+  }
+  if (current.scopeKey !== scopeKey) {
+    return {
+      next: { revision, scopeKey },
+      shouldInvalidateAnalysis: false
+    };
+  }
+  if (revision === null || current.revision === revision) {
+    return { next: current, shouldInvalidateAnalysis: false };
+  }
+  if (current.revision === null) {
+    return {
+      next: { revision, scopeKey },
+      shouldInvalidateAnalysis: false
+    };
+  }
+  return {
+    next: { revision, scopeKey },
+    shouldInvalidateAnalysis: true
+  };
+}
 
 export function readAnalysisLoadingMode(): AnalysisLoadingMode {
   if (typeof window === 'undefined') return 'balanced';

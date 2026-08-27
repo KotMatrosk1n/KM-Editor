@@ -362,9 +362,27 @@ public sealed class GameplaySettingsApplicationService
             snapshot);
     }
 
+    internal static async Task<(
+        GameplaySettingsStateDto State,
+        GameplaySettingsValuesDto? Values,
+        string? Detail,
+        OutputFileState? TargetState)>
+        InspectStaticValuesForInGamePackageAsync(
+            OutputScopeContext context,
+            CancellationToken cancellationToken)
+    {
+        var loaded = await LoadAsync(
+                context,
+                cancellationToken,
+                allowInGamePackageManifest: true)
+            .ConfigureAwait(false);
+        return (loaded.State, loaded.Dto?.Values, loaded.Detail, loaded.TargetState);
+    }
+
     private static async Task<LoadedState> LoadAsync(
         OutputScopeContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowInGamePackageManifest = false)
     {
         var game = context.Paths.SelectedGame
             ?? throw new OutputScopeMismatchException();
@@ -381,6 +399,7 @@ public sealed class GameplaySettingsApplicationService
         string basePath;
         string outputRoot;
         string outputPath;
+        string inGamePackageManifestPath;
         try
         {
             baseRoot = Path.TrimEndingDirectorySeparator(
@@ -389,15 +408,29 @@ public sealed class GameplaySettingsApplicationService
             outputRoot = Path.TrimEndingDirectorySeparator(
                 Path.GetFullPath(context.Paths.OutputRootPath!));
             outputPath = ToAbsolutePath(outputRoot, MainPath.Value);
+            inGamePackageManifestPath = ToAbsolutePath(
+                outputRoot,
+                $"config/km-editor/gameplay-settings/{titleId:X16}/bundle.manifest");
         }
         catch (Exception exception) when (IsUnavailableFileSystemException(exception))
         {
             return LoadedState.Unavailable(game, titleId, GameplaySettingsStateDto.Missing);
         }
 
-        if (Directory.Exists(basePath) || Directory.Exists(outputPath))
+        if (Directory.Exists(basePath)
+            || Directory.Exists(outputPath)
+            || Directory.Exists(inGamePackageManifestPath))
         {
             return LoadedState.Unavailable(game, titleId, GameplaySettingsStateDto.Conflict);
+        }
+
+        if (File.Exists(inGamePackageManifestPath) && !allowInGamePackageManifest)
+        {
+            return LoadedState.Unavailable(
+                game,
+                titleId,
+                GameplaySettingsStateDto.Conflict,
+                "Remove the installed in-game settings package before changing static gameplay settings.");
         }
 
         if (!File.Exists(basePath))

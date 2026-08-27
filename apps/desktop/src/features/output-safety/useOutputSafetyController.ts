@@ -59,8 +59,8 @@ export type OutputSafetyController = {
   isAvailable: boolean;
   loadActivity: () => Promise<void>;
   loadMoreHistory: () => Promise<void>;
-  notifyOutputFailure: (error: unknown) => Promise<void>;
-  notifyOutputMutation: () => Promise<void>;
+  notifyOutputFailure: (error: unknown) => Promise<OutputRecoveryStatus | null>;
+  notifyOutputMutation: () => Promise<OutputRecoveryStatus | null>;
   previewCleanup: () => Promise<void>;
   previewCheckpointRestore: (checkpoint: OutputCheckpoint) => Promise<void>;
   readiness: OutputSafetyReadiness;
@@ -411,7 +411,7 @@ export function useOutputSafetyController({
   const notifyOutputMutation = useCallback(async () => {
     const activeScope = scopeRef.current;
     if (!activeScope || !scopeKey) {
-      return;
+      return null;
     }
     const generation = generationRef.current;
     const safetyEpoch = safetyEpochRef.current + 1;
@@ -430,11 +430,13 @@ export function useOutputSafetyController({
       bridge.listOutputCheckpoints({ scope: activeScope })
     ]);
     if (!isCurrent(generation, scopeKey) || safetyEpochRef.current !== safetyEpoch) {
-      return;
+      return null;
     }
     const [recoveryResult, historyResult, checkpointResult] = results;
+    let refreshedRecovery: OutputRecoveryStatus | null = null;
     if (recoveryResult.status === 'fulfilled') {
       commitRecovery(recoveryResult.value.status);
+      refreshedRecovery = recoveryResult.value.status;
     } else {
       setReadiness('error');
       setActionDiagnostics(toProjectBridgeDiagnostics(
@@ -448,12 +450,13 @@ export function useOutputSafetyController({
     if (checkpointResult.status === 'fulfilled') {
       setCheckpoints(checkpointResult.value);
     }
+    return refreshedRecovery;
   }, [bridge, commitRecovery, isCurrent, scopeKey, t]);
 
   const notifyOutputFailure = useCallback(async (_error: unknown) => {
     const activeScope = scopeRef.current;
     if (!activeScope || !scopeKey) {
-      return;
+      return null;
     }
     const generation = generationRef.current;
     const safetyEpoch = safetyEpochRef.current + 1;
@@ -474,6 +477,7 @@ export function useOutputSafetyController({
           && recoveryRequestRef.current === requestId
           && safetyEpochRef.current === safetyEpoch) {
         commitRecovery(response.status);
+        return response.status;
       }
     } catch (error) {
       if (isCurrent(generation, scopeKey)
@@ -486,6 +490,7 @@ export function useOutputSafetyController({
         setReadiness('error');
       }
     }
+    return null;
   }, [bridge, commitRecovery, isCurrent, scopeKey, t]);
 
   const applyCleanup = useCallback(async () => {

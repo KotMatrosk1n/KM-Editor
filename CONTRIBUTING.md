@@ -76,6 +76,9 @@ For anything that writes or removes files:
 * Treat base project paths as read only.
 * Write generated data only under the selected output root.
 * Preserve fields and files the current workflow does not own.
+* Preserve untouched raw fields behind inactive sentinels such as an empty species or item ID. A read model may present an inactive row as empty, but output must not erase latent bytes unless the user explicitly edits or clears that row.
+* Canonicalize parent and dependent edits at every session boundary. Removing or restoring an identity field must not leave detail edits that can block validation later, even when a session was restored, reordered, or supplied directly to the bridge.
+* Resolve player facing labels through authoritative catalogs. Internal event IDs, row indexes, and storage keys belong in technical provenance and must not be presented as public mission or record numbers.
 * Make cleanup and uninstall remove only output KM Editor can prove it owns.
 * Fail safely when input structure, version, or ownership cannot be verified.
 

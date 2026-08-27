@@ -67,7 +67,15 @@ public static class GameplayBundleUpgradePlanner
 
     private sealed record BundlePayload(
         RelativeOutputPath Path,
-        ImmutableArray<byte> Bytes);
+        ImmutableArray<byte> Bytes,
+        BundlePayloadKind Kind);
+
+    private enum BundlePayloadKind
+    {
+        Immutable = 1,
+        SettingsJournal = 2,
+        CheatToggles = 3,
+    }
 
     public static GameplayBundleUpgradePlan CreateUpgrade(
         ReadOnlyMemory<byte> previousArchiveBytes,
@@ -126,6 +134,21 @@ public static class GameplayBundleUpgradePlanner
 
             var hasPrevious = previousPayloads.TryGetValue(key, out var previousPayload);
             var hasNext = nextPayloads.TryGetValue(key, out var nextPayload);
+            if (previousPayload?.Kind == BundlePayloadKind.CheatToggles
+                || nextPayload?.Kind == BundlePayloadKind.CheatToggles)
+            {
+                AddToggleTransition(
+                    mutations,
+                    path,
+                    review,
+                    previousPayload,
+                    nextPayload,
+                    gameFamily,
+                    next.Manifest.TitleId,
+                    claim);
+                continue;
+            }
+
             if (hasPrevious && !hasNext)
             {
                 mutations.Add(OutputMutation.Delete(path, review.State, [claim]));
@@ -173,25 +196,31 @@ public static class GameplayBundleUpgradePlanner
         var result = new Dictionary<string, BundlePayload>(StringComparer.Ordinal);
         foreach (var component in bundle.ImmutableComponents)
         {
-            AddPayload(result, component.Key, component.Value);
+            AddPayload(result, component.Key, component.Value, BundlePayloadKind.Immutable);
+        }
+
+        foreach (var component in bundle.RuntimeMutableComponents)
+        {
+            AddPayload(result, component.Key, component.Value, BundlePayloadKind.CheatToggles);
         }
 
         var manifestPath =
             $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest";
         var settingsPath =
             $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin";
-        AddPayload(result, manifestPath, bundle.ManifestBytes);
-        AddPayload(result, settingsPath, bundle.SettingsJournal);
+        AddPayload(result, manifestPath, bundle.ManifestBytes, BundlePayloadKind.Immutable);
+        AddPayload(result, settingsPath, bundle.SettingsJournal, BundlePayloadKind.SettingsJournal);
         return result;
     }
 
     private static void AddPayload(
         IDictionary<string, BundlePayload> payloads,
         string value,
-        ImmutableArray<byte> bytes)
+        ImmutableArray<byte> bytes,
+        BundlePayloadKind kind)
     {
         var path = new RelativeOutputPath(value);
-        if (!payloads.TryAdd(path.CanonicalKey, new BundlePayload(path, bytes)))
+        if (!payloads.TryAdd(path.CanonicalKey, new BundlePayload(path, bytes, kind)))
         {
             throw new InvalidDataException(
                 "A gameplay bundle contains colliding canonical output paths.");
@@ -254,8 +283,23 @@ public static class GameplayBundleUpgradePlanner
     {
         foreach (var (path, previousPayload) in previousPayloads)
         {
-            if (string.Equals(path, settingsPath, StringComparison.Ordinal))
+            if (string.Equals(path, settingsPath, StringComparison.Ordinal)
+                || previousPayload.Kind == BundlePayloadKind.CheatToggles)
             {
+                if (previousPayload.Kind == BundlePayloadKind.CheatToggles)
+                {
+                    var toggleReview = reviews[path];
+                    if (!toggleReview.Exists
+                        || !AtmosphereCheatToggleDocument.HasExactInventory(
+                            toggleReview.Bytes.AsSpan(),
+                            AtmosphereCheatToggleDocument.ComputeInventoryIdentity(
+                                previousPayload.Bytes.AsSpan())))
+                    {
+                        throw new InvalidDataException(
+                            "The existing cheat selection document has foreign or malformed entries.");
+                    }
+                }
+
                 continue;
             }
 
@@ -336,5 +380,69 @@ public static class GameplayBundleUpgradePlanner
             [claim],
             gameFamily,
             next.Manifest.TitleId));
+    }
+
+    private static void AddToggleTransition(
+        ICollection<OutputMutation> mutations,
+        RelativeOutputPath path,
+        GameplayBundleUpgradeTargetReview review,
+        BundlePayload? previous,
+        BundlePayload? next,
+        GameFamily gameFamily,
+        ulong titleId,
+        OwnedTarget claim)
+    {
+        if (previous is null)
+        {
+            if (next is null || review.Exists)
+            {
+                throw new InvalidDataException(
+                    "A new cheat selection document does not have a missing reviewed target.");
+            }
+
+            mutations.Add(OutputMutation.WriteRuntimeMutableToggleBootstrap(
+                path,
+                next.Bytes.AsMemory(),
+                review.State,
+                [claim],
+                gameFamily,
+                titleId));
+            return;
+        }
+
+        if (!review.Exists)
+        {
+            throw new InvalidDataException("The existing cheat selection document is missing.");
+        }
+
+        if (next is null)
+        {
+            mutations.Add(OutputMutation.DeleteRuntimeMutableToggle(
+                path,
+                review.Bytes.AsMemory(),
+                review.State,
+                [claim],
+                gameFamily,
+                titleId,
+                GameplayBundleDeploymentPlanner.OutputMode));
+            return;
+        }
+
+        var merged = AtmosphereCheatToggleDocument.PreserveSelections(
+            review.Bytes.AsSpan(),
+            next.Bytes.AsSpan());
+        if (review.Bytes.AsSpan().SequenceEqual(merged))
+        {
+            return;
+        }
+
+        mutations.Add(OutputMutation.WriteRuntimeMutableToggleTransition(
+            path,
+            review.Bytes.AsMemory(),
+            merged,
+            review.State,
+            [claim],
+            gameFamily,
+            titleId));
     }
 }

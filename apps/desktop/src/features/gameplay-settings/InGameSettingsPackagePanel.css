@@ -1,0 +1,246 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.in-game-settings-package {
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.9rem;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: clamp(0.9rem, 1.6vw, 1.25rem);
+  width: 100%;
+}
+
+.in-game-settings-package__header,
+.in-game-settings-package__actions,
+.in-game-settings-package__heading,
+.in-game-settings-package__title-row,
+.in-game-settings-package__instructions,
+.in-game-settings-package__state {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.in-game-settings-package__header {
+  justify-content: space-between;
+}
+
+.in-game-settings-package__heading,
+.in-game-settings-package__instructions,
+.in-game-settings-package__state {
+  align-items: flex-start;
+}
+
+.in-game-settings-package__heading {
+  flex: 1 1 36rem;
+  min-width: 0;
+}
+
+.in-game-settings-package__heading > svg,
+.in-game-settings-package__instructions > svg,
+.in-game-settings-package__state > svg {
+  color: var(--color-gold);
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.in-game-settings-package__title-row h3,
+.in-game-settings-package__review h4 {
+  margin: 0;
+}
+
+.in-game-settings-package__heading p,
+.in-game-settings-package__instructions p,
+.in-game-settings-package__state p,
+.in-game-settings-package__control-card p,
+.in-game-settings-package__review p,
+.in-game-settings-package__vanilla-guidance p {
+  color: var(--color-text-muted);
+  margin: 0.3rem 0 0;
+}
+
+.in-game-settings-package__instructions,
+.in-game-settings-package__state,
+.in-game-settings-package__message,
+.in-game-settings-package__review,
+.in-game-settings-package__vanilla-guidance {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 0.9rem 1rem;
+}
+
+.in-game-settings-package__instructions {
+  border-color: var(--color-accent-bright);
+}
+
+.in-game-settings-package__instructions > svg {
+  color: var(--color-accent-bright);
+}
+
+.in-game-settings-package__controls,
+.in-game-settings-package__status {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.in-game-settings-package__control-card,
+.in-game-settings-package__status > div {
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.75rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+}
+
+.in-game-settings-package__control-card {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.in-game-settings-package__control-card p {
+  overflow-wrap: anywhere;
+}
+
+.in-game-settings-package__status > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.in-game-settings-package__status span {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.in-game-settings-package__status code {
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.in-game-settings-package__state--ready {
+  border-color: var(--color-success);
+}
+
+.in-game-settings-package__state--ready > svg {
+  color: var(--color-success);
+}
+
+.in-game-settings-package__state--blocked {
+  border-color: var(--color-danger-border);
+}
+
+.in-game-settings-package__state--blocked > svg {
+  color: var(--color-danger);
+}
+
+.in-game-settings-package__vanilla-guidance {
+  background: var(--color-warning-surface);
+  border-color: var(--color-warning);
+}
+
+.in-game-settings-package__message {
+  margin: 0;
+}
+
+.in-game-settings-package__actions {
+  justify-content: flex-end;
+}
+
+.in-game-settings-package__review {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.in-game-settings-package__targets {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  max-height: min(22rem, 42vh);
+  overflow: auto;
+  padding: 0 0.2rem 0 0;
+  scrollbar-gutter: stable;
+}
+
+.in-game-settings-package__targets li {
+  align-items: start;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.6rem;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(4.5rem, auto) minmax(0, 1fr);
+  padding: 0.65rem 0.75rem;
+}
+
+.in-game-settings-package__targets span {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.in-game-settings-package__targets code {
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.in-game-settings-package__confirmation {
+  align-items: flex-start;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.in-game-settings-package__confirmation:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.in-game-settings-package__confirmation input {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 75rem) {
+  .in-game-settings-package__controls,
+  .in-game-settings-package__status {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 42rem) {
+  .in-game-settings-package__header,
+  .in-game-settings-package__actions {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .in-game-settings-package__targets li {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (forced-colors: active) {
+  .in-game-settings-package,
+  .in-game-settings-package__instructions,
+  .in-game-settings-package__state,
+  .in-game-settings-package__message,
+  .in-game-settings-package__review,
+  .in-game-settings-package__vanilla-guidance,
+  .in-game-settings-package__control-card,
+  .in-game-settings-package__status > div,
+  .in-game-settings-package__targets li,
+  .in-game-settings-package__confirmation {
+    border-color: CanvasText;
+  }
+}

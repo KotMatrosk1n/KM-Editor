@@ -152,8 +152,7 @@ public sealed record OutputApplyReceiptTarget
         {
             runtimeMutableDescriptor.ValidateIdentity(path, OwnershipClaims[0].GameFamily);
             var state = Kind == OutputMutationKind.Write ? Postimage : Preimage;
-            if (state.LengthBytes != GameplaySettingsJournal.JournalSize
-                || Kind == OutputMutationKind.Write && runtimeMutableDescriptor.MinimumGeneration is null
+            if (!runtimeMutableDescriptor.IsValidStateMetadata(state, Kind)
                 || !OwnershipClaims.Any(claim => claim.Address.ScopeKind == OwnedTargetScopeKind.File))
             {
                 throw new ArgumentException(

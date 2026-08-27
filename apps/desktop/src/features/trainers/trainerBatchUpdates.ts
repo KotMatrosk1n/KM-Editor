@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import type { TrainersWorkflow, TrainersWorkflowDelta } from '../../bridge/contracts';
+import type {
+  EditSession,
+  TrainersWorkflow,
+  TrainersWorkflowDelta
+} from '../../bridge/contracts';
 
 export type TrainerFieldUpdateLike = {
   field: string;
@@ -46,6 +50,106 @@ export function applyTrainerWorkflowDelta(
 
 const speciesIdFieldName = 'speciesId';
 const formFieldName = 'form';
+const trainersDomain = 'workflow.trainers';
+
+export function canonicalizeTrainerPartySlotDrafts(
+  drafts: Readonly<Record<string, string>>,
+  defaults: Readonly<Record<string, string>>,
+  sourceSpeciesId: number
+): Record<string, string> {
+  const speciesDraft = Object.prototype.hasOwnProperty.call(drafts, speciesIdFieldName)
+    ? drafts[speciesIdFieldName]
+    : defaults[speciesIdFieldName] ?? sourceSpeciesId.toString();
+  const normalizedSpeciesDraft = speciesDraft?.trim() ?? '';
+
+  // An invalid identity draft must stay visible to field validation. Treating it as
+  // an empty slot here would hide the actual input error and erase adjacent work.
+  if (!/^\d+$/u.test(normalizedSpeciesDraft)) {
+    return { ...drafts };
+  }
+
+  const effectiveSpeciesId = Number.parseInt(normalizedSpeciesDraft, 10);
+  if (!Number.isSafeInteger(effectiveSpeciesId) || effectiveSpeciesId > 0) {
+    return { ...drafts };
+  }
+
+  const canonicalDrafts = { ...drafts };
+  for (const field of Object.keys(canonicalDrafts)) {
+    if (field === speciesIdFieldName) {
+      continue;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(defaults, field)) {
+      canonicalDrafts[field] = defaults[field];
+    } else {
+      delete canonicalDrafts[field];
+    }
+  }
+
+  return canonicalDrafts;
+}
+
+export function createTrainerPartySourceSpeciesIndex(
+  workflow: TrainersWorkflow
+): ReadonlyMap<string, number> {
+  return new Map(
+    workflow.trainers.flatMap((trainer) =>
+      trainer.team.map((pokemon) => [
+        createTrainerPartySlotKey(trainer.trainerId, pokemon.slot),
+        pokemon.speciesId
+      ] as const)
+    )
+  );
+}
+
+export function removeTrainerPendingEditWithDependencies(
+  pendingEdits: readonly EditSession['pendingEdits'][number][],
+  editIndex: number,
+  sourceSpeciesBySlot: ReadonlyMap<string, number>
+): EditSession['pendingEdits'] {
+  const removedEdit = pendingEdits[editIndex];
+  if (!removedEdit) {
+    return [...pendingEdits];
+  }
+
+  const withoutRemovedEdit = pendingEdits.filter((_, index) => index !== editIndex);
+  if (
+    removedEdit.domain !== trainersDomain ||
+    removedEdit.field !== speciesIdFieldName ||
+    !isPositiveIntegerText(removedEdit.newValue)
+  ) {
+    return withoutRemovedEdit;
+  }
+
+  const target = parseTrainerPartySlotKey(removedEdit.recordId);
+  if (!target || (sourceSpeciesBySlot.get(removedEdit.recordId!) ?? -1) !== 0) {
+    return withoutRemovedEdit;
+  }
+
+  return withoutRemovedEdit.filter((edit) => {
+    if (edit.domain !== trainersDomain) {
+      return true;
+    }
+
+    const candidate = parseTrainerPartySlotKey(edit.recordId);
+    if (!candidate || candidate.trainerId !== target.trainerId) {
+      return true;
+    }
+
+    if (candidate.slot === target.slot) {
+      return false;
+    }
+
+    if (candidate.slot < target.slot) {
+      return true;
+    }
+
+    // A source-occupied later slot is valid even when the vanilla roster is
+    // sparse. Only newly-added, source-empty later groups depend on this added
+    // parent slot and must leave with it.
+    return (sourceSpeciesBySlot.get(edit.recordId!) ?? -1) !== 0;
+  });
+}
 
 export function orderTrainerFieldUpdates<T extends TrainerFieldUpdateLike>(
   updates: readonly T[]
@@ -119,4 +223,26 @@ function getIdentityFieldPriority(field: string) {
   }
 
   return 2;
+}
+
+function createTrainerPartySlotKey(trainerId: number, slot: number) {
+  return `${trainerId}:${slot}`;
+}
+
+function parseTrainerPartySlotKey(recordId: string | null | undefined) {
+  const match = /^(\d+):(\d+)$/u.exec(recordId ?? '');
+  if (!match) {
+    return null;
+  }
+
+  const trainerId = Number.parseInt(match[1], 10);
+  const slot = Number.parseInt(match[2], 10);
+  return Number.isSafeInteger(trainerId) && Number.isSafeInteger(slot)
+    ? { slot, trainerId }
+    : null;
+}
+
+function isPositiveIntegerText(value: string | null | undefined) {
+  const normalizedValue = value?.trim() ?? '';
+  return /^\d+$/u.test(normalizedValue) && Number.parseInt(normalizedValue, 10) > 0;
 }

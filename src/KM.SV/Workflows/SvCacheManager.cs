@@ -1333,7 +1333,7 @@ public sealed class SvCacheManager
                 : 0;
         var percent = total == 0
             ? 0
-            : (int)Math.Round(completed * 100.0 / total, MidpointRounding.AwayFromZero);
+            : (int)Math.Clamp(completed * 100L / total, 0, 100);
         var phase = settings.Mode == SvCacheMode.Minimal
             ? "Minimal mode"
             : capacityLimited || completed >= total && total > 0

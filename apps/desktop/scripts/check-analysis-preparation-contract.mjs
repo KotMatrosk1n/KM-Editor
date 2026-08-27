@@ -87,11 +87,52 @@ assert.match(
   /preparationScopeKeyRef\.current = preparationScopeKey;[\s\S]*?setMountedTools\(new Set/,
   'Workbench must replace, not union, mounted tools when the preparation scope changes.'
 );
+assert.match(
+  workbench,
+  /\{cachePreparation\}[\s\S]*?\{analysisPreparation\}/,
+  'Cache and analysis preparation must remain independent mounted siblings in stable order.'
+);
 
 const app = read('../src/App.tsx');
 assert.ok(
-  app.includes("projectSourceRevision.sourceObservationToken ?? 'pending'"),
-  'An active project must retain measurable loading and error progress before its source token exists.'
+  !app.includes("projectSourceRevision.sourceObservationToken ?? 'pending'"),
+  'Analysis preparation must not create a provisional source scope that later looks like a restart.'
+);
+assert.match(
+  app,
+  /projectSourceRevision\.status === 'ready' &&\s+projectSourceRevision\.sourceObservationToken/,
+  'Analysis preparation must begin its stable scope only after the source identity is resolved.'
+);
+assert.match(
+  app,
+  /cachePreparation=\{\s*activeProjectId &&\s*isProjectCacheGame\(selectedGame\)/,
+  'The data-cache panel must mount with the project instead of appearing only after status loads.'
+);
+assert.match(
+  app,
+  /deferBackgroundWork: isBusy \|\| hasCriticalWriteOperation/,
+  'Cache warmup must not defer or restart independent analysis preparation.'
+);
+assert.ok(
+  app.includes('observeOutputRecoveryRevision('),
+  'Output recovery hydration must use the baseline-aware observation contract.'
+);
+assert.match(
+  app,
+  /refreshedRecovery = await outputSafety\.notifyOutputMutation\(\);[\s\S]*?observedSemanticOutputRevisionRef\.current = \{[\s\S]*?revision: refreshedRecovery\.revision[\s\S]*?\};[\s\S]*?semanticExploreController\.invalidate\(\);[\s\S]*?projectSourceRevision\.refresh\(\);/,
+  'An output mutation must synchronize the observed recovery revision before the one direct source refresh.'
+);
+
+const outputSafetyHook = read('../src/features/output-safety/useOutputSafetyController.ts');
+assert.match(
+  outputSafetyHook,
+  /notifyOutputMutation: \(\) => Promise<OutputRecoveryStatus \| null>/,
+  'Output mutation notification must return the committed recovery revision to its caller.'
+);
+assert.match(
+  outputSafetyHook,
+  /const notifyOutputMutation = useCallback\(async \(\) => \{[\s\S]*?return refreshedRecovery;/,
+  'Output mutation notification must return only the recovery status committed for the active scope.'
 );
 
 const invokedPath = process.argv[1];

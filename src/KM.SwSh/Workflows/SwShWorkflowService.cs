@@ -435,35 +435,8 @@ public sealed class SwShWorkflowService
         ArgumentNullException.ThrowIfNull(updates);
         var workspace = new ProjectWorkspaceService();
         var workflow = SwShTrainersWorkflowService.CreateBounded(ReadSemanticSourceBytes);
-        var service = new SwShTrainersEditSessionService(workspace, workflow);
-        var original = service.ReadEffective(paths, session);
-        var currentSession = original.Session;
-        var current = original;
-        foreach (var update in TrainerFieldUpdateOrdering.IdentityFirst(
-                     updates,
-                     static update => update.Field,
-                     SwShTrainersWorkflowService.SpeciesIdField,
-                     SwShTrainersWorkflowService.FormField))
-        {
-            current = service.UpdateField(
-                paths,
-                currentSession,
-                update.TrainerId,
-                update.Slot,
-                update.Field,
-                update.Value);
-            if (current.Diagnostics.Any(value => value.Severity == DiagnosticSeverity.Error))
-            {
-                return new SwShTrainersEditResult(
-                    original.Workflow,
-                    original.Session,
-                    current.Diagnostics);
-            }
-
-            currentSession = current.Session;
-        }
-
-        return current;
+        return new SwShTrainersEditSessionService(workspace, workflow)
+            .UpdateFields(paths, session, updates);
     }
 
     public ChangePlan CreateGuidedChangePlanFreshBounded(

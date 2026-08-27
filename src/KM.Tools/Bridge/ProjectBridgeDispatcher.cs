@@ -213,6 +213,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly ResearchLabApplicationService researchLabApplicationService;
     private readonly RowClipboardApplicationService rowClipboardApplicationService;
     private readonly GameplaySettingsApplicationService gameplaySettingsApplicationService;
+    private readonly InGameSettingsPackageApplicationService inGameSettingsPackageApplicationService;
     private readonly bool ownsSemanticMergeApplicationService;
     private readonly bool ownsResearchLabApplicationService;
 
@@ -275,7 +276,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         ResearchAnnotationApplicationService? researchAnnotationApplicationService = null,
         ResearchLabApplicationService? researchLabApplicationService = null,
         RowClipboardApplicationService? rowClipboardApplicationService = null,
-        GameplaySettingsApplicationService? gameplaySettingsApplicationService = null)
+        GameplaySettingsApplicationService? gameplaySettingsApplicationService = null,
+        InGameSettingsPackageApplicationService? inGameSettingsPackageApplicationService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -340,6 +342,17 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 rowClipboardMutations.Mutate);
         this.gameplaySettingsApplicationService = gameplaySettingsApplicationService
             ?? new GameplaySettingsApplicationService();
+        if (inGameSettingsPackageApplicationService is not null)
+        {
+            this.inGameSettingsPackageApplicationService = inGameSettingsPackageApplicationService;
+        }
+        else
+        {
+            var productionGameplayPanel = AtmosphereGameplayPanelBundleFactory.CreateProductionCatalog();
+            this.inGameSettingsPackageApplicationService = new InGameSettingsPackageApplicationService(
+                productionGameplayPanel.Catalog,
+                productionGameplayPanel.Authority);
+        }
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
         this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
         this.zaGameDumpService = zaGameDumpService ?? new ZaGameDumpService(this.zaWorkflowService);
@@ -746,6 +759,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.GetGameplaySettings => DispatchGetGameplaySettings(requestJson),
                 KmCommandNames.PreviewGameplaySettingsUpdate => DispatchPreviewGameplaySettingsUpdate(requestJson),
                 KmCommandNames.ApplyGameplaySettingsUpdate => DispatchApplyGameplaySettingsUpdate(requestJson),
+                KmCommandNames.InspectInGameSettingsPackage => DispatchInspectInGameSettingsPackage(requestJson),
+                KmCommandNames.PreviewInGameSettingsPackage => DispatchPreviewInGameSettingsPackage(requestJson),
+                KmCommandNames.ApplyInGameSettingsPackage => DispatchApplyInGameSettingsPackage(requestJson),
                 KmCommandNames.ReconcileOutputRecovery => DispatchReconcileOutputRecovery(requestJson),
                 KmCommandNames.ScanOutputIntegrity => DispatchScanOutputIntegrity(requestJson),
                 KmCommandNames.PreviewOutputCleanup => DispatchPreviewOutputCleanup(requestJson),
@@ -912,6 +928,33 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             return (
                 SerializeFailure(
                     BridgeErrorCodes.GameplaySettingsReviewExpired,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (InGameSettingsPackageUnavailableException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.InGameSettingsPackageUnavailable,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (InGameSettingsPackageStateConflictException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.InGameSettingsPackageStateStale,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (InGameSettingsPackageReviewExpiredException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.InGameSettingsPackageReviewExpired,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1603,6 +1646,36 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<ApplyGameplaySettingsUpdateRequest>(requestJson);
         var response = gameplaySettingsApplicationService
             .ApplyUpdateAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchInspectInGameSettingsPackage(string requestJson)
+    {
+        var request = DeserializeRequest<InspectInGameSettingsPackageRequest>(requestJson);
+        var response = inGameSettingsPackageApplicationService
+            .InspectAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewInGameSettingsPackage(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewInGameSettingsPackageRequest>(requestJson);
+        var response = inGameSettingsPackageApplicationService
+            .PreviewAsync(request.Payload)
+            .GetAwaiter()
+            .GetResult();
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyInGameSettingsPackage(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyInGameSettingsPackageRequest>(requestJson);
+        var response = inGameSettingsPackageApplicationService
+            .ApplyAsync(request.Payload)
             .GetAwaiter()
             .GetResult();
         return SerializeSuccess(response, request.RequestId);
@@ -6981,6 +7054,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.ApplyRandomizer or
             KmCommandNames.RestoreRandomizer or
             KmCommandNames.ApplyGameplaySettingsUpdate or
+            KmCommandNames.ApplyInGameSettingsPackage or
             KmCommandNames.ReconcileOutputRecovery or
             KmCommandNames.ApplyOutputCleanup or
             KmCommandNames.RestoreOutputCheckpoint or
@@ -6994,6 +7068,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.GetGameplaySettings or
             KmCommandNames.PreviewGameplaySettingsUpdate or
             KmCommandNames.ApplyGameplaySettingsUpdate or
+            KmCommandNames.InspectInGameSettingsPackage or
+            KmCommandNames.PreviewInGameSettingsPackage or
+            KmCommandNames.ApplyInGameSettingsPackage or
             KmCommandNames.ReconcileOutputRecovery or
             KmCommandNames.ScanOutputIntegrity or
             KmCommandNames.PreviewOutputCleanup or

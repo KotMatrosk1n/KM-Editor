@@ -16,6 +16,7 @@ public sealed class GameplayBundleArchiveReadResult
     internal GameplayBundleArchiveReadResult(
         GameplayBundleManifest manifest,
         ImmutableDictionary<string, ImmutableArray<byte>> immutableComponents,
+        ImmutableDictionary<string, ImmutableArray<byte>> runtimeMutableComponents,
         ImmutableArray<byte> settingsJournal,
         ImmutableArray<byte> manifestBytes,
         string sha256,
@@ -23,6 +24,7 @@ public sealed class GameplayBundleArchiveReadResult
     {
         Manifest = manifest;
         ImmutableComponents = immutableComponents;
+        RuntimeMutableComponents = runtimeMutableComponents;
         SettingsJournal = settingsJournal;
         ManifestBytes = manifestBytes;
         Sha256 = sha256;
@@ -32,6 +34,8 @@ public sealed class GameplayBundleArchiveReadResult
     public GameplayBundleManifest Manifest { get; }
 
     public ImmutableDictionary<string, ImmutableArray<byte>> ImmutableComponents { get; }
+
+    public ImmutableDictionary<string, ImmutableArray<byte>> RuntimeMutableComponents { get; }
 
     public ImmutableArray<byte> SettingsJournal { get; }
 
@@ -179,11 +183,23 @@ public static class GameplayBundleArchive
 
         ValidateTitleLayerPaths(manifest);
         ValidateBootstrapJournal(manifest, expectedFamily, settingsJournal);
-        var immutable = entries
+        var components = entries
             .Where(entry => !string.Equals(entry.Key, expectedManifestPath, StringComparison.Ordinal)
                 && !string.Equals(entry.Key, expectedSettingsPath, StringComparison.Ordinal))
             .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
-        GameplayBundleIdentity.VerifyComponents(manifest, immutable);
+        GameplayBundleIdentity.VerifyComponents(manifest, components);
+        var expectedTogglesPath = GetTogglesPath(manifest.TitleId);
+        var runtimeMutable = components
+            .Where(entry => string.Equals(entry.Key, expectedTogglesPath, StringComparison.Ordinal))
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+        foreach (var component in runtimeMutable.Values)
+        {
+            _ = AtmosphereCheatToggleDocument.Parse(component);
+        }
+
+        var immutable = components
+            .Where(entry => !string.Equals(entry.Key, expectedTogglesPath, StringComparison.Ordinal))
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
         if (!GameplayBundleIdentity.SerializeManifest(manifest).AsSpan().SequenceEqual(manifestCandidates[0].Value))
         {
             throw new InvalidDataException("The gameplay bundle manifest changed during archive verification.");
@@ -202,6 +218,10 @@ public static class GameplayBundleArchive
         return new GameplayBundleArchiveReadResult(
             manifest,
             immutable.ToImmutableDictionary(
+                entry => entry.Key,
+                entry => ImmutableArray.CreateRange(entry.Value),
+                StringComparer.Ordinal),
+            runtimeMutable.ToImmutableDictionary(
                 entry => entry.Key,
                 entry => ImmutableArray.CreateRange(entry.Value),
                 StringComparer.Ordinal),
@@ -313,4 +333,7 @@ public static class GameplayBundleArchive
 
     private static string GetManifestPath(ulong titleId) =>
         $"config/km-editor/gameplay-settings/{titleId:X16}/bundle.manifest";
+
+    private static string GetTogglesPath(ulong titleId) =>
+        $"atmosphere/contents/{titleId:X16}/cheats/toggles.txt";
 }
