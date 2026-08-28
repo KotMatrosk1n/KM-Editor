@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "family": "scarlet-violet",
+  "updateVersion": "4.0.0",
+  "runtimeComponent": "exefs/subsdk9",
+  "hookPublication": {
+    "strategy": "absolute-branch-16",
+    "loadInstruction": "58000051",
+    "branchInstruction": "D61F0220",
+    "registrationOffset": "0004C550",
+    "registrationResumeOffset": "0004C560",
+    "activationRule": "exact-km-managed-main-preimages-before-publication",
+    "lifetimeRule": "the registration transaction runs once during serialized subsdk startup; gameplay hooks are already immutable in the derived main",
+    "journalRule": "zero snapshot preserves retail behavior while an unbounded sleeping worker retries authenticated data loading only"
+  },
+  "nativeAbi": {
+    "registrationCallback": "int(lua_State*)",
+    "registrationOrder": "retail-first-km-second",
+    "callbacks": [
+      {
+        "name": "KMRuntimeGet",
+        "parameters": 0,
+        "results": 3
+      },
+      {
+        "name": "KMRuntimeApply",
+        "parameters": 3,
+        "results": 1
+      }
+    ],
+    "helperChunkName": "@KM/gameplay_options",
+    "helperMode": "t"
+  },
+  "luaApi": {
+    "pushInteger": "00B5D960",
+    "getTop": "00B5D980",
+    "setTop": "00B5DB00",
+    "pushCClosure": "00B5DBE0",
+    "pcallK": "00B5DDD0",
+    "loadBufferX": "00E382A0",
+    "setGlobal": "026073E0",
+    "checkInteger": "00024340"
+  },
+  "gameplayApply": {
+    "journalPresence": [
+      "experience-share",
+      "experience-rate",
+      "level-cap"
+    ],
+    "launchApply": "one startup registration transaction plus an unbounded data-only journal retry worker",
+    "experienceShare": {
+      "instructionOffset": "01141BA0",
+      "hookInstruction": "148BF89C",
+      "runtime": "one acquire-loaded packed snapshot; zero follows the retail enabled path"
+    },
+    "experienceRate": {
+      "hookOffset": "01781E30",
+      "hookInstruction": "1472F798",
+      "menuIndexes": "0..50",
+      "basisPoints": "index*1000",
+      "runtime": "one acquire-loaded packed snapshot with retail identity fallback"
+    },
+    "levelCap": {
+      "hookOffset": "0178143C",
+      "hookInstruction": "9472FA2D",
+      "menuIndexes": "0=off,1..100=level",
+      "runtime": "one acquire-loaded packed snapshot; off and 100 preserve retail"
+    },
+    "managedScaffold": {
+      "offset": "0343FC90",
+      "length": 432,
+      "sha256": "227C46AE7B1E06F7C54F81234F5A2CD39EAAA5DB1A4D5D249C9158A5985479EC",
+      "snapshotOffset": "047D3000",
+      "snapshotBytes": 8,
+      "snapshotReader": "LDAR",
+      "snapshotPublisher": "release-store"
+    },
+    "transitionSafety": "menu writes commit and authenticate the dual-slot journal before one atomic snapshot publication; executable bytes never change after startup"
+  },
+  "romfs": {
+    "mainScript": {
+      "path": "romfs/script/lua/bin/release/main/main.blua",
+      "baseSha256": "C1A4F4E2625912CF0B739A642A79BA3357DF0557A544B92DA22A6CB139DE2815",
+      "derivedSha256": "59566A4F2E9E686D89A8655A5604CAE99C28FA34BBF10852F358807A7C9006F2"
+    },
+    "messagePathPattern": "romfs/message/dat/{language}/common/option.{dat,tbl}",
+    "messageTableSha256": "8E2FE8C9B578138F1BAA6B099E51715A5491B0C417B056FC3E564BBEC7BD9D5F",
+    "messageDataSha256": {
+      "English": "9D898387467CA715E9ADA7B99062E58F652AFA56FB57E5352C3F67409777ECC3",
+      "Spanish": "2826E5BE74AC9B6DD081E241EE8286D01942A52383DC2F4EBCA94F6E71D3C82C",
+      "French": "5DB3FC950FD11908F92A5A3B2C4F425F00905F16691D5357ED2FFE1180D76022",
+      "German": "0793BB71D9D11359A499A2E5F37C8393880010E91AA0D68C775C4FC5EED3922E",
+      "Italian": "F401865C07DD223D1F83C2C9A64D916B639A4E015E8984058B9FFBB7CE9D9AD9",
+      "JPN": "470B9F3DD648A120513FBAEB437B50CB67263705456A99A452E879447D2FFBE9",
+      "JPN_KANJI": "470B9F3DD648A120513FBAEB437B50CB67263705456A99A452E879447D2FFBE9",
+      "Korean": "91313FA21072F5EEB4906D7C9F3DAAD8015B08E5E6C3E609B57B7C0BB5A8E18B",
+      "Simp_Chinese": "CE187E9196A73958AD938CA236EDC2D850298393033ABB6302C1E455DEBF26BE",
+      "Trad_Chinese": "17397B7A716526998A824FA7DFBB953D6B93FD0C9AD2CFBE2BD0FDFBB0B33268"
+    },
+    "derivation": "base-romfs-only-with-byte-exact-inverse-verification"
+  },
+  "editions": [
+    {
+      "edition": "scarlet",
+      "titleId": "0100A3D008C5C000",
+      "fullBuildId": "421C5411B487EB4D049DD065FEC9547773E8E598000000000000000000000000",
+      "mainNpdmSha256": "EDF2BBF506A3619CCB1702D390DDA609959B5192646791A6374DBEE232322DC5",
+      "retailTextSha256": "F48571CECF394151DA2276AC88F31BEBC74E1B77BB5D413D8BC6FEB768EA0C84",
+      "settingsJournal": "sd:/config/km-editor/gameplay-settings/0100A3D008C5C000/settings.bin"
+    },
+    {
+      "edition": "violet",
+      "titleId": "01008F6008C5E000",
+      "fullBuildId": "709BFD66115298640155FCC4979DBA151C7CC79A000000000000000000000000",
+      "mainNpdmSha256": "1C060AA14B39652D89F5F90D27E7393E0C67AD807FCCCB183864F29A5F3D3792",
+      "retailTextSha256": "7ED23874DC1765429CC43C7E7B13768B04C7F51FA932337DE788D18F8E693F45",
+      "settingsJournal": "sd:/config/km-editor/gameplay-settings/01008F6008C5E000/settings.bin"
+    }
+  ]
+}

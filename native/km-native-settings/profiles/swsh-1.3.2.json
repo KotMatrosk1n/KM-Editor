@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "family": "sword-shield",
+  "updateVersion": "1.3.2",
+  "runtimeComponent": "exefs/subsdk9",
+  "hookPublication": {
+    "strategy": "one serialized startup transaction",
+    "loadInstruction": "51000058",
+    "branchInstruction": "20021FD6",
+    "activationRule": "exact title, text size, executable windows, and managed NOP scaffold before any entry word",
+    "lifetimeRule": "no executable mutation after startup transaction",
+    "journalRule": "missing journal retains a zero unpublished snapshot and retries data only"
+  },
+  "nativeAbi": {
+    "registrationCallback": "void(uint64_t vm_owner)",
+    "registrationOrder": "retail-first-km-second",
+    "arrayRegistrar": "void(uint64_t vm_owner, const Symbol* null_terminated_symbols)",
+    "symbol": "{ const char* name; uint64_t (*function)(void*, uint64_t*) }",
+    "callbacks": [
+      {
+        "name": "KmSettingsRead_",
+        "nameHash": "65B0E246",
+        "parameters": 0
+      },
+      {
+        "name": "KmSettingsWrite_",
+        "nameHash": "9311142F",
+        "parameters": 1
+      }
+    ]
+  },
+  "gameplayApply": {
+    "journalPresence": [
+      "experience-share",
+      "experience-rate",
+      "level-cap"
+    ],
+    "activation": "all immutable hooks publish synchronously before journal load; zero snapshot is retail fallback",
+    "experienceShare": {
+      "hookOffset": "007FB2C0",
+      "retailInstruction": "E0030032",
+      "bridgeOffset": "008A0294",
+      "targetSlotOffset": "008A0FD4",
+      "runtime": "one acquire-loaded packed snapshot; unpublished returns retail true"
+    },
+    "experienceRate": {
+      "hookOffset": "008A564C",
+      "retailInstruction": "E80340B9",
+      "bridgeOffset": "008A1314",
+      "targetSlotOffset": "008A1534",
+      "runtime": "one acquire-loaded packed snapshot, unsigned saturating 0-500 percent scaling, and exact retail fallback while unpublished"
+    },
+    "levelCap": {
+      "hookOffset": "0083A3E0",
+      "retailInstruction": "F50F1DF8",
+      "bridgeOffset": "008A1544",
+      "targetSlotOffset": "008A1B34",
+      "continuationOffset": "0083A3E4",
+      "runtime": "one acquire-loaded packed snapshot; Off and 100 preserve retail; 1-99 clamp the verified battle and catch award before local and replicated application"
+    },
+    "managedScaffold": {
+      "instruction": "1F2003D5",
+      "caveOffsets": [
+        "008A0294",
+        "008A0FD4",
+        "008A1314",
+        "008A1534",
+        "008A1544",
+        "008A1B34"
+      ]
+    },
+    "transitionSafety": "settings writes commit and verify the journal first, then release-store one packed snapshot; failed commit readback reauthenticates and publishes the durable winner, while an unresolved journal publishes zero retail fallback and rejects further menu I/O until cold launch"
+  },
+  "sharedWindows": [
+    {
+      "id": "native-array-registrar",
+      "textOffset": "0066CBA0",
+      "preimage": "008001910200801272030014"
+    },
+    {
+      "id": "native-low-level-registrar",
+      "textOffset": "0066D970",
+      "preimage": "F85FBCA9F65701A9F44F02A9FD7B03A9"
+    },
+    {
+      "id": "experience-share-function",
+      "textOffset": "007FB2C0",
+      "preimage": "E0030032C0035FD60000000000000000"
+    },
+    {
+      "id": "experience-rate-calculator",
+      "textOffset": "008A5A00",
+      "preimage": "EA0F1CFCE9A3006DF50F00F9F44F02A9"
+    },
+    {
+      "id": "experience-additive-transition",
+      "textOffset": "007E4EA0",
+      "preimage": "F85FBCA9F65701A9F44F02A9FD7B03A9"
+    }
+  ],
+  "editions": [
+    {
+      "edition": "sword",
+      "titleId": "0100ABF008968000",
+      "fullBuildId": "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000",
+      "mainNpdmSha256": "0367B2364FCA2086EDDE95F5022506C50670B79BC7BC23240C2DE6215149CD5A",
+      "textSha256": "82A40B8D3C334DBA1B5D9D1F2F99D5BA6A04D0B1953A069C39C3E9097264A37E",
+      "textLength": 26218288,
+      "textMappingSize": 26218496,
+      "registrationHookOffset": "01464FC0",
+      "registrationPreimage": "F30F1EF8FD7B01A9FD430091F30300AA88310094",
+      "settingsJournal": "sd:/config/km-editor/gameplay-settings/0100ABF008968000/settings.bin"
+    },
+    {
+      "edition": "shield",
+      "titleId": "01008DB008C2C000",
+      "fullBuildId": "A16802625E7826BF83B6F9708E475B912A9AB7DF000000000000000000000000",
+      "mainNpdmSha256": "CA29FC6ADC54B4D0278147DCE67FDEBCC8A02D2CD72344343E22CC786714A270",
+      "textSha256": "88F4650C736FB61E1D0C624BFDFF1718C87A286F2686C7C3CBB9378301F8EB28",
+      "textLength": 26218432,
+      "textMappingSize": 26218496,
+      "registrationHookOffset": "01464FF0",
+      "registrationPreimage": "F30F1EF8FD7B01A9FD430091F30300AA88310094",
+      "settingsJournal": "sd:/config/km-editor/gameplay-settings/01008DB008C2C000/settings.bin"
+    }
+  ]
+}

@@ -65,6 +65,38 @@ The complete implementation rules and acceptance checklist are in the
 recursively enforces this contract across TSX and CSS, so run `pnpm typecheck` while developing UI
 changes rather than waiting for pull request validation.
 
+### Concurrency and asynchronous work contract
+
+KM Editor is designed to keep independent project reads and analysis work responsive on modern
+multicore systems without allowing concurrent work to corrupt an edit session or output. Every new
+bridge command and expensive backend workflow must therefore choose and document one of these
+execution models:
+
+* An independent read works from an immutable project snapshot, can run in a bounded read lane,
+  and publishes only after its project scope and source revision are still current.
+* An ordered operation owns mutable editor, cache, workspace, recovery, or output state. It must
+  remain behind the exclusive project-operation boundary even when its internal pure read or
+  decode phases use workers.
+
+For managed CPU, decode, hash, map, and independent file-read loops, use the shared bounded
+concurrency API in `src/KM.Core/Concurrency`. Declare a conservative maximum retained byte count
+per worker and a workload-specific worker ceiling. Worker callbacks must be independent, write at
+most to their own result slot, and return results for deterministic source-order validation and
+publication. Do not introduce raw `Parallel` calls, unbounded `Task.WhenAll`, fire-and-forget work,
+or concurrent source, cache, edit-session, or output mutation. Managed builds enforce the shared
+executor boundary.
+
+Frontend work that can outlive a render or navigation scope must use an exact request key,
+single-flight reuse, a project or source generation, stale-result rejection, and bounded retained
+state. Heavy work belongs behind the native bridge rather than on the browser render thread.
+Progress must report completed real units from the owning operation; elapsed time and animated
+activity are not completion signals.
+
+Concurrency tests must cover deterministic results and failures, invalidation while work is in
+flight, bounded admission under simultaneous callers, and the ordered write barrier. A timeout may
+recover from a stalled dependency, but it must never be used as a substitute for completion or
+correctness.
+
 ## Make changes that are safe to review
 
 Keep pull requests focused. Explain the user impact and root cause for a fix, or the full user workflow for a feature.

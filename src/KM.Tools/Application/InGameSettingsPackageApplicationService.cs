@@ -17,6 +17,9 @@ namespace KM.Tools.Application;
 
 public sealed record InGameSettingsStaticSettingsGuardResult(
     bool IsVanilla,
+    bool OutputMainPresent,
+    bool OutputMainMatchesBase,
+    OutputFileState BaseMainState,
     OutputFileState OutputMainState);
 
 public interface IInGameSettingsStaticSettingsGuard
@@ -26,22 +29,46 @@ public interface IInGameSettingsStaticSettingsGuard
         CancellationToken cancellationToken = default);
 }
 
+public sealed record InGameSettingsBundleResolution(
+    InGameSettingsBundleCatalog Catalog,
+    GameplaySettingsBundleAuthority Authority,
+    string? UnavailableDetail = null,
+    IReadOnlyList<OutputReadDependency>? SourceDependencies = null,
+    bool UsesComposedMain = false,
+    bool UsesComposedMainNpdm = false,
+    bool RequiresOwnedMainSource = false,
+    bool RequiresOwnedMainNpdmSource = false,
+    RelativeOutputPath? AttemptedSourcePath = null);
+
+public interface IInGameSettingsBundleProvider
+{
+    Task<InGameSettingsBundleResolution> ResolveAsync(
+        ProjectPaths paths,
+        ProjectGame game,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
-/// Reviews and applies an exact editor-shipped in-game settings package through
+/// Reviews and applies an exact KM-generated in-game settings package through
 /// the durable output transaction coordinator. Bridge callers can select an
 /// operation, but can never supply package bytes or expand bundle authority.
 /// </summary>
 public sealed class InGameSettingsPackageApplicationService
 {
     private const int MaximumTargetBytes = GameplayBundleArchive.MaximumEntryBytes;
+    private const int MaximumComponentMismatchProbeBytes = 64 * 1024;
     private const string BundleOwnerId = "gameplay-bundle";
     private const string BundlePreservationRule = "whole-file-gameplay-bundle";
+    private static readonly RelativeOutputPath StandaloneMainPath = new("exefs/main");
+    private static readonly RelativeOutputPath StandaloneMainNpdmPath = new("exefs/main.npdm");
+    private static readonly RelativeOutputPath StandaloneRuntimeSlotPath = new("exefs/subsdk9");
     private static readonly TimeSpan ReviewLifetime = TimeSpan.FromMinutes(10);
 
     private readonly object syncRoot = new();
     private readonly Dictionary<string, CachedReview> reviews = new(StringComparer.Ordinal);
     private readonly InGameSettingsBundleCatalog catalog;
     private readonly GameplaySettingsBundleAuthority authority;
+    private readonly IInGameSettingsBundleProvider? bundleProvider;
     private readonly TimeProvider timeProvider;
     private readonly IInGameSettingsStaticSettingsGuard staticSettingsGuard;
 
@@ -53,6 +80,20 @@ public sealed class InGameSettingsPackageApplicationService
     {
         this.catalog = catalog ?? InGameSettingsBundleCatalog.Empty;
         this.authority = authority ?? GameplaySettingsBundleAuthority.DenyAll;
+        bundleProvider = null;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.staticSettingsGuard = staticSettingsGuard ?? new DefaultStaticSettingsGuard();
+    }
+
+    public InGameSettingsPackageApplicationService(
+        IInGameSettingsBundleProvider bundleProvider,
+        TimeProvider? timeProvider = null,
+        IInGameSettingsStaticSettingsGuard? staticSettingsGuard = null)
+    {
+        this.bundleProvider = bundleProvider
+            ?? throw new ArgumentNullException(nameof(bundleProvider));
+        catalog = InGameSettingsBundleCatalog.Empty;
+        authority = GameplaySettingsBundleAuthority.DenyAll;
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.staticSettingsGuard = staticSettingsGuard ?? new DefaultStaticSettingsGuard();
     }
@@ -95,8 +136,10 @@ public sealed class InGameSettingsPackageApplicationService
             throw new InGameSettingsPackageStateConflictException();
         }
 
-        var staticDependency = request.Operation is InGameSettingsPackageOperationDto.Install
-            or InGameSettingsPackageOperationDto.Upgrade
+        var staticDependency = bundleProvider is null
+            && request.Operation is (
+                InGameSettingsPackageOperationDto.Install or
+                InGameSettingsPackageOperationDto.Upgrade)
             ? await GetStaticSettingsDependencyAsync(request.Scope, cancellationToken)
                 .ConfigureAwait(false)
             : null;
@@ -112,11 +155,13 @@ public sealed class InGameSettingsPackageApplicationService
         {
             plan = BindReadDependency(plan, staticDependency);
         }
-        if (loaded.CheatDirectoryMembership is { } cheatDirectoryMembership)
+        if (request.Operation is InGameSettingsPackageOperationDto.Install
+            or InGameSettingsPackageOperationDto.Upgrade)
         {
-            plan = BindDirectoryDependency(
-                plan,
-                cheatDirectoryMembership.ToDependency());
+            foreach (var dependency in loaded.SourceDependencies)
+            {
+                plan = BindReadDependency(plan, dependency);
+            }
         }
         var expiresAtUtc = timeProvider.GetUtcNow().Add(ReviewLifetime);
         var reviewId = Guid.NewGuid().ToString("N");
@@ -155,13 +200,46 @@ public sealed class InGameSettingsPackageApplicationService
                     _ => throw new ArgumentOutOfRangeException(nameof(mutation.Kind)),
                 }))
             .ToArray();
+        var readDependencies = plan.ReadDependencies
+            .OrderBy(dependency => dependency.Path.CanonicalKey, StringComparer.Ordinal)
+            .Take(InGameSettingsPackageContract.MaximumReturnedReadDependencies)
+            .Select(dependency => new InGameSettingsPackageReadDependencyDto(
+                dependency.Path.Value,
+                IsExecutableCompositionSource(dependency)
+                    ? InGameSettingsPackageReadDependencyRoleDto.ExecutableCompositionSource
+                    : InGameSettingsPackageReadDependencyRoleDto.StaticExecutableGuard,
+                dependency.ExpectedState.Exists,
+                dependency.ExpectedState.Sha256,
+                dependency.ExpectedState.Exists
+                    ? dependency.ExpectedState.LengthBytes
+                    : null,
+                Preserved: true))
+            .ToArray();
+        var composition = request.Operation is (
+                InGameSettingsPackageOperationDto.Install or
+                InGameSettingsPackageOperationDto.Upgrade)
+            ? CreateCompositionDto(context, loaded)
+            : null;
         return new PreviewInGameSettingsPackageResponse(
             reviewId,
             expiresAtUtc,
             request.Operation,
             loaded.Snapshot,
             targets,
-            targets.Length != plan.Mutations.Length);
+            targets.Length != plan.Mutations.Length,
+            readDependencies,
+            readDependencies.Length != plan.ReadDependencies.Length,
+            composition);
+
+        bool IsExecutableCompositionSource(OutputReadDependency dependency)
+        {
+            return bundleProvider is not null
+                && dependency.ExpectedState.Exists
+                && (loaded.UsesComposedMain
+                    && dependency.Path.CanonicalKey == StandaloneMainPath.CanonicalKey
+                    || loaded.UsesComposedMainNpdm
+                    && dependency.Path.CanonicalKey == StandaloneMainNpdmPath.CanonicalKey);
+        }
     }
 
     public async Task<ApplyInGameSettingsPackageResponse> ApplyAsync(
@@ -190,8 +268,10 @@ public sealed class InGameSettingsPackageApplicationService
         }
 
 
-        if (review.Operation is InGameSettingsPackageOperationDto.Install
-            or InGameSettingsPackageOperationDto.Upgrade)
+        if (bundleProvider is null
+            && review.Operation is (
+                InGameSettingsPackageOperationDto.Install or
+                InGameSettingsPackageOperationDto.Upgrade))
         {
             var currentStaticDependency = await GetStaticSettingsDependencyAsync(
                     request.Scope,
@@ -257,7 +337,7 @@ public sealed class InGameSettingsPackageApplicationService
             || loaded.AvailableEntry is null)
         {
             throw new InGameSettingsPackageUnavailableException(
-                "An exact editor-shipped package is not ready for initial installation.");
+                "An exact KM-generated package is not ready for initial installation.");
         }
 
         var bundle = ReadEntry(loaded.AvailableEntry);
@@ -286,6 +366,12 @@ public sealed class InGameSettingsPackageApplicationService
             throw new InGameSettingsPackageUnavailableException(
                 "Set static Gameplay Settings to vanilla before installing or upgrading the in-game settings package.");
         }
+        if (inspection.OutputMainPresent
+            && !inspection.OutputMainMatchesBase)
+        {
+            throw new InGameSettingsPackageUnavailableException(
+                "Remove the standalone exefs/main output before installing or upgrading the native in-game menu. Two executable replacements cannot be composed safely, and KM will not discard either one.");
+        }
 
         return new OutputReadDependency(
             new RelativeOutputPath("exefs/main"),
@@ -302,7 +388,16 @@ public sealed class InGameSettingsPackageApplicationService
             var staticState = await GameplaySettingsApplicationService
                 .InspectStaticValuesForInGamePackageAsync(context, cancellationToken)
                 .ConfigureAwait(false);
-            var isVanilla = staticState.State == GameplaySettingsStateDto.Ready
+            var baseMainState = staticState.BaseState ?? OutputFileState.Missing;
+            var outputMainState = staticState.OutputPresent
+                ? staticState.TargetState ?? OutputFileState.Missing
+                : OutputFileState.Missing;
+            var outputMainMatchesBase = staticState.OutputPresent
+                && staticState.OutputMatchesBase
+                && baseMainState.Exists
+                && outputMainState == baseMainState;
+            var isVanilla = outputMainMatchesBase
+                || staticState.State == GameplaySettingsStateDto.Ready
                 && staticState.Values is
                 {
                     ExperienceShareEnabled: true,
@@ -312,7 +407,10 @@ public sealed class InGameSettingsPackageApplicationService
                 };
             return new InGameSettingsStaticSettingsGuardResult(
                 isVanilla,
-                staticState.TargetState ?? OutputFileState.Missing);
+                staticState.OutputPresent,
+                outputMainMatchesBase,
+                baseMainState,
+                outputMainState);
         }
     }
 
@@ -390,6 +488,49 @@ public sealed class InGameSettingsPackageApplicationService
         CancellationToken cancellationToken)
     {
         var loaded = await LoadAsync(context, cancellationToken).ConfigureAwait(false);
+        if (bundleProvider is not null)
+        {
+            // Production native-menu bundles are derived from a reviewed
+            // standalone executable source. The provider proves compatibility,
+            // and the source fingerprints are bound to preview/apply below.
+            return loaded;
+        }
+        if (loaded.Snapshot.State == InGameSettingsPackageStateDto.NotInstalled)
+        {
+            var initialInspection = await staticSettingsGuard
+                .InspectAsync(scope, cancellationToken)
+                .ConfigureAwait(false);
+            if (!initialInspection.OutputMainPresent)
+            {
+                return loaded;
+            }
+
+            if (initialInspection.OutputMainMatchesBase)
+            {
+                return loaded with
+                {
+                    Snapshot = loaded.Snapshot with
+                    {
+                        Revision = ComputeCoexistenceRevision(
+                            loaded.Snapshot.Revision,
+                            initialInspection),
+                        Detail = "A redundant exefs/main output exactly matches the selected Base executable and will be left unchanged.",
+                    },
+                };
+            }
+
+            return loaded with
+            {
+                Snapshot = loaded.Snapshot with
+                {
+                    State = InGameSettingsPackageStateDto.Conflict,
+                    Revision = ComputeCoexistenceRevision(
+                        loaded.Snapshot.Revision,
+                        initialInspection),
+                    Detail = "A separate exefs/main output already exists. KM will not install a second executable replacement or discard the existing one.",
+                },
+            };
+        }
         if (loaded.Snapshot.State is not (
                 InGameSettingsPackageStateDto.Installed or
                 InGameSettingsPackageStateDto.UpgradeAvailable))
@@ -400,17 +541,22 @@ public sealed class InGameSettingsPackageApplicationService
         var inspection = await staticSettingsGuard
             .InspectAsync(scope, cancellationToken)
             .ConfigureAwait(false);
+        var canCoexist = inspection.IsVanilla
+            && (!inspection.OutputMainPresent
+                || inspection.OutputMainMatchesBase);
         var snapshot = loaded.Snapshot with
         {
-            State = inspection.IsVanilla
+            State = canCoexist
                 ? loaded.Snapshot.State
                 : InGameSettingsPackageStateDto.CoexistenceConflict,
             Revision = ComputeCoexistenceRevision(
                 loaded.Snapshot.Revision,
                 inspection),
-            Detail = inspection.IsVanilla
+            Detail = canCoexist
                 ? loaded.Snapshot.Detail
-                : "The KM-managed package files are intact, but the executable or selected base build no longer matches the vanilla state reviewed for safe coexistence. Package removal remains available.",
+                : inspection.OutputMainPresent
+                    ? "The KM-managed package files are intact, but a separate exefs/main output also exists. KM will not choose between two executable replacements. Package removal remains available."
+                    : "The KM-managed package files are intact, but the executable or selected base build no longer matches the vanilla state reviewed for safe coexistence. Package removal remains available.",
         };
         return loaded with { Snapshot = snapshot };
     }
@@ -422,34 +568,51 @@ public sealed class InGameSettingsPackageApplicationService
         var selectedGame = context.Paths.SelectedGame
             ?? throw new OutputScopeMismatchException();
         var titleId = ProjectGameMetadata.Get(selectedGame).TitleId;
-        var authorizedEntries = catalog.GetEntries(context.GameFamily, titleId)
-            .Where(entry => authority.IsAuthorized(entry.AuthorityKey))
+        var resolution = bundleProvider is null
+            ? new InGameSettingsBundleResolution(catalog, authority)
+            : await bundleProvider.ResolveAsync(
+                    context.Paths,
+                    selectedGame,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        var authorizedEntries = resolution.Catalog
+            .GetEntries(context.GameFamily, titleId)
+            .Where(entry => resolution.Authority.IsAuthorized(entry.AuthorityKey))
             .ToImmutableArray();
+        var sourceDependencies = (resolution.SourceDependencies ?? [])
+            .OrderBy(dependency => dependency.Path.CanonicalKey, StringComparer.Ordinal)
+            .ToImmutableArray();
+        if (sourceDependencies.Length > 8
+            || sourceDependencies.Select(dependency => dependency.Path.CanonicalKey)
+                .Distinct(StringComparer.Ordinal).Count() != sourceDependencies.Length)
+        {
+            throw new InvalidDataException(
+                "The native-menu executable source dependency inventory is invalid.");
+        }
         var ownership = await context.Coordinator
             .GetOwnershipInventorySnapshotAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (authorizedEntries.IsEmpty)
-        {
-            var unavailableRevision = ComputeRevision(
+        var providerOfferedCompatiblePackage = !authorizedEntries.IsDefaultOrEmpty;
+        var sourceOwnershipFailure = bundleProvider is not null
+            && providerOfferedCompatiblePackage
+            ? ValidateCompositionSourceOwnership(
                 context,
                 ownership,
-                availableEntry: null,
-                installedEntry: null,
-                []);
-            return new LoadedPackageState(
-                new InGameSettingsPackageSnapshotDto(
-                    InGameSettingsPackageStateDto.Unavailable,
-                    unavailableRevision,
-                    PackageAvailable: false,
-                    InstalledPackage: null,
-                    AvailablePackage: null,
-                    "No authorized editor-shipped package is available for this exact title."),
-                null,
-                null,
-                ownership,
-                ImmutableDictionary<string, ReviewedTarget>.Empty);
+                resolution,
+                sourceDependencies)
+            : null;
+        var unavailableDetail = resolution.UnavailableDetail;
+        if (sourceOwnershipFailure is not null)
+        {
+            authorizedEntries = ImmutableArray<InGameSettingsBundleCatalogEntry>.Empty;
+            unavailableDetail = sourceOwnershipFailure;
         }
+        var executableInput = CreateExecutableInputAssessment(
+            resolution,
+            sourceDependencies,
+            providerOfferedCompatiblePackage,
+            sourceOwnershipFailure,
+            bundleProvider is not null);
 
         var baseBuildId = await TryReadBaseBuildIdAsync(
                 context.Paths.BaseExeFsPath,
@@ -461,11 +624,9 @@ public sealed class InGameSettingsPackageApplicationService
                 entry.Manifest.BuildId,
                 baseBuildId,
                 StringComparison.Ordinal));
-
-        var knownBundles = authorizedEntries.ToDictionary(
-            entry => entry.Manifest.BundleId,
-            ReadEntry,
-            StringComparer.Ordinal);
+        var availableBundle = availableEntry is null
+            ? null
+            : ReadEntry(availableEntry);
         var manifestPath = new RelativeOutputPath(
             $"config/km-editor/gameplay-settings/{titleId:X16}/bundle.manifest");
         var manifestReview = await ReviewTargetAsync(
@@ -475,25 +636,61 @@ public sealed class InGameSettingsPackageApplicationService
                 cancellationToken)
             .ConfigureAwait(false);
 
-        InGameSettingsBundleCatalogEntry? installedEntry = null;
-        if (manifestReview.Exists)
-        {
-            installedEntry = authorizedEntries.SingleOrDefault(entry =>
-                manifestReview.Bytes.AsSpan().SequenceEqual(
-                    knownBundles[entry.Manifest.BundleId].ManifestBytes.AsSpan()));
-        }
+        GameplayBundleManifest? installedManifest = null;
+        var manifestIsCanonical = manifestReview.Exists
+            && TryParseManifest(manifestReview.Bytes.AsSpan(), out installedManifest);
+        var manifestIsNative = manifestIsCanonical
+            && installedManifest is not null
+            && NativeGameplayMenuBundleFactory.IsNativeMenuManifest(
+                selectedGame,
+                installedManifest);
+        var manifestIsRetiredExternalControl = manifestIsCanonical
+            && installedManifest is not null
+            && NativeGameplayMenuBundleFactory.IsRetiredExternalControlManifest(
+                selectedGame,
+                installedManifest);
+        var manifestIsManagedGameplay = manifestIsNative
+            || manifestIsRetiredExternalControl;
 
         var pathInventory = new Dictionary<string, RelativeOutputPath>(StringComparer.Ordinal)
         {
             [manifestPath.CanonicalKey] = manifestPath,
         };
-        foreach (var entry in new[] { installedEntry, availableEntry }.Where(entry => entry is not null))
+        var reviewLimits = new Dictionary<string, int>(StringComparer.Ordinal)
         {
-            foreach (var path in knownBundles[entry!.Manifest.BundleId].Entries)
+            [manifestPath.CanonicalKey] = GameplayBundleIdentity.MaximumSerializationBytes,
+        };
+        if (availableBundle is not null)
+        {
+            foreach (var component in availableBundle.Manifest.Components)
             {
-                var outputPath = new RelativeOutputPath(path);
-                pathInventory.TryAdd(outputPath.CanonicalKey, outputPath);
+                AddReviewTarget(
+                    pathInventory,
+                    reviewLimits,
+                    component.Path,
+                    GetComponentReviewLimit(component));
             }
+            AddReviewTarget(
+                pathInventory,
+                reviewLimits,
+                $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin",
+                GameplaySettingsJournal.JournalSize);
+        }
+        if (manifestIsManagedGameplay)
+        {
+            foreach (var component in installedManifest!.Components)
+            {
+                AddReviewTarget(
+                    pathInventory,
+                    reviewLimits,
+                    component.Path,
+                    GetComponentReviewLimit(component));
+            }
+            AddReviewTarget(
+                pathInventory,
+                reviewLimits,
+                $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin",
+                GameplaySettingsJournal.JournalSize);
         }
 
         var targets = new Dictionary<string, ReviewedTarget>(StringComparer.Ordinal)
@@ -509,27 +706,23 @@ public sealed class InGameSettingsPackageApplicationService
                 await ReviewTargetAsync(
                         context.Paths.OutputRootPath!,
                         path,
-                        MaximumTargetBytes,
+                        reviewLimits[path.CanonicalKey],
                         cancellationToken)
                     .ConfigureAwait(false));
         }
 
-        var cheatDirectory = new RelativeOutputPath(
-            $"atmosphere/contents/{titleId:X16}/cheats");
-        var cheatDirectoryMembership = await context.Coordinator
-            .CaptureDirectoryMembershipAsync(cheatDirectory, cancellationToken)
-            .ConfigureAwait(false);
-        var allowedBuildCheatPaths = pathInventory.Values
-            .Where(path => IsBuildCheatFile(cheatDirectory, path))
-            .Select(path => path.CanonicalKey)
-            .ToHashSet(StringComparer.Ordinal);
-        var foreignBuildCheatFiles = cheatDirectoryMembership.Entries
-            .Where(entry => !entry.IsDirectory
-                && IsBuildCheatFile(cheatDirectory, entry.Path)
-                && !allowedBuildCheatPaths.Contains(entry.Path.CanonicalKey))
-            .Select(entry => entry.Path)
-            .OrderBy(path => path.CanonicalKey, StringComparer.Ordinal)
-            .ToArray();
+        InGameSettingsBundleCatalogEntry? installedEntry = null;
+        GameplayBundleArchiveReadResult? installedBundle = null;
+        if (manifestIsManagedGameplay
+            && TryReconstructInstalledEntry(
+                context.GameFamily,
+                installedManifest!,
+                targets,
+                manifestIsRetiredExternalControl,
+                out installedEntry))
+        {
+            installedBundle = ReadEntry(installedEntry);
+        }
 
         var revision = ComputeRevision(
             context,
@@ -537,12 +730,14 @@ public sealed class InGameSettingsPackageApplicationService
             availableEntry,
             installedEntry,
             targets.Values,
-            cheatDirectoryMembership);
+            sourceDependencies);
         var availableDto = availableEntry is null ? null : ToDto(availableEntry);
+        var blocksStaticEditor = targets.Values.Any(target =>
+            target.Exists
+            && IsRuntimePackageComponentPath(target.Path, titleId));
         if (!manifestReview.Exists)
         {
-            var collision = targets.Values.Any(target => target.Exists)
-                || foreignBuildCheatFiles.Length > 0;
+            var collision = targets.Values.Any(target => target.Exists);
             var state = collision
                 ? InGameSettingsPackageStateDto.Conflict
                 : availableEntry is null
@@ -551,47 +746,67 @@ public sealed class InGameSettingsPackageApplicationService
             return new LoadedPackageState(
                 new InGameSettingsPackageSnapshotDto(
                     state,
+                    BlocksStaticEditor: blocksStaticEditor,
                     revision,
                     PackageAvailable: availableEntry is not null,
                     InstalledPackage: null,
                     AvailablePackage: availableDto,
-                    collision
-                        ? foreignBuildCheatFiles.Length > 0
-                            ? "Another build-specific cheat file already uses this title's shared selection document. Remove other build cheat files before installing the KM package."
-                            : "One or more exact package targets already exist without the package manifest."
+                    ExecutableInput: executableInput,
+                    Detail: collision
+                        ? "One or more exact native package targets already exist without the KM package manifest."
                         : state == InGameSettingsPackageStateDto.Unavailable
-                            ? "No authorized current package is available for this exact title."
+                            ? unavailableDetail
+                              ?? "No current native package is available for this exact title and build."
                             : null),
                 null,
                 availableEntry,
                 ownership,
                 targets.ToImmutableDictionary(StringComparer.Ordinal),
-                cheatDirectoryMembership);
+                sourceDependencies,
+                resolution.UsesComposedMain,
+                resolution.UsesComposedMainNpdm);
         }
 
-        if (installedEntry is null)
+        if (installedEntry is null || installedBundle is null)
         {
-            var state = TryParseManifest(manifestReview.Bytes.AsSpan(), out _)
-                ? InGameSettingsPackageStateDto.Unmanaged
-                : InGameSettingsPackageStateDto.Corrupt;
+            var state = !manifestIsCanonical
+                ? InGameSettingsPackageStateDto.Corrupt
+                : !manifestIsManagedGameplay
+                    ? InGameSettingsPackageStateDto.Unmanaged
+                    : ClassifyUnreconstructableInstalledPackage(
+                        context.GameFamily,
+                        installedManifest!,
+                        targets,
+                        titleId,
+                        manifestIsRetiredExternalControl);
             return new LoadedPackageState(
                 new InGameSettingsPackageSnapshotDto(
                     state,
+                    BlocksStaticEditor: blocksStaticEditor,
                     revision,
                     PackageAvailable: availableEntry is not null,
                     InstalledPackage: null,
                     AvailablePackage: availableDto,
-                    state == InGameSettingsPackageStateDto.Unmanaged
-                        ? "The existing package manifest is not in the authorized editor catalog."
-                        : "The existing package manifest is malformed or noncanonical."),
+                    ExecutableInput: executableInput,
+                    Detail: state switch
+                    {
+                        InGameSettingsPackageStateDto.Unmanaged =>
+                            "The existing package manifest is not a KM native-menu package for this exact title and build.",
+                        InGameSettingsPackageStateDto.Incomplete =>
+                            "The installed native-menu package is missing one or more exact owned files.",
+                        InGameSettingsPackageStateDto.Conflict =>
+                            "An installed native-menu package file no longer matches its reviewed manifest.",
+                        _ => "The existing package manifest or settings journal is malformed or noncanonical.",
+                    }),
                 null,
                 availableEntry,
                 ownership,
                 targets.ToImmutableDictionary(StringComparer.Ordinal),
-                cheatDirectoryMembership);
+                sourceDependencies,
+                resolution.UsesComposedMain,
+                resolution.UsesComposedMainNpdm);
         }
 
-        var installedBundle = knownBundles[installedEntry.Manifest.BundleId];
         var validation = ValidateInstalledPackage(
             context,
             installedBundle,
@@ -602,36 +817,20 @@ public sealed class InGameSettingsPackageApplicationService
             return new LoadedPackageState(
                 new InGameSettingsPackageSnapshotDto(
                     invalidState,
+                    BlocksStaticEditor: blocksStaticEditor,
                     revision,
                     PackageAvailable: availableEntry is not null,
                     InstalledPackage: ToDto(installedEntry),
                     AvailablePackage: availableDto,
-                    invalidState == InGameSettingsPackageStateDto.Conflict
-                        && foreignBuildCheatFiles.Length > 0
-                        ? "Another build-specific cheat file can replace this title's shared selection document. Remove the other build cheat files and restore the KM selection document before continuing."
-                        : validation.Detail),
+                    ExecutableInput: executableInput,
+                    Detail: validation.Detail),
                 installedEntry,
                 availableEntry,
                 ownership,
                 targets.ToImmutableDictionary(StringComparer.Ordinal),
-                cheatDirectoryMembership);
-        }
-
-        if (foreignBuildCheatFiles.Length > 0)
-        {
-            return new LoadedPackageState(
-                new InGameSettingsPackageSnapshotDto(
-                    InGameSettingsPackageStateDto.Conflict,
-                    revision,
-                    PackageAvailable: availableEntry is not null,
-                    InstalledPackage: ToDto(installedEntry),
-                    AvailablePackage: availableDto,
-                    "Another build-specific cheat file shares this title's selection document. Remove other build cheat files before changing or removing the KM package."),
-                installedEntry,
-                availableEntry,
-                ownership,
-                targets.ToImmutableDictionary(StringComparer.Ordinal),
-                cheatDirectoryMembership);
+                sourceDependencies,
+                resolution.UsesComposedMain,
+                resolution.UsesComposedMainNpdm);
         }
 
         var upgradeAvailable = availableEntry is not null
@@ -644,15 +843,228 @@ public sealed class InGameSettingsPackageApplicationService
                 upgradeAvailable
                     ? InGameSettingsPackageStateDto.UpgradeAvailable
                     : InGameSettingsPackageStateDto.Installed,
+                BlocksStaticEditor: true,
                 revision,
                 PackageAvailable: availableEntry is not null,
                 InstalledPackage: ToDto(installedEntry),
-                AvailablePackage: availableDto),
+                AvailablePackage: availableDto,
+                ExecutableInput: executableInput),
             installedEntry,
             availableEntry,
             ownership,
             targets.ToImmutableDictionary(StringComparer.Ordinal),
-            cheatDirectoryMembership);
+            sourceDependencies,
+            resolution.UsesComposedMain,
+            resolution.UsesComposedMainNpdm);
+    }
+
+    private static bool TryReconstructInstalledEntry(
+        GameFamily gameFamily,
+        GameplayBundleManifest manifest,
+        IReadOnlyDictionary<string, ReviewedTarget> targets,
+        bool allowRetiredToggleSelections,
+        out InGameSettingsBundleCatalogEntry entry)
+    {
+        try
+        {
+            var components = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            foreach (var expected in manifest.Components)
+            {
+                var path = new RelativeOutputPath(expected.Path);
+                if (!targets.TryGetValue(path.CanonicalKey, out var target)
+                    || !target.Exists)
+                {
+                    entry = null!;
+                    return false;
+                }
+                var bytes = target.Bytes.ToArray();
+                if (allowRetiredToggleSelections
+                    && IsToggleSelectionPath(expected.Path, manifest.TitleId))
+                {
+                    bytes = AtmosphereCheatToggleDocument.Create(
+                        AtmosphereCheatToggleDocument.Parse(bytes)
+                            .Select(item => new KeyValuePair<string, bool>(
+                                item.Key,
+                                false)));
+                }
+                components.Add(expected.Path, bytes);
+            }
+
+            GameplayBundleIdentity.VerifyComponents(manifest, components);
+            var family = GameplayBundleDeploymentPlanner.ToSettingsFamily(gameFamily);
+            var bootstrap = GameplaySettingsJournal.CreateBootstrap(
+                family,
+                manifest.TitleId,
+                new GameplaySettingsWriterVersion(
+                    checked((ushort)manifest.PackageVersion.Major),
+                    checked((ushort)manifest.PackageVersion.Minor),
+                    checked((ushort)manifest.PackageVersion.Patch)),
+                GameplaySettingPresence.ExperienceShare
+                | GameplaySettingPresence.ExperienceRate
+                | GameplaySettingPresence.LevelCap);
+            var archive = GameplayBundleArchive.Build(
+                manifest,
+                components,
+                family,
+                bootstrap);
+            entry = new InGameSettingsBundleCatalogEntry(
+                gameFamily,
+                archive.Bytes,
+                isCurrent: false);
+            return true;
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidDataException or
+            OverflowException)
+        {
+            entry = null!;
+            return false;
+        }
+    }
+
+    private static InGameSettingsPackageStateDto ClassifyUnreconstructableInstalledPackage(
+        GameFamily gameFamily,
+        GameplayBundleManifest manifest,
+        IReadOnlyDictionary<string, ReviewedTarget> targets,
+        ulong titleId,
+        bool allowRetiredToggleSelections)
+    {
+        foreach (var expected in manifest.Components)
+        {
+            var path = new RelativeOutputPath(expected.Path);
+            if (!targets.TryGetValue(path.CanonicalKey, out var target)
+                || !target.Exists)
+            {
+                return InGameSettingsPackageStateDto.Incomplete;
+            }
+            if (allowRetiredToggleSelections
+                && IsToggleSelectionPath(expected.Path, titleId))
+            {
+                try
+                {
+                    var canonical = AtmosphereCheatToggleDocument.Create(
+                        AtmosphereCheatToggleDocument.Parse(target.Bytes.AsSpan())
+                            .Select(item => new KeyValuePair<string, bool>(
+                                item.Key,
+                                false)));
+                    if ((ulong)canonical.LongLength == expected.Length
+                        && string.Equals(
+                            Convert.ToHexString(SHA256.HashData(canonical)),
+                            expected.Sha256,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+                }
+                catch (Exception exception) when (exception is
+                    ArgumentException or
+                    InvalidDataException or
+                    OverflowException)
+                {
+                    // Classify the target as a conflict below.
+                }
+            }
+            if ((ulong)target.Bytes.Length != expected.Length
+                || !string.Equals(
+                    Convert.ToHexString(SHA256.HashData(target.Bytes.AsSpan())),
+                    expected.Sha256,
+                    StringComparison.Ordinal))
+            {
+                return InGameSettingsPackageStateDto.Conflict;
+            }
+        }
+
+        var settingsPath = new RelativeOutputPath(
+            $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin");
+        if (!targets.TryGetValue(settingsPath.CanonicalKey, out var settings)
+            || !settings.Exists)
+        {
+            return InGameSettingsPackageStateDto.Incomplete;
+        }
+
+        try
+        {
+            var inspection = GameplaySettingsJournal.Inspect(
+                settings.Bytes.AsSpan().ToArray(),
+                GameplayBundleDeploymentPlanner.ToSettingsFamily(gameFamily),
+                titleId);
+            return inspection.WritesAllowed && inspection.ActiveSnapshot is not null
+                ? InGameSettingsPackageStateDto.Conflict
+                : InGameSettingsPackageStateDto.Corrupt;
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidDataException or
+            OverflowException)
+        {
+            return InGameSettingsPackageStateDto.Corrupt;
+        }
+    }
+
+    private static bool IsToggleSelectionPath(string path, ulong titleId) =>
+        string.Equals(
+            path,
+            $"atmosphere/contents/{titleId:X16}/cheats/toggles.txt",
+            StringComparison.Ordinal);
+
+    private static bool IsRuntimePackageComponentPath(
+        RelativeOutputPath path,
+        ulong titleId)
+    {
+        var titleRoot = string.Create(
+            CultureInfo.InvariantCulture,
+            $"atmosphere/contents/{titleId:X16}/");
+        return path.Value.StartsWith(titleRoot + "exefs/", StringComparison.Ordinal)
+            || path.Value.StartsWith(titleRoot + "romfs/", StringComparison.Ordinal)
+            || path.Value.StartsWith(titleRoot + "cheats/", StringComparison.Ordinal);
+    }
+
+    private static int GetComponentReviewLimit(
+        GameplayBundleOutputComponent component)
+    {
+        if (component.Length > MaximumTargetBytes)
+        {
+            throw new InvalidDataException(
+                "A gameplay package component exceeds its bounded target size.");
+        }
+
+        return component.Path.EndsWith("/cheats/toggles.txt", StringComparison.Ordinal)
+            ? AtmosphereCheatToggleDocument.MaximumDocumentBytes
+            : checked((int)Math.Min(
+                MaximumTargetBytes,
+                component.Length + MaximumComponentMismatchProbeBytes));
+    }
+
+    private static void AddReviewTarget(
+        IDictionary<string, RelativeOutputPath> paths,
+        IDictionary<string, int> limits,
+        string value,
+        int maximumBytes)
+    {
+        if (maximumBytes is < 0 or > MaximumTargetBytes)
+        {
+            throw new InvalidDataException(
+                "A gameplay package review limit is out of bounds.");
+        }
+
+        var path = new RelativeOutputPath(value);
+        if (paths.TryGetValue(path.CanonicalKey, out var existing)
+            && !string.Equals(existing.Value, path.Value, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "A gameplay package contains case-colliding target paths.");
+        }
+
+        paths.TryAdd(path.CanonicalKey, path);
+        if (limits.TryGetValue(path.CanonicalKey, out var existingLimit))
+        {
+            limits[path.CanonicalKey] = Math.Max(existingLimit, maximumBytes);
+        }
+        else
+        {
+            limits.Add(path.CanonicalKey, maximumBytes);
+        }
     }
 
     private static PackageValidationFailure ValidateInstalledPackage(
@@ -665,8 +1077,6 @@ public sealed class InGameSettingsPackageApplicationService
             $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin");
         var manifestPath = new RelativeOutputPath(
             $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest");
-        var togglesPath = new RelativeOutputPath(
-            $"atmosphere/contents/{bundle.Manifest.TitleId:X16}/cheats/toggles.txt");
         var expected = new Dictionary<string, ImmutableArray<byte>>(StringComparer.Ordinal);
         foreach (var component in bundle.ImmutableComponents)
         {
@@ -691,26 +1101,15 @@ public sealed class InGameSettingsPackageApplicationService
             }
         }
 
-        foreach (var component in bundle.RuntimeMutableComponents)
+        var togglesPath = new RelativeOutputPath(
+            $"atmosphere/contents/{bundle.Manifest.TitleId:X16}/cheats/toggles.txt");
+        if (bundle.RuntimeMutableComponents.Count > 1
+            || bundle.RuntimeMutableComponents.Count == 1
+            && !bundle.RuntimeMutableComponents.ContainsKey(togglesPath.Value))
         {
-            var path = new RelativeOutputPath(component.Key);
-            if (!targets.TryGetValue(path.CanonicalKey, out var target) || !target.Exists)
-            {
-                return new PackageValidationFailure(
-                    InGameSettingsPackageStateDto.Incomplete,
-                    "The package cheat selection document is missing.");
-            }
-
-            var identity = AtmosphereCheatToggleDocument.ComputeInventoryIdentity(
-                component.Value.AsSpan());
-            if (!AtmosphereCheatToggleDocument.HasExactInventory(
-                    target.Bytes.AsSpan(),
-                    identity))
-            {
-                return new PackageValidationFailure(
-                    InGameSettingsPackageStateDto.Conflict,
-                    "The package cheat selection document contains foreign or malformed entries.");
-            }
+            return new PackageValidationFailure(
+                InGameSettingsPackageStateDto.Conflict,
+                "The installed package has an unsupported runtime-mutable component inventory.");
         }
 
         if (!targets.TryGetValue(settingsPath.CanonicalKey, out var settings)
@@ -782,18 +1181,25 @@ public sealed class InGameSettingsPackageApplicationService
             }
             else if (path.CanonicalKey == togglesPath.CanonicalKey)
             {
-                if (!bundle.RuntimeMutableComponents.TryGetValue(path.Value, out var defaults)
+                if (!bundle.RuntimeMutableComponents.TryGetValue(
+                        togglesPath.Value,
+                        out var bootstrap)
                     || record.RuntimeMutableDescriptor is not { } descriptor
                     || descriptor.Kind != OutputRuntimeMutableKind.BooleanToggleListV1
                     || descriptor.TitleId != bundle.Manifest.TitleId
+                    || descriptor.SemanticIdentity is not { } semanticIdentity
                     || !string.Equals(
-                        descriptor.SemanticIdentity,
-                        AtmosphereCheatToggleDocument.ComputeInventoryIdentity(defaults.AsSpan()),
-                        StringComparison.Ordinal))
+                        semanticIdentity,
+                        AtmosphereCheatToggleDocument.ComputeInventoryIdentity(
+                            bootstrap.AsSpan()),
+                        StringComparison.Ordinal)
+                    || !AtmosphereCheatToggleDocument.HasExactInventory(
+                        targets[path.CanonicalKey].Bytes.AsSpan(),
+                        semanticIdentity))
                 {
                     return new PackageValidationFailure(
                         InGameSettingsPackageStateDto.Unmanaged,
-                        "The cheat selection document does not have exact runtime-mutable ownership.");
+                        "The retired control selection file does not have exact editor ownership and inventory.");
                 }
             }
             else if (record.RuntimeMutableDescriptor is not null
@@ -824,6 +1230,239 @@ public sealed class InGameSettingsPackageApplicationService
             && claim.PreservationRule.SchemaVersion == 1
             && !claim.PreservationRule.PreservesUnownedData
             && !claim.PreservationRule.RequiresPreimage;
+    }
+
+    private static string? ValidateCompositionSourceOwnership(
+        OutputScopeContext context,
+        OutputOwnershipInventorySnapshot ownership,
+        InGameSettingsBundleResolution resolution,
+        IReadOnlyList<OutputReadDependency> sourceDependencies)
+    {
+        var main = FindSourceDependency(sourceDependencies, StandaloneMainPath);
+        var mainNpdm = FindSourceDependency(sourceDependencies, StandaloneMainNpdmPath);
+        var runtimeSlot = FindSourceDependency(sourceDependencies, StandaloneRuntimeSlotPath);
+        if (main is null
+            || mainNpdm is null
+            || runtimeSlot is null
+            || resolution.UsesComposedMain != main.ExpectedState.Exists
+            || resolution.UsesComposedMainNpdm != mainNpdm.ExpectedState.Exists
+            || resolution.RequiresOwnedMainSource && !resolution.UsesComposedMain
+            || resolution.RequiresOwnedMainNpdmSource && !resolution.UsesComposedMainNpdm
+            || runtimeSlot.ExpectedState.Exists)
+        {
+            return "The native-menu provider did not return a complete and internally consistent executable source inventory. KM changed no project file.";
+        }
+
+        var mainFailure = ValidateCompositionSourceOwnership(
+            context,
+            ownership,
+            sourceDependencies,
+            StandaloneMainPath,
+            "exefs/main",
+            resolution.RequiresOwnedMainSource);
+        if (mainFailure is not null)
+        {
+            return mainFailure;
+        }
+
+        return ValidateCompositionSourceOwnership(
+            context,
+            ownership,
+            sourceDependencies,
+            StandaloneMainNpdmPath,
+            "exefs/main.npdm",
+            resolution.RequiresOwnedMainNpdmSource);
+    }
+
+    private static string? ValidateCompositionSourceOwnership(
+        OutputScopeContext context,
+        OutputOwnershipInventorySnapshot ownership,
+        IReadOnlyList<OutputReadDependency> sourceDependencies,
+        RelativeOutputPath path,
+        string displayPath,
+        bool requiresPreservationAwareOwnership)
+    {
+        var dependency = sourceDependencies.SingleOrDefault(candidate =>
+            candidate.Path.CanonicalKey == path.CanonicalKey);
+        var record = ownership.Inventory.Files.SingleOrDefault(candidate =>
+            candidate.Path.CanonicalKey == path.CanonicalKey);
+        if (record is not null
+            && (dependency is null
+                || record.ProjectId != context.ProjectId
+                || record.GameFamily != context.GameFamily
+                || record.CurrentState != dependency.ExpectedState
+                || record.RuntimeMutableDescriptor is not null))
+        {
+            return $"The standalone {displayPath} no longer matches its current KM ownership record. KM left it untouched and will not create a combined executable while the source ledger is stale or belongs to another project.";
+        }
+
+        if (!requiresPreservationAwareOwnership)
+        {
+            return null;
+        }
+
+        var preservableClaims = record?.Claims
+            .Where(claim => !OutputCreatorProvenance.IsClaim(claim))
+            .ToArray();
+        if (dependency is null
+            || !dependency.ExpectedState.Exists
+            || record is null
+            || preservableClaims is null
+            || preservableClaims.Length == 0
+            || preservableClaims.Any(claim =>
+                !claim.PreservationRule.PreservesUnownedData
+                || !claim.PreservationRule.RequiresPreimage))
+        {
+            return $"The compatible standalone {displayPath} is not backed by the current KM ownership ledger and a preservation-aware preimage contract. KM left it untouched and will not create an unverifiable combined executable.";
+        }
+
+        return null;
+    }
+
+    private static InGameSettingsExecutableInputAssessmentDto
+        CreateExecutableInputAssessment(
+            InGameSettingsBundleResolution resolution,
+            IReadOnlyList<OutputReadDependency> sourceDependencies,
+            bool providerOfferedCompatiblePackage,
+            string? sourceOwnershipFailure,
+            bool usesDynamicProvider)
+    {
+        if (resolution.SourceDependencies is null)
+        {
+            if (usesDynamicProvider && resolution.AttemptedSourcePath is { } attemptedSourcePath)
+            {
+                return new InGameSettingsExecutableInputAssessmentDto(
+                    InGameSettingsExecutableInputSourceDto.StandaloneOutput,
+                    InGameSettingsExecutableCompatibilityDto.UnreadableOrAmbiguous,
+                    "source-review-unavailable",
+                    attemptedSourcePath.Value,
+                    null,
+                    null);
+            }
+
+            return new InGameSettingsExecutableInputAssessmentDto(
+                InGameSettingsExecutableInputSourceDto.Base,
+                usesDynamicProvider
+                    ? InGameSettingsExecutableCompatibilityDto.UnreadableOrAmbiguous
+                    : InGameSettingsExecutableCompatibilityDto.Absent,
+                usesDynamicProvider
+                    ? "source-review-unavailable"
+                    : "no-standalone-output",
+                null,
+                null,
+                null);
+        }
+
+        var main = FindSourceDependency(sourceDependencies, StandaloneMainPath);
+        var mainNpdm = FindSourceDependency(sourceDependencies, StandaloneMainNpdmPath);
+        var runtimeSlot = FindSourceDependency(sourceDependencies, StandaloneRuntimeSlotPath);
+        var primary = runtimeSlot?.ExpectedState.Exists == true
+            ? runtimeSlot
+            : resolution.RequiresOwnedMainSource
+                ? main
+                : resolution.RequiresOwnedMainNpdmSource
+                    ? mainNpdm
+                    : main?.ExpectedState.Exists == true
+                        ? main
+                        : mainNpdm?.ExpectedState.Exists == true
+                            ? mainNpdm
+                            : null;
+        if (primary is null)
+        {
+            if (sourceOwnershipFailure is not null)
+            {
+                return new InGameSettingsExecutableInputAssessmentDto(
+                    InGameSettingsExecutableInputSourceDto.None,
+                    InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion,
+                    "source-ledger-stale-or-inconsistent",
+                    null,
+                    null,
+                    null);
+            }
+
+            return new InGameSettingsExecutableInputAssessmentDto(
+                InGameSettingsExecutableInputSourceDto.Base,
+                providerOfferedCompatiblePackage
+                    ? InGameSettingsExecutableCompatibilityDto.Absent
+                    : InGameSettingsExecutableCompatibilityDto.UnsupportedBuild,
+                providerOfferedCompatiblePackage
+                    ? "no-standalone-output"
+                    : "unsupported-base-input",
+                null,
+                null,
+                null);
+        }
+
+        var compatibility = runtimeSlot?.ExpectedState.Exists == true
+            || sourceOwnershipFailure is not null
+            || !providerOfferedCompatiblePackage
+                && (resolution.RequiresOwnedMainSource
+                    || resolution.RequiresOwnedMainNpdmSource)
+            ? InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion
+            : resolution.RequiresOwnedMainSource
+                || resolution.RequiresOwnedMainNpdmSource
+                ? InGameSettingsExecutableCompatibilityDto.CompatiblePreservable
+                : InGameSettingsExecutableCompatibilityDto.RetailEquivalent;
+        var reasonCode = runtimeSlot?.ExpectedState.Exists == true
+            ? "runtime-slot-occupied"
+            : sourceOwnershipFailure is not null
+                ? "standalone-output-not-ledger-owned"
+                : compatibility == InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion
+                    ? "verified-native-region-conflict"
+                    : compatibility == InGameSettingsExecutableCompatibilityDto.CompatiblePreservable
+                        ? "ledger-owned-preservable-output"
+                        : "standalone-matches-base";
+        return new InGameSettingsExecutableInputAssessmentDto(
+            InGameSettingsExecutableInputSourceDto.StandaloneOutput,
+            compatibility,
+            reasonCode,
+            primary.Path.Value,
+            primary.ExpectedState.Sha256,
+            primary.ExpectedState.LengthBytes);
+    }
+
+    private static OutputReadDependency? FindSourceDependency(
+        IReadOnlyList<OutputReadDependency> sourceDependencies,
+        RelativeOutputPath path)
+    {
+        return sourceDependencies.SingleOrDefault(candidate =>
+            candidate.Path.CanonicalKey == path.CanonicalKey);
+    }
+
+    private static InGameSettingsExecutableCompositionDto CreateCompositionDto(
+        OutputScopeContext context,
+        LoadedPackageState loaded)
+    {
+        var strategy = loaded.Snapshot.ExecutableInput.Compatibility switch
+        {
+            InGameSettingsExecutableCompatibilityDto.CompatiblePreservable =>
+                InGameSettingsExecutableCompositionStrategyDto.CompatibleStandalone,
+            InGameSettingsExecutableCompatibilityDto.RetailEquivalent
+                when loaded.Snapshot.ExecutableInput.Source
+                    == InGameSettingsExecutableInputSourceDto.StandaloneOutput =>
+                InGameSettingsExecutableCompositionStrategyDto.RetailEquivalentStandalone,
+            _ => InGameSettingsExecutableCompositionStrategyDto.StockPackage,
+        };
+        var selectedGame = context.Paths.SelectedGame
+            ?? throw new OutputScopeMismatchException();
+        var titleId = ProjectGameMetadata.Get(selectedGame).TitleId;
+        return new InGameSettingsExecutableCompositionDto(
+            strategy,
+            $"atmosphere/contents/{titleId:X16}/exefs/main",
+            SourcePreserved: true,
+            PreservesBytesOutsideOwnedRegions: true,
+            OwnedRegionCount: GetNativeExecutableOwnedRegionCount(selectedGame));
+    }
+
+    private static int GetNativeExecutableOwnedRegionCount(ProjectGame game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword or ProjectGame.Shield => 9,
+            ProjectGame.Scarlet or ProjectGame.Violet => 5,
+            ProjectGame.ZA => 5,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
     }
 
     private static GameplayBundleArchiveReadResult ReadEntry(
@@ -888,46 +1527,6 @@ public sealed class InGameSettingsPackageApplicationService
             plan.ReadDependencies.Append(dependency),
             plan.DirectoryMembershipDependencies,
             plan.OwnershipInventoryRevision);
-    }
-
-    private static OutputApplyPlan BindDirectoryDependency(
-        OutputApplyPlan plan,
-        OutputDirectoryMembershipDependency dependency)
-    {
-        if (plan.DirectoryMembershipDependencies.Any(existing =>
-                existing.Directory.CanonicalKey == dependency.Directory.CanonicalKey))
-        {
-            throw new InvalidDataException(
-                "The in-game settings package plan already contains the cheat directory dependency.");
-        }
-
-        return new OutputApplyPlan(
-            plan.ProjectId,
-            plan.GameFamily,
-            plan.OutputMode,
-            plan.SemanticReviewHash,
-            plan.Origins,
-            plan.Mutations,
-            plan.ReadDependencies,
-            plan.DirectoryMembershipDependencies.Append(dependency),
-            plan.OwnershipInventoryRevision);
-    }
-
-    private static bool IsBuildCheatFile(
-        RelativeOutputPath cheatDirectory,
-        RelativeOutputPath candidate)
-    {
-        var prefix = cheatDirectory.CanonicalKey + "/";
-        if (!candidate.CanonicalKey.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var fileName = candidate.Value[(cheatDirectory.Value.Length + 1)..];
-        return !fileName.Contains('/', StringComparison.Ordinal)
-            && fileName.Length == 20
-            && fileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
-            && fileName.AsSpan(0, 16).ToArray().All(Uri.IsHexDigit);
     }
 
     private static bool TryParseManifest(
@@ -1111,7 +1710,7 @@ public sealed class InGameSettingsPackageApplicationService
         InGameSettingsBundleCatalogEntry? availableEntry,
         InGameSettingsBundleCatalogEntry? installedEntry,
         IEnumerable<ReviewedTarget> targets,
-        OutputDirectoryMembershipSnapshot? cheatDirectoryMembership = null)
+        IEnumerable<OutputReadDependency> sourceDependencies)
     {
         var builder = new StringBuilder();
         builder.Append("in-game-settings-package-review-v1\n")
@@ -1128,10 +1727,15 @@ public sealed class InGameSettingsPackageApplicationService
                 .Append(target.State.LengthBytes.ToString(CultureInfo.InvariantCulture)).Append('\t')
                 .Append(target.State.Sha256 ?? "missing").Append('\n');
         }
-        builder.Append("cheat-directory\t")
-            .Append(cheatDirectoryMembership?.Revision.Value ?? "unobserved")
-            .Append('\n');
-
+        foreach (var dependency in sourceDependencies.OrderBy(
+                     dependency => dependency.Path.CanonicalKey,
+                     StringComparer.Ordinal))
+        {
+            builder.Append("source\t").Append(dependency.Path.Value).Append('\t')
+                .Append(dependency.ExpectedState.Exists ? '1' : '0').Append('\t')
+                .Append(dependency.ExpectedState.LengthBytes.ToString(CultureInfo.InvariantCulture)).Append('\t')
+                .Append(dependency.ExpectedState.Sha256 ?? "missing").Append('\n');
+        }
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
@@ -1139,11 +1743,17 @@ public sealed class InGameSettingsPackageApplicationService
         string packageRevision,
         InGameSettingsStaticSettingsGuardResult inspection)
     {
+        var baseState = inspection.BaseMainState;
         var state = inspection.OutputMainState;
         var builder = new StringBuilder()
-            .Append("in-game-settings-package-coexistence-v1\n")
+            .Append("in-game-settings-package-coexistence-v2\n")
             .Append(packageRevision).Append('\n')
             .Append(inspection.IsVanilla ? '1' : '0').Append('\n')
+            .Append(inspection.OutputMainPresent ? '1' : '0').Append('\n')
+            .Append(inspection.OutputMainMatchesBase ? '1' : '0').Append('\n')
+            .Append(baseState.Exists ? '1' : '0').Append('\n')
+            .Append(baseState.LengthBytes.ToString(CultureInfo.InvariantCulture)).Append('\n')
+            .Append(baseState.Sha256 ?? "missing").Append('\n')
             .Append(state.Exists ? '1' : '0').Append('\n')
             .Append(state.LengthBytes.ToString(CultureInfo.InvariantCulture)).Append('\n')
             .Append(state.Sha256 ?? "missing").Append('\n');
@@ -1191,7 +1801,9 @@ public sealed class InGameSettingsPackageApplicationService
         InGameSettingsBundleCatalogEntry? AvailableEntry,
         OutputOwnershipInventorySnapshot Ownership,
         ImmutableDictionary<string, ReviewedTarget> Targets,
-        OutputDirectoryMembershipSnapshot? CheatDirectoryMembership = null);
+        ImmutableArray<OutputReadDependency> SourceDependencies = default,
+        bool UsesComposedMain = false,
+        bool UsesComposedMainNpdm = false);
 
     private sealed record CachedReview(
         string ReviewId,

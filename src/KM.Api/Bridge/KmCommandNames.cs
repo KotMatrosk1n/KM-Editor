@@ -171,8 +171,6 @@ public static class KmCommandNames
     public const string LoadGameDumpWorkflow = "gameDump.load";
     public const string RunGameDump = "gameDump.run";
     public const string StartEditSession = "editSession.start";
-    public const string GetEditSession = "editSession.get";
-    public const string DiscardEditSession = "editSession.discard";
     public const string ValidateEditSession = "editSession.validate";
     public const string CreateChangePlan = "changePlan.create";
     public const string ApplyChangePlan = "changePlan.apply";

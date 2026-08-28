@@ -7,65 +7,29 @@
 ![Localization](https://img.shields.io/badge/localized-EN%20%7C%20ES%20%7C%20FR%20%7C%20DE%20%7C%20RU%20%7C%20UKR%20%7C%20ZH-orange)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-lightgrey)](LICENSE)
 
-KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Pokémon Scarlet and Violet, and Pokémon Legends Z-A.
-
-It replaces raw table wrestling and mystery ID hunting with searchable editors, readable labels, and workflows that show what will be written before anything reaches your mod.
-
-Modding these games already comes with enough mysteries. Your editor should not be one of them.
+KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Pokémon Scarlet and Violet, and Pokémon Legends Z-A. It replaces raw tables and mystery IDs with searchable, game-aware editors that show what will be written before anything reaches your mod.
 
 [Download the latest release](https://github.com/KotMatrosk1n/KM-Editor/releases/latest) | [Explore the wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) | [Report an issue](https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose)
 
-## Less Guessing, More Modding
+## Why Modders Use KM Editor
 
-KM Editor gives supported game data an interface built around how modders actually work.
+- Find records through readable names, sprites, selectors, filters, and game-aware labels.
+- Edit with controls built for each game's verified data instead of treating every title as the same format.
+- Review normal changes in one staged plan, with dedicated previews for advanced workflows that need their own write boundary.
+- Keep unfinished work organized through project navigation, record tabs, recents, pins, bookmarks, saved views, notes, and read-only analysis tools.
 
-Depending on the selected game, the editor can work with Pokémon, moves, trainers, items, encounters, raids, gifts, trades, shops, placements, type charts, text, and other game systems. Dedicated tools are also available for randomization, CSV/TSV/JSON imports, mod merging, and supported executable changes.
+Beta Gameplay Settings provides reviewed fixed and native in-game controls on the exact builds listed below. Native packages are update-specific, preserve compatible KM-managed executable output, and block unverified conflicts. See [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings) for supported paths, installation, removal, and important limits.
 
-Useful names, sprites, selectors, filters, and game-aware controls make it easier to find the record you intended to edit without keeping a spreadsheet of internal IDs open on another monitor.
+Exact editor and advanced-tool coverage differs by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) is the authoritative feature guide for the latest public release.
 
-Supported Items, Moves, Pokémon, Trainers, and Text drafts are saved privately with the project and tied to the source revision they came from. Workbench record tabs protect unfinished drafts, while guarded row copy and paste is available for supported Pokémon learnset rows, encounter slots, and trainer party members in each game family.
-
-Game-specific workflows include Sword and Shield Max Lair route planning, Battle Cafe rewards, and independently selectable verified 60FPS animation timing groups; Scarlet and Violet TM Machine controls and existing-cell Habitat Coordinates; and Legends Z-A Trainer Pools, trainer name and class actions, and Fashion Catalog editing. Each workflow exposes only the records, values, and source layouts it can verify.
-
-Beta Gameplay Settings provides exact-build Experience Share, Experience Rate, and bounded Level Cap controls for the supported Sword and Shield 1.3.2, Scarlet and Violet 4.0.0, and Legends Z-A 2.0.2 executables. The static editor writes the reviewed values directly, while KM Gameplay Panel can prepare a reviewed Beta package for changing the same bounded values through a compatible in-game manager. The package does not add a stock game menu or bundle a manager, and it remains Beta while title-specific runtime canaries are completed. Both workflows preserve compatible output, support safe removal, and keep unlisted sources such as candies and scripted awards at their original behavior.
-
-Workbench adds project navigation, recents, pins, bookmarks, saved views, notes, output profiles, and capability discovery. Its read-only tools can search supported Items, Pokémon, and Moves records, compare project layers, study balance data, inspect supported game systems, and compare user-selected dumps without changing game output. Project cache and analysis preparation stay visible as independent progress panels, report completed real work, and do not reset when the other pipeline appears or finishes. Previously opened analysis tools and their internal tabs remain ready while you move through the workspace.
-
-Guided Design builds bounded proposals from exact targets, constraints, pins, and deterministic seeds. Semantic Merge can compare supported Sword and Shield item, Pokémon personal, and move fields from two user-owned mods, resolve field-level choices, and create portable recipes without writing output directly.
-
-Not every game supports the same features because the games themselves do not work the same way. Each family has its own editor coverage, requirements, and output options. The wiki provides the complete breakdown for the latest public release.
-
-## Your Changes Stay Under Your Control
-
-Normal editor changes are staged before they are applied. You can work across multiple editors, open **Changes**, inspect the pending targets, and remove anything you do not want before files are written. Dedicated advanced workflows expose their own preview and apply plans when they cannot safely share the normal edit session.
-
-The Output Safety panel tracks KM-managed output separately from foreign or uncertain files. It provides recovery status, integrity scans, reviewed cleanup, apply history, checkpoints, and safe project relocation while refusing destructive actions when ownership or source state cannot be proven. Ordinary applies and supported advanced workflows coordinate through the same project output boundary.
-
-Your clean Base RomFS and Base ExeFS remain untouched. Generated files are written to a separate Output Root, and supported existing output can be layered over the clean base when you continue an established project.
-
-Project validation checks that the selected game matches the files you provided. Changing the selected game or project paths clears project-scoped editor state. If KM Editor cannot safely handle a file, layout, or write target, it stops and explains the problem instead of guessing.
-
-## Supported Games
-
-| Game family                     | Complete guide                                                                                            |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Pokémon Sword and Shield        | [Sword and Shield Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview)     |
-| Pokémon Scarlet and Violet      | [Scarlet and Violet Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
-| Pokémon Legends Z-A             | [Legends Z-A Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview)               |
-
-Depending on the game and workflow, KM Editor can produce standard LayeredFS output or layouts intended for supported Trinity Mod Manager setups. Keep a separate Output Root for each game.
-
-The wiki is the best place to check exact editor coverage, input requirements, output methods, and known limitations for the latest published version.
-
-## Getting Started
+## Start Building
 
 1. Install the latest Windows release.
 2. Open KM Editor and choose the exact game you want to edit.
 3. Open **Project Setup** and select clean Base RomFS and Base ExeFS folders.
 4. Choose a separate, non-overlapping Output Root for the generated mod.
 5. Select **Validate Paths**.
-6. Open an editor under **Workflows** and save or stage its changes. Advanced tools may provide their own review flow.
-7. For normal editor changes, open **Changes**, review the plan, remove anything you do not want, and apply the output.
+6. Open an editor, save or stage your changes, then review the output plan before applying it.
 
 Optional Scarlet/Violet data support requires an external user-selected dependency folder. Legends Z-A archive-backed editors also require a user-selected support folder. See [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) for the complete path requirements.
 
@@ -73,89 +37,54 @@ KM Editor does not include ROM dumps, RomFS, ExeFS, console keys, or save data. 
 
 Regular users do not need .NET, Node.js, Rust, Git, or a separate backend installation.
 
-## Languages, Updates, and Network Use
+## Three Games, Three Dedicated Toolsets
 
-The interface is available in English, Spanish, French, German, Russian, Ukrainian, and Simplified Chinese.
+| Game family                | Beta Gameplay Settings build | Complete guide                                                                                            |
+| -------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Pokémon Sword and Shield   | 1.3.2                        | [Sword and Shield Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview)     |
+| Pokémon Scarlet and Violet | 4.0.0                        | [Scarlet and Violet Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
+| Pokémon Legends Z-A        | 2.0.2                        | [Legends Z-A Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview)               |
 
-Installed releases can check GitHub for newer stable versions and guide you through supported updates from **Settings**. The Windows setup handles installation, supported updates, repair, and uninstall while clearing rebuildable editor cache without removing user settings unless the user chooses to remove them during uninstall.
+Data models, supported editors, and output rules differ by game. Depending on the workflow, KM Editor can produce standard LayeredFS output or layouts for supported Trinity Mod Manager setups. Keep a separate Output Root for each game.
+
+## Safety for Ongoing Projects
+
+Normal editor changes are staged before they are applied. Open **Changes** to inspect pending targets and remove anything you do not want. Advanced workflows provide their own review and apply plans when they cannot safely share the normal edit session.
+
+Clean Base RomFS and Base ExeFS inputs remain untouched. KM Editor writes to a separate Output Root, tracks KM-managed output separately from foreign or uncertain files, and stops when ownership, source state, or a write target cannot be verified.
+
+## Learn More
+
+| What do you need?              | Start here                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Set up a project               | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup)                              |
+| Learn the editing workflow     | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow)                       |
+| Use Beta Gameplay Settings     | [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings)                     |
+| Explore Workbench tools        | [Workbench](https://github.com/KotMatrosk1n/KM-Editor/wiki/Workbench)                                    |
+| Browse every supported feature | [Wiki Home](https://github.com/KotMatrosk1n/KM-Editor/wiki)                                               |
+| Install or update the editor   | [Installing and Updating](https://github.com/KotMatrosk1n/KM-Editor/wiki/Installing-and-Updating)         |
+| Diagnose a problem             | [Error Codes and Diagnostics](https://github.com/KotMatrosk1n/KM-Editor/wiki/Error-Codes-And-Diagnostics) |
+
+KM Editor is also available on GameBanana for [Sword and Shield](https://gamebanana.com/tools/23044), [Scarlet and Violet](https://gamebanana.com/tools/23103), and [Legends Z-A](https://gamebanana.com/tools/23168).
+
+## Languages and Network Use
+
+The interface is available in English, Spanish, French, German, Russian, Ukrainian, and Simplified Chinese. Installed releases can check GitHub for stable updates, and the Windows setup supports installation, update, repair, and uninstall.
 
 Update checks contact GitHub. If a bundled Pokémon sprite is unavailable, the interface may request a fallback image from Pokémon Showdown. Project files remain local and are not uploaded by either request.
 
-## Guides and Help
-
-| What do you need?               | Start here                                                                                                |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Set up a project                | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup)                              |
-| Learn the editing workflow      | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow)                       |
-| Explore Workbench tools         | [Workbench](https://github.com/KotMatrosk1n/KM-Editor/wiki/Workbench)                                    |
-| Browse every supported feature  | [Wiki Home](https://github.com/KotMatrosk1n/KM-Editor/wiki)                                               |
-| Install or update the editor    | [Installing and Updating](https://github.com/KotMatrosk1n/KM-Editor/wiki/Installing-and-Updating)         |
-| Diagnose a problem              | [Error Codes and Diagnostics](https://github.com/KotMatrosk1n/KM-Editor/wiki/Error-Codes-And-Diagnostics) |
-
-You can also find KM Editor on GameBanana for [Sword and Shield](https://gamebanana.com/tools/23044), [Scarlet and Violet](https://gamebanana.com/tools/23103), and [Legends Z-A](https://gamebanana.com/tools/23168).
-
-## Building from Source
-
-Regular users should install KM Editor from the latest GitHub release. The following setup is only required if you want to work with the source code or create your own build.
-
-Development currently requires:
-
-* Windows 10 or Windows 11 on x64
-* Git
-* .NET SDK 10.0.300 or a later compatible .NET 10 SDK
-* Node.js 24.16.0 or newer
-* pnpm 11.5.2 or newer
-* Rust 1.88.0 or newer with the MSVC toolchain
-* Visual Studio 2022 Build Tools with **Desktop development with C++**
-* A Windows 10 or Windows 11 SDK
-* Microsoft Edge WebView2 Runtime
-
-Clone the repository, install the locked dependencies, and restore the .NET solution:
-
-```powershell
-git clone https://github.com/KotMatrosk1n/KM-Editor.git
-Set-Location .\KM-Editor
-
-pnpm install --frozen-lockfile
-dotnet restore .\KM.Editor.slnx
-```
-
-Start the complete desktop development environment:
-
-```powershell
-pnpm tauri:dev
-```
-
-Build the unbundled desktop executable:
-
-```powershell
-pnpm tauri:build
-```
-
-The branded Windows installer is produced separately by the custom setup driver. See the [Windows Setup Documentation](installer/windows/README.md) and [Release Documentation](docs/releases.md) before attempting installer or release packaging.
-
-Before submitting a change, run the project checks:
-
-```powershell
-pnpm check
-```
-
-The root `package.json` contains the current development and build commands. More information about contributing and verification is available in the [Contributing Guide](CONTRIBUTING.md).
-
 ## Contributing
 
-KM Editor is open source, and contributions are welcome.
+Development requirements, setup commands, interface contracts, and project checks are maintained in the [Contributing Guide](CONTRIBUTING.md). Installer and release packaging have separate [Windows Setup](installer/windows/README.md) and [Release](docs/releases.md) documentation.
 
-Before getting started, read the [Contributing Guide](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), and [Security Policy](SECURITY.md).
+Contributors should also read the [Code of Conduct](CODE_OF_CONDUCT.md) and [Security Policy](SECURITY.md).
 
-Found a bug or have a feature request? [Open an issue](https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose).
+## License and Third-Party Assets
 
-## Third-Party Assets and Project Status
+KM Editor includes Pokémon sprites from Pokémon Showdown's public `gen5` and `ani` directories and may use that service as a missing-sprite fallback. See the [Pokémon Showdown credits](https://pokemonshowdown.com/credits) for contributing artists and upstream sources. These files are excluded from KM Editor's GPL license.
 
-KM Editor includes Pokémon sprite files downloaded from Pokémon Showdown's public `gen5` and `ani` sprite directories and may use that service as a missing-sprite fallback. The [Pokémon Showdown credits](https://pokemonshowdown.com/credits) document contributing artists and upstream sources. These files are excluded from KM Editor's GPL license, and this repository does not grant additional rights to them.
+Trainer party cards use item artwork, classic item sprites, and the `helditem.png` fallback from [PKHeX](https://github.com/kwsch/PKHeX) `PKHeX.Drawing.PokeSprite` resources. Those assets are redistributed under PKHeX's GPL-3.0 license.
 
-Trainer party cards use item artwork, classic item sprites, and the `helditem.png` fallback from the [PKHeX](https://github.com/kwsch/PKHeX) `PKHeX.Drawing.PokeSprite` resources. Those assets are redistributed under PKHeX's GPL-3.0 license.
-
-KM Editor is an unofficial fan-made project and is not affiliated with or endorsed by the games' publishers or developers. All related names, trademarks, and artwork belong to their respective owners.
+KM Editor is an unofficial fan-made project and is not affiliated with or endorsed by the games' publishers or developers. Related names, trademarks, and artwork belong to their respective owners.
 
 KM Editor source code is distributed under the [GPL 3.0 only license](LICENSE). Third-party assets remain subject to their own applicable rights and terms.

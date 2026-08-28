@@ -1,0 +1,95 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project>
+  <UsingTask
+    TaskName="ValidateKmManagedConcurrencyContract"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceFiles ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <ExecutorSourcePath ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var executorPath = Path.GetFullPath(ExecutorSourcePath);
+        const string taskNamespace = @"(?:(?:global\s*::\s*)?System\s*\.\s*Threading\s*\.\s*Tasks\s*\.\s*)?";
+        const string threadingNamespace = @"(?:(?:global\s*::\s*)?System\s*\.\s*Threading\s*\.\s*)?";
+        var rawParallelPattern = new Regex(
+            @"\b" + taskNamespace + @"Parallel\s*\.\s*(?:ForEachAsync|ForAsync|ForEach|For|Invoke)(?:\s*<[^>\r\n]+>)?\s*\(",
+            RegexOptions.CultureInvariant);
+        var unboundedWhenAllPattern = new Regex(
+            @"\b" + taskNamespace + @"Task\s*\.\s*WhenAll(?:\s*<[^>\r\n]+>)?\s*\(",
+            RegexOptions.CultureInvariant);
+        var unmanagedSchedulerPattern = new Regex(
+            @"(?:\b" + taskNamespace + @"Task\s*\.\s*Run(?:\s*<[^>\r\n]+>)?\s*\(|\b"
+            + taskNamespace + @"Task\s*\.\s*Factory\s*\.\s*StartNew(?:\s*<[^>\r\n]+>)?\s*\(|\.\s*AsParallel\s*\(|\b"
+            + threadingNamespace + @"ThreadPool\s*\.\s*(?:QueueUserWorkItem|UnsafeQueueUserWorkItem|RegisterWaitForSingleObject|UnsafeRegisterWaitForSingleObject)(?:\s*<[^>\r\n]+>)?\s*\(|\bnew\s+"
+            + threadingNamespace + @"Thread\s*\()",
+            RegexOptions.CultureInvariant);
+
+        foreach (var sourceFile in SourceFiles)
+        {
+            var sourcePath = Path.GetFullPath(sourceFile.ItemSpec);
+            if (string.Equals(sourcePath, executorPath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var source = File.ReadAllText(sourcePath);
+            if (rawParallelPattern.IsMatch(source))
+            {
+                Log.LogError(
+                    null,
+                    "KMCONCURRENCY001",
+                    null,
+                    sourcePath,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "Raw Parallel execution is not allowed in KM managed source. Classify pure indexed work with KM.Core.Concurrency.BoundedParallel; keep ordered mutations serial.");
+            }
+
+            if (unboundedWhenAllPattern.IsMatch(source))
+            {
+                Log.LogError(
+                    null,
+                    "KMCONCURRENCY002",
+                    null,
+                    sourcePath,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "Unbounded Task.WhenAll is not allowed in KM managed source. Use KM.Core.Concurrency.BoundedParallel or an explicitly bounded ordered workflow.");
+            }
+
+            if (unmanagedSchedulerPattern.IsMatch(source))
+            {
+                Log.LogError(
+                    null,
+                    "KMCONCURRENCY003",
+                    null,
+                    sourcePath,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "Direct scheduler entry points are not allowed in KM managed source. Use KM.Core.Concurrency.BoundedParallel. The sole low-level scheduler exemption is that central executor source; any future exemption must be added there and retain global CPU/memory admission.");
+            }
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target
+    Name="ValidateManagedConcurrencyContract"
+    BeforeTargets="CoreCompile"
+    Condition="Exists('$(MSBuildThisFileDirectory)src/$(MSBuildProjectName)/$(MSBuildProjectName).csproj')">
+    <ValidateKmManagedConcurrencyContract
+      SourceFiles="@(Compile->'%(FullPath)')"
+      ExecutorSourcePath="$(MSBuildThisFileDirectory)src/KM.Core/Concurrency/BoundedParallel.cs" />
+  </Target>
+</Project>

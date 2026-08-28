@@ -8,7 +8,7 @@ using KM.Core.Semantics;
 namespace KM.Tools.Application;
 
 /// <summary>
-/// One immutable, editor-shipped gameplay bundle. Bundle bytes are accepted only
+/// One immutable, KM-generated gameplay bundle. Bundle bytes are accepted only
 /// through application construction and are never supplied by a bridge request.
 /// </summary>
 public sealed class InGameSettingsBundleCatalogEntry
@@ -64,7 +64,7 @@ public sealed class InGameSettingsBundleCatalogEntry
 }
 
 /// <summary>
-/// Immutable inventory of editor-shipped bundles. The production default is empty.
+/// Immutable inventory of KM-generated bundles. The production default is empty.
 /// Exact authorization is enforced independently by GameplaySettingsBundleAuthority.
 /// </summary>
 public sealed class InGameSettingsBundleCatalog

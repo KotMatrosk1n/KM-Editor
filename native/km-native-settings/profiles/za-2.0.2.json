@@ -1,0 +1,72 @@
+{
+  "game": "Pokemon Legends Z-A",
+  "version": "2.0.2",
+  "titleId": "0100F43008C44000",
+  "buildId": "B1F12FD919EAE86AB8A978317677E64BCE443D1F000000000000000000000000",
+  "mainNpdmSha256": "9960D4579CB8F8AEDFAC6E51D8452E31C5ACDD0E39308CFC0D4A42955D956058",
+  "managedTextSize": "0x03164000",
+  "roOffset": "0x03164000",
+  "dataOffset": "0x03BC2000",
+  "journal": "sd:/config/km-editor/gameplay-settings/0100F43008C44000/settings.bin",
+  "stockPage": {
+    "category": 2,
+    "stockRows": 3,
+    "managedRows": 6,
+    "hooks": {
+      "reset": "0x02C7F73C",
+      "count": "0x02C7F778",
+      "descriptor": "0x02C80230",
+      "stepRight": "0x02C8063C",
+      "apply": "0x02C806DC",
+      "refreshRow": "0x02C80708",
+      "stepLeft": "0x02C80884",
+      "backBody": "0x02C8219C",
+      "renderRow": "0x02C83760",
+      "renderDescription": "0x02C83A94"
+    },
+    "rows": [
+      { "index": 3, "id": "experience-share", "widget": "stock-toggle" },
+      { "index": 4, "id": "experience-rate", "widget": "stock-slider-with-exact-value-title", "mapping": "0..50 => 0%..500% in 10% steps" },
+      { "index": 5, "id": "level-cap", "widget": "stock-slider-with-exact-value-title", "mapping": "0 => Off; 1..100 => levels 1..100" }
+    ]
+  },
+  "romfs": {
+    "stockUi": {
+      "path": "ui/data/option/option_gamesetting_00.arc",
+      "sha256": "64CA9FCCF4BF884910E4842F8D53B8E97209C9836FC4D17968359D2005BA9687",
+      "policy": "identity-check and reuse; do not emit"
+    },
+    "messageRoot": "ik_message/dat/{language}/common/option",
+    "tableSha256": "33CD1795B7DFABE1877EB2C3F256B722889244C5EE1423F9C8644FFBFAC825EB",
+    "dataSha256": {
+      "English": "18930CF35358FD7AFEF07BD9FE97359C159608C669B4315B1D54E716A70D9EC5",
+      "Spanish": "1555379CBA8B53BA0EB5C7F686B59A176A5CCEBB1A7AAB26C83FD5071E81E753",
+      "French": "F329264B0EC2536A9F4616BBBF5FBA5C7453596F36FD2C4E1DBD6DE6580C2EBD",
+      "German": "675FBA46BB574494A3C84CE21E863ACCC728D666C30C2598D703B493066B1E4D",
+      "Italian": "21EA3BD54DB32796B688CAFBB6F8E6BB2F172FA45A83BCC78B0327862DADE680",
+      "JPN": "61622137640382DC118457D8FDC087BBD1D033B58DE62F2DB1C43F838EE7F43A",
+      "JPN_KANJI": "61622137640382DC118457D8FDC087BBD1D033B58DE62F2DB1C43F838EE7F43A",
+      "Korean": "52D6CFCD2CDA988ACA2D3FBB81EE8A80E6C350ECC789F3DE454E82BCEB9A1461",
+      "LATAM": "E3C57C41263D70362BDC8F54FDEE7E2AECCF8AE5DE8358CC1BCC2CD52532EECE",
+      "Simp_Chinese": "3648216CE167553984CD4E56D004E1100CDA7A45DBA4D13134CB615A9E7C463D",
+      "Trad_Chinese": "6E00F4C5E3D7A437E9E027AE623C60A495348707DD31602A72FDBBFAFA87DDCF"
+    },
+    "outputs": "22 localized option.dat/option.tbl files plus arc/data.trpfd",
+    "inverse": "delete all 160 KM keys in reverse order and require exact source bytes"
+  },
+  "gameplay": {
+    "append": { "offset": "0x03163F70", "length": "0x90" },
+    "shareCalls": ["0x009A3FF4", "0x00D735C0"],
+    "rateSites": ["0x009A4174", "0x00D73744"],
+    "awardBuilder": "0x009A4A70",
+    "speciesGetter": "0x00E49940",
+    "formGetter": "0x00E4D190",
+    "currentExperienceGetter": "0x00E49F60",
+    "minimumExperienceGetter": "0x00CECB8C"
+  },
+  "activation": {
+    "symbol": "km_try_activate_za_202",
+    "policy": "one fail-closed exact-preimage transaction during serialized subsdk startup, using authenticated journal values or a retail-equivalent snapshot",
+    "filesystemRetry": "unbounded one-second low-priority data-only retry; no executable mutation occurs after startup"
+  }
+}

@@ -52,14 +52,9 @@ public static class TrainerPendingEditCanonicalizer
             pair => pair.Key,
             pair => CanonicalizeSlot(
                 pair.Value,
-                resolveSourceTrainerSlots(pair.Key.TrainerId)![pair.Key.Slot],
                 speciesIdField,
                 formField,
                 resolveSourceFieldValue));
-        RemoveUnreachableNewSlots(
-            normalizedGroups,
-            speciesIdField,
-            resolveSourceTrainerSlots);
         var pendingEdits = new List<PendingEdit>(session.PendingEdits.Count);
 
         foreach (var candidate in indexedEdits)
@@ -87,7 +82,6 @@ public static class TrainerPendingEditCanonicalizer
 
     private static IReadOnlyList<PendingEdit> CanonicalizeSlot(
         IReadOnlyList<IndexedPendingEdit> candidates,
-        bool sourceOccupied,
         string speciesIdField,
         string formField,
         Func<PendingEdit, int?> resolveSourceFieldValue)
@@ -102,80 +96,21 @@ public static class TrainerPendingEditCanonicalizer
             candidate.Edit.Field,
             speciesIdField,
             StringComparison.Ordinal));
-        var hasValidProjectedSpecies = speciesEdit is null
-            ? sourceOccupied
-            : int.TryParse(
+        var explicitlyClearsSpecies = speciesEdit is not null
+            && int.TryParse(
                 speciesEdit.Edit.NewValue,
                 NumberStyles.AllowLeadingSign,
                 CultureInfo.InvariantCulture,
                 out var speciesId)
-                ? speciesId > 0
-                : sourceOccupied;
+            && speciesId == 0;
 
         return latestByField
-            .Where(candidate => hasValidProjectedSpecies
+            .Where(candidate => !explicitlyClearsSpecies
                 || string.Equals(candidate.Edit.Field, speciesIdField, StringComparison.Ordinal))
             .OrderBy(candidate => GetPriority(candidate.Edit.Field, speciesIdField, formField))
             .ThenBy(candidate => candidate.Index)
             .Select(candidate => candidate.Edit)
             .ToArray();
-    }
-
-    private static void RemoveUnreachableNewSlots(
-        IDictionary<TrainerPokemonSlotIdentity, IReadOnlyList<PendingEdit>> normalizedGroups,
-        string speciesIdField,
-        Func<int, IReadOnlyDictionary<int, bool>?> resolveSourceTrainerSlots)
-    {
-        foreach (var trainerId in normalizedGroups.Keys.Select(identity => identity.TrainerId).Distinct())
-        {
-            var sourceSlots = resolveSourceTrainerSlots(trainerId);
-            if (sourceSlots is null)
-            {
-                continue;
-            }
-
-            var hasProjectedGap = false;
-            foreach (var sourceSlot in sourceSlots.OrderBy(pair => pair.Key))
-            {
-                var identity = new TrainerPokemonSlotIdentity(trainerId, sourceSlot.Key);
-                normalizedGroups.TryGetValue(identity, out var edits);
-                var projectedOccupied = ResolveProjectedOccupancy(
-                    sourceSlot.Value,
-                    edits,
-                    speciesIdField);
-
-                if (!sourceSlot.Value && projectedOccupied && hasProjectedGap && edits is not null)
-                {
-                    normalizedGroups[identity] = Array.Empty<PendingEdit>();
-                    projectedOccupied = false;
-                }
-
-                if (!projectedOccupied)
-                {
-                    hasProjectedGap = true;
-                }
-            }
-        }
-    }
-
-    private static bool ResolveProjectedOccupancy(
-        bool sourceOccupied,
-        IReadOnlyList<PendingEdit>? edits,
-        string speciesIdField)
-    {
-        var speciesEdit = edits?.LastOrDefault(edit => string.Equals(
-            edit.Field,
-            speciesIdField,
-            StringComparison.Ordinal));
-        return speciesEdit is null
-            ? sourceOccupied
-            : int.TryParse(
-                speciesEdit.NewValue,
-                NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture,
-                out var speciesId)
-                ? speciesId > 0
-                : sourceOccupied;
     }
 
     private static bool IsResolvablePokemonEdit(

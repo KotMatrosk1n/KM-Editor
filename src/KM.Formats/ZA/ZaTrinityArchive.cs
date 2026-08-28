@@ -110,6 +110,28 @@ public sealed class ZaTrinityArchive : IDisposable
         return BuildIndexFromFiles(descriptorPath, trpfsPath, maximumIndexBytes: null);
     }
 
+    public static ZaTrinityArchiveIndex BuildIndex(string romFsRoot, int maximumIndexBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(romFsRoot);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumIndexBytes);
+
+        var normalizedRoot = ResolveRomFsRoot(romFsRoot);
+        var descriptorPath = Path.Combine(normalizedRoot, DescriptorRelativePath);
+        var trpfsPath = Path.Combine(normalizedRoot, FileSystemRelativePath);
+
+        if (!File.Exists(descriptorPath))
+        {
+            throw new FileNotFoundException("Pokemon Legends Z-A Trinity descriptor was not found.", descriptorPath);
+        }
+
+        if (!File.Exists(trpfsPath))
+        {
+            throw new FileNotFoundException("Pokemon Legends Z-A Trinity file system was not found.", trpfsPath);
+        }
+
+        return BuildIndexFromFiles(descriptorPath, trpfsPath, maximumIndexBytes);
+    }
+
     public bool ContainsFile(string virtualPath)
     {
         ObjectDisposedException.ThrowIf(disposed, this);

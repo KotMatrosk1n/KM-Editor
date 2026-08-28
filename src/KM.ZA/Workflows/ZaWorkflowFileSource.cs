@@ -32,6 +32,8 @@ internal sealed class ZaWorkflowFileSource
     private static DeferredOutputBatch? activeDeferredOutputBatch;
     [ThreadStatic]
     private static int freshReadScopeDepth;
+
+    internal static bool HasActiveDeferredOutputBatch => activeDeferredOutputBatch is not null;
     // All top-level RomFS roots emitted by current Z-A workflows, plus the Trinity descriptor root.
     private static readonly string[] KnownBareTrinityModManagerRootDirectories =
     [
@@ -49,6 +51,8 @@ internal sealed class ZaWorkflowFileSource
     private readonly int? maximumReadBytes;
     private readonly int? maximumReadCount;
     private readonly long? maximumAggregateReadBytes;
+    private readonly FreshArchiveSource? freshBaseArchiveSource;
+    private readonly FreshArchiveSource? freshOutputArchiveSource;
     private readonly Dictionary<BoundedReadMemoKey, BoundedReadMemoEntry> boundedReadMemo = [];
     private int boundedReadCount;
     private long boundedReadBytes;
@@ -59,6 +63,25 @@ internal sealed class ZaWorkflowFileSource
         int? maximumReadBytes = null,
         int? maximumReadCount = null,
         long? maximumAggregateReadBytes = null)
+        : this(
+            cacheManager,
+            bypassReusableBaseCache,
+            maximumReadBytes,
+            maximumReadCount,
+            maximumAggregateReadBytes,
+            freshBaseArchiveSource: null,
+            freshOutputArchiveSource: null)
+    {
+    }
+
+    private ZaWorkflowFileSource(
+        ZaCacheManager? cacheManager,
+        bool bypassReusableBaseCache,
+        int? maximumReadBytes,
+        int? maximumReadCount,
+        long? maximumAggregateReadBytes,
+        FreshArchiveSource? freshBaseArchiveSource,
+        FreshArchiveSource? freshOutputArchiveSource)
     {
         if (maximumReadBytes is <= 0
             || maximumReadCount is <= 0
@@ -74,6 +97,62 @@ internal sealed class ZaWorkflowFileSource
         this.maximumReadBytes = maximumReadBytes;
         this.maximumReadCount = maximumReadCount;
         this.maximumAggregateReadBytes = maximumAggregateReadBytes;
+        this.freshBaseArchiveSource = freshBaseArchiveSource;
+        this.freshOutputArchiveSource = freshOutputArchiveSource;
+    }
+
+    internal static FreshSemanticReaderPool CreateFreshSemanticReaderPool(
+        ZaCacheManager cacheManager,
+        ProjectPaths paths,
+        int maximumReadBytes,
+        int readerCount,
+        int? maximumReadCount = null,
+        long? maximumAggregateReadBytes = null)
+    {
+        ArgumentNullException.ThrowIfNull(cacheManager);
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumReadBytes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(readerCount);
+        if (maximumReadCount is <= 0
+            || maximumAggregateReadBytes is <= 0
+            || (maximumReadCount is null) != (maximumAggregateReadBytes is null))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumReadCount),
+                "The retained reader budget is invalid.");
+        }
+
+        var archiveSnapshots = new Dictionary<string, FreshArchiveSnapshot>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var baseSnapshot = CaptureFreshArchiveSnapshot(paths.BaseRomFsPath, archiveSnapshots);
+        var outputSnapshot = CaptureFreshArchiveSnapshot(paths.OutputRootPath, archiveSnapshots);
+        var baseSources = OpenFreshArchiveSources(
+            baseSnapshot,
+            paths.PokemonLegendsZASupportFolderPath,
+            readerCount);
+        var outputSources = OpenFreshArchiveSources(
+            outputSnapshot,
+            paths.PokemonLegendsZASupportFolderPath,
+            readerCount);
+        var readers = new ZaWorkflowFileSource[readerCount];
+        for (var index = 0; index < readers.Length; index++)
+        {
+            readers[index] = new ZaWorkflowFileSource(
+                cacheManager,
+                bypassReusableBaseCache: true,
+                maximumReadBytes,
+                maximumReadCount,
+                maximumAggregateReadBytes,
+                baseSources[index],
+                outputSources[index]);
+        }
+
+        return new FreshSemanticReaderPool(
+            readers,
+            baseSources,
+            outputSources,
+            baseSnapshot.IndexBuildCount,
+            outputSnapshot.IndexBuildCount);
     }
 
     internal int? BoundedTableRecordLimit => maximumReadBytes is null
@@ -500,12 +579,50 @@ internal sealed class ZaWorkflowFileSource
         ProjectPaths paths,
         string virtualRomFsPath)
     {
+        return ReadCurrentSourceFreshCore(
+            paths,
+            virtualRomFsPath,
+            observedBaseBytes: null,
+            useObservedBase: false);
+    }
+
+    internal (byte[] Bytes, ProjectFileLayer Layer) ReadCurrentSourceFreshUsingObservedBase(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        byte[]? observedBaseBytes)
+    {
+        return ReadCurrentSourceFreshCore(
+            paths,
+            virtualRomFsPath,
+            observedBaseBytes,
+            useObservedBase: true);
+    }
+
+    private (byte[] Bytes, ProjectFileLayer Layer) ReadCurrentSourceFreshCore(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        byte[]? observedBaseBytes,
+        bool useObservedBase)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
 
         var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
         var relativePath = ToRelativePath(normalizedVirtualPath);
-        if (!string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        var suppressLayeredOutput = false;
+        if (activeDeferredOutputBatch is { IsCommitting: false } deferredBatch
+            && deferredBatch.Matches(paths)
+            && deferredBatch.TryGetRomFsMutation(normalizedVirtualPath, out var deferredBytes))
+        {
+            if (deferredBytes is not null)
+            {
+                return (deferredBytes.ToArray(), ProjectFileLayer.Layered);
+            }
+
+            suppressLayeredOutput = true;
+        }
+
+        if (!suppressLayeredOutput && !string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             var trinityModManagerPath = CombineGraphPath(paths.OutputRootPath, normalizedVirtualPath);
             var isolatedPath = CombineGraphPath(
@@ -531,6 +648,17 @@ internal sealed class ZaWorkflowFileSource
             {
                 return (outputBytes, ProjectFileLayer.Layered);
             }
+        }
+
+        if (useObservedBase)
+        {
+            return observedBaseBytes is not null
+                ? (observedBaseBytes, ProjectFileLayer.Base)
+                : throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Base,
+                    state: null,
+                    exception: new FileNotFoundException());
         }
 
         return (ReadBaseBytesFresh(paths, normalizedVirtualPath), ProjectFileLayer.Base);
@@ -568,6 +696,16 @@ internal sealed class ZaWorkflowFileSource
 
         try
         {
+            if (freshBaseArchiveSource is not null)
+            {
+                freshBaseArchiveSource.Failure?.Throw();
+                var retainedArchive = freshBaseArchiveSource.Archive
+                    ?? throw new FileNotFoundException();
+                return maximumReadBytes is { } retainedLimit
+                    ? retainedArchive.ReadFile(normalizedVirtualPath, retainedLimit)
+                    : retainedArchive.ReadFile(normalizedVirtualPath);
+            }
+
             using var archive = OpenArchive(
                 paths.BaseRomFsPath,
                 paths.PokemonLegendsZASupportFolderPath);
@@ -2388,6 +2526,19 @@ internal sealed class ZaWorkflowFileSource
                 return false;
             }
 
+            if (freshOutputArchiveSource is not null)
+            {
+                freshOutputArchiveSource.Failure?.Throw();
+                if (freshOutputArchiveSource.Archive is not { } retainedArchive)
+                {
+                    return false;
+                }
+
+                return maximumReadBytes is { } retainedLimit
+                    ? retainedArchive.TryReadFile(virtualPath, retainedLimit, out bytes)
+                    : retainedArchive.TryReadFile(virtualPath, out bytes);
+            }
+
             if (!HasTrinityArchive(outputRootPath))
             {
                 return false;
@@ -2495,6 +2646,121 @@ internal sealed class ZaWorkflowFileSource
                 maximumPackBytes: MaximumBoundedArchivePackBytes);
     }
 
+    private static FreshArchiveSnapshot CaptureFreshArchiveSnapshot(
+        string? rootPath,
+        IDictionary<string, FreshArchiveSnapshot> archiveSnapshots)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return FreshArchiveSnapshot.Missing;
+        }
+
+        string? archiveRootPath = null;
+        var indexBuildAttempted = false;
+        try
+        {
+            archiveRootPath = ResolveFreshArchiveRootPath(rootPath);
+            if (archiveRootPath is null)
+            {
+                return FreshArchiveSnapshot.Missing;
+            }
+
+            if (archiveSnapshots.TryGetValue(archiveRootPath, out var existing))
+            {
+                return existing with { IndexBuildCount = 0 };
+            }
+
+            indexBuildAttempted = true;
+            var snapshot = new FreshArchiveSnapshot(
+                archiveRootPath,
+                ZaTrinityArchive.BuildIndex(archiveRootPath, MaximumBoundedArchiveIndexBytes),
+                Failure: null,
+                IndexBuildCount: 1);
+            archiveSnapshots.Add(archiveRootPath, snapshot);
+            return snapshot;
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            var snapshot = new FreshArchiveSnapshot(
+                archiveRootPath ?? rootPath,
+                Index: null,
+                ExceptionDispatchInfo.Capture(exception),
+                IndexBuildCount: indexBuildAttempted ? 1 : 0);
+            if (archiveRootPath is not null)
+            {
+                archiveSnapshots[archiveRootPath] = snapshot;
+            }
+
+            return snapshot;
+        }
+    }
+
+    private static string? ResolveFreshArchiveRootPath(string rootPath)
+    {
+        var fullRootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+        if (HasTrinityArchiveAt(fullRootPath))
+        {
+            return fullRootPath;
+        }
+
+        var nestedRomFsPath = Path.Combine(fullRootPath, "romfs");
+        return HasTrinityArchiveAt(nestedRomFsPath)
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(nestedRomFsPath))
+            : null;
+    }
+
+    private static FreshArchiveSource[] OpenFreshArchiveSources(
+        FreshArchiveSnapshot snapshot,
+        string? supportFolderPath,
+        int readerCount)
+    {
+        if (snapshot.Failure is not null)
+        {
+            return Enumerable.Repeat(
+                    new FreshArchiveSource(Archive: null, snapshot.Failure),
+                    readerCount)
+                .ToArray();
+        }
+
+        if (snapshot.Index is null || string.IsNullOrWhiteSpace(snapshot.RootPath))
+        {
+            return Enumerable.Repeat(FreshArchiveSource.Missing, readerCount).ToArray();
+        }
+
+        var archives = new ZaTrinityArchive?[readerCount];
+        try
+        {
+            for (var index = 0; index < archives.Length; index++)
+            {
+                archives[index] = ZaTrinityArchive.Open(
+                    snapshot.RootPath,
+                    supportFolderPath,
+                    index: snapshot.Index,
+                    maximumIndexBytes: MaximumBoundedArchiveIndexBytes,
+                    maximumPackBytes: MaximumBoundedArchivePackBytes);
+            }
+
+            return archives
+                .Select(static archive => new FreshArchiveSource(
+                    archive ?? throw new InvalidOperationException("A retained Trinity reader was not opened."),
+                    Failure: null))
+                .ToArray();
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            foreach (var archive in archives)
+            {
+                archive?.Dispose();
+            }
+
+            var failure = ExceptionDispatchInfo.Capture(exception);
+            return Enumerable.Repeat(
+                    new FreshArchiveSource(Archive: null, failure),
+                    readerCount)
+                .ToArray();
+        }
+    }
+
     private static bool FileExistsWithContext(
         string path,
         string relativePath,
@@ -2565,6 +2831,79 @@ internal sealed class ZaWorkflowFileSource
     {
         return FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfd"))
             && FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfs"));
+    }
+
+    private sealed record FreshArchiveSnapshot(
+        string? RootPath,
+        ZaTrinityArchiveIndex? Index,
+        ExceptionDispatchInfo? Failure,
+        int IndexBuildCount)
+    {
+        public static FreshArchiveSnapshot Missing { get; } = new(
+            RootPath: null,
+            Index: null,
+            Failure: null,
+            IndexBuildCount: 0);
+    }
+
+    internal sealed record FreshArchiveSource(
+        ZaTrinityArchive? Archive,
+        ExceptionDispatchInfo? Failure)
+    {
+        public static FreshArchiveSource Missing { get; } = new(
+            Archive: null,
+            Failure: null);
+    }
+
+    internal sealed class FreshSemanticReaderPool : IDisposable
+    {
+        private readonly IReadOnlyList<FreshArchiveSource> baseSources;
+        private readonly IReadOnlyList<FreshArchiveSource> outputSources;
+        private bool disposed;
+
+        internal FreshSemanticReaderPool(
+            IReadOnlyList<ZaWorkflowFileSource> readers,
+            IReadOnlyList<FreshArchiveSource> baseSources,
+            IReadOnlyList<FreshArchiveSource> outputSources,
+            int baseArchiveIndexBuildCount,
+            int outputArchiveIndexBuildCount)
+        {
+            Readers = readers;
+            this.baseSources = baseSources;
+            this.outputSources = outputSources;
+            BaseArchiveIndexBuildCount = baseArchiveIndexBuildCount;
+            OutputArchiveIndexBuildCount = outputArchiveIndexBuildCount;
+        }
+
+        internal IReadOnlyList<ZaWorkflowFileSource> Readers { get; }
+
+        internal int BaseArchiveIndexBuildCount { get; }
+
+        internal int OutputArchiveIndexBuildCount { get; }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            ExceptionDispatchInfo? firstFailure = null;
+            foreach (var source in baseSources.Concat(outputSources))
+            {
+                try
+                {
+                    source.Archive?.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    firstFailure ??= ExceptionDispatchInfo.Capture(exception);
+                }
+            }
+
+            disposed = true;
+            firstFailure?.Throw();
+        }
     }
 
     internal sealed class DeferredOutputBatch : IDisposable

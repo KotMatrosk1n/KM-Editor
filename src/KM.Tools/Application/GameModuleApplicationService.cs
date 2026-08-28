@@ -148,6 +148,7 @@ public sealed class GameModuleApplicationService
 
         var semantic = semanticExploreService.ReadCapabilities(
             new ReadSemanticCapabilitiesRequest(request.Scope));
+        var sourceCacheIdentity = semanticExploreService.ReadSourceCacheIdentity(request.Scope);
         var declaredCapabilities = GameModuleProviders.Capabilities(semantic.Revision.GameFamily);
         var resolvedByModule = new Dictionary<GameModuleDto, GameModuleCapabilityDto>();
         var pendingCacheItems = new List<(DerivedIndexCacheKey Key, DerivedIndexCacheItem<GameModuleData> Item)>();
@@ -155,7 +156,11 @@ public sealed class GameModuleApplicationService
         var missing = new List<(GameModuleCapabilityDto Capability, DerivedIndexCacheKey Key)>();
         foreach (var declared in declaredCapabilities.Where(capability => capability.CanQuery))
         {
-            var key = CacheKey(semantic.Revision, SemanticSourceLayerKindDto.Layered, declared.Module);
+            var key = CacheKey(
+                semantic.Revision,
+                SemanticSourceLayerKindDto.Layered,
+                declared.Module,
+                sourceCacheIdentity);
             if (cache.TryGet(key, out var cached))
             {
                 resolvedByModule.Add(declared.Module, cached.Capability);
@@ -309,7 +314,12 @@ public sealed class GameModuleApplicationService
                 SemanticExploreFailureKind.Unsupported);
         var queryFingerprint = QueryFingerprint(request, snapshot);
         var offset = DecodeCursor(request.Cursor, queryFingerprint);
-        var key = CacheKey(semantic.Revision, request.Layer, request.Module);
+        var sourceCacheIdentity = semanticExploreService.ReadSourceCacheIdentity(request.Scope);
+        var key = CacheKey(
+            semantic.Revision,
+            request.Layer,
+            request.Module,
+            sourceCacheIdentity);
 
         GameModuleData data;
         DerivedIndexCacheItem<GameModuleData>? pendingCacheItem = null;
@@ -652,11 +662,41 @@ public sealed class GameModuleApplicationService
     private static DerivedIndexCacheKey CacheKey(
         SemanticProjectRevisionDto revision,
         SemanticSourceLayerKindDto layer,
-        GameModuleDto module)
+        GameModuleDto module,
+        string sourceCacheIdentity)
     {
         return new DerivedIndexCacheKey(
-            ToCoreRevision(revision),
+            ToCoreSourceRevision(revision, layer, sourceCacheIdentity),
             $"{CacheCallerKeyPrefix}:{layer}:{module}");
+    }
+
+    private static ProjectSourceRevision ToCoreSourceRevision(
+        SemanticProjectRevisionDto revision,
+        SemanticSourceLayerKindDto sourceLayer,
+        string sourceCacheIdentity)
+    {
+        var family = revision.GameFamily switch
+        {
+            SemanticGameFamilyDto.SwordShield => GameFamily.SwordShield,
+            SemanticGameFamilyDto.ScarletViolet => GameFamily.ScarletViolet,
+            SemanticGameFamilyDto.LegendsZA => GameFamily.LegendsZA,
+            _ => throw new ArgumentOutOfRangeException(nameof(revision), revision.GameFamily, null),
+        };
+        var canonical = string.Join(
+            '\n',
+            "game-module-source-revision-v1",
+            revision.ProjectId,
+            revision.GameFamily.ToString(),
+            sourceLayer.ToString(),
+            sourceCacheIdentity);
+        var fingerprint = Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        var generation = Convert.ToInt64(fingerprint[..15], 16);
+        return new ProjectSourceRevision(
+            new ProjectId(revision.ProjectId),
+            family,
+            generation,
+            fingerprint);
     }
 
     private static bool IsReadinessFailure(Exception exception)
@@ -865,19 +905,4 @@ public sealed class GameModuleApplicationService
         }
     }
 
-    private static ProjectSourceRevision ToCoreRevision(SemanticProjectRevisionDto revision)
-    {
-        var family = revision.GameFamily switch
-        {
-            SemanticGameFamilyDto.SwordShield => GameFamily.SwordShield,
-            SemanticGameFamilyDto.ScarletViolet => GameFamily.ScarletViolet,
-            SemanticGameFamilyDto.LegendsZA => GameFamily.LegendsZA,
-            _ => throw new ArgumentOutOfRangeException(nameof(revision), revision.GameFamily, null),
-        };
-        return new ProjectSourceRevision(
-            new ProjectId(revision.ProjectId),
-            family,
-            long.Parse(revision.Generation, NumberStyles.None, CultureInfo.InvariantCulture),
-            revision.Fingerprint);
-    }
 }

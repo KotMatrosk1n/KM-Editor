@@ -20,6 +20,14 @@ function ruleBody(css, selector) {
   return css.slice(bodyStart, end);
 }
 
+function functionBody(source, name) {
+  const marker = `function ${name}(`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `Missing focused editor helper: ${name}`);
+  const nextFunction = source.indexOf('\nfunction ', start + marker.length);
+  return source.slice(start, nextFunction === -1 ? source.length : nextFunction);
+}
+
 const focusedEditors = [
   {
     label: 'Trainer Pools',
@@ -106,4 +114,45 @@ assert.match(
   fashionStyles,
   /@container km-focused-editor \(max-width: 56rem\)[\s\S]*?\.fashion-catalog-editor-grid/,
   'Fashion Catalog must respond to its actual editor width.'
+);
+
+const fashionSource = focusedEditors.find((editor) => editor.label === 'Fashion Catalog').source;
+const fashionSearchText = functionBody(fashionSource, 'getSearchText');
+const fashionRowSubtitle = functionBody(fashionSource, 'getRowSubtitle');
+const fashionFieldDefinitions = functionBody(fashionSource, 'getFieldDefinitions');
+assert.match(
+  fashionSearchText,
+  /'modelVariant' in row[\s\S]*?row\.modelVariant/,
+  'Fashion Catalog dress-up model variants must remain searchable.'
+);
+assert.match(
+  fashionFieldDefinitions,
+  /\['modelVariant', 'option'\]/,
+  'Fashion Catalog dress-up model variants must remain editable.'
+);
+assert.match(
+  fashionRowSubtitle,
+  /if \('modelVariant' in row\) \{\s*return null;\s*\}/,
+  'Fashion Catalog dress-up rows must suppress raw model variants in browser subtitles.'
+);
+assert.doesNotMatch(
+  fashionRowSubtitle,
+  /row\.modelVariant/,
+  'Fashion Catalog browser subtitles must not expose raw dress-up model variants.'
+);
+for (const usefulSubtitle of [
+  /row\.shopIds\.join/,
+  /return row\.modelPart/,
+  /row\.labelKey \?\? row\.colorValue/
+]) {
+  assert.match(
+    fashionRowSubtitle,
+    usefulSubtitle,
+    'Fashion Catalog must retain useful subtitles for non-dress-up-item rows.'
+  );
+}
+assert.match(
+  fashionSource,
+  /\{subtitle \? <span>\{subtitle\}<\/span> : null\}/,
+  'Fashion Catalog must omit the subtitle element when a row has no useful subtitle.'
 );

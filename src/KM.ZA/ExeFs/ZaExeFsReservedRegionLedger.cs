@@ -36,11 +36,57 @@ internal sealed record ZaExeFsReservedRegion(
 internal static class ZaExeFsReservedRegionLedger
 {
     public const string OwnerDexLayout = "Dex Layout";
+    public const string OwnerNativeGameplayMenu = "Native Gameplay Menu";
     public const string OwnerTypeChart = "Type Chart";
     public const string ExeFsMainPath = "exefs/main";
 
     private static readonly ZaExeFsReservedRegion[] regions =
     [
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-share-hook-a",
+            ExeFsMainPath,
+            "main.text",
+            0x009A3FF4,
+            0x04,
+            "Native gameplay menu EXP Share battle hook A",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-award-hook-a",
+            ExeFsMainPath,
+            "main.text",
+            0x009A4174,
+            0x0C,
+            "Native gameplay menu EXP award hook A",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-share-hook-b",
+            ExeFsMainPath,
+            "main.text",
+            0x00D735C0,
+            0x04,
+            "Native gameplay menu EXP Share battle hook B",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-award-hook-b",
+            ExeFsMainPath,
+            "main.text",
+            0x00D73744,
+            0x0C,
+            "Native gameplay menu EXP award hook B",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-runtime-scaffold",
+            ExeFsMainPath,
+            "main.text",
+            0x03163F70,
+            0x90,
+            "Native gameplay menu runtime scaffold",
+            "do-not-overwrite"),
         new(
             OwnerDexLayout,
             "dex-layout-za",

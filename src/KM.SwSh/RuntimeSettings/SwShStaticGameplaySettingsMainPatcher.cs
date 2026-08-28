@@ -48,6 +48,22 @@ public sealed record SwShStaticGameplaySettingsMainAnalysis(
     byte LevelCap,
     IReadOnlyList<SwShStaticGameplaySettingsFeatureAssessment> Features);
 
+public sealed record SwShRuntimeManagedGameplayMainLayout(
+    ProjectGame Game,
+    int ShareHookOffset,
+    uint ShareRetailInstruction,
+    int ShareBridgeOffset,
+    int ShareTargetSlotOffset,
+    int RateHookOffset,
+    uint RateRetailInstruction,
+    int RateBridgeOffset,
+    int RateTargetSlotOffset,
+    int LevelCapHookOffset,
+    uint LevelCapRetailInstruction,
+    int LevelCapBridgeOffset,
+    int LevelCapTargetSlotOffset,
+    IReadOnlyList<int> ImmutableBridgeCaveOffsets);
+
 /// <summary>
 /// Applies exact-build, reversible Sword/Shield 1.3.2 static gameplay patches.
 /// EXP Share, EXP rate, and the bounded level cap affect the verified battle/catch
@@ -94,6 +110,17 @@ public static class SwShStaticGameplaySettingsMainPatcher
     private const int ZeroRateChunkCount = 1;
     private const int LevelCapProgramChunkCount = 17;
     private const int CodeCaveSearchStart = 0x008A0000;
+
+    // Six exact base-zero, ledger-unclaimed caves are converted to a unique
+    // three-NOP scaffold in the derived main. At process startup the guest
+    // module consumes them once as three immutable code bridges and three
+    // immutable absolute-target slots. No setting value is encoded here.
+    private const int RuntimeShareBridgeOffset = 0x008A0294;
+    private const int RuntimeShareTargetSlotOffset = 0x008A0FD4;
+    private const int RuntimeRateBridgeOffset = 0x008A1314;
+    private const int RuntimeRateTargetSlotOffset = 0x008A1534;
+    private const int RuntimeLevelCapBridgeOffset = 0x008A1544;
+    private const int RuntimeLevelCapTargetSlotOffset = 0x008A1B34;
 
     private const uint VanillaShareInstruction = 0x320003E0; // ORR W0, WZR, #1
     private const uint DisabledShareInstruction = 0x2A1F03E0; // MOV W0, WZR
@@ -378,6 +405,152 @@ public static class SwShStaticGameplaySettingsMainPatcher
                 .Concat(newLevelCapCaves)
                 .ToHashSet());
         return output;
+    }
+
+    /// <summary>
+    /// Derives the inert Sword/Shield executable scaffold used by KM's native
+    /// settings page. Only six exact base-zero caves are reserved with a unique
+    /// NOP sentinel. All retail gameplay instructions remain byte-for-byte
+    /// unchanged until the guest module performs its one serialized startup
+    /// transaction. A dormant or rejected guest runtime is therefore retail.
+    /// </summary>
+    public static (byte[] Main, SwShRuntimeManagedGameplayMainLayout Layout)
+        BuildRuntimeManaged(
+            byte[] baseMainBytes,
+            ProjectGame expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        return BuildRuntimeManaged(
+            baseMainBytes,
+            baseMainBytes,
+            expectedGame);
+    }
+
+    /// <summary>
+    /// Composes the inert native-settings scaffold onto a reviewed executable
+    /// while preserving every current executable byte outside KM's exact
+    /// runtime-owned caves. The selected Base executable remains the authority
+    /// for the supported build, retail hook preimages, and vacant cave bytes.
+    /// </summary>
+    public static (byte[] Main, SwShRuntimeManagedGameplayMainLayout Layout)
+        BuildRuntimeManaged(
+            byte[] baseMainBytes,
+            byte[] currentMainBytes,
+            ProjectGame expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(currentMainBytes);
+        EnsureSupportedExpectedGame(expectedGame);
+        var cleanBase = Analyze(baseMainBytes, baseMainBytes, expectedGame);
+        if (cleanBase.Kind != SwShStaticGameplaySettingsMainKind.Vanilla
+            || cleanBase.DetectedGame != expectedGame
+            || cleanBase.ExperienceShareEnabled != true
+            || cleanBase.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
+            || cleanBase.LevelCapEnabled)
+        {
+            throw new InvalidDataException(
+                "The native settings menu requires the exact clean selected-game 1.3.2 base exefs/main.");
+        }
+
+        var current = Analyze(baseMainBytes, currentMainBytes, expectedGame);
+        if (current.Kind != SwShStaticGameplaySettingsMainKind.Vanilla
+            || current.DetectedGame != expectedGame
+            || current.ExperienceShareEnabled != true
+            || current.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
+            || current.LevelCapEnabled)
+        {
+            throw new InvalidDataException(
+                "The native settings menu requires the reviewed current Sword/Shield executable to retain vanilla static gameplay settings and every verified runtime dependency.");
+        }
+
+        var layout = FindLayout(baseMainBytes.AsSpan(0x40, 0x20))
+            ?? throw new InvalidDataException("The base exefs/main build is unsupported.");
+        var baseNso = ParseBoundedNso(baseMainBytes, "base", layout);
+        var currentNso = ParseBoundedNso(currentMainBytes, "current", layout);
+        ValidateRequiredSegmentHashes(baseNso);
+        ValidateRequiredSegmentHashes(currentNso);
+        EnsureSameExecutableEnvelope(baseNso, currentNso);
+        var baseText = baseNso.Text.DecompressedData;
+        var currentText = currentNso.Text.DecompressedData;
+        var text = currentText.ToArray();
+        int[] bridgeCaves =
+        [
+            RuntimeShareBridgeOffset,
+            RuntimeShareTargetSlotOffset,
+            RuntimeRateBridgeOffset,
+            RuntimeRateTargetSlotOffset,
+            RuntimeLevelCapBridgeOffset,
+            RuntimeLevelCapTargetSlotOffset,
+        ];
+        foreach (var caveOffset in bridgeCaves)
+        {
+            ValidateRuntimeOwnedCave(
+                baseText,
+                currentText,
+                caveOffset,
+                expectedGame);
+            WriteChunk(text, caveOffset, NopInstruction, NopInstruction, NopInstruction);
+        }
+
+        ValidateRuntimeOwnedRange(ShareInstructionOffset, SharePatchLength, expectedGame);
+        ValidateRuntimeOwnedRange(RatePatchOffset, sizeof(uint), expectedGame);
+        ValidateRuntimeOwnedRange(LevelCapHookOffset, sizeof(uint), expectedGame);
+
+        if (ReadInstruction(text, ShareInstructionOffset) != VanillaShareInstruction
+            || ReadInstruction(text, RatePatchOffset) != VanillaRateLoadInstruction
+            || ReadInstruction(text, LevelCapHookOffset) != VanillaLevelCapAwardInstruction)
+        {
+            throw new InvalidDataException(
+                "The native Sword/Shield settings scaffold changed a retail gameplay instruction.");
+        }
+
+        var normalized = text.ToArray();
+        currentText.AsSpan(ShareInstructionOffset, SharePatchLength)
+            .CopyTo(normalized.AsSpan(ShareInstructionOffset, SharePatchLength));
+        currentText.AsSpan(RatePatchOffset, sizeof(uint))
+            .CopyTo(normalized.AsSpan(RatePatchOffset, sizeof(uint)));
+        currentText.AsSpan(LevelCapHookOffset, sizeof(uint))
+            .CopyTo(normalized.AsSpan(LevelCapHookOffset, sizeof(uint)));
+        foreach (var caveOffset in bridgeCaves)
+        {
+            currentText.AsSpan(caveOffset, CodeChunkLength)
+                .CopyTo(normalized.AsSpan(caveOffset, CodeChunkLength));
+        }
+        if (!normalized.AsSpan().SequenceEqual(currentText))
+        {
+            throw new InvalidDataException(
+                "The native Sword/Shield settings scaffold changed bytes outside its owned runtime regions.");
+        }
+
+        var output = currentNso.Write(textDecompressedData: text);
+        var verified = ParseBoundedNso(output, "runtime-managed", layout);
+        ValidateRequiredSegmentHashes(verified);
+        EnsureSameExecutableEnvelope(currentNso, verified);
+        if (!verified.Text.DecompressedData.AsSpan().SequenceEqual(text)
+            || !verified.Ro.DecompressedData.AsSpan().SequenceEqual(currentNso.Ro.DecompressedData)
+            || !verified.Data.DecompressedData.AsSpan().SequenceEqual(currentNso.Data.DecompressedData))
+        {
+            throw new InvalidDataException(
+                "The native Sword/Shield settings scaffold failed executable readback.");
+        }
+
+        return (
+            output,
+            new SwShRuntimeManagedGameplayMainLayout(
+                expectedGame,
+                ShareInstructionOffset,
+                VanillaShareInstruction,
+                RuntimeShareBridgeOffset,
+                RuntimeShareTargetSlotOffset,
+                RatePatchOffset,
+                VanillaRateLoadInstruction,
+                RuntimeRateBridgeOffset,
+                RuntimeRateTargetSlotOffset,
+                LevelCapHookOffset,
+                VanillaLevelCapAwardInstruction,
+                RuntimeLevelCapBridgeOffset,
+                RuntimeLevelCapTargetSlotOffset,
+                bridgeCaves));
     }
 
     public static byte[] RestoreFromBase(
@@ -1041,7 +1214,9 @@ public static class SwShStaticGameplaySettingsMainPatcher
         EnsureWindow(currentText, caveOffset, CodeChunkLength);
         if ((caveOffset & 3) != 0
             || baseText.Slice(caveOffset, CodeChunkLength).IndexOfAnyExcept((byte)0) >= 0
-            || SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(game)
+            || SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
+                    game,
+                    SwShExeFsReservedRegionLedger.OwnerNativeGameplayMenu)
                 .Any(region => SwShExeFsReservedRegionLedger.Overlaps(
                     region,
                     caveOffset,
@@ -1049,6 +1224,51 @@ public static class SwShStaticGameplaySettingsMainPatcher
         {
             throw new InvalidDataException(
                 "The installed gameplay-settings branch does not target a KM-owned base-zero code cave.");
+        }
+    }
+
+    private static void ValidateRuntimeOwnedCave(
+        ReadOnlySpan<byte> baseText,
+        ReadOnlySpan<byte> currentText,
+        int caveOffset,
+        ProjectGame game)
+    {
+        EnsureWindow(baseText, caveOffset, CodeChunkLength);
+        EnsureWindow(currentText, caveOffset, CodeChunkLength);
+        ValidateRuntimeOwnedRange(caveOffset, CodeChunkLength, game);
+        if ((caveOffset & 3) != 0
+            || baseText.Slice(caveOffset, CodeChunkLength).IndexOfAnyExcept((byte)0) >= 0
+            || !currentText.Slice(caveOffset, CodeChunkLength)
+                .SequenceEqual(baseText.Slice(caveOffset, CodeChunkLength)))
+        {
+            throw new InvalidDataException(
+                "The native Sword/Shield settings scaffold requires its exact vacant base-zero runtime cave.");
+        }
+    }
+
+    private static void ValidateRuntimeOwnedRange(
+        int offset,
+        int length,
+        ProjectGame game)
+    {
+        var nativeReservations = SwShExeFsReservedRegionLedger
+            .MainTextRegionsForOwner(
+                SwShExeFsReservedRegionLedger.OwnerNativeGameplayMenu,
+                game);
+        if (!nativeReservations.Any(region =>
+                region.StartOffset == offset
+                && region.Length == length)
+            || SwShExeFsReservedRegionLedger
+                .MainTextReservationsForOtherOwners(
+                    game,
+                    SwShExeFsReservedRegionLedger.OwnerNativeGameplayMenu)
+                .Any(region => SwShExeFsReservedRegionLedger.Overlaps(
+                    region,
+                    offset,
+                    length)))
+        {
+            throw new InvalidDataException(
+                "The native Sword/Shield settings scaffold does not have an exclusive executable ownership reservation.");
         }
     }
 

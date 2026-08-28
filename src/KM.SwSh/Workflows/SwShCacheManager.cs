@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using KM.Core.Concurrency;
 using KM.Core.Files;
 using KM.Core.Projects;
 
@@ -111,6 +112,7 @@ public sealed class SwShCacheManager
     };
 
     private readonly string cacheRoot;
+    private readonly bool isReadWorker;
     private readonly object syncRoot = new();
     private readonly Dictionary<string, MemoryArtifact> memoryArtifacts = new(StringComparer.Ordinal);
     private readonly LinkedList<string> memoryLru = [];
@@ -123,6 +125,7 @@ public sealed class SwShCacheManager
     public SwShCacheManager(string? cacheRoot = null)
     {
         this.cacheRoot = Path.GetFullPath(cacheRoot ?? ResolveDefaultCacheRoot());
+        isReadWorker = BoundedConcurrencyHostBudget.IsReadWorker;
     }
 
     public SwShCacheSettings GetSettings()
@@ -142,11 +145,17 @@ public sealed class SwShCacheManager
             if (activeSource is not null)
             {
                 ValidateSourceIdentity(activeSource);
-                DeleteObsoleteSourceCaches(activeSource);
+                if (!isReadWorker)
+                {
+                    DeleteObsoleteSourceCaches(activeSource);
+                }
             }
 
             var settings = ReadSettings();
-            var activeProjectPreserved = PruneIfNeeded(settings, activeSource);
+            var activeProjectPreserved = isReadWorker
+                ? activeSource is not null
+                    && Directory.Exists(GetIdentityDirectory(GetIdentityKey(activeSource)))
+                : PruneIfNeeded(settings, activeSource);
             return CreateStatus(settings, activeProjectPreserved);
         }
     }
@@ -158,6 +167,7 @@ public sealed class SwShCacheManager
     {
         lock (syncRoot)
         {
+            EnsureOwnerCacheMutation("update Sword/Shield cache settings");
             EnsureRoot();
             if (activeSource is not null)
             {
@@ -191,6 +201,7 @@ public sealed class SwShCacheManager
     {
         lock (syncRoot)
         {
+            EnsureOwnerCacheMutation("clear the Sword/Shield persistent cache");
             EnsureRoot();
             if (activeSource is not null)
             {
@@ -279,7 +290,10 @@ public sealed class SwShCacheManager
                     return false;
                 }
 
-                DeleteObsoleteSourceCaches(source);
+                if (!isReadWorker)
+                {
+                    DeleteObsoleteSourceCaches(source);
+                }
                 if (!TryReadPersistentArtifact(
                         source,
                         artifact,
@@ -294,7 +308,10 @@ public sealed class SwShCacheManager
                 }
 
                 AddMemoryArtifact(memoryKey, typeIdentity, payload, GetMemoryLimit(settings));
-                TryPrune(settings, source);
+                if (!isReadWorker)
+                {
+                    TryPrune(settings, source);
+                }
                 return true;
             }
             catch (Exception exception) when (IsDisposableCacheException(exception))
@@ -344,7 +361,10 @@ public sealed class SwShCacheManager
                     return false;
                 }
 
-                DeleteObsoleteSourceCaches(source);
+                if (!isReadWorker)
+                {
+                    DeleteObsoleteSourceCaches(source);
+                }
                 return TryReadPersistentArtifact(
                     source,
                     artifact,
@@ -393,6 +413,10 @@ public sealed class SwShCacheManager
             }
 
             AddMemoryArtifact(memoryKey, typeIdentity, payload, GetMemoryLimit(settings));
+            if (isReadWorker)
+            {
+                return;
+            }
 
             try
             {
@@ -445,6 +469,11 @@ public sealed class SwShCacheManager
         lock (syncRoot)
         {
             var removed = RemoveMemoryArtifact(memoryKey);
+            if (isReadWorker)
+            {
+                return removed;
+            }
+
             try
             {
                 EnsureRoot();
@@ -799,7 +828,11 @@ public sealed class SwShCacheManager
             || !IsValidSourceIdentity(manifest.Source)
             || !SourceIdentityEquals(manifest.Source, source))
         {
-            DeleteTrackedDirectory(identityDirectory);
+            if (!isReadWorker)
+            {
+                DeleteTrackedDirectory(identityDirectory);
+            }
+
             return false;
         }
 
@@ -819,7 +852,10 @@ public sealed class SwShCacheManager
         {
             if (metadata is null || string.Equals(metadata.TypeIdentity, typeIdentity, StringComparison.Ordinal))
             {
-                DeleteArtifactPair(artifactPath, metadataPath);
+                if (!isReadWorker)
+                {
+                    DeleteArtifactPair(artifactPath, metadataPath);
+                }
             }
 
             return false;
@@ -830,28 +866,43 @@ public sealed class SwShCacheManager
             var fileInfo = new FileInfo(artifactPath);
             if (fileInfo.Length != metadata.PayloadLength)
             {
-                DeleteArtifactPair(artifactPath, metadataPath);
+                if (!isReadWorker)
+                {
+                    DeleteArtifactPair(artifactPath, metadataPath);
+                }
+
                 return false;
             }
 
-            payload = File.ReadAllBytes(artifactPath);
-            if (!string.Equals(ComputeSha256(payload), metadata.PayloadSha256, StringComparison.OrdinalIgnoreCase))
+            payload = ReadAllBytesShared(artifactPath, settings.MaxCacheSizeBytes);
+            if (payload.LongLength != metadata.PayloadLength
+                || !string.Equals(
+                    ComputeSha256(payload),
+                    metadata.PayloadSha256,
+                    StringComparison.OrdinalIgnoreCase))
             {
-                DeleteArtifactPair(artifactPath, metadataPath);
+                if (!isReadWorker)
+                {
+                    DeleteArtifactPair(artifactPath, metadataPath);
+                }
+
                 payload = [];
                 return false;
             }
 
             value = JsonSerializer.Deserialize<T>(payload, JsonOptions)!;
             var now = DateTime.UtcNow;
-            if (now - fileInfo.LastWriteTimeUtc >= AccessTouchInterval)
+            if (!isReadWorker && now - fileInfo.LastWriteTimeUtc >= AccessTouchInterval)
             {
                 TryTouchFile(artifactPath, now);
             }
 
             try
             {
-                TouchIdentity(identityKey, now, force: false);
+                if (!isReadWorker)
+                {
+                    TouchIdentity(identityKey, now, force: false);
+                }
             }
             catch (Exception exception) when (IsDisposableCacheException(exception))
             {
@@ -862,7 +913,11 @@ public sealed class SwShCacheManager
         }
         catch (JsonException)
         {
-            DeleteArtifactPair(artifactPath, metadataPath);
+            if (!isReadWorker)
+            {
+                DeleteArtifactPair(artifactPath, metadataPath);
+            }
+
             payload = [];
             value = default!;
             return false;
@@ -908,6 +963,11 @@ public sealed class SwShCacheManager
 
     private void DeleteObsoleteSourceCaches(SwShCacheSourceIdentity activeSource)
     {
+        if (isReadWorker)
+        {
+            return;
+        }
+
         var activeIdentityKey = GetIdentityKey(activeSource);
         var stableSourceKey = GetStableSourceKey(activeSource);
         var cleanupKey = $"{stableSourceKey}:{activeIdentityKey}";
@@ -1030,6 +1090,12 @@ public sealed class SwShCacheManager
 
     private bool PruneIfNeeded(SwShCacheSettings settings, SwShCacheSourceIdentity? activeSource)
     {
+        if (isReadWorker)
+        {
+            return activeSource is not null
+                && Directory.Exists(GetIdentityDirectory(GetIdentityKey(activeSource)));
+        }
+
         var activeIdentityKey = activeSource is null ? null : GetIdentityKey(activeSource);
         var activeDirectory = activeIdentityKey is null ? null : GetIdentityDirectory(activeIdentityKey);
         var activeExisted = activeDirectory is not null && Directory.Exists(activeDirectory);
@@ -1201,6 +1267,11 @@ public sealed class SwShCacheManager
 
     private bool DeleteTrackedFile(string path)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         EnsurePathUnderProjects(path);
         if (!File.Exists(path))
         {
@@ -1234,6 +1305,11 @@ public sealed class SwShCacheManager
 
     private bool DeleteTrackedDirectory(string path)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         EnsurePathUnderProjects(path);
         if (PathsEqual(path, ProjectsPath))
         {
@@ -1340,6 +1416,15 @@ public sealed class SwShCacheManager
             return ledger.ProjectsSizeBytes;
         }
 
+        if (isReadWorker)
+        {
+            var measured = TryMeasureDirectory(
+                ProjectsPath,
+                MaximumMeasuredCacheFileCount,
+                out var readOnlySize);
+            return measured ? readOnlySize : 0;
+        }
+
         return ReconcilePersistentCacheSize();
     }
 
@@ -1413,6 +1498,7 @@ public sealed class SwShCacheManager
 
     private void ResetPersistentCache()
     {
+        EnsureOwnerCacheMutation("reset the Sword/Shield persistent cache");
         Directory.CreateDirectory(ProjectsPath);
         var current = retainedPersistentCacheSizeBytes ?? 0;
         WriteSizeLedger(new SizeLedgerDocument(CacheSchemaVersion, current, IsDirty: true, DateTime.UtcNow));
@@ -1444,7 +1530,7 @@ public sealed class SwShCacheManager
         if (settings is not null && Enum.IsDefined(settings.Mode))
         {
             var normalized = settings with { MaxCacheSizeBytes = ClampMaxCacheSize(settings.MaxCacheSizeBytes) };
-            if (normalized != settings)
+            if (!isReadWorker && normalized != settings)
             {
                 WriteJsonAtomic(SettingsPath, normalized);
             }
@@ -1453,7 +1539,11 @@ public sealed class SwShCacheManager
         }
 
         var defaults = new SwShCacheSettings(SwShCacheMode.Balanced, DefaultMaxCacheSizeBytes);
-        WriteJsonAtomic(SettingsPath, defaults);
+        if (!isReadWorker)
+        {
+            WriteJsonAtomic(SettingsPath, defaults);
+        }
+
         return defaults;
     }
 
@@ -1496,7 +1586,11 @@ public sealed class SwShCacheManager
                 return default;
             }
 
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read | FileShare.Delete);
             if (stream.Length < 0 || stream.Length > maximumBytes)
             {
                 return default;
@@ -1521,6 +1615,7 @@ public sealed class SwShCacheManager
 
     private void WriteBytesAtomic(string destinationPath, byte[] bytes)
     {
+        EnsureOwnerCacheMutation("publish Sword/Shield persistent cache data");
         EnsurePathUnderCacheRoot(destinationPath);
         Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
         Directory.CreateDirectory(TempPath);
@@ -1543,6 +1638,11 @@ public sealed class SwShCacheManager
 
     private void EnsureRoot()
     {
+        if (isReadWorker)
+        {
+            return;
+        }
+
         var projectsDirectoryExisted = Directory.Exists(ProjectsPath);
         Directory.CreateDirectory(cacheRoot);
         Directory.CreateDirectory(ProjectsPath);
@@ -1568,6 +1668,11 @@ public sealed class SwShCacheManager
 
     private void CleanupTempDirectory()
     {
+        if (isReadWorker)
+        {
+            return;
+        }
+
         Directory.CreateDirectory(TempPath);
         var cutoff = DateTime.UtcNow - OrphanTempFileAge;
         foreach (var path in Directory.EnumerateFiles(TempPath, "*.tmp", TopLevelCacheEnumeration))
@@ -1590,6 +1695,36 @@ public sealed class SwShCacheManager
         }
         catch (UnauthorizedAccessException)
         {
+        }
+    }
+
+    private static byte[] ReadAllBytesShared(string path, long maximumBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
+        if (stream.Length < 0 || stream.Length > maximumBytes || stream.Length > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"The Sword/Shield cache payload exceeds its safe read limit of {maximumBytes} bytes.");
+        }
+
+        var bytes = GC.AllocateUninitializedArray<byte>((int)stream.Length);
+        stream.ReadExactly(bytes);
+        return bytes;
+    }
+
+    private void EnsureOwnerCacheMutation(string operation)
+    {
+        if (isReadWorker)
+        {
+            throw new InvalidOperationException(
+                $"An isolated managed read worker cannot {operation}.");
         }
     }
 

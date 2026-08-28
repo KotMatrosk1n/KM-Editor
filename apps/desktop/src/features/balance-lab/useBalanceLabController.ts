@@ -2,7 +2,6 @@
 
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,6 +25,13 @@ import type {
 import { semanticExploreProjectGameFamily } from '../../bridge/semanticExploreContracts';
 import { ProjectBridgeError } from '../../bridge/projectBridgeError';
 import { semanticExploreErrorCodes } from '../../errorCodes';
+import { useDeferredUnmountCleanup } from '../../hooks/useDeferredUnmountCleanup';
+import {
+  BoundedLruCache,
+  ProjectQueryEpoch,
+  runIndependentProjectRead,
+  type ProjectQueryTicket
+} from '../../utils/projectAsyncPolicy';
 
 export type BalanceLabLayer = 'base' | 'layered' | 'pending';
 export type BalanceLabQueryStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -57,7 +63,7 @@ export type BalanceLabController = BalanceLabControllerSnapshot & {
   refresh: () => Promise<void>;
 };
 
-type RequestToken = { epoch: number; id: number; queryGeneration: number };
+type RequestToken = ProjectQueryTicket<'query'> & { id: number };
 const maximumCachedQueries = 5;
 const maximumCacheCharacters = 4 * 1_024 * 1_024;
 
@@ -71,13 +77,16 @@ const idleQueryState = (): BalanceLabQueryState => ({
 class BalanceLabControllerStore {
   private activeRequests = new Set<number>();
   private bridge: BalanceLabProjectBridgeApi;
-  private cache = new Map<string, BalanceLabQueryResponse>();
+  private cache = new BoundedLruCache<string, BalanceLabQueryResponse>({
+    maximumEntries: maximumCachedQueries,
+    maximumWeight: maximumCacheCharacters,
+    weight: (value, key) => key.length + JSON.stringify(value).length
+  });
   private contextKey: string | null = null;
-  private epoch = 0;
+  private freshness = new ProjectQueryEpoch<'query'>();
   private listeners = new Set<() => void>();
   private nextRequestId = 1;
   private onStaleRevision: (() => void) | null = null;
-  private queryGeneration = 0;
   private revision: SemanticExploreRevision | null = null;
   private scope: SemanticExploreScope | null = null;
   private snapshot: BalanceLabControllerSnapshot = {
@@ -122,11 +131,11 @@ class BalanceLabControllerStore {
   }
 
   public cancel() {
-    this.epoch += 1;
-    this.queryGeneration += 1;
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
     this.snapshot = {
       ...this.snapshot,
+      activeQuery: this.snapshot.result.data ? this.snapshot.activeQuery : null,
       isQuerying: false,
       result: this.snapshot.result.data
         ? { ...this.snapshot.result, error: null, isAppending: false, status: 'ready' }
@@ -136,6 +145,12 @@ class BalanceLabControllerStore {
   }
 
   public async query(options: BalanceLabQueryOptions) {
+    if (
+      this.snapshot.result.status === 'loading' &&
+      balanceLabQueriesEqual(this.snapshot.activeQuery, options)
+    ) {
+      return;
+    }
     this.supersedeRequests();
     this.snapshot = { ...this.snapshot, activeQuery: options };
     const cached = this.readCache(options);
@@ -183,14 +198,20 @@ class BalanceLabControllerStore {
     const token = this.begin(options, append);
     try {
       const context = this.requireContext();
-      const response = await this.bridge.queryBalanceLab({
+      const request = {
         ...(cursor ? { cursor } : {}),
         expectedRevision: context.revision,
         layer: options.layer,
         limit,
         scope: context.scope,
         study: options.study
-      });
+      };
+      const response = await runIndependentProjectRead(
+        'queryBalanceLab',
+        this.bridge,
+        request,
+        () => this.bridge.queryBalanceLab(request)
+      );
       if (!this.isCurrent(token)) return;
       assertBalanceLabResponse(response, options, context.revision);
       if (append && previous && response.queryFingerprint !== previous.queryFingerprint) {
@@ -221,8 +242,7 @@ class BalanceLabControllerStore {
 
   private begin(options: BalanceLabQueryOptions, append: boolean): RequestToken {
     this.supersedeRequests();
-    this.queryGeneration += 1;
-    const token = { epoch: this.epoch, id: this.nextRequestId++, queryGeneration: this.queryGeneration };
+    const token = { ...this.freshness.capture('query'), id: this.nextRequestId++ };
     this.activeRequests.add(token.id);
     this.snapshot = {
       activeQuery: options,
@@ -245,7 +265,7 @@ class BalanceLabControllerStore {
   }
 
   private isCurrent(token: RequestToken) {
-    return token.epoch === this.epoch && token.queryGeneration === this.queryGeneration;
+    return this.freshness.isCurrent(token);
   }
 
   private fail(token: RequestToken, retained: BalanceLabQueryResponse | null, error: unknown) {
@@ -275,7 +295,7 @@ class BalanceLabControllerStore {
   }
 
   private supersedeRequests() {
-    this.queryGeneration += 1;
+    this.freshness.supersede('query');
     this.activeRequests.clear();
   }
 
@@ -288,12 +308,7 @@ class BalanceLabControllerStore {
   private readCache(options: BalanceLabQueryOptions) {
     const key = this.cacheKey(options);
     if (!key) return null;
-    const value = this.cache.get(key) ?? null;
-    if (value) {
-      this.cache.delete(key);
-      this.cache.set(key, value);
-    }
-    return value;
+    return this.cache.get(key) ?? null;
   }
 
   private writeCache(options: BalanceLabQueryOptions, value: BalanceLabQueryResponse) {
@@ -304,21 +319,11 @@ class BalanceLabControllerStore {
       capability?.state === 'unavailable' ||
       value.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
     ) return;
-    this.cache.delete(key);
     this.cache.set(key, value);
-    while (
-      this.cache.size > maximumCachedQueries ||
-      cacheCharacterCount(this.cache) > maximumCacheCharacters
-    ) {
-      const oldest = this.cache.keys().next().value as string | undefined;
-      if (!oldest) break;
-      this.cache.delete(oldest);
-    }
   }
 
   private reset() {
-    this.epoch += 1;
-    this.queryGeneration += 1;
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
     this.snapshot = { activeQuery: null, isQuerying: false, result: idleQueryState() };
     this.emit();
@@ -400,12 +405,11 @@ function resultCount(response: BalanceLabQueryResponse | null | undefined) {
   return response ? response.points.length + response.findings.length : 0;
 }
 
-function cacheCharacterCount(cache: ReadonlyMap<string, BalanceLabQueryResponse>) {
-  let count = 0;
-  for (const [key, value] of cache) {
-    count += key.length + JSON.stringify(value).length;
-  }
-  return count;
+function balanceLabQueriesEqual(
+  left: BalanceLabQueryOptions | null,
+  right: BalanceLabQueryOptions
+) {
+  return left?.layer === right.layer && left.study === right.study;
 }
 
 function distinctBy<T>(values: readonly T[], key: (value: T) => string) {
@@ -497,7 +501,7 @@ export function useBalanceLabController(options: {
     () => store.setContext(options.scope, options.revision),
     [options.revision, options.scope, store]
   );
-  useEffect(() => () => store.cancel(), [store]);
+  useDeferredUnmountCleanup(() => store.cancel());
   const actions = useMemo(() => ({
     cancel: () => store.cancel(),
     invalidate: () => store.invalidate(),

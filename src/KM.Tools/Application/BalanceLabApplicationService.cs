@@ -309,6 +309,7 @@ public sealed class BalanceLabApplicationService
                 exception);
         }
 
+        data = RemoveSyntheticBaseLayerOutputDiagnostic(request, data);
         cancellationToken.ThrowIfCancellationRequested();
         var estimatedSize = EstimateSize(data);
         if (estimatedSize > BalanceLabSizingLimits.StudyHardCeilingBytes)
@@ -319,6 +320,29 @@ public sealed class BalanceLabApplicationService
         }
 
         return ValueTask.FromResult(new DerivedIndexCacheItem<BalanceLabStudyData>(data, estimatedSize));
+    }
+
+    private static BalanceLabStudyData RemoveSyntheticBaseLayerOutputDiagnostic(
+        QueryBalanceLabRequest request,
+        BalanceLabStudyData data)
+    {
+        // Base studies clear OutputRootPath only to isolate vanilla files. Do not report
+        // that synthetic read scope as the user's validated project configuration.
+        if (request.Layer != SemanticSourceLayerKindDto.Base
+            || string.IsNullOrWhiteSpace(request.Scope.Paths.OutputRootPath)
+            || data.Diagnostics.All(diagnostic =>
+                diagnostic.Code != ProjectValidator.OutputRootNotConfiguredDiagnosticCode))
+        {
+            return data;
+        }
+
+        return data with
+        {
+            Diagnostics = data.Diagnostics
+                .Where(diagnostic =>
+                    diagnostic.Code != ProjectValidator.OutputRootNotConfiguredDiagnosticCode)
+                .ToArray(),
+        };
     }
 
     private static BalanceLabStudyData UnavailablePendingStudy(

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Cryptography;
@@ -16,6 +17,7 @@ using KM.Api.Projects;
 using KM.Api.Semantics;
 using KM.Api.SemanticMerging;
 using KM.Api.Workflows;
+using KM.Core.Concurrency;
 using KM.Core.Files;
 using KM.Core.Indexing;
 using KM.Core.Projects;
@@ -99,6 +101,11 @@ internal static class SemanticIndexSizingLimits
         ProvisionedIndexSizeBytes * HardCeilingMultiplier);
 }
 
+internal sealed record SemanticWorkflowDtoLoaders(
+    Func<ItemsWorkflowDto> Items,
+    Func<PokemonWorkflowDto> Pokemon,
+    Func<MovesWorkflowDto> Moves);
+
 public sealed class SemanticExploreApplicationService
 {
     private const int MaximumDomainFilters = 16;
@@ -116,6 +123,15 @@ public sealed class SemanticExploreApplicationService
     private const long MaximumExternalAggregateBytes = 512L * 1024L * 1024L;
     private const int MaximumVerifiedSourceObservations = 16;
     private const int SourceMaterializationLockCount = 8;
+    private const int MaximumConcurrentCorpusLoads = 3;
+    private const long EstimatedCorpusLoadWorkerBytes = 256L * 1024L * 1024L;
+    private static readonly BoundedConcurrencyPolicy CorpusLoadPolicy = new(
+        "semantic-explore-corpus-load",
+        BoundedWorkloadKind.Decode,
+        EstimatedCorpusLoadWorkerBytes,
+        maximumDegreeOfParallelism: MaximumConcurrentCorpusLoads,
+        memoryBudgetDivisor: 8,
+        degreeOfParallelismWhenMemoryUnknown: 1);
     private const int SourceObservationTokenLength = 69;
     private const string SourceObservationTokenPrefix = "sob1_";
     private const string QueryMaterializationLimitMessage =
@@ -145,6 +161,9 @@ public sealed class SemanticExploreApplicationService
     private readonly Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh;
     private readonly Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh;
     private readonly Func<ProjectPathsDto, string> captureExactSourceFingerprint;
+    private readonly Func<ProjectPathsDto, bool> canLoadCorpusConcurrently;
+    private readonly Func<ProjectPathsDto, int, SemanticWorkflowDtoLoaders>?
+        prepareCorpusFresh;
     private readonly object cachePublicationSync = new();
     private long cacheInvalidationEpoch;
     private readonly object sourceObservationSync = new();
@@ -184,7 +203,25 @@ public sealed class SemanticExploreApplicationService
         Func<ProjectPathsDto, ItemsWorkflowDto> loadItemsFresh,
         Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh,
         Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh,
-        Func<ProjectPathsDto, string> captureExactSourceFingerprint)
+        Func<ProjectPathsDto, string> captureExactSourceFingerprint,
+        Func<ProjectPathsDto, bool>? canLoadCorpusConcurrently = null)
+        : this(
+            loadItemsFresh,
+            loadPokemonFresh,
+            loadMovesFresh,
+            captureExactSourceFingerprint,
+            canLoadCorpusConcurrently,
+            prepareCorpusFresh: null)
+    {
+    }
+
+    internal SemanticExploreApplicationService(
+        Func<ProjectPathsDto, ItemsWorkflowDto> loadItemsFresh,
+        Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh,
+        Func<ProjectPathsDto, MovesWorkflowDto> loadMovesFresh,
+        Func<ProjectPathsDto, string> captureExactSourceFingerprint,
+        Func<ProjectPathsDto, bool>? canLoadCorpusConcurrently,
+        Func<ProjectPathsDto, int, SemanticWorkflowDtoLoaders>? prepareCorpusFresh)
     {
         this.loadItemsFresh = loadItemsFresh ?? throw new ArgumentNullException(nameof(loadItemsFresh));
         this.loadPokemonFresh = loadPokemonFresh
@@ -192,6 +229,8 @@ public sealed class SemanticExploreApplicationService
         this.loadMovesFresh = loadMovesFresh ?? throw new ArgumentNullException(nameof(loadMovesFresh));
         this.captureExactSourceFingerprint = captureExactSourceFingerprint
             ?? throw new ArgumentNullException(nameof(captureExactSourceFingerprint));
+        this.canLoadCorpusConcurrently = canLoadCorpusConcurrently ?? (_ => false);
+        this.prepareCorpusFresh = prepareCorpusFresh;
     }
 
     internal string RegisterVerifiedSourceObservation(
@@ -1037,8 +1076,16 @@ public sealed class SemanticExploreApplicationService
                     materializationBudget = new SemanticMaterializationBudget(
                         SemanticExploreSizeEstimator.ProjectEnvelopeSizeBytes);
                     var basePaths = scope.Paths with { OutputRootPath = null };
-                    var baseData = provider.Build(LoadCorpus(basePaths), materializationBudget);
-                    var layeredData = provider.Build(LoadCorpus(scope.Paths), materializationBudget);
+                    var baseData = BuildSourceLayer(
+                        provider,
+                        basePaths,
+                        materializationBudget);
+                    var layeredData = Equals(basePaths, scope.Paths)
+                        ? baseData
+                        : BuildSourceLayer(
+                            provider,
+                            scope.Paths,
+                            materializationBudget);
                     ValidateLayerBounds(baseData);
                     ValidateLayerBounds(layeredData);
 
@@ -1180,22 +1227,130 @@ public sealed class SemanticExploreApplicationService
 
     private SemanticWorkflowCorpus LoadCorpus(ProjectPathsDto paths)
     {
+        return WrapCorpus(new SemanticWorkflowDtoLoaders(
+            () => loadItemsFresh(paths),
+            () => loadPokemonFresh(paths),
+            () => loadMovesFresh(paths)));
+    }
+
+    private static SemanticWorkflowCorpus WrapCorpus(SemanticWorkflowDtoLoaders loaders)
+    {
+        ArgumentNullException.ThrowIfNull(loaders);
         return new SemanticWorkflowCorpus(
             () => TryLoad(
-                () => loadItemsFresh(paths),
+                loaders.Items,
                 workflow => workflow.Summary,
                 workflow => workflow.Items.Count,
                 workflow => workflow.Diagnostics),
             () => TryLoad(
-                () => loadPokemonFresh(paths),
+                loaders.Pokemon,
                 workflow => workflow.Summary,
                 workflow => workflow.Pokemon.Count,
                 workflow => workflow.Diagnostics),
             () => TryLoad(
-                () => loadMovesFresh(paths),
+                loaders.Moves,
                 workflow => workflow.Summary,
                 workflow => workflow.Moves.Count,
                 workflow => workflow.Diagnostics));
+    }
+
+    private SemanticLayerData BuildSourceLayer(
+        ISemanticExploreFamilyProvider provider,
+        ProjectPathsDto paths,
+        SemanticMaterializationBudget materializationBudget)
+    {
+        var parallelism = canLoadCorpusConcurrently(paths)
+            ? BoundedParallel.Plan(
+                MaximumConcurrentCorpusLoads,
+                CorpusLoadPolicy).DegreeOfParallelism
+            : 1;
+        var corpus = prepareCorpusFresh is null
+            ? LoadCorpus(paths)
+            : PrepareCorpus(paths, parallelism);
+        return provider.Build(
+            parallelism > 1 && prepareCorpusFresh is null
+                ? MaterializeCorpusConcurrently(corpus, parallelism)
+                : corpus,
+            materializationBudget);
+    }
+
+    private SemanticWorkflowCorpus PrepareCorpus(ProjectPathsDto paths, int parallelism)
+    {
+        try
+        {
+            return WrapCorpus(prepareCorpusFresh!(paths, parallelism));
+        }
+        catch (Exception exception) when (!IsFatal(exception))
+        {
+            var failure = ExceptionDispatchInfo.Capture(exception);
+            return WrapCorpus(new SemanticWorkflowDtoLoaders(
+                () => RethrowPreparedCorpusFailure<ItemsWorkflowDto>(failure),
+                () => RethrowPreparedCorpusFailure<PokemonWorkflowDto>(failure),
+                () => RethrowPreparedCorpusFailure<MovesWorkflowDto>(failure)));
+        }
+    }
+
+    private static T RethrowPreparedCorpusFailure<T>(ExceptionDispatchInfo failure)
+        where T : class
+    {
+        failure.Throw();
+        throw new InvalidOperationException("The semantic corpus preparation failure was not rethrown.");
+    }
+
+    private static SemanticWorkflowCorpus MaterializeCorpusConcurrently(
+        SemanticWorkflowCorpus corpus,
+        int parallelism)
+    {
+        SemanticWorkflowLoad<ItemsWorkflowDto>? items = null;
+        SemanticWorkflowLoad<PokemonWorkflowDto>? pokemon = null;
+        SemanticWorkflowLoad<MovesWorkflowDto>? moves = null;
+        var failures = new ExceptionDispatchInfo?[MaximumConcurrentCorpusLoads];
+
+        var executionPolicy = parallelism > 1
+            ? CorpusLoadPolicy
+            : new BoundedConcurrencyPolicy(
+                "semantic-explore-corpus-load-serial",
+                BoundedWorkloadKind.Decode,
+                EstimatedCorpusLoadWorkerBytes,
+                maximumDegreeOfParallelism: 1);
+        _ = BoundedParallel.For(
+            MaximumConcurrentCorpusLoads,
+            executionPolicy,
+            index =>
+            {
+                try
+                {
+                    switch (index)
+                    {
+                        case 0:
+                            items = corpus.LoadItems();
+                            break;
+                        case 1:
+                            pokemon = corpus.LoadPokemon();
+                            break;
+                        case 2:
+                            moves = corpus.LoadMoves();
+                            break;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    failures[index] = ExceptionDispatchInfo.Capture(exception);
+                }
+            });
+
+        foreach (var failure in failures)
+        {
+            failure?.Throw();
+        }
+
+        return new SemanticWorkflowCorpus(
+            () => items ?? throw new InvalidOperationException(
+                "The semantic items corpus was not materialized."),
+            () => pokemon ?? throw new InvalidOperationException(
+                "The semantic Pokemon corpus was not materialized."),
+            () => moves ?? throw new InvalidOperationException(
+                "The semantic moves corpus was not materialized."));
     }
 
     private SemanticSourceObservation CaptureSourceObservation(
@@ -1262,7 +1417,8 @@ public sealed class SemanticExploreApplicationService
         string sourceFingerprint)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendHash(hash, "semantic-source-observation-v2");
+        AppendHash(hash, "semantic-source-observation-v3");
+        AppendHash(hash, SourceObservationScopeIdentity(scope));
         AppendHash(hash, scope.ProjectId);
         AppendHash(hash, family.ToString());
         AppendHash(hash, scope.Paths.SelectedGame!.Value.ToString());
@@ -2591,8 +2747,9 @@ public sealed class SemanticExploreApplicationService
         EnsureExternalRootIdentity(externalRoot);
         var initialExternalSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);
         var provider = GetProvider(index.Revision.GameFamily);
-        var externalData = provider.Build(
-            LoadCorpus(externalPaths),
+        var externalData = BuildSourceLayer(
+            provider,
+            externalPaths,
             new SemanticMaterializationBudget());
         EnsureExternalRootIdentity(externalRoot);
         var completedExternalSourceFingerprint = CaptureExternalSourceFingerprint(externalPaths);

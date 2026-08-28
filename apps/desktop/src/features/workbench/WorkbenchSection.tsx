@@ -134,6 +134,12 @@ export function WorkbenchSection({
   const previouslyOpenToolRef = useRef<WorkbenchToolId | null>(null);
   const preparationScopeKeyRef = useRef(preparationScopeKey);
   const workbenchHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const visibleMountedTools = preparationScopeKeyRef.current === preparationScopeKey
+    ? mountedTools
+    : new Set<WorkbenchToolId>([
+        ...preloadTools,
+        ...(openTool ? [openTool] : [])
+      ]);
   const tools: readonly WorkbenchTool[] = [
     {
       backKey: 'balanceLab.back',
@@ -519,7 +525,7 @@ export function WorkbenchSection({
       </section>
     </section>
     {tools
-      .filter((tool) => tool.content && mountedTools.has(tool.id))
+      .filter((tool) => tool.content && visibleMountedTools.has(tool.id))
       .map((tool) => (
         <section
           aria-label={t(tool.titleKey)}
