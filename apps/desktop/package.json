@@ -14,7 +14,7 @@
     "tauri:build": "tauri build",
     "tauri:dev": "tauri dev",
     "check:file-size": "node scripts/check-file-size.mjs",
-    "typecheck": "tsc --build && node scripts/check-file-size.mjs"
+    "typecheck": "tsc --build && node scripts/check-file-size.mjs && node scripts/check-gameplay-delivery-contract.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.2",

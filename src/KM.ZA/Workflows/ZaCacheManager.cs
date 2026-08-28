@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using KM.Core.Concurrency;
 using KM.Core.Projects;
 using KM.Formats.ZA;
 using KM.ZA.Data;
@@ -36,16 +38,41 @@ public sealed class ZaCacheManager
     private const string WarmupStateFileName = "warmup-state.json";
     private const string PayloadDirectoryName = "payloads";
     private const string MetadataDirectoryName = "metadata";
-    private const int TextWarmupBatchSize = 8;
-    private static readonly TimeSpan WarmupStepTimeBudget = TimeSpan.FromMilliseconds(35);
+    private const int WarmupCandidateBatchSize = 256;
+    private const int MaximumPerformanceWarmupParallelism = 8;
+    private const int MaximumArchiveIndexBytes = 64 * 1024 * 1024;
+    private const int MaximumPerformanceWarmupFileBytes = 64 * 1024 * 1024;
+    private const long MaximumPerformanceWarmupPackBytes = 128L * 1024L * 1024L;
+    // A worker can retain a 64 MiB cached pack while loading a 128 MiB pack,
+    // plus five 64 MiB compressed, native, and returned-payload buffers.
+    // Reserve another 64 MiB above that roughly 512 MiB legal allocation peak.
+    private const long PerformanceWarmupWorkerMemoryBudgetBytes = 576L * 1024L * 1024L;
+    private const int MaximumCacheTraversalEntries = 500_000;
+    private const int MaximumCacheTraversalDepth = 128;
+    private const long MaximumCacheJsonFileBytes = 16L * 1024L * 1024L;
+    private const long MaximumPersistedIndexFileBytes = 256L * 1024L * 1024L;
+    private static readonly TimeSpan BalancedWarmupStepTimeBudget = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan PerformanceWarmupStepTimeBudget = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan OrphanTempFileAge = TimeSpan.FromMinutes(10);
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
-    private static readonly EnumerationOptions RecursiveCacheEnumeration = new()
+    private static readonly BoundedConcurrencyPolicy PerformanceWarmupPolicy = new(
+        "za-cache-performance-warmup",
+        BoundedWorkloadKind.Decode,
+        PerformanceWarmupWorkerMemoryBudgetBytes,
+        MaximumPerformanceWarmupParallelism,
+        memoryBudgetDivisor: 8);
+    private static readonly BoundedConcurrencyPolicy WarmupVerificationPolicy = new(
+        "za-cache-warmup-verification",
+        BoundedWorkloadKind.Read,
+        maximumBytesPerWorker: 32L * 1024L * 1024L,
+        maximumDegreeOfParallelism: MaximumPerformanceWarmupParallelism,
+        degreeOfParallelismWhenMemoryUnknown: 4);
+    private static readonly EnumerationOptions CacheDirectoryEnumeration = new()
     {
-        AttributesToSkip = FileAttributes.ReparsePoint,
-        IgnoreInaccessible = true,
-        RecurseSubdirectories = true,
+        AttributesToSkip = 0,
+        IgnoreInaccessible = false,
+        RecurseSubdirectories = false,
         ReturnSpecialDirectories = false,
     };
     private static readonly IReadOnlyList<string> WarmupTextLanguages =
@@ -54,6 +81,7 @@ public sealed class ZaCacheManager
     private static readonly IReadOnlyList<string> LabelWarmupVirtualPaths = CreateLabelWarmupVirtualPaths();
 
     private readonly string cacheRoot;
+    private readonly bool isReadWorker;
     private readonly object syncRoot = new();
     private ZaCacheSourceFingerprint? retainedIndexSource;
     private ZaTrinityArchiveIndex? retainedIndex;
@@ -71,7 +99,8 @@ public sealed class ZaCacheManager
 
     public ZaCacheManager(string? cacheRoot = null)
     {
-        this.cacheRoot = cacheRoot ?? ResolveDefaultCacheRoot();
+        this.cacheRoot = Path.GetFullPath(cacheRoot ?? ResolveDefaultCacheRoot());
+        isReadWorker = BoundedConcurrencyHostBudget.IsReadWorker;
     }
 
     internal bool HasRetainedIndex
@@ -112,7 +141,7 @@ public sealed class ZaCacheManager
             DeleteObsoleteProjectCaches(context);
             var warmupPaths = GetWarmupVirtualPaths(
                 context,
-                persistToDisk: settings.Mode != ZaCacheMode.Minimal,
+                persistToDisk: !isReadWorker && settings.Mode != ZaCacheMode.Minimal,
                 out var cacheChanged);
             if (cacheChanged)
             {
@@ -213,22 +242,15 @@ public sealed class ZaCacheManager
         bool persistToDisk,
         out bool cacheChanged)
     {
-        try
+        persistToDisk &= !isReadWorker;
+        var index = GetOrBuildIndex(context, persistToDisk, out cacheChanged);
+        var warmupPaths = GetOrCreateWarmupVirtualPaths(context, index);
+        if (persistToDisk)
         {
-            var index = GetOrBuildIndex(context, persistToDisk, out cacheChanged);
-            var warmupPaths = GetOrCreateWarmupVirtualPaths(context, index);
-            if (persistToDisk)
-            {
-                cacheChanged |= EnsureWarmupPathsManifestIsPersisted(context, warmupPaths);
-            }
+            cacheChanged |= EnsureWarmupPathsManifestIsPersisted(context, warmupPaths);
+        }
 
-            return warmupPaths;
-        }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
-        {
-            cacheChanged = false;
-            return WarmupVirtualPaths;
-        }
+        return warmupPaths;
     }
 
     private static IEnumerable<string> CreateDiscoveredMessageWarmupPaths(
@@ -254,6 +276,7 @@ public sealed class ZaCacheManager
     {
         lock (syncRoot)
         {
+            EnsureOwnerCacheMutation("update Z-A cache settings");
             EnsureRoot();
             var previousSettings = ReadSettings();
             var settings = new ZaCacheSettings(
@@ -301,17 +324,28 @@ public sealed class ZaCacheManager
             EnsureRoot();
             var settings = ReadSettings();
             var context = TryCreateActiveProjectContext(paths);
+            IReadOnlyList<string>? warmupPlan = null;
             if (context is not null)
             {
                 DeleteObsoleteProjectCaches(context);
-                if (Directory.Exists(context.ProjectDirectory))
+                if (settings.Mode != ZaCacheMode.Minimal)
+                {
+                    warmupPlan = GetWarmupVirtualPaths(
+                        context,
+                        persistToDisk: !isReadWorker);
+                }
+                else if (Directory.Exists(context.ProjectDirectory))
                 {
                     EnsureSourceManifestIsPersisted(context);
                 }
             }
 
-            PruneIfNeeded(settings, context, forceSizeRefresh: true);
-            return CreateStatus(settings, context, activeProjectPreserved: false);
+            PruneIfNeeded(settings, context);
+            return CreateStatus(
+                settings,
+                context,
+                activeProjectPreserved: false,
+                warmupPlan);
         }
     }
 
@@ -319,6 +353,7 @@ public sealed class ZaCacheManager
     {
         lock (syncRoot)
         {
+            EnsureOwnerCacheMutation("clear the Z-A persistent cache");
             EnsureRoot();
             var settings = ReadSettings();
             var activeContext = TryCreateActiveProjectContext(activePaths);
@@ -328,7 +363,14 @@ public sealed class ZaCacheManager
             DeleteDirectoryIfExists(TempPath);
             Directory.CreateDirectory(ProjectsPath);
             retainedPersistentCacheSizeBytes = 0;
-            return CreateStatus(settings, activeContext, activeProjectPreserved: false);
+            var warmupPlan = activeContext is not null && settings.Mode != ZaCacheMode.Minimal
+                ? GetWarmupVirtualPaths(activeContext, persistToDisk: false)
+                : null;
+            return CreateStatus(
+                settings,
+                activeContext,
+                activeProjectPreserved: false,
+                warmupPlan);
         }
     }
 
@@ -346,6 +388,7 @@ public sealed class ZaCacheManager
 
         lock (syncRoot)
         {
+            EnsureOwnerCacheMutation("warm the Z-A persistent cache");
             EnsureRoot();
             var settings = ReadSettings();
             var context = TryCreateActiveProjectContext(paths);
@@ -355,42 +398,59 @@ public sealed class ZaCacheManager
             }
 
             DeleteObsoleteProjectCaches(context);
+            var warmupVirtualPaths = GetWarmupVirtualPaths(context);
+            PruneIfNeeded(settings, context);
             if (IsWarmupCapacityLimited(settings, context))
             {
-                return CreateStatus(settings, context, activeProjectPreserved: false);
+                return CreateStatus(
+                    settings,
+                    context,
+                    activeProjectPreserved: false,
+                    warmupVirtualPaths);
             }
 
-            var stopwatch = Stopwatch.StartNew();
-            var warmupVirtualPaths = GetWarmupVirtualPaths(context);
             if (warmupVirtualPaths.Count == 0)
             {
-                return CreateStatus(settings, context, activeProjectPreserved: false);
+                return CreateStatus(
+                    settings,
+                    context,
+                    activeProjectPreserved: false,
+                    warmupVirtualPaths);
             }
 
             var completedPaths = GetOrCreateCompletedWarmupPaths(settings, context, warmupVirtualPaths);
             var batch = GetWarmupBatch(warmupVirtualPaths, completedPaths, stepIndex);
             if (batch.Count == 0)
             {
-                return CreateStatus(settings, context, activeProjectPreserved: false);
+                return CreateStatus(
+                    settings,
+                    context,
+                    activeProjectPreserved: false,
+                    warmupVirtualPaths);
             }
 
             IReadOnlyList<string> processedPaths;
             if (settings.Mode == ZaCacheMode.Performance)
             {
-                processedPaths = WarmupPerformanceBatch(paths, context, batch, stopwatch);
+                processedPaths = WarmupPerformanceBatch(settings, paths, context, batch);
             }
             else
             {
+                var stopwatch = Stopwatch.StartNew();
                 var processed = new List<string>(batch.Count);
                 for (var index = 0; index < batch.Count; index++)
                 {
-                    if (index > 0 && stopwatch.Elapsed >= WarmupStepTimeBudget)
+                    if (index > 0 && stopwatch.Elapsed >= BalancedWarmupStepTimeBudget)
                     {
                         break;
                     }
 
-                    WriteVirtualMetadata(context, batch[index]);
-                    processed.Add(batch[index]);
+                    var virtualPath = batch[index];
+                    WriteVirtualMetadata(context, virtualPath);
+                    if (IsWarmupEntryComplete(settings, context, virtualPath))
+                    {
+                        processed.Add(virtualPath);
+                    }
                 }
 
                 processedPaths = processed;
@@ -415,7 +475,11 @@ public sealed class ZaCacheManager
                 WriteWarmupCapacityState(settings, context);
             }
 
-            return CreateStatus(settings, context, activeProjectPreserved: false);
+            return CreateStatus(
+                settings,
+                context,
+                activeProjectPreserved: false,
+                warmupVirtualPaths);
         }
     }
 
@@ -435,14 +499,18 @@ public sealed class ZaCacheManager
             if (settings.Mode == ZaCacheMode.Performance
                 && TryReadPayload(context, normalizedVirtualPath, out var cachedBytes))
             {
-                EnsureSourceManifestIsPersisted(context);
-                TouchProjectDirectory(context);
+                if (!isReadWorker)
+                {
+                    EnsureSourceManifestIsPersisted(context);
+                    TouchProjectDirectory(context);
+                }
+
                 return cachedBytes;
             }
 
             var index = GetOrBuildIndex(
                 context,
-                persistToDisk: settings.Mode != ZaCacheMode.Minimal,
+                persistToDisk: !isReadWorker && settings.Mode != ZaCacheMode.Minimal,
                 out var cacheChanged);
 
             using var archive = ZaTrinityArchive.Open(
@@ -451,7 +519,7 @@ public sealed class ZaCacheManager
                 index: index);
             var bytes = archive.ReadFile(normalizedVirtualPath);
 
-            if (settings.Mode == ZaCacheMode.Performance)
+            if (!isReadWorker && settings.Mode == ZaCacheMode.Performance)
             {
                 WritePayload(context, normalizedVirtualPath, bytes);
                 cacheChanged = true;
@@ -509,6 +577,7 @@ public sealed class ZaCacheManager
         bool persistToDisk,
         out bool cacheChanged)
     {
+        persistToDisk &= !isReadWorker;
         if (TryGetRetainedIndex(context, out var retained))
         {
             cacheChanged = persistToDisk && EnsureRetainedIndexIsPersisted(context, retained);
@@ -518,7 +587,15 @@ public sealed class ZaCacheManager
 
         if (!persistToDisk)
         {
-            var transientIndex = CompactIndex(ZaTrinityArchive.BuildIndex(context.RomFsRootPath));
+            if (isReadWorker && TryReadCachedIndex(context, out var readOnlyCachedIndex))
+            {
+                cacheChanged = false;
+                return readOnlyCachedIndex;
+            }
+
+            var transientIndex = CompactIndex(ZaTrinityArchive.BuildIndex(
+                context.RomFsRootPath,
+                MaximumArchiveIndexBytes));
             RetainIndex(context, transientIndex);
             cacheChanged = false;
             return transientIndex;
@@ -535,7 +612,9 @@ public sealed class ZaCacheManager
             return cachedIndex;
         }
 
-        var index = CompactIndex(ZaTrinityArchive.BuildIndex(context.RomFsRootPath));
+        var index = CompactIndex(ZaTrinityArchive.BuildIndex(
+            context.RomFsRootPath,
+            MaximumArchiveIndexBytes));
         var indexFile = new ZaCacheIndexFile(
             CacheSchemaVersion,
             context.Source,
@@ -578,7 +657,7 @@ public sealed class ZaCacheManager
         DeleteObsoleteProjectCaches(context);
         var index = GetOrBuildIndex(
             context,
-            persistToDisk: settings.Mode != ZaCacheMode.Minimal,
+            persistToDisk: !isReadWorker && settings.Mode != ZaCacheMode.Minimal,
             out var cacheChanged);
         if (cacheChanged)
         {
@@ -614,6 +693,11 @@ public sealed class ZaCacheManager
         ZaCacheProjectContext context,
         ZaTrinityArchiveIndex index)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         var indexPath = Path.Combine(context.ProjectDirectory, IndexFileName);
         var changed = false;
         if (!File.Exists(indexPath))
@@ -636,6 +720,11 @@ public sealed class ZaCacheManager
 
     private bool EnsureSourceManifestIsPersisted(ZaCacheProjectContext context)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         var sourcePath = GetSourcePath(context);
         if (File.Exists(sourcePath))
         {
@@ -657,6 +746,11 @@ public sealed class ZaCacheManager
         ZaCacheProjectContext context,
         IReadOnlyList<string> virtualPaths)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         var manifestPath = GetWarmupPathsPath(context);
         try
         {
@@ -667,6 +761,7 @@ public sealed class ZaCacheManager
                 if (existing is not null
                     && existing.CacheSchemaVersion == CacheSchemaVersion
                     && existing.Source == context.Source
+                    && IsValidWarmupPathList(existing.VirtualPaths)
                     && existing.VirtualPaths.SequenceEqual(virtualPaths, StringComparer.OrdinalIgnoreCase))
                 {
                     return false;
@@ -853,20 +948,26 @@ public sealed class ZaCacheManager
             if (metadata is null
                 || metadata.CacheSchemaVersion != CacheSchemaVersion
                 || metadata.Source != context.Source
-                || !string.Equals(metadata.VirtualPath, virtualPath, StringComparison.Ordinal))
+                || !string.Equals(metadata.VirtualPath, virtualPath, StringComparison.Ordinal)
+                || metadata.DecompressedSize < 0
+                || metadata.DecompressedSize > MaximumPerformanceWarmupFileBytes)
             {
                 bytes = [];
                 return false;
             }
 
-            bytes = File.ReadAllBytes(payloadPath);
+            bytes = ReadAllBytesShared(payloadPath, MaximumPerformanceWarmupFileBytes);
             if (bytes.LongLength != metadata.DecompressedSize)
             {
                 bytes = [];
                 return false;
             }
 
-            TouchCacheFile(payloadPath);
+            if (!isReadWorker)
+            {
+                TouchCacheFile(payloadPath);
+            }
+
             return true;
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
@@ -887,23 +988,15 @@ public sealed class ZaCacheManager
             return Array.Empty<string>();
         }
 
-        var firstPath = NormalizeVirtualPath(warmupVirtualPaths[firstIndex]);
-        if (!IsTextMessagePath(firstPath))
-        {
-            return [firstPath];
-        }
-
-        var batch = new List<string>(TextWarmupBatchSize);
-        for (var offset = 0; offset < warmupVirtualPaths.Count && batch.Count < TextWarmupBatchSize; offset++)
+        var batch = new List<string>(WarmupCandidateBatchSize);
+        var selectedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var offset = 0;
+             offset < warmupVirtualPaths.Count && batch.Count < WarmupCandidateBatchSize;
+             offset++)
         {
             var index = (firstIndex + offset) % warmupVirtualPaths.Count;
             var virtualPath = NormalizeVirtualPath(warmupVirtualPaths[index]);
-            if (!IsTextMessagePath(virtualPath))
-            {
-                continue;
-            }
-
-            if (!completedPaths.Contains(virtualPath))
+            if (!completedPaths.Contains(virtualPath) && selectedPaths.Add(virtualPath))
             {
                 batch.Add(virtualPath);
             }
@@ -936,55 +1029,206 @@ public sealed class ZaCacheManager
         ZaCacheProjectContext context,
         string virtualPath)
     {
-        if (!File.Exists(GetMetadataPath(context, virtualPath)))
+        if (!IsVirtualMetadataComplete(context, virtualPath))
         {
             return false;
         }
 
-        return settings.Mode != ZaCacheMode.Performance || File.Exists(GetPayloadPath(context, virtualPath));
+        return settings.Mode != ZaCacheMode.Performance || IsWarmupPayloadComplete(context, virtualPath);
     }
 
     private static bool IsWarmupPayloadComplete(ZaCacheProjectContext context, string virtualPath)
     {
-        return File.Exists(GetMetadataPath(context, virtualPath))
-            && File.Exists(GetPayloadPath(context, virtualPath));
+        var metadataPath = GetPayloadMetadataPath(context, virtualPath);
+        var payloadPath = GetPayloadPath(context, virtualPath);
+        if (!File.Exists(metadataPath) || !File.Exists(payloadPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var stream = OpenJsonReadStream(metadataPath);
+            var metadata = JsonSerializer.Deserialize<ZaCachePayloadMetadata>(stream, JsonOptions);
+            return metadata is not null
+                && metadata.CacheSchemaVersion == CacheSchemaVersion
+                && metadata.Source == context.Source
+                && string.Equals(metadata.VirtualPath, virtualPath, StringComparison.Ordinal)
+                && metadata.DecompressedSize >= 0
+                && new FileInfo(payloadPath).Length == metadata.DecompressedSize;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsVirtualMetadataComplete(ZaCacheProjectContext context, string virtualPath)
+    {
+        var metadataPath = GetMetadataPath(context, virtualPath);
+        if (!File.Exists(metadataPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var stream = OpenJsonReadStream(metadataPath);
+            var metadata = JsonSerializer.Deserialize<ZaCacheVirtualFileMetadata>(stream, JsonOptions);
+            return metadata is not null
+                && metadata.CacheSchemaVersion == CacheSchemaVersion
+                && metadata.Source == context.Source
+                && string.Equals(metadata.VirtualPath, virtualPath, StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private IReadOnlyList<string> WarmupPerformanceBatch(
+        ZaCacheSettings settings,
         ProjectPaths paths,
         ZaCacheProjectContext context,
-        IReadOnlyList<string> virtualPaths,
-        Stopwatch stopwatch)
+        IReadOnlyList<string> virtualPaths)
     {
-        var processed = new List<string>(virtualPaths.Count);
+        var stopwatch = Stopwatch.StartNew();
         var index = GetOrBuildIndex(context);
-        using var archive = ZaTrinityArchive.Open(
-            paths.BaseRomFsPath!,
-            paths.PokemonLegendsZASupportFolderPath,
-            index: index);
+        var processed = new List<string>(virtualPaths.Count);
+        var pendingPaths = new List<string>(virtualPaths.Count);
 
-        for (var pathIndex = 0; pathIndex < virtualPaths.Count; pathIndex++)
+        foreach (var path in virtualPaths)
         {
-            if (pathIndex > 0 && stopwatch.Elapsed >= WarmupStepTimeBudget)
-            {
-                break;
-            }
-
-            var virtualPath = virtualPaths[pathIndex];
-            if (IsWarmupPayloadComplete(context, virtualPath))
+            var virtualPath = NormalizeVirtualPath(path);
+            if (IsWarmupEntryComplete(settings, context, virtualPath))
             {
                 processed.Add(virtualPath);
-                continue;
             }
-
-            if (!archive.TryReadFile(virtualPath, out var bytes))
+            else
             {
-                continue;
+                pendingPaths.Add(virtualPath);
+            }
+        }
+
+        if (pendingPaths.Count == 0)
+        {
+            return processed;
+        }
+
+        using (ZaTrinityArchive.Open(
+            paths.BaseRomFsPath!,
+            paths.PokemonLegendsZASupportFolderPath,
+            index: index,
+            maximumPackBytes: MaximumPerformanceWarmupPackBytes))
+        {
+            // Compile the shared immutable lookup once before worker archives fan out.
+        }
+
+        var maximumParallelism = BoundedParallel
+            .Plan(pendingPaths.Count, PerformanceWarmupPolicy)
+            .DegreeOfParallelism;
+        var archives = new ZaTrinityArchive?[maximumParallelism];
+        try
+        {
+            for (var archiveIndex = 0; archiveIndex < archives.Length; archiveIndex++)
+            {
+                archives[archiveIndex] = ZaTrinityArchive.Open(
+                    paths.BaseRomFsPath!,
+                    paths.PokemonLegendsZASupportFolderPath,
+                    index: index,
+                    maximumPackBytes: MaximumPerformanceWarmupPackBytes);
             }
 
-            WriteVirtualMetadata(context, virtualPath);
-            WritePayload(context, virtualPath, bytes);
-            processed.Add(virtualPath);
+            for (var waveStart = 0; waveStart < pendingPaths.Count; waveStart += maximumParallelism)
+            {
+                var waveCount = Math.Min(maximumParallelism, pendingPaths.Count - waveStart);
+                var extractedPayloads = new byte[]?[waveCount];
+                var extractionFailures = new ExceptionDispatchInfo?[waveCount];
+                _ = BoundedParallel.For(
+                    waveCount,
+                    PerformanceWarmupPolicy,
+                    waveIndex =>
+                    {
+                        try
+                        {
+                            var virtualPath = pendingPaths[waveStart + waveIndex];
+                            if (archives[waveIndex]!.TryReadFile(
+                                    virtualPath,
+                                    MaximumPerformanceWarmupFileBytes,
+                                    out var bytes))
+                            {
+                                extractedPayloads[waveIndex] = bytes;
+                            }
+                        }
+                        catch (Exception exception)
+                        {
+                            extractionFailures[waveIndex] = ExceptionDispatchInfo.Capture(exception);
+                        }
+                    });
+
+                for (var waveIndex = 0; waveIndex < waveCount; waveIndex++)
+                {
+                    if (extractionFailures[waveIndex] is not { } extractionFailure)
+                    {
+                        continue;
+                    }
+
+                    var failedPath = pendingPaths[waveStart + waveIndex];
+                    try
+                    {
+                        extractionFailure.Throw();
+                    }
+                    catch (OutOfMemoryException)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        throw new InvalidDataException(
+                            $"The indexed Z-A cache source failed while reading '{failedPath}'. Verify the configured Base RomFS and support files, then retry.",
+                            exception);
+                    }
+                }
+
+                for (var waveIndex = 0; waveIndex < waveCount; waveIndex++)
+                {
+                    if (extractedPayloads[waveIndex] is null)
+                    {
+                        var failedPath = pendingPaths[waveStart + waveIndex];
+                        throw new InvalidDataException(
+                            $"The indexed Z-A cache source could not read '{failedPath}'. Verify the configured Base RomFS and support files, then retry.");
+                    }
+                }
+
+                for (var waveIndex = 0; waveIndex < waveCount; waveIndex++)
+                {
+                    var virtualPath = pendingPaths[waveStart + waveIndex];
+                    var bytes = extractedPayloads[waveIndex]!;
+                    WriteVirtualMetadata(context, virtualPath);
+                    WritePayload(context, virtualPath, bytes);
+                    extractedPayloads[waveIndex] = null;
+
+                    if (!IsWarmupEntryComplete(settings, context, virtualPath))
+                    {
+                        throw new InvalidDataException(
+                            $"The Z-A cache could not verify the completed warmup entry '{virtualPath}'. Retry the cache build.");
+                    }
+
+                    processed.Add(virtualPath);
+                }
+
+                if (stopwatch.Elapsed >= PerformanceWarmupStepTimeBudget)
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            foreach (var archive in archives)
+            {
+                archive?.Dispose();
+            }
         }
 
         return processed;
@@ -1010,11 +1254,12 @@ public sealed class ZaCacheManager
     private ZaCacheStatus CreateStatus(
         ZaCacheSettings settings,
         ZaCacheProjectContext? context,
-        bool activeProjectPreserved)
+        bool activeProjectPreserved,
+        IReadOnlyList<string>? exactWarmupPlan = null)
     {
         var cacheSize = GetCacheContentSize();
         var warmupVirtualPaths = context is not null && settings.Mode != ZaCacheMode.Minimal
-            ? GetWarmupVirtualPathsForStatus(context)
+            ? exactWarmupPlan ?? GetWarmupVirtualPaths(context)
             : Array.Empty<string>();
         var total = warmupVirtualPaths.Count;
         var capacityLimited = context is not null && IsWarmupCapacityLimited(settings, context);
@@ -1057,35 +1302,21 @@ public sealed class ZaCacheManager
             activeProjectPreserved);
     }
 
-    private IReadOnlyList<string> GetWarmupVirtualPathsForStatus(ZaCacheProjectContext context)
+    private static bool IsValidWarmupPathList(IReadOnlyList<string>? virtualPaths)
     {
-        if (retainedWarmupVirtualPaths is not null && retainedWarmupPathsSource == context.Source)
-        {
-            return retainedWarmupVirtualPaths;
-        }
-
-        var manifestPath = GetWarmupPathsPath(context);
-        try
-        {
-            if (File.Exists(manifestPath))
+        return virtualPaths is { Count: > 0 }
+            && virtualPaths.All(path =>
             {
-                using var stream = OpenJsonReadStream(manifestPath);
-                var manifest = JsonSerializer.Deserialize<ZaCacheWarmupPathsFile>(stream, JsonOptions);
-                if (manifest is not null
-                    && manifest.CacheSchemaVersion == CacheSchemaVersion
-                    && manifest.Source == context.Source)
+                if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
                 {
-                    retainedWarmupPathsSource = context.Source;
-                    retainedWarmupVirtualPaths = manifest.VirtualPaths;
-                    return manifest.VirtualPaths;
+                    return false;
                 }
-            }
-        }
-        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
-        {
-        }
 
-        return WarmupVirtualPaths;
+                var segments = path.Replace('\\', '/').Split('/');
+                return segments.All(segment => !string.IsNullOrWhiteSpace(segment)
+                    && !string.Equals(segment, ".", StringComparison.Ordinal)
+                    && !string.Equals(segment, "..", StringComparison.Ordinal));
+            });
     }
 
     private bool IsWarmupCapacityLimited(ZaCacheSettings settings, ZaCacheProjectContext context)
@@ -1142,9 +1373,14 @@ public sealed class ZaCacheManager
         retainedWarmupProgressSource = context.Source;
         retainedWarmupProgressMode = settings.Mode;
         retainedWarmupProgressPaths = warmupVirtualPaths;
-        retainedCompletedWarmupPaths = warmupVirtualPaths
-            .Select(NormalizeVirtualPath)
-            .Where(path => IsWarmupEntryComplete(settings, context, path))
+        var normalizedPaths = warmupVirtualPaths.Select(NormalizeVirtualPath).ToArray();
+        var completed = BoundedParallel.MapOrdered(
+            normalizedPaths,
+            WarmupVerificationPolicy,
+            (virtualPath, _) => IsWarmupEntryComplete(settings, context, virtualPath));
+        retainedCompletedWarmupPaths = Enumerable.Range(0, normalizedPaths.Length)
+            .Where(index => completed[index])
+            .Select(index => normalizedPaths[index])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return retainedCompletedWarmupPaths;
     }
@@ -1154,6 +1390,11 @@ public sealed class ZaCacheManager
         ZaCacheProjectContext? activeContext,
         bool forceSizeRefresh = false)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         var activeProjectKey = activeContext?.ProjectKey;
         CleanupTempDirectory();
         var currentSize = GetCacheContentSize(forceSizeRefresh);
@@ -1310,6 +1551,11 @@ public sealed class ZaCacheManager
 
     private void DeleteObsoleteProjectCaches(ZaCacheProjectContext activeContext)
     {
+        if (isReadWorker)
+        {
+            return;
+        }
+
         if (string.Equals(
                 lastObsoleteProjectCleanupKey,
                 activeContext.ProjectKey,
@@ -1385,7 +1631,7 @@ public sealed class ZaCacheManager
 
         try
         {
-            using var stream = OpenJsonReadStream(indexPath);
+            using var stream = OpenJsonReadStream(indexPath, MaximumPersistedIndexFileBytes);
             var cached = JsonSerializer.Deserialize<ZaCacheIndexFile>(stream, JsonOptions);
             if (cached is not null && cached.CacheSchemaVersion == CacheSchemaVersion)
             {
@@ -1393,7 +1639,8 @@ public sealed class ZaCacheManager
                 return true;
             }
         }
-        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (
+            exception is JsonException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
             // Corrupt or inaccessible cache files are disposable and ignored here.
         }
@@ -1404,6 +1651,11 @@ public sealed class ZaCacheManager
 
     private bool TryDeleteDirectory(string path)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         try
         {
             DeleteDirectoryIfExists(path);
@@ -1435,14 +1687,7 @@ public sealed class ZaCacheManager
             return null;
         }
 
-        try
-        {
-            return CreateProjectContext(paths);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FileNotFoundException)
-        {
-            return null;
-        }
+        return CreateProjectContext(paths);
     }
 
     private ZaCacheProjectContext CreateProjectContext(ProjectPaths paths)
@@ -1549,7 +1794,11 @@ public sealed class ZaCacheManager
         if (!File.Exists(SettingsPath))
         {
             var defaultSettings = new ZaCacheSettings(ZaCacheMode.Balanced, DefaultMaxCacheSizeBytes);
-            WriteJsonAtomic(SettingsPath, defaultSettings);
+            if (!isReadWorker)
+            {
+                WriteJsonAtomic(SettingsPath, defaultSettings);
+            }
+
             return defaultSettings;
         }
 
@@ -1564,10 +1813,15 @@ public sealed class ZaCacheManager
 
             return settings with { MaxCacheSizeBytes = ClampMaxCacheSize(settings.MaxCacheSizeBytes) };
         }
-        catch (JsonException)
+        catch (Exception exception) when (
+            exception is JsonException or IOException or UnauthorizedAccessException)
         {
             var defaultSettings = new ZaCacheSettings(ZaCacheMode.Balanced, DefaultMaxCacheSizeBytes);
-            WriteJsonAtomic(SettingsPath, defaultSettings);
+            if (!isReadWorker)
+            {
+                WriteJsonAtomic(SettingsPath, defaultSettings);
+            }
+
             return defaultSettings;
         }
     }
@@ -1579,6 +1833,11 @@ public sealed class ZaCacheManager
 
     private void EnsureRoot()
     {
+        if (isReadWorker)
+        {
+            return;
+        }
+
         Directory.CreateDirectory(cacheRoot);
         Directory.CreateDirectory(ProjectsPath);
         if (!tempCleanupCompleted)
@@ -1660,20 +1919,20 @@ public sealed class ZaCacheManager
         return Path.Combine(context.ProjectDirectory, WarmupStateFileName);
     }
 
-    private static bool IsTextMessagePath(string virtualPath)
+    private void TouchProjectDirectory(ZaCacheProjectContext context)
     {
-        return NormalizeVirtualPath(virtualPath)
-            .StartsWith($"{ZaMessagePathResolver.MessageRootPath}/", StringComparison.OrdinalIgnoreCase);
-    }
+        if (isReadWorker)
+        {
+            return;
+        }
 
-    private static void TouchProjectDirectory(ZaCacheProjectContext context)
-    {
         Directory.CreateDirectory(context.ProjectDirectory);
         Directory.SetLastWriteTimeUtc(context.ProjectDirectory, DateTime.UtcNow);
     }
 
     private void WriteJsonAtomic<TValue>(string path, TValue value)
     {
+        EnsureOwnerCacheMutation("publish Z-A persistent cache data");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         Directory.CreateDirectory(TempPath);
         var tempPath = Path.Combine(
@@ -1702,19 +1961,60 @@ public sealed class ZaCacheManager
         }
     }
 
-    private static FileStream OpenJsonReadStream(string path)
+    private static FileStream OpenJsonReadStream(
+        string path,
+        long maximumBytes = MaximumCacheJsonFileBytes)
     {
-        return new FileStream(
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+
+        var stream = new FileStream(
             path,
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read | FileShare.Delete,
             bufferSize: 128 * 1024,
             FileOptions.SequentialScan);
+        try
+        {
+            if (stream.Length < 0 || stream.Length > maximumBytes)
+            {
+                throw new IOException(
+                    $"Cache JSON file exceeds the safe read limit of {maximumBytes} bytes.");
+            }
+
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    private static byte[] ReadAllBytesShared(string path, long maximumBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
+        if (stream.Length < 0 || stream.Length > maximumBytes || stream.Length > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"The Z-A cache payload exceeds its safe read limit of {maximumBytes} bytes.");
+        }
+
+        var bytes = GC.AllocateUninitializedArray<byte>((int)stream.Length);
+        stream.ReadExactly(bytes);
+        return bytes;
     }
 
     private void WriteBytesAtomic(string path, byte[] bytes)
     {
+        EnsureOwnerCacheMutation("publish Z-A persistent cache data");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         Directory.CreateDirectory(TempPath);
         var tempPath = Path.Combine(
@@ -1735,6 +2035,11 @@ public sealed class ZaCacheManager
 
     private void CleanupTempDirectory()
     {
+        if (isReadWorker)
+        {
+            return;
+        }
+
         if (!Directory.Exists(TempPath))
         {
             return;
@@ -1775,6 +2080,11 @@ public sealed class ZaCacheManager
 
     private bool TryDeleteFile(string path)
     {
+        if (isReadWorker)
+        {
+            return false;
+        }
+
         var previousLength = GetTrackedFileLength(path);
         try
         {
@@ -1848,29 +2158,141 @@ public sealed class ZaCacheManager
         return fullPath.StartsWith(projectsRoot, StringComparison.OrdinalIgnoreCase);
     }
 
+    private void EnsureOwnerCacheMutation(string operation)
+    {
+        if (isReadWorker)
+        {
+            throw new InvalidOperationException(
+                $"An isolated managed read worker cannot {operation}.");
+        }
+    }
+
     private static long GetDirectorySize(string path)
     {
-        if (!Directory.Exists(path))
+        FileAttributes rootAttributes;
+        try
+        {
+            rootAttributes = File.GetAttributes(path);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return 0;
         }
-
-        long total = 0;
-        foreach (var file in Directory.EnumerateFiles(path, "*", RecursiveCacheEnumeration))
+        catch (Exception exception) when (IsCacheTraversalFailure(exception))
         {
+            throw new IOException("The Z-A cache directory could not be inspected safely.", exception);
+        }
+
+        if ((rootAttributes & FileAttributes.Directory) == 0)
+        {
+            throw new InvalidDataException("The configured Z-A cache directory is not a directory.");
+        }
+
+        if ((rootAttributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException("The configured Z-A cache directory cannot be a symbolic link or reparse point.");
+        }
+
+        var pendingDirectories = new Stack<(DirectoryInfo Directory, int Depth)>();
+        pendingDirectories.Push((new DirectoryInfo(path), 0));
+        var entryCount = 0;
+        long total = 0;
+        while (pendingDirectories.TryPop(out var pendingDirectory))
+        {
+            var remainingEntryCapacity = MaximumCacheTraversalEntries - entryCount;
+            FileSystemInfo[] entries;
             try
             {
-                total += new FileInfo(file).Length;
+                entries = pendingDirectory.Directory
+                    .EnumerateFileSystemInfos("*", CacheDirectoryEnumeration)
+                    .Take(remainingEntryCapacity + 1)
+                    .ToArray();
             }
-            catch (IOException)
+            catch (Exception exception) when (IsCacheTraversalFailure(exception))
             {
+                throw new IOException(
+                    $"The Z-A cache directory tree could not be enumerated safely at depth {pendingDirectory.Depth}.",
+                    exception);
             }
-            catch (UnauthorizedAccessException)
+
+            if (entries.Length > remainingEntryCapacity)
             {
+                throw new InvalidDataException(
+                    $"The Z-A cache directory contains more than the supported {MaximumCacheTraversalEntries:N0} entries.");
+            }
+
+            entryCount += entries.Length;
+            Array.Sort(entries, static (left, right) => StringComparer.Ordinal.Compare(left.Name, right.Name));
+            var childDirectories = new List<DirectoryInfo>();
+            foreach (var entry in entries)
+            {
+                FileAttributes attributes;
+                try
+                {
+                    attributes = entry.Attributes;
+                }
+                catch (Exception exception) when (IsCacheTraversalFailure(exception))
+                {
+                    throw new IOException(
+                        $"An entry in the Z-A cache directory could not be inspected safely at depth {pendingDirectory.Depth}.",
+                        exception);
+                }
+
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    continue;
+                }
+
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    if (pendingDirectory.Depth >= MaximumCacheTraversalDepth)
+                    {
+                        throw new InvalidDataException(
+                            $"The Z-A cache directory exceeds the supported traversal depth of {MaximumCacheTraversalDepth}.");
+                    }
+
+                    childDirectories.Add(entry as DirectoryInfo ?? new DirectoryInfo(entry.FullName));
+                    continue;
+                }
+
+                long fileLength;
+                try
+                {
+                    fileLength = (entry as FileInfo ?? new FileInfo(entry.FullName)).Length;
+                }
+                catch (Exception exception) when (IsCacheTraversalFailure(exception))
+                {
+                    throw new IOException(
+                        $"A file in the Z-A cache directory could not be measured safely at depth {pendingDirectory.Depth}.",
+                        exception);
+                }
+
+                try
+                {
+                    total = checked(total + fileLength);
+                }
+                catch (OverflowException exception)
+                {
+                    throw new InvalidDataException("The Z-A cache directory size exceeds the supported range.", exception);
+                }
+            }
+
+            for (var index = childDirectories.Count - 1; index >= 0; index--)
+            {
+                pendingDirectories.Push((childDirectories[index], pendingDirectory.Depth + 1));
             }
         }
 
         return total;
+    }
+
+    private static bool IsCacheTraversalFailure(Exception exception)
+    {
+        return exception is IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException
+            or ArgumentException
+            or NotSupportedException;
     }
 
     private static void DeleteDirectoryIfExists(string path)

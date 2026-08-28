@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import {
+  measureRealQueryUnits,
+  type RealQueryUnitStatus
+} from '../../utils/projectAsyncPolicy';
+
 export const analysisLoadingModes = ['reduced', 'balanced', 'fastest'] as const;
 export type AnalysisLoadingMode = (typeof analysisLoadingModes)[number];
 
@@ -136,16 +141,30 @@ export function nextAnalysisPreloadTool(options: {
   semanticState: AnalysisPreparationState;
   states: Record<AnalysisSystemId, AnalysisPreparationState>;
 }): AnalysisToolId | null {
-  if (options.semanticState !== 'ready') return null;
+  return nextAnalysisPreloadTools(options)[0] ?? null;
+}
+
+export function nextAnalysisPreloadTools(options: {
+  deferBackgroundWork: boolean;
+  mode: AnalysisLoadingMode;
+  preloadTools: readonly AnalysisToolId[];
+  semanticState: AnalysisPreparationState;
+  states: Record<AnalysisSystemId, AnalysisPreparationState>;
+}): readonly AnalysisToolId[] {
+  if (options.semanticState !== 'ready') return [];
   const order = analysisPreloadOrder(options.mode);
+  if (options.mode === 'fastest') {
+    return order.filter((tool) => !options.preloadTools.includes(tool));
+  }
   const nextIndex = order.findIndex((tool) => !options.preloadTools.includes(tool));
-  if (nextIndex < 0) return null;
+  if (nextIndex < 0) return [];
   if (order.slice(0, nextIndex).some((tool) => (
     options.states[tool] !== 'ready' && options.states[tool] !== 'error'
-  ))) return null;
-  if (analysisToolIds.some((tool) => options.states[tool] === 'loading')) return null;
-  if (options.mode === 'balanced' && options.deferBackgroundWork) return null;
-  return order[nextIndex] ?? null;
+  ))) return [];
+  if (analysisToolIds.some((tool) => options.states[tool] === 'loading')) return [];
+  if (options.mode === 'balanced' && options.deferBackgroundWork) return [];
+  const nextTool = order[nextIndex];
+  return nextTool ? [nextTool] : [];
 }
 
 export function createAnalysisPreparationProgress(
@@ -170,7 +189,7 @@ export function createAnalysisPreparationProgress(
 
 export function preparationProgressFromQueryStatuses(
   system: AnalysisSystemId,
-  statuses: readonly ('idle' | 'loading' | 'ready' | 'error')[]
+  statuses: readonly RealQueryUnitStatus[]
 ): AnalysisPreparationProgress {
   const totalUnitCount = analysisPreparationUnitCounts[system];
   if (statuses.length !== totalUnitCount) {
@@ -178,13 +197,17 @@ export function preparationProgressFromQueryStatuses(
       `${system} preparation requires ${totalUnitCount} measured query statuses.`
     );
   }
-  const completedUnitCount = statuses.filter((status) => status === 'ready').length;
-  const state: AnalysisPreparationState = statuses.some((status) => status === 'error')
+  const measured = measureRealQueryUnits(statuses);
+  const state: AnalysisPreparationState = measured.hasError
     ? 'error'
-    : completedUnitCount === totalUnitCount
+    : measured.isReady
       ? 'ready'
       : 'loading';
-  return { completedUnitCount, state, totalUnitCount };
+  return {
+    completedUnitCount: measured.completedUnitCount,
+    state,
+    totalUnitCount: measured.totalUnitCount
+  };
 }
 
 export function mergeAnalysisPreparationProgress(
@@ -222,7 +245,7 @@ export function createAnalysisPreparationScopeState(options: {
     preloadTools: [],
     progressBySystem: {
       ...emptyAnalysisPreparationProgress(),
-      semanticProject: options.scopeKey
+      semanticProject: options.scopeKey || options.semanticProgress.state !== 'ready'
         ? options.semanticProgress
         : createAnalysisPreparationProgress('semanticProject', 'waiting')
     },

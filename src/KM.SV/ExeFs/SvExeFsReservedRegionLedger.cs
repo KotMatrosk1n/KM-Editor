@@ -37,11 +37,57 @@ internal static class SvExeFsReservedRegionLedger
 {
     public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerHyperspaceBypass = "Hyperspace Bypass";
+    public const string OwnerNativeGameplayMenu = "Native Gameplay Menu";
     public const string OwnerTypeChart = "Type Chart";
     public const string ExeFsMainPath = "exefs/main";
 
     private static readonly SvExeFsReservedRegion[] regions =
     [
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-bss-reservation",
+            ExeFsMainPath,
+            "main.header",
+            0x3C,
+            0x04,
+            "Native gameplay menu runtime snapshot BSS reservation",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-share-hook",
+            ExeFsMainPath,
+            "main.text",
+            0x01141BA0,
+            0x04,
+            "Native gameplay menu EXP Share runtime hook",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-level-cap-hook",
+            ExeFsMainPath,
+            "main.text",
+            0x0178143C,
+            0x04,
+            "Native gameplay menu level-cap runtime hook",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-rate-hook",
+            ExeFsMainPath,
+            "main.text",
+            0x01781E30,
+            0x04,
+            "Native gameplay menu EXP rate runtime hook",
+            "do-not-overwrite"),
+        new(
+            OwnerNativeGameplayMenu,
+            "native-gameplay-menu-runtime-scaffold",
+            ExeFsMainPath,
+            "main.text",
+            0x0343FC90,
+            0x01B0,
+            "Native gameplay menu runtime scaffold",
+            "do-not-overwrite"),
         new(
             OwnerTypeChart,
             "type-chart-sv",

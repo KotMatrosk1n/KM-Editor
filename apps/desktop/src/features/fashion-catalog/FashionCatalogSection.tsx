@@ -321,18 +321,21 @@ export function FashionCatalogSection({
             <div className="fashion-catalog-row-list">
               {visibleRows.length === 0 ? (
                 <p className="empty-copy">{t('fashionCatalog.search.noResults')}</p>
-              ) : visibleRows.map((row) => (
-                <button
-                  aria-pressed={selectedRowId === row.physicalRowId}
-                  className={selectedRowId === row.physicalRowId ? 'selected' : ''}
-                  key={row.physicalRowId}
-                  onClick={() => setSelectedRowId(row.physicalRowId)}
-                  type="button"
-                >
-                  <strong>{getRowTitle(row)}</strong>
-                  <span>{getRowSubtitle(row)}</span>
-                </button>
-              ))}
+              ) : visibleRows.map((row) => {
+                const subtitle = getRowSubtitle(row);
+                return (
+                  <button
+                    aria-pressed={selectedRowId === row.physicalRowId}
+                    className={selectedRowId === row.physicalRowId ? 'selected' : ''}
+                    key={row.physicalRowId}
+                    onClick={() => setSelectedRowId(row.physicalRowId)}
+                    type="button"
+                  >
+                    <strong>{getRowTitle(row)}</strong>
+                    {subtitle ? <span>{subtitle}</span> : null}
+                  </button>
+                );
+              })}
             </div>
             <div className="fashion-catalog-pagination">
               <button
@@ -521,12 +524,12 @@ function getRowTitle(row: CatalogRecord): string {
   return `${row.itemId} · ${row.modelKey}`;
 }
 
-function getRowSubtitle(row: CatalogRecord): string {
+function getRowSubtitle(row: CatalogRecord): string | null {
   if ('lineupId' in row) {
     return row.shopIds.join(', ') || String(row.entryPhysicalIndex + 1);
   }
   if ('modelVariant' in row) {
-    return row.modelVariant;
+    return null;
   }
   if ('displayLabel' in row) {
     return row.modelPart;

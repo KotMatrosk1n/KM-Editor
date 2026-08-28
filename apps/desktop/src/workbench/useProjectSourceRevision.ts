@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProjectGame, ProjectPaths } from '../bridge/contracts';
 import type { ProjectSourceRevisionProjectBridgeApi } from '../bridge/projectSourceRevisionProjectBridge';
+import {
+  ProjectQueryEpoch,
+  runIndependentProjectRead
+} from '../utils/projectAsyncPolicy';
 
 export type ProjectSourceRevisionState = {
   error: string | null;
@@ -49,10 +53,19 @@ export function useProjectSourceRevision(options: {
     sourceObservationToken: null,
     status: 'idle'
   });
-  const generationRef = useRef(0);
+  const freshnessRef = useRef<ProjectQueryEpoch<'revision'> | null>(null);
+  if (freshnessRef.current === null) {
+    freshnessRef.current = new ProjectQueryEpoch<'revision'>();
+  }
+  const freshness = freshnessRef.current;
   const observationIdentity = projectSourceRevisionObservationIdentity(options);
+  const requestKey = JSON.stringify([
+    'project.sourceRevision.read',
+    observationIdentity,
+    refreshRevision
+  ]);
   const refresh = useCallback(() => {
-    generationRef.current += 1;
+    freshness.invalidateAll();
     setState({
       error: null,
       fingerprint: null,
@@ -62,10 +75,10 @@ export function useProjectSourceRevision(options: {
     setRefreshRevision((current) =>
       current === Number.MAX_SAFE_INTEGER ? 0 : current + 1
     );
-  }, []);
+  }, [freshness]);
 
   useEffect(() => {
-    const generation = ++generationRef.current;
+    const ticket = freshness.supersede('revision');
     if (!options.game || !options.paths || !options.projectId) {
       setState({
         error: null,
@@ -82,14 +95,18 @@ export function useProjectSourceRevision(options: {
       sourceObservationToken: null,
       status: 'loading'
     });
-    void options.bridge
-      .readProjectSourceRevision({
-        paths: options.paths,
-        projectId: options.projectId
+    void runIndependentProjectRead(
+      'readProjectSourceRevision',
+      options.bridge,
+      requestKey,
+      () => options.bridge.readProjectSourceRevision({
+        paths: options.paths as ProjectPaths,
+        projectId: options.projectId as string
       })
+    )
       .then(
         (response) => {
-          if (generation !== generationRef.current) return;
+          if (!freshness.isCurrent(ticket)) return;
           if (
             response.projectId !== options.projectId ||
             response.game !== options.game
@@ -110,7 +127,7 @@ export function useProjectSourceRevision(options: {
           });
         },
         () => {
-          if (generation !== generationRef.current) return;
+          if (!freshness.isCurrent(ticket)) return;
           setState({
             error: 'source-revision-unavailable',
             fingerprint: null,
@@ -121,12 +138,13 @@ export function useProjectSourceRevision(options: {
       );
 
     return () => {
-      generationRef.current += 1;
+      freshness.supersede('revision');
     };
   }, [
+    freshness,
     options.bridge,
     observationIdentity,
-    refreshRevision
+    requestKey
   ]);
 
   return { ...state, refresh };

@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use std::io::{BufRead, BufReader, Write};
+use std::collections::VecDeque;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex, MutexGuard, TryLockError};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+#[cfg(windows)]
+use std::ffi::c_void;
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use tauri::{Emitter, Manager};
@@ -17,7 +24,18 @@ use tauri_plugin_shell::ShellExt;
 mod windows_app_identity;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
-const MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS: usize = 8;
+// The bridge wire protocol is stateful and line-oriented. Keep mutations on the owning
+// sidecar while proven immutable reads use a small, resource-bounded pool of long-lived
+// sidecars with stable command affinity.
+const MAX_PROJECT_BRIDGE_PARALLEL_READ_WORKERS: usize = 4;
+const PROJECT_BRIDGE_ESTIMATED_READ_WORKER_BYTES: u64 = 768 * 1024 * 1024;
+const PROJECT_BRIDGE_READ_WORKER_MEMORY_BUDGET_DIVISOR: u64 = 4;
+const PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE: &str = "KM_MANAGED_READ_WORKER";
+const PROJECT_BRIDGE_CPU_LIMIT_ENVIRONMENT_VARIABLE: &str = "KM_MANAGED_CONCURRENCY_CPU_LIMIT";
+const PROJECT_BRIDGE_MEMORY_LIMIT_ENVIRONMENT_VARIABLE: &str =
+    "KM_MANAGED_CONCURRENCY_MEMORY_BYTES";
+const MAX_PROJECT_BRIDGE_PENDING_REQUESTS: usize = 64;
+const MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES: usize = 256 * 1024 * 1024;
 const PROJECT_BRIDGE_LIMIT_PROVISION_MULTIPLIER: usize = 4;
 const PROJECT_BRIDGE_LIMIT_HARD_CEILING_MULTIPLIER: usize = 2;
 const PROJECT_BRIDGE_EXPECTED_REQUEST_BYTES: usize = 16 * 1024 * 1024;
@@ -56,9 +74,7 @@ const PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER: u64 = 2;
 const PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT: Duration = Duration::from_secs(
     PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER,
 );
-const PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const PROJECT_BRIDGE_TERMINATION_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
-const PROJECT_BRIDGE_OUTER_TIMEOUT_MARGIN: Duration = Duration::from_secs(5);
 const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(
     PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS
         * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER
@@ -67,7 +83,10 @@ const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(
 // New commands must never become unbounded by omission. They receive this generous
 // ceiling without replay until their retry semantics are explicitly reviewed.
 const PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT: Duration = PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT;
-const PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROJECT_BRIDGE_IO_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROJECT_BRIDGE_TERMINATION_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROJECT_BRIDGE_READ_CHUNK_BYTES: usize = 64 * 1024;
+const PROJECT_BRIDGE_INITIAL_RESPONSE_BUFFER_BYTES: usize = 8 * 1024;
 const PROJECT_BRIDGE_REQUEST_RUNNING: usize = 0;
 const PROJECT_BRIDGE_REQUEST_COMPLETED: usize = 1;
 const PROJECT_BRIDGE_REQUEST_TIMED_OUT: usize = 2;
@@ -81,6 +100,245 @@ const STALE_UPDATER_TEMP_DIRECTORY_AGE: Duration = Duration::from_secs(24 * 60 *
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+// This sorted catalog mirrors every command that the managed dispatcher actually routes. Unknown
+// commands never enter a read worker: they fail closed onto the exclusive ordered lane. The Rust
+// contract test below compares this catalog to the C# dispatcher so a new route cannot silently
+// inherit concurrency or replay behavior.
+const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
+    "angeFight.load",
+    "angeFight.stage",
+    "angeFight.uninstall.stage",
+    "bagHook.install.stage",
+    "bagHook.load",
+    "bagHook.uninstall.stage",
+    "battleCafeRewards.load",
+    "battleCafeRewards.rows.stage",
+    "behavior.entry.update",
+    "behavior.fields.update",
+    "behavior.load",
+    "catchCap.load",
+    "catchCap.stage",
+    "catchCap.uninstall.stage",
+    "changePlan.apply",
+    "changePlan.create",
+    "changeSets.captureSession",
+    "changeSets.export",
+    "changeSets.import",
+    "changeSets.materialize",
+    "changeSets.mutate",
+    "changeSets.read",
+    "dynamaxAdventures.defaults.preview",
+    "dynamaxAdventures.field.update",
+    "dynamaxAdventures.load",
+    "dynamaxAdventures.repair.stage",
+    "dynamaxAdventures.restore.stage",
+    "dynamaxAdventures.seed.plan",
+    "dynamaxAdventures.seed.save.set",
+    "dynamaxAdventures.seed.search",
+    "editSession.start",
+    "editSession.validate",
+    "encounters.load",
+    "encounters.slot.update",
+    "encounters.slot.vanilla.stage",
+    "encounters.slots.update",
+    "exefsPatches.load",
+    "exefsPatches.patch.stage",
+    "fairyGymBoosts.load",
+    "fairyGymBoosts.stage",
+    "fashionCatalog.field.stage",
+    "fashionCatalog.load",
+    "fashionUnlock.install.stage",
+    "fashionUnlock.load",
+    "fashionUnlock.uninstall.stage",
+    "flagworkSave.load",
+    "fpsPatch.apply",
+    "fpsPatch.load",
+    "fpsPatch.restore",
+    "gameDump.load",
+    "gameDump.run",
+    "gameModules.capabilities",
+    "gameModules.query",
+    "gameplaySettings.get",
+    "gameplaySettings.update.apply",
+    "gameplaySettings.update.preview",
+    "giftPokemon.field.update",
+    "giftPokemon.fields.update",
+    "giftPokemon.gift.vanilla.stage",
+    "giftPokemon.load",
+    "guidedDesign.capabilities",
+    "guidedDesign.import",
+    "guidedDesign.preview",
+    "gymUniformRemoval.install.stage",
+    "gymUniformRemoval.load",
+    "gymUniformRemoval.uninstall.stage",
+    "habitatCoordinates.coordinate.stage",
+    "habitatCoordinates.load",
+    "hyperTraining.load",
+    "hyperTraining.stage",
+    "hyperspaceBypass.install.stage",
+    "hyperspaceBypass.load",
+    "hyperspaceBypass.uninstall.stage",
+    "inGameSettingsPackage.apply",
+    "inGameSettingsPackage.inspect",
+    "inGameSettingsPackage.preview",
+    "items.field.update",
+    "items.fields.update",
+    "items.item.vanilla.stage",
+    "items.load",
+    "ivScreen.install.stage",
+    "ivScreen.load",
+    "ivScreen.uninstall.stage",
+    "modMerger.apply",
+    "modMerger.load",
+    "modMerger.stage",
+    "moves.field.update",
+    "moves.fields.update",
+    "moves.load",
+    "moves.move.vanilla.stage",
+    "npcItemGift.load",
+    "npcItemGift.stage",
+    "output.checkpoint.create",
+    "output.checkpoint.delete",
+    "output.checkpoint.list",
+    "output.checkpoint.restore",
+    "output.checkpoint.restore.preview",
+    "output.cleanup.apply",
+    "output.cleanup.preview",
+    "output.history.list",
+    "output.integrity.scan",
+    "output.recovery.reconcile",
+    "output.recovery.status",
+    "placement.catalog.open",
+    "placement.catalog.query",
+    "placement.load",
+    "placement.object.load",
+    "placement.object.update",
+    "placement.objects.update",
+    "pokemon.dex.megas.sync.stage",
+    "pokemon.dex.move",
+    "pokemon.dex.resize",
+    "pokemon.dex.swap",
+    "pokemon.dex.vanilla.stage",
+    "pokemon.evolution.update",
+    "pokemon.field.update",
+    "pokemon.fields.update",
+    "pokemon.learnset.update",
+    "pokemon.load",
+    "profanityFilter.apply",
+    "profanityFilter.load",
+    "profanityFilter.restore",
+    "project.fileGraph.refresh",
+    "project.open",
+    "project.relocation.apply",
+    "project.relocation.preview",
+    "project.sourceRevision.read",
+    "project.validate",
+    "raidBattles.load",
+    "raidBattles.slot.update",
+    "raidBattles.slots.update",
+    "raidBonusRewards.load",
+    "raidBonusRewards.reward.update",
+    "raidBonusRewards.rewards.update",
+    "raidRewards.load",
+    "raidRewards.reward.update",
+    "raidRewards.rewards.update",
+    "randomizer.apply",
+    "randomizer.restore",
+    "randomizer.seed.import",
+    "recipes.export",
+    "recipes.import",
+    "recipes.preview",
+    "recipes.validate",
+    "rentalPokemon.field.update",
+    "rentalPokemon.fields.update",
+    "rentalPokemon.load",
+    "researchLab.annotations.mutate",
+    "researchLab.annotations.read",
+    "researchLab.byteWindow",
+    "researchLab.capabilities",
+    "researchLab.compare",
+    "researchLab.source.close",
+    "researchLab.source.open",
+    "rowClipboard.authorizations.clear",
+    "rowClipboard.copy.prepare",
+    "rowClipboard.paste.preview",
+    "rowClipboard.paste.stage",
+    "royalCandy.load",
+    "royalCandy.workflow.stage",
+    "semantic.balance-lab",
+    "semantic.capabilities",
+    "semantic.changes",
+    "semantic.compare",
+    "semantic.entity",
+    "semantic.external.compare",
+    "semantic.impact",
+    "semantic.ownership",
+    "semantic.references",
+    "semantic.search",
+    "semanticMerge.capabilities",
+    "semanticMerge.import",
+    "semanticMerge.preview",
+    "semanticMerge.source.open",
+    "shinyRate.load",
+    "shinyRate.stage",
+    "shops.inventory.update",
+    "shops.load",
+    "spreadsheetImport.load",
+    "spreadsheetImport.preview",
+    "startingItems.load",
+    "startingItems.stage",
+    "staticEncounters.field.update",
+    "staticEncounters.fields.update",
+    "staticEncounters.load",
+    "support.report.build",
+    "svCache.clear",
+    "svCache.settings.update",
+    "svCache.status",
+    "svCache.warmup.step",
+    "svModMerger.apply",
+    "svModMerger.load",
+    "svModMerger.stage",
+    "swshCache.clear",
+    "swshCache.settings.update",
+    "swshCache.status",
+    "swshCache.warmup.step",
+    "teraRaids.field.update",
+    "teraRaids.fields.update",
+    "teraRaids.load",
+    "text.entry.update",
+    "text.load",
+    "tmMachineControls.load",
+    "tmMachineControls.materialVisibility.stage",
+    "tmMachineControls.recipeAvailability.stage",
+    "tradePokemon.field.update",
+    "tradePokemon.fields.update",
+    "tradePokemon.load",
+    "trainerPools.fixedCountSwap.stage",
+    "trainerPools.load",
+    "trainers.field.update",
+    "trainers.fields.update",
+    "trainers.load",
+    "typeChart.load",
+    "typeChart.stage",
+    "typeChart.uninstall.stage",
+    "workflow.list",
+    "workspace.applicationState.read",
+    "workspace.applicationState.write",
+    "workspace.drafts.delete",
+    "workspace.drafts.read",
+    "workspace.drafts.write",
+    "workspace.projectState.delete",
+    "workspace.projectState.read",
+    "workspace.projectState.write",
+    "zaCache.clear",
+    "zaCache.settings.update",
+    "zaCache.status",
+    "zaCache.warmup.step",
+    "zaModMerger.apply",
+    "zaModMerger.load",
+    "zaModMerger.stage",
+];
+
 const fn checked_project_bridge_limit(value: usize, multiplier: usize) -> usize {
     match value.checked_mul(multiplier) {
         Some(limit) => limit,
@@ -88,8 +346,74 @@ const fn checked_project_bridge_limit(value: usize, multiplier: usize) -> usize 
     }
 }
 
+fn project_bridge_parallel_read_worker_limit() -> usize {
+    let cpu_limit = std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get().saturating_sub(1).max(1))
+        .unwrap_or(1)
+        .min(MAX_PROJECT_BRIDGE_PARALLEL_READ_WORKERS);
+    let memory_limit = available_project_bridge_memory_bytes()
+        .map(|available_bytes| {
+            (available_bytes
+                / PROJECT_BRIDGE_READ_WORKER_MEMORY_BUDGET_DIVISOR
+                / PROJECT_BRIDGE_ESTIMATED_READ_WORKER_BYTES)
+                .clamp(1, MAX_PROJECT_BRIDGE_PARALLEL_READ_WORKERS as u64) as usize
+        })
+        .unwrap_or(1);
+
+    cpu_limit.min(memory_limit).max(1)
+}
+
+fn project_bridge_worker_host_budgets(worker_count: usize) -> (usize, u64) {
+    let worker_count = worker_count.max(1);
+    let cpu_budget = std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .div_ceil(worker_count)
+        .clamp(1, 64);
+    let memory_budget = available_project_bridge_memory_bytes()
+        .map(|available_bytes| {
+            available_bytes / PROJECT_BRIDGE_READ_WORKER_MEMORY_BUDGET_DIVISOR / worker_count as u64
+        })
+        .unwrap_or(PROJECT_BRIDGE_ESTIMATED_READ_WORKER_BYTES)
+        .max(64 * 1024 * 1024);
+    (cpu_budget, memory_budget)
+}
+
+#[cfg(windows)]
+fn available_project_bridge_memory_bytes() -> Option<u64> {
+    let mut status = ProjectBridgeMemoryStatus {
+        length: std::mem::size_of::<ProjectBridgeMemoryStatus>() as u32,
+        memory_load: 0,
+        total_physical: 0,
+        available_physical: 0,
+        total_page_file: 0,
+        available_page_file: 0,
+        total_virtual: 0,
+        available_virtual: 0,
+        available_extended_virtual: 0,
+    };
+    let succeeded = unsafe { global_memory_status_ex(&mut status) };
+    (succeeded != 0 && status.available_physical > 0).then_some(status.available_physical)
+}
+
+#[cfg(target_os = "linux")]
+fn available_project_bridge_memory_bytes() -> Option<u64> {
+    let contents = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let kibibytes = contents.lines().find_map(|line| {
+        let value = line.strip_prefix("MemAvailable:")?.trim();
+        value.strip_suffix("kB")?.trim().parse::<u64>().ok()
+    })?;
+    kibibytes.checked_mul(1024)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn available_project_bridge_memory_bytes() -> Option<u64> {
+    None
+}
+
 struct CloseGuardState {
     is_guarded: AtomicBool,
+    shutdown_started: AtomicBool,
 }
 
 #[derive(Clone, Default)]
@@ -116,50 +440,121 @@ impl SupportSearchState {
 #[derive(Clone)]
 struct ProjectBridgeState {
     process: Arc<Mutex<Option<Arc<ProjectBridgeProcess>>>>,
+    read_processes: Arc<Vec<Mutex<Option<Arc<ProjectBridgeProcess>>>>>,
+    process_lifecycle: Arc<Mutex<()>>,
     generation: Arc<AtomicUsize>,
-    in_flight_requests: Arc<AtomicUsize>,
-    maximum_in_flight_requests: usize,
+    execution_gate: Arc<tokio::sync::RwLock<()>>,
+    pending_requests: Arc<Mutex<ProjectBridgePendingRequestState>>,
 }
 
 impl Default for ProjectBridgeState {
     fn default() -> Self {
-        Self::with_request_limit(MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS)
+        Self::with_parallel_read_limit(project_bridge_parallel_read_worker_limit())
     }
 }
 
 impl ProjectBridgeState {
-    fn with_request_limit(maximum_in_flight_requests: usize) -> Self {
-        assert!(maximum_in_flight_requests > 0);
+    fn with_parallel_read_limit(maximum_parallel_reads: usize) -> Self {
+        assert!(maximum_parallel_reads > 0);
+        let maximum_parallel_reads = u32::try_from(maximum_parallel_reads)
+            .expect("project bridge parallel read limit must fit in u32");
         Self {
             process: Arc::new(Mutex::new(None)),
+            read_processes: Arc::new(
+                (0..maximum_parallel_reads)
+                    .map(|_| Mutex::new(None))
+                    .collect(),
+            ),
+            process_lifecycle: Arc::new(Mutex::new(())),
             generation: Arc::new(AtomicUsize::new(0)),
-            in_flight_requests: Arc::new(AtomicUsize::new(0)),
-            maximum_in_flight_requests,
+            execution_gate: Arc::new(tokio::sync::RwLock::with_max_readers(
+                (),
+                maximum_parallel_reads,
+            )),
+            pending_requests: Arc::new(Mutex::new(ProjectBridgePendingRequestState::default())),
         }
     }
 
-    fn try_acquire_request_permit(&self) -> Result<ProjectBridgeRequestPermit, String> {
-        self.in_flight_requests
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                (current < self.maximum_in_flight_requests).then_some(current + 1)
-            })
-            .map_err(|_| {
-                "Project bridge request capacity is full. Wait for the current editor operation to finish and retry."
-                    .to_owned()
-            })?;
-        Ok(ProjectBridgeRequestPermit {
-            in_flight_requests: self.in_flight_requests.clone(),
+    fn reserve_pending_request(
+        &self,
+        request_bytes: usize,
+    ) -> Result<ProjectBridgePendingRequestGuard, String> {
+        let mut pending = self
+            .pending_requests
+            .lock()
+            .map_err(|_| "Project bridge request budget lock was poisoned.".to_owned())?;
+        if pending.count >= MAX_PROJECT_BRIDGE_PENDING_REQUESTS {
+            return Err(
+                "Too many project operations are already queued. Wait for the current operations to finish and retry."
+                    .to_owned(),
+            );
+        }
+        if request_bytes > MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES - pending.bytes {
+            return Err(
+                "Queued project operations exceeded the supported memory budget. Wait for the current operations to finish and retry."
+                    .to_owned(),
+            );
+        }
+
+        pending.count += 1;
+        pending.bytes += request_bytes;
+        drop(pending);
+        Ok(ProjectBridgePendingRequestGuard {
+            pending_requests: self.pending_requests.clone(),
+            request_bytes,
         })
+    }
+
+    async fn acquire_execution_permit_for_generation(
+        &self,
+        request_generation: usize,
+        concurrency: ProjectBridgeCommandConcurrency,
+    ) -> Result<ProjectBridgeExecutionPermit, String> {
+        let permit = match concurrency {
+            ProjectBridgeCommandConcurrency::IndependentRead(_)
+            | ProjectBridgeCommandConcurrency::AffinityOrdered(_)
+            | ProjectBridgeCommandConcurrency::OwnerOrdered => {
+                ProjectBridgeExecutionPermit::IndependentRead {
+                    _guard: self.execution_gate.clone().read_owned().await,
+                }
+            }
+            ProjectBridgeCommandConcurrency::AffinityExclusive(_)
+            | ProjectBridgeCommandConcurrency::Exclusive => ProjectBridgeExecutionPermit::Ordered {
+                _guard: self.execution_gate.clone().write_owned().await,
+            },
+        };
+        ensure_project_bridge_request_is_current(self, request_generation)?;
+        Ok(permit)
     }
 }
 
-struct ProjectBridgeRequestPermit {
-    in_flight_requests: Arc<AtomicUsize>,
+#[derive(Default)]
+struct ProjectBridgePendingRequestState {
+    count: usize,
+    bytes: usize,
 }
 
-impl Drop for ProjectBridgeRequestPermit {
+struct ProjectBridgePendingRequestGuard {
+    pending_requests: Arc<Mutex<ProjectBridgePendingRequestState>>,
+    request_bytes: usize,
+}
+
+#[derive(Debug)]
+enum ProjectBridgeExecutionPermit {
+    IndependentRead {
+        _guard: tokio::sync::OwnedRwLockReadGuard<()>,
+    },
+    Ordered {
+        _guard: tokio::sync::OwnedRwLockWriteGuard<()>,
+    },
+}
+
+impl Drop for ProjectBridgePendingRequestGuard {
     fn drop(&mut self) {
-        self.in_flight_requests.fetch_sub(1, Ordering::AcqRel);
+        if let Ok(mut pending) = self.pending_requests.lock() {
+            pending.count = pending.count.saturating_sub(1);
+            pending.bytes = pending.bytes.saturating_sub(self.request_bytes);
+        }
     }
 }
 
@@ -167,29 +562,101 @@ struct ProjectBridgeProcess {
     active_request_token: AtomicUsize,
     next_request_token: AtomicUsize,
     child: Mutex<Option<Child>>,
+    admission: ProjectBridgeAdmission,
     io: Mutex<ProjectBridgeIo>,
 }
 
-struct ProjectBridgeIo {
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+#[derive(Default)]
+struct ProjectBridgeAdmission {
+    state: Mutex<ProjectBridgeAdmissionState>,
+    changed: Condvar,
 }
 
+#[derive(Default)]
+struct ProjectBridgeAdmissionState {
+    active: bool,
+    waiting_request_tokens: VecDeque<usize>,
+}
+
+struct ProjectBridgeAdmissionGuard<'a> {
+    admission: &'a ProjectBridgeAdmission,
+}
+
+struct ProjectBridgeIo {
+    stdin: Option<ChildStdin>,
+    stdout: ChildStdout,
+    buffered_stdout: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct ProjectBridgeRequestCancellation {
+    request_state: Option<Arc<AtomicUsize>>,
+    generation: Arc<AtomicUsize>,
+    request_generation: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectBridgeStdoutReadiness {
+    Pending,
+    Ready(usize),
+    Closed,
+}
+
+#[derive(Debug)]
 enum ProjectBridgeRequestFailure {
     Retryable(String),
     NonRetryable(String),
     TimedOut(String),
 }
 
-enum ProjectBridgeIoLockFailure {
+#[derive(Debug)]
+enum ProjectBridgeAdmissionFailure {
     Poisoned,
-    TimedOut,
 }
 
 #[derive(Clone, Copy)]
 struct ProjectBridgeRequestPolicy {
-    execution_timeout: Duration,
+    execution_timeout: Option<Duration>,
     retry_after_transport_failure: bool,
+    concurrency: ProjectBridgeCommandConcurrency,
+    recycle_read_workers_before_execution: bool,
+    recycle_read_workers_after_execution: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectBridgeCommandConcurrency {
+    IndependentRead(ProjectBridgeReadAffinity),
+    AffinityOrdered(ProjectBridgeReadAffinity),
+    AffinityExclusive(ProjectBridgeReadAffinity),
+    OwnerOrdered,
+    Exclusive,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectBridgeReadAffinity {
+    SemanticExplore,
+    BalanceLab,
+    GameModules,
+    GuidedDesign,
+    SemanticMerge,
+    ResearchLab,
+    Workflow(u64),
+    GeneralProject,
+}
+
+impl ProjectBridgeReadAffinity {
+    fn stable_index(self) -> usize {
+        match self {
+            Self::SemanticExplore => 0,
+            Self::BalanceLab => 1,
+            Self::GameModules => 2,
+            Self::GuidedDesign => 3,
+            Self::SemanticMerge => 4,
+            Self::ResearchLab => 5,
+            Self::Workflow(hash) => 6_usize.wrapping_add(hash as usize),
+            Self::GeneralProject => 7,
+        }
+    }
 }
 
 struct ProjectBridgeRequestWatchdog {
@@ -233,45 +700,75 @@ async fn project_bridge(
     }
 
     let bridge_state = bridge_state.inner().clone();
-    let request_permit = bridge_state.try_acquire_request_permit()?;
+    let pending_request = bridge_state.reserve_pending_request(request_json.len())?;
+    let request_policy = resolved_project_bridge_request_policy(&request_json);
     let request_generation = bridge_state.generation.load(Ordering::Acquire);
-    let outer_timeout = project_bridge_outer_timeout(&request_json);
+    let execution_permit = bridge_state
+        .acquire_execution_permit_for_generation(request_generation, request_policy.concurrency)
+        .await?;
     let request_bridge_state = bridge_state.clone();
-    let mut request_task = tauri::async_runtime::spawn_blocking(move || {
-        let _request_permit = request_permit;
-        run_project_bridge_request(
-            &app_handle,
-            &request_bridge_state,
-            request_generation,
-            request_json,
-        )
-    });
-
-    match tokio::time::timeout(outer_timeout, &mut request_task).await {
-        Ok(request_result) => request_result
-            .map_err(|error| format!("Project bridge request task failed: {error}"))?,
-        Err(_) => {
-            request_task.abort();
-            let recovery_bridge_state = bridge_state.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                let _ = recycle_project_bridge_request_if_current(
-                    &recovery_bridge_state,
-                    request_generation,
-                );
-            });
-            Err(create_project_bridge_outer_timeout_error(outer_timeout))
+    tauri::async_runtime::spawn_blocking(move || {
+        let _pending_request = pending_request;
+        let _execution_permit = execution_permit;
+        if request_policy.recycle_read_workers_before_execution {
+            recycle_project_bridge_read_workers(&request_bridge_state)?;
         }
-    }
+
+        let response = match request_policy.concurrency {
+            ProjectBridgeCommandConcurrency::IndependentRead(affinity)
+            | ProjectBridgeCommandConcurrency::AffinityOrdered(affinity)
+            | ProjectBridgeCommandConcurrency::AffinityExclusive(affinity) => {
+                run_project_bridge_read_request(
+                    &app_handle,
+                    &request_bridge_state,
+                    request_generation,
+                    request_json,
+                    request_policy,
+                    affinity,
+                )
+            }
+            ProjectBridgeCommandConcurrency::OwnerOrdered
+            | ProjectBridgeCommandConcurrency::Exclusive => run_project_bridge_request(
+                &app_handle,
+                &request_bridge_state,
+                request_generation,
+                request_json,
+                request_policy,
+            ),
+        };
+        if request_policy.recycle_read_workers_after_execution {
+            let recycle_result = recycle_project_bridge_read_workers(&request_bridge_state);
+            if response.is_ok() {
+                recycle_result?;
+            }
+        }
+        response
+    })
+    .await
+    .map_err(|error| format!("Project bridge request task failed: {error}"))?
 }
 
 #[tauri::command]
 async fn recycle_project_bridge(
     bridge_state: tauri::State<'_, ProjectBridgeState>,
 ) -> Result<(), String> {
-    let bridge_state = bridge_state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || recycle_project_bridge_process(&bridge_state))
-        .await
-        .map_err(|error| format!("Project bridge recycle task failed: {error}"))?
+    recycle_project_bridge_after_active_requests(bridge_state.inner().clone()).await
+}
+
+async fn recycle_project_bridge_after_active_requests(
+    bridge_state: ProjectBridgeState,
+) -> Result<(), String> {
+    // Recycling is a lifecycle operation, not a request in the current generation. It must wait
+    // behind the same exclusive barrier as durable work, then hold that barrier until every
+    // process has been detached and reaped. Otherwise a manual recycle or shutdown can kill the
+    // sidecar between journal publication and its cleanup/recovery boundary.
+    let execution_permit = bridge_state.execution_gate.clone().write_owned().await;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _execution_permit = execution_permit;
+        recycle_project_bridge_process(&bridge_state)
+    })
+    .await
+    .map_err(|error| format!("Project bridge recycle task failed: {error}"))?
 }
 
 fn run_project_bridge_request(
@@ -279,45 +776,73 @@ fn run_project_bridge_request(
     bridge_state: &ProjectBridgeState,
     request_generation: usize,
     request_json: String,
+    request_policy: ProjectBridgeRequestPolicy,
 ) -> Result<String, String> {
-    run_project_bridge_request_with(bridge_state, request_generation, &request_json, || {
-        start_project_bridge_process(app_handle)
-    })
+    run_project_bridge_request_with(
+        bridge_state,
+        request_generation,
+        &request_json,
+        request_policy,
+        &bridge_state.process,
+        || start_project_bridge_process(app_handle, None),
+    )
+}
+
+fn run_project_bridge_read_request(
+    app_handle: &tauri::AppHandle,
+    bridge_state: &ProjectBridgeState,
+    request_generation: usize,
+    request_json: String,
+    request_policy: ProjectBridgeRequestPolicy,
+    affinity: ProjectBridgeReadAffinity,
+) -> Result<String, String> {
+    let process_index = affinity.stable_index() % bridge_state.read_processes.len();
+    let process_slot = &bridge_state.read_processes[process_index];
+    run_project_bridge_request_with(
+        bridge_state,
+        request_generation,
+        &request_json,
+        request_policy,
+        process_slot,
+        || start_project_bridge_process(app_handle, Some(bridge_state.read_processes.len())),
+    )
 }
 
 fn run_project_bridge_request_with<F>(
     bridge_state: &ProjectBridgeState,
     request_generation: usize,
     request_json: &str,
+    request_policy: ProjectBridgeRequestPolicy,
+    process_slot: &Mutex<Option<Arc<ProjectBridgeProcess>>>,
     mut start_process: F,
 ) -> Result<String, String>
 where
     F: FnMut() -> Result<ProjectBridgeProcess, String>,
 {
-    let request_policy = project_bridge_request_policy(request_json);
-    let may_retry = request_policy.is_some_and(|policy| policy.retry_after_transport_failure);
+    let may_retry = request_policy.retry_after_transport_failure;
 
     for attempt in 0..2 {
         let process = get_or_start_project_bridge_process(
             bridge_state,
             request_generation,
+            process_slot,
             &mut start_process,
         )?;
         let request_result = process.request(
             bridge_state,
             request_generation,
             request_json,
-            request_policy.map(|policy| policy.execution_timeout),
+            request_policy.execution_timeout,
         );
         match request_result {
             Ok(response) => return Ok(response),
             Err(ProjectBridgeRequestFailure::TimedOut(error)) => return Err(error),
             Err(ProjectBridgeRequestFailure::NonRetryable(error)) => {
-                remove_failed_project_bridge_process(bridge_state, &process)?;
+                remove_failed_project_bridge_process(bridge_state, process_slot, &process)?;
                 return Err(error);
             }
             Err(ProjectBridgeRequestFailure::Retryable(error)) => {
-                remove_failed_project_bridge_process(bridge_state, &process)?;
+                remove_failed_project_bridge_process(bridge_state, process_slot, &process)?;
                 ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
                 if !may_retry || attempt > 0 {
                     return Err(error);
@@ -332,10 +857,14 @@ where
 fn get_or_start_project_bridge_process(
     bridge_state: &ProjectBridgeState,
     request_generation: usize,
+    process_slot: &Mutex<Option<Arc<ProjectBridgeProcess>>>,
     start_process: &mut impl FnMut() -> Result<ProjectBridgeProcess, String>,
 ) -> Result<Arc<ProjectBridgeProcess>, String> {
-    let mut process = bridge_state
-        .process
+    let _lifecycle = bridge_state
+        .process_lifecycle
+        .lock()
+        .map_err(|_| "Project bridge process lifecycle lock was poisoned.".to_owned())?;
+    let mut process = process_slot
         .lock()
         .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
     ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
@@ -351,11 +880,15 @@ fn get_or_start_project_bridge_process(
 
 fn remove_failed_project_bridge_process(
     bridge_state: &ProjectBridgeState,
+    process_slot: &Mutex<Option<Arc<ProjectBridgeProcess>>>,
     failed_process: &Arc<ProjectBridgeProcess>,
 ) -> Result<(), String> {
+    let _lifecycle = bridge_state
+        .process_lifecycle
+        .lock()
+        .map_err(|_| "Project bridge process lifecycle lock was poisoned.".to_owned())?;
     let removed = {
-        let mut current = bridge_state
-            .process
+        let mut current = process_slot
             .lock()
             .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
         if current
@@ -380,9 +913,11 @@ impl ProjectBridgeProcess {
             active_request_token: AtomicUsize::new(PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN),
             next_request_token: AtomicUsize::new(1),
             child: Mutex::new(Some(child)),
+            admission: ProjectBridgeAdmission::default(),
             io: Mutex::new(ProjectBridgeIo {
-                stdin,
-                stdout: BufReader::new(stdout),
+                stdin: Some(stdin),
+                stdout,
+                buffered_stdout: Vec::with_capacity(PROJECT_BRIDGE_INITIAL_RESPONSE_BUFFER_BYTES),
             }),
         }
     }
@@ -395,23 +930,19 @@ impl ProjectBridgeProcess {
         execution_timeout: Option<Duration>,
     ) -> Result<String, ProjectBridgeRequestFailure> {
         let request_token = self.allocate_request_token();
-        let mut io =
-            match lock_project_bridge_request_io(&self.io, Some(PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT))
-            {
-                Ok(io) => io,
-                Err(ProjectBridgeIoLockFailure::TimedOut) => {
-                    return Err(ProjectBridgeRequestFailure::TimedOut(
-                        create_project_bridge_queue_timeout_error(
-                            PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT,
-                        ),
-                    ));
-                }
-                Err(ProjectBridgeIoLockFailure::Poisoned) => {
-                    return Err(ProjectBridgeRequestFailure::Retryable(
-                        "Project bridge I/O lock was poisoned.".to_owned(),
-                    ));
-                }
-            };
+        let _admission = match self.admission.acquire(request_token) {
+            Ok(admission) => admission,
+            Err(ProjectBridgeAdmissionFailure::Poisoned) => {
+                return Err(ProjectBridgeRequestFailure::Retryable(
+                    "Project bridge admission queue was poisoned.".to_owned(),
+                ));
+            }
+        };
+        let mut io = self.io.lock().map_err(|_| {
+            ProjectBridgeRequestFailure::Retryable(
+                "Project bridge I/O lock was poisoned.".to_owned(),
+            )
+        })?;
         let _active_request =
             ProjectBridgeActiveRequest::begin(&self.active_request_token, request_token);
         let watchdog = execution_timeout.map(|timeout| {
@@ -423,27 +954,33 @@ impl ProjectBridgeProcess {
                 timeout,
             )
         });
+        let request_cancellation = ProjectBridgeRequestCancellation {
+            request_state: watchdog
+                .as_ref()
+                .map(ProjectBridgeRequestWatchdog::request_state),
+            generation: bridge_state.generation.clone(),
+            request_generation,
+        };
 
         let request_result = (|| -> Result<String, ProjectBridgeRequestFailure> {
             ensure_project_bridge_request_is_current(bridge_state, request_generation)
                 .map_err(ProjectBridgeRequestFailure::Retryable)?;
-            io.stdin
-                .write_all(request_json.as_bytes())
-                .map_err(|error| {
-                    ProjectBridgeRequestFailure::Retryable(format!(
-                        "Could not send the project bridge request: {error}"
-                    ))
-                })?;
-            io.stdin
-                .write_all(b"\n")
-                .and_then(|_| io.stdin.flush())
-                .map_err(|error| {
-                    ProjectBridgeRequestFailure::Retryable(format!(
-                        "Could not send the project bridge request: {error}"
-                    ))
-                })?;
+            write_project_bridge_request_with_cancellation(
+                &mut io.stdin,
+                request_json,
+                &request_cancellation,
+            )?;
 
-            let mut response = read_bounded_project_bridge_response(&mut io.stdout)?;
+            let ProjectBridgeIo {
+                stdout,
+                buffered_stdout,
+                ..
+            } = &mut *io;
+            let mut response = read_bounded_project_bridge_response(
+                stdout,
+                buffered_stdout,
+                &request_cancellation,
+            )?;
 
             while response.ends_with(['\r', '\n']) {
                 response.pop();
@@ -483,40 +1020,162 @@ impl ProjectBridgeProcess {
     }
 }
 
-fn read_bounded_project_bridge_response(
-    reader: &mut impl BufRead,
-) -> Result<String, ProjectBridgeRequestFailure> {
-    let mut response = Vec::with_capacity(8 * 1024);
-    loop {
-        let available = reader.fill_buf().map_err(|error| {
-            ProjectBridgeRequestFailure::Retryable(format!(
-                "Could not read the project bridge response: {error}"
-            ))
-        })?;
-        if available.is_empty() {
-            break;
-        }
+impl ProjectBridgeAdmission {
+    fn acquire(
+        &self,
+        request_token: usize,
+    ) -> Result<ProjectBridgeAdmissionGuard<'_>, ProjectBridgeAdmissionFailure> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| ProjectBridgeAdmissionFailure::Poisoned)?;
+        state.waiting_request_tokens.push_back(request_token);
 
-        let newline = available.iter().position(|byte| *byte == b'\n');
-        let chunk_length = newline.map_or(available.len(), |index| index + 1);
-        let next_framed_length = response.len().checked_add(chunk_length).ok_or_else(|| {
-            ProjectBridgeRequestFailure::NonRetryable(
-                "Project bridge response exceeded the supported size limit.".to_owned(),
-            )
-        })?;
-        if next_framed_length > MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES {
-            return Err(ProjectBridgeRequestFailure::NonRetryable(
-                "Project bridge response exceeded the supported size limit.".to_owned(),
-            ));
-        }
+        loop {
+            if !state.active && state.waiting_request_tokens.front().copied() == Some(request_token)
+            {
+                state.waiting_request_tokens.pop_front();
+                state.active = true;
+                return Ok(ProjectBridgeAdmissionGuard { admission: self });
+            }
 
-        response.extend_from_slice(&available[..chunk_length]);
-        reader.consume(chunk_length);
-        if newline.is_some() {
-            break;
+            state = self
+                .changed
+                .wait(state)
+                .map_err(|_| ProjectBridgeAdmissionFailure::Poisoned)?;
         }
     }
+}
 
+impl Drop for ProjectBridgeAdmissionGuard<'_> {
+    fn drop(&mut self) {
+        let mut state = match self.admission.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        state.active = false;
+        self.admission.changed.notify_all();
+    }
+}
+
+fn write_project_bridge_request_with_cancellation(
+    stdin: &mut Option<ChildStdin>,
+    request_json: &str,
+    cancellation: &ProjectBridgeRequestCancellation,
+) -> Result<(), ProjectBridgeRequestFailure> {
+    cancellation.ensure_active()?;
+    let mut request_stdin = stdin.take().ok_or_else(|| {
+        ProjectBridgeRequestFailure::Retryable(
+            "Project bridge request pipe was unavailable.".to_owned(),
+        )
+    })?;
+    let mut request = Vec::with_capacity(request_json.len().saturating_add(1));
+    request.extend_from_slice(request_json.as_bytes());
+    request.push(b'\n');
+    let (completion_sender, completion_receiver) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("km-project-bridge-write".to_owned())
+        .spawn(move || {
+            let result = request_stdin
+                .write_all(&request)
+                .and_then(|_| request_stdin.flush());
+            let _ = completion_sender.send((request_stdin, result));
+        })
+        .map_err(|error| {
+            ProjectBridgeRequestFailure::Retryable(format!(
+                "Could not start the project bridge request writer: {error}"
+            ))
+        })?;
+
+    loop {
+        cancellation.ensure_active()?;
+        match completion_receiver.recv_timeout(PROJECT_BRIDGE_IO_POLL_INTERVAL) {
+            Ok((returned_stdin, result)) => {
+                *stdin = Some(returned_stdin);
+                return result.map_err(|error| {
+                    ProjectBridgeRequestFailure::Retryable(format!(
+                        "Could not send the project bridge request: {error}"
+                    ))
+                });
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(ProjectBridgeRequestFailure::Retryable(
+                    "Project bridge request writer stopped unexpectedly.".to_owned(),
+                ));
+            }
+        }
+    }
+}
+
+fn read_bounded_project_bridge_response(
+    stdout: &mut ChildStdout,
+    buffered_stdout: &mut Vec<u8>,
+    cancellation: &ProjectBridgeRequestCancellation,
+) -> Result<String, ProjectBridgeRequestFailure> {
+    loop {
+        if let Some(response) = take_project_bridge_response_frame(buffered_stdout)? {
+            return decode_project_bridge_response(response);
+        }
+
+        let readiness = wait_for_project_bridge_stdout_with_cancellation(cancellation, || {
+            wait_for_project_bridge_stdout(stdout, PROJECT_BRIDGE_IO_POLL_INTERVAL)
+        })?;
+        match readiness {
+            ProjectBridgeStdoutReadiness::Pending => continue,
+            ProjectBridgeStdoutReadiness::Closed => {
+                reset_project_bridge_response_buffer(buffered_stdout);
+                return Err(project_bridge_incomplete_response_failure());
+            }
+            ProjectBridgeStdoutReadiness::Ready(available_bytes) => {
+                let read_bytes = available_bytes.clamp(1, PROJECT_BRIDGE_READ_CHUNK_BYTES);
+                let mut chunk = vec![0_u8; read_bytes];
+                match stdout.read(&mut chunk) {
+                    Ok(0) => {
+                        reset_project_bridge_response_buffer(buffered_stdout);
+                        return Err(project_bridge_incomplete_response_failure());
+                    }
+                    Ok(count) => buffered_stdout.extend_from_slice(&chunk[..count]),
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(error) => {
+                        return Err(ProjectBridgeRequestFailure::Retryable(format!(
+                            "Could not read the project bridge response: {error}"
+                        )));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn take_project_bridge_response_frame(
+    buffered_stdout: &mut Vec<u8>,
+) -> Result<Option<Vec<u8>>, ProjectBridgeRequestFailure> {
+    let newline = buffered_stdout.iter().position(|byte| *byte == b'\n');
+    if let Some(index) = newline {
+        let frame_length = index + 1;
+        if frame_length > MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES {
+            reset_project_bridge_response_buffer(buffered_stdout);
+            return Err(project_bridge_response_size_failure());
+        }
+
+        let remainder = buffered_stdout.split_off(frame_length);
+        let response = std::mem::replace(buffered_stdout, remainder);
+        return Ok(Some(response));
+    }
+
+    if buffered_stdout.len() > MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES {
+        reset_project_bridge_response_buffer(buffered_stdout);
+        return Err(project_bridge_response_size_failure());
+    }
+
+    Ok(None)
+}
+
+fn decode_project_bridge_response(
+    mut response: Vec<u8>,
+) -> Result<String, ProjectBridgeRequestFailure> {
     if response.is_empty() {
         return Err(ProjectBridgeRequestFailure::Retryable(
             "Project bridge runner returned an empty response.".to_owned(),
@@ -532,9 +1191,7 @@ fn read_bounded_project_bridge_response(
     }
 
     if response.len() > MAX_PROJECT_BRIDGE_RESPONSE_BYTES {
-        return Err(ProjectBridgeRequestFailure::NonRetryable(
-            "Project bridge response exceeded the supported size limit.".to_owned(),
-        ));
+        return Err(project_bridge_response_size_failure());
     }
 
     String::from_utf8(response).map_err(|_| {
@@ -542,6 +1199,196 @@ fn read_bounded_project_bridge_response(
             "Project bridge runner returned a response that was not valid UTF-8.".to_owned(),
         )
     })
+}
+
+fn project_bridge_response_size_failure() -> ProjectBridgeRequestFailure {
+    ProjectBridgeRequestFailure::NonRetryable(
+        "Project bridge response exceeded the supported size limit.".to_owned(),
+    )
+}
+
+fn project_bridge_incomplete_response_failure() -> ProjectBridgeRequestFailure {
+    ProjectBridgeRequestFailure::Retryable(
+        "Project bridge runner closed before completing its newline-delimited response.".to_owned(),
+    )
+}
+
+fn reset_project_bridge_response_buffer(buffered_stdout: &mut Vec<u8>) {
+    *buffered_stdout = Vec::with_capacity(PROJECT_BRIDGE_INITIAL_RESPONSE_BUFFER_BYTES);
+}
+
+impl ProjectBridgeRequestCancellation {
+    fn ensure_active(&self) -> Result<(), ProjectBridgeRequestFailure> {
+        if self
+            .request_state
+            .as_ref()
+            .is_some_and(|state| state.load(Ordering::Acquire) != PROJECT_BRIDGE_REQUEST_RUNNING)
+        {
+            return Err(ProjectBridgeRequestFailure::Retryable(
+                "Project bridge response read was canceled by the active request watchdog."
+                    .to_owned(),
+            ));
+        }
+
+        if self.generation.load(Ordering::Acquire) != self.request_generation {
+            return Err(ProjectBridgeRequestFailure::Retryable(
+                PROJECT_BRIDGE_RECYCLED_ERROR.to_owned(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+fn wait_for_project_bridge_stdout_with_cancellation(
+    cancellation: &ProjectBridgeRequestCancellation,
+    wait: impl FnOnce() -> io::Result<ProjectBridgeStdoutReadiness>,
+) -> Result<ProjectBridgeStdoutReadiness, ProjectBridgeRequestFailure> {
+    cancellation.ensure_active()?;
+    let readiness = wait().map_err(|error| {
+        ProjectBridgeRequestFailure::Retryable(format!(
+            "Could not inspect the project bridge response pipe: {error}"
+        ))
+    })?;
+    cancellation.ensure_active()?;
+    Ok(readiness)
+}
+
+#[cfg(windows)]
+fn wait_for_project_bridge_stdout(
+    stdout: &ChildStdout,
+    poll_interval: Duration,
+) -> io::Result<ProjectBridgeStdoutReadiness> {
+    let mut available_bytes = 0_u32;
+    let succeeded = unsafe {
+        peek_named_pipe(
+            stdout.as_raw_handle(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            &mut available_bytes,
+            std::ptr::null_mut(),
+        )
+    };
+    if succeeded == 0 {
+        let error = io::Error::last_os_error();
+        return match error.raw_os_error() {
+            Some(109 | 232) => Ok(ProjectBridgeStdoutReadiness::Closed),
+            _ => Err(error),
+        };
+    }
+
+    if available_bytes == 0 {
+        std::thread::sleep(poll_interval);
+        return Ok(ProjectBridgeStdoutReadiness::Pending);
+    }
+
+    Ok(ProjectBridgeStdoutReadiness::Ready(
+        available_bytes as usize,
+    ))
+}
+
+#[cfg(unix)]
+fn wait_for_project_bridge_stdout(
+    stdout: &ChildStdout,
+    poll_interval: Duration,
+) -> io::Result<ProjectBridgeStdoutReadiness> {
+    const POLLIN: i16 = 0x0001;
+    const POLLERR: i16 = 0x0008;
+    const POLLHUP: i16 = 0x0010;
+    const POLLNVAL: i16 = 0x0020;
+
+    let mut descriptor = ProjectBridgePollFd {
+        fd: stdout.as_raw_fd(),
+        events: POLLIN,
+        revents: 0,
+    };
+    let timeout_milliseconds = poll_interval.as_millis().min(i32::MAX as u128) as i32;
+    let result = unsafe { project_bridge_poll(&mut descriptor, 1, timeout_milliseconds) };
+    if result < 0 {
+        let error = io::Error::last_os_error();
+        return if error.kind() == io::ErrorKind::Interrupted {
+            Ok(ProjectBridgeStdoutReadiness::Pending)
+        } else {
+            Err(error)
+        };
+    }
+    if result == 0 {
+        return Ok(ProjectBridgeStdoutReadiness::Pending);
+    }
+    if descriptor.revents & POLLNVAL != 0 {
+        return Err(io::Error::from_raw_os_error(9));
+    }
+    if descriptor.revents & (POLLIN | POLLERR | POLLHUP) != 0 {
+        return Ok(ProjectBridgeStdoutReadiness::Ready(
+            PROJECT_BRIDGE_READ_CHUNK_BYTES,
+        ));
+    }
+
+    Ok(ProjectBridgeStdoutReadiness::Pending)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn wait_for_project_bridge_stdout(
+    _stdout: &ChildStdout,
+    poll_interval: Duration,
+) -> io::Result<ProjectBridgeStdoutReadiness> {
+    std::thread::sleep(poll_interval);
+    Ok(ProjectBridgeStdoutReadiness::Ready(1))
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    #[link_name = "PeekNamedPipe"]
+    fn peek_named_pipe(
+        pipe: *mut c_void,
+        buffer: *mut c_void,
+        buffer_size: u32,
+        bytes_read: *mut u32,
+        total_bytes_available: *mut u32,
+        bytes_left_this_message: *mut u32,
+    ) -> i32;
+
+    #[link_name = "GlobalMemoryStatusEx"]
+    fn global_memory_status_ex(status: *mut ProjectBridgeMemoryStatus) -> i32;
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct ProjectBridgeMemoryStatus {
+    length: u32,
+    memory_load: u32,
+    total_physical: u64,
+    available_physical: u64,
+    total_page_file: u64,
+    available_page_file: u64,
+    total_virtual: u64,
+    available_virtual: u64,
+    available_extended_virtual: u64,
+}
+
+#[cfg(unix)]
+#[repr(C)]
+struct ProjectBridgePollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
+
+#[cfg(target_os = "linux")]
+type ProjectBridgePollCount = usize;
+#[cfg(all(unix, not(target_os = "linux")))]
+type ProjectBridgePollCount = u32;
+
+#[cfg(unix)]
+unsafe extern "C" {
+    #[link_name = "poll"]
+    fn project_bridge_poll(
+        descriptors: *mut ProjectBridgePollFd,
+        descriptor_count: ProjectBridgePollCount,
+        timeout_milliseconds: i32,
+    ) -> i32;
 }
 
 impl<'a> ProjectBridgeActiveRequest<'a> {
@@ -606,6 +1453,10 @@ impl ProjectBridgeRequestWatchdog {
         }
     }
 
+    fn request_state(&self) -> Arc<AtomicUsize> {
+        self.request_state.clone()
+    }
+
     fn finish(mut self) -> bool {
         let _ = self.request_state.compare_exchange(
             PROJECT_BRIDGE_REQUEST_RUNNING,
@@ -630,109 +1481,205 @@ fn active_project_bridge_request_matches(
         && active_request_token.load(Ordering::Acquire) == request_token
 }
 
-fn lock_project_bridge_request_io<'a, T>(
-    io: &'a Mutex<T>,
-    timeout: Option<Duration>,
-) -> Result<MutexGuard<'a, T>, ProjectBridgeIoLockFailure> {
-    let Some(timeout) = timeout else {
-        return io.lock().map_err(|_| ProjectBridgeIoLockFailure::Poisoned);
-    };
-    let started_at = Instant::now();
-
-    loop {
-        match io.try_lock() {
-            Ok(io) => return Ok(io),
-            Err(TryLockError::Poisoned(_)) => return Err(ProjectBridgeIoLockFailure::Poisoned),
-            Err(TryLockError::WouldBlock) if started_at.elapsed() >= timeout => {
-                return Err(ProjectBridgeIoLockFailure::TimedOut)
-            }
-            Err(TryLockError::WouldBlock) => {
-                std::thread::sleep(PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL)
-            }
-        }
-    }
-}
-
 fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequestPolicy> {
     let request: serde_json::Value = serde_json::from_str(request_json).ok()?;
     let command = request.get("command")?.as_str()?;
+    let concurrency = project_bridge_command_concurrency(command)?;
+    let recycles_read_workers = project_bridge_command_recycles_read_workers(command);
+    let recycle_read_workers_before_execution =
+        recycles_read_workers && matches!(concurrency, ProjectBridgeCommandConcurrency::Exclusive);
+    let recycle_read_workers_after_execution = recycles_read_workers
+        && matches!(
+            concurrency,
+            ProjectBridgeCommandConcurrency::AffinityExclusive(_)
+        );
 
-    if is_replay_safe_edit_session_command(command) {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
-            retry_after_transport_failure: true,
-        });
-    }
+    let (bounded_execution_timeout, bounded_retry_after_transport_failure) =
+        if is_replay_safe_edit_session_command(command) {
+            (PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT, true)
+        } else if matches!(
+            command,
+            "changeSets.captureSession"
+                | "changePlan.apply"
+                | "dynamaxAdventures.seed.save.set"
+                | "gameplaySettings.update.preview"
+                | "gameplaySettings.update.apply"
+        ) {
+            (PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT, false)
+        } else if matches!(
+            command,
+            "project.open"
+                | "project.validate"
+                | "project.fileGraph.refresh"
+                | "randomizer.seed.import"
+                | "workflow.list"
+                | "workspace.drafts.read"
+                | "workspace.applicationState.read"
+                | "workspace.projectState.read"
+        ) {
+            (PROJECT_BRIDGE_PROJECT_READ_TIMEOUT, true)
+        } else if command == "output.cleanup.preview" {
+            (PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT, false)
+        } else if command == "output.history.list" {
+            (PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT, true)
+        } else if is_project_bridge_workflow_load_command(command)
+            || matches!(
+                command,
+                "placement.catalog.open"
+                    | "placement.catalog.query"
+                    | "svCache.status"
+                    | "svCache.settings.update"
+                    | "svCache.clear"
+                    | "svCache.warmup.step"
+                    | "zaCache.status"
+                    | "zaCache.settings.update"
+                    | "zaCache.clear"
+                    | "zaCache.warmup.step"
+                    | "swshCache.status"
+                    | "swshCache.settings.update"
+                    | "swshCache.clear"
+                    | "swshCache.warmup.step"
+                    | "output.recovery.status"
+                    | "output.integrity.scan"
+                    | "output.checkpoint.list"
+                    | "output.checkpoint.restore.preview"
+                    | "project.relocation.preview"
+                    | "changeSets.read"
+                    | "changeSets.materialize"
+                    | "changeSets.export"
+                    | "project.sourceRevision.read"
+                    | "semantic.capabilities"
+                    | "semantic.search"
+                    | "semantic.entity"
+                    | "semantic.compare"
+                    | "semantic.references"
+                    | "semantic.impact"
+                    | "semantic.ownership"
+                    | "semantic.external.compare"
+                    | "semantic.changes"
+                    | "semantic.balance-lab"
+                    | "guidedDesign.capabilities"
+                    | "guidedDesign.preview"
+                    | "gameplaySettings.get"
+                    | "semanticMerge.capabilities"
+                    | "semanticMerge.source.open"
+                    | "gameModules.capabilities"
+                    | "gameModules.query"
+                    | "modMerger.stage"
+                    | "svModMerger.stage"
+                    | "zaModMerger.stage"
+                    | "researchLab.capabilities"
+                    | "researchLab.annotations.read"
+                    | "recipes.export"
+                    | "recipes.validate"
+                    | "support.report.build"
+            )
+        {
+            (PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT, true)
+        } else {
+            // Every routed command reaches this explicit conservative policy if it has not received a
+            // narrower reviewed timeout/replay contract above.
+            (PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT, false)
+        };
 
-    if command == "changeSets.captureSession" {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
-            retry_after_transport_failure: false,
-        });
-    }
+    // A watchdog may terminate only work whose effects are stateless or explicitly recoverable.
+    // Durable exclusive commands keep their barrier until the managed command returns, which is
+    // also the point where output transactions have either finalized or left a durable recovery
+    // journal. Transport replay is disabled for the same commands because a disconnected caller
+    // cannot know whether publication already completed.
+    let (execution_timeout, retry_after_transport_failure) =
+        if project_bridge_command_requires_uninterrupted_completion(command, concurrency) {
+            (None, false)
+        } else {
+            (
+                Some(bounded_execution_timeout),
+                bounded_retry_after_transport_failure,
+            )
+        };
 
-    if matches!(
+    Some(ProjectBridgeRequestPolicy {
+        execution_timeout,
+        retry_after_transport_failure,
+        concurrency,
+        recycle_read_workers_before_execution,
+        recycle_read_workers_after_execution,
+    })
+}
+
+fn resolved_project_bridge_request_policy(request_json: &str) -> ProjectBridgeRequestPolicy {
+    project_bridge_request_policy(request_json).unwrap_or(ProjectBridgeRequestPolicy {
+        execution_timeout: Some(PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT),
+        retry_after_transport_failure: false,
+        concurrency: ProjectBridgeCommandConcurrency::Exclusive,
+        recycle_read_workers_before_execution: false,
+        recycle_read_workers_after_execution: false,
+    })
+}
+
+fn project_bridge_command_requires_uninterrupted_completion(
+    command: &str,
+    concurrency: ProjectBridgeCommandConcurrency,
+) -> bool {
+    matches!(
+        concurrency,
+        ProjectBridgeCommandConcurrency::AffinityExclusive(_)
+            | ProjectBridgeCommandConcurrency::Exclusive
+    ) && !project_bridge_command_allows_bounded_recovery(command)
+}
+
+fn project_bridge_command_allows_bounded_recovery(command: &str) -> bool {
+    // Cache payloads are derived, disposable, and atomically published. These maintenance calls
+    // can therefore retain watchdog recovery without risking project or output corruption.
+    matches!(
         command,
-        "changePlan.apply"
-            | "dynamaxAdventures.seed.save.set"
-            | "gameplaySettings.update.preview"
-            | "gameplaySettings.update.apply"
-    ) {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT,
-            retry_after_transport_failure: false,
-        });
-    }
-
-    if matches!(
-        command,
-        "project.open"
-            | "project.validate"
-            | "project.fileGraph.refresh"
-            | "randomizer.seed.import"
-            | "workflow.list"
-            | "workspace.drafts.read"
-            | "workspace.applicationState.read"
-            | "workspace.projectState.read"
-    ) {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_PROJECT_READ_TIMEOUT,
-            retry_after_transport_failure: true,
-        });
-    }
-
-    if matches!(command, "output.cleanup.preview" | "output.history.list") {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT,
-            retry_after_transport_failure: true,
-        });
-    }
-
-    if matches!(
-        command,
-        "placement.catalog.open"
-            | "placement.catalog.query"
-            | "svCache.status"
+        "svCache.clear"
             | "svCache.settings.update"
-            | "svCache.clear"
+            | "svCache.status"
             | "svCache.warmup.step"
-            | "zaCache.status"
-            | "zaCache.settings.update"
-            | "zaCache.clear"
-            | "zaCache.warmup.step"
-            | "swshCache.status"
-            | "swshCache.settings.update"
             | "swshCache.clear"
+            | "swshCache.settings.update"
+            | "swshCache.status"
             | "swshCache.warmup.step"
-            | "output.recovery.status"
-            | "output.integrity.scan"
-            | "output.checkpoint.list"
-            | "output.checkpoint.restore.preview"
-            | "project.relocation.preview"
-            | "changeSets.read"
-            | "changeSets.materialize"
-            | "changeSets.export"
-            | "semantic.capabilities"
+            | "zaCache.clear"
+            | "zaCache.settings.update"
+            | "zaCache.status"
+            | "zaCache.warmup.step"
+    )
+}
+
+fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeCommandConcurrency> {
+    if ROUTED_PROJECT_BRIDGE_COMMANDS
+        .binary_search(&command)
+        .is_err()
+    {
+        return None;
+    }
+
+    if matches!(command, "semanticMerge.import" | "recipes.import") {
+        return Some(ProjectBridgeCommandConcurrency::AffinityExclusive(
+            ProjectBridgeReadAffinity::SemanticMerge,
+        ));
+    }
+    if command == "recipes.export" {
+        return Some(ProjectBridgeCommandConcurrency::AffinityOrdered(
+            ProjectBridgeReadAffinity::SemanticMerge,
+        ));
+    }
+    if command == "researchLab.annotations.mutate" {
+        return Some(ProjectBridgeCommandConcurrency::AffinityExclusive(
+            ProjectBridgeReadAffinity::ResearchLab,
+        ));
+    }
+    if command == "researchLab.source.close" {
+        return Some(ProjectBridgeCommandConcurrency::AffinityOrdered(
+            ProjectBridgeReadAffinity::ResearchLab,
+        ));
+    }
+
+    let affinity = if matches!(
+        command,
+        "semantic.capabilities"
+            | "project.sourceRevision.read"
             | "semantic.search"
             | "semantic.entity"
             | "semantic.compare"
@@ -741,67 +1688,236 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
             | "semantic.ownership"
             | "semantic.external.compare"
             | "semantic.changes"
-            | "semantic.balance-lab"
-            | "guidedDesign.capabilities"
-            | "guidedDesign.preview"
-            | "gameplaySettings.get"
-            | "semanticMerge.capabilities"
+    ) {
+        Some(ProjectBridgeReadAffinity::SemanticExplore)
+    } else if command == "semantic.balance-lab" {
+        Some(ProjectBridgeReadAffinity::BalanceLab)
+    } else if matches!(command, "gameModules.capabilities" | "gameModules.query") {
+        Some(ProjectBridgeReadAffinity::GameModules)
+    } else if matches!(
+        command,
+        "guidedDesign.capabilities" | "guidedDesign.preview"
+    ) {
+        Some(ProjectBridgeReadAffinity::GuidedDesign)
+    } else if matches!(
+        command,
+        "semanticMerge.capabilities"
             | "semanticMerge.source.open"
             | "semanticMerge.preview"
-            | "gameModules.capabilities"
-            | "gameModules.query"
-            | "modMerger.stage"
-            | "svModMerger.stage"
-            | "zaModMerger.stage"
-            | "researchLab.capabilities"
+            | "recipes.validate"
+            | "recipes.preview"
+    ) {
+        Some(ProjectBridgeReadAffinity::SemanticMerge)
+    } else if matches!(
+        command,
+        "researchLab.capabilities"
             | "researchLab.source.open"
-            | "researchLab.source.close"
             | "researchLab.compare"
             | "researchLab.byteWindow"
             | "researchLab.annotations.read"
-            | "recipes.export"
-            | "recipes.validate"
-            | "recipes.preview"
-            | "support.report.build"
     ) {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT,
-            retry_after_transport_failure: true,
-        });
-    }
+        Some(ProjectBridgeReadAffinity::ResearchLab)
+    } else if is_project_bridge_workflow_read_command(command) {
+        Some(ProjectBridgeReadAffinity::Workflow(
+            stable_project_bridge_affinity_hash(command),
+        ))
+    } else if matches!(
+        command,
+        "editSession.start"
+            | "gameplaySettings.get"
+            | "inGameSettingsPackage.inspect"
+            | "output.recovery.status"
+            | "output.history.list"
+            | "output.checkpoint.list"
+            | "project.relocation.preview"
+            | "randomizer.seed.import"
+            | "support.report.build"
+            | "workflow.list"
+            | "workspace.drafts.read"
+            | "workspace.applicationState.read"
+            | "workspace.projectState.read"
+    ) {
+        Some(ProjectBridgeReadAffinity::GeneralProject)
+    } else {
+        None
+    };
 
-    if command.ends_with(".load") {
-        return Some(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT,
-            retry_after_transport_failure: true,
-        });
-    }
-
-    // Fail closed for replay safety while still guaranteeing shared-bridge recovery.
-    Some(ProjectBridgeRequestPolicy {
-        execution_timeout: PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT,
-        retry_after_transport_failure: false,
+    Some(match affinity {
+        Some(affinity) => ProjectBridgeCommandConcurrency::IndependentRead(affinity),
+        None if project_bridge_command_requires_exclusive_barrier(command) => {
+            ProjectBridgeCommandConcurrency::Exclusive
+        }
+        None => ProjectBridgeCommandConcurrency::OwnerOrdered,
     })
 }
 
-fn project_bridge_outer_timeout(request_json: &str) -> Duration {
-    let policy =
-        project_bridge_request_policy(request_json).unwrap_or(ProjectBridgeRequestPolicy {
-            execution_timeout: PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT,
-            retry_after_transport_failure: false,
-        });
-    let attempt_budget = PROJECT_BRIDGE_QUEUE_WAIT_TIMEOUT
-        .saturating_add(policy.execution_timeout)
-        .saturating_add(PROJECT_BRIDGE_TERMINATION_WAIT_TIMEOUT);
-    let maximum_attempts = if policy.retry_after_transport_failure {
-        2
-    } else {
-        1
-    };
+fn stable_project_bridge_affinity_hash(command: &str) -> u64 {
+    let family = command
+        .split_once('.')
+        .map_or(command, |(family, _)| family);
+    family
+        .as_bytes()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+}
 
-    attempt_budget
-        .saturating_mul(maximum_attempts)
-        .saturating_add(PROJECT_BRIDGE_OUTER_TIMEOUT_MARGIN)
+fn is_project_bridge_workflow_read_command(command: &str) -> bool {
+    is_project_bridge_workflow_load_command(command)
+        || matches!(
+            command,
+            "dynamaxAdventures.defaults.preview"
+                | "dynamaxAdventures.seed.plan"
+                | "dynamaxAdventures.seed.search"
+                | "modMerger.stage"
+                | "placement.catalog.open"
+                | "placement.catalog.query"
+                | "spreadsheetImport.preview"
+                | "svModMerger.stage"
+                | "zaModMerger.stage"
+        )
+}
+
+fn is_project_bridge_workflow_load_command(command: &str) -> bool {
+    matches!(
+        command,
+        "angeFight.load"
+            | "bagHook.load"
+            | "battleCafeRewards.load"
+            | "behavior.load"
+            | "catchCap.load"
+            | "dynamaxAdventures.load"
+            | "encounters.load"
+            | "exefsPatches.load"
+            | "fairyGymBoosts.load"
+            | "fashionCatalog.load"
+            | "fashionUnlock.load"
+            | "flagworkSave.load"
+            | "fpsPatch.load"
+            | "gameDump.load"
+            | "giftPokemon.load"
+            | "gymUniformRemoval.load"
+            | "habitatCoordinates.load"
+            | "hyperspaceBypass.load"
+            | "hyperTraining.load"
+            | "items.load"
+            | "ivScreen.load"
+            | "modMerger.load"
+            | "moves.load"
+            | "npcItemGift.load"
+            | "placement.load"
+            | "placement.object.load"
+            | "pokemon.load"
+            | "profanityFilter.load"
+            | "raidBattles.load"
+            | "raidBonusRewards.load"
+            | "raidRewards.load"
+            | "rentalPokemon.load"
+            | "royalCandy.load"
+            | "shinyRate.load"
+            | "shops.load"
+            | "spreadsheetImport.load"
+            | "startingItems.load"
+            | "staticEncounters.load"
+            | "svModMerger.load"
+            | "teraRaids.load"
+            | "text.load"
+            | "tmMachineControls.load"
+            | "tradePokemon.load"
+            | "trainerPools.load"
+            | "trainers.load"
+            | "typeChart.load"
+            | "zaModMerger.load"
+    )
+}
+
+fn project_bridge_command_requires_exclusive_barrier(command: &str) -> bool {
+    matches!(
+        command,
+        "changePlan.apply"
+            | "changeSets.captureSession"
+            | "changeSets.import"
+            | "changeSets.mutate"
+            | "dynamaxAdventures.seed.save.set"
+            | "fpsPatch.apply"
+            | "fpsPatch.restore"
+            | "gameDump.run"
+            | "gameplaySettings.update.apply"
+            | "guidedDesign.import"
+            | "inGameSettingsPackage.apply"
+            | "modMerger.apply"
+            | "output.checkpoint.create"
+            | "output.checkpoint.delete"
+            | "output.checkpoint.restore"
+            | "output.cleanup.apply"
+            | "output.recovery.reconcile"
+            | "profanityFilter.apply"
+            | "profanityFilter.restore"
+            | "project.fileGraph.refresh"
+            | "project.open"
+            | "project.relocation.apply"
+            | "project.validate"
+            | "randomizer.apply"
+            | "randomizer.restore"
+            | "svCache.clear"
+            | "svCache.settings.update"
+            | "svCache.status"
+            | "svCache.warmup.step"
+            | "svModMerger.apply"
+            | "swshCache.clear"
+            | "swshCache.settings.update"
+            | "swshCache.status"
+            | "swshCache.warmup.step"
+            | "workspace.applicationState.write"
+            | "workspace.drafts.delete"
+            | "workspace.drafts.write"
+            | "workspace.projectState.delete"
+            | "workspace.projectState.write"
+            | "zaCache.clear"
+            | "zaCache.settings.update"
+            | "zaCache.status"
+            | "zaCache.warmup.step"
+            | "zaModMerger.apply"
+    )
+}
+
+fn project_bridge_command_recycles_read_workers(command: &str) -> bool {
+    matches!(
+        command,
+        "changePlan.apply"
+            | "dynamaxAdventures.seed.save.set"
+            | "fpsPatch.apply"
+            | "fpsPatch.restore"
+            | "gameDump.run"
+            | "gameplaySettings.update.apply"
+            | "inGameSettingsPackage.apply"
+            | "modMerger.apply"
+            | "output.checkpoint.create"
+            | "output.checkpoint.delete"
+            | "output.checkpoint.restore"
+            | "output.cleanup.apply"
+            | "output.recovery.reconcile"
+            | "profanityFilter.apply"
+            | "profanityFilter.restore"
+            | "project.fileGraph.refresh"
+            | "project.open"
+            | "project.relocation.apply"
+            | "project.validate"
+            | "randomizer.apply"
+            | "randomizer.restore"
+            | "recipes.import"
+            | "researchLab.annotations.mutate"
+            | "semanticMerge.import"
+            | "svCache.clear"
+            | "svCache.settings.update"
+            | "svModMerger.apply"
+            | "swshCache.clear"
+            | "swshCache.settings.update"
+            | "zaCache.clear"
+            | "zaCache.settings.update"
+            | "zaModMerger.apply"
+    )
 }
 
 fn is_replay_safe_edit_session_command(command: &str) -> bool {
@@ -868,8 +1984,6 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "raidRewards.rewards.update"
             | "rentalPokemon.field.update"
             | "rentalPokemon.fields.update"
-            | "rowClipboard.paste.preview"
-            | "rowClipboard.paste.stage"
             | "royalCandy.workflow.stage"
             | "shinyRate.stage"
             | "shops.inventory.update"
@@ -897,69 +2011,54 @@ fn timeout_project_bridge_process(
     request_generation: usize,
     timed_out_process: &Arc<ProjectBridgeProcess>,
 ) -> Result<(), String> {
+    let _lifecycle = bridge_state
+        .process_lifecycle
+        .lock()
+        .map_err(|_| "Project bridge process lifecycle lock was poisoned.".to_owned())?;
     let removed = {
+        if bridge_state.generation.load(Ordering::Acquire) != request_generation {
+            return Ok(());
+        }
+
         let mut current = bridge_state
             .process
             .lock()
             .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
-        if bridge_state.generation.load(Ordering::Acquire) == request_generation
-            && current
-                .as_ref()
-                .is_some_and(|process| Arc::ptr_eq(process, timed_out_process))
+        if current
+            .as_ref()
+            .is_some_and(|process| Arc::ptr_eq(process, timed_out_process))
         {
             bridge_state.generation.fetch_add(1, Ordering::AcqRel);
-            current.take()
+            let mut removed = current.take().into_iter().collect::<Vec<_>>();
+            drop(current);
+            removed.extend(take_project_bridge_read_workers_unlocked(bridge_state)?);
+            removed
         } else {
-            None
+            drop(current);
+            let mut removed = Vec::with_capacity(1);
+            for process_slot in bridge_state.read_processes.iter() {
+                let mut current = process_slot
+                    .lock()
+                    .map_err(|_| "Project bridge read-worker lock was poisoned.".to_owned())?;
+                if current
+                    .as_ref()
+                    .is_some_and(|process| Arc::ptr_eq(process, timed_out_process))
+                {
+                    if let Some(process) = current.take() {
+                        removed.push(process);
+                    }
+                    break;
+                }
+            }
+            removed
         }
     };
-
-    if let Some(process) = removed {
-        process.terminate()?;
-    }
-    Ok(())
-}
-
-fn recycle_project_bridge_request_if_current(
-    bridge_state: &ProjectBridgeState,
-    request_generation: usize,
-) -> Result<(), String> {
-    let removed = {
-        let mut current = bridge_state
-            .process
-            .lock()
-            .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
-        if bridge_state.generation.load(Ordering::Acquire) == request_generation {
-            bridge_state.generation.fetch_add(1, Ordering::AcqRel);
-            current.take()
-        } else {
-            None
-        }
-    };
-
-    if let Some(process) = removed {
-        process.terminate()?;
-    }
-    Ok(())
+    terminate_project_bridge_processes(removed)
 }
 
 fn create_project_bridge_timeout_error(timeout: Duration) -> String {
     format!(
         "The project request did not return within {} seconds. KM Editor stopped the stalled bridge so the interface can recover. No response was accepted. Refresh the current editor state before retrying because a durable request may have finished before the connection stopped.",
-        timeout.as_secs()
-    )
-}
-
-fn create_project_bridge_outer_timeout_error(timeout: Duration) -> String {
-    format!(
-        "The project request did not return after {} seconds, including bridge recovery time. KM Editor released the interface and discarded any late response. Refresh the current editor state before retrying because a durable request may have finished before the connection stopped.",
-        timeout.as_secs()
-    )
-}
-
-fn create_project_bridge_queue_timeout_error(timeout: Duration) -> String {
-    format!(
-        "The project bridge remained busy for {} seconds. This request was not sent. Wait for the current operation to finish, then retry.",
         timeout.as_secs()
     )
 }
@@ -980,9 +2079,8 @@ fn terminate_project_bridge_child(child: &mut Option<Child>) -> Result<(), Strin
         return Ok(());
     };
 
-    match child.try_wait() {
-        Ok(Some(_)) => return Ok(()),
-        Ok(None) | Err(_) => {}
+    if let Ok(Some(_)) = child.try_wait() {
+        return Ok(());
     }
 
     if let Err(kill_error) = child.kill() {
@@ -1007,7 +2105,7 @@ fn terminate_project_bridge_child(child: &mut Option<Child>) -> Result<(), Strin
     while Instant::now() < deadline {
         match child.try_wait() {
             Ok(Some(_)) => return Ok(()),
-            Ok(None) => std::thread::sleep(PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL),
+            Ok(None) => std::thread::sleep(PROJECT_BRIDGE_TERMINATION_POLL_INTERVAL),
             Err(error) => {
                 reap_project_bridge_child_in_background(child, false);
                 return Err(format!(
@@ -1032,8 +2130,10 @@ fn reap_project_bridge_child_in_background(mut child: Child, retry_termination: 
 
 fn start_project_bridge_process(
     app_handle: &tauri::AppHandle,
+    read_worker_pool_size: Option<usize>,
 ) -> Result<ProjectBridgeProcess, String> {
     let mut command = resolve_project_bridge_command(app_handle, "bridge")?;
+    configure_project_bridge_process_environment(&mut command, read_worker_pool_size);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     let mut child = command
@@ -1054,6 +2154,28 @@ fn start_project_bridge_process(
     };
 
     Ok(ProjectBridgeProcess::new(child, stdin, stdout))
+}
+
+fn configure_project_bridge_process_environment(
+    command: &mut Command,
+    read_worker_pool_size: Option<usize>,
+) {
+    if let Some(worker_count) = read_worker_pool_size {
+        let (cpu_budget, memory_budget) = project_bridge_worker_host_budgets(worker_count);
+        command.env(PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE, "1");
+        command.env(
+            PROJECT_BRIDGE_CPU_LIMIT_ENVIRONMENT_VARIABLE,
+            cpu_budget.to_string(),
+        );
+        command.env(
+            PROJECT_BRIDGE_MEMORY_LIMIT_ENVIRONMENT_VARIABLE,
+            memory_budget.to_string(),
+        );
+    } else {
+        // The desktop process may itself have inherited this marker. The owning bridge must
+        // always retain cache publication authority; only explicitly created read workers lose it.
+        command.env_remove(PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE);
+    }
 }
 
 fn resolve_project_bridge_command(
@@ -1348,35 +2470,69 @@ fn set_close_guard_enabled(state: tauri::State<'_, CloseGuardState>, enabled: bo
 }
 
 #[tauri::command]
-fn exit_app(app_handle: tauri::AppHandle) {
+async fn exit_app(
+    app_handle: tauri::AppHandle,
+    bridge_state: tauri::State<'_, ProjectBridgeState>,
+) -> Result<(), String> {
     app_handle.state::<SupportSearchState>().cancel();
-    shutdown_project_bridge(&app_handle);
+    recycle_project_bridge_after_active_requests(bridge_state.inner().clone()).await?;
     app_handle.exit(0);
-}
-
-fn shutdown_project_bridge(app_handle: &tauri::AppHandle) {
-    let bridge_state = app_handle.state::<ProjectBridgeState>();
-    if let Ok(Some(process)) = detach_project_bridge_process(&bridge_state) {
-        let _ = process.terminate();
-    }
-}
-
-fn recycle_project_bridge_process(bridge_state: &ProjectBridgeState) -> Result<(), String> {
-    if let Some(process) = detach_project_bridge_process(bridge_state)? {
-        process.terminate()?;
-    }
     Ok(())
 }
 
-fn detach_project_bridge_process(
-    bridge_state: &ProjectBridgeState,
-) -> Result<Option<Arc<ProjectBridgeProcess>>, String> {
-    let mut process = bridge_state
+fn recycle_project_bridge_process(bridge_state: &ProjectBridgeState) -> Result<(), String> {
+    let _lifecycle = bridge_state
+        .process_lifecycle
+        .lock()
+        .map_err(|_| "Project bridge process lifecycle lock was poisoned.".to_owned())?;
+    bridge_state.generation.fetch_add(1, Ordering::AcqRel);
+    let mut processes = Vec::with_capacity(bridge_state.read_processes.len() + 1);
+    if let Some(process) = bridge_state
         .process
         .lock()
-        .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
-    bridge_state.generation.fetch_add(1, Ordering::AcqRel);
-    Ok(process.take())
+        .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?
+        .take()
+    {
+        processes.push(process);
+    }
+    processes.extend(take_project_bridge_read_workers_unlocked(bridge_state)?);
+    terminate_project_bridge_processes(processes)
+}
+
+fn recycle_project_bridge_read_workers(bridge_state: &ProjectBridgeState) -> Result<(), String> {
+    let _lifecycle = bridge_state
+        .process_lifecycle
+        .lock()
+        .map_err(|_| "Project bridge process lifecycle lock was poisoned.".to_owned())?;
+    terminate_project_bridge_processes(take_project_bridge_read_workers_unlocked(bridge_state)?)
+}
+
+fn take_project_bridge_read_workers_unlocked(
+    bridge_state: &ProjectBridgeState,
+) -> Result<Vec<Arc<ProjectBridgeProcess>>, String> {
+    let mut processes = Vec::with_capacity(bridge_state.read_processes.len());
+    for process_slot in bridge_state.read_processes.iter() {
+        if let Some(process) = process_slot
+            .lock()
+            .map_err(|_| "Project bridge read-worker lock was poisoned.".to_owned())?
+            .take()
+        {
+            processes.push(process);
+        }
+    }
+    Ok(processes)
+}
+
+fn terminate_project_bridge_processes(
+    processes: Vec<Arc<ProjectBridgeProcess>>,
+) -> Result<(), String> {
+    let mut first_error = None;
+    for process in processes {
+        if let Err(error) = process.terminate() {
+            first_error.get_or_insert(error);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 #[cfg(windows)]
@@ -1410,6 +2566,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(CloseGuardState {
             is_guarded: AtomicBool::new(false),
+            shutdown_started: AtomicBool::new(false),
         })
         .manage(SupportSearchState::default())
         .manage(ProjectBridgeState::default())
@@ -1444,9 +2601,31 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.emit(WINDOW_CLOSE_REQUESTED_EVENT, ());
                 } else {
+                    // Native window close can race the frontend guard. Always serialize shutdown
+                    // behind active bridge work instead of synchronously killing its process.
+                    api.prevent_close();
                     app_handle.state::<SupportSearchState>().cancel();
-                    shutdown_project_bridge(&app_handle);
-                    app_handle.exit(0);
+                    if close_guard
+                        .shutdown_started
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                    {
+                        let app_handle = app_handle.clone();
+                        let bridge_state = app_handle.state::<ProjectBridgeState>().inner().clone();
+                        tauri::async_runtime::spawn(async move {
+                            if recycle_project_bridge_after_active_requests(bridge_state)
+                                .await
+                                .is_ok()
+                            {
+                                app_handle.exit(0);
+                            } else {
+                                app_handle
+                                    .state::<CloseGuardState>()
+                                    .shutdown_started
+                                    .store(false, Ordering::Release);
+                            }
+                        });
+                    }
                 }
             }
         })
@@ -1480,4 +2659,1141 @@ fn find_repo_root(start_path: PathBuf) -> Option<PathBuf> {
         .ancestors()
         .find(|path| path.join("KM.Editor.slnx").is_file())
         .map(Path::to_path_buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::ffi::OsStr;
+    use std::future::Future;
+    use std::sync::Barrier;
+
+    const CSHARP_COMMAND_NAMES_SOURCE: &str =
+        include_str!("../../../../src/KM.Api/Bridge/KmCommandNames.cs");
+    const CSHARP_DISPATCHER_SOURCE: &str =
+        include_str!("../../../../src/KM.Tools/Bridge/ProjectBridgeDispatcher.cs");
+    const TYPESCRIPT_COMMAND_CONTRACT_SOURCE: &str = include_str!("../../src/bridge/contracts.ts");
+
+    #[test]
+    fn project_source_revision_is_an_explicit_replay_safe_read() {
+        let policy = project_bridge_request_policy(
+            r#"{"command":"project.sourceRevision.read","requestId":"test","payload":{}}"#,
+        )
+        .expect("source revision requests must have an explicit policy");
+
+        assert_eq!(
+            policy.execution_timeout,
+            Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT)
+        );
+        assert!(policy.retry_after_transport_failure);
+        assert_eq!(
+            policy.concurrency,
+            ProjectBridgeCommandConcurrency::IndependentRead(
+                ProjectBridgeReadAffinity::SemanticExplore
+            )
+        );
+    }
+
+    #[test]
+    fn routed_commands_have_an_exhaustive_cross_layer_policy_contract() {
+        assert!(ROUTED_PROJECT_BRIDGE_COMMANDS
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]));
+
+        let declarations = parse_csharp_command_declarations(CSHARP_COMMAND_NAMES_SOURCE);
+        let dispatched = parse_csharp_dispatcher_commands(CSHARP_DISPATCHER_SOURCE, &declarations);
+        let rust = ROUTED_PROJECT_BRIDGE_COMMANDS
+            .iter()
+            .copied()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let typescript = parse_typescript_command_values(TYPESCRIPT_COMMAND_CONTRACT_SOURCE);
+
+        assert_eq!(
+            dispatched, rust,
+            "Rust must classify every routed C# command"
+        );
+        assert_eq!(
+            typescript, rust,
+            "TypeScript must expose every routed C# command"
+        );
+        assert_eq!(
+            declarations.values().cloned().collect::<BTreeSet<_>>(),
+            rust,
+            "C# command declarations and dispatcher routes must stay one-to-one"
+        );
+        for command in ROUTED_PROJECT_BRIDGE_COMMANDS {
+            let concurrency = project_bridge_command_concurrency(command).unwrap_or_else(|| {
+                panic!("{command} must have an explicit concurrency classification")
+            });
+            let request = format!(r#"{{"command":"{command}"}}"#);
+            assert!(
+                project_bridge_request_policy(&request).is_some(),
+                "{command} must have an explicit timeout/replay policy"
+            );
+            if project_bridge_command_recycles_read_workers(command) {
+                assert!(
+                    matches!(
+                        concurrency,
+                        ProjectBridgeCommandConcurrency::Exclusive
+                            | ProjectBridgeCommandConcurrency::AffinityExclusive(_)
+                    ),
+                    "{command} cannot recycle read workers without owning the exclusive barrier"
+                );
+            }
+
+            let policy = project_bridge_request_policy(&request)
+                .unwrap_or_else(|| panic!("{command} must have an explicit request policy"));
+            if project_bridge_command_requires_uninterrupted_completion(command, concurrency) {
+                assert_eq!(
+                    policy.execution_timeout, None,
+                    "{command} must not arm a process-killing watchdog during durable work"
+                );
+                assert!(
+                    !policy.retry_after_transport_failure,
+                    "{command} must not replay after an indeterminate durable completion"
+                );
+            } else {
+                assert!(
+                    policy.execution_timeout.is_some(),
+                    "{command} must retain bounded recovery unless it owns durable work"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_commands_fail_closed_onto_the_ordered_lane() {
+        let command = "future.unclassified.command";
+        assert_eq!(project_bridge_command_concurrency(command), None);
+        let policy =
+            resolved_project_bridge_request_policy(&format!(r#"{{"command":"{command}"}}"#));
+        assert_eq!(
+            policy.concurrency,
+            ProjectBridgeCommandConcurrency::Exclusive
+        );
+        assert_eq!(
+            policy.execution_timeout,
+            Some(PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT)
+        );
+        assert!(!policy.retry_after_transport_failure);
+        assert!(!policy.recycle_read_workers_before_execution);
+        assert!(!policy.recycle_read_workers_after_execution);
+    }
+
+    #[test]
+    fn stateful_handle_and_review_families_never_cross_processes() {
+        for command in [
+            "semanticMerge.capabilities",
+            "semanticMerge.source.open",
+            "semanticMerge.preview",
+            "semanticMerge.import",
+            "recipes.export",
+            "recipes.validate",
+            "recipes.preview",
+            "recipes.import",
+        ] {
+            assert_eq!(
+                command_affinity(command),
+                Some(ProjectBridgeReadAffinity::SemanticMerge),
+                "{command} must stay on the semantic-merge worker"
+            );
+        }
+        for command in [
+            "researchLab.capabilities",
+            "researchLab.source.open",
+            "researchLab.source.close",
+            "researchLab.compare",
+            "researchLab.byteWindow",
+            "researchLab.annotations.read",
+            "researchLab.annotations.mutate",
+        ] {
+            assert_eq!(
+                command_affinity(command),
+                Some(ProjectBridgeReadAffinity::ResearchLab),
+                "{command} must stay on the research worker"
+            );
+        }
+        for command in [
+            "gameplaySettings.update.preview",
+            "gameplaySettings.update.apply",
+            "inGameSettingsPackage.preview",
+            "inGameSettingsPackage.apply",
+            "output.cleanup.preview",
+            "output.cleanup.apply",
+            "output.checkpoint.restore.preview",
+            "output.checkpoint.restore",
+            "rowClipboard.copy.prepare",
+            "rowClipboard.paste.preview",
+            "rowClipboard.paste.stage",
+        ] {
+            assert!(
+                matches!(
+                    project_bridge_command_concurrency(command),
+                    Some(
+                        ProjectBridgeCommandConcurrency::OwnerOrdered
+                            | ProjectBridgeCommandConcurrency::Exclusive
+                    )
+                ),
+                "{command} must stay on the stateful owner process"
+            );
+        }
+    }
+
+    #[test]
+    fn process_held_handles_are_not_replayed_after_their_worker_is_lost() {
+        for command in [
+            "semanticMerge.preview",
+            "semanticMerge.import",
+            "recipes.preview",
+            "recipes.import",
+            "researchLab.source.open",
+            "researchLab.source.close",
+            "researchLab.compare",
+            "researchLab.byteWindow",
+            "researchLab.annotations.mutate",
+            "rowClipboard.paste.preview",
+            "rowClipboard.paste.stage",
+            "output.cleanup.preview",
+        ] {
+            let policy = project_bridge_request_policy(&format!(r#"{{"command":"{command}"}}"#))
+                .unwrap_or_else(|| panic!("missing request policy for {command}"));
+            assert!(
+                !policy.retry_after_transport_failure,
+                "{command} cannot be replayed after process-local authorization or handle state is lost"
+            );
+        }
+
+        for command in [
+            "semanticMerge.capabilities",
+            "semanticMerge.source.open",
+            "recipes.export",
+            "recipes.validate",
+            "researchLab.capabilities",
+            "researchLab.annotations.read",
+            "placement.catalog.open",
+            "placement.catalog.query",
+            "placement.object.load",
+        ] {
+            let policy = project_bridge_request_policy(&format!(r#"{{"command":"{command}"}}"#))
+                .unwrap_or_else(|| panic!("missing request policy for {command}"));
+            assert!(
+                policy.retry_after_transport_failure,
+                "{command} is stateless or recreates its exact immutable revision and should remain replayable"
+            );
+        }
+    }
+
+    #[test]
+    fn owner_process_cannot_inherit_the_read_worker_marker() {
+        let mut owner = Command::new("unused-owner");
+        owner.env(
+            PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE,
+            "unexpected",
+        );
+        configure_project_bridge_process_environment(&mut owner, None);
+        assert_eq!(
+            project_bridge_command_environment(
+                &owner,
+                PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE
+            ),
+            Some(None),
+            "the owning sidecar must explicitly remove an inherited read-worker marker"
+        );
+
+        let mut worker = Command::new("unused-worker");
+        configure_project_bridge_process_environment(&mut worker, Some(2));
+        assert_eq!(
+            project_bridge_command_environment(
+                &worker,
+                PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE
+            ),
+            Some(Some(OsStr::new("1")))
+        );
+        assert!(matches!(
+            project_bridge_command_environment(
+                &worker,
+                PROJECT_BRIDGE_CPU_LIMIT_ENVIRONMENT_VARIABLE
+            ),
+            Some(Some(value)) if value.to_string_lossy().parse::<usize>().is_ok_and(|value| (1..=64).contains(&value))
+        ));
+        assert!(matches!(
+            project_bridge_command_environment(
+                &worker,
+                PROJECT_BRIDGE_MEMORY_LIMIT_ENVIRONMENT_VARIABLE
+            ),
+            Some(Some(value)) if value.to_string_lossy().parse::<u64>().is_ok_and(|value| value >= 64 * 1024 * 1024)
+        ));
+    }
+
+    #[test]
+    fn cache_commands_are_exclusive_and_only_destructive_controls_recycle_workers() {
+        for family in ["svCache", "zaCache", "swshCache"] {
+            for operation in ["status", "warmup.step"] {
+                let command = format!("{family}.{operation}");
+                let policy =
+                    project_bridge_request_policy(&format!(r#"{{"command":"{command}"}}"#))
+                        .expect("cache command policy");
+                assert_eq!(
+                    policy.concurrency,
+                    ProjectBridgeCommandConcurrency::Exclusive
+                );
+                assert!(!policy.recycle_read_workers_before_execution);
+                assert!(!policy.recycle_read_workers_after_execution);
+            }
+            for operation in ["settings.update", "clear"] {
+                let command = format!("{family}.{operation}");
+                let policy =
+                    project_bridge_request_policy(&format!(r#"{{"command":"{command}"}}"#))
+                        .expect("cache command policy");
+                assert_eq!(
+                    policy.concurrency,
+                    ProjectBridgeCommandConcurrency::Exclusive
+                );
+                assert!(policy.recycle_read_workers_before_execution);
+                assert!(!policy.recycle_read_workers_after_execution);
+            }
+        }
+    }
+
+    #[test]
+    fn shared_persistence_mutations_take_the_exclusive_barrier() {
+        for command in [
+            "changeSets.captureSession",
+            "changeSets.import",
+            "changeSets.mutate",
+            "guidedDesign.import",
+            "workspace.applicationState.write",
+            "workspace.drafts.delete",
+            "workspace.drafts.write",
+            "workspace.projectState.delete",
+            "workspace.projectState.write",
+        ] {
+            assert_eq!(
+                project_bridge_command_concurrency(command),
+                Some(ProjectBridgeCommandConcurrency::Exclusive),
+                "{command} must not race a read worker observing the same durable state"
+            );
+        }
+    }
+
+    #[test]
+    fn read_workers_overlap_with_a_bounded_exclusive_writer_barrier() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(2);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let first = tauri::async_runtime::block_on(
+            bridge_state.acquire_execution_permit_for_generation(
+                request_generation,
+                project_bridge_command_concurrency("project.sourceRevision.read")
+                    .expect("source revision classification"),
+            ),
+        )
+        .expect("source revision read permit");
+        let second = tauri::async_runtime::block_on(
+            bridge_state.acquire_execution_permit_for_generation(
+                request_generation,
+                project_bridge_command_concurrency("gameModules.capabilities")
+                    .expect("game-module classification"),
+            ),
+        )
+        .expect("independent analysis reads must overlap");
+
+        assert!(bridge_state
+            .execution_gate
+            .clone()
+            .try_read_owned()
+            .is_err());
+        assert!(bridge_state
+            .execution_gate
+            .clone()
+            .try_write_owned()
+            .is_err());
+        drop(first);
+        drop(second);
+        let _writer = bridge_state
+            .execution_gate
+            .clone()
+            .try_write_owned()
+            .expect("exclusive execution must resume after every reader exits");
+    }
+
+    #[test]
+    fn malformed_project_bridge_requests_keep_the_default_watchdog() {
+        for request_json in ["not-json", r#"{"requestId":"missing-command"}"#] {
+            let policy = resolved_project_bridge_request_policy(request_json);
+            assert_eq!(
+                policy.execution_timeout,
+                Some(PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT)
+            );
+            assert!(!policy.retry_after_transport_failure);
+            assert_eq!(
+                policy.concurrency,
+                ProjectBridgeCommandConcurrency::Exclusive
+            );
+        }
+    }
+
+    #[test]
+    fn queued_request_permit_rejects_a_recycled_generation() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let held_permit =
+            tauri::async_runtime::block_on(bridge_state.acquire_execution_permit_for_generation(
+                request_generation,
+                ProjectBridgeCommandConcurrency::IndependentRead(
+                    ProjectBridgeReadAffinity::SemanticExplore,
+                ),
+            ))
+            .expect("the first request should acquire the only read permit");
+        let waiting_state = bridge_state.clone();
+        let waiting = std::thread::spawn(move || {
+            tauri::async_runtime::block_on(waiting_state.acquire_execution_permit_for_generation(
+                request_generation,
+                ProjectBridgeCommandConcurrency::Exclusive,
+            ))
+        });
+
+        bridge_state.generation.fetch_add(1, Ordering::AcqRel);
+        drop(held_permit);
+
+        let error = waiting
+            .join()
+            .expect("queued permit thread")
+            .expect_err("the stale queued request must not acquire the recycled generation");
+        assert_eq!(error, PROJECT_BRIDGE_RECYCLED_ERROR);
+    }
+
+    #[test]
+    fn canceled_response_read_releases_the_sole_request_permit() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let permit =
+            tauri::async_runtime::block_on(bridge_state.acquire_execution_permit_for_generation(
+                request_generation,
+                ProjectBridgeCommandConcurrency::Exclusive,
+            ))
+            .expect("the active request should acquire exclusive execution");
+        let request_state = Arc::new(AtomicUsize::new(PROJECT_BRIDGE_REQUEST_TIMED_OUT));
+        let cancellation = ProjectBridgeRequestCancellation {
+            request_state: Some(request_state),
+            generation: bridge_state.generation.clone(),
+            request_generation: bridge_state.generation.load(Ordering::Acquire),
+        };
+        let wait_was_called = Arc::new(AtomicBool::new(false));
+        let wait_was_called_by_closure = wait_was_called.clone();
+
+        let result = wait_for_project_bridge_stdout_with_cancellation(&cancellation, move || {
+            wait_was_called_by_closure.store(true, Ordering::Release);
+            Ok(ProjectBridgeStdoutReadiness::Pending)
+        });
+        assert!(matches!(
+            result,
+            Err(ProjectBridgeRequestFailure::Retryable(_))
+        ));
+        assert!(
+            !wait_was_called.load(Ordering::Acquire),
+            "a canceled response read must not enter the pipe wait"
+        );
+
+        drop(permit);
+        let _replacement_permit = bridge_state
+            .execution_gate
+            .clone()
+            .try_write_owned()
+            .expect("canceling the active read must release the sole request permit");
+    }
+
+    #[test]
+    fn recycled_generation_cancels_response_read_before_pipe_wait() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let cancellation = ProjectBridgeRequestCancellation {
+            request_state: None,
+            generation: bridge_state.generation.clone(),
+            request_generation,
+        };
+        bridge_state.generation.fetch_add(1, Ordering::AcqRel);
+
+        let result = wait_for_project_bridge_stdout_with_cancellation(&cancellation, || {
+            panic!("a recycled response read must not enter the pipe wait")
+        });
+        match result {
+            Err(ProjectBridgeRequestFailure::Retryable(error)) => {
+                assert_eq!(error, PROJECT_BRIDGE_RECYCLED_ERROR)
+            }
+            _ => panic!("a recycled response read must return the recycled request failure"),
+        }
+    }
+
+    #[test]
+    fn response_framing_retains_bytes_for_the_next_ordered_request() {
+        let mut buffered = b"{\"first\":true}\r\n{\"second\":true}\n".to_vec();
+        let first = take_project_bridge_response_frame(&mut buffered)
+            .expect("the first frame should be valid")
+            .expect("the first frame should be complete");
+        assert_eq!(
+            decode_project_bridge_response(first).expect("decode the first response"),
+            r#"{"first":true}"#
+        );
+        let second = take_project_bridge_response_frame(&mut buffered)
+            .expect("the second frame should be valid")
+            .expect("the second frame should be complete");
+        assert_eq!(
+            decode_project_bridge_response(second).expect("decode the second response"),
+            r#"{"second":true}"#
+        );
+        assert!(buffered.is_empty());
+    }
+
+    #[test]
+    fn closed_stdout_never_accepts_a_partial_response_frame() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let cancellation = ProjectBridgeRequestCancellation {
+            request_state: None,
+            generation: bridge_state.generation.clone(),
+            request_generation,
+        };
+        let mut child = spawn_partial_response_fixture();
+        let mut stdout = child.stdout.take().expect("partial fixture stdout");
+        let mut buffered = Vec::with_capacity(PROJECT_BRIDGE_INITIAL_RESPONSE_BUFFER_BYTES);
+
+        let result =
+            read_bounded_project_bridge_response(&mut stdout, &mut buffered, &cancellation);
+        assert!(matches!(
+            result,
+            Err(ProjectBridgeRequestFailure::Retryable(error))
+                if error.contains("closed before completing")
+        ));
+        assert!(buffered.is_empty());
+        assert_eq!(
+            buffered.capacity(),
+            PROJECT_BRIDGE_INITIAL_RESPONSE_BUFFER_BYTES,
+            "discarding an invalid frame must release any enlarged response allocation"
+        );
+        child.wait().expect("reap partial response fixture");
+    }
+
+    #[test]
+    fn process_response_ownership_survives_heavy_contention() {
+        const REQUEST_COUNT: usize = 64;
+        let process = Arc::new(spawn_echo_project_bridge_fixture());
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(4);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let start = Arc::new(Barrier::new(REQUEST_COUNT + 1));
+        let threads = (0..REQUEST_COUNT)
+            .map(|request_index| {
+                let process = process.clone();
+                let bridge_state = bridge_state.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    let request = format!(r#"{{"requestIndex":{request_index}}}"#);
+                    start.wait();
+                    let response = process
+                        .request(
+                            &bridge_state,
+                            request_generation,
+                            &request,
+                            Some(Duration::from_secs(5)),
+                        )
+                        .unwrap_or_else(|error| {
+                            panic!("request {request_index} failed: {error:?}")
+                        });
+                    assert_eq!(response, request, "response ownership crossed requests");
+                })
+            })
+            .collect::<Vec<_>>();
+        start.wait();
+        for thread in threads {
+            thread.join().expect("contention request thread");
+        }
+        process.terminate().expect("terminate echo fixture");
+    }
+
+    #[test]
+    fn retryable_transport_crash_restarts_once_without_reusing_the_dead_process() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let request = r#"{"request":"recover-after-crash"}"#;
+        let policy = ProjectBridgeRequestPolicy {
+            execution_timeout: Some(Duration::from_secs(5)),
+            retry_after_transport_failure: true,
+            concurrency: ProjectBridgeCommandConcurrency::IndependentRead(
+                ProjectBridgeReadAffinity::GeneralProject,
+            ),
+            recycle_read_workers_before_execution: false,
+            recycle_read_workers_after_execution: false,
+        };
+        let mut starts = 0;
+        let response = run_project_bridge_request_with(
+            &bridge_state,
+            request_generation,
+            request,
+            policy,
+            &bridge_state.process,
+            || {
+                starts += 1;
+                Ok(if starts == 1 {
+                    spawn_crashing_project_bridge_fixture()
+                } else {
+                    spawn_echo_project_bridge_fixture()
+                })
+            },
+        )
+        .expect("the replay-safe request should recover on one fresh process");
+        assert_eq!(response, request);
+        assert_eq!(starts, 2, "transport recovery must retry at most once");
+        recycle_project_bridge_process(&bridge_state).expect("reap recovery fixture");
+    }
+
+    #[test]
+    fn durable_request_reaches_its_response_boundary_before_recycle_or_shutdown() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let request = r#"{"command":"changePlan.apply","requestId":"durable"}"#;
+        let policy = project_bridge_request_policy(request).expect("durable request policy");
+        assert_eq!(policy.execution_timeout, None);
+        assert!(!policy.retry_after_transport_failure);
+
+        let request_state = bridge_state.clone();
+        let (admitted_sender, admitted_receiver) = mpsc::channel();
+        let request_thread = std::thread::spawn(move || {
+            let execution_permit = tauri::async_runtime::block_on(
+                request_state.acquire_execution_permit_for_generation(
+                    request_generation,
+                    policy.concurrency,
+                ),
+            )
+            .expect("admit durable request");
+            admitted_sender
+                .send(())
+                .expect("signal durable request admission");
+            let response = run_project_bridge_request_with(
+                &request_state,
+                request_generation,
+                request,
+                policy,
+                &request_state.process,
+                || Ok(spawn_delayed_echo_project_bridge_fixture()),
+            );
+            drop(execution_permit);
+            response
+        });
+        admitted_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("durable request admitted");
+
+        let recycle_state = bridge_state.clone();
+        let (recycled_sender, recycled_receiver) = mpsc::channel();
+        let recycle_thread = std::thread::spawn(move || {
+            let result = tauri::async_runtime::block_on(
+                recycle_project_bridge_after_active_requests(recycle_state),
+            );
+            recycled_sender.send(result).expect("send recycle result");
+        });
+        assert!(
+            recycled_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "manual recycle and native shutdown must wait behind admitted durable work"
+        );
+
+        let response = request_thread
+            .join()
+            .expect("durable request thread")
+            .expect("delayed durable request must complete without a watchdog termination");
+        assert_eq!(response, request);
+        recycled_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("queued recycle must complete after durable response")
+            .expect("queued recycle result");
+        recycle_thread.join().expect("recycle thread");
+        assert!(
+            bridge_state
+                .process
+                .lock()
+                .expect("owner process slot")
+                .is_none(),
+            "recycle must detach the completed durable request process"
+        );
+        assert_ne!(
+            bridge_state.generation.load(Ordering::Acquire),
+            request_generation,
+            "recycle must advance the generation after the durable boundary"
+        );
+    }
+
+    #[test]
+    fn watchdog_cancels_a_request_blocked_while_filling_stdin() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let process = Arc::new(spawn_silent_project_bridge_fixture());
+        *bridge_state.process.lock().expect("owner process slot") = Some(process.clone());
+        let request = "x".repeat(4 * 1024 * 1024);
+        let started = Instant::now();
+
+        let result = process.request(
+            &bridge_state,
+            request_generation,
+            &request,
+            Some(Duration::from_millis(50)),
+        );
+        assert!(matches!(
+            result,
+            Err(ProjectBridgeRequestFailure::TimedOut(_))
+        ));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a blocked stdin write must release admission after the active watchdog fires"
+        );
+        assert!(bridge_state
+            .process
+            .lock()
+            .expect("owner process slot")
+            .is_none());
+        assert_ne!(
+            bridge_state.generation.load(Ordering::Acquire),
+            request_generation,
+            "an owner timeout must invalidate requests bound to every old sidecar"
+        );
+        process
+            .terminate()
+            .expect("timed-out process is already detached");
+    }
+
+    #[test]
+    fn process_lifecycle_prevents_a_new_generation_from_binding_a_detached_process() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let old_process = Arc::new(spawn_echo_project_bridge_fixture());
+        *bridge_state.process.lock().expect("owner process slot") = Some(old_process.clone());
+        let lifecycle = bridge_state
+            .process_lifecycle
+            .lock()
+            .expect("process lifecycle lock");
+        let new_generation = bridge_state
+            .generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        let waiting_state = bridge_state.clone();
+        let (started_sender, started_receiver) = mpsc::channel();
+        let (finished_sender, finished_receiver) = mpsc::channel();
+        let waiting = std::thread::spawn(move || {
+            started_sender.send(()).expect("signal lifecycle waiter");
+            let process = get_or_start_project_bridge_process(
+                &waiting_state,
+                new_generation,
+                &waiting_state.process,
+                &mut || Ok(spawn_echo_project_bridge_fixture()),
+            )
+            .expect("start replacement process");
+            finished_sender
+                .send(process)
+                .expect("return replacement process");
+        });
+        started_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("lifecycle waiter started");
+        assert!(
+            finished_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "process lookup must wait while a generation transition detaches process slots"
+        );
+        let detached = bridge_state
+            .process
+            .lock()
+            .expect("detach owner fixture")
+            .take()
+            .expect("old owner fixture");
+        drop(lifecycle);
+
+        let replacement = finished_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("replacement process result");
+        assert!(!Arc::ptr_eq(&replacement, &old_process));
+        waiting.join().expect("lifecycle waiter thread");
+        detached.terminate().expect("terminate detached fixture");
+        recycle_project_bridge_process(&bridge_state).expect("terminate replacement fixture");
+    }
+
+    #[test]
+    fn exclusive_writer_is_not_starved_by_a_reader_flood() {
+        tauri::async_runtime::block_on(async {
+            const READER_COUNT: usize = 64;
+            let gate = Arc::new(tokio::sync::RwLock::with_max_readers((), 4));
+            let initial_reader = gate.clone().read_owned().await;
+            let acquisition_order = Arc::new(Mutex::new(Vec::with_capacity(READER_COUNT + 1)));
+            let (writer_queued_sender, writer_queued_receiver) = tokio::sync::oneshot::channel();
+            let writer_gate = gate.clone();
+            let writer_order = acquisition_order.clone();
+            let writer = tauri::async_runtime::spawn(async move {
+                let mut write_permit = Box::pin(writer_gate.write_owned());
+                let mut queued_sender = Some(writer_queued_sender);
+                let _permit = std::future::poll_fn(|context| {
+                    let result = write_permit.as_mut().poll(context);
+                    if result.is_pending() {
+                        if let Some(sender) = queued_sender.take() {
+                            sender.send(()).expect("queue writer signal");
+                        }
+                    }
+                    result
+                })
+                .await;
+                writer_order.lock().expect("writer order").push(0_usize);
+            });
+            writer_queued_receiver.await.expect("writer queued");
+
+            let readers = (1..=READER_COUNT)
+                .map(|reader_index| {
+                    let reader_gate = gate.clone();
+                    let reader_order = acquisition_order.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _permit = reader_gate.read_owned().await;
+                        reader_order
+                            .lock()
+                            .expect("reader order")
+                            .push(reader_index);
+                    })
+                })
+                .collect::<Vec<_>>();
+            drop(initial_reader);
+            writer.await.expect("writer task");
+            for reader in readers {
+                reader.await.expect("reader task");
+            }
+            let order = acquisition_order.lock().expect("acquisition order");
+            assert_eq!(order.len(), READER_COUNT + 1);
+            assert_eq!(order[0], 0, "queued writer must precede later readers");
+        });
+    }
+
+    #[test]
+    fn pending_project_bridge_requests_are_bounded_by_count_and_bytes() {
+        let byte_limited_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let first = byte_limited_state
+            .reserve_pending_request(MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES / 2)
+            .expect("the first request should fit the byte budget");
+        let second = byte_limited_state
+            .reserve_pending_request(MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES / 2)
+            .expect("the second request should fill the byte budget");
+        assert!(byte_limited_state.reserve_pending_request(1).is_err());
+        drop(first);
+        byte_limited_state
+            .reserve_pending_request(1)
+            .expect("dropping a request should release its byte budget");
+        drop(second);
+
+        let count_limited_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let requests = (0..MAX_PROJECT_BRIDGE_PENDING_REQUESTS)
+            .map(|_| {
+                count_limited_state
+                    .reserve_pending_request(1)
+                    .expect("request should fit the count budget")
+            })
+            .collect::<Vec<_>>();
+        assert!(count_limited_state.reserve_pending_request(1).is_err());
+        drop(requests);
+        count_limited_state
+            .reserve_pending_request(1)
+            .expect("dropping requests should release the count budget");
+    }
+
+    #[test]
+    fn project_bridge_admission_is_fifo() {
+        let admission = Arc::new(ProjectBridgeAdmission::default());
+        let active = admission
+            .acquire(1)
+            .expect("the first request should acquire admission");
+        let (acquired_sender, acquired_receiver) = mpsc::channel();
+
+        let second_admission = admission.clone();
+        let second_sender = acquired_sender.clone();
+        let second = std::thread::spawn(move || {
+            let _guard = second_admission
+                .acquire(2)
+                .expect("the second request should acquire admission");
+            second_sender.send(2).expect("send second acquisition");
+        });
+        wait_for_admission_queue_length(&admission, 1);
+
+        let third_admission = admission.clone();
+        let third = std::thread::spawn(move || {
+            let _guard = third_admission
+                .acquire(3)
+                .expect("the third request should acquire admission");
+            acquired_sender.send(3).expect("send third acquisition");
+        });
+        wait_for_admission_queue_length(&admission, 2);
+
+        drop(active);
+        assert_eq!(
+            acquired_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the second request should be admitted first"),
+            2
+        );
+        assert_eq!(
+            acquired_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the third request should be admitted second"),
+            3
+        );
+
+        second.join().expect("second admission thread");
+        third.join().expect("third admission thread");
+    }
+
+    #[test]
+    fn queued_project_bridge_admission_waits_until_the_active_request_finishes() {
+        let admission = Arc::new(ProjectBridgeAdmission::default());
+        let active = admission
+            .acquire(1)
+            .expect("the first request should acquire admission");
+        let (acquired_sender, acquired_receiver) = mpsc::channel();
+
+        let queued_admission = admission.clone();
+        let queued = std::thread::spawn(move || {
+            let _guard = queued_admission
+                .acquire(2)
+                .expect("the queued request should acquire admission");
+            acquired_sender.send(()).expect("send queued acquisition");
+        });
+        wait_for_admission_queue_length(&admission, 1);
+        assert!(
+            acquired_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "the queued request must not bypass the active request"
+        );
+
+        drop(active);
+        acquired_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the queued request should remain admitted instead of expiring");
+        queued.join().expect("queued admission thread");
+    }
+
+    fn command_affinity(command: &str) -> Option<ProjectBridgeReadAffinity> {
+        match project_bridge_command_concurrency(command)? {
+            ProjectBridgeCommandConcurrency::IndependentRead(affinity)
+            | ProjectBridgeCommandConcurrency::AffinityOrdered(affinity)
+            | ProjectBridgeCommandConcurrency::AffinityExclusive(affinity) => Some(affinity),
+            ProjectBridgeCommandConcurrency::OwnerOrdered
+            | ProjectBridgeCommandConcurrency::Exclusive => None,
+        }
+    }
+
+    fn project_bridge_command_environment<'a>(
+        command: &'a Command,
+        name: &str,
+    ) -> Option<Option<&'a OsStr>> {
+        command
+            .get_envs()
+            .find(|(key, _)| *key == OsStr::new(name))
+            .map(|(_, value)| value)
+    }
+
+    fn parse_csharp_command_declarations(source: &str) -> BTreeMap<String, String> {
+        source
+            .lines()
+            .filter_map(|line| {
+                let declaration = line.trim().strip_prefix("public const string ")?;
+                let (name, value) = declaration.split_once(" = ")?;
+                Some((
+                    name.to_owned(),
+                    value.trim_end_matches(';').trim_matches('"').to_owned(),
+                ))
+            })
+            .collect()
+    }
+
+    fn parse_csharp_dispatcher_commands(
+        source: &str,
+        declarations: &BTreeMap<String, String>,
+    ) -> BTreeSet<String> {
+        source
+            .lines()
+            .filter(|line| line.contains("=>"))
+            .filter_map(|line| {
+                let suffix = line.split_once("KmCommandNames.")?.1;
+                let name = suffix
+                    .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                    .next()?;
+                declarations.get(name).cloned()
+            })
+            .collect()
+    }
+
+    fn parse_typescript_command_values(source: &str) -> BTreeSet<String> {
+        let mut in_values = false;
+        let mut values = BTreeSet::new();
+        for line in source.lines() {
+            let line = line.trim();
+            if line == "export const kmCommandNameValues = [" {
+                in_values = true;
+                continue;
+            }
+            if !in_values {
+                continue;
+            }
+            if line == "] as const;" {
+                break;
+            }
+            if let Some(value) = line
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix("\","))
+            {
+                values.insert(value.to_owned());
+            }
+        }
+        values
+    }
+
+    fn wait_for_admission_queue_length(admission: &ProjectBridgeAdmission, expected: usize) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let queued = admission
+                .state
+                .lock()
+                .expect("inspect admission state")
+                .waiting_request_tokens
+                .len();
+            if queued == expected {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the request did not enter the admission queue"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    fn spawn_echo_project_bridge_fixture() -> ProjectBridgeProcess {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$line = [Console]::In.ReadLine(); while ($null -ne $line) { [Console]::Out.WriteLine($line); [Console]::Out.Flush(); $line = [Console]::In.ReadLine() }",
+            ]);
+            command
+        };
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args([
+                "-c",
+                "while IFS= read -r line; do printf '%s\\n' \"$line\"; done",
+            ]);
+            command
+        };
+        spawn_project_bridge_fixture(&mut command)
+    }
+
+    fn spawn_delayed_echo_project_bridge_fixture() -> ProjectBridgeProcess {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$line = [Console]::In.ReadLine(); if ($null -ne $line) { Start-Sleep -Milliseconds 250; [Console]::Out.WriteLine($line); [Console]::Out.Flush() }; $line = [Console]::In.ReadLine(); while ($null -ne $line) { [Console]::Out.WriteLine($line); [Console]::Out.Flush(); $line = [Console]::In.ReadLine() }",
+            ]);
+            command
+        };
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args([
+                "-c",
+                "first=1; while IFS= read -r line; do if [ \"$first\" = 1 ]; then sleep 0.25; first=0; fi; printf '%s\\n' \"$line\"; done",
+            ]);
+            command
+        };
+        spawn_project_bridge_fixture(&mut command)
+    }
+
+    fn spawn_crashing_project_bridge_fixture() -> ProjectBridgeProcess {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("cmd.exe");
+            command.args(["/d", "/q", "/c", "exit", "/b", "7"]);
+            command
+        };
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "exit 7"]);
+            command
+        };
+        spawn_project_bridge_fixture(&mut command)
+    }
+
+    fn spawn_silent_project_bridge_fixture() -> ProjectBridgeProcess {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ]);
+            command
+        };
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 30"]);
+            command
+        };
+        spawn_project_bridge_fixture(&mut command)
+    }
+
+    fn spawn_partial_response_fixture() -> Child {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::Out.Write('partial')",
+            ]);
+            command
+        };
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "printf partial"]);
+            command
+        };
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn partial response fixture")
+    }
+
+    fn spawn_project_bridge_fixture(command: &mut Command) -> ProjectBridgeProcess {
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn project bridge fixture");
+        let stdin = child.stdin.take().expect("fixture stdin");
+        let stdout = child.stdout.take().expect("fixture stdout");
+        ProjectBridgeProcess::new(child, stdin, stdout)
+    }
 }

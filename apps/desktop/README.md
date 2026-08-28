@@ -60,6 +60,23 @@ audits every desktop TSX and CSS source and rejects inline native-control stylin
 dynamic input types, platform appearance outside forced-colors mode, hardcoded field colors,
 field background shorthands, erased select arrows, and missing shared or proxy-control states.
 
+## Desktop concurrency contract
+
+The browser render thread owns React and Zustand state. Expensive project reads, decoding, hashing,
+and analysis belong behind the typed local bridge, where independent reads can use the bounded
+native read pool and the managed bounded executor. Edit-session changes, cache replacement,
+workspace mutations, output, and recovery stay ordered behind the exclusive bridge barrier.
+
+Every frontend controller that starts bridge work must bind the request to the complete project and
+source scope, reuse an identical in-flight request, reject late generations, and bound any retained
+cache. Controllers that survive Workbench navigation must use the shared lifecycle helpers instead
+of feature-specific unmount timing. A progress surface must use real completed and total units from
+the owning workflow and must not infer progress from timers.
+
+New bridge commands are ordered by default until their read-only behavior and affinity are
+explicitly classified. Do not work around that boundary with direct sidecar processes or
+fire-and-forget requests.
+
 Tauri dev and build commands publish `src/KM.Tools` as a self-contained sidecar before launching or packaging the desktop app. To refresh only the sidecar, run `pnpm sidecar:publish`; the generated executable is staged under `apps/desktop/src-tauri/binaries/` and is intentionally not committed.
 
 Tauri builds on Windows require Visual Studio Build Tools with the Microsoft C++ toolchain and Windows SDK components available to the Rust MSVC target.

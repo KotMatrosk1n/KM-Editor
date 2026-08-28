@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -17,6 +18,7 @@ using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Semantics;
 using KM.Api.Trainers;
+using KM.Core.Concurrency;
 using KM.Api.Workflows;
 using KM.Core.Editing;
 using KM.Core.Projects;
@@ -43,17 +45,43 @@ public sealed class GuidedDesignValidationException : Exception
     public GuidedDesignFailureKind FailureKind { get; }
 }
 
+internal sealed record GuidedDesignWorkflowDtoLoaders(
+    Func<TrainersWorkflowDto> Trainers,
+    Func<EncountersWorkflowDto> Encounters,
+    Func<ItemsWorkflowDto> Items,
+    Func<PokemonWorkflowDto> Pokemon);
+
 public sealed class GuidedDesignApplicationService
 {
     private const int MaximumDiagnostics = 512;
+    private const int MaximumCapabilityCacheEntries = 8;
+    private const int CapabilityBuildLockCount = 8;
+    private const int MaximumConcurrentSourceLoads = 4;
+    private const long EstimatedSourceLoadWorkerBytes = 256L * 1024L * 1024L;
+    private static readonly BoundedConcurrencyPolicy SourceLoadPolicy = new(
+        "guided-design-source-load",
+        BoundedWorkloadKind.Decode,
+        EstimatedSourceLoadWorkerBytes,
+        maximumDegreeOfParallelism: MaximumConcurrentSourceLoads,
+        memoryBudgetDivisor: 8,
+        degreeOfParallelismWhenMemoryUnknown: 1);
     private readonly object capabilityCacheSync = new();
-    private CapabilityCacheEntry? capabilityCache;
+    private readonly Dictionary<string, CapabilityCacheEntry> capabilityCache = new(
+        StringComparer.Ordinal);
+    private readonly LinkedList<string> capabilityCacheUsage = new();
+    private readonly object[] capabilityBuildLocks =
+    [
+        new(), new(), new(), new(), new(), new(), new(), new(),
+    ];
     private readonly SemanticExploreApplicationService semanticExploreService;
     private readonly ChangeSetApplicationService changeSetService;
     private readonly Func<ProjectPathsDto, TrainersWorkflowDto> loadTrainersFresh;
     private readonly Func<ProjectPathsDto, EncountersWorkflowDto> loadEncountersFresh;
     private readonly Func<ProjectPathsDto, ItemsWorkflowDto> loadItemsFresh;
     private readonly Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh;
+    private readonly Func<ProjectPathsDto, bool> canLoadSourcesConcurrently;
+    private readonly Func<ProjectPathsDto, int, GuidedDesignWorkflowDtoLoaders>?
+        prepareSourcesFresh;
     private readonly Func<
         ProjectPathsDto,
         IReadOnlyList<GuidedDesignStagingEdit>,
@@ -79,7 +107,40 @@ public sealed class GuidedDesignApplicationService
             ProjectPathsDto,
             EditSession,
             ChangePlanOutputModeDto?,
-            ChangePlan> createChangePlan)
+            ChangePlan> createChangePlan,
+        Func<ProjectPathsDto, bool>? canLoadSourcesConcurrently = null)
+        : this(
+            semanticExploreService,
+            changeSetService,
+            loadTrainersFresh,
+            loadEncountersFresh,
+            loadItemsFresh,
+            loadPokemonFresh,
+            stageEdits,
+            createChangePlan,
+            canLoadSourcesConcurrently,
+            prepareSourcesFresh: null)
+    {
+    }
+
+    internal GuidedDesignApplicationService(
+        SemanticExploreApplicationService semanticExploreService,
+        ChangeSetApplicationService changeSetService,
+        Func<ProjectPathsDto, TrainersWorkflowDto> loadTrainersFresh,
+        Func<ProjectPathsDto, EncountersWorkflowDto> loadEncountersFresh,
+        Func<ProjectPathsDto, ItemsWorkflowDto> loadItemsFresh,
+        Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh,
+        Func<
+            ProjectPathsDto,
+            IReadOnlyList<GuidedDesignStagingEdit>,
+            GuidedDesignStagingResult> stageEdits,
+        Func<
+            ProjectPathsDto,
+            EditSession,
+            ChangePlanOutputModeDto?,
+            ChangePlan> createChangePlan,
+        Func<ProjectPathsDto, bool>? canLoadSourcesConcurrently,
+        Func<ProjectPathsDto, int, GuidedDesignWorkflowDtoLoaders>? prepareSourcesFresh)
     {
         this.semanticExploreService = semanticExploreService
             ?? throw new ArgumentNullException(nameof(semanticExploreService));
@@ -93,6 +154,8 @@ public sealed class GuidedDesignApplicationService
             ?? throw new ArgumentNullException(nameof(loadItemsFresh));
         this.loadPokemonFresh = loadPokemonFresh
             ?? throw new ArgumentNullException(nameof(loadPokemonFresh));
+        this.canLoadSourcesConcurrently = canLoadSourcesConcurrently ?? (_ => false);
+        this.prepareSourcesFresh = prepareSourcesFresh;
         this.stageEdits = stageEdits ?? throw new ArgumentNullException(nameof(stageEdits));
         this.createChangePlan = createChangePlan
             ?? throw new ArgumentNullException(nameof(createChangePlan));
@@ -115,7 +178,7 @@ public sealed class GuidedDesignApplicationService
             semanticExploreService.ReadSourceCacheIdentity(request.Scope));
         ProjectCapabilityRead capabilityRead;
         ReadSemanticCapabilitiesResponse completed;
-        lock (capabilityCacheSync)
+        lock (CapabilityBuildLock(capabilityCacheKey))
         {
             // Capability readiness is decoded once per exact semantic revision. Keep the
             // source recheck and cache publication inside the same gate so launch preload
@@ -145,10 +208,11 @@ public sealed class GuidedDesignApplicationService
     {
         var readiness = Enum.GetValues<GuidedDesignProposalKindDto>()
             .ToDictionary(kind => kind, _ => false);
-        var trainersCacheable = ProjectTrainerReadiness(paths, family, readiness);
-        var encountersCacheable = ProjectEncounterReadiness(paths, family, readiness);
-        var itemsCacheable = ProjectItemReadiness(paths, family, readiness);
-        var pokemonCacheable = ProjectPokemonReadiness(paths, family, readiness);
+        var sources = LoadProjectSources(paths, family);
+        var trainersCacheable = ProjectTrainerReadiness(sources.Trainers, family, readiness);
+        var encountersCacheable = ProjectEncounterReadiness(sources.Encounters, family, readiness);
+        var itemsCacheable = ProjectItemReadiness(sources.Items, family, readiness);
+        var pokemonCacheable = ProjectPokemonReadiness(sources.Pokemon, family, readiness);
 
         var capabilities = GuidedDesignProviders.Capabilities(family).Select(capability =>
         {
@@ -191,7 +255,7 @@ public sealed class GuidedDesignApplicationService
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool ProjectTrainerReadiness(
-        ProjectPathsDto paths,
+        TrainersWorkflowDto? trainers,
         SemanticGameFamilyDto family,
         IDictionary<GuidedDesignProposalKindDto, bool> readiness)
     {
@@ -200,7 +264,6 @@ public sealed class GuidedDesignApplicationService
             return true;
         }
 
-        var trainers = TryLoad(() => loadTrainersFresh(paths));
         if (trainers is null)
         {
             return false;
@@ -229,11 +292,10 @@ public sealed class GuidedDesignApplicationService
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool ProjectEncounterReadiness(
-        ProjectPathsDto paths,
+        EncountersWorkflowDto? encounters,
         SemanticGameFamilyDto family,
         IDictionary<GuidedDesignProposalKindDto, bool> readiness)
     {
-        var encounters = TryLoad(() => loadEncountersFresh(paths));
         if (encounters is null)
         {
             return false;
@@ -264,11 +326,10 @@ public sealed class GuidedDesignApplicationService
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool ProjectItemReadiness(
-        ProjectPathsDto paths,
+        ItemsWorkflowDto? items,
         SemanticGameFamilyDto family,
         IDictionary<GuidedDesignProposalKindDto, bool> readiness)
     {
-        var items = TryLoad(() => loadItemsFresh(paths));
         if (items is null)
         {
             return false;
@@ -291,11 +352,10 @@ public sealed class GuidedDesignApplicationService
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool ProjectPokemonReadiness(
-        ProjectPathsDto paths,
+        PokemonWorkflowDto? pokemon,
         SemanticGameFamilyDto family,
         IDictionary<GuidedDesignProposalKindDto, bool> readiness)
     {
-        var pokemon = TryLoad(() => loadPokemonFresh(paths));
         if (pokemon is null)
         {
             return false;
@@ -323,6 +383,102 @@ public sealed class GuidedDesignApplicationService
         return WorkflowCacheable(pokemon.Summary, pokemon.Diagnostics);
     }
 
+    private ProjectWorkflowSources LoadProjectSources(
+        ProjectPathsDto paths,
+        SemanticGameFamilyDto family)
+    {
+        var sourceCount = family == SemanticGameFamilyDto.SwordShield
+            ? MaximumConcurrentSourceLoads - 1
+            : MaximumConcurrentSourceLoads;
+        var parallelism = canLoadSourcesConcurrently(paths)
+            ? BoundedParallel.Plan(sourceCount, SourceLoadPolicy).DegreeOfParallelism
+            : 1;
+        var loaders = PrepareProjectSourceLoaders(paths, parallelism);
+        TrainersWorkflowDto? trainers = null;
+        EncountersWorkflowDto? encounters = null;
+        ItemsWorkflowDto? items = null;
+        PokemonWorkflowDto? pokemon = null;
+        var failures = new ExceptionDispatchInfo?[MaximumConcurrentSourceLoads];
+
+        void LoadAt(int index)
+        {
+            try
+            {
+                switch (index)
+                {
+                    case 0 when family != SemanticGameFamilyDto.SwordShield:
+                        trainers = TryLoad(loaders.Trainers);
+                        break;
+                    case 1:
+                        encounters = TryLoad(loaders.Encounters);
+                        break;
+                    case 2:
+                        items = TryLoad(loaders.Items);
+                        break;
+                    case 3:
+                        pokemon = TryLoad(loaders.Pokemon);
+                        break;
+                }
+            }
+            catch (Exception exception)
+            {
+                failures[index] = ExceptionDispatchInfo.Capture(exception);
+            }
+        }
+
+        var executionPolicy = parallelism > 1
+            ? SourceLoadPolicy
+            : new BoundedConcurrencyPolicy(
+                "guided-design-source-load-serial",
+                BoundedWorkloadKind.Decode,
+                EstimatedSourceLoadWorkerBytes,
+                maximumDegreeOfParallelism: 1);
+        _ = BoundedParallel.For(MaximumConcurrentSourceLoads, executionPolicy, LoadAt);
+
+        // Preserve the historical trainer, encounter, item, Pokemon failure precedence.
+        foreach (var failure in failures)
+        {
+            failure?.Throw();
+        }
+
+        return new ProjectWorkflowSources(trainers, encounters, items, pokemon);
+    }
+
+    private GuidedDesignWorkflowDtoLoaders PrepareProjectSourceLoaders(
+        ProjectPathsDto paths,
+        int parallelism)
+    {
+        if (prepareSourcesFresh is null)
+        {
+            return new GuidedDesignWorkflowDtoLoaders(
+                () => loadTrainersFresh(paths),
+                () => loadEncountersFresh(paths),
+                () => loadItemsFresh(paths),
+                () => loadPokemonFresh(paths));
+        }
+
+        try
+        {
+            return prepareSourcesFresh(paths, parallelism);
+        }
+        catch (Exception exception) when (IsUnavailableSourceException(exception))
+        {
+            var failure = ExceptionDispatchInfo.Capture(exception);
+            return new GuidedDesignWorkflowDtoLoaders(
+                () => RethrowPreparedSourceFailure<TrainersWorkflowDto>(failure),
+                () => RethrowPreparedSourceFailure<EncountersWorkflowDto>(failure),
+                () => RethrowPreparedSourceFailure<ItemsWorkflowDto>(failure),
+                () => RethrowPreparedSourceFailure<PokemonWorkflowDto>(failure));
+        }
+    }
+
+    private static T RethrowPreparedSourceFailure<T>(ExceptionDispatchInfo failure)
+        where T : class
+    {
+        failure.Throw();
+        throw new InvalidOperationException("The Guided Design source failure was not rethrown.");
+    }
+
     private ProjectCapabilityRead ReadProjectCapabilitiesCached(
         ProjectPathsDto paths,
         SemanticGameFamilyDto family,
@@ -330,9 +486,10 @@ public sealed class GuidedDesignApplicationService
     {
         lock (capabilityCacheSync)
         {
-            if (capabilityCache is { } cached
-                && string.Equals(cached.CacheKey, cacheKey, StringComparison.Ordinal))
+            if (capabilityCache.TryGetValue(cacheKey, out var cached))
             {
+                capabilityCacheUsage.Remove(cached.UsageNode);
+                capabilityCacheUsage.AddFirst(cached.UsageNode);
                 return new ProjectCapabilityRead(cached.Capabilities, Cacheable: true);
             }
         }
@@ -346,12 +503,39 @@ public sealed class GuidedDesignApplicationService
     {
         lock (capabilityCacheSync)
         {
-            // A single immutable nine-row entry is deliberately retained. The key
-            // excludes pending edits but includes the server-verified source identity.
-            capabilityCache = new CapabilityCacheEntry(
+            if (capabilityCache.Remove(cacheKey, out var existing))
+            {
+                capabilityCacheUsage.Remove(existing.UsageNode);
+            }
+
+            var usageNode = capabilityCacheUsage.AddFirst(cacheKey);
+            capabilityCache.Add(
                 cacheKey,
-                capabilities.ToArray());
+                new CapabilityCacheEntry(capabilities.ToArray(), usageNode));
+            while (capabilityCache.Count > MaximumCapabilityCacheEntries)
+            {
+                var oldest = capabilityCacheUsage.Last
+                    ?? throw new InvalidOperationException(
+                        "The Guided Design capability cache is inconsistent.");
+                capabilityCacheUsage.RemoveLast();
+                if (!capabilityCache.Remove(oldest.Value))
+                {
+                    throw new InvalidOperationException(
+                        "The Guided Design capability cache is inconsistent.");
+                }
+            }
         }
+    }
+
+    private object CapabilityBuildLock(string cacheKey)
+    {
+        var hash = 2166136261u;
+        foreach (var character in cacheKey)
+        {
+            hash = unchecked((hash ^ character) * 16777619u);
+        }
+
+        return capabilityBuildLocks[hash % CapabilityBuildLockCount];
     }
 
     private static string CapabilityCacheKey(
@@ -373,18 +557,20 @@ public sealed class GuidedDesignApplicationService
         {
             return load();
         }
-        catch (Exception exception) when (exception is
-            IOException or
-            UnauthorizedAccessException or
-            InvalidDataException or
-            InvalidOperationException or
-            ArgumentException or
-            NotSupportedException or
-            OverflowException)
+        catch (Exception exception) when (IsUnavailableSourceException(exception))
         {
             return null;
         }
     }
+
+    private static bool IsUnavailableSourceException(Exception exception) => exception is
+        IOException or
+        UnauthorizedAccessException or
+        InvalidDataException or
+        InvalidOperationException or
+        ArgumentException or
+        NotSupportedException or
+        OverflowException;
 
     private static bool WorkflowReady(
         WorkflowSummaryDto summary,
@@ -1530,8 +1716,14 @@ public sealed class GuidedDesignApplicationService
         int TotalCount);
 
     private sealed record CapabilityCacheEntry(
-        string CacheKey,
-        IReadOnlyList<GuidedDesignCapabilityDto> Capabilities);
+        IReadOnlyList<GuidedDesignCapabilityDto> Capabilities,
+        LinkedListNode<string> UsageNode);
+
+    private sealed record ProjectWorkflowSources(
+        TrainersWorkflowDto? Trainers,
+        EncountersWorkflowDto? Encounters,
+        ItemsWorkflowDto? Items,
+        PokemonWorkflowDto? Pokemon);
 
     private sealed record ProjectCapabilityRead(
         IReadOnlyList<GuidedDesignCapabilityDto> Capabilities,

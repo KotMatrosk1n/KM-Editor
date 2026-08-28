@@ -282,7 +282,7 @@ internal sealed class SvTrainersEditSessionService
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var effectiveSession = Validate(paths, session).Session;
-        var currentPlan = CreateChangePlan(paths, effectiveSession, outputMode);
+        var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 

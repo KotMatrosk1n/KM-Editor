@@ -10,6 +10,11 @@
     <ProjectReference Include="..\KM.ZA\KM.ZA.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\km-native-settings.nso"
+                      LogicalName="KM.Tools.Resources.km-native-settings.nso" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { outputSafetyScopeSchema } from './outputSafetyContracts';
 
 export const inGameSettingsPackageMaximumReturnedTargets = 512;
+export const inGameSettingsPackageMaximumReturnedReadDependencies = 16;
 
 const uint32Schema = z.number().int().min(0).max(0xffff_ffff);
 const titleIdSchema = z.string().regex(/^[0-9A-F]{16}$/u);
@@ -57,6 +58,32 @@ export const inGameSettingsPackageOperationSchema = z.enum([
 
 export const inGameSettingsPackageTargetOperationSchema = z.enum(['write', 'delete']);
 
+export const inGameSettingsExecutableInputSourceSchema = z.enum([
+  'none',
+  'base',
+  'standaloneOutput'
+]);
+
+export const inGameSettingsExecutableCompatibilitySchema = z.enum([
+  'absent',
+  'retailEquivalent',
+  'compatiblePreservable',
+  'incompatibleOwnedRegion',
+  'unsupportedBuild',
+  'unreadableOrAmbiguous'
+]);
+
+export const inGameSettingsPackageReadDependencyRoleSchema = z.enum([
+  'staticExecutableGuard',
+  'executableCompositionSource'
+]);
+
+export const inGameSettingsExecutableCompositionStrategySchema = z.enum([
+  'stockPackage',
+  'retailEquivalentStandalone',
+  'compatibleStandalone'
+]);
+
 export const inGameSettingsPackageVersionSchema = z.strictObject({
   major: uint32Schema,
   minor: uint32Schema,
@@ -73,9 +100,54 @@ export const inGameSettingsPackageDescriptorSchema = z.strictObject({
   titleId: titleIdSchema
 });
 
+export const inGameSettingsExecutableInputAssessmentSchema = z.strictObject({
+  compatibility: inGameSettingsExecutableCompatibilitySchema,
+  reasonCode: z
+    .string()
+    .min(1)
+    .max(96)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+  source: inGameSettingsExecutableInputSourceSchema,
+  sourceLengthBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
+  sourceRelativePath: relativeOutputPathSchema.nullable(),
+  sourceSha256: sha256Schema.nullable()
+}).superRefine((assessment, context) => {
+  const hasCompleteFingerprint =
+    assessment.sourceSha256 !== null && assessment.sourceLengthBytes !== null;
+  if ((assessment.sourceSha256 !== null) !== (assessment.sourceLengthBytes !== null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Executable input fingerprints must contain both SHA-256 and byte length.'
+    });
+  }
+  if (
+    (assessment.compatibility === 'retailEquivalent' ||
+      assessment.compatibility === 'compatiblePreservable') &&
+    (assessment.source !== 'standaloneOutput' ||
+      assessment.sourceRelativePath === null ||
+      !hasCompleteFingerprint)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Compatible standalone inputs require one complete, path-bound fingerprint.'
+    });
+  }
+  if (
+    assessment.compatibility === 'incompatibleOwnedRegion' &&
+    assessment.source !== 'standaloneOutput'
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Owned-region conflicts require a standalone output source.'
+    });
+  }
+});
+
 export const inGameSettingsPackageSnapshotSchema = z.strictObject({
   availablePackage: inGameSettingsPackageDescriptorSchema.nullable(),
+  blocksStaticEditor: z.boolean(),
   detail: z.string().nullable(),
+  executableInput: inGameSettingsExecutableInputAssessmentSchema,
   installedPackage: inGameSettingsPackageDescriptorSchema.nullable(),
   packageAvailable: z.boolean(),
   revision: sha256Schema,
@@ -101,15 +173,74 @@ export const inGameSettingsPackageTargetSchema = z.strictObject({
   relativePath: relativeOutputPathSchema
 });
 
+export const inGameSettingsPackageReadDependencySchema = z.strictObject({
+  exists: z.boolean(),
+  lengthBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
+  preserved: z.boolean(),
+  relativePath: relativeOutputPathSchema,
+  role: inGameSettingsPackageReadDependencyRoleSchema,
+  sha256: sha256Schema.nullable()
+}).superRefine((dependency, context) => {
+  if (dependency.exists !== (dependency.sha256 !== null && dependency.lengthBytes !== null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Existing read dependencies require one complete fingerprint; missing dependencies require none.'
+    });
+  }
+});
+
+export const inGameSettingsExecutableCompositionSchema = z.strictObject({
+  destinationRelativePath: relativeOutputPathSchema,
+  ownedRegionCount: z.number().int().min(0).max(4_096),
+  preservesBytesOutsideOwnedRegions: z.boolean(),
+  sourcePreserved: z.boolean(),
+  strategy: inGameSettingsExecutableCompositionStrategySchema
+});
+
 export const previewInGameSettingsPackageResponseSchema = z.strictObject({
   before: inGameSettingsPackageSnapshotSchema,
+  composition: inGameSettingsExecutableCompositionSchema.nullable(),
   expiresAtUtc: dateTimeOffsetSchema,
   operation: inGameSettingsPackageOperationSchema,
+  readDependencies: z
+    .array(inGameSettingsPackageReadDependencySchema)
+    .max(inGameSettingsPackageMaximumReturnedReadDependencies),
+  readDependenciesTruncated: z.boolean(),
   reviewId: reviewIdSchema,
   targets: z
     .array(inGameSettingsPackageTargetSchema)
     .max(inGameSettingsPackageMaximumReturnedTargets),
   targetsTruncated: z.boolean()
+}).superRefine((preview, context) => {
+  if (preview.operation === 'remove' && preview.composition !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Removal reviews cannot claim an executable composition operation.'
+    });
+  }
+  if (preview.operation !== 'remove' && preview.composition === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Install and upgrade reviews require executable composition facts.'
+    });
+  }
+  if (preview.composition?.strategy === 'compatibleStandalone') {
+    const source = preview.readDependencies.find(
+      (dependency) => dependency.role === 'executableCompositionSource'
+    );
+    if (
+      !preview.composition.sourcePreserved ||
+      !preview.composition.preservesBytesOutsideOwnedRegions ||
+      preview.composition.ownedRegionCount === 0 ||
+      !source?.exists ||
+      !source.preserved
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Compatible composition requires a preserved fingerprinted source and explicit owned-region guarantees.'
+      });
+    }
+  }
 });
 
 export const applyInGameSettingsPackageRequestSchema = z.strictObject({
@@ -133,6 +264,15 @@ export type InGameSettingsPackageState = z.infer<typeof inGameSettingsPackageSta
 export type InGameSettingsPackageOperation = z.infer<typeof inGameSettingsPackageOperationSchema>;
 export type InGameSettingsPackageVersion = z.infer<typeof inGameSettingsPackageVersionSchema>;
 export type InGameSettingsPackageDescriptor = z.infer<typeof inGameSettingsPackageDescriptorSchema>;
+export type InGameSettingsExecutableInputAssessment = z.infer<
+  typeof inGameSettingsExecutableInputAssessmentSchema
+>;
+export type InGameSettingsPackageReadDependency = z.infer<
+  typeof inGameSettingsPackageReadDependencySchema
+>;
+export type InGameSettingsExecutableComposition = z.infer<
+  typeof inGameSettingsExecutableCompositionSchema
+>;
 export type InGameSettingsPackageSnapshot = z.infer<typeof inGameSettingsPackageSnapshotSchema>;
 export type InspectInGameSettingsPackageRequest = z.infer<
   typeof inspectInGameSettingsPackageRequestSchema

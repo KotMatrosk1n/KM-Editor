@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ProjectQueryEpoch } from '../../utils/projectAsyncPolicy';
 import {
   createAnalysisPreparationProgress,
   createAnalysisPreparationScopeState,
   createAnalysisPreparationSnapshot,
   mergeAnalysisPreparationProgress,
-  nextAnalysisPreloadTool,
+  nextAnalysisPreloadTools,
   resolveAnalysisPreparationScopeState,
   type AnalysisLoadingMode,
   type AnalysisPreparationProgress,
@@ -29,7 +30,11 @@ export function useAnalysisPreparation(options: {
   const [scopeState, setScopeState] = useState(() => (
     createAnalysisPreparationScopeState(options)
   ));
-  const scopeGenerationRef = useRef(0);
+  const preloadFreshnessRef = useRef<ProjectQueryEpoch<'preload'> | null>(null);
+  if (preloadFreshnessRef.current === null) {
+    preloadFreshnessRef.current = new ProjectQueryEpoch<'preload'>();
+  }
+  const preloadFreshness = preloadFreshnessRef.current;
   const visibleScopeState = useMemo(
     () => resolveAnalysisPreparationScopeState(scopeState, options),
     [
@@ -43,9 +48,9 @@ export function useAnalysisPreparation(options: {
   const { preloadTools, progressBySystem } = visibleScopeState;
 
   useEffect(() => {
-    scopeGenerationRef.current += 1;
+    preloadFreshness.invalidateAll();
     setScopeState((current) => resolveAnalysisPreparationScopeState(current, options));
-  }, [options.scopeKey]);
+  }, [options.scopeKey, preloadFreshness]);
 
   useEffect(() => {
     const scopeKey = options.scopeKey;
@@ -75,37 +80,29 @@ export function useAnalysisPreparation(options: {
     const states = Object.fromEntries(
       Object.entries(progressBySystem).map(([system, progress]) => [system, progress.state])
     ) as Record<AnalysisSystemId, AnalysisPreparationState>;
-    const nextTool = nextAnalysisPreloadTool({
+    const nextTools = nextAnalysisPreloadTools({
       deferBackgroundWork: options.deferBackgroundWork,
       mode: options.mode,
       preloadTools,
       semanticState: options.semanticProgress.state,
       states
     });
-    if (!nextTool) return;
-    const generation = scopeGenerationRef.current;
+    if (nextTools.length === 0) return;
+    const ticket = preloadFreshness.capture('preload');
     const scopeKey = options.scopeKey;
     const idleWindow = window as IdleWindow;
     let timeoutHandle: number | null = null;
     let idleHandle: number | null = null;
     const mountNext = () => {
-      if (scopeGenerationRef.current !== generation) return;
+      if (!preloadFreshness.isCurrent(ticket)) return;
       setScopeState((current) => {
         if (current.scopeKey !== scopeKey) return current;
-        const progress = current.progressBySystem[nextTool].state === 'waiting'
-          ? createAnalysisPreparationProgress(nextTool, 'loading')
-          : current.progressBySystem[nextTool];
-        const tools = current.preloadTools.includes(nextTool)
-          ? current.preloadTools
-          : [...current.preloadTools, nextTool];
-        return progress === current.progressBySystem[nextTool]
-          && tools === current.preloadTools
+        const additions = nextTools.filter((tool) => !current.preloadTools.includes(tool));
+        // Mounting admits the owning runtimes only. Their real async query states report
+        // loading and completed units; admission itself must not advance measured progress.
+        return additions.length === 0
           ? current
-          : {
-              ...current,
-              preloadTools: tools,
-              progressBySystem: { ...current.progressBySystem, [nextTool]: progress }
-            };
+          : { ...current, preloadTools: [...current.preloadTools, ...additions] };
       });
     };
 
@@ -124,6 +121,7 @@ export function useAnalysisPreparation(options: {
     options.mode,
     options.scopeKey,
     options.semanticProgress.state,
+    preloadFreshness,
     preloadTools,
     progressBySystem
   ]);

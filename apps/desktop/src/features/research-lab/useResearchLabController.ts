@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -39,6 +38,14 @@ import {
   researchLabErrorCodes,
   semanticExploreErrorCodes
 } from '../../errorCodes';
+import { useDeferredUnmountCleanup } from '../../hooks/useDeferredUnmountCleanup';
+import {
+  ProjectQueryEpoch,
+  runIndependentProjectRead,
+  runOrderedProjectOperation,
+  type ProjectQueryTicket
+} from '../../utils/projectAsyncPolicy';
+import { ResearchSourceRevocationTracker } from './researchSourceRevocationTracker';
 
 export type ResearchLabStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type ResearchLabError =
@@ -123,21 +130,7 @@ type RequestChannel =
   | 'comparison'
   | 'source0'
   | 'source1';
-type RequestToken = {
-  channel: RequestChannel;
-  epoch: number;
-  generation: number;
-  id: number;
-};
-
-const requestChannels: readonly RequestChannel[] = [
-  'annotations',
-  'byteWindow',
-  'capabilities',
-  'comparison',
-  'source0',
-  'source1'
-];
+type RequestToken = ProjectQueryTicket<RequestChannel> & { id: number };
 
 const idleCapabilities = (): ResearchCapabilitiesState => ({
   data: null,
@@ -170,15 +163,11 @@ class ResearchLabControllerStore {
   private bridge: ResearchLabProjectBridgeApi;
   private comparisonCursors = new Set<string>();
   private contextKey: string | null = null;
-  private disposalTimer: ReturnType<typeof setTimeout> | null = null;
-  private epoch = 0;
-  private generations = new Map<RequestChannel, number>(
-    requestChannels.map((channel) => [channel, 0])
-  );
+  private freshness = new ProjectQueryEpoch<RequestChannel>();
   private listeners = new Set<() => void>();
   private nextRequestId = 1;
   private onStaleRevision: (() => void) | null = null;
-  private revokedSourceIds = new Set<string>();
+  private sourceRevocations = new ResearchSourceRevocationTracker();
   private revision: SemanticExploreRevision | null = null;
   private scope: SemanticExploreScope | null = null;
   private snapshot: ResearchLabControllerSnapshot = {
@@ -222,24 +211,13 @@ class ResearchLabControllerStore {
     this.onStaleRevision = callback ?? null;
   }
 
-  public cancelScheduledDispose() {
-    if (this.disposalTimer === null) return;
-    clearTimeout(this.disposalTimer);
-    this.disposalTimer = null;
-  }
-
-  public scheduleDispose() {
+  public dispose() {
     this.cancel();
-    this.cancelScheduledDispose();
-    this.disposalTimer = setTimeout(() => {
-      this.disposalTimer = null;
-      this.releaseRegisteredSources();
-    }, 0);
+    this.releaseRegisteredSources();
   }
 
   public cancel() {
-    this.epoch += 1;
-    for (const channel of requestChannels) this.advance(channel);
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
     this.snapshot = {
       ...this.snapshot,
@@ -266,7 +244,13 @@ class ResearchLabControllerStore {
     this.emit();
     try {
       const context = this.requireContext();
-      const response = await this.bridge.getResearchLabCapabilities({ scope: context.scope });
+      const request = { scope: context.scope };
+      const response = await runIndependentProjectRead(
+        'getResearchLabCapabilities',
+        this.bridge,
+        request,
+        () => this.bridge.getResearchLabCapabilities(request)
+      );
       if (!this.isCurrent(token)) return;
       assertCapabilitiesResponse(response, context.revision);
       this.snapshot = {
@@ -302,6 +286,8 @@ class ResearchLabControllerStore {
     this.invalidateComparison();
     this.snapshot = { ...this.snapshot, sources: nextSources };
     this.emit();
+    const retainedSourceId = retained.data?.sourceId ?? null;
+    this.sourceRevocations.begin(retainedSourceId);
     let acceptedResponse: OpenResearchSourceResponse | null = null;
     let requestContext: {
       revision: SemanticExploreRevision;
@@ -311,15 +297,20 @@ class ResearchLabControllerStore {
       const context = this.requireContext();
       requestContext = context;
       const requestStartedAt = Date.now();
-      const response = await this.bridge.openResearchSource({
+      const request = {
         expectedRevision: context.revision,
         replaceSourceId: retained.data?.sourceId ?? null,
         rootPath,
         scope: context.scope
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'openResearchSource',
+        this.bridge,
+        (bridge) => bridge.openResearchSource(request)
+      );
       acceptedResponse = response;
       if (retained.data !== null) {
-        this.revokedSourceIds.add(retained.data.sourceId);
+        this.revokeSource(retained.data.sourceId);
       }
       const responseReceivedAt = Date.now();
       if (!this.isCurrent(token)) {
@@ -364,12 +355,13 @@ class ResearchLabControllerStore {
         !this.isCurrent(token) &&
         !canSafelyRetainSourceAfterFailure(classified)
       ) {
-        this.revokedSourceIds.add(retained.data.sourceId);
+        this.revokeSource(retained.data.sourceId);
         this.clearRevokedSource(slot, retained.data.sourceId, classified);
       }
       this.failSource(token, slot, acceptedResponse ? idleSource() : retained, error);
     } finally {
       this.finish(token);
+      this.sourceRevocations.end(retainedSourceId, this.visibleSourceIds());
     }
   }
 
@@ -389,14 +381,21 @@ class ResearchLabControllerStore {
     sources[slot] = { data: retained.data, error: null, status: 'loading' };
     this.snapshot = { ...this.snapshot, sources };
     this.emit();
+    const retainedSourceId = retained.data.sourceId;
+    this.sourceRevocations.begin(retainedSourceId);
     try {
       const context = this.requireContext();
-      const response = await this.bridge.closeResearchSource({
+      const request = {
         expectedRevision: context.revision,
         scope: context.scope,
         sourceId: retained.data.sourceId
-      });
-      this.revokedSourceIds.add(retained.data.sourceId);
+      };
+      const response = await runOrderedProjectOperation(
+        'closeResearchSource',
+        this.bridge,
+        (bridge) => bridge.closeResearchSource(request)
+      );
+      this.revokeSource(retained.data.sourceId);
       assertRevision(response.revision, context.revision);
       if (response.sourceId !== retained.data.sourceId) {
         throw new Error('The closed research source did not match the exact request.');
@@ -422,12 +421,13 @@ class ResearchLabControllerStore {
       this.emit();
     } catch (error) {
       if (!this.isCurrent(token)) {
-        this.revokedSourceIds.add(retained.data.sourceId);
+        this.revokeSource(retained.data.sourceId);
         this.clearRevokedSource(slot, retained.data.sourceId, classifyError(error));
       }
       this.failSource(token, slot, retained, error);
     } finally {
       this.finish(token);
+      this.sourceRevocations.end(retainedSourceId, this.visibleSourceIds());
     }
   }
 
@@ -508,14 +508,19 @@ class ResearchLabControllerStore {
     this.emit();
     try {
       const context = this.requireContext();
-      const response = await this.bridge.compareResearchSources({
+      const request = {
         cursor,
         expectedRevision: context.revision,
         limit,
         scope: context.scope,
         selectedRelativePaths: [...selectedRelativePaths],
         sourceIds
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'compareResearchSources',
+        this.bridge,
+        (bridge) => bridge.compareResearchSources(request)
+      );
       if (!this.isCurrent(token)) return;
       assertComparisonResponse({
         cursor,
@@ -569,7 +574,7 @@ class ResearchLabControllerStore {
     this.emit();
     try {
       const context = this.requireContext();
-      const response = await this.bridge.readResearchByteWindow({
+      const request = {
         comparisonId: comparison.comparisonId,
         expectedComparisonFingerprint: comparison.comparisonFingerprint,
         expectedRevision: context.revision,
@@ -577,7 +582,12 @@ class ResearchLabControllerStore {
         offset,
         relativePath: storedFinding.relativePath,
         scope: context.scope
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'readResearchByteWindow',
+        this.bridge,
+        (bridge) => bridge.readResearchByteWindow(request)
+      );
       if (!this.isCurrent(token)) return;
       assertByteWindowResponse(response, {
         comparisonFingerprint: comparison.comparisonFingerprint,
@@ -623,10 +633,15 @@ class ResearchLabControllerStore {
     this.emit();
     try {
       const context = this.requireContext();
-      const response = await this.bridge.readResearchAnnotations({
+      const request = {
         expectedRevision: context.revision,
         scope: context.scope
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'readResearchAnnotations',
+        this.bridge,
+        (bridge) => bridge.readResearchAnnotations(request)
+      );
       if (!this.isCurrent(token)) return;
       assertAnnotationsResponse(response, context.revision);
       this.snapshot = {
@@ -713,12 +728,17 @@ class ResearchLabControllerStore {
     this.emit();
     try {
       const context = this.requireContext();
-      const response = await this.bridge.mutateResearchAnnotations({
+      const request = {
         expectedETag: retained.etag,
         expectedRevision: context.revision,
         mutation: options.mutation,
         scope: context.scope
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'mutateResearchAnnotations',
+        this.bridge,
+        (bridge) => bridge.mutateResearchAnnotations(request)
+      );
       if (!this.isCurrent(token)) return;
       assertAnnotationMutationResponse({
         expectedAnnotationId: options.expectedAnnotationId,
@@ -807,11 +827,9 @@ class ResearchLabControllerStore {
   }
 
   private begin(channel: RequestChannel): RequestToken {
-    this.advance(channel);
+    const freshness = this.freshness.supersede(channel);
     const token = {
-      channel,
-      epoch: this.epoch,
-      generation: this.generations.get(channel)!,
+      ...freshness,
       id: this.nextRequestId++
     };
     this.activeRequests.add(token.id);
@@ -825,12 +843,11 @@ class ResearchLabControllerStore {
   }
 
   private isCurrent(token: RequestToken) {
-    return token.epoch === this.epoch &&
-      token.generation === this.generations.get(token.channel);
+    return this.freshness.isCurrent(token);
   }
 
   private advance(channel: RequestChannel) {
-    this.generations.set(channel, (this.generations.get(channel) ?? 0) + 1);
+    this.freshness.supersede(channel);
   }
 
   private invalidateChannel(channel: RequestChannel) {
@@ -876,7 +893,7 @@ class ResearchLabControllerStore {
     if (this.handleStale(error)) return;
     const classified = classifyError(error);
     const canRetain = retained.data !== null &&
-      !this.revokedSourceIds.has(retained.data.sourceId) &&
+      !this.sourceRevocations.isRevoked(retained.data.sourceId) &&
       canSafelyRetainSourceAfterFailure(classified);
     const sources = [...this.snapshot.sources] as [ResearchSourceState, ResearchSourceState];
     sources[slot] = canRetain
@@ -1045,10 +1062,9 @@ class ResearchLabControllerStore {
   }
 
   private reset() {
-    this.epoch += 1;
+    this.freshness.invalidateAll();
     this.comparisonCursors.clear();
-    this.revokedSourceIds.clear();
-    for (const channel of requestChannels) this.advance(channel);
+    this.sourceRevocations.clear();
     this.activeRequests.clear();
     this.snapshot = {
       annotations: idleAnnotations(),
@@ -1071,16 +1087,30 @@ class ResearchLabControllerStore {
     }
   }
 
+  private revokeSource(sourceId: string) {
+    this.sourceRevocations.revoke(sourceId, this.visibleSourceIds());
+  }
+
+  private visibleSourceIds() {
+    return this.snapshot.sources.flatMap((source) => (
+      source.data ? [source.data.sourceId] : []
+    ));
+  }
+
   private releaseSource(
     sourceId: string,
     scope: SemanticExploreScope,
     revision: SemanticExploreRevision
   ) {
-    void this.bridge.closeResearchSource({
-      expectedRevision: revision,
-      scope,
-      sourceId
-    }).catch(() => undefined);
+    void runOrderedProjectOperation(
+      'closeResearchSource',
+      this.bridge,
+      (bridge) => bridge.closeResearchSource({
+        expectedRevision: revision,
+        scope,
+        sourceId
+      })
+    ).catch(() => undefined);
   }
 
   private emit() {
@@ -1449,10 +1479,7 @@ export function useResearchLabController(options: {
     () => store.setOnStaleRevision(options.onStaleRevision),
     [options.onStaleRevision, store]
   );
-  useEffect(() => {
-    store.cancelScheduledDispose();
-    return () => store.scheduleDispose();
-  }, [store]);
+  useDeferredUnmountCleanup(() => store.dispose());
   return useMemo(() => ({
     ...snapshot,
     cancel: () => store.cancel(),

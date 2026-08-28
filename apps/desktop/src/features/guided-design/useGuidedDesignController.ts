@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -27,6 +26,12 @@ import type {
 } from '../../bridge/semanticExploreContracts';
 import { semanticExploreProjectGameFamily } from '../../bridge/semanticExploreContracts';
 import { guidedDesignErrorCodes, semanticExploreErrorCodes } from '../../errorCodes';
+import { useDeferredUnmountCleanup } from '../../hooks/useDeferredUnmountCleanup';
+import {
+  ProjectQueryEpoch,
+  runIndependentProjectRead,
+  type ProjectQueryTicket
+} from '../../utils/projectAsyncPolicy';
 
 export type GuidedDesignQueryStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type GuidedDesignQueryError =
@@ -64,7 +69,7 @@ export type GuidedDesignController = GuidedDesignControllerSnapshot & {
   refresh: () => Promise<void>;
 };
 
-type RequestToken = { epoch: number; generation: number; id: number };
+type RequestToken = ProjectQueryTicket<'query'> & { id: number };
 
 const idleQuery = <T,>(): QueryState<T> => ({
   data: null,
@@ -82,9 +87,8 @@ class GuidedDesignControllerStore {
   private activeTargetSearchText: string | null = null;
   private bridge: GuidedDesignProjectBridgeApi;
   private contextKey: string | null = null;
-  private epoch = 0;
   private expectedChangeSetETag: string | null = null;
-  private generation = 0;
+  private freshness = new ProjectQueryEpoch<'query'>();
   private isAuthoringContextReady = false;
   private listeners = new Set<() => void>();
   private nextRequestId = 1;
@@ -123,7 +127,7 @@ class GuidedDesignControllerStore {
     if (isReady === this.isAuthoringContextReady) return;
     this.isAuthoringContextReady = isReady;
     if (!isReady) {
-      this.generation += 1;
+      this.freshness.supersede('query');
       this.activeRequests.clear();
       this.snapshot = {
         ...this.snapshot,
@@ -156,8 +160,7 @@ class GuidedDesignControllerStore {
   }
 
   public cancel() {
-    this.epoch += 1;
-    this.generation += 1;
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
     this.snapshot = {
       ...this.snapshot,
@@ -182,7 +185,13 @@ class GuidedDesignControllerStore {
     const token = this.beginCapabilities();
     try {
       const scope = this.requireScope();
-      const response = await this.bridge.getGuidedDesignCapabilities({ scope });
+      const request = { scope };
+      const response = await runIndependentProjectRead(
+        'getGuidedDesignCapabilities',
+        this.bridge,
+        request,
+        () => this.bridge.getGuidedDesignCapabilities(request)
+      );
       if (!this.isCurrent(token)) return;
       assertCapabilitiesResponse(response, scope, this.revision);
       this.snapshot = {
@@ -242,12 +251,12 @@ class GuidedDesignControllerStore {
       const requestedInput = previous?.normalizedInput ?? input;
       const requestedTargetSearchText =
         previous?.normalizedTargetSearchText ?? targetSearchText;
-      const response = await this.bridge.previewGuidedDesign({
+      const request = {
         cursor: previous?.nextCursor ?? null,
         expectedChangeSetETag: context.expectedChangeSetETag,
         expectedRevision: context.revision,
         input: requestedInput,
-        layer: 'layered',
+        layer: 'layered' as const,
         limit: Math.min(
           guidedDesignDefaultPageSize,
           resultLimit(previous) - resultCount(previous)
@@ -256,7 +265,13 @@ class GuidedDesignControllerStore {
         proposalId: previous?.proposalId ?? null,
         scope: context.scope,
         targetSearchText: requestedTargetSearchText
-      });
+      };
+      const response = await runIndependentProjectRead(
+        'previewGuidedDesign',
+        this.bridge,
+        request,
+        () => this.bridge.previewGuidedDesign(request)
+      );
       if (!this.isCurrent(token)) return;
       assertPreviewResponse(
         response,
@@ -352,8 +367,7 @@ class GuidedDesignControllerStore {
   }
 
   private createToken(): RequestToken {
-    this.generation += 1;
-    const token = { epoch: this.epoch, generation: this.generation, id: this.nextRequestId++ };
+    const token = { ...this.freshness.capture('query'), id: this.nextRequestId++ };
     this.activeRequests.add(token.id);
     return token;
   }
@@ -368,7 +382,7 @@ class GuidedDesignControllerStore {
   }
 
   private isCurrent(token: RequestToken) {
-    return token.epoch === this.epoch && token.generation === this.generation;
+    return this.freshness.isCurrent(token);
   }
 
   private failCapabilities(token: RequestToken, error: unknown) {
@@ -409,13 +423,12 @@ class GuidedDesignControllerStore {
   }
 
   private supersedeRequests() {
-    this.generation += 1;
+    this.freshness.supersede('query');
     this.activeRequests.clear();
   }
 
   private reset() {
-    this.epoch += 1;
-    this.generation += 1;
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
     this.activeTargetSearchText = null;
     this.snapshot = {
@@ -845,7 +858,7 @@ export function useGuidedDesignController(options: {
       store
     ]
   );
-  useEffect(() => () => store.cancel(), [store]);
+  useDeferredUnmountCleanup(() => store.cancel());
   const actions = useMemo(() => ({
     cancel: () => store.cancel(),
     ensureCapabilities: () => store.ensureCapabilities(),

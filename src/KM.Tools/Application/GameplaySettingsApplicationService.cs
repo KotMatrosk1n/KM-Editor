@@ -366,7 +366,10 @@ public sealed class GameplaySettingsApplicationService
         GameplaySettingsStateDto State,
         GameplaySettingsValuesDto? Values,
         string? Detail,
-        OutputFileState? TargetState)>
+        OutputFileState? BaseState,
+        OutputFileState? TargetState,
+        bool OutputPresent,
+        bool OutputMatchesBase)>
         InspectStaticValuesForInGamePackageAsync(
             OutputScopeContext context,
             CancellationToken cancellationToken)
@@ -376,7 +379,164 @@ public sealed class GameplaySettingsApplicationService
                 cancellationToken,
                 allowInGamePackageManifest: true)
             .ConfigureAwait(false);
-        return (loaded.State, loaded.Dto?.Values, loaded.Detail, loaded.TargetState);
+        var outputMatchesBase = loaded.BaseBytes is not null
+            && loaded.CurrentBytes is not null
+            && loaded.TargetState is { Exists: true }
+            && loaded.BaseBytes.AsSpan().SequenceEqual(loaded.CurrentBytes);
+        var outputPresent = IsOutputMainPresent(context.Paths.OutputRootPath);
+        return (
+            loaded.State,
+            loaded.Dto?.Values,
+            loaded.Detail,
+            loaded.BaseState,
+            loaded.TargetState,
+            outputPresent,
+            outputMatchesBase);
+    }
+
+    private static bool IsOutputMainPresent(string? outputRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputRootPath)
+            || !Path.IsPathFullyQualified(outputRootPath))
+        {
+            return true;
+        }
+
+        try
+        {
+            var outputRoot = Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(outputRootPath));
+            var outputPath = ToAbsolutePath(outputRoot, MainPath.Value);
+            var outputRootProbe = ProbeOutputPathEntry(outputRoot);
+            if (outputRootProbe == OutputPathEntryProbe.Missing)
+            {
+                return false;
+            }
+            if (outputRootProbe != OutputPathEntryProbe.Directory)
+            {
+                return true;
+            }
+
+            var exefsPath = Path.GetDirectoryName(outputPath);
+            if (string.IsNullOrWhiteSpace(exefsPath))
+            {
+                return true;
+            }
+
+            var exefsProbe = ProbeOutputPathEntry(exefsPath);
+            if (exefsProbe == OutputPathEntryProbe.Missing)
+            {
+                return false;
+            }
+            if (exefsProbe != OutputPathEntryProbe.Directory)
+            {
+                return true;
+            }
+
+            return ProbeOutputPathEntry(outputPath) != OutputPathEntryProbe.Missing;
+        }
+        catch (Exception exception) when (exception is
+            UnauthorizedAccessException or
+            SecurityException or
+            IOException or
+            ArgumentException or
+            NotSupportedException)
+        {
+            return true;
+        }
+    }
+
+    private static OutputPathEntryProbe ProbeOutputPathEntry(string path)
+    {
+        var fileLinkProbe = ProbeLinkTarget(new FileInfo(path));
+        if (fileLinkProbe == LinkTargetProbe.Link)
+        {
+            return OutputPathEntryProbe.Link;
+        }
+        if (fileLinkProbe == LinkTargetProbe.Ambiguous)
+        {
+            return OutputPathEntryProbe.Ambiguous;
+        }
+
+        var directoryLinkProbe = ProbeLinkTarget(new DirectoryInfo(path));
+        if (directoryLinkProbe == LinkTargetProbe.Link)
+        {
+            return OutputPathEntryProbe.Link;
+        }
+        if (directoryLinkProbe == LinkTargetProbe.Ambiguous)
+        {
+            return OutputPathEntryProbe.Ambiguous;
+        }
+
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if (attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                return OutputPathEntryProbe.Link;
+            }
+
+            return attributes.HasFlag(FileAttributes.Directory)
+                ? OutputPathEntryProbe.Directory
+                : OutputPathEntryProbe.File;
+        }
+        catch (Exception exception) when (exception is
+            FileNotFoundException or
+            DirectoryNotFoundException)
+        {
+            return OutputPathEntryProbe.Missing;
+        }
+        catch (Exception exception) when (exception is
+            UnauthorizedAccessException or
+            SecurityException or
+            IOException or
+            ArgumentException or
+            NotSupportedException)
+        {
+            return OutputPathEntryProbe.Ambiguous;
+        }
+    }
+
+    private static LinkTargetProbe ProbeLinkTarget(FileSystemInfo entry)
+    {
+        try
+        {
+            entry.Refresh();
+            return string.IsNullOrEmpty(entry.LinkTarget)
+                ? LinkTargetProbe.None
+                : LinkTargetProbe.Link;
+        }
+        catch (Exception exception) when (exception is
+            FileNotFoundException or
+            DirectoryNotFoundException)
+        {
+            return LinkTargetProbe.None;
+        }
+        catch (Exception exception) when (exception is
+            UnauthorizedAccessException or
+            SecurityException or
+            IOException or
+            ArgumentException or
+            NotSupportedException)
+        {
+            return LinkTargetProbe.Ambiguous;
+        }
+    }
+
+    private enum OutputPathEntryProbe
+    {
+        Missing,
+        File,
+        Directory,
+        Link,
+        Ambiguous,
+    }
+
+    private enum LinkTargetProbe
+    {
+        None,
+        Link,
+        Ambiguous,
     }
 
     private static async Task<LoadedState> LoadAsync(
@@ -495,7 +655,16 @@ public sealed class GameplaySettingsApplicationService
                 || !outputExists
                 || ownership.CurrentState != targetState))
         {
-            return LoadedState.Unavailable(game, titleId, GameplaySettingsStateDto.Conflict);
+            return LoadedState.UnavailableAfterExecutableReview(
+                game,
+                titleId,
+                GameplaySettingsStateDto.Conflict,
+                baseBytes,
+                currentBytes,
+                baseState,
+                targetState,
+                ownership,
+                inventorySnapshot.Revision);
         }
 
         var result = AnalyzeForGame(game, baseBytes, currentBytes);
@@ -514,21 +683,43 @@ public sealed class GameplaySettingsApplicationService
                 if (baseResult.State != GameplaySettingsStateDto.Ready
                     || baseResult.Analysis is null)
                 {
-                    return LoadedState.Unavailable(
+                    return LoadedState.UnavailableAfterExecutableReview(
                         game,
                         titleId,
                         baseResult.State,
+                        baseBytes,
+                        currentBytes,
+                        baseState,
+                        targetState,
+                        ownership,
+                        inventorySnapshot.Revision,
                         baseResult.Detail);
                 }
 
-                return LoadedState.Unavailable(
+                return LoadedState.UnavailableAfterExecutableReview(
                     game,
                     titleId,
                     GameplaySettingsStateDto.Unmanaged,
+                    baseBytes,
+                    currentBytes,
+                    baseState,
+                    targetState,
+                    ownership,
+                    inventorySnapshot.Revision,
                     result.Detail);
             }
 
-            return LoadedState.Unavailable(game, titleId, result.State, result.Detail);
+            return LoadedState.UnavailableAfterExecutableReview(
+                game,
+                titleId,
+                result.State,
+                baseBytes,
+                currentBytes,
+                baseState,
+                targetState,
+                ownership,
+                inventorySnapshot.Revision,
+                result.Detail);
         }
 
         var dto = ToDto(game, titleId, result.Analysis, currentBytes);
@@ -1354,6 +1545,34 @@ public sealed class GameplaySettingsApplicationService
                 null,
                 null,
                 "unavailable",
+                null,
+                null,
+                detail);
+        }
+
+        public static LoadedState UnavailableAfterExecutableReview(
+            ProjectGame game,
+            ulong titleId,
+            GameplaySettingsStateDto state,
+            byte[] baseBytes,
+            byte[] currentBytes,
+            OutputFileState baseState,
+            OutputFileState targetState,
+            OutputOwnershipRecord? ownership,
+            OutputStateRevision ownershipInventoryRevision,
+            string? detail = null)
+        {
+            return new LoadedState(
+                state,
+                game,
+                titleId,
+                baseBytes,
+                currentBytes,
+                baseState,
+                targetState,
+                ownership,
+                ownershipInventoryRevision,
+                ComputeOwnershipSignature(ownership),
                 null,
                 null,
                 detail);

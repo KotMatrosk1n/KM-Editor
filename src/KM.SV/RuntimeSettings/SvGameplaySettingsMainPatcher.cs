@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using KM.Core.RuntimeSettings;
 using KM.Formats.Executable;
+using KM.SV.ExeFs;
 
 namespace KM.SV.RuntimeSettings;
 
@@ -46,6 +47,15 @@ public sealed record SvGameplaySettingsMainAnalysis(
     IReadOnlyList<SvGameplaySettingsStaticCapability> Capabilities,
     IReadOnlyList<SvGameplaySettingsOwnedTextRegion> OwnedTextRegions);
 
+public sealed record SvRuntimeManagedGameplayMainLayout(
+    int ShareDecisionOffset,
+    uint ShareHookInstruction,
+    int RateHookOffset,
+    uint RateHookInstruction,
+    int LevelCapHookOffset,
+    uint LevelCapEnabledInstruction,
+    int RuntimeSnapshotOffset);
+
 /// <summary>
 /// Applies the beta Scarlet/Violet 4.0.0 gameplay controls that have complete,
 /// static executable contracts. The patcher never emits a settings sidecar:
@@ -61,6 +71,14 @@ public static class SvGameplaySettingsMainPatcher
     public const int RateStubLength = 0x48;
     public const int CapStubOffset = RateStubOffset + RateStubLength;
     public const int CapStubLength = 0x100;
+    public const int RuntimeRateStubOffset = OriginalTextLength;
+    public const int RuntimeRateStubLength = 0x60;
+    public const int RuntimeCapStubOffset = RuntimeRateStubOffset + RuntimeRateStubLength;
+    public const int RuntimeCapStubLength = 0x120;
+    public const int RuntimeShareStubOffset = RuntimeCapStubOffset + RuntimeCapStubLength;
+    public const int RuntimeShareStubLength = 0x30;
+    public const int RuntimeSnapshotOffset = 0x047D3000;
+    public const int RuntimeBssReservationLength = 0x1000;
     public const uint MaximumExperienceRateBasisPoints = 50_000;
     public const uint ExperienceRateStepBasisPoints = 1_000;
 
@@ -553,6 +571,202 @@ public static class SvGameplaySettingsMainPatcher
         return output;
     }
 
+    /// <summary>
+    /// Derives the exact-build executable scaffold used by KM's native settings
+    /// menu. The installed image behaves like retail before the guest runtime
+    /// reads its journal: EXP Share is enabled, the rate stub is an identity
+    /// transform, and the level-cap stub is present but not called.
+    /// </summary>
+    public static (byte[] Main, SvRuntimeManagedGameplayMainLayout Layout)
+        BuildRuntimeManaged(
+            byte[] baseMainBytes,
+            SvGameplayRuntimeEdition expectedEdition)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        return BuildRuntimeManaged(
+            baseMainBytes,
+            baseMainBytes,
+            expectedEdition);
+    }
+
+    /// <summary>
+    /// Composes the exact native-settings scaffold onto a reviewed executable.
+    /// The clean Base executable authorizes the build and retail preimages;
+    /// unrelated current text, rodata, and data bytes are retained verbatim.
+    /// </summary>
+    public static (byte[] Main, SvRuntimeManagedGameplayMainLayout Layout)
+        BuildRuntimeManaged(
+            byte[] baseMainBytes,
+            byte[] currentMainBytes,
+            SvGameplayRuntimeEdition expectedEdition)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(currentMainBytes);
+        var cleanBase = Analyze(baseMainBytes, expectedEdition);
+        if (cleanBase.Kind != SvGameplaySettingsMainKind.Vanilla
+            || !cleanBase.CanonicalTextIdentityMatches
+            || cleanBase.Values != GameplaySettingsValues.Vanilla)
+        {
+            throw new InvalidDataException(
+                "The native settings menu requires the exact clean selected-game 4.0.0 base exefs/main.");
+        }
+
+        var current = Analyze(currentMainBytes, expectedEdition);
+        if (current.Kind != SvGameplaySettingsMainKind.Vanilla
+            || current.Values != GameplaySettingsValues.Vanilla)
+        {
+            throw new InvalidDataException(
+                "The native settings menu requires the reviewed current Scarlet/Violet executable to retain vanilla static gameplay settings and every verified runtime dependency.");
+        }
+
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        var nso = NsoFile.Parse(currentMainBytes);
+        if (!baseNso.BuildId.AsSpan().SequenceEqual(nso.BuildId)
+            || !NormalizeExecutableEnvelope(baseNso)
+                .AsSpan()
+                .SequenceEqual(NormalizeExecutableEnvelope(nso))
+            || nso.Text.DecompressedData.Length != OriginalTextLength
+            || BinaryPrimitives.ReadInt32LittleEndian(
+                nso.RawHeader.AsSpan(0x3C, sizeof(int))) != ExpectedDataHeaderAux)
+        {
+            throw new InvalidDataException(
+                "The reviewed current Scarlet/Violet executable does not have the exact composable 4.0.0 segment and BSS layout.");
+        }
+
+        ValidateRuntimeOwnedRange("main.header", 0x3C, sizeof(int));
+        ValidateRuntimeOwnedRange("main.text", ShareDecisionOffset, sizeof(uint));
+        ValidateRuntimeOwnedRange("main.text", RateEpilogueOffset, sizeof(uint));
+        ValidateRuntimeOwnedRange("main.text", CapMergeCallOffset, sizeof(uint));
+        ValidateRuntimeOwnedRange(
+            "main.text",
+            RuntimeRateStubOffset,
+            RuntimeRateStubLength + RuntimeCapStubLength + RuntimeShareStubLength);
+        var originalText = nso.Text.DecompressedData;
+        var text = new byte[checked(
+            OriginalTextLength
+                + RuntimeRateStubLength
+                + RuntimeCapStubLength
+                + RuntimeShareStubLength)];
+        originalText.AsSpan(0, OriginalTextLength).CopyTo(text);
+        var rateHook = EncodeUnconditionalBranch(RateEpilogueOffset, RuntimeRateStubOffset);
+        var capHook = EncodeBranchLink(CapMergeCallOffset, RuntimeCapStubOffset);
+        var shareHook = EncodeUnconditionalBranch(ShareDecisionOffset, RuntimeShareStubOffset);
+        WriteInstruction(text, ShareDecisionOffset, shareHook);
+        WriteInstruction(text, RateEpilogueOffset, rateHook);
+        WriteInstruction(text, CapMergeCallOffset, capHook);
+        CreateRuntimeRateStub().CopyTo(text.AsSpan(RuntimeRateStubOffset));
+        CreateRuntimeCapStub().CopyTo(text.AsSpan(RuntimeCapStubOffset));
+        CreateRuntimeShareStub().CopyTo(text.AsSpan(RuntimeShareStubOffset));
+
+        var runtimeHeader = nso.RawHeader.ToArray();
+        var originalBssLength = BinaryPrimitives.ReadInt32LittleEndian(
+            runtimeHeader.AsSpan(0x3C, sizeof(int)));
+        if (originalBssLength != ExpectedDataHeaderAux
+            || RuntimeSnapshotOffset
+                != checked(ExpectedDataMemoryOffset + ExpectedDataLength + originalBssLength))
+        {
+            throw new InvalidDataException(
+                "The native Scarlet/Violet settings snapshot reservation does not match the exact executable layout.");
+        }
+        BinaryPrimitives.WriteInt32LittleEndian(
+            runtimeHeader.AsSpan(0x3C, sizeof(int)),
+            checked(originalBssLength + RuntimeBssReservationLength));
+        var runtimeNso = nso with { RawHeader = runtimeHeader };
+        var output = runtimeNso.Write(textDecompressedData: text);
+        var verified = NsoFile.Parse(output);
+        ValidateRuntimeEnvelopeComposition(nso, verified);
+        if (!DeclaredSegmentHashesMatch(verified)
+            || !verified.BuildId.AsSpan().SequenceEqual(nso.BuildId)
+            || !verified.Ro.DecompressedData.AsSpan().SequenceEqual(nso.Ro.DecompressedData)
+            || !verified.Data.DecompressedData.AsSpan().SequenceEqual(nso.Data.DecompressedData)
+            || verified.Text.DecompressedData.Length != text.Length
+            || !verified.Text.DecompressedData.AsSpan().SequenceEqual(text)
+            || BinaryPrimitives.ReadInt32LittleEndian(
+                verified.RawHeader.AsSpan(0x3C, sizeof(int)))
+                != checked(ExpectedDataHeaderAux + RuntimeBssReservationLength))
+        {
+            throw new InvalidDataException(
+                "The native Scarlet/Violet settings scaffold failed executable readback.");
+        }
+
+        var normalized = text.AsSpan(0, OriginalTextLength).ToArray();
+        WriteInstruction(normalized, ShareDecisionOffset, ShareDecisionVanilla);
+        WriteInstruction(normalized, RateEpilogueOffset, RateEpilogueVanilla);
+        WriteInstruction(normalized, CapMergeCallOffset, CapMergeCallerVanilla);
+        if (!normalized.AsSpan().SequenceEqual(originalText.AsSpan(0, OriginalTextLength)))
+        {
+            throw new InvalidDataException(
+                "The native Scarlet/Violet settings scaffold changed bytes outside its owned runtime hook.");
+        }
+
+        return (
+            output,
+            new SvRuntimeManagedGameplayMainLayout(
+                ShareDecisionOffset,
+                shareHook,
+                RateEpilogueOffset,
+                rateHook,
+                CapMergeCallOffset,
+                capHook,
+                RuntimeSnapshotOffset));
+    }
+
+    private static void ValidateRuntimeOwnedRange(
+        string area,
+        int offset,
+        int length)
+    {
+        var nativeRegions = SvExeFsReservedRegionLedger.Regions
+            .Where(region => string.Equals(
+                    region.RelativePath,
+                    SvExeFsReservedRegionLedger.ExeFsMainPath,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(region.Area, area, StringComparison.Ordinal)
+                && string.Equals(
+                    region.Owner,
+                    SvExeFsReservedRegionLedger.OwnerNativeGameplayMenu,
+                    StringComparison.Ordinal))
+            .ToArray();
+        var hasExactReservation = nativeRegions.Any(region =>
+            region.StartOffset == offset
+            && region.Length == length);
+        var overlapsOtherOwner = SvExeFsReservedRegionLedger.Regions.Any(region =>
+            string.Equals(
+                region.RelativePath,
+                SvExeFsReservedRegionLedger.ExeFsMainPath,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(region.Area, area, StringComparison.Ordinal)
+            && !string.Equals(
+                region.Owner,
+                SvExeFsReservedRegionLedger.OwnerNativeGameplayMenu,
+                StringComparison.Ordinal)
+            && SvExeFsReservedRegionLedger.Overlaps(region, offset, length));
+        if (!hasExactReservation || overlapsOtherOwner)
+        {
+            throw new InvalidDataException(
+                "The native Scarlet/Violet settings scaffold does not have an exclusive executable ownership reservation.");
+        }
+    }
+
+    private static void ValidateRuntimeEnvelopeComposition(
+        NsoFile before,
+        NsoFile after)
+    {
+        var beforeEnvelope = NormalizeExecutableEnvelope(before);
+        var afterEnvelope = NormalizeExecutableEnvelope(after);
+        foreach (var offset in new[] { 0x18, 0x3C })
+        {
+            beforeEnvelope.AsSpan(offset, sizeof(int)).Clear();
+            afterEnvelope.AsSpan(offset, sizeof(int)).Clear();
+        }
+
+        if (!beforeEnvelope.AsSpan().SequenceEqual(afterEnvelope))
+        {
+            throw new InvalidDataException(
+                "The native Scarlet/Violet settings scaffold changed the executable envelope outside its text-length and BSS reservations.");
+        }
+    }
+
     public static byte[] RestoreVanilla(
         byte[] currentMainBytes,
         SvGameplayRuntimeEdition expectedEdition)
@@ -871,6 +1085,235 @@ public static class SvGameplaySettingsMainPatcher
         return bytes;
     }
 
+    private static byte[] CreateRuntimeRateStub()
+    {
+        var instructions = Enumerable.Repeat(0xD503201Fu, RuntimeRateStubLength / sizeof(uint))
+            .ToArray();
+        instructions[0] = 0xB9400028; // ldr w8, [x1]
+        instructions[1] = EncodeCompareAndBranchZero(
+            RuntimeRateStubOffset + 0x04,
+            RuntimeRateStubOffset + 0x58,
+            register: 8,
+            is64Bit: false);
+        instructions[2] = EncodeAdrp(
+            9,
+            RuntimeRateStubOffset + 0x08,
+            RuntimeSnapshotOffset);
+        instructions[3] = 0xC8DFFD29; // ldar x9, [x9]
+        instructions[4] = EncodeCompareAndBranchZero(
+            RuntimeRateStubOffset + 0x10,
+            RuntimeRateStubOffset + 0x1C,
+            register: 9,
+            is64Bit: true,
+            nonZero: true);
+        instructions[5] = MoveRateImmediateBase
+            | GameplaySettingsValues.Vanilla.ExperienceRateBasisPoints << 5;
+        instructions[6] = EncodeUnconditionalBranch(
+            RuntimeRateStubOffset + 0x18, RuntimeRateStubOffset + 0x20);
+        instructions[7] = EncodeUnsignedBitfieldExtract64(9, 9, 9, 32);
+        instructions[8] = EncodeCompareAndBranchZero(
+            RuntimeRateStubOffset + 0x20,
+            RuntimeRateStubOffset + 0x50,
+            register: 9,
+            is64Bit: false);
+        instructions[9] = 0x9BA97D08; // umull x8, w8, w9
+        instructions[10] = 0x5284E209; // movz w9, #10000
+        instructions[11] = 0x9AC90908; // udiv x8, x8, x9
+        instructions[12] = EncodeCompareAndBranchZero(
+            RuntimeRateStubOffset + 0x30,
+            RuntimeRateStubOffset + 0x3C,
+            register: 8,
+            is64Bit: true,
+            nonZero: true);
+        instructions[13] = 0x52800028; // movz w8, #1
+        instructions[14] = EncodeUnconditionalBranch(
+            RuntimeRateStubOffset + 0x38, RuntimeRateStubOffset + 0x54);
+        instructions[15] = 0xD360FD0A; // lsr x10, x8, #32
+        instructions[16] = EncodeCompareAndBranchZero(
+            RuntimeRateStubOffset + 0x40,
+            RuntimeRateStubOffset + 0x54,
+            register: 10,
+            is64Bit: true);
+        instructions[17] = 0x12800008; // movn w8, #0
+        instructions[18] = EncodeUnconditionalBranch(
+            RuntimeRateStubOffset + 0x48, RuntimeRateStubOffset + 0x54);
+        instructions[20] = 0x2A1F03E8; // mov w8, wzr
+        instructions[21] = 0xB9000028; // str w8, [x1]
+        instructions[22] = RateEpilogueVanilla;
+        instructions[23] = EncodeUnconditionalBranch(
+            RuntimeRateStubOffset + 0x5C, RateEpilogueOffset + sizeof(uint));
+        return SerializeInstructions(
+            instructions,
+            RuntimeRateStubLength,
+            "runtime EXP rate");
+    }
+
+    private static byte[] CreateRuntimeCapStub()
+    {
+        var instructions = Enumerable.Repeat(0xD503201Fu, RuntimeCapStubLength / sizeof(uint))
+            .ToArray();
+        instructions[0] = 0xD101C3FF;
+        instructions[1] = 0xA9007BFD;
+        instructions[2] = 0xA90153F3;
+        instructions[3] = 0xA9025BF5;
+        instructions[4] = 0xA90363F7;
+        instructions[5] = 0xA9046BF9;
+        instructions[6] = 0xA90573FB;
+        instructions[7] = 0xF9400A95;
+        instructions[8] = 0xAA0003F3;
+        instructions[9] = 0xAA0103F4;
+        instructions[10] = EncodeAdrp(
+            22,
+            RuntimeCapStubOffset + 0x28,
+            RuntimeSnapshotOffset);
+        instructions[11] = 0xC8DFFED6; // ldar x22, [x22]
+        instructions[12] = EncodeCompareAndBranchZero(
+            RuntimeCapStubOffset + 0x30,
+            RuntimeCapStubOffset + 0x40,
+            register: 22,
+            is64Bit: true);
+        instructions[13] = EncodeTestBitBranchZero(
+            RuntimeCapStubOffset + 0x34,
+            RuntimeCapStubOffset + 0x40,
+            register: 22,
+            bit: 1);
+        instructions[14] = EncodeUnsignedBitfieldExtract64(22, 22, 2, 7);
+        instructions[15] = EncodeUnconditionalBranch(
+            RuntimeCapStubOffset + 0x3C, RuntimeCapStubOffset + 0x44);
+        instructions[16] = MoveCapImmediateBase
+            | (uint)GameplaySettingsValues.Vanilla.LevelCap << 5;
+        instructions[17] = 0xAA1303E0;
+        instructions[18] = 0xAA1403E1;
+        instructions[19] = EncodeBranchLink(
+            RuntimeCapStubOffset + 0x4C, AwardMergeFunctionOffset);
+        instructions[20] = 0x710192DF;
+        instructions[21] = EncodeConditionalBranch(
+            RuntimeCapStubOffset + 0x54,
+            RuntimeCapStubOffset + 0xF0,
+            condition: 0);
+        instructions[22] = EncodeCompareAndBranchZero(
+            RuntimeCapStubOffset + 0x58,
+            RuntimeCapStubOffset + 0xF0,
+            register: 21,
+            is64Bit: true);
+        instructions[23] = 0x3940C2B7;
+        instructions[24] = 0x71001AFF;
+        instructions[25] = 0x528000C8;
+        instructions[26] = 0x1A8892F7;
+        instructions[27] = 0xAA1F03F8;
+        instructions[28] = 0x6B17031F;
+        instructions[29] = EncodeConditionalBranch(
+            RuntimeCapStubOffset + 0x74,
+            RuntimeCapStubOffset + 0xF0,
+            condition: 2);
+        instructions[30] = 0xF8787AB9;
+        instructions[31] = EncodeCompareAndBranchZero(
+            RuntimeCapStubOffset + 0x7C,
+            RuntimeCapStubOffset + 0xE8,
+            register: 25,
+            is64Bit: true);
+        instructions[32] = 0x900085E8;
+        instructions[33] = 0x9132C108;
+        instructions[34] = 0xF9400329;
+        instructions[35] = 0xEB08013F;
+        instructions[36] = EncodeConditionalBranch(
+            RuntimeCapStubOffset + 0x90,
+            RuntimeCapStubOffset + 0xE8,
+            condition: 1);
+        instructions[37] = 0x794E233A;
+        instructions[38] = 0x794E333B;
+        instructions[39] = 0xAA1903E0;
+        instructions[40] = EncodeBranchLink(
+            RuntimeCapStubOffset + 0xA0, CurrentExperienceGetterOffset);
+        instructions[41] = 0x2A0003FC;
+        instructions[42] = 0x2A1A03E0;
+        instructions[43] = 0x2A1B03E1;
+        instructions[44] = 0x110006C2;
+        instructions[45] = EncodeBranchLink(
+            RuntimeCapStubOffset + 0xB4, MinimumExperienceFunctionOffset);
+        instructions[46] = 0x5100041A;
+        instructions[47] = 0x6B1C035A;
+        instructions[48] = 0x1A9F235A;
+        instructions[49] = 0x8B181279;
+        instructions[50] = 0x8B181289;
+        instructions[51] = 0xB9400328;
+        instructions[52] = 0xB940012A;
+        instructions[53] = 0x4B0A0108;
+        instructions[54] = 0x8B2A4108;
+        instructions[55] = 0xEB1A011F;
+        instructions[56] = 0x9A9A9108;
+        instructions[57] = 0xB9000328;
+        instructions[58] = 0x91000718;
+        instructions[59] = EncodeUnconditionalBranch(
+            RuntimeCapStubOffset + 0xEC, RuntimeCapStubOffset + 0x70);
+        instructions[60] = 0xA94573FB;
+        instructions[61] = 0xA9446BF9;
+        instructions[62] = 0xA94363F7;
+        instructions[63] = 0xA9425BF5;
+        instructions[64] = 0xA94153F3;
+        instructions[65] = 0xA9407BFD;
+        instructions[66] = 0x9101C3FF;
+        instructions[67] = 0xD65F03C0;
+        return SerializeInstructions(
+            instructions,
+            RuntimeCapStubLength,
+            "runtime level cap");
+    }
+
+    private static byte[] CreateRuntimeShareStub()
+    {
+        var instructions = Enumerable.Repeat(0xD503201Fu, RuntimeShareStubLength / sizeof(uint))
+            .ToArray();
+        instructions[0] = 0xA9BF47F0; // stp x16, x17, [sp, #-16]!
+        instructions[1] = EncodeAdrp(
+            16,
+            RuntimeShareStubOffset + 0x04,
+            RuntimeSnapshotOffset);
+        instructions[2] = 0xC8DFFE10; // ldar x16, [x16]
+        instructions[3] = EncodeCompareAndBranchZero(
+            RuntimeShareStubOffset + 0x0C,
+            RuntimeShareStubOffset + 0x14,
+            register: 16,
+            is64Bit: true);
+        instructions[4] = EncodeTestBitBranchZero(
+            RuntimeShareStubOffset + 0x10,
+            RuntimeShareStubOffset + 0x1C,
+            register: 16,
+            bit: 0);
+        instructions[5] = ShareDecisionVanilla;
+        instructions[6] = EncodeUnconditionalBranch(
+            RuntimeShareStubOffset + 0x18,
+            RuntimeShareStubOffset + 0x20);
+        instructions[7] = ShareDecisionDisabled;
+        instructions[8] = 0xA8C147F0; // ldp x16, x17, [sp], #16
+        instructions[9] = EncodeUnconditionalBranch(
+            RuntimeShareStubOffset + 0x24, ShareDecisionOffset + sizeof(uint));
+        return SerializeInstructions(
+            instructions,
+            RuntimeShareStubLength,
+            "runtime EXP Share");
+    }
+
+    private static byte[] SerializeInstructions(
+        IReadOnlyList<uint> instructions,
+        int expectedLength,
+        string label)
+    {
+        var bytes = new byte[checked(instructions.Count * sizeof(uint))];
+        for (var index = 0; index < instructions.Count; index++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                bytes.AsSpan(index * sizeof(uint), sizeof(uint)),
+                instructions[index]);
+        }
+        if (bytes.Length != expectedLength)
+        {
+            throw new InvalidOperationException(
+                $"The Scarlet/Violet {label} stub length changed unexpectedly.");
+        }
+        return bytes;
+    }
+
     private static void ValidateRequestedValues(GameplaySettingsValues values)
     {
         ValidateRate(values.ExperienceRateBasisPoints);
@@ -1186,6 +1629,152 @@ public static class SvGameplaySettingsMainPatcher
     {
         return !required
             || SHA256.HashData(segment.DecompressedData).AsSpan().SequenceEqual(segment.Hash);
+    }
+
+    private static uint EncodeCompareAndBranchZero(
+        int sourceOffset,
+        int targetOffset,
+        int register,
+        bool is64Bit,
+        bool nonZero = false)
+    {
+        ValidateRegister(register);
+        var immediate = GetSignedBranchImmediate(
+            sourceOffset,
+            targetOffset,
+            immediateBits: 19,
+            "CBZ/CBNZ");
+        var opcode = is64Bit ? 0xB4000000u : 0x34000000u;
+        if (nonZero)
+        {
+            opcode |= 0x01000000u;
+        }
+
+        return opcode | ((uint)immediate & 0x7FFFFu) << 5 | (uint)register;
+    }
+
+    private static uint EncodeConditionalBranch(
+        int sourceOffset,
+        int targetOffset,
+        int condition)
+    {
+        if (condition is < 0 or > 0xF)
+        {
+            throw new ArgumentOutOfRangeException(nameof(condition));
+        }
+
+        var immediate = GetSignedBranchImmediate(
+            sourceOffset,
+            targetOffset,
+            immediateBits: 19,
+            "conditional branch");
+        return 0x54000000u
+            | ((uint)immediate & 0x7FFFFu) << 5
+            | (uint)condition;
+    }
+
+    private static uint EncodeTestBitBranchZero(
+        int sourceOffset,
+        int targetOffset,
+        int register,
+        int bit)
+    {
+        ValidateRegister(register);
+        if (bit is < 0 or > 63)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bit));
+        }
+
+        var immediate = GetSignedBranchImmediate(
+            sourceOffset,
+            targetOffset,
+            immediateBits: 14,
+            "TBZ");
+        return 0x36000000u
+            | ((uint)bit & 0x20u) << 26
+            | ((uint)bit & 0x1Fu) << 19
+            | ((uint)immediate & 0x3FFFu) << 5
+            | (uint)register;
+    }
+
+    private static uint EncodeAdrp(
+        int register,
+        int sourceOffset,
+        int targetOffset)
+    {
+        ValidateRegister(register);
+        var sourcePage = (long)sourceOffset & ~0xFFFL;
+        var targetPage = (long)targetOffset & ~0xFFFL;
+        var immediate = (targetPage - sourcePage) / 0x1000;
+        const long minimum = -(1L << 20);
+        const long maximum = (1L << 20) - 1;
+        if (immediate < minimum || immediate > maximum)
+        {
+            throw new InvalidOperationException(
+                "An AArch64 ADRP target is outside the signed 21-bit page range.");
+        }
+
+        var encoded = (uint)immediate & 0x1FFFFFu;
+        return 0x90000000u
+            | (encoded & 0x3u) << 29
+            | (encoded >> 2) << 5
+            | (uint)register;
+    }
+
+    private static uint EncodeUnsignedBitfieldExtract64(
+        int destinationRegister,
+        int sourceRegister,
+        int leastSignificantBit,
+        int width)
+    {
+        ValidateRegister(destinationRegister);
+        ValidateRegister(sourceRegister);
+        if (leastSignificantBit is < 0 or > 63
+            || width is < 1 or > 64
+            || leastSignificantBit > 64 - width)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width));
+        }
+
+        var mostSignificantBit = leastSignificantBit + width - 1;
+        return 0xD3400000u
+            | (uint)leastSignificantBit << 16
+            | (uint)mostSignificantBit << 10
+            | (uint)sourceRegister << 5
+            | (uint)destinationRegister;
+    }
+
+    private static long GetSignedBranchImmediate(
+        int sourceOffset,
+        int targetOffset,
+        int immediateBits,
+        string instruction)
+    {
+        var delta = (long)targetOffset - sourceOffset;
+        if ((delta & 3) != 0)
+        {
+            throw new InvalidOperationException(
+                $"An AArch64 {instruction} target is not instruction aligned.");
+        }
+
+        var immediate = delta / sizeof(uint);
+        var minimum = -(1L << (immediateBits - 1));
+        var maximum = (1L << (immediateBits - 1)) - 1;
+        if (immediate < minimum || immediate > maximum)
+        {
+            throw new InvalidOperationException(
+                $"An AArch64 {instruction} target is outside its signed immediate range.");
+        }
+
+        return immediate;
+    }
+
+    private static void ValidateRegister(int register)
+    {
+        if (register is < 0 or > 31)
+        {
+            throw new ArgumentOutOfRangeException(nameof(register));
+        }
     }
 
     private static uint EncodeUnconditionalBranch(int sourceOffset, int targetOffset)

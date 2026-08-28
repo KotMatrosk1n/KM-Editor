@@ -59,6 +59,7 @@ using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Api.Workspace;
 using KM.Api.ZaCache;
+using KM.Core.Concurrency;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
@@ -130,6 +131,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
 {
     private const int BridgeProvisionMultiplier = 4;
     private const int BridgeHardCeilingMultiplier = 2;
+    private const long EstimatedBridgeWorkerBytes = 256L * 1024L * 1024L;
     internal const int ExpectedBridgeRequestCharacters = 16 * 1024 * 1024;
     internal const int ProvisionedBridgeRequestCharacters = checked(
         ExpectedBridgeRequestCharacters * BridgeProvisionMultiplier);
@@ -348,10 +350,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         }
         else
         {
-            var productionGameplayPanel = AtmosphereGameplayPanelBundleFactory.CreateProductionCatalog();
             this.inGameSettingsPackageApplicationService = new InGameSettingsPackageApplicationService(
-                productionGameplayPanel.Catalog,
-                productionGameplayPanel.Authority);
+                new NativeGameplayMenuBundleProvider());
         }
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
         this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
@@ -379,7 +379,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 LoadSemanticExploreItemsFresh,
                 LoadSemanticExplorePokemonFresh,
                 LoadSemanticExploreMovesFresh,
-                CaptureSemanticExploreSourceFingerprint);
+                CaptureSemanticExploreSourceFingerprint,
+                CanLoadSemanticExploreCorporaConcurrently,
+                PrepareSemanticExploreCorporaFresh);
         this.balanceLabApplicationService = balanceLabApplicationService
             ?? new BalanceLabApplicationService(
                 this.semanticExploreApplicationService,
@@ -418,7 +420,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 (paths, session, outputMode) => CreateChangePlanForSession(
                     ProjectBridgeMapper.ToCore(paths),
                     session,
-                    outputMode));
+                    outputMode),
+                CanLoadSemanticExploreCorporaConcurrently,
+                PrepareGuidedDesignSourcesFresh);
         ownsSemanticMergeApplicationService = semanticMergeApplicationService is null;
         this.semanticMergeApplicationService = semanticMergeApplicationService
             ?? new SemanticMergeApplicationService(
@@ -6710,6 +6714,278 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             SemanticExploreFailureKind.Unsupported);
     }
 
+    private bool CanLoadSemanticExploreCorporaConcurrently(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.CanLoadSemanticExploreCorporaConcurrently;
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.CanLoadSemanticExploreCorporaConcurrently;
+        }
+
+        return paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield;
+    }
+
+    private SemanticWorkflowDtoLoaders PrepareSemanticExploreCorporaFresh(
+        ProjectPathsDto pathsDto,
+        int maximumParallelism)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var loaders = zaWorkflowService.PrepareSemanticExploreCorpora(
+                paths,
+                maximumParallelism);
+            return PrepareSemanticWorkflowDtos(
+                () => ZaBridgeMapper.ToDto(loaders.Items()).Workflow,
+                () => ZaBridgeMapper.ToDto(loaders.Pokemon()).Workflow,
+                () => ZaBridgeMapper.ToDto(loaders.Moves()).Workflow,
+                maximumParallelism);
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            var loaders = svWorkflowService.PrepareSemanticExploreCorpora(
+                paths,
+                maximumParallelism);
+            return PrepareSemanticWorkflowDtos(
+                () => SvBridgeMapper.ToDto(loaders.Items()).Workflow,
+                () => SvBridgeMapper.ToDto(loaders.Pokemon()).Workflow,
+                () => SvBridgeMapper.ToDto(loaders.Moves()).Workflow,
+                maximumParallelism);
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return PrepareSemanticWorkflowDtos(
+                () => SwShBridgeMapper.ToDto(
+                    swShWorkflowService.LoadSemanticExploreItems(paths)).Workflow,
+                () => SwShBridgeMapper.ToDto(
+                    swShWorkflowService.LoadSemanticExplorePokemon(paths)).Workflow,
+                () => SwShBridgeMapper.ToDto(
+                    swShWorkflowService.LoadSemanticExploreMoves(paths)).Workflow,
+                maximumParallelism);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected semantic game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private static SemanticWorkflowDtoLoaders PrepareSemanticWorkflowDtos(
+        Func<ItemsWorkflowDto> loadItems,
+        Func<PokemonWorkflowDto> loadPokemon,
+        Func<MovesWorkflowDto> loadMoves,
+        int maximumParallelism)
+    {
+        ArgumentNullException.ThrowIfNull(loadItems);
+        ArgumentNullException.ThrowIfNull(loadPokemon);
+        ArgumentNullException.ThrowIfNull(loadMoves);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumParallelism);
+
+        PreparedSemanticWorkflowDto<ItemsWorkflowDto>? items = null;
+        PreparedSemanticWorkflowDto<PokemonWorkflowDto>? pokemon = null;
+        PreparedSemanticWorkflowDto<MovesWorkflowDto>? moves = null;
+
+        void LoadAt(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    items = CaptureSemanticWorkflowDto(loadItems);
+                    break;
+                case 1:
+                    pokemon = CaptureSemanticWorkflowDto(loadPokemon);
+                    break;
+                case 2:
+                    moves = CaptureSemanticWorkflowDto(loadMoves);
+                    break;
+            }
+        }
+
+        var effectiveParallelism = Math.Clamp(maximumParallelism, 1, 3);
+        _ = BoundedParallel.For(
+            3,
+            CreateBridgePolicy(
+                "bridge-semantic-workflow-dto-load",
+                BoundedWorkloadKind.Decode,
+                effectiveParallelism),
+            LoadAt);
+
+        return new SemanticWorkflowDtoLoaders(
+            (items ?? throw new InvalidOperationException(
+                "The semantic items workflow DTO was not prepared.")).Get,
+            (pokemon ?? throw new InvalidOperationException(
+                "The semantic Pokemon workflow DTO was not prepared.")).Get,
+            (moves ?? throw new InvalidOperationException(
+                "The semantic moves workflow DTO was not prepared.")).Get);
+    }
+
+    private GuidedDesignWorkflowDtoLoaders PrepareGuidedDesignSourcesFresh(
+        ProjectPathsDto pathsDto,
+        int maximumParallelism)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var loaders = zaWorkflowService.PrepareGuidedDesignSources(
+                paths,
+                maximumParallelism);
+            return PrepareGuidedDesignWorkflowDtos(
+                () => ZaBridgeMapper.ToDto(loaders.Trainers()).Workflow,
+                () => ZaBridgeMapper.ToDto(loaders.Encounters()).Workflow,
+                () => ZaBridgeMapper.ToDto(loaders.Items()).Workflow,
+                () => ZaBridgeMapper.ToDto(loaders.Pokemon()).Workflow,
+                maximumParallelism,
+                includeTrainers: true);
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            var loaders = svWorkflowService.PrepareGuidedDesignSources(
+                paths,
+                maximumParallelism);
+            return PrepareGuidedDesignWorkflowDtos(
+                () => SvBridgeMapper.ToDto(loaders.Trainers()).Workflow,
+                () => SvBridgeMapper.ToDto(loaders.Encounters()).Workflow,
+                () => SvBridgeMapper.ToDto(loaders.Items()).Workflow,
+                () => SvBridgeMapper.ToDto(loaders.Pokemon()).Workflow,
+                maximumParallelism,
+                includeTrainers: true);
+        }
+
+        if (paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            return PrepareGuidedDesignWorkflowDtos(
+                () => throw new NotSupportedException(
+                    "Sword and Shield Guided Design does not load trainer sources."),
+                () => SwShBridgeMapper.ToDto(
+                    swShWorkflowService.LoadBalanceLabEncounters(paths)).Workflow,
+                () => SwShBridgeMapper.ToDto(
+                    swShWorkflowService.LoadSemanticExploreItems(paths)).Workflow,
+                () => SwShBridgeMapper.ToDto(
+                    swShWorkflowService.LoadSemanticExplorePokemon(paths)).Workflow,
+                maximumParallelism,
+                includeTrainers: false);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Guided Design game is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private static GuidedDesignWorkflowDtoLoaders PrepareGuidedDesignWorkflowDtos(
+        Func<TrainersWorkflowDto> loadTrainers,
+        Func<EncountersWorkflowDto> loadEncounters,
+        Func<ItemsWorkflowDto> loadItems,
+        Func<PokemonWorkflowDto> loadPokemon,
+        int maximumParallelism,
+        bool includeTrainers)
+    {
+        ArgumentNullException.ThrowIfNull(loadTrainers);
+        ArgumentNullException.ThrowIfNull(loadEncounters);
+        ArgumentNullException.ThrowIfNull(loadItems);
+        ArgumentNullException.ThrowIfNull(loadPokemon);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumParallelism);
+
+        const int sourceCount = 4;
+        PreparedSemanticWorkflowDto<TrainersWorkflowDto>? trainers = null;
+        PreparedSemanticWorkflowDto<EncountersWorkflowDto>? encounters = null;
+        PreparedSemanticWorkflowDto<ItemsWorkflowDto>? items = null;
+        PreparedSemanticWorkflowDto<PokemonWorkflowDto>? pokemon = null;
+
+        void LoadAt(int index)
+        {
+            switch (index)
+            {
+                case 0 when includeTrainers:
+                    trainers = CaptureSemanticWorkflowDto(loadTrainers);
+                    break;
+                case 1:
+                    encounters = CaptureSemanticWorkflowDto(loadEncounters);
+                    break;
+                case 2:
+                    items = CaptureSemanticWorkflowDto(loadItems);
+                    break;
+                case 3:
+                    pokemon = CaptureSemanticWorkflowDto(loadPokemon);
+                    break;
+            }
+        }
+
+        var activeSourceCount = includeTrainers ? sourceCount : sourceCount - 1;
+        var effectiveParallelism = Math.Clamp(maximumParallelism, 1, activeSourceCount);
+        _ = BoundedParallel.For(
+            sourceCount,
+            CreateBridgePolicy(
+                "bridge-guided-design-dto-load",
+                BoundedWorkloadKind.Decode,
+                effectiveParallelism),
+            LoadAt);
+
+        Func<TrainersWorkflowDto> preparedTrainers = trainers is null
+            ? () => throw new NotSupportedException(
+                "The Guided Design trainers workflow DTO was not prepared for this game.")
+            : trainers.Get;
+        return new GuidedDesignWorkflowDtoLoaders(
+            preparedTrainers,
+            (encounters ?? throw new InvalidOperationException(
+                "The Guided Design encounters workflow DTO was not prepared.")).Get,
+            (items ?? throw new InvalidOperationException(
+                "The Guided Design items workflow DTO was not prepared.")).Get,
+            (pokemon ?? throw new InvalidOperationException(
+                "The Guided Design Pokemon workflow DTO was not prepared.")).Get);
+    }
+
+    private static PreparedSemanticWorkflowDto<T> CaptureSemanticWorkflowDto<T>(Func<T> load)
+        where T : class
+    {
+        try
+        {
+            return new PreparedSemanticWorkflowDto<T>(load(), Failure: null);
+        }
+        catch (Exception exception)
+        {
+            return new PreparedSemanticWorkflowDto<T>(
+                Value: null,
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception));
+        }
+    }
+
+    private static BoundedConcurrencyPolicy CreateBridgePolicy(
+        string name,
+        BoundedWorkloadKind workloadKind,
+        int maximumParallelism)
+    {
+        return new BoundedConcurrencyPolicy(
+            name,
+            workloadKind,
+            EstimatedBridgeWorkerBytes,
+            maximumDegreeOfParallelism: Math.Clamp(
+                maximumParallelism,
+                1,
+                BoundedConcurrencyPolicy.MaximumSupportedParallelism),
+            memoryBudgetDivisor: 8,
+            degreeOfParallelismWhenMemoryUnknown: 1);
+    }
+
+    private sealed record PreparedSemanticWorkflowDto<T>(
+        T? Value,
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? Failure)
+        where T : class
+    {
+        public T Get()
+        {
+            Failure?.Throw();
+            return Value ?? throw new InvalidOperationException(
+                "The semantic workflow DTO was not prepared.");
+        }
+    }
+
     private TrainersWorkflowDto LoadBalanceLabTrainersFresh(ProjectPathsDto pathsDto)
     {
         var paths = ProjectBridgeMapper.ToCore(pathsDto);
@@ -6872,16 +7148,88 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var paths = ProjectBridgeMapper.ToCore(pathsDto);
         if (IsPokemonLegendsZA(paths))
         {
+            const int outputCount = 8;
             var sources = zaWorkflowService.LoadGameModuleCapabilityBatch(paths);
+            PreparedSemanticWorkflowDto<EncountersWorkflowDto>? scriptedBossEncounters = null;
+            PreparedSemanticWorkflowDto<EncountersWorkflowDto>? wildEncounters = null;
+            PreparedSemanticWorkflowDto<MovesWorkflowDto>? moves = null;
+            PreparedSemanticWorkflowDto<TrainersWorkflowDto>? trainers = null;
+            PreparedSemanticWorkflowDto<EncounterCompatibilityWorkflowDto>?
+                encounterCompatibility = null;
+            PreparedSemanticWorkflowDto<PokemonWorkflowDto>? pokemon = null;
+            PreparedSemanticWorkflowDto<TrainerPoolsWorkflowDto>? trainerPools = null;
+            PreparedSemanticWorkflowDto<LegendsZaTypeEffectivenessStateDto>?
+                typeEffectivenessState = null;
+
+            void MapAt(int index)
+            {
+                switch (index)
+                {
+                    case 0:
+                        scriptedBossEncounters = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToDto(sources.ScriptedBossEncounters).Workflow);
+                        break;
+                    case 1:
+                        wildEncounters = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToDto(sources.WildEncounters).Workflow);
+                        break;
+                    case 2:
+                        moves = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToDto(sources.Moves).Workflow);
+                        break;
+                    case 3:
+                        trainers = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToDto(sources.Trainers).Workflow);
+                        break;
+                    case 4:
+                        encounterCompatibility = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToGameModuleDto(sources.EncounterCompatibility));
+                        break;
+                    case 5:
+                        pokemon = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToGameModuleDto(sources.Pokemon));
+                        break;
+                    case 6:
+                        trainerPools = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToGameModuleDto(sources.TrainerPools));
+                        break;
+                    case 7:
+                        typeEffectivenessState = CaptureSemanticWorkflowDto(
+                            () => ZaBridgeMapper.ToGameModuleDto(sources.TypeEffectivenessState));
+                        break;
+                }
+            }
+
+            var effectiveParallelism = Math.Clamp(
+                zaWorkflowService.GameModuleCapabilityBatchParallelism,
+                1,
+                outputCount);
+            _ = BoundedParallel.For(
+                outputCount,
+                CreateBridgePolicy(
+                    "bridge-za-game-module-dto-map",
+                    BoundedWorkloadKind.Map,
+                    effectiveParallelism),
+                MapAt);
+
+            // Resolve in the original bridge tuple order so mapping failures stay deterministic.
             return (
-                ZaBridgeMapper.ToDto(sources.ScriptedBossEncounters).Workflow,
-                ZaBridgeMapper.ToDto(sources.WildEncounters).Workflow,
-                ZaBridgeMapper.ToDto(sources.Moves).Workflow,
-                ZaBridgeMapper.ToDto(sources.Trainers).Workflow,
-                ZaBridgeMapper.ToGameModuleDto(sources.EncounterCompatibility),
-                ZaBridgeMapper.ToGameModuleDto(sources.Pokemon),
-                ZaBridgeMapper.ToGameModuleDto(sources.TrainerPools),
-                ZaBridgeMapper.ToGameModuleDto(sources.TypeEffectivenessState));
+                (scriptedBossEncounters ?? throw new InvalidOperationException(
+                    "The Z-A scripted boss encounter DTO was not prepared.")).Get(),
+                (wildEncounters ?? throw new InvalidOperationException(
+                    "The Z-A wild encounter DTO was not prepared.")).Get(),
+                (moves ?? throw new InvalidOperationException(
+                    "The Z-A move DTO was not prepared.")).Get(),
+                (trainers ?? throw new InvalidOperationException(
+                    "The Z-A trainer DTO was not prepared.")).Get(),
+                (encounterCompatibility ?? throw new InvalidOperationException(
+                    "The Z-A encounter compatibility DTO was not prepared.")).Get(),
+                (pokemon ?? throw new InvalidOperationException(
+                    "The Z-A Pokemon DTO was not prepared.")).Get(),
+                (trainerPools ?? throw new InvalidOperationException(
+                    "The Z-A trainer pool DTO was not prepared.")).Get(),
+                (typeEffectivenessState ?? throw new InvalidOperationException(
+                    "The Z-A type effectiveness DTO was not prepared.")).Get());
         }
 
         throw new SemanticExploreValidationException(

@@ -43,6 +43,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
     public const string OwnerNameFilterBypass = "Profanity Filter";
+    public const string OwnerNativeGameplayMenu = "Native Gameplay Menu";
     public const string OwnerPokemonSummaryRuntime = "Pokemon Summary Runtime";
     public const string OwnerRoyalCandy = "Royal Candy";
     public const string OwnerRoyalCandyStoryLimits = "Royal Candy with Story Limits";
@@ -57,6 +58,16 @@ internal static class SwShExeFsReservedRegionLedger
     [
         new(OwnerBagHook, "bag-hook-v2", BagEventScriptPath, "whole-file", null, null, "Bag-event AMX grant route", "owns-file"),
         new(OwnerStartingItems, "starting-items-bag-hook-slots", BagEventScriptPath, "bag-hook-slots", null, null, "Bag Hook slots 2-20 startup grants", "payload-only"),
+
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-share-hook", ExeFsMainPath, "main.text", 0x007FB2C0, 0x04, "Native gameplay menu EXP Share runtime hook", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-level-cap-hook", ExeFsMainPath, "main.text", 0x0083A3E0, 0x04, "Native gameplay menu level-cap runtime hook", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-share-bridge", ExeFsMainPath, "main.text", 0x008A0294, 0x0C, "Native gameplay menu EXP Share bridge", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-share-target-slot", ExeFsMainPath, "main.text", 0x008A0FD4, 0x0C, "Native gameplay menu EXP Share target slot", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-rate-bridge", ExeFsMainPath, "main.text", 0x008A1314, 0x0C, "Native gameplay menu EXP rate bridge", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-rate-target-slot", ExeFsMainPath, "main.text", 0x008A1534, 0x0C, "Native gameplay menu EXP rate target slot", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-level-cap-bridge", ExeFsMainPath, "main.text", 0x008A1544, 0x0C, "Native gameplay menu level-cap bridge", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-level-cap-target-slot", ExeFsMainPath, "main.text", 0x008A1B34, 0x0C, "Native gameplay menu level-cap target slot", "do-not-overwrite"),
+        new(OwnerNativeGameplayMenu, "native-gameplay-menu-rate-hook", ExeFsMainPath, "main.text", 0x008A564C, 0x04, "Native gameplay menu EXP rate runtime hook", "do-not-overwrite"),
 
         // The six-byte summary rows contain five owned bytes and one opaque padding byte at +1.
         // DA writers preserve that padding byte while owning the surrounding summary projection.

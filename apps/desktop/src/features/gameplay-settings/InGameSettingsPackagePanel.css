@@ -47,16 +47,18 @@
 }
 
 .in-game-settings-package__title-row h3,
-.in-game-settings-package__review h4 {
+.in-game-settings-package__review h4,
+.in-game-settings-package__review h5 {
   margin: 0;
 }
 
 .in-game-settings-package__heading p,
 .in-game-settings-package__instructions p,
 .in-game-settings-package__state p,
-.in-game-settings-package__control-card p,
 .in-game-settings-package__review p,
-.in-game-settings-package__vanilla-guidance p {
+.in-game-settings-package__vanilla-guidance p,
+.in-game-settings-package__installation p,
+.in-game-settings-package__contents p {
   color: var(--color-text-muted);
   margin: 0.3rem 0 0;
 }
@@ -65,7 +67,9 @@
 .in-game-settings-package__state,
 .in-game-settings-package__message,
 .in-game-settings-package__review,
-.in-game-settings-package__vanilla-guidance {
+.in-game-settings-package__vanilla-guidance,
+.in-game-settings-package__installation,
+.in-game-settings-package__contents {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
@@ -80,14 +84,12 @@
   color: var(--color-accent-bright);
 }
 
-.in-game-settings-package__controls,
 .in-game-settings-package__status {
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.in-game-settings-package__control-card,
 .in-game-settings-package__status > div {
   background: var(--color-control);
   border: 1px solid var(--color-control-border);
@@ -96,13 +98,126 @@
   padding: 0.9rem 1rem;
 }
 
-.in-game-settings-package__control-card {
+.in-game-settings-package__installation {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.85rem;
 }
 
-.in-game-settings-package__control-card p {
+.in-game-settings-package__installation-heading h4 {
+  margin: 0;
+}
+
+.in-game-settings-package__target-options {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.in-game-settings-package__target-option {
+  align-items: center;
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.7rem;
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  text-align: left;
+}
+
+.in-game-settings-package__target-option:hover {
+  background: var(--color-control-hover);
+  border-color: var(--color-accent-bright);
+}
+
+.in-game-settings-package__target-option[aria-pressed='true'] {
+  background: rgb(var(--color-accent-rgb) / 20%);
+  border-color: var(--color-accent-bright);
+  box-shadow: inset 0.2rem 0 0 var(--color-gold);
+}
+
+.in-game-settings-package__support {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.4rem;
+  text-transform: uppercase;
+}
+
+.in-game-settings-package__support--supported {
+  color: var(--color-success);
+}
+
+.in-game-settings-package__support--manual {
+  color: var(--color-accent-bright);
+}
+
+.in-game-settings-package__support--blocked {
+  color: var(--color-warning);
+}
+
+.in-game-settings-package__installation-detail {
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.7rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.in-game-settings-package__installation-detail--blocked {
+  background: var(--color-warning-surface);
+  border-color: var(--color-warning);
+}
+
+.in-game-settings-package__installation-detail > p {
+  margin: 0;
+}
+
+.in-game-settings-package__installation-detail > button {
+  justify-self: start;
+}
+
+.in-game-settings-package__path {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.in-game-settings-package__path span {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.in-game-settings-package__path code {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  color: var(--color-text-soft);
   overflow-wrap: anywhere;
+  padding: 0.6rem 0.7rem;
+  white-space: normal;
+}
+
+.in-game-settings-package__contents summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.in-game-settings-package__contents > div {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.in-game-settings-package__contents p {
+  margin: 0;
 }
 
 .in-game-settings-package__status > div {
@@ -154,6 +269,49 @@
   gap: 0.9rem;
 }
 
+.in-game-settings-package__composition,
+.in-game-settings-package__read-dependencies {
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.7rem;
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.in-game-settings-package__composition > p,
+.in-game-settings-package__read-dependencies > p {
+  margin: 0;
+}
+
+.in-game-settings-package__composition dl {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.in-game-settings-package__composition dl > div {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+}
+
+.in-game-settings-package__composition dt {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.in-game-settings-package__composition dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .in-game-settings-package__targets {
   display: grid;
   gap: 0.45rem;
@@ -190,6 +348,16 @@
   white-space: normal;
 }
 
+.in-game-settings-package__read-dependencies .in-game-settings-package__targets li > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.in-game-settings-package__read-dependencies small {
+  color: var(--color-text-muted);
+}
+
 .in-game-settings-package__confirmation {
   align-items: flex-start;
   background: var(--color-control);
@@ -211,7 +379,6 @@
 }
 
 @media (max-width: 75rem) {
-  .in-game-settings-package__controls,
   .in-game-settings-package__status {
     grid-template-columns: 1fr;
   }
@@ -228,6 +395,14 @@
   .in-game-settings-package__targets li {
     grid-template-columns: 1fr;
   }
+
+  .in-game-settings-package__target-options {
+    grid-template-columns: 1fr;
+  }
+
+  .in-game-settings-package__composition dl {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (forced-colors: active) {
@@ -237,9 +412,14 @@
   .in-game-settings-package__message,
   .in-game-settings-package__review,
   .in-game-settings-package__vanilla-guidance,
-  .in-game-settings-package__control-card,
+  .in-game-settings-package__installation,
+  .in-game-settings-package__installation-detail,
+  .in-game-settings-package__target-option,
+  .in-game-settings-package__contents,
   .in-game-settings-package__status > div,
   .in-game-settings-package__targets li,
+  .in-game-settings-package__composition,
+  .in-game-settings-package__read-dependencies,
   .in-game-settings-package__confirmation {
     border-color: CanvasText;
   }

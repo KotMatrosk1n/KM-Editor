@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -36,6 +35,13 @@ import {
   semanticExploreErrorCodes,
   semanticMergeErrorCodes
 } from '../../errorCodes';
+import { useDeferredUnmountCleanup } from '../../hooks/useDeferredUnmountCleanup';
+import {
+  ProjectQueryEpoch,
+  runIndependentProjectRead,
+  runOrderedProjectOperation,
+  type ProjectQueryTicket
+} from '../../utils/projectAsyncPolicy';
 
 export type SemanticMergeQueryStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SemanticMergeQueryError =
@@ -100,12 +106,7 @@ type Flow =
   | 'sourceA'
   | 'sourceB';
 
-type RequestToken = {
-  epoch: number;
-  flow: Flow;
-  generation: number;
-  id: number;
-};
+type RequestToken = ProjectQueryTicket<Flow> & { id: number };
 
 const idleQuery = <T,>(): SemanticMergeQueryState<T> => ({
   data: null,
@@ -122,9 +123,8 @@ class SemanticMergeControllerStore {
   private activeRequests = new Map<number, Flow>();
   private bridge: SemanticMergeProjectBridgeApi;
   private contextKey: string | null = null;
-  private epoch = 0;
   private expectedChangeSetETag: string | null = null;
-  private flowGenerations = new Map<Flow, number>();
+  private freshness = new ProjectQueryEpoch<Flow>();
   private isAuthoringContextReady = false;
   private listeners = new Set<() => void>();
   private nextRequestId = 1;
@@ -185,7 +185,7 @@ class SemanticMergeControllerStore {
   }
 
   public cancelAll = () => {
-    this.epoch += 1;
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
     this.snapshot = {
       ...this.snapshot,
@@ -247,7 +247,13 @@ class SemanticMergeControllerStore {
     this.emit();
     try {
       const scope = this.requireScope();
-      const response = await this.bridge.getSemanticMergeCapabilities({ scope });
+      const request = { scope };
+      const response = await runIndependentProjectRead(
+        'getSemanticMergeCapabilities',
+        this.bridge,
+        request,
+        () => this.bridge.getSemanticMergeCapabilities(request)
+      );
       if (!this.isCurrent(token)) return;
       assertCapabilitiesResponse(response, scope, this.revision);
       this.snapshot = {
@@ -278,11 +284,16 @@ class SemanticMergeControllerStore {
     this.emit();
     try {
       const context = this.requireRevisionContext();
-      const response = await this.bridge.openSemanticMergeSource({
+      const request = {
         expectedRevision: context.revision,
         externalRootPath,
         scope: context.scope
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'openSemanticMergeSource',
+        this.bridge,
+        (bridge) => bridge.openSemanticMergeSource(request)
+      );
       if (!this.isCurrent(token)) return;
       assertSourceResponse(response.revision, response.source, context.revision);
       const other = slot === 'a' ? this.snapshot.sourceB.data : this.snapshot.sourceA.data;
@@ -335,7 +346,12 @@ class SemanticMergeControllerStore {
     };
     this.emit();
     try {
-      const response = await this.bridge.validateKmRecipe({ content });
+      const request = { content };
+      const response = await runOrderedProjectOperation(
+        'validateKmRecipe',
+        this.bridge,
+        (bridge) => bridge.validateKmRecipe(request)
+      );
       if (!this.isCurrent(token)) return;
       this.snapshot = {
         ...this.snapshot,
@@ -377,7 +393,11 @@ class SemanticMergeControllerStore {
         expectedRevision: context.revision,
         scope: context.scope
       };
-      const response = await this.bridge.exportKmRecipe(fullRequest);
+      const response = await runOrderedProjectOperation(
+        'exportKmRecipe',
+        this.bridge,
+        (bridge) => bridge.exportKmRecipe(fullRequest)
+      );
       if (!this.isCurrent(token)) return;
       await assertRecipeExportResponse(response, fullRequest);
       if (!this.isCurrent(token)) return;
@@ -424,7 +444,7 @@ class SemanticMergeControllerStore {
       const requestTargets = previous?.normalizedTargets ?? targets;
       const requestResolutions = previous?.normalizedResolutions ?? resolutions;
       const requestSearch = previous?.normalizedTargetSearchText ?? targetSearchText;
-      const response = await this.bridge.previewSemanticMerge({
+      const request = {
         cursor: previous?.nextCursor ?? null,
         expectedChangeSetETag: context.expectedChangeSetETag,
         expectedRevision: context.revision,
@@ -437,7 +457,12 @@ class SemanticMergeControllerStore {
         sourceBInstanceId: sourceB.instanceId,
         targetSearchText: requestSearch,
         targets: requestTargets
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'previewSemanticMerge',
+        this.bridge,
+        (bridge) => bridge.previewSemanticMerge(request)
+      );
       if (!this.isCurrent(token)) return;
       assertMergePreviewResponse({
         capabilities,
@@ -488,7 +513,7 @@ class SemanticMergeControllerStore {
       const context = this.requireAuthoringContext(false);
       const validation = this.snapshot.recipeValidation.data;
       if (!validation) throw new Error('A validated recipe is required before preview.');
-      const response = await this.bridge.previewKmRecipe({
+      const request = {
         cursor: previous?.nextCursor ?? null,
         expectedChangeSetETag: context.expectedChangeSetETag,
         expectedRevision: context.revision,
@@ -498,7 +523,12 @@ class SemanticMergeControllerStore {
         recipeFingerprint: validation.recipeFingerprint,
         recipeInstanceId: validation.recipeInstanceId,
         scope: context.scope
-      });
+      };
+      const response = await runOrderedProjectOperation(
+        'previewKmRecipe',
+        this.bridge,
+        (bridge) => bridge.previewKmRecipe(request)
+      );
       if (!this.isCurrent(token)) return;
       assertRecipePreviewResponse(
         response,
@@ -574,9 +604,8 @@ class SemanticMergeControllerStore {
   }
 
   private reset() {
-    this.epoch += 1;
+    this.freshness.invalidateAll();
     this.activeRequests.clear();
-    this.flowGenerations.clear();
     this.snapshot = {
       capabilities: idleQuery<SemanticMergeCapabilitiesResponse>(),
       exportRecipe: idleQuery<KmRecipeExportResponse>(),
@@ -593,9 +622,7 @@ class SemanticMergeControllerStore {
   private begin(flow: Flow, supersede = true): RequestToken {
     if (supersede) this.supersede(flow);
     const token = {
-      epoch: this.epoch,
-      flow,
-      generation: this.flowGenerations.get(flow) ?? 0,
+      ...this.freshness.capture(flow),
       id: this.nextRequestId++
     };
     this.activeRequests.set(token.id, flow);
@@ -604,7 +631,7 @@ class SemanticMergeControllerStore {
   }
 
   private supersede(flow: Flow) {
-    this.flowGenerations.set(flow, (this.flowGenerations.get(flow) ?? 0) + 1);
+    this.freshness.supersede(flow);
     for (const [id, activeFlow] of this.activeRequests) {
       if (activeFlow === flow) this.activeRequests.delete(id);
     }
@@ -612,8 +639,7 @@ class SemanticMergeControllerStore {
   }
 
   private isCurrent(token: RequestToken) {
-    return token.epoch === this.epoch &&
-      token.generation === (this.flowGenerations.get(token.flow) ?? 0) &&
+    return this.freshness.isCurrent(token) &&
       this.activeRequests.has(token.id);
   }
 
@@ -1144,7 +1170,7 @@ export function useSemanticMergeController(options: {
     store
   ]);
 
-  useEffect(() => () => store.cancelAll(), [store]);
+  useDeferredUnmountCleanup(() => store.cancelAll());
 
   return useMemo(() => ({
     ...snapshot,

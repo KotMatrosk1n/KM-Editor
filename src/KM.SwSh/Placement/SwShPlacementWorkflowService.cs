@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Concurrency;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
@@ -17,6 +18,13 @@ namespace KM.SwSh.Placement;
 
 public sealed class SwShPlacementWorkflowService
 {
+    private static readonly BoundedConcurrencyPolicy CatalogFingerprintPolicy = new(
+        "swsh-placement-catalog-fingerprint",
+        BoundedWorkloadKind.Hash,
+        maximumBytesPerWorker: 2L * 1024L * 1024L,
+        maximumDegreeOfParallelism: 8,
+        degreeOfParallelismWhenMemoryUnknown: 4);
+
     private const string CatalogParserSchema = "swsh-placement-catalog-v3";
     private const int MaximumCatalogQueryLimit = 250;
     private const int PlacementArchiveCacheCapacity = 8;
@@ -977,12 +985,10 @@ public sealed class SwShPlacementWorkflowService
                 relativePath,
                 ResolveWorkflowFile(project, relativePath)))
             .ToArray();
-        var fingerprints = new CatalogDependencyFingerprint[dependencies.Length];
-        Parallel.For(
-            fromInclusive: 0,
-            toExclusive: dependencies.Length,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) },
-            index => fingerprints[index] = CaptureCatalogDependencyFingerprint(dependencies[index]));
+        var fingerprints = BoundedParallel.MapOrdered(
+            dependencies,
+            CatalogFingerprintPolicy,
+            static (dependency, _) => CaptureCatalogDependencyFingerprint(dependency));
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         AppendFingerprint(hash, CatalogParserSchema);

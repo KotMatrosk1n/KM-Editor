@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using KM.Core.Projects;
 using KM.Formats.Executable;
+using KM.ZA.ExeFs;
 
 namespace KM.ZA.RuntimeSettings;
 
@@ -46,6 +47,18 @@ public sealed record ZaStaticGameplaySettingsMainAnalysis(
     bool LevelCapEnabled,
     byte LevelCap,
     IReadOnlyList<ZaStaticGameplaySettingsFeatureAssessment> Features);
+
+public sealed record ZaRuntimeManagedGameplayMainLayout(
+    int ShareCallAOffset,
+    uint ShareCallAVanillaInstruction,
+    uint ShareCallAHookInstruction,
+    int ShareCallBOffset,
+    uint ShareCallBVanillaInstruction,
+    uint ShareCallBHookInstruction,
+    int AwardSiteAOffset,
+    int AwardSiteBOffset,
+    int AppendOffset,
+    int AppendLength);
 
 /// <summary>
 /// Applies exact-build, reversible Pokemon Legends Z-A 2.0.2 static gameplay
@@ -310,6 +323,136 @@ public static class ZaStaticGameplaySettingsMainPatcher
             request,
             expectedGame);
         return output;
+    }
+
+    /// <summary>
+    /// Builds the inert executable scaffold used by KM's native settings rows.
+    /// All retail call sites remain untouched, while the exact owned executable
+    /// append is reserved for the runtime's preimage-guarded policy templates.
+    /// A loader failure therefore leaves retail gameplay behavior intact.
+    /// </summary>
+    public static (byte[] Main, ZaRuntimeManagedGameplayMainLayout Layout)
+        BuildRuntimeManaged(
+            byte[] baseMainBytes,
+            ProjectGame? expectedGame = ProjectGame.ZA)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        return BuildRuntimeManaged(
+            baseMainBytes,
+            baseMainBytes,
+            expectedGame);
+    }
+
+    /// <summary>
+    /// Composes the inert native-settings scaffold onto a reviewed executable.
+    /// The exact Base executable authorizes the 2.0.2 build and dependency
+    /// preimages, while every unrelated current executable byte is preserved.
+    /// </summary>
+    public static (byte[] Main, ZaRuntimeManagedGameplayMainLayout Layout)
+        BuildRuntimeManaged(
+            byte[] baseMainBytes,
+            byte[] currentMainBytes,
+            ProjectGame? expectedGame = ProjectGame.ZA)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(currentMainBytes);
+        var cleanBase = Analyze(baseMainBytes, baseMainBytes, expectedGame);
+        if (cleanBase.Kind != ZaStaticGameplaySettingsMainKind.Vanilla
+            || cleanBase.ExperienceShareEnabled != true
+            || cleanBase.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
+            || cleanBase.LevelCapEnabled)
+        {
+            throw new InvalidDataException(
+                "The native settings menu requires the exact clean Pokemon Legends Z-A 2.0.2 base exefs/main.");
+        }
+
+        var current = Analyze(baseMainBytes, currentMainBytes, expectedGame);
+        if (current.Kind != ZaStaticGameplaySettingsMainKind.Vanilla
+            || current.ExperienceShareEnabled != true
+            || current.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
+            || current.LevelCapEnabled)
+        {
+            throw new InvalidDataException(
+                "The native settings menu requires the reviewed current Pokemon Legends Z-A executable to retain vanilla static gameplay settings and every verified runtime dependency.");
+        }
+
+        var baseNso = ParseBoundedNso(baseMainBytes, "base", allowAppendedText: false);
+        var nso = ParseBoundedNso(currentMainBytes, "current", allowAppendedText: false);
+        ValidateRequiredSegmentHashes(baseNso);
+        ValidateRequiredSegmentHashes(nso);
+        EnsureSameExecutableEnvelope(baseNso, nso);
+        ValidateRuntimeOwnedRange(ShareCallAOffset, sizeof(uint));
+        ValidateRuntimeOwnedRange(ShareCallBOffset, sizeof(uint));
+        ValidateRuntimeOwnedRange(RateSiteAOffset, 3 * sizeof(uint));
+        ValidateRuntimeOwnedRange(RateSiteBOffset, 3 * sizeof(uint));
+        ValidateRuntimeOwnedRange(AppendOffset, AppendLength);
+        var text = new byte[AppendedTextLength];
+        nso.Text.DecompressedData.CopyTo(text, 0);
+        // This complete, unreachable template gives the runtime a single exact
+        // preimage on first activation. Retail hooks remain disabled until every
+        // requested policy byte has been prepared and can be changed together.
+        BuildAppend(
+                shareDisabled: true,
+                rateBasisPoints: VanillaExperienceRateBasisPoints,
+                levelCapEnabled: true,
+                levelCap: 99)
+            .CopyTo(text, AppendOffset);
+
+        var output = nso.Write(textDecompressedData: text);
+        var verified = ParseBoundedNso(output, "runtime-managed", allowAppendedText: true);
+        ValidateRequiredSegmentHashes(verified);
+        EnsureSameExecutableEnvelope(nso, verified);
+        if (!verified.Ro.DecompressedData.AsSpan().SequenceEqual(nso.Ro.DecompressedData)
+            || !verified.Data.DecompressedData.AsSpan().SequenceEqual(nso.Data.DecompressedData)
+            || !verified.Text.DecompressedData.AsSpan().SequenceEqual(text)
+            || !verified.Text.DecompressedData.AsSpan(0, BaseTextLength)
+                .SequenceEqual(nso.Text.DecompressedData))
+        {
+            throw new InvalidDataException(
+                "The native Pokemon Legends Z-A settings scaffold failed executable readback.");
+        }
+
+        return (
+            output,
+            new ZaRuntimeManagedGameplayMainLayout(
+                ShareCallAOffset,
+                VanillaShareCallA,
+                EncodeBranchLink(ShareCallAOffset, ShareStubOffset),
+                ShareCallBOffset,
+                VanillaShareCallB,
+                EncodeBranchLink(ShareCallBOffset, ShareStubOffset),
+                RateSiteAOffset,
+                RateSiteBOffset,
+                AppendOffset,
+                AppendLength));
+    }
+
+    private static void ValidateRuntimeOwnedRange(
+        int offset,
+        int length)
+    {
+        var nativeRegions = ZaExeFsReservedRegionLedger
+            .MainTextRegionsForOwner(
+                ZaExeFsReservedRegionLedger.OwnerNativeGameplayMenu);
+        var hasExactReservation = nativeRegions.Any(region =>
+            region.StartOffset == offset
+            && region.Length == length);
+        var overlapsOtherOwner = ZaExeFsReservedRegionLedger.Regions.Any(region =>
+            string.Equals(
+                region.RelativePath,
+                ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(region.Area, "main.text", StringComparison.Ordinal)
+            && !string.Equals(
+                region.Owner,
+                ZaExeFsReservedRegionLedger.OwnerNativeGameplayMenu,
+                StringComparison.Ordinal)
+            && ZaExeFsReservedRegionLedger.Overlaps(region, offset, length));
+        if (!hasExactReservation || overlapsOtherOwner)
+        {
+            throw new InvalidDataException(
+                "The native Pokemon Legends Z-A settings scaffold does not have an exclusive executable ownership reservation.");
+        }
     }
 
     public static byte[] RestoreFromBase(

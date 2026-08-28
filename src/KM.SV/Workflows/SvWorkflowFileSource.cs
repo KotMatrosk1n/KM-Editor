@@ -8,6 +8,7 @@ using KM.Core.Projects;
 using KM.Core.Semantics;
 using KM.Formats.SV;
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
@@ -28,11 +29,15 @@ internal sealed class SvWorkflowFileSource
     [ThreadStatic]
     private static DeferredOutputBatch? activeDeferredOutputBatch;
 
+    internal static bool HasActiveDeferredOutputBatch => activeDeferredOutputBatch is not null;
+
     private readonly SvCacheManager cacheManager;
     private readonly bool bypassReusableBaseCache;
     private readonly int? maximumReadBytes;
     private readonly int? maximumReadCount;
     private readonly long? maximumAggregateReadBytes;
+    private readonly FreshArchiveSource? freshBaseArchiveSource;
+    private readonly FreshArchiveSource? freshOutputArchiveSource;
     private int boundedReadCount;
     private long boundedReadBytes;
 
@@ -42,6 +47,25 @@ internal sealed class SvWorkflowFileSource
         int? maximumReadBytes = null,
         int? maximumReadCount = null,
         long? maximumAggregateReadBytes = null)
+        : this(
+            cacheManager,
+            bypassReusableBaseCache,
+            maximumReadBytes,
+            maximumReadCount,
+            maximumAggregateReadBytes,
+            freshBaseArchiveSource: null,
+            freshOutputArchiveSource: null)
+    {
+    }
+
+    private SvWorkflowFileSource(
+        SvCacheManager? cacheManager,
+        bool bypassReusableBaseCache,
+        int? maximumReadBytes,
+        int? maximumReadCount,
+        long? maximumAggregateReadBytes,
+        FreshArchiveSource? freshBaseArchiveSource,
+        FreshArchiveSource? freshOutputArchiveSource)
     {
         if (maximumReadBytes is <= 0
             || maximumReadCount is <= 0
@@ -57,6 +81,52 @@ internal sealed class SvWorkflowFileSource
         this.maximumReadBytes = maximumReadBytes;
         this.maximumReadCount = maximumReadCount;
         this.maximumAggregateReadBytes = maximumAggregateReadBytes;
+        this.freshBaseArchiveSource = freshBaseArchiveSource;
+        this.freshOutputArchiveSource = freshOutputArchiveSource;
+    }
+
+    internal static FreshSemanticReaderPool CreateFreshSemanticReaderPool(
+        SvCacheManager cacheManager,
+        ProjectPaths paths,
+        int maximumReadBytes,
+        int readerCount)
+    {
+        ArgumentNullException.ThrowIfNull(cacheManager);
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumReadBytes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(readerCount);
+
+        var archiveSnapshots = new Dictionary<string, FreshArchiveSnapshot>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var baseSnapshot = CaptureFreshArchiveSnapshot(paths.BaseRomFsPath, archiveSnapshots);
+        var outputSnapshot = CaptureFreshArchiveSnapshot(paths.OutputRootPath, archiveSnapshots);
+        var baseSources = OpenFreshArchiveSources(
+            baseSnapshot,
+            paths.ScarletVioletSupportFolderPath,
+            readerCount);
+        var outputSources = OpenFreshArchiveSources(
+            outputSnapshot,
+            paths.ScarletVioletSupportFolderPath,
+            readerCount);
+        var readers = new SvWorkflowFileSource[readerCount];
+        for (var index = 0; index < readers.Length; index++)
+        {
+            readers[index] = new SvWorkflowFileSource(
+                cacheManager,
+                bypassReusableBaseCache: true,
+                maximumReadBytes,
+                maximumReadCount: null,
+                maximumAggregateReadBytes: null,
+                baseSources[index],
+                outputSources[index]);
+        }
+
+        return new FreshSemanticReaderPool(
+            readers,
+            baseSources,
+            outputSources,
+            baseSnapshot.IndexBuildCount,
+            outputSnapshot.IndexBuildCount);
     }
 
     internal int? BoundedTableRecordLimit => maximumReadBytes is null
@@ -399,6 +469,31 @@ internal sealed class SvWorkflowFileSource
         ProjectPaths paths,
         string virtualRomFsPath)
     {
+        return ReadCurrentSourceFreshCore(
+            paths,
+            virtualRomFsPath,
+            observedBaseBytes: null,
+            useObservedBase: false);
+    }
+
+    internal (byte[] Bytes, ProjectFileLayer Layer) ReadCurrentSourceFreshUsingObservedBase(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        byte[]? observedBaseBytes)
+    {
+        return ReadCurrentSourceFreshCore(
+            paths,
+            virtualRomFsPath,
+            observedBaseBytes,
+            useObservedBase: true);
+    }
+
+    private (byte[] Bytes, ProjectFileLayer Layer) ReadCurrentSourceFreshCore(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        byte[]? observedBaseBytes,
+        bool useObservedBase)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
 
@@ -439,6 +534,17 @@ internal sealed class SvWorkflowFileSource
             }
         }
 
+        if (useObservedBase)
+        {
+            return observedBaseBytes is not null
+                ? (observedBaseBytes, ProjectFileLayer.Base)
+                : throw CreateReadFailure(
+                    relativePath,
+                    ProjectFileLayer.Base,
+                    state: null,
+                    exception: new FileNotFoundException());
+        }
+
         return (ReadBaseBytesFresh(paths, normalizedVirtualPath), ProjectFileLayer.Base);
     }
 
@@ -474,6 +580,16 @@ internal sealed class SvWorkflowFileSource
 
         try
         {
+            if (freshBaseArchiveSource is not null)
+            {
+                freshBaseArchiveSource.Failure?.Throw();
+                var retainedArchive = freshBaseArchiveSource.Archive
+                    ?? throw new FileNotFoundException();
+                return maximumReadBytes is { } retainedLimit
+                    ? retainedArchive.ReadFile(normalizedVirtualPath, retainedLimit)
+                    : retainedArchive.ReadFile(normalizedVirtualPath);
+            }
+
             using var archive = OpenArchive(
                 paths.BaseRomFsPath,
                 paths.ScarletVioletSupportFolderPath);
@@ -1748,6 +1864,19 @@ internal sealed class SvWorkflowFileSource
                 return false;
             }
 
+            if (freshOutputArchiveSource is not null)
+            {
+                freshOutputArchiveSource.Failure?.Throw();
+                if (freshOutputArchiveSource.Archive is not { } retainedArchive)
+                {
+                    return false;
+                }
+
+                return maximumReadBytes is { } retainedLimit
+                    ? retainedArchive.TryReadFile(virtualPath, retainedLimit, out bytes)
+                    : retainedArchive.TryReadFile(virtualPath, out bytes);
+            }
+
             if (!HasTrinityArchive(outputRootPath))
             {
                 return false;
@@ -1855,6 +1984,121 @@ internal sealed class SvWorkflowFileSource
                 maximumPackBytes: MaximumBoundedArchivePackBytes);
     }
 
+    private static FreshArchiveSnapshot CaptureFreshArchiveSnapshot(
+        string? rootPath,
+        IDictionary<string, FreshArchiveSnapshot> archiveSnapshots)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return FreshArchiveSnapshot.Missing;
+        }
+
+        string? archiveRootPath = null;
+        var indexBuildAttempted = false;
+        try
+        {
+            archiveRootPath = ResolveFreshArchiveRootPath(rootPath);
+            if (archiveRootPath is null)
+            {
+                return FreshArchiveSnapshot.Missing;
+            }
+
+            if (archiveSnapshots.TryGetValue(archiveRootPath, out var existing))
+            {
+                return existing with { IndexBuildCount = 0 };
+            }
+
+            indexBuildAttempted = true;
+            var snapshot = new FreshArchiveSnapshot(
+                archiveRootPath,
+                SvTrinityArchive.BuildIndex(archiveRootPath, MaximumBoundedArchiveIndexBytes),
+                Failure: null,
+                IndexBuildCount: 1);
+            archiveSnapshots.Add(archiveRootPath, snapshot);
+            return snapshot;
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            var snapshot = new FreshArchiveSnapshot(
+                archiveRootPath ?? rootPath,
+                Index: null,
+                ExceptionDispatchInfo.Capture(exception),
+                IndexBuildCount: indexBuildAttempted ? 1 : 0);
+            if (archiveRootPath is not null)
+            {
+                archiveSnapshots[archiveRootPath] = snapshot;
+            }
+
+            return snapshot;
+        }
+    }
+
+    private static string? ResolveFreshArchiveRootPath(string rootPath)
+    {
+        var fullRootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+        if (HasTrinityArchiveAt(fullRootPath))
+        {
+            return fullRootPath;
+        }
+
+        var nestedRomFsPath = Path.Combine(fullRootPath, "romfs");
+        return HasTrinityArchiveAt(nestedRomFsPath)
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(nestedRomFsPath))
+            : null;
+    }
+
+    private static FreshArchiveSource[] OpenFreshArchiveSources(
+        FreshArchiveSnapshot snapshot,
+        string? supportFolderPath,
+        int readerCount)
+    {
+        if (snapshot.Failure is not null)
+        {
+            return Enumerable.Repeat(
+                    new FreshArchiveSource(Archive: null, snapshot.Failure),
+                    readerCount)
+                .ToArray();
+        }
+
+        if (snapshot.Index is null || string.IsNullOrWhiteSpace(snapshot.RootPath))
+        {
+            return Enumerable.Repeat(FreshArchiveSource.Missing, readerCount).ToArray();
+        }
+
+        var archives = new SvTrinityArchive?[readerCount];
+        try
+        {
+            for (var index = 0; index < archives.Length; index++)
+            {
+                archives[index] = SvTrinityArchive.Open(
+                    snapshot.RootPath,
+                    supportFolderPath,
+                    index: snapshot.Index,
+                    maximumIndexBytes: MaximumBoundedArchiveIndexBytes,
+                    maximumPackBytes: MaximumBoundedArchivePackBytes);
+            }
+
+            return archives
+                .Select(static archive => new FreshArchiveSource(
+                    archive ?? throw new InvalidOperationException("A retained Trinity reader was not opened."),
+                    Failure: null))
+                .ToArray();
+        }
+        catch (Exception exception) when (IsContextualFileFailure(exception))
+        {
+            foreach (var archive in archives)
+            {
+                archive?.Dispose();
+            }
+
+            var failure = ExceptionDispatchInfo.Capture(exception);
+            return Enumerable.Repeat(
+                    new FreshArchiveSource(Archive: null, failure),
+                    readerCount)
+                .ToArray();
+        }
+    }
+
     private static bool FileExistsWithContext(
         string path,
         string relativePath,
@@ -1925,6 +2169,79 @@ internal sealed class SvWorkflowFileSource
     {
         return FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfd"))
             && FileExistsForInspection(Path.Combine(romFsRoot, "arc", "data.trpfs"));
+    }
+
+    private sealed record FreshArchiveSnapshot(
+        string? RootPath,
+        SvTrinityArchiveIndex? Index,
+        ExceptionDispatchInfo? Failure,
+        int IndexBuildCount)
+    {
+        public static FreshArchiveSnapshot Missing { get; } = new(
+            RootPath: null,
+            Index: null,
+            Failure: null,
+            IndexBuildCount: 0);
+    }
+
+    internal sealed record FreshArchiveSource(
+        SvTrinityArchive? Archive,
+        ExceptionDispatchInfo? Failure)
+    {
+        public static FreshArchiveSource Missing { get; } = new(
+            Archive: null,
+            Failure: null);
+    }
+
+    internal sealed class FreshSemanticReaderPool : IDisposable
+    {
+        private readonly IReadOnlyList<FreshArchiveSource> baseSources;
+        private readonly IReadOnlyList<FreshArchiveSource> outputSources;
+        private bool disposed;
+
+        internal FreshSemanticReaderPool(
+            IReadOnlyList<SvWorkflowFileSource> readers,
+            IReadOnlyList<FreshArchiveSource> baseSources,
+            IReadOnlyList<FreshArchiveSource> outputSources,
+            int baseArchiveIndexBuildCount,
+            int outputArchiveIndexBuildCount)
+        {
+            Readers = readers;
+            this.baseSources = baseSources;
+            this.outputSources = outputSources;
+            BaseArchiveIndexBuildCount = baseArchiveIndexBuildCount;
+            OutputArchiveIndexBuildCount = outputArchiveIndexBuildCount;
+        }
+
+        internal IReadOnlyList<SvWorkflowFileSource> Readers { get; }
+
+        internal int BaseArchiveIndexBuildCount { get; }
+
+        internal int OutputArchiveIndexBuildCount { get; }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            ExceptionDispatchInfo? firstFailure = null;
+            foreach (var source in baseSources.Concat(outputSources))
+            {
+                try
+                {
+                    source.Archive?.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    firstFailure ??= ExceptionDispatchInfo.Capture(exception);
+                }
+            }
+
+            disposed = true;
+            firstFailure?.Throw();
+        }
     }
 
     internal sealed class DeferredOutputBatch : IDisposable

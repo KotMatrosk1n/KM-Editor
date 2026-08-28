@@ -277,8 +277,8 @@ import {
 } from './desktopServices';
 import {
   createCacheWarmupProgressSnapshot,
-  maxConsecutiveNoProgressWarmupAttempts,
-  updateWarmupNoProgressBudget
+  createProjectCacheScopeKey,
+  evaluateCacheWarmupProgressTransition
 } from './cacheWarmupPolicy';
 import {
   createReportableError,
@@ -2748,6 +2748,32 @@ export function App({
   const health = projectHealth;
   const selectedGame = draftPaths.selectedGame;
   const activeProjectId = openProject?.projectId ?? null;
+  const [svCacheStatus, setSvCacheStatus] = useState<TrinityCacheStatus | null>(null);
+  const [svCacheStatusScopeKey, setSvCacheStatusScopeKey] = useState<string | null>(null);
+  const [hasSvCacheRequestError, setHasSvCacheRequestError] = useState(false);
+  const [hasSvCacheWarmupError, setHasSvCacheWarmupError] = useState(false);
+  const [isSvCacheWarming, setIsSvCacheWarming] = useState(false);
+  const [isSvCacheRefreshing, setIsSvCacheRefreshing] = useState(false);
+  const [isSvCacheSettingsUpdating, setIsSvCacheSettingsUpdating] = useState(false);
+  const [svCacheRefreshTick, setSvCacheRefreshTick] = useState(0);
+  const [isSvCacheClearing, setIsSvCacheClearing] = useState(false);
+  const [isSvCacheClearConfirmOpen, setIsSvCacheClearConfirmOpen] = useState(false);
+  const svCacheScopeKey =
+    activeProjectId && isProjectCacheGame(selectedGame)
+      ? createProjectCacheScopeKey(activeProjectId, gameDumpPaths)
+      : null;
+  const svCacheScopeKeyRef = useRef(svCacheScopeKey);
+  svCacheScopeKeyRef.current = svCacheScopeKey;
+  const svCacheOperationGenerationRef = useRef(0);
+  const svCacheRefreshOperationRef = useRef(0);
+  const svCacheSettingsOperationRef = useRef<object | null>(null);
+  const isCurrentSvCacheScope =
+    svCacheScopeKey !== null && svCacheStatusScopeKey === svCacheScopeKey;
+  const currentSvCacheStatus = isCurrentSvCacheScope ? svCacheStatus : null;
+  const currentSvCacheRequestError =
+    isCurrentSvCacheScope && hasSvCacheRequestError;
+  const currentSvCacheWarmupError =
+    isCurrentSvCacheScope && hasSvCacheWarmupError;
   const projectSourceRevision = useProjectSourceRevision({
     bridge,
     game: selectedGame,
@@ -3230,12 +3256,6 @@ export function App({
   const [dynamaxAdventureApplyResult, setDynamaxAdventureApplyResult] =
     useState<ApplyResult | null>(null);
   const [workProgress, setWorkProgress] = useState<WorkProgressState | null>(null);
-  const [svCacheStatus, setSvCacheStatus] = useState<TrinityCacheStatus | null>(null);
-  const [isSvCacheWarming, setIsSvCacheWarming] = useState(false);
-  const [isSvCacheRefreshing, setIsSvCacheRefreshing] = useState(false);
-  const [svCacheRefreshTick, setSvCacheRefreshTick] = useState(0);
-  const [isSvCacheClearing, setIsSvCacheClearing] = useState(false);
-  const [isSvCacheClearConfirmOpen, setIsSvCacheClearConfirmOpen] = useState(false);
   const [trinityOutputConfirmation, setTrinityOutputConfirmation] =
     useState<TrinityOutputConfirmationState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
@@ -3360,6 +3380,7 @@ export function App({
     isGameplaySettingsApplying ||
     isDynamaxAdventureSaveSeedWriting ||
     isNativeUpdateApplying ||
+    isSvCacheSettingsUpdating ||
     isSvCacheClearing;
   const hasCriticalWriteOperation =
     hasExternalCriticalWriteOperation || isOutputSafetyMutationBusy;
@@ -3736,6 +3757,10 @@ export function App({
   );
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
+  const svCacheAutomaticStartupRef = useRef<{
+    key: string;
+    request: Promise<void>;
+  } | null>(null);
   const swShPlacementCatalogRevisionRef = useRef<string | null>(null);
   const swShPlacementQueryRunRef = useRef(0);
   const swShPlacementDetailRunRef = useRef(0);
@@ -3755,6 +3780,9 @@ export function App({
   const editSessionMutationTokenRef = useRef(0);
   const pendingEditSessionMutationTokensRef = useRef(new Set<number>());
   const projectValidationRunRef = useRef(0);
+  const projectPathDraftChangeRunRef = useRef(0);
+  const projectBridgeScopeRecycleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectBridgeScopeRecycleInFlightRef = useRef<Promise<boolean> | null>(null);
   const supportSearchRunRef = useRef(0);
   const updateCheckRunRef = useRef(0);
   const modMergerReviewRevisionRef = useRef(0);
@@ -4685,10 +4713,19 @@ export function App({
 
   const resetLoadedProjectState = useCallback(() => {
     projectScopeGenerationRef.current += 1;
+    projectPathDraftChangeRunRef.current += 1;
     semanticExploreController.invalidate();
     svCacheWarmupRunRef.current += 1;
+    svCacheOperationGenerationRef.current += 1;
+    svCacheRefreshOperationRef.current += 1;
+    svCacheSettingsOperationRef.current = null;
+    svCacheAutomaticStartupRef.current = null;
     setIsSvCacheWarming(false);
+    setIsSvCacheSettingsUpdating(false);
     setSvCacheStatus(null);
+    setSvCacheStatusScopeKey(null);
+    setHasSvCacheRequestError(false);
+    setHasSvCacheWarmupError(false);
     setTextCategoryId(null);
     setTextResultOffset(0);
     setTextLanguage(null);
@@ -4704,6 +4741,64 @@ export function App({
     resetProjectSession,
     semanticExploreController.invalidate
   ]);
+
+  const recycleProjectBridgeBeforeScopeChange = useCallback(async () => {
+    if (projectBridgeScopeRecycleTimerRef.current !== null) {
+      clearTimeout(projectBridgeScopeRecycleTimerRef.current);
+      projectBridgeScopeRecycleTimerRef.current = null;
+    }
+    if (!desktopServices.isAvailable) {
+      return true;
+    }
+    if (projectBridgeScopeRecycleInFlightRef.current !== null) {
+      return projectBridgeScopeRecycleInFlightRef.current;
+    }
+
+    const request = desktopServices.recycleProjectBridge()
+      .then(() => true)
+      .catch((error) => {
+        setBridgeDiagnostics(
+          toDesktopDiagnostics(
+            error,
+            'Could not stop work from the previous project before changing project scope.',
+            desktopErrorCodes.bridgeRecycleFailed
+          )
+        );
+        return false;
+      });
+    projectBridgeScopeRecycleInFlightRef.current = request;
+    try {
+      return await request;
+    } finally {
+      if (projectBridgeScopeRecycleInFlightRef.current === request) {
+        projectBridgeScopeRecycleInFlightRef.current = null;
+      }
+    }
+  }, [
+    desktopServices.isAvailable,
+    desktopServices.recycleProjectBridge,
+    setBridgeDiagnostics
+  ]);
+
+  const scheduleProjectBridgeRecycleAfterDraftChange = useCallback(() => {
+    if (!desktopServices.isAvailable) {
+      return;
+    }
+    if (projectBridgeScopeRecycleTimerRef.current !== null) {
+      clearTimeout(projectBridgeScopeRecycleTimerRef.current);
+    }
+    projectBridgeScopeRecycleTimerRef.current = setTimeout(() => {
+      projectBridgeScopeRecycleTimerRef.current = null;
+      void recycleProjectBridgeBeforeScopeChange();
+    }, 150);
+  }, [desktopServices.isAvailable, recycleProjectBridgeBeforeScopeChange]);
+
+  useEffect(() => () => {
+    if (projectBridgeScopeRecycleTimerRef.current !== null) {
+      clearTimeout(projectBridgeScopeRecycleTimerRef.current);
+      projectBridgeScopeRecycleTimerRef.current = null;
+    }
+  }, []);
 
   const prepareProjectPathChange = useCallback(async () => {
     if (!(await flushOrdinaryEditorDrafts())) {
@@ -4745,8 +4840,13 @@ export function App({
       if (draftPathsRef.current[field] === value) {
         return;
       }
+      const changeRun = projectPathDraftChangeRunRef.current + 1;
+      projectPathDraftChangeRunRef.current = changeRun;
 
       if (!(await prepareProjectPathChange())) {
+        return;
+      }
+      if (projectPathDraftChangeRunRef.current !== changeRun) {
         return;
       }
 
@@ -4761,6 +4861,7 @@ export function App({
       resetLoadedProjectState();
       setBridgeDiagnostics([]);
       setDraftPath(field, value);
+      scheduleProjectBridgeRecycleAfterDraftChange();
     },
     [
       desktopServices.cancelSupportFileSearch,
@@ -4768,6 +4869,7 @@ export function App({
       isSupportSearchRunning,
       prepareProjectPathChange,
       resetLoadedProjectState,
+      scheduleProjectBridgeRecycleAfterDraftChange,
       setBridgeDiagnostics,
       setDraftPath
     ]
@@ -7487,7 +7589,12 @@ export function App({
   ]);
 
   const startSvCacheWarmup = useCallback(
-    async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
+    async (
+      paths: ReturnType<typeof toProjectPaths>,
+      health: ProjectHealth,
+      scopeKey: string,
+      knownStatus?: TrinityCacheStatus
+    ) => {
       if (
         !isProjectCacheGame(paths.selectedGame) ||
         !hasValidProjectCacheSource(paths.selectedGame, health)
@@ -7497,45 +7604,54 @@ export function App({
 
       const runId = svCacheWarmupRunRef.current + 1;
       svCacheWarmupRunRef.current = runId;
+      const isCurrentRun = () =>
+        svCacheWarmupRunRef.current === runId &&
+        svCacheScopeKeyRef.current === scopeKey;
+
+      let initialStatus: TrinityCacheStatus;
+      try {
+        initialStatus =
+          knownStatus ??
+          (await getProjectCacheStatusForGame(bridge, paths.selectedGame, paths)).status;
+        if (!isCurrentRun()) {
+          return;
+        }
+
+        setSvCacheStatusScopeKey(scopeKey);
+        setSvCacheStatus(initialStatus);
+        setHasSvCacheRequestError(false);
+        setHasSvCacheWarmupError(false);
+      } catch (error) {
+        if (isCurrentRun() && !isStaleProjectScopeError(error)) {
+          setSvCacheStatusScopeKey(scopeKey);
+          setHasSvCacheRequestError(true);
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+        return;
+      }
+
+      if (
+        initialStatus.settings.mode === 'minimal' ||
+        initialStatus.warmupTotal === 0 ||
+        initialStatus.warmupCompleted >= initialStatus.warmupTotal
+      ) {
+        return;
+      }
 
       try {
-        const initialStatus = await getProjectCacheStatusForGame(
-          bridge,
-          paths.selectedGame,
-          paths
-        );
-        if (svCacheWarmupRunRef.current !== runId) {
-          return;
-        }
-
-        setSvCacheStatus(initialStatus.status);
-        if (
-          initialStatus.status.settings.mode === 'minimal' ||
-          initialStatus.status.warmupTotal === 0 ||
-          initialStatus.status.warmupCompleted >= initialStatus.status.warmupTotal
-        ) {
-          return;
-        }
-
         setIsSvCacheWarming(true);
-        // Give the foreground navigation/load path first access to the bridge after validation.
-        // The first persistent-cache step may need to hydrate a large archive index.
-        await delay(500);
-        if (svCacheWarmupRunRef.current !== runId) {
+        if (!isCurrentRun()) {
           return;
         }
 
-        let latestStatus = initialStatus.status;
+        let latestStatus = initialStatus;
+        const expectedWarmupTotal = initialStatus.warmupTotal;
         let nextStepIndex = Math.max(
           0,
           Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
         );
-        let remainingNoProgressAttempts = maxConsecutiveNoProgressWarmupAttempts;
-        while (
-          latestStatus.warmupCompleted < latestStatus.warmupTotal &&
-          remainingNoProgressAttempts > 0
-        ) {
-          if (svCacheWarmupRunRef.current !== runId) {
+        while (latestStatus.warmupCompleted < latestStatus.warmupTotal) {
+          if (!isCurrentRun()) {
             return;
           }
 
@@ -7545,50 +7661,62 @@ export function App({
           }
 
           const previousCompleted = latestStatus.warmupCompleted;
-          const previousTotal = latestStatus.warmupTotal;
           const response = await warmupProjectCacheStepForGame(
             bridge,
             paths.selectedGame,
             paths,
             nextStepIndex
           );
-          if (svCacheWarmupRunRef.current !== runId) {
+          if (!isCurrentRun()) {
             return;
           }
 
-          latestStatus = response.status;
-          setSvCacheStatus(latestStatus);
-          const madeProgress =
-            latestStatus.warmupCompleted > previousCompleted ||
-            latestStatus.warmupTotal !== previousTotal;
-          remainingNoProgressAttempts = updateWarmupNoProgressBudget(
-            remainingNoProgressAttempts,
+          const nextStatus = response.status;
+          const progressTransition = evaluateCacheWarmupProgressTransition(
             previousCompleted,
-            previousTotal,
-            latestStatus.warmupCompleted,
-            latestStatus.warmupTotal
+            expectedWarmupTotal,
+            nextStatus.warmupCompleted,
+            nextStatus.warmupTotal
           );
-          if (!madeProgress) {
-            nextStepIndex = (nextStepIndex + 1) % Math.max(1, latestStatus.warmupTotal);
-          } else {
-            nextStepIndex = Math.max(
-              0,
-              Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
-            );
+          if (progressTransition.kind !== 'advanced') {
+            const failureDetail = progressTransition.kind === 'stalled'
+              ? `did not advance beyond ${previousCompleted} of ${expectedWarmupTotal}`
+              : progressTransition.reason === 'total-changed'
+                ? `changed its work total from ${expectedWarmupTotal} to ${nextStatus.warmupTotal}`
+                : progressTransition.reason === 'completed-regressed'
+                  ? `moved backward from ${previousCompleted} to ${nextStatus.warmupCompleted} completed items`
+                  : 'reported invalid progress counts';
+            setHasSvCacheWarmupError(true);
+            setBridgeDiagnostics([
+              {
+                domain: 'cache',
+                message: `The ${getTrinityCacheTitle(paths.selectedGame)} build ${failureDetail}. KM Editor kept the last verified progress instead of accepting an inconsistent result. Retry the cache build.`,
+                severity: 'error'
+              }
+            ]);
+            break;
           }
-          // Leave a real admission window between native warmup batches so foreground editor
-          // loads, saves, and output requests are never trapped behind a continuous warmup loop.
-          await delay(25);
+
+          latestStatus = nextStatus;
+          setSvCacheStatusScopeKey(scopeKey);
+          setSvCacheStatus(latestStatus);
+          setHasSvCacheRequestError(false);
+          nextStepIndex = Math.max(
+            0,
+            Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
+          );
+          // Yield one task between native batches so foreground requests can enter the ordered
+          // bridge without imposing fixed latency on every successful cache batch.
+          await delay(0);
         }
       } catch (error) {
-        if (
-          svCacheWarmupRunRef.current === runId &&
-          !isStaleProjectScopeError(error)
-        ) {
+        if (isCurrentRun() && !isStaleProjectScopeError(error)) {
+          setSvCacheStatusScopeKey(scopeKey);
+          setHasSvCacheWarmupError(true);
           setBridgeDiagnostics(toBridgeDiagnostics(error));
         }
       } finally {
-        if (svCacheWarmupRunRef.current === runId) {
+        if (isCurrentRun()) {
           setIsSvCacheWarming(false);
         }
       }
@@ -7597,55 +7725,110 @@ export function App({
   );
 
   useEffect(() => {
-    svCacheWarmupRunRef.current += 1;
-    setIsSvCacheWarming(false);
-
-    if (!isProjectCacheGame(selectedGame)) {
+    if (!isProjectCacheGame(selectedGame) || svCacheScopeKey === null) {
+      svCacheWarmupRunRef.current += 1;
+      svCacheOperationGenerationRef.current += 1;
+      svCacheRefreshOperationRef.current += 1;
+      svCacheSettingsOperationRef.current = null;
+      svCacheAutomaticStartupRef.current = null;
       setIsSvCacheWarming(false);
       setIsSvCacheRefreshing(false);
+      setIsSvCacheSettingsUpdating(false);
       setIsSvCacheClearing(false);
       setIsSvCacheClearConfirmOpen(false);
       setSvCacheStatus(null);
+      setSvCacheStatusScopeKey(null);
+      setHasSvCacheRequestError(false);
+      setHasSvCacheWarmupError(false);
       return;
     }
 
-    if (health && hasValidProjectCacheSource(selectedGame, health)) {
-      void startSvCacheWarmup(createProjectPaths(draftPathsRef.current), health);
+    const paths = createProjectPaths(draftPathsRef.current);
+    const hasValidSource = Boolean(health && hasValidProjectCacheSource(selectedGame, health));
+    const startupKey = JSON.stringify([svCacheScopeKey, hasValidSource, paths]);
+    if (svCacheAutomaticStartupRef.current?.key === startupKey) {
       return;
     }
 
-    let isDisposed = false;
+    svCacheWarmupRunRef.current += 1;
+    svCacheOperationGenerationRef.current += 1;
+    svCacheRefreshOperationRef.current += 1;
+    svCacheSettingsOperationRef.current = null;
+    setIsSvCacheWarming(false);
+    setIsSvCacheRefreshing(false);
+    setIsSvCacheSettingsUpdating(false);
+    setIsSvCacheClearing(false);
+    setSvCacheStatus(null);
+    setSvCacheStatusScopeKey(svCacheScopeKey);
+    setHasSvCacheRequestError(false);
+    setHasSvCacheWarmupError(false);
 
-    void getProjectCacheStatusForGame(bridge, selectedGame, null)
+    // Project health settles asynchronously. Do not occupy the ordered bridge with a
+    // pathless status request that will immediately be superseded by the real project.
+    if (!health) {
+      return;
+    }
+
+    if (hasValidSource) {
+      const request = startSvCacheWarmup(paths, health, svCacheScopeKey);
+      svCacheAutomaticStartupRef.current = { key: startupKey, request };
+      void request;
+      return;
+    }
+
+    const request = getProjectCacheStatusForGame(bridge, selectedGame, null)
       .then((response) => {
-        if (!isDisposed) {
+        if (
+          svCacheAutomaticStartupRef.current?.key === startupKey &&
+          svCacheScopeKeyRef.current === svCacheScopeKey
+        ) {
+          setSvCacheStatusScopeKey(svCacheScopeKey);
           setSvCacheStatus(response.status);
+          setHasSvCacheRequestError(false);
         }
       })
       .catch((error) => {
-        if (!isDisposed && !isStaleProjectScopeError(error)) {
+        if (
+          svCacheAutomaticStartupRef.current?.key === startupKey &&
+          svCacheScopeKeyRef.current === svCacheScopeKey &&
+          !isStaleProjectScopeError(error)
+        ) {
+          setSvCacheStatusScopeKey(svCacheScopeKey);
+          setHasSvCacheRequestError(true);
           setBridgeDiagnostics(toBridgeDiagnostics(error));
         }
       });
-
-    return () => {
-      isDisposed = true;
-    };
-  }, [bridge, health, selectedGame, startSvCacheWarmup]);
+    svCacheAutomaticStartupRef.current = { key: startupKey, request };
+    void request;
+  }, [bridge, createProjectPaths, health, selectedGame, startSvCacheWarmup, svCacheScopeKey]);
 
   const handleChangeSvCacheMode = useCallback(
     async (mode: TrinityCacheMode) => {
-      if (!isProjectCacheGame(selectedGame)) {
+      if (
+        !isProjectCacheGame(selectedGame) ||
+        svCacheSettingsOperationRef.current !== null
+      ) {
         return;
       }
 
+      const settingsOperation = {};
+      svCacheSettingsOperationRef.current = settingsOperation;
+      criticalWriteOperationRef.current = true;
+      setIsSvCacheSettingsUpdating(true);
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
+      const operationScopeKey = svCacheScopeKey;
+      const operationGeneration = svCacheOperationGenerationRef.current + 1;
+      svCacheOperationGenerationRef.current = operationGeneration;
+      const isCurrentOperation = () =>
+        svCacheOperationGenerationRef.current === operationGeneration &&
+        svCacheScopeKeyRef.current === operationScopeKey;
 
       const paths = isProjectCacheGame(selectedGame)
         ? createProjectPaths(draftPathsRef.current)
         : null;
-      const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
+      const maxCacheSizeBytes =
+        currentSvCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
       let diagnosticFallback: UiDiagnosticFallback = {
         domain: 'bridge',
         message: 'Could not update cache settings.'
@@ -7659,7 +7842,13 @@ export function App({
           maxCacheSizeBytes,
           paths
         );
+        if (!isCurrentOperation()) {
+          return;
+        }
+        setSvCacheStatusScopeKey(svCacheScopeKey);
         setSvCacheStatus(response.status);
+        setHasSvCacheRequestError(false);
+        setHasSvCacheWarmupError(false);
         evictUnprotectedWorkflowPayloads();
         diagnosticFallback = {
           code: desktopErrorCodes.bridgeRecycleFailed,
@@ -7667,11 +7856,23 @@ export function App({
           message: 'Could not restart the project bridge after updating cache settings.'
         };
         await desktopServices.recycleProjectBridge();
-        if (paths && health) {
-          void startSvCacheWarmup(paths, health);
+        if (!isCurrentOperation()) {
+          return;
+        }
+        semanticExploreController.invalidate();
+        projectSourceRevision.refresh();
+        if (paths && health && svCacheScopeKey) {
+          void startSvCacheWarmup(paths, health, svCacheScopeKey);
         }
       } catch (error) {
-        setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
+        if (isCurrentOperation() && !isStaleProjectScopeError(error)) {
+          setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
+        }
+      } finally {
+        if (svCacheSettingsOperationRef.current === settingsOperation) {
+          svCacheSettingsOperationRef.current = null;
+          setIsSvCacheSettingsUpdating(false);
+        }
       }
     },
     [
@@ -7679,24 +7880,40 @@ export function App({
       desktopServices.recycleProjectBridge,
       evictUnprotectedWorkflowPayloads,
       health,
+      currentSvCacheStatus?.settings.maxCacheSizeBytes,
+      projectSourceRevision.refresh,
       selectedGame,
+      semanticExploreController.invalidate,
       startSvCacheWarmup,
-      svCacheStatus?.settings.maxCacheSizeBytes
+      svCacheScopeKey
     ]
   );
 
   const handleChangeSvCacheLimit = useCallback(
     async (maxCacheSizeBytes: number) => {
-      if (!isProjectCacheGame(selectedGame)) {
+      if (
+        !isProjectCacheGame(selectedGame) ||
+        svCacheSettingsOperationRef.current !== null
+      ) {
         return;
       }
 
+      const settingsOperation = {};
+      svCacheSettingsOperationRef.current = settingsOperation;
+      criticalWriteOperationRef.current = true;
+      setIsSvCacheSettingsUpdating(true);
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
+      const operationScopeKey = svCacheScopeKey;
+      const operationGeneration = svCacheOperationGenerationRef.current + 1;
+      svCacheOperationGenerationRef.current = operationGeneration;
+      const isCurrentOperation = () =>
+        svCacheOperationGenerationRef.current === operationGeneration &&
+        svCacheScopeKeyRef.current === operationScopeKey;
       const paths = isProjectCacheGame(selectedGame)
         ? createProjectPaths(draftPathsRef.current)
         : null;
-      const mode = svCacheStatus?.settings.mode ?? 'balanced';
+      const mode = currentSvCacheStatus?.settings.mode ?? 'balanced';
 
       try {
         const response = await updateProjectCacheSettingsForGame(
@@ -7706,42 +7923,108 @@ export function App({
           maxCacheSizeBytes,
           paths
         );
+        if (!isCurrentOperation()) {
+          return;
+        }
+        setSvCacheStatusScopeKey(svCacheScopeKey);
         setSvCacheStatus(response.status);
-        if (paths && health) {
-          void startSvCacheWarmup(paths, health);
+        setHasSvCacheRequestError(false);
+        setHasSvCacheWarmupError(false);
+        if (paths && health && svCacheScopeKey) {
+          void startSvCacheWarmup(paths, health, svCacheScopeKey);
         }
       } catch (error) {
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
+        if (isCurrentOperation() && !isStaleProjectScopeError(error)) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      } finally {
+        if (svCacheSettingsOperationRef.current === settingsOperation) {
+          svCacheSettingsOperationRef.current = null;
+          setIsSvCacheSettingsUpdating(false);
+        }
       }
     },
-    [bridge, health, selectedGame, startSvCacheWarmup, svCacheStatus?.settings.mode]
+    [
+      bridge,
+      currentSvCacheStatus?.settings.mode,
+      health,
+      selectedGame,
+      startSvCacheWarmup,
+      svCacheScopeKey
+    ]
   );
 
   const handleRefreshSvCacheStatus = useCallback(async () => {
-    if (!isProjectCacheGame(selectedGame)) {
+    if (
+      !isProjectCacheGame(selectedGame) ||
+      svCacheSettingsOperationRef.current !== null
+    ) {
       return;
     }
 
     const paths = createProjectPaths(draftPathsRef.current);
+    const operationScopeKey = svCacheScopeKey;
+    const operationGeneration = svCacheOperationGenerationRef.current + 1;
+    svCacheOperationGenerationRef.current = operationGeneration;
+    const refreshOperation = svCacheRefreshOperationRef.current + 1;
+    svCacheRefreshOperationRef.current = refreshOperation;
+    const isCurrentOperation = () =>
+      svCacheOperationGenerationRef.current === operationGeneration &&
+      svCacheScopeKeyRef.current === operationScopeKey;
     setIsSvCacheRefreshing(true);
+    setSvCacheStatusScopeKey(svCacheScopeKey);
+    setHasSvCacheRequestError(false);
     try {
       const response = await getProjectCacheStatusForGame(bridge, selectedGame, paths);
+      if (!isCurrentOperation()) {
+        return;
+      }
+      setSvCacheStatusScopeKey(svCacheScopeKey);
       setSvCacheStatus(response.status);
+      setHasSvCacheRequestError(false);
+      setHasSvCacheWarmupError(false);
       setSvCacheRefreshTick((currentTick) => currentTick + 1);
+      if (
+        health &&
+        svCacheScopeKey &&
+        !isSvCacheWarming &&
+        hasValidProjectCacheSource(selectedGame, health) &&
+        response.status.settings.mode !== 'minimal' &&
+        response.status.warmupCompleted < response.status.warmupTotal
+      ) {
+        void startSvCacheWarmup(paths, health, svCacheScopeKey, response.status);
+      }
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (isCurrentOperation() && !isStaleProjectScopeError(error)) {
+        setSvCacheStatusScopeKey(svCacheScopeKey);
+        setHasSvCacheRequestError(true);
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsSvCacheRefreshing(false);
+      if (svCacheRefreshOperationRef.current === refreshOperation) {
+        setIsSvCacheRefreshing(false);
+      }
     }
-  }, [bridge, selectedGame]);
+  }, [bridge, health, isSvCacheWarming, selectedGame, startSvCacheWarmup, svCacheScopeKey]);
 
   const handleConfirmClearSvCache = useCallback(async () => {
-    if (!isProjectCacheGame(selectedGame)) {
+    if (
+      !isProjectCacheGame(selectedGame) ||
+      svCacheSettingsOperationRef.current !== null
+    ) {
       return;
     }
 
     setIsSvCacheClearConfirmOpen(false);
     svCacheWarmupRunRef.current += 1;
+    svCacheRefreshOperationRef.current += 1;
+    setIsSvCacheRefreshing(false);
+    const operationScopeKey = svCacheScopeKey;
+    const operationGeneration = svCacheOperationGenerationRef.current + 1;
+    svCacheOperationGenerationRef.current = operationGeneration;
+    const isCurrentOperation = () =>
+      svCacheOperationGenerationRef.current === operationGeneration &&
+      svCacheScopeKeyRef.current === operationScopeKey;
     setIsSvCacheWarming(false);
     setIsSvCacheClearing(true);
     let diagnosticFallback: UiDiagnosticFallback = {
@@ -7754,7 +8037,13 @@ export function App({
         ? createProjectPaths(draftPathsRef.current)
         : null;
       const response = await clearProjectCacheForGame(bridge, selectedGame, activePaths);
+      if (!isCurrentOperation()) {
+        return;
+      }
+      setSvCacheStatusScopeKey(svCacheScopeKey);
       setSvCacheStatus(response.status);
+      setHasSvCacheRequestError(false);
+      setHasSvCacheWarmupError(false);
       evictUnprotectedWorkflowPayloads();
       diagnosticFallback = {
         code: desktopErrorCodes.bridgeRecycleFailed,
@@ -7762,12 +8051,29 @@ export function App({
         message: 'Could not restart the project bridge after clearing the cache.'
       };
       await desktopServices.recycleProjectBridge();
+      if (!isCurrentOperation()) {
+        return;
+      }
+      semanticExploreController.invalidate();
+      projectSourceRevision.refresh();
     } catch (error) {
-      setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
+      if (isCurrentOperation() && !isStaleProjectScopeError(error)) {
+        setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
+      }
     } finally {
-      setIsSvCacheClearing(false);
+      if (isCurrentOperation()) {
+        setIsSvCacheClearing(false);
+      }
     }
-  }, [bridge, desktopServices, evictUnprotectedWorkflowPayloads, selectedGame]);
+  }, [
+    bridge,
+    desktopServices,
+    evictUnprotectedWorkflowPayloads,
+    projectSourceRevision.refresh,
+    selectedGame,
+    semanticExploreController.invalidate,
+    svCacheScopeKey
+  ]);
 
   const rememberPrivateProject = useCallback(
     async (
@@ -7830,6 +8136,7 @@ export function App({
     response: ApplyProjectRelocationResponse,
     candidatePaths: OutputSafetyScope['paths']
   ) => {
+    const didRecycleBridge = await recycleProjectBridgeBeforeScopeChange();
     const nextSelectedGame = candidatePaths.selectedGame ?? selectedGame;
     const nextDraftPaths: ProjectPathDraft = {
       baseExeFsPath: candidatePaths.baseExeFsPath ?? '',
@@ -7865,7 +8172,9 @@ export function App({
       projectId: response.projectId
     });
     void rememberPrivateProject(activatedPaths, response.projectId);
-    setBridgeDiagnostics(response.diagnostics);
+    if (didRecycleBridge) {
+      setBridgeDiagnostics(response.diagnostics);
+    }
 
     const activationGeneration = projectScopeGenerationRef.current;
     try {
@@ -7883,14 +8192,13 @@ export function App({
       }
       return;
     }
-
-    if (projectScopeGenerationRef.current === activationGeneration) {
-      void startSvCacheWarmup(activatedPaths, response.health);
-    }
   };
 
   const handleValidateProject = async () => {
     if (!(await flushOrdinaryEditorDrafts())) {
+      return;
+    }
+    if (!(await recycleProjectBridgeBeforeScopeChange())) {
       return;
     }
     const runId = projectValidationRunRef.current + 1;
@@ -7920,16 +8228,13 @@ export function App({
         ]);
         return;
       }
-      const activatedProject = await activateValidatedProject(
+      await activateValidatedProject(
         paths,
         response,
         () => projectValidationRunRef.current === runId
       );
       if (projectValidationRunRef.current !== runId) {
         return;
-      }
-      if (activatedProject) {
-        void startSvCacheWarmup(paths, activatedProject.health);
       }
     } catch (error) {
       if (projectValidationRunRef.current !== runId) {
@@ -7966,6 +8271,9 @@ export function App({
       (candidate) => candidate.projectId === projectId
     );
     if (!profile) return;
+    if (!(await recycleProjectBridgeBeforeScopeChange())) {
+      return;
+    }
 
     const runId = ++projectValidationRunRef.current;
     projectScopeGenerationRef.current += 1;
@@ -7991,7 +8299,6 @@ export function App({
           next.delete(projectId);
           return next;
         });
-        void startSvCacheWarmup(profilePaths, activated.health);
       } else if (projectValidationRunRef.current === runId) {
         setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
       }
@@ -8191,6 +8498,9 @@ export function App({
     if (!(await prepareProjectPathChange())) {
       return;
     }
+    if (!(await recycleProjectBridgeBeforeScopeChange())) {
+      return;
+    }
 
     const runId = projectValidationRunRef.current + 1;
     projectValidationRunRef.current = runId;
@@ -8212,10 +8522,10 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      resetLoadedProjectState();
-      setProjectHealth(validationResponse.health);
 
       if (!validationResponse.health.canOpenReadOnlyWorkflows) {
+        resetLoadedProjectState();
+        setProjectHealth(validationResponse.health);
         setBridgeDiagnostics([
           {
             domain: 'project',
@@ -8235,6 +8545,9 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
+      if (!(await recycleProjectBridgeBeforeScopeChange())) {
+        return;
+      }
       resetLoadedProjectState();
       setDraftPath('outputRootPath', outputRootPath);
       setProjectStatus('validating');
@@ -8251,16 +8564,13 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      const activatedProject = await activateValidatedProject(
+      await activateValidatedProject(
         nextPaths,
         nextResponse,
         () => projectValidationRunRef.current === runId
       );
       if (projectValidationRunRef.current !== runId) {
         return;
-      }
-      if (activatedProject) {
-        void startSvCacheWarmup(nextPaths, activatedProject.health);
       }
     } catch (error) {
       if (projectValidationRunRef.current !== runId) {
@@ -8358,6 +8668,9 @@ export function App({
       if (!(await prepareProjectPathChange())) {
         return;
       }
+      if (!(await recycleProjectBridgeBeforeScopeChange())) {
+        return;
+      }
 
       const supportFolderField: ProjectPathFieldName = isPokemonLegendsZAGame(selectedGame)
         ? 'pokemonLegendsZASupportFolderPath'
@@ -8385,7 +8698,7 @@ export function App({
       ) {
         return;
       }
-      const activatedProject = await activateValidatedProject(
+      await activateValidatedProject(
         paths,
         response,
         () =>
@@ -8397,9 +8710,6 @@ export function App({
         projectValidationRunRef.current !== projectRunId
       ) {
         return;
-      }
-      if (activatedProject) {
-        void startSvCacheWarmup(paths, activatedProject.health);
       }
       setBridgeDiagnostics([
         {
@@ -18017,6 +18327,9 @@ export function App({
       if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
         return;
       }
+      if (!(await recycleProjectBridgeBeforeScopeChange())) {
+        return;
+      }
 
       projectValidationRunRef.current += 1;
       cancelSupportFileSearch();
@@ -18044,6 +18357,7 @@ export function App({
       hasLatestOrdinaryDraftProtection,
       isEditSessionOperationBusy,
       isPersonalWorkspaceMutationBusy,
+      recycleProjectBridgeBeforeScopeChange,
       resetLoadedProjectState,
       selectedGame,
       setProjectPathDraft,
@@ -18200,6 +18514,9 @@ export function App({
               bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
               isOutputRootCreating={isOutputRootCreating}
+              hasSvCacheRequestError={currentSvCacheRequestError}
+              hasSvCacheWarmupError={currentSvCacheWarmupError}
+              isSvCacheRefreshing={isSvCacheRefreshing}
               isSvCacheWarming={isSvCacheWarming}
               isSupportSearchRunning={isSupportSearchRunning}
               onChangeGame={handleChangeGame}
@@ -18225,12 +18542,13 @@ export function App({
                 />
               }
               onRequestSupportSearch={handleRequestSupportSearch}
+              onRetrySvCacheStatus={() => void handleRefreshSvCacheStatus()}
               onSetDraftPath={handleSetDraftPath}
               onValidateProject={handleValidateProject}
               pendingEditCount={unassignedPendingEditCount}
               projectStatus={projectStatus}
               selectedGame={selectedGame}
-              svCacheStatus={svCacheStatus}
+              svCacheStatus={currentSvCacheStatus}
             />
           ) : null}
           <div className="km-retained-workbench" hidden={activeSection !== 'workbench'}>
@@ -18250,16 +18568,21 @@ export function App({
                         ? t('settings.cache.swsh.title')
                         : getTrinityCacheTitle(selectedGame)
                     }
+                    isRetrying={isSvCacheRefreshing}
                     isWarming={isSvCacheWarming}
+                    hasWarmupError={currentSvCacheWarmupError}
+                    onRetry={() => void handleRefreshSvCacheStatus()}
                     selectedGame={selectedGame}
                     sourceState={
-                      !health
-                        ? 'checking'
-                        : hasValidProjectCacheSource(selectedGame, health)
-                          ? 'ready'
-                          : 'setupRequired'
+                      currentSvCacheRequestError
+                        ? 'error'
+                        : !health
+                          ? 'checking'
+                          : hasValidProjectCacheSource(selectedGame, health)
+                            ? 'ready'
+                            : 'setupRequired'
                     }
-                    status={svCacheStatus}
+                    status={currentSvCacheStatus}
                   />
                 ) : null
               }
@@ -19950,8 +20273,10 @@ export function App({
                 />
               }
               editorLayout={editorLayout}
+              hasSvCacheRequestError={currentSvCacheRequestError}
               isSvCacheClearing={isSvCacheClearing}
               isSvCacheRefreshing={isSvCacheRefreshing}
+              isSvCacheSettingsUpdating={isSvCacheSettingsUpdating}
               isSvCacheWarming={isSvCacheWarming}
               onChangeEditorLayout={handleChangeEditorLayout}
               onChangeLanguage={handleInterfaceLanguageChange}
@@ -19965,7 +20290,7 @@ export function App({
               selectedGame={selectedGame}
               status={updateCheckStatus}
               svCacheRefreshTick={svCacheRefreshTick}
-              svCacheStatus={svCacheStatus}
+              svCacheStatus={currentSvCacheStatus}
             />
           ) : null}
           {activeSection !== 'health' && bridgeDiagnostics.length > 0 ? (
@@ -20009,7 +20334,7 @@ export function App({
         <SvCacheClearConfirmationModal
           cacheSizeLabel={
             formatCacheSizeLabel(
-              svCacheStatus?.cacheSizeBytes,
+              currentSvCacheStatus?.cacheSizeBytes,
               formatLocale,
               t('settings.cache.size.none'),
               translateLiteral('Unavailable')
@@ -20458,10 +20783,13 @@ function HealthSection({
   analysisPreparation,
   bridgeDiagnostics,
   draftPaths,
+  hasSvCacheRequestError,
+  hasSvCacheWarmupError,
   health,
   isBusy,
   isDesktopAvailable,
   isOutputRootCreating,
+  isSvCacheRefreshing,
   isSvCacheWarming,
   isSupportSearchRunning,
   onChangeGame,
@@ -20469,6 +20797,7 @@ function HealthSection({
   onOpenOutputRoot,
   onPickProjectPath,
   onRequestSupportSearch,
+  onRetrySvCacheStatus,
   onSetDraftPath,
   onValidateProject,
   pendingEditCount,
@@ -20480,10 +20809,13 @@ function HealthSection({
   analysisPreparation: ReactNode;
   bridgeDiagnostics: ApiDiagnostic[];
   draftPaths: ProjectPathDraft;
+  hasSvCacheRequestError: boolean;
+  hasSvCacheWarmupError: boolean;
   health: ProjectHealth | null;
   isBusy: boolean;
   isDesktopAvailable: boolean;
   isOutputRootCreating: boolean;
+  isSvCacheRefreshing: boolean;
   isSvCacheWarming: boolean;
   isSupportSearchRunning: boolean;
   onChangeGame: () => void;
@@ -20491,6 +20823,7 @@ function HealthSection({
   onOpenOutputRoot: () => void;
   onPickProjectPath: (pathField: ProjectPathField) => void;
   onRequestSupportSearch: () => void;
+  onRetrySvCacheStatus: () => void;
   onSetDraftPath: (field: ProjectPathFieldName, value: string) => void;
   onValidateProject: () => void;
   pendingEditCount: number;
@@ -20507,11 +20840,13 @@ function HealthSection({
     isProjectPathFieldVisible(pathField, selectedGame)
   );
   const canShowSvCacheProgress = isProjectCacheGame(selectedGame);
-  const cacheSourceState: CacheProgressSourceState = !health
-    ? 'checking'
-    : hasValidProjectCacheSource(selectedGame, health)
-      ? 'ready'
-      : 'setupRequired';
+  const cacheSourceState: CacheProgressSourceState = hasSvCacheRequestError
+    ? 'error'
+    : !health
+      ? 'checking'
+      : hasValidProjectCacheSource(selectedGame, health)
+        ? 'ready'
+        : 'setupRequired';
   const cacheTitle = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.title')
     : getTrinityCacheTitle(selectedGame);
@@ -20664,7 +20999,10 @@ function HealthSection({
         {canShowSvCacheProgress ? (
           <SvCacheProgressPanel
             cacheTitle={cacheTitle}
+            hasWarmupError={hasSvCacheWarmupError}
+            isRetrying={isSvCacheRefreshing}
             isWarming={isSvCacheWarming}
+            onRetry={onRetrySvCacheStatus}
             selectedGame={selectedGame}
             sourceState={cacheSourceState}
             status={svCacheStatus}
@@ -20713,19 +21051,27 @@ function HealthSection({
 
 function SvCacheProgressPanel({
   cacheTitle,
+  hasWarmupError,
+  isRetrying,
   isWarming,
+  onRetry,
   selectedGame,
   sourceState,
   status
 }: {
   cacheTitle: string;
+  hasWarmupError: boolean;
+  isRetrying: boolean;
   isWarming: boolean;
+  onRetry: () => void;
   selectedGame: ProjectGame;
   sourceState: CacheProgressSourceState;
   status: TrinityCacheStatus | null;
 }) {
   const { formatLocale, t, translateLiteral } = useLocalization();
-  const effectiveStatus = sourceState === 'ready' ? status : null;
+  const effectiveStatus = sourceState === 'ready' || sourceState === 'error' ? status : null;
+  const isError = sourceState === 'error';
+  const isWarmupPaused = sourceState === 'ready' && hasWarmupError;
   const isChecking =
     sourceState === 'checking' || (sourceState === 'ready' && status === null);
   const isSetupRequired = sourceState === 'setupRequired';
@@ -20743,57 +21089,74 @@ function SvCacheProgressPanel({
   } = progress;
   const isSessionOnlyReady =
     isSwordShieldCache && !isMinimal && isReady && effectiveStatus?.cacheSizeBytes === 0;
-  const phaseLabel = isSetupRequired
-    ? 'Setup required'
-    : isChecking
-      ? 'Checking'
-      : isMinimal
-        ? 'Off'
-        : isWarming
-          ? 'Building'
-          : isReady
-            ? 'Ready'
-            : completedUnitCount > 0
-              ? 'Partially built'
-              : 'Ready to build';
-  const message = isSetupRequired
-    ? `Complete the required ${cacheTitle} source path in Project Setup.`
-    : isChecking
-      ? `Reading the current ${cacheTitle} status...`
-      : isSwordShieldCache
-        ? isMinimal
-          ? t('settings.cache.swsh.status.off')
-          : isWarming
-            ? t('settings.cache.swsh.status.building')
-            : isSessionOnlyReady
-              ? t('settings.cache.swsh.status.readySessionOnly')
-              : isReady
-                ? t('settings.cache.swsh.status.ready')
-                : t('settings.cache.swsh.status.readyToBuild')
+  const phaseLabel = isError
+    ? 'Error'
+    : isWarmupPaused
+      ? 'Build paused'
+    : isSetupRequired
+      ? 'Setup required'
+      : isChecking
+        ? 'Checking'
         : isMinimal
-          ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
-          : effectiveStatus!.message;
+          ? 'Off'
+          : isWarming
+            ? 'Building'
+            : isReady
+              ? 'Ready'
+              : completedUnitCount > 0
+                ? 'Partially built'
+                : 'Ready to build';
+  const message = isError
+    ? `The ${cacheTitle} status request stopped before completion. Retry the check. Editors can still read the configured project sources.`
+    : isWarmupPaused
+      ? `The ${cacheTitle} build stopped because the next batch could not be verified. Existing cache data and the last measured progress remain available. Retry to continue from the last verified item.`
+    : isSetupRequired
+      ? `Complete the required ${cacheTitle} source path in Project Setup.`
+      : isChecking
+        ? `Reading the current ${cacheTitle} status...`
+        : isSwordShieldCache
+          ? isMinimal
+            ? t('settings.cache.swsh.status.off')
+            : isWarming
+              ? t('settings.cache.swsh.status.building')
+              : isSessionOnlyReady
+                ? t('settings.cache.swsh.status.readySessionOnly')
+                : isReady
+                  ? t('settings.cache.swsh.status.ready')
+                  : t('settings.cache.swsh.status.readyToBuild')
+          : isMinimal
+            ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
+            : effectiveStatus!.message;
 
   return (
-    <div className="sv-cache-progress-panel" role="status">
+    <div
+      className="sv-cache-progress-panel"
+      role={isError || isWarmupPaused ? 'alert' : 'status'}
+    >
       <div className="sv-cache-progress-header">
         <div>
           <Layers aria-hidden="true" size={18} />
           <strong>{cacheTitle}</strong>
         </div>
-        <span className="status-pill status-pill-info">{phaseLabel}</span>
+        <span
+          className={`status-pill ${isError || isWarmupPaused ? 'status-blocked' : 'status-pill-info'}`}
+        >
+          {phaseLabel}
+        </span>
       </div>
-      {!isMinimal ? (
+      {!isMinimal && !isError ? (
         <div
           aria-label={`${cacheTitle} build progress`}
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={percent}
-          aria-valuetext={isSetupRequired
-            ? `${cacheTitle} setup required`
-            : isChecking
-              ? `Checking ${cacheTitle} status`
-              : `${completedUnitCount} of ${totalUnitCount}`}
+          aria-valuetext={
+            isSetupRequired
+              ? `${cacheTitle} setup required`
+              : isChecking
+                ? `Checking ${cacheTitle} status`
+                : `${completedUnitCount} of ${totalUnitCount}`
+          }
           className="work-progress-track"
           role="progressbar"
         >
@@ -20804,22 +21167,30 @@ function SvCacheProgressPanel({
         <div>
           <dt>Mode</dt>
           <dd>
-            {isSetupRequired
-              ? 'Setup required'
-              : effectiveStatus
-                ? formatSvCacheModeLabel(effectiveStatus.settings.mode)
-                : 'Checking'}
+            {isError && !effectiveStatus
+              ? 'Unavailable'
+              : isError
+                ? `${formatSvCacheModeLabel(effectiveStatus!.settings.mode)} (last known)`
+                : isSetupRequired
+                  ? 'Setup required'
+                  : effectiveStatus
+                    ? formatSvCacheModeLabel(effectiveStatus.settings.mode)
+                    : 'Checking'}
           </dd>
         </div>
         {!isMinimal ? (
           <div>
             <dt>Progress</dt>
             <dd>
-              {isSetupRequired
-                ? 'Waiting for Project Setup'
-                : isChecking
-                  ? 'Checking'
-                  : `${percent}% (${completedUnitCount} of ${totalUnitCount})`}
+              {isError && !effectiveStatus
+                ? 'Retry required'
+                : isError
+                  ? `${percent}% (${completedUnitCount} of ${totalUnitCount}, last known)`
+                  : isSetupRequired
+                    ? 'Waiting for Project Setup'
+                    : isChecking
+                      ? 'Checking'
+                      : `${percent}% (${completedUnitCount} of ${totalUnitCount})`}
             </dd>
           </div>
         ) : null}
@@ -20838,11 +21209,30 @@ function SvCacheProgressPanel({
         </div>
       </dl>
       <p className="sv-cache-progress-message">{message}</p>
+      {isError || isWarmupPaused ? (
+        <div className="action-row">
+          <button
+            aria-busy={isRetrying || undefined}
+            className="secondary-button"
+            disabled={isRetrying}
+            onClick={onRetry}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel={isWarmupPaused ? 'Retrying cache build' : 'Retrying cache check'}
+              icon={<RefreshCw aria-hidden="true" size={18} />}
+              isBusy={isRetrying}
+              label={isWarmupPaused ? 'Retry cache build' : 'Retry cache check'}
+              size={18}
+            />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-type CacheProgressSourceState = 'checking' | 'ready' | 'setupRequired';
+type CacheProgressSourceState = 'checking' | 'error' | 'ready' | 'setupRequired';
 
 type ItemsSectionProps = {
   editSession: EditSession | null;
@@ -53530,8 +53920,10 @@ function SettingsSection({
   availableUpdateKind,
   personalizationSettings,
   editorLayout,
+  hasSvCacheRequestError,
   isSvCacheClearing,
   isSvCacheRefreshing,
+  isSvCacheSettingsUpdating,
   isSvCacheWarming,
   onChangeEditorLayout,
   onChangeLanguage,
@@ -53552,8 +53944,10 @@ function SettingsSection({
   availableUpdateKind: AvailableUpdate['kind'] | null;
   personalizationSettings: ReactNode;
   editorLayout: EditorLayoutPreference;
+  hasSvCacheRequestError: boolean;
   isSvCacheClearing: boolean;
   isSvCacheRefreshing: boolean;
+  isSvCacheSettingsUpdating: boolean;
   isSvCacheWarming: boolean;
   onChangeEditorLayout: (layout: EditorLayoutPreference) => void;
   onChangeLanguage: (language: LanguageCode) => Promise<void>;
@@ -53577,15 +53971,19 @@ function SettingsSection({
     status.kind === 'opening' ||
     status.kind === 'preparing' ||
     status.kind === 'restarting';
-  const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
-  const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
+  const activeCacheMode = svCacheStatus?.settings.mode ?? null;
+  const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? '';
   const cacheSizeLabel = formatCacheSizeLabel(
     svCacheStatus?.cacheSizeBytes,
     formatLocale,
     t('settings.cache.size.none'),
     translateLiteral('Unavailable')
   );
-  const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
+  const isCacheControlBusy =
+    isSvCacheClearing ||
+    isSvCacheRefreshing ||
+    isSvCacheSettingsUpdating ||
+    isSvCacheWarming;
   const canShowSvCacheSettings = isProjectCacheGame(selectedGame);
   const cacheTitle = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.title')
@@ -53762,6 +54160,12 @@ function SettingsSection({
             </div>
           </div>
 
+          {hasSvCacheRequestError ? (
+            <p className="update-status update-status-error" role="alert">
+              Cache status could not be read. Retry the status check before changing cache settings.
+            </p>
+          ) : null}
+
           <div className="sv-cache-mode-options" role="radiogroup" aria-label={cacheModeLabel}>
             {svCacheModeOptions.map((option) => {
               const isSelected = option.id === activeCacheMode;
@@ -53770,7 +54174,7 @@ function SettingsSection({
                 <button
                   aria-checked={isSelected}
                   className={`sv-cache-mode-option${isSelected ? ' sv-cache-mode-option-selected' : ''}`}
-                  disabled={isCacheControlBusy || isSelected}
+                  disabled={isCacheControlBusy || svCacheStatus === null || isSelected}
                   key={option.id}
                   onClick={() => onChangeSvCacheMode(option.id)}
                   role="radio"
@@ -53804,11 +54208,16 @@ function SettingsSection({
               />
               <select
                 className="km-select-control"
-                disabled={isSvCacheClearing}
+                disabled={isCacheControlBusy || svCacheStatus === null}
                 id="settings-cache-limit"
                 onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
                 value={activeCacheLimit}
               >
+                {svCacheStatus === null ? (
+                  <option value="">
+                    {hasSvCacheRequestError ? 'Retry required' : 'Checking status'}
+                  </option>
+                ) : null}
                 {svCacheLimitOptions.map((option) => (
                   <option key={option.bytes} value={option.bytes}>
                     {option.label}
@@ -53837,7 +54246,7 @@ function SettingsSection({
             <button
               aria-busy={isSvCacheRefreshing || undefined}
               className="secondary-button sv-cache-refresh-button"
-              disabled={isSvCacheClearing || isSvCacheRefreshing}
+              disabled={isCacheControlBusy}
               onClick={onRefreshSvCacheStatus}
               type="button"
             >
@@ -53845,14 +54254,14 @@ function SettingsSection({
                 busyLabel="Refreshing"
                 icon={<RefreshCw aria-hidden="true" size={18} />}
                 isBusy={isSvCacheRefreshing}
-                label="Refresh Cache Size"
+                label={hasSvCacheRequestError ? 'Retry Cache Status' : 'Refresh Cache Size'}
                 size={18}
               />
             </button>
             <button
               aria-busy={isSvCacheClearing || undefined}
               className="danger-button"
-              disabled={isSvCacheClearing || svCacheStatus === null}
+              disabled={isCacheControlBusy || svCacheStatus === null}
               onClick={onClearSvCache}
               type="button"
             >

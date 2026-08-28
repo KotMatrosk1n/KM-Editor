@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Concurrency;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
@@ -39,6 +40,7 @@ using KM.SwSh.Text;
 using KM.SwSh.TypeChart;
 using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -51,6 +53,13 @@ public sealed class SwShWorkflowService
     private const long MaximumSemanticSourceBytes = 512L * 1024L * 1024L;
     private const long MaximumSemanticFingerprintBytesPerFile = 512L * 1024L * 1024L;
     private const long MaximumSemanticFingerprintBytes = 2L * 1024L * 1024L * 1024L;
+    private const int MaximumSemanticFingerprintParallelism = 8;
+    private static readonly BoundedConcurrencyPolicy SemanticFingerprintPolicy = new(
+        "swsh-semantic-fingerprint",
+        BoundedWorkloadKind.Hash,
+        maximumBytesPerWorker: 2L * 1024L * 1024L,
+        maximumDegreeOfParallelism: MaximumSemanticFingerprintParallelism,
+        degreeOfParallelismWhenMemoryUnknown: 4);
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShPokemonWorkflowService pokemonWorkflowService;
     private readonly SwShMovesWorkflowService movesWorkflowService;
@@ -258,33 +267,55 @@ public sealed class SwShWorkflowService
             MaximumTraversalDepth = 128,
             MaximumGraphEntries = 250_000,
         }).Build(paths);
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "swsh-semantic-source-v4");
-        AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
-        AppendSemanticSourceHash(hash, SwShGameTextLanguage.Resolve(paths));
+        var buildIdentity = SemanticProjectBuildIdentity.Capture(paths);
+        var gameTextLanguage = SwShGameTextLanguage.Resolve(paths);
         var sourceCount = 0;
-        long sourceBytes = 0;
+        long plannedSourceBytes = 0;
+        var reads = new List<SemanticFingerprintRead>();
+        var entries = new List<SemanticFingerprintEntry>();
         foreach (var entry in graph.Entries
                      .Where(entry => IsSemanticExploreSource(entry.RelativePath)
                          || SwShGameModuleWorkflowService.IsKnownSourcePath(entry.RelativePath))
                      .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal))
         {
-            AppendSemanticSourceHash(hash, entry.RelativePath);
-            AppendSemanticGraphSource(
-                hash,
+            var baseSource = PrepareSemanticFingerprintSource(
                 paths,
                 entry.RelativePath,
                 entry.BaseFile is not null,
                 layered: false,
                 ref sourceCount,
-                ref sourceBytes);
-            AppendSemanticGraphSource(
-                hash,
+                ref plannedSourceBytes,
+                reads);
+            var layeredSource = PrepareSemanticFingerprintSource(
                 paths,
                 entry.RelativePath,
                 entry.LayeredFile is not null,
                 layered: true,
                 ref sourceCount,
+                ref plannedSourceBytes,
+                reads);
+            entries.Add(new SemanticFingerprintEntry(entry.RelativePath, baseSource, layeredSource));
+        }
+
+        var observations = CaptureSemanticFingerprintObservations(reads);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendSemanticSourceHash(hash, "swsh-semantic-source-v4");
+        AppendSemanticSourceHash(hash, buildIdentity);
+        AppendSemanticSourceHash(hash, gameTextLanguage);
+        long sourceBytes = 0;
+        foreach (var entry in entries)
+        {
+            AppendSemanticSourceHash(hash, entry.RelativePath);
+            AppendSemanticGraphSource(
+                hash,
+                entry.Base,
+                observations,
+                ref sourceBytes);
+            AppendSemanticGraphSource(
+                hash,
+                entry.Layered,
+                observations,
                 ref sourceBytes);
         }
 
@@ -514,90 +545,184 @@ public sealed class SwShWorkflowService
             || relativePath.EndsWith("/common/trtype.dat", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void AppendSemanticGraphSource(
-        IncrementalHash hash,
+    private static SemanticFingerprintSource PrepareSemanticFingerprintSource(
         ProjectPaths paths,
         string relativePath,
         bool exists,
         bool layered,
         ref int sourceCount,
+        ref long sourceBytes,
+        List<SemanticFingerprintRead> reads)
+    {
+        if (!exists)
+        {
+            return new SemanticFingerprintSource(layered, Exists: false, ReadIndex: -1, PreparationError: null);
+        }
+
+        if (++sourceCount > MaximumSemanticSourceFiles)
+        {
+            return new SemanticFingerprintSource(
+                layered,
+                Exists: true,
+                ReadIndex: -1,
+                ExceptionDispatchInfo.Capture(new InvalidDataException(
+                    "The semantic source file count exceeds its bounded limit.")));
+        }
+
+        try
+        {
+            var root = layered
+                ? paths.OutputRootPath
+                : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+                    ? paths.BaseRomFsPath
+                    : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                        ? paths.BaseExeFsPath
+                        : throw new InvalidDataException("A semantic base source path is outside a configured source root.");
+            var child = layered
+                ? relativePath
+                : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+                    ? relativePath["romfs/".Length..]
+                    : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                        ? relativePath["exefs/".Length..]
+                        : throw new InvalidDataException("A semantic base source path is outside a configured source root.");
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                throw new InvalidDataException("A semantic source root is unavailable.");
+            }
+
+            var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            var fullPath = Path.GetFullPath(Path.Combine(
+                normalizedRoot,
+                child.Replace('/', Path.DirectorySeparatorChar)));
+            var relative = Path.GetRelativePath(normalizedRoot, fullPath);
+            if (Path.IsPathRooted(relative)
+                || relative == ".."
+                || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("A semantic source path escapes its configured root.");
+            }
+
+            var file = new FileInfo(fullPath);
+            file.Refresh();
+            if (!file.Exists
+                || (file.Attributes & FileAttributes.ReparsePoint) != 0
+                || !string.IsNullOrEmpty(file.LinkTarget))
+            {
+                throw new InvalidDataException("A semantic source file is missing or linked.");
+            }
+
+            var observedLength = file.Length;
+            if (observedLength < 0
+                || observedLength > MaximumSemanticFingerprintBytesPerFile
+                || observedLength > MaximumSemanticFingerprintBytes - sourceBytes)
+            {
+                throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
+            }
+
+            var readIndex = reads.Count;
+            reads.Add(new SemanticFingerprintRead(fullPath, observedLength));
+            sourceBytes = checked(sourceBytes + observedLength);
+            return new SemanticFingerprintSource(layered, Exists: true, readIndex, PreparationError: null);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return new SemanticFingerprintSource(
+                layered,
+                Exists: true,
+                ReadIndex: -1,
+                ExceptionDispatchInfo.Capture(exception));
+        }
+    }
+
+    private static SemanticFingerprintObservation[] CaptureSemanticFingerprintObservations(
+        IReadOnlyList<SemanticFingerprintRead> reads)
+    {
+        var observations = new SemanticFingerprintObservation[reads.Count];
+        if (reads.Count == 0)
+        {
+            return observations;
+        }
+
+        _ = BoundedParallel.For(
+            reads.Count,
+            SemanticFingerprintPolicy,
+            readIndex => observations[readIndex] = CaptureSemanticFingerprintObservation(reads[readIndex]));
+        return observations;
+    }
+
+    private static SemanticFingerprintObservation CaptureSemanticFingerprintObservation(
+        SemanticFingerprintRead read)
+    {
+        try
+        {
+            var file = new FileInfo(read.FullPath);
+            file.Refresh();
+            if (!file.Exists
+                || (file.Attributes & FileAttributes.ReparsePoint) != 0
+                || !string.IsNullOrEmpty(file.LinkTarget))
+            {
+                throw new InvalidDataException("A semantic source file is missing or linked.");
+            }
+
+            using var stream = new FileStream(
+                read.FullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 128 * 1_024,
+                FileOptions.SequentialScan);
+            var observedLength = stream.Length;
+            if (observedLength < 0 || observedLength > MaximumSemanticFingerprintBytesPerFile)
+            {
+                throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
+            }
+
+            if (observedLength != read.ExpectedLength)
+            {
+                throw new InvalidDataException("The semantic source changed while it was observed.");
+            }
+
+            var digest = Convert.ToHexStringLower(SHA256.HashData(stream));
+            if (stream.Length != observedLength)
+            {
+                throw new InvalidDataException("The semantic source changed while it was observed.");
+            }
+
+            return new SemanticFingerprintObservation(observedLength, digest, Error: null);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return new SemanticFingerprintObservation(
+                Length: 0,
+                Digest: string.Empty,
+                ExceptionDispatchInfo.Capture(exception));
+        }
+    }
+
+    private static void AppendSemanticGraphSource(
+        IncrementalHash hash,
+        SemanticFingerprintSource source,
+        IReadOnlyList<SemanticFingerprintObservation> observations,
         ref long sourceBytes)
     {
-        AppendSemanticSourceHash(hash, layered ? "layered" : "base");
-        if (!exists)
+        AppendSemanticSourceHash(hash, source.Layered ? "layered" : "base");
+        if (!source.Exists)
         {
             AppendSemanticSourceHash(hash, "missing");
             return;
         }
 
-        if (++sourceCount > MaximumSemanticSourceFiles)
-        {
-            throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
-        }
-
-        var root = layered
-            ? paths.OutputRootPath
-            : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
-                ? paths.BaseRomFsPath
-                : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
-                    ? paths.BaseExeFsPath
-                    : throw new InvalidDataException("A semantic base source path is outside a configured source root.");
-        var child = layered
-            ? relativePath
-            : relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
-                ? relativePath["romfs/".Length..]
-                : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
-                    ? relativePath["exefs/".Length..]
-                    : throw new InvalidDataException("A semantic base source path is outside a configured source root.");
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            throw new InvalidDataException("A semantic source root is unavailable.");
-        }
-
-        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        var fullPath = Path.GetFullPath(Path.Combine(
-            normalizedRoot,
-            child.Replace('/', Path.DirectorySeparatorChar)));
-        var relative = Path.GetRelativePath(normalizedRoot, fullPath);
-        if (Path.IsPathRooted(relative)
-            || relative == ".."
-            || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("A semantic source path escapes its configured root.");
-        }
-
-        var file = new FileInfo(fullPath);
-        file.Refresh();
-        if (!file.Exists
-            || (file.Attributes & FileAttributes.ReparsePoint) != 0
-            || !string.IsNullOrEmpty(file.LinkTarget))
-        {
-            throw new InvalidDataException("A semantic source file is missing or linked.");
-        }
-
-        using var stream = new FileStream(
-            fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 128 * 1_024,
-            FileOptions.SequentialScan);
-        var observedLength = stream.Length;
-        if (observedLength < 0
-            || observedLength > MaximumSemanticFingerprintBytesPerFile
-            || observedLength > MaximumSemanticFingerprintBytes - sourceBytes)
+        source.PreparationError?.Throw();
+        var observation = observations[source.ReadIndex];
+        observation.Error?.Throw();
+        if (observation.Length > MaximumSemanticFingerprintBytes - sourceBytes)
         {
             throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
         }
 
-        AppendSemanticSourceHash(hash, observedLength.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        AppendSemanticSourceHash(hash, Convert.ToHexStringLower(SHA256.HashData(stream)));
-        if (stream.Length != observedLength)
-        {
-            throw new InvalidDataException("The semantic source changed while it was observed.");
-        }
-
-        sourceBytes = checked(sourceBytes + observedLength);
+        AppendSemanticSourceHash(hash, observation.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendSemanticSourceHash(hash, observation.Digest);
+        sourceBytes = checked(sourceBytes + observation.Length);
     }
 
     private static byte[] ReadSemanticSourceBytes(string path)
@@ -634,6 +759,24 @@ public sealed class SwShWorkflowService
         hash.AppendData(bytes);
         hash.AppendData("\n"u8);
     }
+
+    private sealed record SemanticFingerprintEntry(
+        string RelativePath,
+        SemanticFingerprintSource Base,
+        SemanticFingerprintSource Layered);
+
+    private sealed record SemanticFingerprintSource(
+        bool Layered,
+        bool Exists,
+        int ReadIndex,
+        ExceptionDispatchInfo? PreparationError);
+
+    private sealed record SemanticFingerprintRead(string FullPath, long ExpectedLength);
+
+    private sealed record SemanticFingerprintObservation(
+        long Length,
+        string Digest,
+        ExceptionDispatchInfo? Error);
 
     public SwShCacheStatus GetCacheStatus(ProjectPaths? paths = null)
     {

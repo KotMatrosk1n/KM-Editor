@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Security;
 using System.Text;
+using KM.Core.Concurrency;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
@@ -38,6 +40,24 @@ public sealed class ZaWorkflowService
     private const int MaximumSemanticSourceFiles = 128;
     private const int MaximumSemanticSourceBytesPerFile = 64 * 1024 * 1024;
     private const long MaximumSemanticSourceBytes = 512L * 1024L * 1024L;
+    private const int MaximumSemanticFingerprintParallelism = 8;
+    private const long EstimatedSemanticFingerprintWorkerBytes = 256L * 1024L * 1024L;
+    private const int MaximumGameModuleCapabilityParallelism = 4;
+    private const long EstimatedGameModuleCapabilityWorkerBytes = 256L * 1024L * 1024L;
+    private static readonly BoundedConcurrencyPolicy SemanticFingerprintPolicy = new(
+        "za-semantic-source-fingerprint",
+        BoundedWorkloadKind.Hash,
+        EstimatedSemanticFingerprintWorkerBytes,
+        MaximumSemanticFingerprintParallelism,
+        memoryBudgetDivisor: 8,
+        degreeOfParallelismWhenMemoryUnknown: 4);
+    private static readonly BoundedConcurrencyPolicy GameModuleCapabilityPolicy = new(
+        "za-game-module-capability-load",
+        BoundedWorkloadKind.Decode,
+        EstimatedGameModuleCapabilityWorkerBytes,
+        MaximumGameModuleCapabilityParallelism,
+        memoryBudgetDivisor: 8,
+        degreeOfParallelismWhenMemoryUnknown: 4);
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaCacheManager cacheManager;
@@ -202,10 +222,6 @@ public sealed class ZaWorkflowService
     {
         ArgumentNullException.ThrowIfNull(paths);
         using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
-        var semanticFileSource = new ZaWorkflowFileSource(
-            cacheManager,
-            bypassReusableBaseCache: true,
-            MaximumSemanticSourceBytesPerFile);
         var language = ZaGameTextLanguage.Resolve(paths);
         var virtualPaths = new List<string>
         {
@@ -308,21 +324,23 @@ public sealed class ZaWorkflowService
             throw new InvalidDataException("The semantic source file count exceeds its bounded limit.");
         }
 
+        var payloadCaptures = CaptureSemanticSourcePayloadPairs(paths, boundedVirtualPaths);
         long sourceBytes = 0;
-        foreach (var virtualPath in boundedVirtualPaths)
+        for (var index = 0; index < boundedVirtualPaths.Length; index++)
         {
+            var virtualPath = boundedVirtualPaths[index];
             AppendSemanticSourceHash(hash, virtualPath);
-            AppendSemanticSourcePayload(
+            var capture = payloadCaptures[index]
+                ?? throw new InvalidOperationException("A semantic source payload was not observed.");
+            if (capture.Failure is not null)
+            {
+                capture.Failure.Throw();
+            }
+
+            AppendSemanticSourcePayloadPair(
                 hash,
-                () => (semanticFileSource.ReadBaseBytesFresh(paths, virtualPath), "base"),
-                ref sourceBytes);
-            AppendSemanticSourcePayload(
-                hash,
-                () =>
-                {
-                    var source = semanticFileSource.ReadCurrentSourceFresh(paths, virtualPath);
-                    return (source.Bytes, source.Layer.ToString());
-                },
+                capture.Observation
+                    ?? throw new InvalidOperationException("A semantic source payload was not observed."),
                 ref sourceBytes);
         }
 
@@ -338,6 +356,151 @@ public sealed class ZaWorkflowService
             bypassReusableBaseCache: true,
             MaximumSemanticSourceBytesPerFile);
         return new ZaItemsWorkflowService(freshFileSource).Load(project);
+    }
+
+    public bool CanLoadSemanticExploreCorporaConcurrently =>
+        !ZaWorkflowFileSource.HasActiveDeferredOutputBatch;
+
+    public (
+        Func<ZaItemsWorkflow> Items,
+        Func<ZaPokemonWorkflow> Pokemon,
+        Func<ZaMovesWorkflow> Moves) PrepareSemanticExploreCorpora(
+            ProjectPaths paths,
+            int maximumParallelism)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumParallelism);
+
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var effectiveParallelism = ZaWorkflowFileSource.HasActiveDeferredOutputBatch
+            ? 1
+            : Math.Clamp(maximumParallelism, 1, 3);
+        var readerCount = effectiveParallelism > 1 ? 3 : 1;
+        CapturedSemanticWorkflow<ZaItemsWorkflow>? items = null;
+        CapturedSemanticWorkflow<ZaPokemonWorkflow>? pokemon = null;
+        CapturedSemanticWorkflow<ZaMovesWorkflow>? moves = null;
+
+        using (var readerPool = ZaWorkflowFileSource.CreateFreshSemanticReaderPool(
+                   cacheManager,
+                   paths,
+                   MaximumSemanticSourceBytesPerFile,
+                   readerCount))
+        {
+            void LoadAt(int index)
+            {
+                var source = readerPool.Readers[effectiveParallelism > 1 ? index : 0];
+                switch (index)
+                {
+                    case 0:
+                        items = CaptureSemanticWorkflow(
+                            () => new ZaItemsWorkflowService(source).Load(project));
+                        break;
+                    case 1:
+                        pokemon = CaptureSemanticWorkflow(
+                            () => new ZaPokemonWorkflowService(source).Load(project));
+                        break;
+                    case 2:
+                        moves = CaptureSemanticWorkflow(
+                            () => new ZaMovesWorkflowService(source).Load(project));
+                        break;
+                }
+            }
+
+            _ = BoundedParallel.For(
+                3,
+                CreateSourceLoadPolicy("za-semantic-corpus-source-load", effectiveParallelism),
+                LoadAt);
+        }
+
+        return (
+            (items ?? throw new InvalidOperationException(
+                "The semantic items workflow was not prepared.")).Get,
+            (pokemon ?? throw new InvalidOperationException(
+                "The semantic Pokemon workflow was not prepared.")).Get,
+            (moves ?? throw new InvalidOperationException(
+                "The semantic moves workflow was not prepared.")).Get);
+    }
+
+    public (
+        Func<ZaTrainersWorkflow> Trainers,
+        Func<ZaEncountersWorkflow> Encounters,
+        Func<ZaItemsWorkflow> Items,
+        Func<ZaPokemonWorkflow> Pokemon) PrepareGuidedDesignSources(
+            ProjectPaths paths,
+            int maximumParallelism)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumParallelism);
+
+        const int sourceCount = 4;
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        var effectiveParallelism = ZaWorkflowFileSource.HasActiveDeferredOutputBatch
+            ? 1
+            : Math.Clamp(maximumParallelism, 1, sourceCount);
+        var readerCount = effectiveParallelism > 1 ? sourceCount : 1;
+        CapturedSemanticWorkflow<ZaTrainersWorkflow>? trainers = null;
+        CapturedSemanticWorkflow<ZaEncountersWorkflow>? encounters = null;
+        CapturedSemanticWorkflow<ZaItemsWorkflow>? items = null;
+        CapturedSemanticWorkflow<ZaPokemonWorkflow>? pokemon = null;
+        var fatalFailures = new ExceptionDispatchInfo?[sourceCount];
+
+        using (var readerPool = ZaWorkflowFileSource.CreateFreshSemanticReaderPool(
+                   cacheManager,
+                   paths,
+                   MaximumSemanticSourceBytesPerFile,
+                   readerCount))
+        {
+            void LoadAt(int index)
+            {
+                try
+                {
+                    var source = readerPool.Readers[effectiveParallelism > 1 ? index : 0];
+                    switch (index)
+                    {
+                        case 0:
+                            trainers = CaptureSemanticWorkflow(
+                                () => new ZaTrainersWorkflowService(source).Load(project));
+                            break;
+                        case 1:
+                            encounters = CaptureSemanticWorkflow(
+                                () => new ZaEncountersWorkflowService(source).Load(project));
+                            break;
+                        case 2:
+                            items = CaptureSemanticWorkflow(
+                                () => new ZaItemsWorkflowService(source).Load(project));
+                            break;
+                        case 3:
+                            pokemon = CaptureSemanticWorkflow(
+                                () => new ZaPokemonWorkflowService(source).Load(project));
+                            break;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    fatalFailures[index] = ExceptionDispatchInfo.Capture(exception);
+                }
+            }
+
+            _ = BoundedParallel.For(
+                sourceCount,
+                CreateSourceLoadPolicy("za-guided-design-source-load", effectiveParallelism),
+                LoadAt);
+        }
+
+        foreach (var failure in fatalFailures)
+        {
+            failure?.Throw();
+        }
+
+        return (
+            (trainers ?? throw new InvalidOperationException(
+                "The Guided Design trainers workflow was not prepared.")).Get,
+            (encounters ?? throw new InvalidOperationException(
+                "The Guided Design encounters workflow was not prepared.")).Get,
+            (items ?? throw new InvalidOperationException(
+                "The Guided Design items workflow was not prepared.")).Get,
+            (pokemon ?? throw new InvalidOperationException(
+                "The Guided Design Pokemon workflow was not prepared.")).Get);
     }
 
     public ZaPokemonWorkflow LoadSemanticExplorePokemon(ProjectPaths paths)
@@ -410,26 +573,108 @@ public sealed class ZaWorkflowService
         LoadGameModuleCapabilityBatch(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        const int groupCount = 4;
         var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
-        var freshFileSource = CreateGameModuleFileSource();
-        var executableReader = new BoundedGameModuleExecutableReader(paths);
+        var effectiveParallelism = GameModuleCapabilityBatchParallelism;
+        var readerCount = effectiveParallelism > 1 ? groupCount : 1;
+        CapturedSemanticWorkflow<ZaEncountersWorkflow>? scriptedBossEncounters = null;
+        CapturedSemanticWorkflow<ZaEncountersWorkflow>? wildEncounters = null;
+        CapturedSemanticWorkflow<ZaMovesWorkflow>? moves = null;
+        CapturedSemanticWorkflow<ZaTrainersWorkflow>? trainers = null;
+        CapturedSemanticWorkflow<ZaEncounterCompatibilityWorkflow>? encounterCompatibility = null;
+        CapturedSemanticWorkflow<ZaPokemonWorkflow>? pokemon = null;
+        CapturedSemanticWorkflow<ZaTrainerPoolsWorkflow>? trainerPools = null;
+        CapturedSemanticWorkflow<ZaTypeEffectivenessState>? typeEffectivenessState = null;
+
+        using (var readerPool = ZaWorkflowFileSource.CreateFreshSemanticReaderPool(
+                   cacheManager,
+                   paths,
+                   MaximumSemanticSourceBytesPerFile,
+                   readerCount,
+                   MaximumSemanticSourceFiles,
+                   MaximumSemanticSourceBytes))
+        {
+            void LoadGroup(int groupIndex)
+            {
+                var source = readerPool.Readers[effectiveParallelism > 1 ? groupIndex : 0];
+                switch (groupIndex)
+                {
+                    case 0:
+                        var encounterService = new ZaEncountersWorkflowService(source);
+                        scriptedBossEncounters = CaptureSemanticWorkflow(
+                            () => encounterService.LoadGameModuleReadOnly(
+                                project,
+                                includeScriptedBosses: true,
+                                includeEncounterTables: false));
+                        wildEncounters = CaptureSemanticWorkflow(
+                            () => encounterService.LoadGameModuleReadOnly(
+                                project,
+                                includeScriptedBosses: false,
+                                includeEncounterTables: true));
+                        encounterCompatibility = CaptureSemanticWorkflow(
+                            () => encounterService.LoadGameModuleCompatibility(project));
+                        break;
+                    case 1:
+                        trainers = CaptureSemanticWorkflow(
+                            () => new ZaTrainersWorkflowService(source)
+                                .LoadGameModuleReadOnly(project));
+                        trainerPools = CaptureSemanticWorkflow(
+                            () => new ZaTrainerPoolsWorkflowService(source).Load(project));
+                        break;
+                    case 2:
+                        var executableReader = new BoundedGameModuleExecutableReader(paths);
+                        pokemon = CaptureSemanticWorkflow(
+                            () => new ZaPokemonWorkflowService(source, executableReader.ReadAllBytes)
+                                .LoadGameModuleReadOnly(project, includeDexEditor: true));
+                        typeEffectivenessState = CaptureSemanticWorkflow(
+                            () => new ZaTypeEffectivenessStateService(executableReader.ReadAllBytes)
+                                .Load(project));
+                        break;
+                    case 3:
+                        moves = CaptureSemanticWorkflow(
+                            () => new ZaMovesWorkflowService(source).LoadGameModuleReadOnly(project));
+                        break;
+                }
+            }
+
+            _ = BoundedParallel.For(
+                groupCount,
+                GameModuleCapabilityPolicy,
+                LoadGroup);
+        }
+
+        // Materialize in the original public tuple order so a failing source remains deterministic.
+        var preparedScriptedBossEncounters = RequirePrepared(
+            scriptedBossEncounters,
+            "scripted boss encounters").Get();
+        var preparedWildEncounters = RequirePrepared(wildEncounters, "wild encounters").Get();
+        var preparedMoves = RequirePrepared(moves, "moves").Get();
+        var preparedTrainers = RequirePrepared(trainers, "trainers").Get();
+        var preparedEncounterCompatibility = RequirePrepared(
+            encounterCompatibility,
+            "encounter compatibility").Get();
+        var preparedPokemon = RequirePrepared(pokemon, "Pokemon").Get();
+        var preparedTrainerPools = RequirePrepared(trainerPools, "trainer pools").Get();
+        var preparedTypeEffectivenessState = RequirePrepared(
+            typeEffectivenessState,
+            "type effectiveness").Get();
         return (
-            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleReadOnly(
-                project,
-                includeScriptedBosses: true,
-                includeEncounterTables: false),
-            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleReadOnly(
-                project,
-                includeScriptedBosses: false,
-                includeEncounterTables: true),
-            new ZaMovesWorkflowService(freshFileSource).LoadGameModuleReadOnly(project),
-            new ZaTrainersWorkflowService(freshFileSource).LoadGameModuleReadOnly(project),
-            new ZaEncountersWorkflowService(freshFileSource).LoadGameModuleCompatibility(project),
-            new ZaPokemonWorkflowService(freshFileSource, executableReader.ReadAllBytes)
-                .LoadGameModuleReadOnly(project, includeDexEditor: true),
-            new ZaTrainerPoolsWorkflowService(freshFileSource).Load(project),
-            new ZaTypeEffectivenessStateService(executableReader.ReadAllBytes).Load(project));
+            preparedScriptedBossEncounters,
+            preparedWildEncounters,
+            preparedMoves,
+            preparedTrainers,
+            preparedEncounterCompatibility,
+            preparedPokemon,
+            preparedTrainerPools,
+            preparedTypeEffectivenessState);
     }
+
+    public int GameModuleCapabilityBatchParallelism =>
+        ZaWorkflowFileSource.HasActiveDeferredOutputBatch
+            ? 1
+            : BoundedParallel
+                .Plan(MaximumGameModuleCapabilityParallelism, GameModuleCapabilityPolicy)
+                .DegreeOfParallelism;
 
     public ZaTrainersWorkflow LoadGameModuleTrainerArchetypes(ProjectPaths paths)
     {
@@ -662,29 +907,237 @@ public sealed class ZaWorkflowService
         };
     }
 
-    private static void AppendSemanticSourcePayload(
-        IncrementalHash hash,
-        Func<(byte[] Bytes, string Origin)> read,
-        ref long sourceBytes)
+    private SemanticSourcePayloadPairCapture?[] CaptureSemanticSourcePayloadPairs(
+        ProjectPaths paths,
+        IReadOnlyList<string> virtualPaths)
     {
+        var captures = new SemanticSourcePayloadPairCapture?[virtualPaths.Count];
+        var maximumParallelism = BoundedParallel
+            .Plan(Math.Max(1, virtualPaths.Count), SemanticFingerprintPolicy)
+            .DegreeOfParallelism;
+        var readerCount = ZaWorkflowFileSource.HasActiveDeferredOutputBatch
+            ? 1
+            : Math.Min(maximumParallelism, Math.Max(1, virtualPaths.Count));
+        using var readerPool = ZaWorkflowFileSource.CreateFreshSemanticReaderPool(
+            cacheManager,
+            paths,
+            MaximumSemanticSourceBytesPerFile,
+            readerCount);
+
+        void CaptureAt(int readerIndex, int pathIndex)
+        {
+            var source = readerPool.Readers[readerIndex];
+            try
+            {
+                var virtualPath = virtualPaths[pathIndex];
+                captures[pathIndex] = new SemanticSourcePayloadPairCapture(
+                    CaptureSemanticSourcePayloadPairFromReaders(
+                        () => source.ReadBaseBytesFresh(paths, virtualPath),
+                        observedBaseBytes => source.ReadCurrentSourceFreshUsingObservedBase(
+                            paths,
+                            virtualPath,
+                            observedBaseBytes)),
+                    Failure: null);
+            }
+            catch (Exception exception)
+            {
+                captures[pathIndex] = new SemanticSourcePayloadPairCapture(
+                    Observation: null,
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception));
+            }
+        }
+
+        long plannedSourceBytes = 0;
+        for (var batchStart = 0; batchStart < virtualPaths.Count; batchStart += readerCount)
+        {
+            var batchCount = Math.Min(readerCount, virtualPaths.Count - batchStart);
+            _ = BoundedParallel.For(
+                batchCount,
+                SemanticFingerprintPolicy,
+                readerIndex => CaptureAt(readerIndex, batchStart + readerIndex));
+
+            for (var pathIndex = batchStart; pathIndex < batchStart + batchCount; pathIndex++)
+            {
+                var capture = captures[pathIndex]
+                    ?? throw new InvalidOperationException("A semantic source payload was not observed.");
+                if (capture.Failure is not null)
+                {
+                    return captures;
+                }
+
+                var observation = capture.Observation
+                    ?? throw new InvalidOperationException("A semantic source payload was not observed.");
+                foreach (var payload in new[] { observation.Base, observation.Current })
+                {
+                    if (!payload.IsMissing)
+                    {
+                        if (payload.Length > MaximumSemanticSourceBytes - plannedSourceBytes)
+                        {
+                            captures[pathIndex] = new SemanticSourcePayloadPairCapture(
+                                Observation: null,
+                                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(
+                                    new InvalidDataException(
+                                        "The semantic source bytes exceed their bounded limit.")));
+                            return captures;
+                        }
+
+                        plannedSourceBytes = checked(plannedSourceBytes + payload.Length);
+                    }
+                }
+            }
+        }
+
+        return captures;
+    }
+
+    private static BoundedConcurrencyPolicy CreateSourceLoadPolicy(
+        string name,
+        int maximumParallelism)
+    {
+        return new BoundedConcurrencyPolicy(
+            name,
+            BoundedWorkloadKind.Decode,
+            EstimatedSemanticFingerprintWorkerBytes,
+            maximumParallelism,
+            memoryBudgetDivisor: 8,
+            degreeOfParallelismWhenMemoryUnknown: Math.Min(4, maximumParallelism));
+    }
+
+    private static CapturedSemanticWorkflow<T> RequirePrepared<T>(
+        CapturedSemanticWorkflow<T>? captured,
+        string label)
+        where T : class
+    {
+        return captured ?? throw new InvalidOperationException(
+            $"The Z-A Game Tools {label} workflow was not prepared.");
+    }
+
+    private static SemanticSourcePayloadPairObservation CaptureSemanticSourcePayloadPairFromReaders(
+        Func<byte[]> readBase,
+        Func<byte[]?, (byte[] Bytes, ProjectFileLayer Layer)> readCurrent)
+    {
+        byte[]? observedBaseBytes = null;
+        SemanticSourcePayloadObservation baseObservation;
         try
         {
-            var payload = read();
-            if (payload.Bytes.LongLength > MaximumSemanticSourceBytes - sourceBytes)
-            {
-                throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
-            }
-
-            sourceBytes = checked(sourceBytes + payload.Bytes.LongLength);
-            AppendSemanticSourceHash(hash, payload.Origin);
-            AppendSemanticSourceHash(
-                hash,
-                payload.Bytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            AppendSemanticSourceHash(hash, Convert.ToHexStringLower(SHA256.HashData(payload.Bytes)));
+            observedBaseBytes = readBase();
+            baseObservation = CaptureSemanticSourcePayload(observedBaseBytes, "base");
         }
         catch (ProjectFileOperationException exception) when (IsMissingSource(exception))
         {
+            baseObservation = SemanticSourcePayloadObservation.Missing;
+        }
+
+        SemanticSourcePayloadObservation currentObservation;
+        try
+        {
+            var current = readCurrent(observedBaseBytes);
+            currentObservation = current.Layer == ProjectFileLayer.Base
+                && ReferenceEquals(current.Bytes, observedBaseBytes)
+                && !baseObservation.IsMissing
+                    ? baseObservation with { Origin = current.Layer.ToString() }
+                    : CaptureSemanticSourcePayload(
+                        current.Bytes,
+                        current.Layer.ToString());
+        }
+        catch (ProjectFileOperationException exception) when (IsMissingSource(exception))
+        {
+            currentObservation = SemanticSourcePayloadObservation.Missing;
+        }
+
+        return new SemanticSourcePayloadPairObservation(baseObservation, currentObservation);
+    }
+
+    private static SemanticSourcePayloadObservation CaptureSemanticSourcePayload(
+        byte[] bytes,
+        string origin)
+    {
+        return new SemanticSourcePayloadObservation(
+            IsMissing: false,
+            origin,
+            bytes.Length,
+            Convert.ToHexStringLower(SHA256.HashData(bytes)));
+    }
+
+    private static void AppendSemanticSourcePayloadPair(
+        IncrementalHash hash,
+        SemanticSourcePayloadPairObservation observation,
+        ref long sourceBytes)
+    {
+        AppendSemanticSourcePayload(hash, observation.Base, ref sourceBytes);
+        AppendSemanticSourcePayload(hash, observation.Current, ref sourceBytes);
+    }
+
+    private static void AppendSemanticSourcePayload(
+        IncrementalHash hash,
+        SemanticSourcePayloadObservation observation,
+        ref long sourceBytes)
+    {
+        if (observation.IsMissing)
+        {
             AppendSemanticSourceHash(hash, "missing");
+            return;
+        }
+
+        if (observation.Length > MaximumSemanticSourceBytes - sourceBytes)
+        {
+            throw new InvalidDataException("The semantic source bytes exceed their bounded limit.");
+        }
+
+        sourceBytes = checked(sourceBytes + observation.Length);
+        AppendSemanticSourceHash(hash, observation.Origin);
+        AppendSemanticSourceHash(
+            hash,
+            observation.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendSemanticSourceHash(hash, observation.Digest);
+    }
+
+    private sealed record SemanticSourcePayloadPairCapture(
+        SemanticSourcePayloadPairObservation? Observation,
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? Failure);
+
+    private sealed record SemanticSourcePayloadPairObservation(
+        SemanticSourcePayloadObservation Base,
+        SemanticSourcePayloadObservation Current);
+
+    private sealed record SemanticSourcePayloadObservation(
+        bool IsMissing,
+        string Origin,
+        int Length,
+        string Digest)
+    {
+        public static SemanticSourcePayloadObservation Missing { get; } = new(
+            IsMissing: true,
+            Origin: string.Empty,
+            Length: 0,
+            Digest: string.Empty);
+    }
+
+    private sealed record CapturedSemanticWorkflow<T>(
+        T? Value,
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? Failure)
+        where T : class
+    {
+        public T Get()
+        {
+            Failure?.Throw();
+            return Value ?? throw new InvalidOperationException(
+                "The semantic workflow was not prepared.");
+        }
+    }
+
+    private static CapturedSemanticWorkflow<T> CaptureSemanticWorkflow<T>(Func<T> load)
+        where T : class
+    {
+        try
+        {
+            return new CapturedSemanticWorkflow<T>(load(), Failure: null);
+        }
+        catch (Exception exception)
+        {
+            return new CapturedSemanticWorkflow<T>(
+                Value: null,
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception));
         }
     }
 

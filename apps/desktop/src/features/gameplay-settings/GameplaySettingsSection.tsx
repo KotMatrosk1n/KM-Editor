@@ -55,6 +55,7 @@ type LoadState = {
 };
 
 type GameplaySettingsLoadMode = 'applyRefresh' | 'standalone';
+type GameplaySettingsDeliveryMode = 'fixed' | 'runtime';
 
 const rateChoices = Array.from(
   {
@@ -94,9 +95,13 @@ export function GameplaySettingsSection({
   const [busy, setBusy] = useState<'apply' | 'load' | 'preview' | null>(null);
   const [messageKey, setMessageKey] = useState<string | null>(null);
   const [betaAcknowledged, setBetaAcknowledged] = useState(false);
+  const [deliveryMode, setDeliveryMode] =
+    useState<GameplaySettingsDeliveryMode>('runtime');
   const [inGamePackageDirty, setInGamePackageDirty] = useState(false);
   const [inGamePackageState, setInGamePackageState] =
     useState<InGameSettingsPackageState | null>(null);
+  const [inGamePackageLocksStaticEditor, setInGamePackageLocksStaticEditor] =
+    useState(false);
   const actionGenerationRef = useRef(0);
   const draftGenerationRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -108,6 +113,7 @@ export function GameplaySettingsSection({
   onApplyBusyChangeRef.current = onApplyBusyChange;
   const applyGuardControllerRef = useRef<GameplaySettingsApplyGuardController | null>(null);
   const focusReviewOnCompletionRef = useRef(false);
+  const deliveryModeChosenRef = useRef(false);
   const reviewRegionRef = useRef<HTMLDivElement | null>(null);
   if (applyGuardControllerRef.current === null) {
     applyGuardControllerRef.current = createGameplaySettingsApplyGuardController(
@@ -170,9 +176,23 @@ export function GameplaySettingsSection({
     previewRequestGenerationRef.current += 1;
     endApplyGuard();
     setBetaAcknowledged(false);
+    setDeliveryMode('runtime');
+    deliveryModeChosenRef.current = false;
     setInGamePackageDirty(false);
     setInGamePackageState(null);
+    setInGamePackageLocksStaticEditor(false);
   }, [endApplyGuard, scopeKey]);
+
+  useEffect(() => {
+    if (
+      !deliveryModeChosenRef.current &&
+      (inGamePackageState === 'installed' ||
+        inGamePackageState === 'upgradeAvailable' ||
+        inGamePackageState === 'coexistenceConflict')
+    ) {
+      setDeliveryMode('runtime');
+    }
+  }, [inGamePackageState]);
 
   const reportError = useCallback(
     async (error: unknown, operation: 'apply' | 'load' | 'preview') => {
@@ -261,9 +281,7 @@ export function GameplaySettingsSection({
     stableScope && loadState && isEditableState(loadState.state) && snapshot && draft
   );
   const staticEditorLockedByPackage = Boolean(
-    stableScope &&
-      inGamePackageState !== 'unavailable' &&
-      inGamePackageState !== 'notInstalled'
+    stableScope && inGamePackageLocksStaticEditor
   );
   const unavailableReason = stableScope
     ? loadState?.state ?? (busy === 'load' ? 'loading' : 'not-loaded')
@@ -592,7 +610,7 @@ export function GameplaySettingsSection({
             <p>{t('gameplaySettings.description')}</p>
           </div>
         </div>
-        {stableScope ? (
+        {stableScope && deliveryMode === 'fixed' ? (
           <button
             className="secondary-button"
             disabled={busy !== null || hasProtectedDraft}
@@ -663,6 +681,54 @@ export function GameplaySettingsSection({
         </div>
       ) : null}
 
+      {stableScope ? (
+        <section
+          aria-labelledby="gameplay-settings-delivery-title"
+          className="gameplay-settings__delivery"
+        >
+          <div className="gameplay-settings__delivery-heading">
+            <h3 id="gameplay-settings-delivery-title">
+              {t('gameplaySettings.delivery.title')}
+            </h3>
+            <p>{t('gameplaySettings.delivery.description')}</p>
+          </div>
+          <div
+            aria-label={t('gameplaySettings.delivery.title')}
+            className="gameplay-settings__delivery-options"
+            role="group"
+          >
+            <button
+              aria-pressed={deliveryMode === 'fixed'}
+              className="gameplay-settings__delivery-option"
+              onClick={() => {
+                deliveryModeChosenRef.current = true;
+                setDeliveryMode('fixed');
+              }}
+              type="button"
+            >
+              <strong>{t('gameplaySettings.delivery.fixedTitle')}</strong>
+              <span>{t('gameplaySettings.delivery.fixedDescription')}</span>
+            </button>
+            <button
+              aria-pressed={deliveryMode === 'runtime'}
+              className="gameplay-settings__delivery-option"
+              onClick={() => {
+                deliveryModeChosenRef.current = true;
+                setDeliveryMode('runtime');
+              }}
+              type="button"
+            >
+              <strong>{t('gameplaySettings.delivery.runtimeTitle')}</strong>
+              <span>{t('gameplaySettings.delivery.runtimeDescription')}</span>
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <div
+        className="gameplay-settings__mode-content"
+        hidden={deliveryMode !== 'fixed'}
+      >
       {staticEditorLockedByPackage ? (
         <div className="gameplay-settings__warning" role="status">
           <strong>
@@ -891,22 +957,29 @@ export function GameplaySettingsSection({
           </div>
         </div>
       ) : null}
+      </div>
 
       {stableScope ? (
-        <InGameSettingsPackagePanel
-          armCriticalWriteGuard={armCriticalWriteGuard}
-          bridge={bridge}
-          canApply={canApply}
-          onApplied={onApplied}
-          onApplyBusyChange={onApplyBusyChange}
-          onDirtyChange={setInGamePackageDirty}
-          onError={onError}
-          onRecoveryRequired={onRecoveryRequired}
-          onStateChange={setInGamePackageState}
-          scope={stableScope}
-          staticEditorBusy={busy !== null || hasProtectedDraft}
-          staticSettingsAreVanilla={staticSettingsAreVanilla}
-        />
+        <div
+          className="gameplay-settings__mode-content"
+          hidden={deliveryMode !== 'runtime'}
+        >
+          <InGameSettingsPackagePanel
+            armCriticalWriteGuard={armCriticalWriteGuard}
+            bridge={bridge}
+            canApply={canApply}
+            onApplied={onApplied}
+            onApplyBusyChange={onApplyBusyChange}
+            onDirtyChange={setInGamePackageDirty}
+            onError={onError}
+            onRecoveryRequired={onRecoveryRequired}
+            onStaticEditorLockChange={setInGamePackageLocksStaticEditor}
+            onStateChange={setInGamePackageState}
+            scope={stableScope}
+            staticEditorBusy={busy !== null || hasProtectedDraft}
+            staticSettingsAreVanilla={staticSettingsAreVanilla}
+          />
+        </div>
       ) : null}
     </section>
   );
