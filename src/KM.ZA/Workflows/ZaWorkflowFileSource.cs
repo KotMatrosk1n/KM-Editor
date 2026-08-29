@@ -23,8 +23,11 @@ internal sealed class ZaWorkflowFileSource
     private const long MaximumBoundedArchivePackBytes = 128L * 1024L * 1024L;
     private const int MaximumBoundedTableRecords = 50_000;
     private const int MaximumBoundedNestedRecords = 100_000;
+    private const string StandaloneOutputModeKey = "za.standalone";
+    private const string TrinityModManagerOutputModeKey = "za.trinity-mod-manager";
+    private const string TrinityBypassOutputModeKey = "za.trinity-bypass";
 
-    private static readonly ConcurrentDictionary<string, object> OutputRootLocks = new(
+    private static readonly ConcurrentDictionary<string, ZaOutputRootLockGate> OutputRootLocks = new(
         OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal);
@@ -1573,11 +1576,12 @@ internal sealed class ZaWorkflowFileSource
             lockKey = $"<invalid>:{outputRoot}";
         }
 
-        var gate = OutputRootLocks.GetOrAdd(lockKey, static _ => new object());
-        Monitor.Enter(gate);
+        var gate = ReserveOutputRootGate(lockKey);
+        var lockTaken = false;
         Mutex? processMutex = null;
         try
         {
+            Monitor.Enter(gate.SyncRoot, ref lockTaken);
             var lockName = CreateOutputMutexName(lockKey);
             processMutex = new Mutex(initiallyOwned: false, lockName);
             try
@@ -1598,9 +1602,46 @@ internal sealed class ZaWorkflowFileSource
         catch
         {
             processMutex?.Dispose();
-            Monitor.Exit(gate);
+            if (lockTaken)
+            {
+                Monitor.Exit(gate.SyncRoot);
+            }
+
+            ReleaseOutputRootGate(gate);
             throw;
         }
+    }
+
+    private static ZaOutputRootLockGate ReserveOutputRootGate(string lockKey)
+    {
+        while (true)
+        {
+            var gate = OutputRootLocks.GetOrAdd(
+                lockKey,
+                static key => new ZaOutputRootLockGate(key));
+            if (gate.TryAddReference())
+            {
+                return gate;
+            }
+
+            RemoveOutputRootGate(gate);
+            Thread.Yield();
+        }
+    }
+
+    internal static void ReleaseOutputRootGate(ZaOutputRootLockGate gate)
+    {
+        ArgumentNullException.ThrowIfNull(gate);
+        if (gate.ReleaseReference())
+        {
+            RemoveOutputRootGate(gate);
+        }
+    }
+
+    private static void RemoveOutputRootGate(ZaOutputRootLockGate gate)
+    {
+        ((ICollection<KeyValuePair<string, ZaOutputRootLockGate>>)OutputRootLocks).Remove(
+            new KeyValuePair<string, ZaOutputRootLockGate>(gate.LockKey, gate));
     }
 
     internal static DeferredOutputBatch BeginDeferredOutputBatch(
@@ -2218,10 +2259,46 @@ internal sealed class ZaWorkflowFileSource
         if (owned.ProjectId != projectId
             || owned.GameFamily != gameFamily
             || owned.CurrentState != expectedPreimage
-            || !string.Equals(owned.OutputMode, outputMode, StringComparison.Ordinal))
+            || !AreComposedExecutableOutputModesCompatible(
+                owned.OutputMode,
+                outputMode,
+                relativePath))
         {
             throw new OutputOwnershipConflictException(relativePath);
         }
+    }
+
+    private static bool AreComposedExecutableOutputModesCompatible(
+        string ownedOutputMode,
+        string requestedOutputMode,
+        RelativeOutputPath relativePath)
+    {
+        if (string.Equals(ownedOutputMode, requestedOutputMode, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!IsComposedExecutablePath(relativePath))
+        {
+            return false;
+        }
+
+        return (string.Equals(
+                    ownedOutputMode,
+                    StandaloneOutputModeKey,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    requestedOutputMode,
+                    TrinityBypassOutputModeKey,
+                    StringComparison.Ordinal))
+            || (string.Equals(
+                    ownedOutputMode,
+                    TrinityBypassOutputModeKey,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    requestedOutputMode,
+                    StandaloneOutputModeKey,
+                    StringComparison.Ordinal));
     }
 
     private static IReadOnlyDictionary<string, OutputFileState> CapturePreparedPreimages(
@@ -2323,9 +2400,9 @@ internal sealed class ZaWorkflowFileSource
     {
         return outputMode switch
         {
-            ZaOutputMode.Standalone => "za.standalone",
-            ZaOutputMode.TrinityModManager => "za.trinity-mod-manager",
-            ZaOutputMode.TrinityBypass => "za.trinity-bypass",
+            ZaOutputMode.Standalone => StandaloneOutputModeKey,
+            ZaOutputMode.TrinityModManager => TrinityModManagerOutputModeKey,
+            ZaOutputMode.TrinityBypass => TrinityBypassOutputModeKey,
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }
@@ -3293,10 +3370,10 @@ public sealed class ZaOutputApplyNotCommittedException : IOException
 
 internal sealed class ZaOutputRootLock : IDisposable
 {
-    private object? gate;
+    private ZaOutputRootLockGate? gate;
     private Mutex? processMutex;
 
-    public ZaOutputRootLock(object gate, Mutex processMutex)
+    public ZaOutputRootLock(ZaOutputRootLockGate gate, Mutex processMutex)
     {
         this.gate = gate;
         this.processMutex = processMutex;
@@ -3318,8 +3395,65 @@ internal sealed class ZaOutputRootLock : IDisposable
             var capturedGate = Interlocked.Exchange(ref gate, null);
             if (capturedGate is not null)
             {
-                Monitor.Exit(capturedGate);
+                try
+                {
+                    Monitor.Exit(capturedGate.SyncRoot);
+                }
+                finally
+                {
+                    ZaWorkflowFileSource.ReleaseOutputRootGate(capturedGate);
+                }
             }
+        }
+    }
+}
+
+internal sealed class ZaOutputRootLockGate
+{
+    private readonly object referenceSync = new();
+    private int referenceCount;
+    private bool retired;
+
+    public ZaOutputRootLockGate(string lockKey)
+    {
+        LockKey = lockKey;
+    }
+
+    public string LockKey { get; }
+
+    public object SyncRoot { get; } = new();
+
+    public bool TryAddReference()
+    {
+        lock (referenceSync)
+        {
+            if (retired)
+            {
+                return false;
+            }
+
+            referenceCount++;
+            return true;
+        }
+    }
+
+    public bool ReleaseReference()
+    {
+        lock (referenceSync)
+        {
+            if (referenceCount <= 0)
+            {
+                throw new InvalidOperationException("The Pokemon Legends Z-A output lock gate was released without an owner.");
+            }
+
+            referenceCount--;
+            if (referenceCount != 0)
+            {
+                return false;
+            }
+
+            retired = true;
+            return true;
         }
     }
 }

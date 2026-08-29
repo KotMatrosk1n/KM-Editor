@@ -24,7 +24,7 @@ internal sealed class SvWorkflowFileSource
     private const int MaximumBoundedNestedRecords = 100_000;
 
     internal static object OutputWriteSyncRoot { get; } = new();
-    private static readonly ConcurrentDictionary<string, object> OutputRootLocks = new(
+    private static readonly ConcurrentDictionary<string, SvOutputRootLockGate> OutputRootLocks = new(
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     [ThreadStatic]
     private static DeferredOutputBatch? activeDeferredOutputBatch;
@@ -1610,11 +1610,12 @@ internal sealed class SvWorkflowFileSource
             lockKey = $"<invalid>:{outputRoot}";
         }
 
-        var gate = OutputRootLocks.GetOrAdd(lockKey, static _ => new object());
-        Monitor.Enter(gate);
+        var gate = ReserveOutputRootGate(lockKey);
+        var lockTaken = false;
         Mutex? processMutex = null;
         try
         {
+            Monitor.Enter(gate.SyncRoot, ref lockTaken);
             processMutex = new Mutex(initiallyOwned: false, CreateOutputMutexName(lockKey));
             try
             {
@@ -1633,9 +1634,46 @@ internal sealed class SvWorkflowFileSource
         catch
         {
             processMutex?.Dispose();
-            Monitor.Exit(gate);
+            if (lockTaken)
+            {
+                Monitor.Exit(gate.SyncRoot);
+            }
+
+            ReleaseOutputRootGate(gate);
             throw;
         }
+    }
+
+    private static SvOutputRootLockGate ReserveOutputRootGate(string lockKey)
+    {
+        while (true)
+        {
+            var gate = OutputRootLocks.GetOrAdd(
+                lockKey,
+                static key => new SvOutputRootLockGate(key));
+            if (gate.TryAddReference())
+            {
+                return gate;
+            }
+
+            RemoveOutputRootGate(gate);
+            Thread.Yield();
+        }
+    }
+
+    internal static void ReleaseOutputRootGate(SvOutputRootLockGate gate)
+    {
+        ArgumentNullException.ThrowIfNull(gate);
+        if (gate.ReleaseReference())
+        {
+            RemoveOutputRootGate(gate);
+        }
+    }
+
+    private static void RemoveOutputRootGate(SvOutputRootLockGate gate)
+    {
+        ((ICollection<KeyValuePair<string, SvOutputRootLockGate>>)OutputRootLocks).Remove(
+            new KeyValuePair<string, SvOutputRootLockGate>(gate.LockKey, gate));
     }
 
     private static string CreateOutputMutexName(string lockKey)
@@ -2515,10 +2553,10 @@ public sealed class SvOutputApplyNotCommittedException : IOException
 
 internal sealed class SvOutputRootLock : IDisposable
 {
-    private object? gate;
+    private SvOutputRootLockGate? gate;
     private Mutex? processMutex;
 
-    public SvOutputRootLock(object gate, Mutex processMutex)
+    public SvOutputRootLock(SvOutputRootLockGate gate, Mutex processMutex)
     {
         this.gate = gate;
         this.processMutex = processMutex;
@@ -2537,8 +2575,65 @@ internal sealed class SvOutputRootLock : IDisposable
             var capturedGate = Interlocked.Exchange(ref gate, null);
             if (capturedGate is not null)
             {
-                Monitor.Exit(capturedGate);
+                try
+                {
+                    Monitor.Exit(capturedGate.SyncRoot);
+                }
+                finally
+                {
+                    SvWorkflowFileSource.ReleaseOutputRootGate(capturedGate);
+                }
             }
+        }
+    }
+}
+
+internal sealed class SvOutputRootLockGate
+{
+    private readonly object referenceSync = new();
+    private int referenceCount;
+    private bool retired;
+
+    public SvOutputRootLockGate(string lockKey)
+    {
+        LockKey = lockKey;
+    }
+
+    public string LockKey { get; }
+
+    public object SyncRoot { get; } = new();
+
+    public bool TryAddReference()
+    {
+        lock (referenceSync)
+        {
+            if (retired)
+            {
+                return false;
+            }
+
+            referenceCount++;
+            return true;
+        }
+    }
+
+    public bool ReleaseReference()
+    {
+        lock (referenceSync)
+        {
+            if (referenceCount <= 0)
+            {
+                throw new InvalidOperationException("The Scarlet/Violet output lock gate was released without an owner.");
+            }
+
+            referenceCount--;
+            if (referenceCount != 0)
+            {
+                return false;
+            }
+
+            retired = true;
+            return true;
         }
     }
 }

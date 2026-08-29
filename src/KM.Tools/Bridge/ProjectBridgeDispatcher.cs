@@ -218,6 +218,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly InGameSettingsPackageApplicationService inGameSettingsPackageApplicationService;
     private readonly bool ownsSemanticMergeApplicationService;
     private readonly bool ownsResearchLabApplicationService;
+    private readonly bool ownsInGameSettingsPackageApplicationService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -344,6 +345,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 rowClipboardMutations.Mutate);
         this.gameplaySettingsApplicationService = gameplaySettingsApplicationService
             ?? new GameplaySettingsApplicationService();
+        ownsInGameSettingsPackageApplicationService =
+            inGameSettingsPackageApplicationService is null;
         if (inGameSettingsPackageApplicationService is not null)
         {
             this.inGameSettingsPackageApplicationService = inGameSettingsPackageApplicationService;
@@ -457,6 +460,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         if (ownsResearchLabApplicationService)
         {
             researchLabApplicationService.Dispose();
+        }
+
+        if (ownsInGameSettingsPackageApplicationService)
+        {
+            inGameSettingsPackageApplicationService.Dispose();
         }
     }
 

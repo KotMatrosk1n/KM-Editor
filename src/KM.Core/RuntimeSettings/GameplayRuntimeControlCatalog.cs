@@ -326,7 +326,7 @@ public static class GameplayRuntimeControlCatalog
             DeferredDefinition(
                 GameplayRuntimeControlId.PicnicExperience,
                 "picnic-experience",
-                "Picnic Experience",
+                "Picnic EXP Rewards",
                 GameplayRuntimeControlSection.Progression,
                 GameplayDeferredFeatureId.PicnicExperience,
                 _ => picnicExperience),

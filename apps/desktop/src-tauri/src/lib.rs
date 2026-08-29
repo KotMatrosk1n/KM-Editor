@@ -695,9 +695,7 @@ async fn project_bridge(
     bridge_state: tauri::State<'_, ProjectBridgeState>,
     request_json: String,
 ) -> Result<String, String> {
-    if request_json.len() > MAX_PROJECT_BRIDGE_REQUEST_BYTES {
-        return Err("Project bridge request exceeded the supported size limit.".to_owned());
-    }
+    validate_project_bridge_request_transport(&request_json)?;
 
     let bridge_state = bridge_state.inner().clone();
     let pending_request = bridge_state.reserve_pending_request(request_json.len())?;
@@ -746,6 +744,22 @@ async fn project_bridge(
     })
     .await
     .map_err(|error| format!("Project bridge request task failed: {error}"))?
+}
+
+fn validate_project_bridge_request_transport(request_json: &str) -> Result<(), String> {
+    if request_json.len() > MAX_PROJECT_BRIDGE_REQUEST_BYTES {
+        return Err("Project bridge request exceeded the supported size limit.".to_owned());
+    }
+
+    if request_json
+        .as_bytes()
+        .iter()
+        .any(|byte| matches!(byte, b'\r' | b'\n'))
+    {
+        return Err("Project bridge requests must contain exactly one JSON line.".to_owned());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -2240,10 +2254,17 @@ fn open_path(path: String) -> Result<(), String> {
     }
 
     let mut command = create_open_path_command(&path);
-    command
+    let child = command
         .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Could not open the folder: {error}"))
+        .map_err(|error| format!("Could not open the folder: {error}"))?;
+    reap_open_path_child_in_background(child);
+    Ok(())
+}
+
+fn reap_open_path_child_in_background(mut child: Child) {
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -3032,6 +3053,26 @@ mod tests {
                 ProjectBridgeCommandConcurrency::Exclusive
             );
         }
+    }
+
+    #[test]
+    fn project_bridge_transport_rejects_line_delimiter_injection() {
+        for request_json in [
+            "{}\n{}",
+            "{}\r{}",
+            "{}\r\n{}",
+            "\n{\"command\":\"project.list\"}",
+        ] {
+            assert!(
+                validate_project_bridge_request_transport(request_json).is_err(),
+                "raw request delimiters must be rejected before bridge admission"
+            );
+        }
+
+        assert!(validate_project_bridge_request_transport(
+            r#"{"command":"project.list","value":"escaped\ntext"}"#
+        )
+        .is_ok());
     }
 
     #[test]
