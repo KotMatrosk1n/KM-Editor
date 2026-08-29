@@ -870,24 +870,11 @@ public sealed class OutputSafetyApplicationService
             throw new OutputScopeMismatchException();
         }
 
-        string outputRoot;
-        try
-        {
-            outputRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.OutputRootPath));
-        }
-        catch (Exception exception) when (exception is
-            IOException or
-            UnauthorizedAccessException or
-            SecurityException or
-            ArgumentException or
-            NotSupportedException)
-        {
-            throw new OutputScopeMismatchException();
-        }
-
-        if (!IsSafeOutputRoot(outputRoot)
-            || OverlapsSourceRoot(outputRoot, paths.BaseRomFsPath)
-            || OverlapsSourceRoot(outputRoot, paths.BaseExeFsPath))
+        if (!TryNormalizeSafeExistingDirectory(paths.OutputRootPath, out var outputRoot)
+            || !TryNormalizeSafeOptionalExistingDirectory(paths.BaseRomFsPath, out var baseRomFsRoot)
+            || !TryNormalizeSafeOptionalExistingDirectory(paths.BaseExeFsPath, out var baseExeFsRoot)
+            || (baseRomFsRoot is not null && PathsOverlap(outputRoot, baseRomFsRoot))
+            || (baseExeFsRoot is not null && PathsOverlap(outputRoot, baseExeFsRoot)))
         {
             throw new OutputScopeMismatchException();
         }
@@ -928,14 +915,43 @@ public sealed class OutputSafetyApplicationService
             || (value.Length <= maximumLength && !value.Any(char.IsControl));
     }
 
-    private static bool IsSafeOutputRoot(string outputRoot)
+    private static bool TryNormalizeSafeExistingDirectory(string? path, out string normalizedPath)
     {
+        normalizedPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+        {
+            return false;
+        }
+
         try
         {
-            var directory = new DirectoryInfo(outputRoot);
-            directory.Refresh();
-            return directory.Exists
-                && string.IsNullOrEmpty(directory.LinkTarget);
+            var directory = new DirectoryInfo(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)));
+            FileSystemInfo? entry = directory;
+            while (entry is not null)
+            {
+                entry.Refresh();
+                if (!entry.Exists)
+                {
+                    return false;
+                }
+
+                if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                    && !string.IsNullOrEmpty(entry.LinkTarget))
+                {
+                    return false;
+                }
+
+                entry = entry switch
+                {
+                    FileInfo file => file.Directory,
+                    DirectoryInfo parentDirectory => parentDirectory.Parent,
+                    _ => null,
+                };
+            }
+
+            normalizedPath = directory.FullName;
+            return true;
         }
         catch (Exception exception) when (exception is
             IOException or
@@ -948,28 +964,29 @@ public sealed class OutputSafetyApplicationService
         }
     }
 
-    private static bool OverlapsSourceRoot(string outputRoot, string? sourceRoot)
+    private static bool TryNormalizeSafeOptionalExistingDirectory(
+        string? path,
+        out string? normalizedPath)
     {
-        if (string.IsNullOrWhiteSpace(sourceRoot))
+        normalizedPath = null;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return true;
+        }
+
+        if (!TryNormalizeSafeExistingDirectory(path, out var normalizedExistingPath))
         {
             return false;
         }
 
-        try
-        {
-            var normalizedSourceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceRoot));
-            return IsContainedOrEqual(outputRoot, normalizedSourceRoot)
-                || IsContainedOrEqual(normalizedSourceRoot, outputRoot);
-        }
-        catch (Exception exception) when (exception is
-            IOException or
-            UnauthorizedAccessException or
-            SecurityException or
-            ArgumentException or
-            NotSupportedException)
-        {
-            return true;
-        }
+        normalizedPath = normalizedExistingPath;
+        return true;
+    }
+
+    private static bool PathsOverlap(string firstPath, string secondPath)
+    {
+        return IsContainedOrEqual(firstPath, secondPath)
+            || IsContainedOrEqual(secondPath, firstPath);
     }
 
     private static bool IsContainedOrEqual(string parentPath, string candidatePath)

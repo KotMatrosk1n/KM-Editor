@@ -7,6 +7,7 @@ using KM.Api.RuntimeSettings;
 using KM.Core.Concurrency;
 using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
 using KM.SV.RuntimeSettings;
 using KM.SwSh.RuntimeSettings;
@@ -109,9 +110,24 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var main = (byte[])prepared[0];
-            var npdm = (byte[])prepared[1];
-            var romFs = (IReadOnlyDictionary<string, byte[]>)prepared[2];
+            var mainSource = (ReviewedBaseSource)prepared[0];
+            var npdmSource = (ReviewedBaseSource)prepared[1];
+            var preparedRomFs = (PreparedRomFs)prepared[2];
+            var main = mainSource.Bytes;
+            var npdm = npdmSource.Bytes;
+            var romFs = preparedRomFs.Components;
+            var externalSourceDependencies = new[]
+                {
+                    mainSource.Dependency,
+                    npdmSource.Dependency,
+                }
+                .Concat(preparedRomFs.Dependencies)
+                .OrderBy(
+                    dependency => dependency.AbsolutePath,
+                    OperatingSystem.IsWindows()
+                        ? StringComparer.OrdinalIgnoreCase
+                        : StringComparer.Ordinal)
+                .ToArray();
 
             reviewingOutputSources = true;
             var reviewedSources = BoundedParallel.MapOrdered<ReviewedOutputSource>(
@@ -185,7 +201,8 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 requiresOwnedMainSource,
                 requiresOwnedMainNpdmSource,
                 AttemptedSourcePath: null,
-                SemanticallyVerifiedMainSource: semanticallyVerifiedMainSource));
+                SemanticallyVerifiedMainSource: semanticallyVerifiedMainSource,
+                ExternalSourceDependencies: externalSourceDependencies));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -235,13 +252,13 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
         };
     }
 
-    private static IReadOnlyDictionary<string, byte[]> BuildRomFsComponents(
+    private static PreparedRomFs BuildRomFsComponents(
         ProjectPaths paths,
         ProjectGame game,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return game switch
+        var components = game switch
         {
             ProjectGame.Scarlet or ProjectGame.Violet =>
                 SvNativeGameplayMenuRomFsMaterializer.Build(paths, cancellationToken),
@@ -255,9 +272,234 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 ZaNativeGameplayMenuRomFsMaterializer.Build(paths, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(game)),
         };
+        var dependencies = ReviewRomFsDependencies(
+            paths,
+            game,
+            components.Keys,
+            cancellationToken);
+        return new PreparedRomFs(components, dependencies);
     }
 
-    private static byte[] ReadBaseExeFsFile(
+    private static IReadOnlyList<InGameSettingsExternalSourceDependency>
+        ReviewRomFsDependencies(
+            ProjectPaths paths,
+            ProjectGame game,
+            IEnumerable<string> componentPaths,
+            CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+            || !Path.IsPathFullyQualified(paths.BaseRomFsPath))
+        {
+            throw new DirectoryNotFoundException(
+                "The selected project has no valid Base RomFS folder.");
+        }
+
+        var root = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(paths.BaseRomFsPath));
+        var rootInfo = new DirectoryInfo(root);
+        rootInfo.Refresh();
+        if (!rootInfo.Exists
+            || !string.IsNullOrEmpty(rootInfo.LinkTarget)
+            || !rootInfo.Attributes.HasFlag(FileAttributes.Directory))
+        {
+            throw new IOException("The Base RomFS folder is not a safe regular directory.");
+        }
+
+        var virtualPaths = componentPaths
+            .Where(path => path.StartsWith("romfs/", StringComparison.Ordinal))
+            .Select(path => path["romfs/".Length..])
+            .Where(path => game != ProjectGame.ZA
+                || !string.Equals(path, "arc/data.trpfd", StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        if (game is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            virtualPaths.Add("bin/script/param/script_id/script_id_record.bin");
+        }
+        if (game == ProjectGame.ZA)
+        {
+            virtualPaths.Add(ZaNativeGameplayMenuRomFsMaterializer.GameSettingsUiPath["romfs/".Length..]);
+        }
+
+        var pathComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var reviewed = new Dictionary<string, InGameSettingsExternalSourceDependency>(pathComparer);
+        var requiresPackedArchive = false;
+        foreach (var virtualPath in virtualPaths.OrderBy(path => path, StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var loosePath = game is ProjectGame.Sword or ProjectGame.Shield
+                ? ResolveDirectLooseSource(root, virtualPath)
+                : TryResolveLooseSource(root, virtualPath);
+            if (loosePath is null)
+            {
+                requiresPackedArchive = true;
+                continue;
+            }
+
+            reviewed.TryAdd(
+                loosePath,
+                ReviewExternalSource(
+                    root,
+                    loosePath,
+                    GameplayBundleArchive.MaximumEntryBytes,
+                    hashContents: true,
+                    cancellationToken));
+        }
+
+        if (game is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            if (requiresPackedArchive)
+            {
+                throw new FileNotFoundException(
+                    "A required Sword/Shield Base RomFS source is missing.");
+            }
+        }
+        else if (requiresPackedArchive || game == ProjectGame.ZA)
+        {
+            var descriptorPath = ResolveRequiredLooseSource(root, "arc/data.trpfd");
+            reviewed.TryAdd(
+                descriptorPath,
+                ReviewExternalSource(
+                    root,
+                    descriptorPath,
+                    64 * 1024 * 1024,
+                    hashContents: true,
+                    cancellationToken));
+            if (requiresPackedArchive)
+            {
+                var packPath = ResolveRequiredLooseSource(root, "arc/data.trpfs");
+                reviewed.TryAdd(
+                    packPath,
+                    ReviewExternalSource(
+                        root,
+                        packPath,
+                        OutputLimits.MaximumFingerprintFileBytes,
+                        hashContents: false,
+                        cancellationToken));
+            }
+        }
+
+        return reviewed.Values
+            .OrderBy(dependency => dependency.AbsolutePath, pathComparer)
+            .ToArray();
+    }
+
+    private static string? ResolveDirectLooseSource(string root, string virtualPath)
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            root,
+            virtualPath.Replace('/', Path.DirectorySeparatorChar)));
+        EnsureContained(root, path);
+        return File.Exists(path) ? path : null;
+    }
+
+    private static string? TryResolveLooseSource(string root, string virtualPath)
+    {
+        var platformPath = virtualPath.Replace('/', Path.DirectorySeparatorChar);
+        foreach (var candidate in new[]
+                 {
+                     Path.GetFullPath(Path.Combine(root, platformPath)),
+                     Path.GetFullPath(Path.Combine(root, "romfs", platformPath)),
+                 })
+        {
+            EnsureContained(root, candidate);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static string ResolveRequiredLooseSource(string root, string virtualPath) =>
+        TryResolveLooseSource(root, virtualPath)
+        ?? throw new FileNotFoundException("A required packed Base RomFS source is missing.");
+
+    private static InGameSettingsExternalSourceDependency ReviewExternalSource(
+        string root,
+        string path,
+        long maximumBytes,
+        bool hashContents,
+        CancellationToken cancellationToken)
+    {
+        EnsureContained(root, path);
+        EnsureSafeBaseSourceChain(root, path);
+        var file = new FileInfo(path);
+        file.Refresh();
+        if (!file.Exists
+            || !string.IsNullOrEmpty(file.LinkTarget)
+            || file.Attributes.HasFlag(FileAttributes.Directory)
+            || file.Length <= 0
+            || file.Length > maximumBytes)
+        {
+            throw new IOException("A required Base RomFS source is missing or invalid.");
+        }
+
+        var expectedLength = file.Length;
+        string? sha256 = null;
+        if (hashContents)
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 128 * 1024,
+                FileOptions.SequentialScan);
+            if (stream.Length != expectedLength || stream.Length > maximumBytes)
+            {
+                throw new IOException("A Base RomFS source changed while it was reviewed.");
+            }
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[128 * 1024];
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var read = stream.Read(buffer);
+                if (read == 0)
+                {
+                    break;
+                }
+                hash.AppendData(buffer, 0, read);
+            }
+            sha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
+        }
+
+        EnsureSafeBaseSourceChain(root, path);
+        file.Refresh();
+        if (!file.Exists
+            || !string.IsNullOrEmpty(file.LinkTarget)
+            || file.Length != expectedLength)
+        {
+            throw new IOException("A Base RomFS source changed while it was reviewed.");
+        }
+        return new InGameSettingsExternalSourceDependency(
+            path,
+            expectedLength,
+            sha256,
+            maximumBytes);
+    }
+
+    private static void EnsureSafeBaseSourceChain(string root, string path)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        var current = root;
+        foreach (var segment in relative.Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                     StringSplitOptions.RemoveEmptyEntries).SkipLast(1))
+        {
+            current = Path.Combine(current, segment);
+            var directory = new DirectoryInfo(current);
+            directory.Refresh();
+            if (!directory.Exists || !string.IsNullOrEmpty(directory.LinkTarget))
+            {
+                throw new IOException("A Base RomFS source traverses a linked directory.");
+            }
+        }
+    }
+
+    private static ReviewedBaseSource ReadBaseExeFsFile(
         string? baseExeFsRoot,
         string fileName,
         int maximumBytes,
@@ -336,7 +578,13 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             throw new IOException("A Base ExeFS source changed while it was being read.");
         }
 
-        return bytes;
+        return new ReviewedBaseSource(
+            bytes,
+            new InGameSettingsExternalSourceDependency(
+                path,
+                bytes.LongLength,
+                Convert.ToHexStringLower(SHA256.HashData(bytes)),
+                maximumBytes));
     }
 
     private static ReviewedOutputSource ReviewOutputExeFsFile(
@@ -566,4 +814,12 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             [],
             OutputFileState.Missing);
     }
+
+    private sealed record ReviewedBaseSource(
+        byte[] Bytes,
+        InGameSettingsExternalSourceDependency Dependency);
+
+    private sealed record PreparedRomFs(
+        IReadOnlyDictionary<string, byte[]> Components,
+        IReadOnlyList<InGameSettingsExternalSourceDependency> Dependencies);
 }

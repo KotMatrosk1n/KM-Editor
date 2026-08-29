@@ -39,7 +39,56 @@ public sealed record InGameSettingsBundleResolution(
     bool RequiresOwnedMainSource = false,
     bool RequiresOwnedMainNpdmSource = false,
     RelativeOutputPath? AttemptedSourcePath = null,
-    bool SemanticallyVerifiedMainSource = false);
+    bool SemanticallyVerifiedMainSource = false,
+    IReadOnlyList<InGameSettingsExternalSourceDependency>? ExternalSourceDependencies = null);
+
+public sealed record InGameSettingsExternalSourceDependency
+{
+    public InGameSettingsExternalSourceDependency(
+        string absolutePath,
+        long expectedLength,
+        string? expectedSha256,
+        long maximumBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(absolutePath);
+        if (!Path.IsPathFullyQualified(absolutePath)
+            || absolutePath.Length > 32_768)
+        {
+            throw new ArgumentException(
+                "An external package source path must be a bounded absolute path.",
+                nameof(absolutePath));
+        }
+        if (maximumBytes is < 1 or > OutputLimits.MaximumFingerprintFileBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        }
+        if (expectedLength is < 1 || expectedLength > maximumBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedLength));
+        }
+        if (expectedSha256 is not null
+            && (expectedSha256.Length != SHA256.HashSizeInBytes * 2
+                || expectedSha256.Any(character => !Uri.IsHexDigit(character))))
+        {
+            throw new ArgumentException(
+                "An external package source fingerprint must be SHA-256.",
+                nameof(expectedSha256));
+        }
+
+        AbsolutePath = Path.GetFullPath(absolutePath);
+        ExpectedLength = expectedLength;
+        ExpectedSha256 = expectedSha256?.ToLowerInvariant();
+        MaximumBytes = maximumBytes;
+    }
+
+    public string AbsolutePath { get; }
+
+    public long ExpectedLength { get; }
+
+    public string? ExpectedSha256 { get; }
+
+    public long MaximumBytes { get; }
+}
 
 public interface IInGameSettingsBundleProvider
 {
@@ -69,7 +118,7 @@ public interface IInGameSettingsBundleProvider
 /// the durable output transaction coordinator. Bridge callers can select an
 /// operation, but can never supply package bytes or expand bundle authority.
 /// </summary>
-public sealed class InGameSettingsPackageApplicationService
+public sealed class InGameSettingsPackageApplicationService : IDisposable
 {
     private const int MaximumTargetBytes = GameplayBundleArchive.MaximumEntryBytes;
     private const int MaximumComponentMismatchProbeBytes = 64 * 1024;
@@ -79,6 +128,11 @@ public sealed class InGameSettingsPackageApplicationService
     private static readonly RelativeOutputPath StandaloneMainNpdmPath = new("exefs/main.npdm");
     private static readonly RelativeOutputPath StandaloneRuntimeSlotPath = new("exefs/subsdk9");
     private static readonly TimeSpan ReviewLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ReviewSweepInterval = TimeSpan.FromMinutes(1);
+    private static readonly StringComparer ExternalSourcePathComparer =
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private const int MaximumExternalSourceDependencies = 64;
+    private const long MaximumRetainedReviewBytes = OutputLimits.MaximumWriteBytesPerApply;
 
     private readonly object syncRoot = new();
     private readonly Dictionary<string, CachedReview> reviews = new(StringComparer.Ordinal);
@@ -87,6 +141,9 @@ public sealed class InGameSettingsPackageApplicationService
     private readonly IInGameSettingsBundleProvider? bundleProvider;
     private readonly TimeProvider timeProvider;
     private readonly IInGameSettingsStaticSettingsGuard staticSettingsGuard;
+    private readonly ITimer reviewPruneTimer;
+    private long retainedReviewBytes;
+    private bool disposed;
 
     public InGameSettingsPackageApplicationService(
         InGameSettingsBundleCatalog? catalog = null,
@@ -99,6 +156,7 @@ public sealed class InGameSettingsPackageApplicationService
         bundleProvider = null;
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.staticSettingsGuard = staticSettingsGuard ?? new DefaultStaticSettingsGuard();
+        reviewPruneTimer = CreateReviewPruneTimer();
     }
 
     public InGameSettingsPackageApplicationService(
@@ -112,12 +170,14 @@ public sealed class InGameSettingsPackageApplicationService
         authority = GameplaySettingsBundleAuthority.DenyAll;
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.staticSettingsGuard = staticSettingsGuard ?? new DefaultStaticSettingsGuard();
+        reviewPruneTimer = CreateReviewPruneTimer();
     }
 
     public async Task<InspectInGameSettingsPackageResponse> InspectAsync(
         InspectInGameSettingsPackageRequest request,
         CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(request);
         ValidateInstallationTarget(request.InstallationTarget);
         var context = OutputSafetyApplicationService.ResolveScope(request.Scope);
@@ -134,6 +194,7 @@ public sealed class InGameSettingsPackageApplicationService
         PreviewInGameSettingsPackageRequest request,
         CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(request);
         ValidateInstallationTarget(request.InstallationTarget);
         if (!Enum.IsDefined(request.Operation))
@@ -185,28 +246,43 @@ public sealed class InGameSettingsPackageApplicationService
         }
         var expiresAtUtc = timeProvider.GetUtcNow().Add(ReviewLifetime);
         var reviewId = Guid.NewGuid().ToString("N");
+        var retainedBytes = CalculateRetainedReviewBytes(plan);
+        if (retainedBytes > MaximumRetainedReviewBytes)
+        {
+            throw new InGameSettingsPackageUnavailableException(
+                "The reviewed native-menu package exceeds the bounded in-memory review budget.");
+        }
+        var externalSourceDependencies = request.Operation is
+            InGameSettingsPackageOperationDto.Install or
+            InGameSettingsPackageOperationDto.Upgrade
+                ? loaded.ExternalSourceDependencies
+                : ImmutableArray<InGameSettingsExternalSourceDependency>.Empty;
         lock (syncRoot)
         {
+            ThrowIfDisposedLocked();
             PruneReviewsLocked(timeProvider.GetUtcNow());
-            if (reviews.Count == InGameSettingsPackageContract.MaximumCachedReviews)
+            while (reviews.Count >= InGameSettingsPackageContract.MaximumCachedReviews
+                   || retainedReviewBytes > MaximumRetainedReviewBytes - retainedBytes)
             {
                 var oldest = reviews.Values
                     .OrderBy(review => review.ExpiresAtUtc)
                     .ThenBy(review => review.ReviewId, StringComparer.Ordinal)
                     .First();
-                reviews.Remove(oldest.ReviewId);
+                RemoveReviewLocked(oldest.ReviewId, out _);
             }
 
-            reviews.Add(
+            var review = new CachedReview(
                 reviewId,
-                new CachedReview(
-                    reviewId,
-                    context.ScopeKey,
-                    loaded.Snapshot.Revision,
-                    request.Operation,
-                    request.InstallationTarget,
-                    expiresAtUtc,
-                    plan));
+                context.ScopeKey,
+                loaded.Snapshot.Revision,
+                request.Operation,
+                request.InstallationTarget,
+                expiresAtUtc,
+                plan,
+                externalSourceDependencies,
+                retainedBytes);
+            reviews.Add(reviewId, review);
+            retainedReviewBytes = checked(retainedReviewBytes + retainedBytes);
         }
 
         var targets = plan.Mutations
@@ -267,6 +343,7 @@ public sealed class InGameSettingsPackageApplicationService
         ApplyInGameSettingsPackageRequest request,
         CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(request);
         ValidateInstallationTarget(request.InstallationTarget);
         if (string.IsNullOrWhiteSpace(request.ReviewId)
@@ -280,8 +357,9 @@ public sealed class InGameSettingsPackageApplicationService
         CachedReview review;
         lock (syncRoot)
         {
+            ThrowIfDisposedLocked();
             PruneReviewsLocked(timeProvider.GetUtcNow());
-            if (!reviews.Remove(request.ReviewId, out review!)
+            if (!RemoveReviewLocked(request.ReviewId, out review!)
                 || review.ScopeKey != context.ScopeKey
                 || review.InstallationTarget != request.InstallationTarget
                 || review.ExpiresAtUtc <= timeProvider.GetUtcNow())
@@ -290,6 +368,12 @@ public sealed class InGameSettingsPackageApplicationService
             }
         }
 
+        using var externalSourceLeases = review.ExternalSourceDependencies.IsDefaultOrEmpty
+            ? ExternalSourceLeaseSet.Empty
+            : await AcquireExternalSourceLeasesAsync(
+                    review.ExternalSourceDependencies,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
         if (bundleProvider is null
             && review.Operation is (
@@ -315,7 +399,13 @@ public sealed class InGameSettingsPackageApplicationService
         if (!string.Equals(
                 current.Snapshot.Revision,
                 review.ExpectedRevision,
-                StringComparison.Ordinal))
+                StringComparison.Ordinal)
+            || review.Operation is (
+                    InGameSettingsPackageOperationDto.Install or
+                    InGameSettingsPackageOperationDto.Upgrade)
+                && !HaveSameExternalSourceDependencies(
+                    current.ExternalSourceDependencies,
+                    review.ExternalSourceDependencies))
         {
             throw new InGameSettingsPackageStateConflictException();
         }
@@ -623,6 +713,19 @@ public sealed class InGameSettingsPackageApplicationService
             throw new InvalidDataException(
                 "The native-menu executable source dependency inventory is invalid.");
         }
+        var externalSourceDependencies = (resolution.ExternalSourceDependencies ?? [])
+            .OrderBy(
+                dependency => dependency.AbsolutePath,
+                ExternalSourcePathComparer)
+            .ToImmutableArray();
+        if (externalSourceDependencies.Length > MaximumExternalSourceDependencies
+            || externalSourceDependencies.Select(dependency => dependency.AbsolutePath)
+                .Distinct(ExternalSourcePathComparer).Count()
+                != externalSourceDependencies.Length)
+        {
+            throw new InvalidDataException(
+                "The native-menu Base source dependency inventory is invalid.");
+        }
         var ownership = await context.Coordinator
             .GetOwnershipInventorySnapshotAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -773,7 +876,8 @@ public sealed class InGameSettingsPackageApplicationService
             availableEntry,
             installedEntry,
             targets.Values,
-            sourceDependencies);
+            sourceDependencies,
+            externalSourceDependencies);
         var availableDto = availableEntry is null ? null : ToDto(availableEntry);
         var blocksStaticEditor = targets.Values.Any(target =>
             target.Exists
@@ -806,6 +910,7 @@ public sealed class InGameSettingsPackageApplicationService
                 ownership,
                 targets.ToImmutableDictionary(StringComparer.Ordinal),
                 sourceDependencies,
+                externalSourceDependencies,
                 resolution.UsesComposedMain,
                 resolution.UsesComposedMainNpdm);
         }
@@ -846,6 +951,7 @@ public sealed class InGameSettingsPackageApplicationService
                 ownership,
                 targets.ToImmutableDictionary(StringComparer.Ordinal),
                 sourceDependencies,
+                externalSourceDependencies,
                 resolution.UsesComposedMain,
                 resolution.UsesComposedMainNpdm);
         }
@@ -872,6 +978,7 @@ public sealed class InGameSettingsPackageApplicationService
                 ownership,
                 targets.ToImmutableDictionary(StringComparer.Ordinal),
                 sourceDependencies,
+                externalSourceDependencies,
                 resolution.UsesComposedMain,
                 resolution.UsesComposedMainNpdm);
         }
@@ -897,6 +1004,7 @@ public sealed class InGameSettingsPackageApplicationService
             ownership,
             targets.ToImmutableDictionary(StringComparer.Ordinal),
             sourceDependencies,
+            externalSourceDependencies,
             resolution.UsesComposedMain,
             resolution.UsesComposedMainNpdm);
     }
@@ -1794,7 +1902,8 @@ public sealed class InGameSettingsPackageApplicationService
         InGameSettingsBundleCatalogEntry? availableEntry,
         InGameSettingsBundleCatalogEntry? installedEntry,
         IEnumerable<ReviewedTarget> targets,
-        IEnumerable<OutputReadDependency> sourceDependencies)
+        IEnumerable<OutputReadDependency> sourceDependencies,
+        IEnumerable<InGameSettingsExternalSourceDependency> externalSourceDependencies)
     {
         var builder = new StringBuilder();
         builder.Append("in-game-settings-package-review-v2\n")
@@ -1821,6 +1930,17 @@ public sealed class InGameSettingsPackageApplicationService
                 .Append(dependency.ExpectedState.LengthBytes.ToString(CultureInfo.InvariantCulture)).Append('\t')
                 .Append(dependency.ExpectedState.Sha256 ?? "missing").Append('\n');
         }
+        foreach (var dependency in externalSourceDependencies.OrderBy(
+                     dependency => dependency.AbsolutePath,
+                     ExternalSourcePathComparer))
+        {
+            var pathFingerprint = Convert.ToHexStringLower(
+                SHA256.HashData(Encoding.UTF8.GetBytes(dependency.AbsolutePath)));
+            builder.Append("base-source\t").Append(pathFingerprint).Append('\t')
+                .Append(dependency.ExpectedLength.ToString(CultureInfo.InvariantCulture)).Append('\t')
+                .Append(dependency.ExpectedSha256 ?? "length-bound").Append('\t')
+                .Append(dependency.MaximumBytes.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        }
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
@@ -1846,6 +1966,49 @@ public sealed class InGameSettingsPackageApplicationService
             SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
+    private ITimer CreateReviewPruneTimer() => timeProvider.CreateTimer(
+        static state => ((InGameSettingsPackageApplicationService)state!).PruneExpiredReviews(),
+        this,
+        ReviewSweepInterval,
+        ReviewSweepInterval);
+
+    private void PruneExpiredReviews()
+    {
+        lock (syncRoot)
+        {
+            if (!disposed)
+            {
+                PruneReviewsLocked(timeProvider.GetUtcNow());
+            }
+        }
+    }
+
+    private static long CalculateRetainedReviewBytes(OutputApplyPlan plan)
+    {
+        long result = 0;
+        foreach (var mutation in plan.Mutations)
+        {
+            result = checked(result + mutation.Postimage.Length);
+        }
+        return result;
+    }
+
+    private bool RemoveReviewLocked(string reviewId, out CachedReview review)
+    {
+        if (!reviews.Remove(reviewId, out review!))
+        {
+            return false;
+        }
+
+        retainedReviewBytes = checked(retainedReviewBytes - review.RetainedBytes);
+        if (retainedReviewBytes < 0)
+        {
+            throw new InvalidOperationException(
+                "The native-menu review cache byte accounting is invalid.");
+        }
+        return true;
+    }
+
     private void PruneReviewsLocked(DateTimeOffset now)
     {
         foreach (var reviewId in reviews.Values
@@ -1853,8 +2016,161 @@ public sealed class InGameSettingsPackageApplicationService
                      .Select(review => review.ReviewId)
                      .ToArray())
         {
-            reviews.Remove(reviewId);
+            RemoveReviewLocked(reviewId, out _);
         }
+    }
+
+    private static bool HaveSameExternalSourceDependencies(
+        ImmutableArray<InGameSettingsExternalSourceDependency> current,
+        ImmutableArray<InGameSettingsExternalSourceDependency> reviewed)
+    {
+        if (current.Length != reviewed.Length)
+        {
+            return false;
+        }
+        for (var index = 0; index < current.Length; index++)
+        {
+            var left = current[index];
+            var right = reviewed[index];
+            if (!ExternalSourcePathComparer.Equals(left.AbsolutePath, right.AbsolutePath)
+                || left.ExpectedLength != right.ExpectedLength
+                || !string.Equals(left.ExpectedSha256, right.ExpectedSha256, StringComparison.Ordinal)
+                || left.MaximumBytes != right.MaximumBytes)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static async Task<ExternalSourceLeaseSet> AcquireExternalSourceLeasesAsync(
+        ImmutableArray<InGameSettingsExternalSourceDependency> dependencies,
+        CancellationToken cancellationToken)
+    {
+        var streams = new List<FileStream>(dependencies.Length);
+        try
+        {
+            foreach (var dependency in dependencies.OrderBy(
+                         dependency => dependency.AbsolutePath,
+                         ExternalSourcePathComparer))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                EnsureSafeExternalSource(dependency);
+                var stream = new FileStream(
+                    dependency.AbsolutePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 128 * 1024,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                streams.Add(stream);
+                if (stream.Length != dependency.ExpectedLength
+                    || stream.Length > dependency.MaximumBytes)
+                {
+                    throw new IOException(
+                        "A reviewed Base source changed before the package could be applied.");
+                }
+
+                if (dependency.ExpectedSha256 is not null)
+                {
+                    var actual = Convert.ToHexStringLower(
+                        await SHA256.HashDataAsync(stream, cancellationToken)
+                            .ConfigureAwait(false));
+                    if (!string.Equals(
+                            actual,
+                            dependency.ExpectedSha256,
+                            StringComparison.Ordinal))
+                    {
+                        throw new IOException(
+                            "A reviewed Base source changed before the package could be applied.");
+                    }
+                }
+                EnsureSafeExternalSource(dependency);
+            }
+
+            return new ExternalSourceLeaseSet(streams);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            DisposeStreams(streams);
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            SecurityException or
+            ArgumentException or
+            NotSupportedException)
+        {
+            DisposeStreams(streams);
+            throw new InGameSettingsPackageStateConflictException();
+        }
+        catch
+        {
+            DisposeStreams(streams);
+            throw;
+        }
+    }
+
+    private static void EnsureSafeExternalSource(
+        InGameSettingsExternalSourceDependency dependency)
+    {
+        var file = new FileInfo(dependency.AbsolutePath);
+        file.Refresh();
+        if (!file.Exists
+            || !string.IsNullOrEmpty(file.LinkTarget)
+            || file.Attributes.HasFlag(FileAttributes.Directory)
+            || file.Length != dependency.ExpectedLength
+            || file.Length > dependency.MaximumBytes)
+        {
+            throw new IOException("A reviewed Base source is no longer a safe regular file.");
+        }
+
+        for (var directory = file.Directory; directory is not null; directory = directory.Parent)
+        {
+            directory.Refresh();
+            if (!directory.Exists || !string.IsNullOrEmpty(directory.LinkTarget))
+            {
+                throw new IOException("A reviewed Base source traverses a linked directory.");
+            }
+        }
+    }
+
+    private static void DisposeStreams(IEnumerable<FileStream> streams)
+    {
+        foreach (var stream in streams)
+        {
+            stream.Dispose();
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+    }
+
+    private void ThrowIfDisposedLocked()
+    {
+        if (disposed)
+        {
+            throw new ObjectDisposedException(GetType().FullName);
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (syncRoot)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            reviews.Clear();
+            retainedReviewBytes = 0;
+        }
+        reviewPruneTimer.Dispose();
     }
 
     private static void ValidateInstallationTarget(
@@ -1904,6 +2220,7 @@ public sealed class InGameSettingsPackageApplicationService
         OutputOwnershipInventorySnapshot Ownership,
         ImmutableDictionary<string, ReviewedTarget> Targets,
         ImmutableArray<OutputReadDependency> SourceDependencies = default,
+        ImmutableArray<InGameSettingsExternalSourceDependency> ExternalSourceDependencies = default,
         bool UsesComposedMain = false,
         bool UsesComposedMainNpdm = false);
 
@@ -1914,7 +2231,23 @@ public sealed class InGameSettingsPackageApplicationService
         InGameSettingsPackageOperationDto Operation,
         InGameSettingsInstallationTargetDto InstallationTarget,
         DateTimeOffset ExpiresAtUtc,
-        OutputApplyPlan ApplyPlan);
+        OutputApplyPlan ApplyPlan,
+        ImmutableArray<InGameSettingsExternalSourceDependency> ExternalSourceDependencies,
+        long RetainedBytes);
+
+    private sealed class ExternalSourceLeaseSet : IDisposable
+    {
+        internal static ExternalSourceLeaseSet Empty { get; } = new([]);
+
+        private readonly IReadOnlyList<FileStream> streams;
+
+        internal ExternalSourceLeaseSet(IReadOnlyList<FileStream> streams)
+        {
+            this.streams = streams;
+        }
+
+        public void Dispose() => DisposeStreams(streams);
+    }
 }
 
 public sealed class InGameSettingsPackageUnavailableException : Exception
