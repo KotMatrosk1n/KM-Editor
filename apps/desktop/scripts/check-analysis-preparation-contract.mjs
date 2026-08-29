@@ -118,13 +118,37 @@ assert.match(
   /const visibleMountedTools = preparationScopeKeyRef\.current === preparationScopeKey[\s\S]*?visibleMountedTools\.has\(tool\.id\)/,
   'Workbench must stop rendering obsolete-scope preload tools before its reset effect runs.'
 );
-assert.match(
+assert.doesNotMatch(
   workbench,
-  /\{cachePreparation\}[\s\S]*?\{analysisPreparation\}/,
-  'Cache and analysis preparation must remain independent mounted siblings in stable order.'
+  /cachePreparation|analysisPreparation/,
+  'Workbench must not render project setup preparation status panels.'
 );
 
 const app = read('../src/App.tsx');
+const workbenchHomeStart = app.indexOf('<WorkbenchHomeSection');
+const workbenchHomeEnd = app.indexOf('/>', workbenchHomeStart);
+assert.ok(
+  workbenchHomeStart >= 0 && workbenchHomeEnd > workbenchHomeStart,
+  'The Workbench home invocation must remain discoverable by the contract.'
+);
+const workbenchHome = app.slice(workbenchHomeStart, workbenchHomeEnd);
+assert.doesNotMatch(
+  workbenchHome,
+  /cachePreparation|analysisPreparation|SvCacheProgressPanel|AnalysisPreparationPanel/,
+  'Workbench must not receive Project Setup cache or analysis status panels.'
+);
+const projectSetupStart = app.indexOf('function HealthSection({');
+const projectSetupEnd = app.indexOf('function SvCacheProgressPanel(', projectSetupStart);
+assert.ok(
+  projectSetupStart >= 0 && projectSetupEnd > projectSetupStart,
+  'Project Setup must remain discoverable by the preparation placement contract.'
+);
+const projectSetup = app.slice(projectSetupStart, projectSetupEnd);
+assert.match(
+  projectSetup,
+  /<SvCacheProgressPanel[\s\S]*?\{analysisPreparation\}/,
+  'Project Setup must retain the cache and analysis preparation status panels in stable order.'
+);
 assert.ok(
   !app.includes("projectSourceRevision.sourceObservationToken ?? 'pending'"),
   'Analysis preparation must not create a provisional source scope that later looks like a restart.'
@@ -133,11 +157,6 @@ assert.match(
   app,
   /projectSourceRevision\.status === 'ready' &&\s+projectSourceRevision\.sourceObservationToken/,
   'Analysis preparation must begin its stable scope only after the source identity is resolved.'
-);
-assert.match(
-  app,
-  /cachePreparation=\{\s*activeProjectId &&\s*isProjectCacheGame\(selectedGame\)/,
-  'The data-cache panel must mount with the project instead of appearing only after status loads.'
 );
 assert.match(
   app,
@@ -236,9 +255,9 @@ assert.match(
   'A failed cache request must never continue rendering as Checking.'
 );
 assert.match(
-  app,
-  /currentSvCacheRequestError\s*\? 'error'[\s\S]*?status=\{currentSvCacheStatus\}/,
-  'Workbench cache progress must use the current project scope and surface request failure.'
+  projectSetup,
+  /hasSvCacheRequestError\s*\? 'error'[\s\S]*?status=\{svCacheStatus\}/,
+  'Project Setup cache progress must use the current project scope and surface request failure.'
 );
 assert.ok(
   [...app.matchAll(/svCacheStatus=\{currentSvCacheStatus\}/g)].length >= 2,

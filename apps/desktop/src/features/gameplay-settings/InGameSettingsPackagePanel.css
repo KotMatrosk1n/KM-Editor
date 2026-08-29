@@ -56,7 +56,6 @@
 .in-game-settings-package__instructions p,
 .in-game-settings-package__state p,
 .in-game-settings-package__review p,
-.in-game-settings-package__vanilla-guidance p,
 .in-game-settings-package__installation p,
 .in-game-settings-package__contents p {
   color: var(--color-text-muted);
@@ -67,7 +66,6 @@
 .in-game-settings-package__state,
 .in-game-settings-package__message,
 .in-game-settings-package__review,
-.in-game-settings-package__vanilla-guidance,
 .in-game-settings-package__installation,
 .in-game-settings-package__contents {
   background: var(--color-surface);
@@ -251,11 +249,6 @@
   color: var(--color-danger);
 }
 
-.in-game-settings-package__vanilla-guidance {
-  background: var(--color-warning-surface);
-  border-color: var(--color-warning);
-}
-
 .in-game-settings-package__message {
   margin: 0;
 }
@@ -411,7 +404,6 @@
   .in-game-settings-package__state,
   .in-game-settings-package__message,
   .in-game-settings-package__review,
-  .in-game-settings-package__vanilla-guidance,
   .in-game-settings-package__installation,
   .in-game-settings-package__installation-detail,
   .in-game-settings-package__target-option,

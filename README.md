@@ -18,7 +18,7 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 - Review normal changes in one staged plan, with dedicated previews for advanced workflows that need their own write boundary.
 - Keep unfinished work organized through project navigation, record tabs, recents, pins, bookmarks, saved views, notes, and read-only analysis tools.
 
-Beta Gameplay Settings provides reviewed fixed and native in-game controls on the exact builds listed below. Native packages are update-specific, preserve compatible KM-managed executable output, and block unverified conflicts. See [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings) for supported paths, installation, removal, and important limits.
+Beta Gameplay Settings provides reviewed native in-game controls on the exact builds listed below. Native packages are update-specific, preserve compatible KM-managed executable output, and block unverified conflicts. See [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings) for supported paths, installation, removal, and important limits.
 
 Exact editor and advanced-tool coverage differs by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) is the authoritative feature guide for the latest public release.
 

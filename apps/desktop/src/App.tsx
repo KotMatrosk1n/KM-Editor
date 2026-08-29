@@ -18553,39 +18553,6 @@ export function App({
           ) : null}
           <div className="km-retained-workbench" hidden={activeSection !== 'workbench'}>
             <WorkbenchHomeSection
-              analysisPreparation={activeProjectId ? (
-                <AnalysisPreparationPanel
-                  mode={analysisLoadingMode}
-                  snapshot={analysisPreparation.snapshot}
-                />
-              ) : null}
-              cachePreparation={
-                activeProjectId &&
-                isProjectCacheGame(selectedGame) ? (
-                  <SvCacheProgressPanel
-                    cacheTitle={
-                      isSwordShieldGame(selectedGame)
-                        ? t('settings.cache.swsh.title')
-                        : getTrinityCacheTitle(selectedGame)
-                    }
-                    isRetrying={isSvCacheRefreshing}
-                    isWarming={isSvCacheWarming}
-                    hasWarmupError={currentSvCacheWarmupError}
-                    onRetry={() => void handleRefreshSvCacheStatus()}
-                    selectedGame={selectedGame}
-                    sourceState={
-                      currentSvCacheRequestError
-                        ? 'error'
-                        : !health
-                          ? 'checking'
-                          : hasValidProjectCacheSource(selectedGame, health)
-                            ? 'ready'
-                            : 'setupRequired'
-                    }
-                    status={currentSvCacheStatus}
-                  />
-                ) : null
-              }
               balanceLab={
                 semanticExploreScope ? (
                   <BalanceLabRuntime

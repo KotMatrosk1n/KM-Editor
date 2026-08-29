@@ -6,6 +6,7 @@
 import './check-analysis-preparation-contract.mjs';
 import './check-project-async-policy.mjs';
 import './check-focused-editor-contracts.mjs';
+import './check-trainer-naming-contract.mjs';
 
 import { checkControlTheme } from './check-control-theme.mjs';
 

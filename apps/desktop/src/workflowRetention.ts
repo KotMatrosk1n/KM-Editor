@@ -64,7 +64,8 @@ const refreshDependentsBySection: Partial<
 > = {
   royalCandy: ['placement'],
   staticEncounters: ['placement'],
-  text: ['placement']
+  text: ['placement', 'trainers', 'trainerPools'],
+  trainers: ['trainerPools']
 };
 
 export type LoadedWorkflowRetentionEntry = {

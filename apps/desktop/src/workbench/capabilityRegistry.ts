@@ -494,7 +494,7 @@ export const workbenchCapabilityRegistry = [
   }),
   workflow({
     description:
-      'Review and write build-guarded gameplay changes to the selected game executable.',
+      "Install build-specific controls in the game's own settings menu.",
     games: allGames,
     icon: FlaskConical,
     id: 'gameplaySettings',

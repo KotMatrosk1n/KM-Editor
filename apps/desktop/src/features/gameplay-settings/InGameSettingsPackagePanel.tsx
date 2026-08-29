@@ -3,6 +3,7 @@
 import { Gamepad2, PackageCheck, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  InGameSettingsInstallationTarget,
   InGameSettingsPackageOperation,
   InGameSettingsPackageSnapshot,
   PreviewInGameSettingsPackageResponse
@@ -32,15 +33,10 @@ type InGameSettingsPackagePanelProps = {
     scope: OutputSafetyScope
   ) => Promise<void> | void;
   onRecoveryRequired?: (scope: OutputSafetyScope) => Promise<void> | void;
-  onStaticEditorLockChange?: (isLocked: boolean) => void;
-  onStateChange?: (state: InGameSettingsPackageSnapshot['state'] | null) => void;
   scope: OutputSafetyScope;
-  staticEditorBusy: boolean;
-  staticSettingsAreVanilla: boolean;
 };
 
 type PackageBusyState = 'apply' | 'load' | 'preview' | null;
-type InstallationTarget = 'atmosphere' | 'eden' | 'ryujinx';
 
 export function InGameSettingsPackagePanel({
   armCriticalWriteGuard,
@@ -51,11 +47,7 @@ export function InGameSettingsPackagePanel({
   onDirtyChange,
   onError,
   onRecoveryRequired,
-  onStaticEditorLockChange,
-  onStateChange,
-  scope,
-  staticEditorBusy,
-  staticSettingsAreVanilla
+  scope
 }: InGameSettingsPackagePanelProps) {
   const { t } = useLocalization();
   const [snapshot, setSnapshot] = useState<InGameSettingsPackageSnapshot | null>(null);
@@ -65,17 +57,17 @@ export function InGameSettingsPackagePanel({
   const [messageKey, setMessageKey] = useState<string | null>(null);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
   const [installationTarget, setInstallationTarget] =
-    useState<InstallationTarget>('atmosphere');
+    useState<InGameSettingsInstallationTarget>('atmosphere');
   const requestGenerationRef = useRef(0);
   const applyGenerationRef = useRef(0);
   const isMountedRef = useRef(true);
   const applyBusyReportedRef = useRef(false);
-  const staticSettingsAreVanillaRef = useRef(staticSettingsAreVanilla);
-  staticSettingsAreVanillaRef.current = staticSettingsAreVanilla;
+  const reviewRegionRef = useRef<HTMLDivElement | null>(null);
 
   const scopeKey = useMemo(() => JSON.stringify(scope), [scope]);
-  const scopeKeyRef = useRef(scopeKey);
-  scopeKeyRef.current = scopeKey;
+  const requestContextKey = `${scopeKey}:${installationTarget}`;
+  const requestContextKeyRef = useRef(requestContextKey);
+  requestContextKeyRef.current = requestContextKey;
 
   const reportApplyBusy = useCallback(
     (isBusy: boolean) => {
@@ -105,16 +97,6 @@ export function InGameSettingsPackagePanel({
     return () => onDirtyChange?.(false);
   }, [onDirtyChange, preview]);
 
-  useEffect(() => {
-    onStateChange?.(snapshot?.state ?? null);
-    return () => onStateChange?.(null);
-  }, [onStateChange, snapshot?.state]);
-
-  useEffect(() => {
-    onStaticEditorLockChange?.(snapshot?.blocksStaticEditor ?? false);
-    return () => onStaticEditorLockChange?.(false);
-  }, [onStaticEditorLockChange, snapshot]);
-
   const reportError = useCallback(
     async (error: unknown, operation: 'apply' | 'load' | 'preview') => {
       setMessageKey('gameplaySettings.inGamePackage.error');
@@ -127,10 +109,25 @@ export function InGameSettingsPackagePanel({
     [onError, scope]
   );
 
+  const selectInstallationTarget = useCallback(
+    (target: InGameSettingsInstallationTarget) => {
+      if (target === installationTarget || busy === 'apply') return;
+      requestGenerationRef.current += 1;
+      setInstallationTarget(target);
+      setSnapshot(null);
+      setPreview(null);
+      setReviewAcknowledged(false);
+      setRecoveryRequired(false);
+      setMessageKey(null);
+      setBusy(null);
+    },
+    [busy, installationTarget]
+  );
+
   const inspect = useCallback(
     async (showBusy = true): Promise<InGameSettingsPackageSnapshot | null> => {
       const generation = ++requestGenerationRef.current;
-      const requestScopeKey = scopeKey;
+      const requestedContextKey = requestContextKey;
       if (showBusy) {
         setBusy('load');
       }
@@ -139,11 +136,14 @@ export function InGameSettingsPackagePanel({
       setRecoveryRequired(false);
       setMessageKey(null);
       try {
-        const response = await bridge.inspectInGameSettingsPackage({ scope });
+        const response = await bridge.inspectInGameSettingsPackage({
+          installationTarget,
+          scope
+        });
         if (
           !isMountedRef.current ||
           requestGenerationRef.current !== generation ||
-          scopeKeyRef.current !== requestScopeKey
+          requestContextKeyRef.current !== requestedContextKey
         ) {
           return null;
         }
@@ -153,7 +153,7 @@ export function InGameSettingsPackagePanel({
         if (
           !isMountedRef.current ||
           requestGenerationRef.current !== generation ||
-          scopeKeyRef.current !== requestScopeKey
+          requestContextKeyRef.current !== requestedContextKey
         ) {
           return null;
         }
@@ -165,13 +165,13 @@ export function InGameSettingsPackagePanel({
           showBusy &&
           isMountedRef.current &&
           requestGenerationRef.current === generation &&
-          scopeKeyRef.current === requestScopeKey
+          requestContextKeyRef.current === requestedContextKey
         ) {
           setBusy(null);
         }
       }
     },
-    [bridge, reportError, scope, scopeKey]
+    [bridge, installationTarget, reportError, requestContextKey, scope]
   );
 
   useEffect(() => {
@@ -184,14 +184,7 @@ export function InGameSettingsPackagePanel({
     setRecoveryRequired(false);
     setMessageKey(null);
     void inspect();
-  }, [inspect, reportApplyBusy, scopeKey]);
-
-  useEffect(() => {
-    if (!preview || preview.operation !== 'install' || staticSettingsAreVanilla) return;
-    setPreview(null);
-    setReviewAcknowledged(false);
-    setMessageKey('gameplaySettings.inGamePackage.vanillaRequired');
-  }, [preview, staticSettingsAreVanilla]);
+  }, [inspect, reportApplyBusy, requestContextKey]);
 
   useEffect(() => {
     if (!preview) return;
@@ -216,22 +209,28 @@ export function InGameSettingsPackagePanel({
     };
   }, [preview]);
 
+  useEffect(() => {
+    if (!preview) return;
+    const animationFrame = window.requestAnimationFrame(() => {
+      reviewRegionRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [preview]);
+
   const reviewOperation = useCallback(
     async (operation: InGameSettingsPackageOperation) => {
       if (
         !snapshot ||
         busy !== null ||
-        staticEditorBusy ||
         !canApply ||
         recoveryRequired ||
-        !canReviewOperation(snapshot, operation) ||
-        (operation === 'install' && !staticSettingsAreVanilla)
+        !canReviewOperation(snapshot, operation)
       ) {
         return;
       }
 
       const generation = ++requestGenerationRef.current;
-      const requestScopeKey = scopeKey;
+      const requestedContextKey = requestContextKey;
       setBusy('preview');
       setPreview(null);
       setReviewAcknowledged(false);
@@ -239,18 +238,15 @@ export function InGameSettingsPackagePanel({
       try {
         const response = await bridge.previewInGameSettingsPackage({
           expectedRevision: snapshot.revision,
+          installationTarget,
           operation,
           scope
         });
         if (
           !isMountedRef.current ||
           requestGenerationRef.current !== generation ||
-          scopeKeyRef.current !== requestScopeKey
+          requestContextKeyRef.current !== requestedContextKey
         ) {
-          return;
-        }
-        if (operation === 'install' && !staticSettingsAreVanillaRef.current) {
-          setMessageKey('gameplaySettings.inGamePackage.vanillaRequired');
           return;
         }
         setPreview(response);
@@ -258,7 +254,7 @@ export function InGameSettingsPackagePanel({
         if (
           !isMountedRef.current ||
           requestGenerationRef.current !== generation ||
-          scopeKeyRef.current !== requestScopeKey
+          requestContextKeyRef.current !== requestedContextKey
         ) {
           return;
         }
@@ -267,7 +263,7 @@ export function InGameSettingsPackagePanel({
         if (
           isMountedRef.current &&
           requestGenerationRef.current === generation &&
-          scopeKeyRef.current === requestScopeKey
+          requestContextKeyRef.current === requestedContextKey
         ) {
           setBusy(null);
         }
@@ -277,13 +273,12 @@ export function InGameSettingsPackagePanel({
       bridge,
       busy,
       canApply,
+      installationTarget,
       recoveryRequired,
       reportError,
+      requestContextKey,
       scope,
-      scopeKey,
-      snapshot,
-      staticEditorBusy,
-      staticSettingsAreVanilla
+      snapshot
     ]
   );
 
@@ -292,17 +287,15 @@ export function InGameSettingsPackagePanel({
       !preview ||
       !reviewAcknowledged ||
       busy !== null ||
-      staticEditorBusy ||
       !canApply ||
       recoveryRequired ||
-      isPackageReviewExpired(preview) ||
-      (preview.operation === 'install' && !staticSettingsAreVanilla)
+      isPackageReviewExpired(preview)
     ) {
       return;
     }
 
     const generation = ++applyGenerationRef.current;
-    const requestScopeKey = scopeKey;
+    const requestedContextKey = requestContextKey;
     setBusy('apply');
     setMessageKey(null);
     reportApplyBusy(true);
@@ -312,39 +305,33 @@ export function InGameSettingsPackagePanel({
         !armed ||
         !isMountedRef.current ||
         applyGenerationRef.current !== generation ||
-        scopeKeyRef.current !== requestScopeKey
+        requestContextKeyRef.current !== requestedContextKey
       ) {
         if (
           isMountedRef.current &&
           applyGenerationRef.current === generation &&
-          scopeKeyRef.current === requestScopeKey
+          requestContextKeyRef.current === requestedContextKey
         ) {
           setMessageKey('gameplaySettings.inGamePackage.guardFailed');
         }
         return;
       }
-      if (
-        isPackageReviewExpired(preview) ||
-        (preview.operation === 'install' && !staticSettingsAreVanillaRef.current)
-      ) {
+      if (isPackageReviewExpired(preview)) {
         setPreview(null);
         setReviewAcknowledged(false);
-        setMessageKey(
-          preview.operation === 'install'
-            ? 'gameplaySettings.inGamePackage.vanillaRequired'
-            : 'gameplaySettings.inGamePackage.reviewExpired'
-        );
+        setMessageKey('gameplaySettings.inGamePackage.reviewExpired');
         return;
       }
 
       const response = await bridge.applyInGameSettingsPackage({
+        installationTarget,
         reviewId: preview.reviewId,
         scope
       });
       if (
         !isMountedRef.current ||
         applyGenerationRef.current !== generation ||
-        scopeKeyRef.current !== requestScopeKey
+        requestContextKeyRef.current !== requestedContextKey
       ) {
         return;
       }
@@ -352,6 +339,7 @@ export function InGameSettingsPackagePanel({
       setPreview(null);
       setReviewAcknowledged(false);
       if (response.outcome === 'committed') {
+        const committedOperation = packageReviewPresentationOperation(preview);
         if (response.snapshot) {
           setSnapshot(response.snapshot);
         } else {
@@ -360,12 +348,12 @@ export function InGameSettingsPackagePanel({
         if (
           !isMountedRef.current ||
           applyGenerationRef.current !== generation ||
-          scopeKeyRef.current !== requestScopeKey
+          requestContextKeyRef.current !== requestedContextKey
         ) {
           return;
         }
         setMessageKey(
-          `gameplaySettings.inGamePackage.${preview.operation}Committed`
+          `gameplaySettings.inGamePackage.${committedOperation}Committed`
         );
         try {
           await onApplied?.(scope);
@@ -376,7 +364,7 @@ export function InGameSettingsPackagePanel({
             // The committed receipt remains authoritative.
           }
           setMessageKey(
-            `gameplaySettings.inGamePackage.${preview.operation}Committed`
+            `gameplaySettings.inGamePackage.${committedOperation}Committed`
           );
         }
       } else if (response.outcome === 'rolledBack') {
@@ -384,7 +372,7 @@ export function InGameSettingsPackagePanel({
         if (
           isMountedRef.current &&
           applyGenerationRef.current === generation &&
-          scopeKeyRef.current === requestScopeKey
+          requestContextKeyRef.current === requestedContextKey
         ) {
           setMessageKey('gameplaySettings.inGamePackage.rolledBack');
         }
@@ -407,7 +395,7 @@ export function InGameSettingsPackagePanel({
       if (
         !isMountedRef.current ||
         applyGenerationRef.current !== generation ||
-        scopeKeyRef.current !== requestScopeKey
+        requestContextKeyRef.current !== requestedContextKey
       ) {
         return;
       }
@@ -419,7 +407,7 @@ export function InGameSettingsPackagePanel({
       if (
         isMountedRef.current &&
         applyGenerationRef.current === generation &&
-        scopeKeyRef.current === requestScopeKey
+        requestContextKeyRef.current === requestedContextKey
       ) {
         setBusy(null);
       }
@@ -429,6 +417,7 @@ export function InGameSettingsPackagePanel({
     bridge,
     busy,
     canApply,
+    installationTarget,
     inspect,
     onApplied,
     onRecoveryRequired,
@@ -436,26 +425,28 @@ export function InGameSettingsPackagePanel({
     recoveryRequired,
     reportApplyBusy,
     reportError,
+    requestContextKey,
     reviewAcknowledged,
-    scope,
-    scopeKey,
-    staticEditorBusy,
-    staticSettingsAreVanilla
+    scope
   ]);
 
-  const installBlockedByStaticSettings =
-    snapshot?.state === 'notInstalled' && !staticSettingsAreVanilla;
-  const actionsDisabled = busy !== null || staticEditorBusy || !canApply || recoveryRequired;
+  const actionsDisabled = busy !== null || !canApply || recoveryRequired;
   const compatibilityPackage = snapshot?.availablePackage ?? snapshot?.installedPackage ?? null;
   const titleId = compatibilityPackage?.titleId ?? '<TITLE_ID>';
+  const generatedTitleRoots: Record<InGameSettingsInstallationTarget, string> = {
+    atmosphere: `atmosphere/contents/${titleId}`,
+    ryujinx: `mods/contents/${titleId}/KM-Gameplay-Settings`,
+    eden: `load/${titleId}/KM-Gameplay-Settings`
+  };
+  const generatedTitleRoot = generatedTitleRoots[installationTarget];
   const generatedTitleSourcePaths = [
-    `<Output Root>/atmosphere/contents/${titleId}/exefs`,
-    `<Output Root>/atmosphere/contents/${titleId}/romfs`
+    `<Output Root>/${generatedTitleRoot}/exefs`,
+    `<Output Root>/${generatedTitleRoot}/romfs`
   ];
   const settingsJournalPath = `config/km-editor/gameplay-settings/${titleId}/settings.bin`;
   const generatedSettingsSourcePath = `<Output Root>/${settingsJournalPath}`;
   const installationPaths: Record<
-    InstallationTarget,
+    InGameSettingsInstallationTarget,
     {
       defaultSettingsDestination?: string;
       settingsDestination: string;
@@ -474,16 +465,16 @@ export function InGameSettingsPackagePanel({
       defaultSettingsDestination:
         `<Emulator data folder>/sdcard/${settingsJournalPath}`,
       titleDestinations: [
-        `<Emulator data folder>/mods/contents/${titleId}/KM Gameplay Settings/exefs`,
-        `<Emulator data folder>/mods/contents/${titleId}/KM Gameplay Settings/romfs`
+        `<Emulator data folder>/mods/contents/${titleId}/KM-Gameplay-Settings/exefs`,
+        `<Emulator data folder>/mods/contents/${titleId}/KM-Gameplay-Settings/romfs`
       ]
     },
     eden: {
       settingsDestination: `<Configured emulated SD root>/${settingsJournalPath}`,
       defaultSettingsDestination: `<Eden data folder>/sdmc/${settingsJournalPath}`,
       titleDestinations: [
-        `<Eden data folder>/load/${titleId}/KM Gameplay Settings/exefs`,
-        `<Eden data folder>/load/${titleId}/KM Gameplay Settings/romfs`
+        `<Eden data folder>/load/${titleId}/KM-Gameplay-Settings/exefs`,
+        `<Eden data folder>/load/${titleId}/KM-Gameplay-Settings/romfs`
       ]
     }
   };
@@ -491,6 +482,10 @@ export function InGameSettingsPackagePanel({
   const stateTitleKey = snapshot ? packageStateTitleMessageKey(snapshot) : null;
   const stateDescriptionKey = snapshot
     ? packageStateDescriptionMessageKey(snapshot)
+    : null;
+  const refreshRequired = snapshot ? isPackageRefreshRequired(snapshot) : false;
+  const reviewPresentationOperation = preview
+    ? packageReviewPresentationOperation(preview)
     : null;
   const showExecutableInputAssessment = Boolean(
     snapshot &&
@@ -520,7 +515,7 @@ export function InGameSettingsPackagePanel({
         </div>
         <button
           className="secondary-button"
-          disabled={busy !== null || preview !== null || staticEditorBusy}
+          disabled={busy !== null || preview !== null}
           onClick={() => void inspect()}
           type="button"
         >
@@ -560,8 +555,9 @@ export function InGameSettingsPackagePanel({
             <button
               aria-pressed={installationTarget === target}
               className="in-game-settings-package__target-option"
+              disabled={busy === 'apply'}
               key={target}
-              onClick={() => setInstallationTarget(target)}
+              onClick={() => selectInstallationTarget(target)}
               type="button"
             >
               <span>{t(`gameplaySettings.inGamePackage.target.${target}`)}</span>
@@ -725,19 +721,6 @@ export function InGameSettingsPackagePanel({
         </div>
       ) : null}
 
-      {installBlockedByStaticSettings ? (
-        <div className="in-game-settings-package__vanilla-guidance" role="alert">
-          <strong>{t('gameplaySettings.inGamePackage.vanillaTitle')}</strong>
-          <p>{t('gameplaySettings.inGamePackage.vanillaDescription')}</p>
-        </div>
-      ) : null}
-
-      {staticEditorBusy && snapshot && isPackageStateActionable(snapshot) ? (
-        <p className="in-game-settings-package__message" role="status">
-          {t('gameplaySettings.inGamePackage.staticDraftPending')}
-        </p>
-      ) : null}
-
       {messageKey ? (
         <p className="in-game-settings-package__message" role="status">
           {t(messageKey)}
@@ -750,9 +733,7 @@ export function InGameSettingsPackagePanel({
             <button
               className="primary-button"
               disabled={
-                actionsDisabled ||
-                !staticSettingsAreVanilla ||
-                !isExecutableInputCompatible(snapshot)
+                actionsDisabled || !isExecutableInputCompatible(snapshot)
               }
               onClick={() => void reviewOperation('install')}
               type="button"
@@ -771,7 +752,11 @@ export function InGameSettingsPackagePanel({
             >
               {busy === 'preview'
                 ? t('gameplaySettings.inGamePackage.reviewing')
-                : t('gameplaySettings.inGamePackage.reviewUpgrade')}
+                : t(
+                    refreshRequired
+                      ? 'gameplaySettings.inGamePackage.reviewRefresh'
+                      : 'gameplaySettings.inGamePackage.reviewUpgrade'
+                  )}
             </button>
           ) : null}
           {snapshot.state === 'installed' ||
@@ -794,14 +779,21 @@ export function InGameSettingsPackagePanel({
       {preview ? (
         <div
           aria-labelledby="in-game-settings-package-review-title"
+          aria-live="polite"
           className="in-game-settings-package__review"
+          ref={reviewRegionRef}
           role="region"
+          tabIndex={-1}
         >
           <div>
             <h4 id="in-game-settings-package-review-title">
-              {t(`gameplaySettings.inGamePackage.review.${preview.operation}.title`)}
+              {t(`gameplaySettings.inGamePackage.review.${reviewPresentationOperation}.title`)}
             </h4>
-            <p>{t(`gameplaySettings.inGamePackage.review.${preview.operation}.description`)}</p>
+            <p>
+              {t(
+                `gameplaySettings.inGamePackage.review.${reviewPresentationOperation}.description`
+              )}
+            </p>
           </div>
           {preview.composition ? (
             <section className="in-game-settings-package__composition">
@@ -912,7 +904,7 @@ export function InGameSettingsPackagePanel({
                 preview.operation === 'install' &&
                   preview.composition?.strategy === 'compatibleStandalone'
                   ? 'gameplaySettings.inGamePackage.confirm.installCompatible'
-                  : `gameplaySettings.inGamePackage.confirm.${preview.operation}`
+                  : `gameplaySettings.inGamePackage.confirm.${reviewPresentationOperation}`
               )}
             </span>
           </label>
@@ -932,19 +924,19 @@ export function InGameSettingsPackagePanel({
               className={preview.operation === 'remove' ? 'danger-button' : 'primary-button'}
               disabled={
                 busy !== null ||
-                staticEditorBusy ||
                 !canApply ||
                 !reviewAcknowledged ||
                 recoveryRequired ||
-                isPackageReviewExpired(preview) ||
-                (preview.operation === 'install' && !staticSettingsAreVanilla)
+                isPackageReviewExpired(preview)
               }
               onClick={() => void applyReviewedOperation()}
               type="button"
             >
               {busy === 'apply'
                 ? t('gameplaySettings.inGamePackage.applying')
-                : t(`gameplaySettings.inGamePackage.apply.${preview.operation}`)}
+                : t(
+                    `gameplaySettings.inGamePackage.apply.${reviewPresentationOperation}`
+                  )}
             </button>
           </div>
         </div>
@@ -984,6 +976,19 @@ function isPackageStateActionable(snapshot: InGameSettingsPackageSnapshot) {
 }
 
 function packageStateTitleMessageKey(snapshot: InGameSettingsPackageSnapshot) {
+  if (isPackageRefreshRequired(snapshot)) {
+    return 'gameplaySettings.inGamePackage.state.refreshRequired.title';
+  }
+  if (snapshot.state === 'unavailable') {
+    switch (snapshot.executableInput.compatibility) {
+      case 'ownershipUnverified':
+        return 'gameplaySettings.inGamePackage.state.ownershipUnverified.title';
+      case 'incompatibleOwnedRegion':
+        return 'gameplaySettings.inGamePackage.state.executableConflict.title';
+      case 'unreadableOrAmbiguous':
+        return 'gameplaySettings.inGamePackage.state.executableReviewFailed.title';
+    }
+  }
   if (
     snapshot.state === 'notInstalled' &&
     snapshot.executableInput.compatibility === 'compatiblePreservable'
@@ -994,6 +999,19 @@ function packageStateTitleMessageKey(snapshot: InGameSettingsPackageSnapshot) {
 }
 
 function packageStateDescriptionMessageKey(snapshot: InGameSettingsPackageSnapshot) {
+  if (isPackageRefreshRequired(snapshot)) {
+    return 'gameplaySettings.inGamePackage.state.refreshRequired.description';
+  }
+  if (snapshot.state === 'unavailable') {
+    switch (snapshot.executableInput.compatibility) {
+      case 'ownershipUnverified':
+        return 'gameplaySettings.inGamePackage.state.ownershipUnverified.description';
+      case 'incompatibleOwnedRegion':
+        return 'gameplaySettings.inGamePackage.state.executableConflict.description';
+      case 'unreadableOrAmbiguous':
+        return 'gameplaySettings.inGamePackage.state.executableReviewFailed.description';
+    }
+  }
   if (
     snapshot.state === 'notInstalled' &&
     snapshot.executableInput.compatibility === 'compatiblePreservable'
@@ -1001,6 +1019,38 @@ function packageStateDescriptionMessageKey(snapshot: InGameSettingsPackageSnapsh
     return 'gameplaySettings.inGamePackage.state.readyCompatible.description';
   }
   return `gameplaySettings.inGamePackage.state.${snapshot.state}.description`;
+}
+
+function isPackageRefreshRequired(snapshot: InGameSettingsPackageSnapshot) {
+  return (
+    snapshot.state === 'upgradeAvailable' &&
+    snapshot.installedPackage !== null &&
+    snapshot.availablePackage !== null &&
+    packageVersionsEqual(
+      snapshot.installedPackage.packageVersion,
+      snapshot.availablePackage.packageVersion
+    ) &&
+    snapshot.installedPackage.bundleId !== snapshot.availablePackage.bundleId
+  );
+}
+
+function packageReviewPresentationOperation(
+  preview: PreviewInGameSettingsPackageResponse
+): InGameSettingsPackageOperation | 'refresh' {
+  return preview.operation === 'upgrade' && isPackageRefreshRequired(preview.before)
+    ? 'refresh'
+    : preview.operation;
+}
+
+function packageVersionsEqual(
+  left: { major: number; minor: number; patch: number },
+  right: { major: number; minor: number; patch: number }
+) {
+  return (
+    left.major === right.major &&
+    left.minor === right.minor &&
+    left.patch === right.patch
+  );
 }
 
 function isExecutableInputCompatible(snapshot: InGameSettingsPackageSnapshot) {
@@ -1028,8 +1078,20 @@ const executableInputReasonMessageKeys: Readonly<Record<string, string>> = {
     'gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput',
   'runtime-slot-occupied':
     'gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied',
+  'source-inventory-inconsistent':
+    'gameplaySettings.inGamePackage.executableInput.reason.sourceInventoryInconsistent',
+  'source-ledger-stale-or-inconsistent':
+    'gameplaySettings.inGamePackage.executableInput.reason.sourceLedgerStaleOrInconsistent',
+  'source-ledger-preservation-contract-invalid':
+    'gameplaySettings.inGamePackage.executableInput.reason.sourceLedgerPreservationContractInvalid',
   'standalone-output-not-ledger-owned':
     'gameplaySettings.inGamePackage.executableInput.reason.standaloneOutputNotLedgerOwned',
+  'recognized-km-output-without-ledger':
+    'gameplaySettings.inGamePackage.executableInput.reason.registeredKmExeFsOutput',
+  'registered-km-exefs-output':
+    'gameplaySettings.inGamePackage.executableInput.reason.registeredKmExeFsOutput',
+  'registered-compatible-exefs-output':
+    'gameplaySettings.inGamePackage.executableInput.reason.registeredKmExeFsOutput',
   'verified-native-region-conflict':
     'gameplaySettings.inGamePackage.executableInput.reason.verifiedNativeRegionConflict',
   'ledger-owned-preservable-output':

@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using KM.Api.RuntimeSettings;
 using KM.Core.Projects;
 using KM.Core.RuntimeSettings;
 using KM.Core.Semantics;
@@ -61,29 +62,21 @@ public static class NativeGameplayMenuBundleFactory
             return false;
         }
 
-        var titleRoot = string.Create(
-            CultureInfo.InvariantCulture,
-            $"atmosphere/contents/{metadata.TitleId:X16}/");
-        var requiredExeFs = new HashSet<string>(StringComparer.Ordinal)
-        {
-            titleRoot + "exefs/main",
-            titleRoot + "exefs/main.npdm",
-            titleRoot + "exefs/" + RuntimeComponentName,
-        };
-        var actualExeFs = manifest.Components
-            .Where(component => component.Path.StartsWith(
-                titleRoot + "exefs/",
-                StringComparison.Ordinal))
-            .Select(component => component.Path)
-            .ToHashSet(StringComparer.Ordinal);
-        return manifest.Components.Count <= MaximumNativeMenuComponentCount
-            && actualExeFs.SetEquals(requiredExeFs)
-            && manifest.Components.Any(component => component.Path.StartsWith(
-                titleRoot + "romfs/",
-                StringComparison.Ordinal))
-            && manifest.Components.All(component =>
-                component.Path.StartsWith(titleRoot + "exefs/", StringComparison.Ordinal)
-                || component.Path.StartsWith(titleRoot + "romfs/", StringComparison.Ordinal));
+        return GetRecognizedTitleRoots(metadata.TitleId)
+            .Any(titleRoot => HasNativeMenuInventoryAtRoot(manifest, titleRoot));
+    }
+
+    internal static bool IsNativeMenuManifestForTarget(
+        ProjectGame game,
+        GameplayBundleManifest manifest,
+        InGameSettingsInstallationTargetDto installationTarget)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ValidateInstallationTarget(installationTarget);
+        return IsNativeMenuManifest(game, manifest)
+            && HasNativeMenuInventoryAtRoot(
+                manifest,
+                GetTitleRoot(manifest.TitleId, installationTarget));
     }
 
     internal static bool IsRetiredExternalControlManifest(
@@ -130,7 +123,9 @@ public static class NativeGameplayMenuBundleFactory
         ReadOnlySpan<byte> retailMain,
         ReadOnlySpan<byte> retailMainNpdm,
         ReadOnlySpan<byte> runtimeNso,
-        IReadOnlyDictionary<string, byte[]> transformedRomFsComponents)
+        IReadOnlyDictionary<string, byte[]> transformedRomFsComponents,
+        InGameSettingsInstallationTargetDto installationTarget =
+            InGameSettingsInstallationTargetDto.Atmosphere)
     {
         return CreateEntry(
             game,
@@ -139,7 +134,8 @@ public static class NativeGameplayMenuBundleFactory
             retailMain,
             retailMainNpdm,
             runtimeNso,
-            transformedRomFsComponents);
+            transformedRomFsComponents,
+            installationTarget);
     }
 
     /// <summary>
@@ -155,9 +151,12 @@ public static class NativeGameplayMenuBundleFactory
         ReadOnlySpan<byte> executableSourceMain,
         ReadOnlySpan<byte> executableSourceMainNpdm,
         ReadOnlySpan<byte> runtimeNso,
-        IReadOnlyDictionary<string, byte[]> transformedRomFsComponents)
+        IReadOnlyDictionary<string, byte[]> transformedRomFsComponents,
+        InGameSettingsInstallationTargetDto installationTarget =
+            InGameSettingsInstallationTargetDto.Atmosphere)
     {
         ArgumentNullException.ThrowIfNull(transformedRomFsComponents);
+        ValidateInstallationTarget(installationTarget);
         var metadata = ProjectGameMetadata.Get(game);
         var family = ToFamily(game);
         var update = GetUpdateVersion(game);
@@ -171,6 +170,19 @@ public static class NativeGameplayMenuBundleFactory
 
         var composedSourceMain = executableSourceMain.ToArray();
         var composedSourceNpdm = executableSourceMainNpdm.ToArray();
+        var initialSettings = ReadInitialSettings(
+            game,
+            sourceMain,
+            composedSourceMain);
+        if (!sourceMain.AsSpan().SequenceEqual(composedSourceMain)
+            && !NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(
+                sourceMain,
+                composedSourceMain)
+            && !initialSettings.IsLegacyStaticOutput)
+        {
+            throw new InvalidDataException(
+                "The executable composition source does not match the supported Base layout envelope.");
+        }
         EnsureExpectedNpdmTitle(game, composedSourceNpdm);
 
         var guestModule = runtimeNso.ToArray();
@@ -198,9 +210,7 @@ public static class NativeGameplayMenuBundleFactory
             .AddGuestRuntimeCapabilities(composedSourceNpdm);
         NpdmRuntimeCapabilityPatcher.VerifyDerived(composedSourceNpdm, derivedNpdm);
 
-        var titleRoot = string.Create(
-            CultureInfo.InvariantCulture,
-            $"atmosphere/contents/{metadata.TitleId:X16}/");
+        var titleRoot = GetTitleRoot(metadata.TitleId, installationTarget);
         var components = new Dictionary<string, byte[]>(StringComparer.Ordinal)
         {
             [titleRoot + "exefs/main"] = derivedMain,
@@ -279,7 +289,8 @@ public static class NativeGameplayMenuBundleFactory
                 checked((ushort)PackageVersion.Major),
                 checked((ushort)PackageVersion.Minor),
                 checked((ushort)PackageVersion.Patch)),
-            SettingsPresence);
+            SettingsPresence,
+            initialSettings.Values);
         var archive = GameplayBundleArchive.Build(
             manifest,
             components,
@@ -290,6 +301,97 @@ public static class NativeGameplayMenuBundleFactory
             archive.Bytes,
             isCurrent: true);
     }
+
+    private static InitialExecutableSettings ReadInitialSettings(
+        ProjectGame game,
+        byte[] baseMain,
+        byte[] currentMain)
+    {
+        return game switch
+        {
+            ProjectGame.Scarlet => ReadScarletVioletInitialSettings(
+                currentMain,
+                SvGameplayRuntimeEdition.Scarlet),
+            ProjectGame.Violet => ReadScarletVioletInitialSettings(
+                currentMain,
+                SvGameplayRuntimeEdition.Violet),
+            ProjectGame.Sword or ProjectGame.Shield =>
+                ReadSwordShieldInitialSettings(baseMain, currentMain, game),
+            ProjectGame.ZA => ReadZaInitialSettings(baseMain, currentMain),
+            _ => throw new ArgumentOutOfRangeException(nameof(game)),
+        };
+    }
+
+    private static InitialExecutableSettings ReadScarletVioletInitialSettings(
+        byte[] currentMain,
+        SvGameplayRuntimeEdition edition)
+    {
+        var analysis = SvGameplaySettingsMainPatcher.Analyze(currentMain, edition);
+        if (analysis.Kind is not (SvGameplaySettingsMainKind.Vanilla
+            or SvGameplaySettingsMainKind.Modified))
+        {
+            throw new InvalidDataException(analysis.Message);
+        }
+
+        return new InitialExecutableSettings(
+            analysis.Values,
+            analysis.Kind == SvGameplaySettingsMainKind.Modified);
+    }
+
+    private static InitialExecutableSettings ReadSwordShieldInitialSettings(
+        byte[] baseMain,
+        byte[] currentMain,
+        ProjectGame game)
+    {
+        var analysis = SwShStaticGameplaySettingsMainPatcher.Analyze(
+            baseMain,
+            currentMain,
+            game);
+        if (analysis.Kind is not (SwShStaticGameplaySettingsMainKind.Vanilla
+            or SwShStaticGameplaySettingsMainKind.Configured)
+            || analysis.ExperienceShareEnabled is null
+            || analysis.ExperienceRateBasisPoints is null)
+        {
+            throw new InvalidDataException(analysis.Message);
+        }
+
+        return new InitialExecutableSettings(
+            new GameplaySettingsValues(
+                analysis.ExperienceShareEnabled.Value,
+                analysis.ExperienceRateBasisPoints.Value,
+                analysis.LevelCapEnabled,
+                analysis.LevelCap),
+            analysis.Kind == SwShStaticGameplaySettingsMainKind.Configured);
+    }
+
+    private static InitialExecutableSettings ReadZaInitialSettings(
+        byte[] baseMain,
+        byte[] currentMain)
+    {
+        var analysis = ZaStaticGameplaySettingsMainPatcher.Analyze(
+            baseMain,
+            currentMain,
+            ProjectGame.ZA);
+        if (analysis.Kind is not (ZaStaticGameplaySettingsMainKind.Vanilla
+            or ZaStaticGameplaySettingsMainKind.Configured)
+            || analysis.ExperienceShareEnabled is null
+            || analysis.ExperienceRateBasisPoints is null)
+        {
+            throw new InvalidDataException(analysis.Message);
+        }
+
+        return new InitialExecutableSettings(
+            new GameplaySettingsValues(
+                analysis.ExperienceShareEnabled.Value,
+                analysis.ExperienceRateBasisPoints.Value,
+                analysis.LevelCapEnabled,
+                analysis.LevelCap),
+            analysis.Kind == ZaStaticGameplaySettingsMainKind.Configured);
+    }
+
+    private sealed record InitialExecutableSettings(
+        GameplaySettingsValues Values,
+        bool IsLegacyStaticOutput);
 
     private static byte[] CreateProfilePreimage(
         ProjectGame game,
@@ -351,6 +453,104 @@ public static class NativeGameplayMenuBundleFactory
             throw new InvalidDataException("A native menu RomFS component has no file path.");
         }
         return normalized;
+    }
+
+    internal static string GetExecutableDestinationPath(
+        ulong titleId,
+        InGameSettingsInstallationTargetDto installationTarget) =>
+        GetTitleRoot(titleId, installationTarget) + "exefs/main";
+
+    internal static bool IsRuntimePackageComponentPath(string path, ulong titleId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return GetRecognizedTitleRoots(titleId).Any(titleRoot =>
+            path.StartsWith(titleRoot + "exefs/", StringComparison.Ordinal)
+            || path.StartsWith(titleRoot + "romfs/", StringComparison.Ordinal));
+    }
+
+    internal static IReadOnlyList<string> GetEquivalentRuntimePackagePaths(
+        string path,
+        ulong titleId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var roots = GetRecognizedTitleRoots(titleId);
+        var sourceRoot = roots.FirstOrDefault(root =>
+            path.StartsWith(root, StringComparison.Ordinal));
+        if (sourceRoot is null)
+        {
+            return [path];
+        }
+
+        var suffix = path[sourceRoot.Length..];
+        return roots.Select(root => root + suffix).ToArray();
+    }
+
+    private static bool HasNativeMenuInventoryAtRoot(
+        GameplayBundleManifest manifest,
+        string titleRoot)
+    {
+        var requiredExeFs = new HashSet<string>(StringComparer.Ordinal)
+        {
+            titleRoot + "exefs/main",
+            titleRoot + "exefs/main.npdm",
+            titleRoot + "exefs/" + RuntimeComponentName,
+        };
+        var actualExeFs = manifest.Components
+            .Where(component => component.Path.StartsWith(
+                titleRoot + "exefs/",
+                StringComparison.Ordinal))
+            .Select(component => component.Path)
+            .ToHashSet(StringComparer.Ordinal);
+        return manifest.Components.Count <= MaximumNativeMenuComponentCount
+            && actualExeFs.SetEquals(requiredExeFs)
+            && manifest.Components.Any(component => component.Path.StartsWith(
+                titleRoot + "romfs/",
+                StringComparison.Ordinal))
+            && manifest.Components.All(component =>
+                component.Path.StartsWith(titleRoot + "exefs/", StringComparison.Ordinal)
+                || component.Path.StartsWith(titleRoot + "romfs/", StringComparison.Ordinal));
+    }
+
+    private static IReadOnlyList<string> GetRecognizedTitleRoots(ulong titleId) =>
+    [
+        GetTitleRoot(titleId, InGameSettingsInstallationTargetDto.Atmosphere),
+        GetTitleRoot(titleId, InGameSettingsInstallationTargetDto.Ryujinx),
+        GetTitleRoot(titleId, InGameSettingsInstallationTargetDto.Eden),
+    ];
+
+    private static string GetTitleRoot(
+        ulong titleId,
+        InGameSettingsInstallationTargetDto installationTarget)
+    {
+        ValidateInstallationTarget(installationTarget);
+        return installationTarget switch
+        {
+            InGameSettingsInstallationTargetDto.Atmosphere => string.Create(
+                CultureInfo.InvariantCulture,
+                $"atmosphere/contents/{titleId:X16}/"),
+            InGameSettingsInstallationTargetDto.Ryujinx => string.Create(
+                CultureInfo.InvariantCulture,
+                $"mods/contents/{titleId:X16}/KM-Gameplay-Settings/"),
+            InGameSettingsInstallationTargetDto.Eden => string.Create(
+                CultureInfo.InvariantCulture,
+                $"load/{titleId:X16}/KM-Gameplay-Settings/"),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(installationTarget),
+                installationTarget,
+                null),
+        };
+    }
+
+    private static void ValidateInstallationTarget(
+        InGameSettingsInstallationTargetDto installationTarget)
+    {
+        if (!Enum.IsDefined(installationTarget))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(installationTarget),
+                installationTarget,
+                null);
+        }
     }
 
     private static void EnsureExpectedBuild(ProjectGame game, string buildId)

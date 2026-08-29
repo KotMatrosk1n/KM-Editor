@@ -8,8 +8,6 @@
 }
 
 .gameplay-settings__header,
-.gameplay-settings__actions,
-.gameplay-settings__identity,
 .gameplay-settings__setup {
   align-items: center;
   display: flex;
@@ -40,26 +38,22 @@
 }
 
 .gameplay-settings__header h2,
-.gameplay-settings__review h3,
-.gameplay-settings__empty h3,
 .gameplay-settings__setup h3 {
   margin: 0;
 }
 
 .gameplay-settings__header p,
-.gameplay-settings__review > p,
-.gameplay-settings__empty p,
 .gameplay-settings__setup p,
-.gameplay-settings__warning p,
 .gameplay-settings__beta-notice p {
   color: var(--color-text-muted);
   margin: 0.35rem 0 0;
 }
 
-.gameplay-settings__beta-badge,
-.gameplay-settings__availability {
-  border: 1px solid var(--color-border-strong);
+.gameplay-settings__beta-badge {
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-warning);
   border-radius: 999px;
+  color: var(--color-warning);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.055em;
@@ -68,20 +62,8 @@
   text-transform: uppercase;
 }
 
-.gameplay-settings__beta-badge {
-  background: var(--color-warning-surface);
-  border-color: var(--color-warning);
-  color: var(--color-warning);
-}
-
-.gameplay-settings__identity,
-.gameplay-settings__empty,
-.gameplay-settings__warning,
-.gameplay-settings__message,
-.gameplay-settings__review,
 .gameplay-settings__setup,
-.gameplay-settings__beta-notice,
-.gameplay-settings__acknowledgement {
+.gameplay-settings__beta-notice {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
@@ -93,279 +75,19 @@
   border-color: var(--color-warning);
 }
 
-.gameplay-settings__identity {
-  justify-content: flex-start;
-}
-
-.gameplay-settings__identity > span {
-  color: var(--color-text-muted);
-}
-
-.gameplay-settings__warning {
-  border-color: var(--color-warning);
-}
-
-.gameplay-settings__message {
-  margin: 0;
-}
-
-.gameplay-settings__delivery {
-  background: var(--color-surface-soft);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 0.9rem;
-  display: grid;
-  gap: 0.85rem;
-  padding: clamp(0.9rem, 1.6vw, 1.2rem);
-}
-
-.gameplay-settings__delivery-heading h3 {
-  margin: 0;
-}
-
-.gameplay-settings__delivery-heading p {
-  color: var(--color-text-muted);
-  margin: 0.35rem 0 0;
-}
-
-.gameplay-settings__delivery-options {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.gameplay-settings__delivery-option {
-  align-content: start;
-  background: var(--color-control);
-  border: 1px solid var(--color-control-border);
-  border-radius: 0.75rem;
-  color: var(--color-text);
-  cursor: pointer;
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-  padding: 1rem;
-  text-align: left;
-}
-
-.gameplay-settings__delivery-option:hover:not(:disabled) {
-  background: var(--color-control-hover);
-  border-color: var(--color-accent-bright);
-}
-
-.gameplay-settings__delivery-option[aria-pressed='true'] {
-  background: rgb(var(--color-accent-rgb) / 20%);
-  border-color: var(--color-accent-bright);
-  box-shadow: inset 0.2rem 0 0 var(--color-gold);
-}
-
-.gameplay-settings__delivery-option span {
-  color: var(--color-text-muted);
-  line-height: 1.45;
-}
-
-.gameplay-settings__mode-content {
-  display: contents;
-}
-
-.gameplay-settings__mode-content[hidden] {
-  display: none;
-}
-
-.gameplay-settings__controls {
-  display: grid;
-  gap: 0.85rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.gameplay-settings__control-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  display: grid;
-  gap: 0.8rem;
-  min-width: 0;
-  padding: 1rem;
-}
-
-.gameplay-settings__control-card--unavailable {
-  background: var(--color-surface-muted);
-}
-
-.gameplay-settings__toggle,
-.gameplay-settings__field,
-.gameplay-settings__cap {
-  align-items: center;
-  display: flex;
-  gap: 0.85rem;
-  justify-content: space-between;
-}
-
-.gameplay-settings__toggle > span,
-.gameplay-settings__field > span {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.gameplay-settings__toggle small,
-.gameplay-settings__field small {
-  color: var(--color-text-muted);
-}
-
-.gameplay-settings__toggle input {
-  flex: 0 0 auto;
-}
-
-.gameplay-settings__field select {
-  min-width: 8rem;
-}
-
-.gameplay-settings__cap {
-  align-items: stretch;
-  display: grid;
-  gap: 0.7rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.gameplay-settings__field--compact {
-  border-left: 1px solid var(--color-border);
-  padding-left: 0.7rem;
-}
-
-.gameplay-settings__capability {
-  align-content: start;
-  border-top: 1px solid var(--color-border);
-  display: grid;
-  gap: 0.45rem;
-  min-width: 0;
-  padding-top: 0.75rem;
-}
-
-.gameplay-settings__capability p {
-  align-items: baseline;
-  color: var(--color-text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 0.78rem;
-  gap: 0.35rem;
-  margin: 0;
-  min-width: 0;
-}
-
-.gameplay-settings__capability p > span {
-  color: var(--color-text);
-  overflow-wrap: anywhere;
-}
-
-.gameplay-settings__availability {
-  justify-self: start;
-}
-
-.gameplay-settings__availability--available {
-  border-color: var(--color-success);
-  color: var(--color-success);
-}
-
-.gameplay-settings__availability--unavailable {
-  color: var(--color-text-muted);
-}
-
-.gameplay-settings__acknowledgement {
-  align-items: flex-start;
-  cursor: pointer;
-  display: flex;
-  gap: 0.7rem;
-}
-
-.gameplay-settings__acknowledgement:has(input:disabled) {
-  cursor: not-allowed;
-}
-
-.gameplay-settings__acknowledgement input {
-  flex: 0 0 auto;
-  margin-top: 0.2rem;
-}
-
-.gameplay-settings__actions {
-  justify-content: flex-end;
-}
-
-.gameplay-settings__review {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.gameplay-settings__review dl {
-  display: grid;
-  gap: 0.5rem;
-  margin: 0;
-}
-
-.gameplay-settings__review dl > div {
-  align-items: baseline;
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 2fr);
-}
-
-.gameplay-settings__review dt {
-  font-weight: 700;
-}
-
-.gameplay-settings__review dd {
-  margin: 0;
-}
-
-@media (max-width: 75rem) {
-  .gameplay-settings__controls {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 42rem) {
   .gameplay-settings__header,
-  .gameplay-settings__setup,
-  .gameplay-settings__toggle,
-  .gameplay-settings__field,
-  .gameplay-settings__cap,
-  .gameplay-settings__review dl > div {
+  .gameplay-settings__setup {
     align-items: stretch;
     display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .gameplay-settings__field--compact {
-    border-left: 0;
-    border-top: 1px solid var(--color-border);
-    padding-left: 0;
-    padding-top: 0.7rem;
-  }
-
-  .gameplay-settings__field select {
-    width: 100%;
-  }
-
-  .gameplay-settings__delivery-options {
     grid-template-columns: 1fr;
   }
 }
 
 @media (forced-colors: active) {
-  .gameplay-settings__identity,
-  .gameplay-settings__empty,
-  .gameplay-settings__warning,
-  .gameplay-settings__message,
-  .gameplay-settings__review,
   .gameplay-settings__setup,
   .gameplay-settings__beta-notice,
-  .gameplay-settings__acknowledgement,
-  .gameplay-settings__control-card,
-  .gameplay-settings__beta-badge,
-  .gameplay-settings__availability {
-    border-color: CanvasText;
-  }
-
-  .gameplay-settings__delivery,
-  .gameplay-settings__delivery-option {
+  .gameplay-settings__beta-badge {
     border-color: CanvasText;
   }
 }

@@ -346,7 +346,8 @@ public static class ZaStaticGameplaySettingsMainPatcher
     /// <summary>
     /// Composes the inert native-settings scaffold onto a reviewed executable.
     /// The exact Base executable authorizes the 2.0.2 build and dependency
-    /// preimages, while every unrelated current executable byte is preserved.
+    /// preimages. Recognized legacy static settings are restored in memory,
+    /// while every unrelated current executable byte is preserved.
     /// </summary>
     public static (byte[] Main, ZaRuntimeManagedGameplayMainLayout Layout)
         BuildRuntimeManaged(
@@ -367,17 +368,32 @@ public static class ZaStaticGameplaySettingsMainPatcher
         }
 
         var current = Analyze(baseMainBytes, currentMainBytes, expectedGame);
-        if (current.Kind != ZaStaticGameplaySettingsMainKind.Vanilla
-            || current.ExperienceShareEnabled != true
-            || current.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
-            || current.LevelCapEnabled)
+        // Use the static patcher's reviewed inverse only for a fully recognized
+        // legacy output. Every other non-vanilla state remains fail-closed.
+        var compositionMainBytes = current.Kind switch
+        {
+            ZaStaticGameplaySettingsMainKind.Vanilla => currentMainBytes,
+            ZaStaticGameplaySettingsMainKind.Configured => RestoreFromBase(
+                baseMainBytes,
+                currentMainBytes,
+                expectedGame),
+            _ => throw new InvalidDataException(current.Message),
+        };
+        var normalizedCurrent = Analyze(
+            baseMainBytes,
+            compositionMainBytes,
+            expectedGame);
+        if (normalizedCurrent.Kind != ZaStaticGameplaySettingsMainKind.Vanilla
+            || normalizedCurrent.ExperienceShareEnabled != true
+            || normalizedCurrent.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
+            || normalizedCurrent.LevelCapEnabled)
         {
             throw new InvalidDataException(
-                "The native settings menu requires the reviewed current Pokemon Legends Z-A executable to retain vanilla static gameplay settings and every verified runtime dependency.");
+                "The native settings menu could not safely normalize the recognized legacy Pokemon Legends Z-A static gameplay settings before composition.");
         }
 
         var baseNso = ParseBoundedNso(baseMainBytes, "base", allowAppendedText: false);
-        var nso = ParseBoundedNso(currentMainBytes, "current", allowAppendedText: false);
+        var nso = ParseBoundedNso(compositionMainBytes, "current", allowAppendedText: false);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(nso);
         EnsureSameExecutableEnvelope(baseNso, nso);

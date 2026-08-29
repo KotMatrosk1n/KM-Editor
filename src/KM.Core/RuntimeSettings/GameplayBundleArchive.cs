@@ -248,7 +248,6 @@ public static class GameplayBundleArchive
             || inspection.ActiveSlotIndex != 0
             || inspection.ActiveSnapshot is null
             || inspection.ActiveSnapshot.Generation != 1
-            || inspection.ActiveSnapshot.Values != GameplaySettingsValues.Vanilla
             || inspection.SlotB.Classification != GameplaySettingsSlotClassification.Empty)
         {
             throw new InvalidDataException("The archive settings journal is not the canonical one-slot bootstrap image.");
@@ -267,7 +266,8 @@ public static class GameplayBundleArchive
             family,
             manifest.TitleId,
             expectedVersion,
-            inspection.ActiveSnapshot.Presence);
+            inspection.ActiveSnapshot.Presence,
+            inspection.ActiveSnapshot.Values);
         if (!canonical.AsSpan().SequenceEqual(settingsJournal))
         {
             throw new InvalidDataException("The archive settings journal is not byte-canonical.");
@@ -276,14 +276,29 @@ public static class GameplayBundleArchive
 
     private static void ValidateTitleLayerPaths(GameplayBundleManifest manifest)
     {
-        var titleRoot = $"atmosphere/contents/{manifest.TitleId:X16}/";
-        if (manifest.Components.Any(component =>
-            !component.Path.StartsWith(titleRoot, StringComparison.Ordinal)
-            || component.Path.Length == titleRoot.Length))
+        if (manifest.Components.Count == 0)
         {
-            throw new InvalidDataException("Every immutable gameplay bundle component must belong to the exact title layer.");
+            throw new InvalidDataException(
+                "The gameplay bundle must contain at least one immutable title-layer component.");
+        }
+
+        var titleRoot = GetSupportedTitleRoots(manifest.TitleId)
+            .FirstOrDefault(candidate => manifest.Components.All(component =>
+                component.Path.StartsWith(candidate, StringComparison.Ordinal)
+                && component.Path.Length > candidate.Length));
+        if (titleRoot is null)
+        {
+            throw new InvalidDataException(
+                "Every immutable gameplay bundle component must belong to one exact supported title layer.");
         }
     }
+
+    private static IReadOnlyList<string> GetSupportedTitleRoots(ulong titleId) =>
+    [
+        $"atmosphere/contents/{titleId:X16}/",
+        $"mods/contents/{titleId:X16}/KM-Gameplay-Settings/",
+        $"load/{titleId:X16}/KM-Gameplay-Settings/",
+    ];
 
     private static void ValidatePayloadBounds(IReadOnlyList<(string Path, byte[] Bytes)> entries)
     {

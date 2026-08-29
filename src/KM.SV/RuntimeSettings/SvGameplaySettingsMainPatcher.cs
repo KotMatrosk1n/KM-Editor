@@ -591,8 +591,9 @@ public static class SvGameplaySettingsMainPatcher
 
     /// <summary>
     /// Composes the exact native-settings scaffold onto a reviewed executable.
-    /// The clean Base executable authorizes the build and retail preimages;
-    /// unrelated current text, rodata, and data bytes are retained verbatim.
+    /// The clean Base executable authorizes the build and retail preimages.
+    /// Recognized legacy static settings are restored in memory before the
+    /// runtime hooks are added; unrelated current bytes are retained verbatim.
     /// </summary>
     public static (byte[] Main, SvRuntimeManagedGameplayMainLayout Layout)
         BuildRuntimeManaged(
@@ -612,15 +613,28 @@ public static class SvGameplaySettingsMainPatcher
         }
 
         var current = Analyze(currentMainBytes, expectedEdition);
-        if (current.Kind != SvGameplaySettingsMainKind.Vanilla
-            || current.Values != GameplaySettingsValues.Vanilla)
+        // Retiring the static editor must not strand an executable that it
+        // previously produced. RestoreFromBase owns the exact inverse and
+        // preserves current bytes outside those legacy static regions.
+        var compositionMainBytes = current.Kind switch
+        {
+            SvGameplaySettingsMainKind.Vanilla => currentMainBytes,
+            SvGameplaySettingsMainKind.Modified => RestoreFromBase(
+                currentMainBytes,
+                baseMainBytes,
+                expectedEdition),
+            _ => throw new InvalidDataException(current.Message),
+        };
+        var normalizedCurrent = Analyze(compositionMainBytes, expectedEdition);
+        if (normalizedCurrent.Kind != SvGameplaySettingsMainKind.Vanilla
+            || normalizedCurrent.Values != GameplaySettingsValues.Vanilla)
         {
             throw new InvalidDataException(
-                "The native settings menu requires the reviewed current Scarlet/Violet executable to retain vanilla static gameplay settings and every verified runtime dependency.");
+                "The native settings menu could not safely normalize the recognized legacy Scarlet/Violet static gameplay settings before composition.");
         }
 
         var baseNso = NsoFile.Parse(baseMainBytes);
-        var nso = NsoFile.Parse(currentMainBytes);
+        var nso = NsoFile.Parse(compositionMainBytes);
         if (!baseNso.BuildId.AsSpan().SequenceEqual(nso.BuildId)
             || !NormalizeExecutableEnvelope(baseNso)
                 .AsSpan()

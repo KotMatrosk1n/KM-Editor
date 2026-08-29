@@ -50,6 +50,12 @@ export const inGameSettingsPackageStateSchema = z.enum([
   'corrupt'
 ]);
 
+export const inGameSettingsInstallationTargetSchema = z.enum([
+  'atmosphere',
+  'ryujinx',
+  'eden'
+]);
+
 export const inGameSettingsPackageOperationSchema = z.enum([
   'install',
   'upgrade',
@@ -68,6 +74,7 @@ export const inGameSettingsExecutableCompatibilitySchema = z.enum([
   'absent',
   'retailEquivalent',
   'compatiblePreservable',
+  'ownershipUnverified',
   'incompatibleOwnedRegion',
   'unsupportedBuild',
   'unreadableOrAmbiguous'
@@ -155,6 +162,7 @@ export const inGameSettingsPackageSnapshotSchema = z.strictObject({
 });
 
 export const inspectInGameSettingsPackageRequestSchema = z.strictObject({
+  installationTarget: inGameSettingsInstallationTargetSchema,
   scope: outputSafetyScopeSchema
 });
 
@@ -164,6 +172,7 @@ export const inspectInGameSettingsPackageResponseSchema = z.strictObject({
 
 export const previewInGameSettingsPackageRequestSchema = z.strictObject({
   expectedRevision: sha256Schema,
+  installationTarget: inGameSettingsInstallationTargetSchema,
   operation: inGameSettingsPackageOperationSchema,
   scope: outputSafetyScopeSchema
 });
@@ -244,6 +253,7 @@ export const previewInGameSettingsPackageResponseSchema = z.strictObject({
 });
 
 export const applyInGameSettingsPackageRequestSchema = z.strictObject({
+  installationTarget: inGameSettingsInstallationTargetSchema,
   reviewId: reviewIdSchema,
   scope: outputSafetyScopeSchema
 });
@@ -261,6 +271,9 @@ export const applyInGameSettingsPackageResponseSchema = z.strictObject({
 });
 
 export type InGameSettingsPackageState = z.infer<typeof inGameSettingsPackageStateSchema>;
+export type InGameSettingsInstallationTarget = z.infer<
+  typeof inGameSettingsInstallationTargetSchema
+>;
 export type InGameSettingsPackageOperation = z.infer<typeof inGameSettingsPackageOperationSchema>;
 export type InGameSettingsPackageVersion = z.infer<typeof inGameSettingsPackageVersionSchema>;
 export type InGameSettingsPackageDescriptor = z.infer<typeof inGameSettingsPackageDescriptorSchema>;
