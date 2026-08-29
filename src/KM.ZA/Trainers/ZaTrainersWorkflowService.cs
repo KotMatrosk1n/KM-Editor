@@ -300,30 +300,16 @@ internal sealed class ZaTrainersWorkflowService
     {
         var aiFlags = PackAiFlags(trainer);
         var team = ReadGameModuleTeam(trainer, labels).ToArray();
-        var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
-        var isHyperspaceTrainer = ZaTrainerNameCatalog.IsHyperspaceTrainer(trainer.TrainerId);
-        var trainerName = isHyperspaceTrainer
-            ? ZaLabels.FormatTrainerIdForLookup(trainer.TrainerId!, className)
-            : labels.TrainerNameFromText(trainer.TrainerId, trainerId)
-                ?? labels.TrainerNameFromKeys(ZaTrainerNameCatalog.ResolveTrainerNameKeys(trainer.TrainerId))
-                ?? ZaLabels.FormatTrainerIdForLookup(
-                    trainer.TrainerId ?? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}",
-                    className);
-        trainerName = ZaTextLabelLookup.NormalizeTrainerName(trainerName, className);
-        if (isHyperspaceTrainer
-            && labels.HyperspaceTrainerClassFromText(trainer.TrainerId) is { } trainerArchetype)
-        {
-            className = trainerArchetype;
-        }
+        var displayIdentity = ZaTrainerDisplayIdentityResolver.Resolve(trainerId, trainer, labels);
 
         var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
             ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"
             : trainer.TrainerId!;
         return new ZaTrainerRecord(
             trainerId,
-            trainerName,
-            classId,
-            className,
+            displayIdentity.Name,
+            displayIdentity.ClassId,
+            displayIdentity.ClassName,
             location,
             0,
             trainer.MegaEvolution ? "Mega Evolution" : "Trainer Battle",
@@ -468,30 +454,16 @@ internal sealed class ZaTrainersWorkflowService
     {
         var aiFlags = PackAiFlags(trainer);
         var team = ReadTeam(trainer, labels, spriteLabels, abilityResolver).ToArray();
-        var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
-        var isHyperspaceTrainer = ZaTrainerNameCatalog.IsHyperspaceTrainer(trainer.TrainerId);
-        var trainerName = isHyperspaceTrainer
-            ? ZaLabels.FormatTrainerIdForLookup(trainer.TrainerId!, className)
-            : labels.TrainerNameFromText(trainer.TrainerId, trainerId)
-                ?? labels.TrainerNameFromKeys(ZaTrainerNameCatalog.ResolveTrainerNameKeys(trainer.TrainerId))
-                ?? ZaLabels.FormatTrainerIdForLookup(
-                    trainer.TrainerId ?? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}",
-                    className);
-        trainerName = ZaTextLabelLookup.NormalizeTrainerName(trainerName, className);
-        if (isHyperspaceTrainer
-            && labels.HyperspaceTrainerClassFromText(trainer.TrainerId) is { } trainerArchetype)
-        {
-            className = trainerArchetype;
-        }
+        var displayIdentity = ZaTrainerDisplayIdentityResolver.Resolve(trainerId, trainer, labels);
         var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
             ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"
             : trainer.TrainerId!;
 
         return new ZaTrainerRecord(
             trainerId,
-            trainerName,
-            classId,
-            className,
+            displayIdentity.Name,
+            displayIdentity.ClassId,
+            displayIdentity.ClassName,
             location,
             0,
             trainer.MegaEvolution ? "Mega Evolution" : "Trainer Battle",
@@ -521,17 +493,17 @@ internal sealed class ZaTrainersWorkflowService
             trainer.MegaEvolution,
             trainer.LastHand)
         {
-            NameTextTarget = !isHyperspaceTrainer
+            NameTextTarget = !displayIdentity.IsHyperspaceTrainer
                 ? CreateTextTarget(labels.TrainerNameTarget(trainer.TrainerId, trainerId), "name")
                 : null,
-            ClassTextTarget = isHyperspaceTrainer
+            ClassTextTarget = displayIdentity.IsHyperspaceTrainer
                 ? CreateTextTarget(labels.TrainerNameTarget(trainer.TrainerId, trainerId), "hyperspaceArchetype")
                 : CreateTextTarget(labels.TrainerTypeTarget(trainer.TrainerType, trainer.TrainerType2), "class"),
             ClassPairId = CreateClassPairId(trainer.TrainerType, trainer.TrainerType2),
-            CanReassignClass = !isHyperspaceTrainer && classId >= 0,
-            ClassReassignmentBlockedReason = isHyperspaceTrainer
+            CanReassignClass = !displayIdentity.IsHyperspaceTrainer && displayIdentity.ClassId >= 0,
+            ClassReassignmentBlockedReason = displayIdentity.IsHyperspaceTrainer
                 ? ZaTrainerClassReassignmentBlockReasons.HyperspaceArchetype
-                : classId < 0
+                : displayIdentity.ClassId < 0
                     ? ZaTrainerClassReassignmentBlockReasons.UnresolvedClassPair
                     : null,
             IsSharedRivalRoster = ZaTrainerNameCatalog.IsSharedRivalRoster(trainer.TrainerId),

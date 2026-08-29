@@ -98,7 +98,8 @@ public sealed record OutputRuntimeMutableDescriptor
             inspection.ActiveSnapshot.Family,
             titleId,
             inspection.ActiveSnapshot.WriterVersion,
-            inspection.ActiveSnapshot.Presence);
+            inspection.ActiveSnapshot.Presence,
+            inspection.ActiveSnapshot.Values);
         if (!postimage.SequenceEqual(canonical))
         {
             throw new ArgumentException(

@@ -10,26 +10,21 @@ function read(relativePath) {
 const section = read('../src/features/gameplay-settings/GameplaySettingsSection.tsx');
 assert.match(
   section,
-  /type GameplaySettingsDeliveryMode = 'fixed' \| 'runtime'/,
-  'Gameplay Settings must retain one explicit fixed-versus-runtime delivery choice.'
+  /<InGameSettingsPackagePanel[\s\S]*?scope=\{stableScope\}/,
+  'Gameplay Settings must open directly into the native in-game controls workflow.'
 );
-assert.match(
+assert.doesNotMatch(
   section,
-  /hidden=\{deliveryMode !== 'fixed'\}[\s\S]*?hidden=\{deliveryMode !== 'runtime'\}/,
-  'Only the chosen gameplay delivery workflow may be visible.'
-);
-assert.match(
-  section,
-  /<InGameSettingsPackagePanel[\s\S]*?onStateChange=\{setInGamePackageState\}/,
-  'The hidden runtime workflow must remain mounted so mutual-exclusion checks stay active.'
-);
-assert.match(
-  section,
-  /inGamePackageLocksStaticEditor[\s\S]*?staticEditorLockedByPackage[\s\S]*?onStaticEditorLockChange=\{setInGamePackageLocksStaticEditor\}/,
-  'The fixed editor lock must consume the package inspection capability instead of inferring ownership from a generic conflict state.'
+  /GameplaySettingsDeliveryMode|deliveryMode|previewGameplaySettingsUpdate|applyGameplaySettingsUpdate|getGameplaySettings/,
+  'Gameplay Settings must not retain the retired fixed executable editor or delivery selector.'
 );
 
 const panel = read('../src/features/gameplay-settings/InGameSettingsPackagePanel.tsx');
+assert.match(
+  panel,
+  /reviewRegionRef\.current\?\.focus\(\)[\s\S]*?aria-live="polite"[\s\S]*?ref=\{reviewRegionRef\}[\s\S]*?tabIndex=\{-1\}/,
+  'The dynamically opened native-package review must announce itself and receive keyboard focus.'
+);
 assert.doesNotMatch(
   panel,
   /RuntimeControlCard/,
@@ -47,7 +42,7 @@ assert.match(
 );
 assert.match(
   panel,
-  /<Emulator data folder>\/mods\/contents\/\$\{titleId\}\/KM Gameplay Settings\/exefs[\s\S]*?<Emulator data folder>\/mods\/contents\/\$\{titleId\}\/KM Gameplay Settings\/romfs[\s\S]*?<Eden data folder>\/load\/\$\{titleId\}\/KM Gameplay Settings\/exefs[\s\S]*?<Eden data folder>\/load\/\$\{titleId\}\/KM Gameplay Settings\/romfs/,
+  /<Emulator data folder>\/mods\/contents\/\$\{titleId\}\/KM-Gameplay-Settings\/exefs[\s\S]*?<Emulator data folder>\/mods\/contents\/\$\{titleId\}\/KM-Gameplay-Settings\/romfs[\s\S]*?<Eden data folder>\/load\/\$\{titleId\}\/KM-Gameplay-Settings\/exefs[\s\S]*?<Eden data folder>\/load\/\$\{titleId\}\/KM-Gameplay-Settings\/romfs/,
   'Native-menu installation guidance must distinguish generated sources from exact emulator title-layer destinations.'
 );
 assert.doesNotMatch(
@@ -65,10 +60,10 @@ assert.doesNotMatch(
   /cheatFileName|atmosphereCheatPath|ryujinxCheatPath|openFixedMode/,
   'The native-menu panel must not retain cheat-package routing or block supported emulators.'
 );
-assert.match(
+assert.doesNotMatch(
   panel,
-  /onStaticEditorLockChange\?\.\(snapshot\?\.blocksStaticEditor \?\? false\)/,
-  'The native-menu panel must forward the backend-owned fixed-editor lock capability exactly.'
+  /staticEditor|staticSettingsAreVanilla|vanillaRequired|openFixedMode/,
+  'The native-menu panel must not depend on the retired fixed executable editor.'
 );
 assert.doesNotMatch(
   panel,
@@ -150,20 +145,8 @@ assert.match(
   'The frontend bridge must validate executable composition facts.'
 );
 
-const styles = read('../src/features/gameplay-settings/GameplaySettingsSection.css');
-assert.match(
-  styles,
-  /\.gameplay-settings__mode-content\[hidden\] \{\s*display: none;/,
-  'Hidden gameplay workflows must remain visually and interactively absent.'
-);
-
 const resourcesDirectory = new URL('../src/localization/resources/', import.meta.url);
 const requiredKeys = [
-  'gameplaySettings.delivery.title',
-  'gameplaySettings.delivery.fixedTitle',
-  'gameplaySettings.delivery.fixedDescription',
-  'gameplaySettings.delivery.runtimeTitle',
-  'gameplaySettings.delivery.runtimeDescription',
   'gameplaySettings.inGamePackage.availableControls',
   'gameplaySettings.inGamePackage.installationTitle',
   'gameplaySettings.inGamePackage.installationDescription',
@@ -240,4 +223,207 @@ assert.match(
   english['gameplaySettings.inGamePackage.howToDescription'],
   /existing game-owned menu[\s\S]*No cheat manager or external overlay/i,
   'Public copy must state that controls use a game-owned menu without an external manager.'
+);
+
+const legacyStaticCompositionContracts = [
+  {
+    label: 'Scarlet/Violet',
+    source: read('../../../src/KM.SV/RuntimeSettings/SvGameplaySettingsMainPatcher.cs'),
+    recognizedKind: 'SvGameplaySettingsMainKind.Modified'
+  },
+  {
+    label: 'Sword/Shield',
+    source: read('../../../src/KM.SwSh/RuntimeSettings/SwShStaticGameplaySettingsMainPatcher.cs'),
+    recognizedKind: 'SwShStaticGameplaySettingsMainKind.Configured'
+  },
+  {
+    label: 'Pokemon Legends Z-A',
+    source: read('../../../src/KM.ZA/RuntimeSettings/ZaStaticGameplaySettingsMainPatcher.cs'),
+    recognizedKind: 'ZaStaticGameplaySettingsMainKind.Configured'
+  }
+];
+for (const contract of legacyStaticCompositionContracts) {
+  assert.match(
+    contract.source,
+    new RegExp(
+      `var compositionMainBytes = current\\.Kind switch[\\s\\S]*?${contract.recognizedKind.replaceAll('.', '\\.')} => RestoreFromBase\\([\\s\\S]*?_ => throw new InvalidDataException\\(current\\.Message\\)`
+    ),
+    `${contract.label} must normalize only an exactly recognized legacy static output and fail closed for every other state.`
+  );
+  assert.match(
+    contract.source,
+    /var normalizedCurrent = Analyze\([\s\S]*?compositionMainBytes[\s\S]*?normalizedCurrent\.Kind != [\s\S]*?Vanilla/,
+    `${contract.label} must re-analyze the preservation-aware restore before writing native runtime hooks.`
+  );
+  assert.match(
+    contract.source,
+    /(?:NsoFile\.Parse|ParseBoundedNso)\(compositionMainBytes/,
+    `${contract.label} must compose the native runtime from the normalized executable rather than the legacy static image.`
+  );
+}
+
+const nativeBundleFactory = read(
+  '../../../src/KM.Tools/Application/NativeGameplayMenuBundleFactory.cs'
+);
+for (const game of ['Scarlet', 'Violet', 'Sword', 'Shield', 'ZA']) {
+  assert.match(
+    nativeBundleFactory,
+    new RegExp(`ProjectGame\\.${game}`),
+    `Native gameplay composition must keep ${game} routed through the preservation-aware runtime builders.`
+  );
+}
+assert.match(
+  nativeBundleFactory,
+  /var initialSettings = ReadInitialSettings\([\s\S]*?sourceMain,[\s\S]*?composedSourceMain\)[\s\S]*?&& !initialSettings\.IsLegacyStaticOutput[\s\S]*?GameplaySettingsJournal\.CreateBootstrap\([\s\S]*?SettingsPresence,[\s\S]*?initialSettings\.Values\)/,
+  'Native package creation must carry the recognized executable settings into the initial runtime journal.'
+);
+for (const recognizedKind of [
+  'SvGameplaySettingsMainKind.Modified',
+  'SwShStaticGameplaySettingsMainKind.Configured',
+  'ZaStaticGameplaySettingsMainKind.Configured'
+]) {
+  assert.match(
+    nativeBundleFactory,
+    new RegExp(`${recognizedKind.replaceAll('.', '\\.')}\\)`),
+    `Only ${recognizedKind} may bypass the generic Base layout envelope during legacy migration.`
+  );
+}
+for (const analyzer of [
+  'SvGameplaySettingsMainPatcher.Analyze',
+  'SwShStaticGameplaySettingsMainPatcher.Analyze',
+  'ZaStaticGameplaySettingsMainPatcher.Analyze'
+]) {
+  assert.match(
+    nativeBundleFactory,
+    new RegExp(analyzer.replaceAll('.', '\\.')),
+    `Initial journal migration must use the strict ${analyzer} result.`
+  );
+}
+
+const settingsJournal = read(
+  '../../../src/KM.Core/RuntimeSettings/GameplaySettingsJournal.cs'
+);
+assert.match(
+  settingsJournal,
+  /CreateBootstrap\([\s\S]*?GameplaySettingPresence presence,[\s\S]*?GameplaySettingsValues values\)[\s\S]*?CanonicalizeValues\(normalizedPresence, values\)/,
+  'The settings journal must support a canonical one-slot bootstrap with reviewed initial values.'
+);
+
+const bundleArchive = read(
+  '../../../src/KM.Core/RuntimeSettings/GameplayBundleArchive.cs'
+);
+assert.match(
+  bundleArchive,
+  /GameplaySettingsJournal\.CreateBootstrap\([\s\S]*?inspection\.ActiveSnapshot\.Presence,[\s\S]*?inspection\.ActiveSnapshot\.Values\)/,
+  'Bundle validation must canonicalize the actual initial settings instead of forcing vanilla.'
+);
+
+const runtimeMutableContracts = read(
+  '../../../src/KM.Core/Output/OutputRuntimeMutableContracts.cs'
+);
+assert.match(
+  runtimeMutableContracts,
+  /GameplaySettingsJournal\.CreateBootstrap\([\s\S]*?inspection\.ActiveSnapshot\.Presence,[\s\S]*?inspection\.ActiveSnapshot\.Values\)/,
+  'Runtime-mutable ownership must validate non-vanilla canonical bootstrap journals.'
+);
+
+const semanticNsoVerifier = read(
+  '../../../src/KM.Formats/Executable/NsoRegisteredRegionCompositionVerifier.cs'
+);
+for (const semanticProof of [
+  'NormalizeHeader(retail)',
+  'retail.Text.DecompressedData',
+  'retail.Ro.DecompressedData',
+  'retail.Data.DecompressedData',
+  'OpaqueSpansMatch'
+]) {
+  assert.match(
+    semanticNsoVerifier,
+    new RegExp(semanticProof.replaceAll('.', '\\.').replaceAll('(', '\\(').replaceAll(')', '\\)')),
+    `Ledgerless executable adoption must include the whole-NSO semantic proof ${semanticProof}.`
+  );
+}
+
+const strictKnownOutputContracts = [
+  {
+    label: 'Scarlet/Violet',
+    source: read('../../../src/KM.SV/RuntimeSettings/SvKnownExecutableCompositionVerifier.cs'),
+    legacyKind: 'SvGameplaySettingsMainKind.Modified',
+    legacyRestore: 'SvGameplaySettingsMainPatcher.RestoreFromBase'
+  },
+  {
+    label: 'Sword/Shield',
+    source: read('../../../src/KM.SwSh/RuntimeSettings/SwShKnownExecutableCompositionVerifier.cs'),
+    legacyKind: 'SwShStaticGameplaySettingsMainKind.Configured',
+    legacyRestore: 'SwShStaticGameplaySettingsMainPatcher.RestoreFromBase'
+  },
+  {
+    label: 'Pokemon Legends Z-A',
+    source: read('../../../src/KM.ZA/RuntimeSettings/ZaKnownExecutableCompositionVerifier.cs'),
+    legacyKind: 'ZaStaticGameplaySettingsMainKind.Configured',
+    legacyRestore: 'ZaStaticGameplaySettingsMainPatcher.RestoreFromBase'
+  }
+];
+for (const contract of strictKnownOutputContracts) {
+  assert.match(
+    contract.source,
+    new RegExp(contract.legacyKind.replaceAll('.', '\\.')),
+    `${contract.label} ledgerless migration must require the strict legacy static analyzer result.`
+  );
+  assert.match(
+    contract.source,
+    new RegExp(contract.legacyRestore.replaceAll('.', '\\.')),
+    `${contract.label} ledgerless migration must use the legacy editor's preservation-aware inverse.`
+  );
+  assert.match(
+    contract.source,
+    /recognizedTransformation[\s\S]*?NsoRegisteredRegionCompositionVerifier\.SemanticallyMatches/,
+    `${contract.label} must normalize at least one known KM output and prove the complete remaining executable.`
+  );
+  assert.doesNotMatch(
+    contract.source,
+    /ChangesAreConfinedToRegisteredRegions|ReservedRegionLedger\.Regions/,
+    `${contract.label} must not treat registered offsets as semantic provenance.`
+  );
+}
+
+const swordShieldKnownOutput = strictKnownOutputContracts[1].source;
+assert.doesNotMatch(
+  swordShieldKnownOutput,
+  /SwShDynamaxAdventuresMainPatcher/,
+  'Ledgerless Dynamax Adventures output must remain rejected because executable bytes alone cannot prove its paired archive state.'
+);
+for (const rejectedCompatibleKind of [
+  'SwShGymUniformRemovalInstallKind.InstalledCompatible',
+  'SwShNameFilterMainKind.InstalledCompatible'
+]) {
+  assert.doesNotMatch(
+    swordShieldKnownOutput,
+    new RegExp(rejectedCompatibleKind.replaceAll('.', '\\.')),
+    `${rejectedCompatibleKind} must not be adopted without a current ownership ledger.`
+  );
+}
+
+const zaKnownOutput = strictKnownOutputContracts[2].source;
+assert.match(
+  zaKnownOutput,
+  /ZaDexLayoutMainPatcher\.Analyze[\s\S]*?ZaDexLayoutMainKind\.Modified[\s\S]*?ApplyRegularCount\([\s\S]*?ZaDexLayoutMainPatcher\.VanillaRegularCount/,
+  'Z-A must recognize and canonically reverse the proven historical Dex Layout output.'
+);
+
+const nativeBundleProvider = read(
+  '../../../src/KM.Tools/Application/NativeGameplayMenuBundleProvider.cs'
+);
+const nativePackageApplication = read(
+  '../../../src/KM.Tools/Application/InGameSettingsPackageApplicationService.cs'
+);
+assert.match(
+  nativeBundleProvider,
+  /semanticallyVerifiedMainSource[\s\S]*?IsSemanticallyVerifiedOutput/,
+  'The provider must carry one authoritative semantic source classification.'
+);
+assert.match(
+  nativePackageApplication,
+  /SemanticallyVerifiedMainSource[\s\S]*?semanticallyVerifiedSource/,
+  'The application ownership gate must consume the provider semantic classification.'
 );

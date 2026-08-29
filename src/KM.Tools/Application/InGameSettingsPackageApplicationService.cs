@@ -38,7 +38,8 @@ public sealed record InGameSettingsBundleResolution(
     bool UsesComposedMainNpdm = false,
     bool RequiresOwnedMainSource = false,
     bool RequiresOwnedMainNpdmSource = false,
-    RelativeOutputPath? AttemptedSourcePath = null);
+    RelativeOutputPath? AttemptedSourcePath = null,
+    bool SemanticallyVerifiedMainSource = false);
 
 public interface IInGameSettingsBundleProvider
 {
@@ -46,6 +47,21 @@ public interface IInGameSettingsBundleProvider
         ProjectPaths paths,
         ProjectGame game,
         CancellationToken cancellationToken = default);
+
+    Task<InGameSettingsBundleResolution> ResolveAsync(
+        ProjectPaths paths,
+        ProjectGame game,
+        InGameSettingsInstallationTargetDto installationTarget,
+        CancellationToken cancellationToken = default)
+    {
+        if (installationTarget != InGameSettingsInstallationTargetDto.Atmosphere)
+        {
+            throw new NotSupportedException(
+                "This gameplay bundle provider supports only the default Atmosphere installation target.");
+        }
+
+        return ResolveAsync(paths, game, cancellationToken);
+    }
 }
 
 /// <summary>
@@ -103,10 +119,12 @@ public sealed class InGameSettingsPackageApplicationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateInstallationTarget(request.InstallationTarget);
         var context = OutputSafetyApplicationService.ResolveScope(request.Scope);
         var loaded = await LoadWithCoexistenceAsync(
                 request.Scope,
                 context,
+                request.InstallationTarget,
                 cancellationToken)
             .ConfigureAwait(false);
         return new InspectInGameSettingsPackageResponse(loaded.Snapshot);
@@ -117,6 +135,7 @@ public sealed class InGameSettingsPackageApplicationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateInstallationTarget(request.InstallationTarget);
         if (!Enum.IsDefined(request.Operation))
         {
             throw new ArgumentOutOfRangeException(nameof(request.Operation));
@@ -126,6 +145,7 @@ public sealed class InGameSettingsPackageApplicationService
         var loaded = await LoadWithCoexistenceAsync(
                 request.Scope,
                 context,
+                request.InstallationTarget,
                 cancellationToken)
             .ConfigureAwait(false);
         if (!string.Equals(
@@ -184,6 +204,7 @@ public sealed class InGameSettingsPackageApplicationService
                     context.ScopeKey,
                     loaded.Snapshot.Revision,
                     request.Operation,
+                    request.InstallationTarget,
                     expiresAtUtc,
                     plan));
         }
@@ -218,7 +239,7 @@ public sealed class InGameSettingsPackageApplicationService
         var composition = request.Operation is (
                 InGameSettingsPackageOperationDto.Install or
                 InGameSettingsPackageOperationDto.Upgrade)
-            ? CreateCompositionDto(context, loaded)
+            ? CreateCompositionDto(context, loaded, request.InstallationTarget)
             : null;
         return new PreviewInGameSettingsPackageResponse(
             reviewId,
@@ -247,6 +268,7 @@ public sealed class InGameSettingsPackageApplicationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateInstallationTarget(request.InstallationTarget);
         if (string.IsNullOrWhiteSpace(request.ReviewId)
             || request.ReviewId.Length > InGameSettingsPackageContract.MaximumReviewIdLength
             || request.ReviewId.Any(character => !Uri.IsHexDigit(character)))
@@ -261,6 +283,7 @@ public sealed class InGameSettingsPackageApplicationService
             PruneReviewsLocked(timeProvider.GetUtcNow());
             if (!reviews.Remove(request.ReviewId, out review!)
                 || review.ScopeKey != context.ScopeKey
+                || review.InstallationTarget != request.InstallationTarget
                 || review.ExpiresAtUtc <= timeProvider.GetUtcNow())
             {
                 throw new InGameSettingsPackageReviewExpiredException();
@@ -286,6 +309,7 @@ public sealed class InGameSettingsPackageApplicationService
         var current = await LoadWithCoexistenceAsync(
                 request.Scope,
                 context,
+                request.InstallationTarget,
                 cancellationToken)
             .ConfigureAwait(false);
         if (!string.Equals(
@@ -307,6 +331,7 @@ public sealed class InGameSettingsPackageApplicationService
                 snapshot = (await LoadWithCoexistenceAsync(
                         request.Scope,
                         context,
+                        request.InstallationTarget,
                         CancellationToken.None)
                     .ConfigureAwait(false)).Snapshot;
             }
@@ -485,9 +510,11 @@ public sealed class InGameSettingsPackageApplicationService
     private async Task<LoadedPackageState> LoadWithCoexistenceAsync(
         OutputScopeDto scope,
         OutputScopeContext context,
+        InGameSettingsInstallationTargetDto installationTarget,
         CancellationToken cancellationToken)
     {
-        var loaded = await LoadAsync(context, cancellationToken).ConfigureAwait(false);
+        var loaded = await LoadAsync(context, installationTarget, cancellationToken)
+            .ConfigureAwait(false);
         if (bundleProvider is not null)
         {
             // Production native-menu bundles are derived from a reviewed
@@ -563,6 +590,7 @@ public sealed class InGameSettingsPackageApplicationService
 
     private async Task<LoadedPackageState> LoadAsync(
         OutputScopeContext context,
+        InGameSettingsInstallationTargetDto installationTarget,
         CancellationToken cancellationToken)
     {
         var selectedGame = context.Paths.SelectedGame
@@ -573,11 +601,17 @@ public sealed class InGameSettingsPackageApplicationService
             : await bundleProvider.ResolveAsync(
                     context.Paths,
                     selectedGame,
+                    installationTarget,
                     cancellationToken)
                 .ConfigureAwait(false);
         var authorizedEntries = resolution.Catalog
             .GetEntries(context.GameFamily, titleId)
             .Where(entry => resolution.Authority.IsAuthorized(entry.AuthorityKey))
+            .Where(entry => bundleProvider is null
+                || NativeGameplayMenuBundleFactory.IsNativeMenuManifestForTarget(
+                    selectedGame,
+                    entry.Manifest,
+                    installationTarget))
             .ToImmutableArray();
         var sourceDependencies = (resolution.SourceDependencies ?? [])
             .OrderBy(dependency => dependency.Path.CanonicalKey, StringComparer.Ordinal)
@@ -605,7 +639,7 @@ public sealed class InGameSettingsPackageApplicationService
         if (sourceOwnershipFailure is not null)
         {
             authorizedEntries = ImmutableArray<InGameSettingsBundleCatalogEntry>.Empty;
-            unavailableDetail = sourceOwnershipFailure;
+            unavailableDetail = sourceOwnershipFailure.Detail;
         }
         var executableInput = CreateExecutableInputAssessment(
             resolution,
@@ -664,11 +698,15 @@ public sealed class InGameSettingsPackageApplicationService
         {
             foreach (var component in availableBundle.Manifest.Components)
             {
-                AddReviewTarget(
-                    pathInventory,
-                    reviewLimits,
-                    component.Path,
-                    GetComponentReviewLimit(component));
+                foreach (var equivalentPath in NativeGameplayMenuBundleFactory
+                             .GetEquivalentRuntimePackagePaths(component.Path, titleId))
+                {
+                    AddReviewTarget(
+                        pathInventory,
+                        reviewLimits,
+                        equivalentPath,
+                        GetComponentReviewLimit(component));
+                }
             }
             AddReviewTarget(
                 pathInventory,
@@ -680,11 +718,15 @@ public sealed class InGameSettingsPackageApplicationService
         {
             foreach (var component in installedManifest!.Components)
             {
-                AddReviewTarget(
-                    pathInventory,
-                    reviewLimits,
-                    component.Path,
-                    GetComponentReviewLimit(component));
+                foreach (var equivalentPath in NativeGameplayMenuBundleFactory
+                             .GetEquivalentRuntimePackagePaths(component.Path, titleId))
+                {
+                    AddReviewTarget(
+                        pathInventory,
+                        reviewLimits,
+                        equivalentPath,
+                        GetComponentReviewLimit(component));
+                }
             }
             AddReviewTarget(
                 pathInventory,
@@ -726,6 +768,7 @@ public sealed class InGameSettingsPackageApplicationService
 
         var revision = ComputeRevision(
             context,
+            installationTarget,
             ownership,
             availableEntry,
             installedEntry,
@@ -1012,12 +1055,14 @@ public sealed class InGameSettingsPackageApplicationService
         RelativeOutputPath path,
         ulong titleId)
     {
-        var titleRoot = string.Create(
-            CultureInfo.InvariantCulture,
-            $"atmosphere/contents/{titleId:X16}/");
-        return path.Value.StartsWith(titleRoot + "exefs/", StringComparison.Ordinal)
-            || path.Value.StartsWith(titleRoot + "romfs/", StringComparison.Ordinal)
-            || path.Value.StartsWith(titleRoot + "cheats/", StringComparison.Ordinal);
+        return NativeGameplayMenuBundleFactory.IsRuntimePackageComponentPath(
+                path.Value,
+                titleId)
+            || path.Value.StartsWith(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"atmosphere/contents/{titleId:X16}/cheats/"),
+                StringComparison.Ordinal);
     }
 
     private static int GetComponentReviewLimit(
@@ -1211,6 +1256,16 @@ public sealed class InGameSettingsPackageApplicationService
             }
         }
 
+        if (targets.Values.Any(target =>
+                target.Exists
+                && IsRuntimePackageComponentPath(target.Path, bundle.Manifest.TitleId)
+                && !expected.ContainsKey(target.Path.CanonicalKey)))
+        {
+            return new PackageValidationFailure(
+                InGameSettingsPackageStateDto.CoexistenceConflict,
+                "A second installation-target layout contains native package files that are not part of the installed package inventory.");
+        }
+
         return new PackageValidationFailure(null, null);
     }
 
@@ -1232,7 +1287,7 @@ public sealed class InGameSettingsPackageApplicationService
             && !claim.PreservationRule.RequiresPreimage;
     }
 
-    private static string? ValidateCompositionSourceOwnership(
+    private static CompositionSourceOwnershipFailure? ValidateCompositionSourceOwnership(
         OutputScopeContext context,
         OutputOwnershipInventorySnapshot ownership,
         InGameSettingsBundleResolution resolution,
@@ -1248,9 +1303,15 @@ public sealed class InGameSettingsPackageApplicationService
             || resolution.UsesComposedMainNpdm != mainNpdm.ExpectedState.Exists
             || resolution.RequiresOwnedMainSource && !resolution.UsesComposedMain
             || resolution.RequiresOwnedMainNpdmSource && !resolution.UsesComposedMainNpdm
+            || resolution.SemanticallyVerifiedMainSource
+                && (!resolution.UsesComposedMain
+                    || !resolution.RequiresOwnedMainSource)
             || runtimeSlot.ExpectedState.Exists)
         {
-            return "The native-menu provider did not return a complete and internally consistent executable source inventory. KM changed no project file.";
+            return new CompositionSourceOwnershipFailure(
+                InGameSettingsExecutableCompatibilityDto.UnreadableOrAmbiguous,
+                "source-inventory-inconsistent",
+                "The native-menu provider did not return a complete and internally consistent executable source inventory. KM changed no project file.");
         }
 
         var mainFailure = ValidateCompositionSourceOwnership(
@@ -1259,7 +1320,8 @@ public sealed class InGameSettingsPackageApplicationService
             sourceDependencies,
             StandaloneMainPath,
             "exefs/main",
-            resolution.RequiresOwnedMainSource);
+            resolution.RequiresOwnedMainSource,
+            resolution.SemanticallyVerifiedMainSource);
         if (mainFailure is not null)
         {
             return mainFailure;
@@ -1271,16 +1333,18 @@ public sealed class InGameSettingsPackageApplicationService
             sourceDependencies,
             StandaloneMainNpdmPath,
             "exefs/main.npdm",
-            resolution.RequiresOwnedMainNpdmSource);
+            resolution.RequiresOwnedMainNpdmSource,
+            semanticallyVerifiedSource: false);
     }
 
-    private static string? ValidateCompositionSourceOwnership(
+    private static CompositionSourceOwnershipFailure? ValidateCompositionSourceOwnership(
         OutputScopeContext context,
         OutputOwnershipInventorySnapshot ownership,
         IReadOnlyList<OutputReadDependency> sourceDependencies,
         RelativeOutputPath path,
         string displayPath,
-        bool requiresPreservationAwareOwnership)
+        bool requiresPreservationAwareOwnership,
+        bool semanticallyVerifiedSource)
     {
         var dependency = sourceDependencies.SingleOrDefault(candidate =>
             candidate.Path.CanonicalKey == path.CanonicalKey);
@@ -1293,10 +1357,18 @@ public sealed class InGameSettingsPackageApplicationService
                 || record.CurrentState != dependency.ExpectedState
                 || record.RuntimeMutableDescriptor is not null))
         {
-            return $"The standalone {displayPath} no longer matches its current KM ownership record. KM left it untouched and will not create a combined executable while the source ledger is stale or belongs to another project.";
+            return new CompositionSourceOwnershipFailure(
+                InGameSettingsExecutableCompatibilityDto.OwnershipUnverified,
+                "source-ledger-stale-or-inconsistent",
+                $"The standalone {displayPath} no longer matches its current KM ownership record. KM left it untouched and will not create a combined executable while the source ledger is stale or belongs to another project.");
         }
 
         if (!requiresPreservationAwareOwnership)
+        {
+            return null;
+        }
+
+        if (semanticallyVerifiedSource)
         {
             return null;
         }
@@ -1313,7 +1385,12 @@ public sealed class InGameSettingsPackageApplicationService
                 !claim.PreservationRule.PreservesUnownedData
                 || !claim.PreservationRule.RequiresPreimage))
         {
-            return $"The compatible standalone {displayPath} is not backed by the current KM ownership ledger and a preservation-aware preimage contract. KM left it untouched and will not create an unverifiable combined executable.";
+            return new CompositionSourceOwnershipFailure(
+                InGameSettingsExecutableCompatibilityDto.OwnershipUnverified,
+                record is null
+                    ? "standalone-output-not-ledger-owned"
+                    : "source-ledger-preservation-contract-invalid",
+                $"The compatible standalone {displayPath} is not backed by the current KM ownership ledger and a preservation-aware preimage contract. KM left it untouched and will not create an unverifiable combined executable.");
         }
 
         return null;
@@ -1324,7 +1401,7 @@ public sealed class InGameSettingsPackageApplicationService
             InGameSettingsBundleResolution resolution,
             IReadOnlyList<OutputReadDependency> sourceDependencies,
             bool providerOfferedCompatiblePackage,
-            string? sourceOwnershipFailure,
+            CompositionSourceOwnershipFailure? sourceOwnershipFailure,
             bool usesDynamicProvider)
     {
         if (resolution.SourceDependencies is null)
@@ -1373,8 +1450,8 @@ public sealed class InGameSettingsPackageApplicationService
             {
                 return new InGameSettingsExecutableInputAssessmentDto(
                     InGameSettingsExecutableInputSourceDto.None,
-                    InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion,
-                    "source-ledger-stale-or-inconsistent",
+                    sourceOwnershipFailure.Compatibility,
+                    sourceOwnershipFailure.ReasonCode,
                     null,
                     null,
                     null);
@@ -1394,23 +1471,26 @@ public sealed class InGameSettingsPackageApplicationService
         }
 
         var compatibility = runtimeSlot?.ExpectedState.Exists == true
-            || sourceOwnershipFailure is not null
             || !providerOfferedCompatiblePackage
                 && (resolution.RequiresOwnedMainSource
                     || resolution.RequiresOwnedMainNpdmSource)
             ? InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion
-            : resolution.RequiresOwnedMainSource
-                || resolution.RequiresOwnedMainNpdmSource
-                ? InGameSettingsExecutableCompatibilityDto.CompatiblePreservable
-                : InGameSettingsExecutableCompatibilityDto.RetailEquivalent;
+            : sourceOwnershipFailure is not null
+                ? sourceOwnershipFailure.Compatibility
+                : resolution.RequiresOwnedMainSource
+                    || resolution.RequiresOwnedMainNpdmSource
+                    ? InGameSettingsExecutableCompatibilityDto.CompatiblePreservable
+                    : InGameSettingsExecutableCompatibilityDto.RetailEquivalent;
         var reasonCode = runtimeSlot?.ExpectedState.Exists == true
             ? "runtime-slot-occupied"
             : sourceOwnershipFailure is not null
-                ? "standalone-output-not-ledger-owned"
+                ? sourceOwnershipFailure.ReasonCode
                 : compatibility == InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion
                     ? "verified-native-region-conflict"
                     : compatibility == InGameSettingsExecutableCompatibilityDto.CompatiblePreservable
-                        ? "ledger-owned-preservable-output"
+                        ? resolution.SemanticallyVerifiedMainSource
+                            ? "registered-compatible-exefs-output"
+                            : "ledger-owned-preservable-output"
                         : "standalone-matches-base";
         return new InGameSettingsExecutableInputAssessmentDto(
             InGameSettingsExecutableInputSourceDto.StandaloneOutput,
@@ -1431,7 +1511,8 @@ public sealed class InGameSettingsPackageApplicationService
 
     private static InGameSettingsExecutableCompositionDto CreateCompositionDto(
         OutputScopeContext context,
-        LoadedPackageState loaded)
+        LoadedPackageState loaded,
+        InGameSettingsInstallationTargetDto installationTarget)
     {
         var strategy = loaded.Snapshot.ExecutableInput.Compatibility switch
         {
@@ -1448,7 +1529,9 @@ public sealed class InGameSettingsPackageApplicationService
         var titleId = ProjectGameMetadata.Get(selectedGame).TitleId;
         return new InGameSettingsExecutableCompositionDto(
             strategy,
-            $"atmosphere/contents/{titleId:X16}/exefs/main",
+            NativeGameplayMenuBundleFactory.GetExecutableDestinationPath(
+                titleId,
+                installationTarget),
             SourcePreserved: true,
             PreservesBytesOutsideOwnedRegions: true,
             OwnedRegionCount: GetNativeExecutableOwnedRegionCount(selectedGame));
@@ -1706,6 +1789,7 @@ public sealed class InGameSettingsPackageApplicationService
 
     private static string ComputeRevision(
         OutputScopeContext context,
+        InGameSettingsInstallationTargetDto installationTarget,
         OutputOwnershipInventorySnapshot ownership,
         InGameSettingsBundleCatalogEntry? availableEntry,
         InGameSettingsBundleCatalogEntry? installedEntry,
@@ -1713,8 +1797,9 @@ public sealed class InGameSettingsPackageApplicationService
         IEnumerable<OutputReadDependency> sourceDependencies)
     {
         var builder = new StringBuilder();
-        builder.Append("in-game-settings-package-review-v1\n")
+        builder.Append("in-game-settings-package-review-v2\n")
             .Append(context.ScopeKey).Append('\n')
+            .Append(installationTarget).Append('\n')
             .Append(ownership.Revision.Value).Append('\n')
             .Append(availableEntry?.ArchiveSha256 ?? "none").Append('\n')
             .Append(installedEntry?.ArchiveSha256 ?? "none").Append('\n');
@@ -1772,6 +1857,18 @@ public sealed class InGameSettingsPackageApplicationService
         }
     }
 
+    private static void ValidateInstallationTarget(
+        InGameSettingsInstallationTargetDto installationTarget)
+    {
+        if (!Enum.IsDefined(installationTarget))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(installationTarget),
+                installationTarget,
+                null);
+        }
+    }
+
     private static bool IsFatal(Exception exception)
     {
         return exception is
@@ -1795,6 +1892,11 @@ public sealed class InGameSettingsPackageApplicationService
         InGameSettingsPackageStateDto? State,
         string? Detail);
 
+    private sealed record CompositionSourceOwnershipFailure(
+        InGameSettingsExecutableCompatibilityDto Compatibility,
+        string ReasonCode,
+        string Detail);
+
     private sealed record LoadedPackageState(
         InGameSettingsPackageSnapshotDto Snapshot,
         InGameSettingsBundleCatalogEntry? InstalledEntry,
@@ -1810,6 +1912,7 @@ public sealed class InGameSettingsPackageApplicationService
         string ScopeKey,
         string ExpectedRevision,
         InGameSettingsPackageOperationDto Operation,
+        InGameSettingsInstallationTargetDto InstallationTarget,
         DateTimeOffset ExpiresAtUtc,
         OutputApplyPlan ApplyPlan);
 }

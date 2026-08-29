@@ -53,6 +53,7 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<GameplaySettingsApplyOutcomeDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageStateDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageOperationDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<InGameSettingsInstallationTargetDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<InGameSettingsPackageTargetOperationDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<InGameSettingsExecutableInputSourceDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<InGameSettingsExecutableCompatibilityDto>(JsonNamingPolicy.CamelCase, false));

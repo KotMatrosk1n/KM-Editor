@@ -34,6 +34,13 @@ public enum InGameSettingsPackageOperationDto
     Remove,
 }
 
+public enum InGameSettingsInstallationTargetDto
+{
+    Atmosphere,
+    Ryujinx,
+    Eden,
+}
+
 public enum InGameSettingsPackageTargetOperationDto
 {
     Write,
@@ -52,6 +59,7 @@ public enum InGameSettingsExecutableCompatibilityDto
     Absent,
     RetailEquivalent,
     CompatiblePreservable,
+    OwnershipUnverified,
     IncompatibleOwnedRegion,
     UnsupportedBuild,
     UnreadableOrAmbiguous,
@@ -102,7 +110,10 @@ public sealed record InGameSettingsPackageSnapshotDto(
     InGameSettingsExecutableInputAssessmentDto ExecutableInput,
     string? Detail = null);
 
-public sealed record InspectInGameSettingsPackageRequest(OutputScopeDto Scope);
+public sealed record InspectInGameSettingsPackageRequest(
+    OutputScopeDto Scope,
+    InGameSettingsInstallationTargetDto InstallationTarget =
+        InGameSettingsInstallationTargetDto.Atmosphere);
 
 public sealed record InspectInGameSettingsPackageResponse(
     InGameSettingsPackageSnapshotDto Snapshot);
@@ -110,7 +121,9 @@ public sealed record InspectInGameSettingsPackageResponse(
 public sealed record PreviewInGameSettingsPackageRequest(
     OutputScopeDto Scope,
     string ExpectedRevision,
-    InGameSettingsPackageOperationDto Operation);
+    InGameSettingsPackageOperationDto Operation,
+    InGameSettingsInstallationTargetDto InstallationTarget =
+        InGameSettingsInstallationTargetDto.Atmosphere);
 
 public sealed record InGameSettingsPackageTargetDto(
     string RelativePath,
@@ -144,7 +157,9 @@ public sealed record PreviewInGameSettingsPackageResponse(
 
 public sealed record ApplyInGameSettingsPackageRequest(
     OutputScopeDto Scope,
-    string ReviewId);
+    string ReviewId,
+    InGameSettingsInstallationTargetDto InstallationTarget =
+        InGameSettingsInstallationTargetDto.Atmosphere);
 
 public enum InGameSettingsPackageApplyOutcomeDto
 {

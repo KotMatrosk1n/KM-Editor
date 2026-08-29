@@ -117,6 +117,22 @@ public static class GameplaySettingsJournal
         GameplaySettingsWriterVersion writerVersion,
         GameplaySettingPresence presence)
     {
+        return CreateBootstrap(
+            family,
+            titleId,
+            writerVersion,
+            presence,
+            GameplaySettingsValues.Vanilla);
+    }
+
+    public static byte[] CreateBootstrap(
+        GameplaySettingsFamily family,
+        ulong titleId,
+        GameplaySettingsWriterVersion writerVersion,
+        GameplaySettingPresence presence,
+        GameplaySettingsValues values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
         ValidateIdentity(family, titleId);
         var normalizedPresence = ValidatePresence(presence);
         var journal = new byte[JournalSize];
@@ -126,7 +142,7 @@ public static class GameplaySettingsJournal
             generation: 1,
             writerVersion,
             normalizedPresence,
-            CanonicalizeValues(normalizedPresence, GameplaySettingsValues.Vanilla))
+            CanonicalizeValues(normalizedPresence, values))
             .CopyTo(journal, 0);
         return journal;
     }

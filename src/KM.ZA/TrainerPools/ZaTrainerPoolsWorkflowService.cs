@@ -93,11 +93,8 @@ internal sealed class ZaTrainerPoolsWorkflowService
             var rosterSource = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
             var spawnerSource = fileSource.Read(project, ZaDataPaths.BattleTrainerSpawnerDataArray);
             var document = ZaTrainerPoolDataDocument.Parse(tableSource.Bytes);
-            var displayRecords = new ZaTrainersWorkflowService(fileSource)
-                .Load(project)
-                .Trainers
-                .ToDictionary(record => record.TrainerId);
-            var roster = ReadRoster(rosterSource.Bytes, displayRecords, diagnostics);
+            var labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            var roster = ReadRoster(rosterSource.Bytes, labels, diagnostics);
             var identities = ReadIdentities(identitySource.Bytes, roster, diagnostics);
             var referencedTableIds = ReadReferencedTableIds(spawnerSource.Bytes, diagnostics);
             var pools = BuildPools(document, identities, referencedTableIds, diagnostics);
@@ -692,7 +689,7 @@ internal sealed class ZaTrainerPoolsWorkflowService
 
     private static IReadOnlyDictionary<string, RosterRecord> ReadRoster(
         byte[] bytes,
-        IReadOnlyDictionary<int, ZaTrainerRecord> displayRecords,
+        ZaTextLabelLookup labels,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var root = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(bytes));
@@ -714,9 +711,7 @@ internal sealed class ZaTrainerPoolsWorkflowService
                 row.Value.Pokemon5,
                 row.Value.Pokemon6,
             }.Count(pokemon => pokemon is not null && pokemon.Value.SpeciesId != 0);
-            var displayName = displayRecords.TryGetValue(index, out var display)
-                ? display.Name
-                : row.Value.TrainerId!;
+            var displayName = ZaTrainerDisplayIdentityResolver.Resolve(index, row.Value, labels).Name;
             if (!result.TryAdd(
                     row.Value.TrainerId!,
                     new RosterRecord(index, displayName, row.Value.Rank, teamSize)))

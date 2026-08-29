@@ -35,10 +35,8 @@ import type {
 import './workbench.css';
 
 export type WorkbenchSectionProps = {
-  analysisPreparation?: ReactNode;
   balanceLab: ReactNode;
   bookmarks: readonly WorkspaceTargetViewModel[];
-  cachePreparation?: ReactNode;
   capabilities: readonly CapabilityDiscoveryViewModel[];
   gameModules?: ReactNode;
   guidedDesign?: ReactNode;
@@ -89,10 +87,8 @@ type WorkbenchTool = {
 };
 
 export function WorkbenchSection({
-  analysisPreparation,
   balanceLab,
   bookmarks,
-  cachePreparation,
   capabilities,
   gameModules,
   guidedDesign,
@@ -513,10 +509,6 @@ export function WorkbenchSection({
           )}
         </section>
       </div>
-
-      {cachePreparation}
-
-      {analysisPreparation}
 
       {semanticExplore}
 

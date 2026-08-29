@@ -429,8 +429,9 @@ public static class SwShStaticGameplaySettingsMainPatcher
     /// <summary>
     /// Composes the inert native-settings scaffold onto a reviewed executable
     /// while preserving every current executable byte outside KM's exact
-    /// runtime-owned caves. The selected Base executable remains the authority
-    /// for the supported build, retail hook preimages, and vacant cave bytes.
+    /// owned regions. Recognized legacy static settings are first restored in
+    /// memory. The selected Base executable remains the authority for the
+    /// supported build, retail hook preimages, and vacant cave bytes.
     /// </summary>
     public static (byte[] Main, SwShRuntimeManagedGameplayMainLayout Layout)
         BuildRuntimeManaged(
@@ -453,20 +454,35 @@ public static class SwShStaticGameplaySettingsMainPatcher
         }
 
         var current = Analyze(baseMainBytes, currentMainBytes, expectedGame);
-        if (current.Kind != SwShStaticGameplaySettingsMainKind.Vanilla
-            || current.DetectedGame != expectedGame
-            || current.ExperienceShareEnabled != true
-            || current.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
-            || current.LevelCapEnabled)
+        // Use the static patcher's reviewed inverse only for a fully recognized
+        // legacy output. Every other non-vanilla state remains fail-closed.
+        var compositionMainBytes = current.Kind switch
+        {
+            SwShStaticGameplaySettingsMainKind.Vanilla => currentMainBytes,
+            SwShStaticGameplaySettingsMainKind.Configured => RestoreFromBase(
+                baseMainBytes,
+                currentMainBytes,
+                expectedGame),
+            _ => throw new InvalidDataException(current.Message),
+        };
+        var normalizedCurrent = Analyze(
+            baseMainBytes,
+            compositionMainBytes,
+            expectedGame);
+        if (normalizedCurrent.Kind != SwShStaticGameplaySettingsMainKind.Vanilla
+            || normalizedCurrent.DetectedGame != expectedGame
+            || normalizedCurrent.ExperienceShareEnabled != true
+            || normalizedCurrent.ExperienceRateBasisPoints != VanillaExperienceRateBasisPoints
+            || normalizedCurrent.LevelCapEnabled)
         {
             throw new InvalidDataException(
-                "The native settings menu requires the reviewed current Sword/Shield executable to retain vanilla static gameplay settings and every verified runtime dependency.");
+                "The native settings menu could not safely normalize the recognized legacy Sword/Shield static gameplay settings before composition.");
         }
 
         var layout = FindLayout(baseMainBytes.AsSpan(0x40, 0x20))
             ?? throw new InvalidDataException("The base exefs/main build is unsupported.");
         var baseNso = ParseBoundedNso(baseMainBytes, "base", layout);
-        var currentNso = ParseBoundedNso(currentMainBytes, "current", layout);
+        var currentNso = ParseBoundedNso(compositionMainBytes, "current", layout);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(currentNso);
         EnsureSameExecutableEnvelope(baseNso, currentNso);

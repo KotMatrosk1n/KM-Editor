@@ -491,7 +491,7 @@ internal static class SwShExeFsReservedRegionLedger
             .ToArray();
     }
 
-    private static SwShExeFsReservedRegion ShiftIvScreenRegionForShield(SwShExeFsReservedRegion region)
+    internal static SwShExeFsReservedRegion ShiftIvScreenRegionForShield(SwShExeFsReservedRegion region)
     {
         const int shieldOffsetDelta = 0x30;
         return region with

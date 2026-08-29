@@ -3,6 +3,7 @@
 using System.Reflection;
 using System.Security;
 using System.Security.Cryptography;
+using KM.Api.RuntimeSettings;
 using KM.Core.Concurrency;
 using KM.Core.Output;
 using KM.Core.Projects;
@@ -42,9 +43,27 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
     public Task<InGameSettingsBundleResolution> ResolveAsync(
         ProjectPaths paths,
         ProjectGame game,
+        CancellationToken cancellationToken = default) =>
+        ResolveAsync(
+            paths,
+            game,
+            InGameSettingsInstallationTargetDto.Atmosphere,
+            cancellationToken);
+
+    public Task<InGameSettingsBundleResolution> ResolveAsync(
+        ProjectPaths paths,
+        ProjectGame game,
+        InGameSettingsInstallationTargetDto installationTarget,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        if (!Enum.IsDefined(installationTarget))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(installationTarget),
+                installationTarget,
+                null);
+        }
         cancellationToken.ThrowIfCancellationRequested();
         if (paths.SelectedGame != game)
         {
@@ -144,6 +163,8 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
 
             var executableSourceMain = outputMain.Exists ? outputMain.Bytes : main;
             var executableSourceNpdm = outputNpdm.Exists ? outputNpdm.Bytes : npdm;
+            var semanticallyVerifiedMainSource = requiresOwnedMainSource
+                && IsSemanticallyVerifiedOutput(main, outputMain.Bytes, game);
 
             var entry = NativeGameplayMenuBundleFactory.CreateEntry(
                 game,
@@ -152,7 +173,8 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 executableSourceMain,
                 executableSourceNpdm,
                 runtime,
-                romFs);
+                romFs,
+                installationTarget);
             return Task.FromResult(new InGameSettingsBundleResolution(
                 InGameSettingsBundleCatalog.Create([entry]),
                 GameplaySettingsBundleAuthority.AllowOnly([entry.AuthorityKey]),
@@ -161,7 +183,9 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 usesComposedMain,
                 usesComposedMainNpdm,
                 requiresOwnedMainSource,
-                requiresOwnedMainNpdmSource));
+                requiresOwnedMainNpdmSource,
+                AttemptedSourcePath: null,
+                SemanticallyVerifiedMainSource: semanticallyVerifiedMainSource));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -183,6 +207,32 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 requiresOwnedMainNpdmSource,
                 attemptedSourcePath));
         }
+    }
+
+    private static bool IsSemanticallyVerifiedOutput(
+        ReadOnlySpan<byte> retailMain,
+        ReadOnlySpan<byte> candidateMain,
+        ProjectGame game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword or ProjectGame.Shield =>
+                SwShKnownExecutableCompositionVerifier.IsCompatibleRegisteredOutput(
+                    retailMain,
+                    candidateMain,
+                    game),
+            ProjectGame.Scarlet or ProjectGame.Violet =>
+                SvKnownExecutableCompositionVerifier.IsCompatibleRegisteredOutput(
+                    retailMain,
+                    candidateMain,
+                    game),
+            ProjectGame.ZA =>
+                ZaKnownExecutableCompositionVerifier.IsCompatibleRegisteredOutput(
+                    retailMain,
+                    candidateMain,
+                    game),
+            _ => false,
+        };
     }
 
     private static IReadOnlyDictionary<string, byte[]> BuildRomFsComponents(
