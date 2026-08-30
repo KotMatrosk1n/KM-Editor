@@ -179,6 +179,9 @@ export function ScriptedBossEncounterActions({
   const profileName = profile?.scope === 'verified-scripted-follower'
     ? t('za.encounters.bossActions.followerProfileName', { pokemon: profile.name })
     : profile?.name;
+  const followerHelpKey = profile?.key === '688:0:boss_0689:follower'
+    ? 'za.encounters.bossActions.ownership.follower.barbaracleBinacleHelp'
+    : 'za.encounters.bossActions.ownership.follower.help';
 
   return (
     <section
@@ -419,7 +422,7 @@ export function ScriptedBossEncounterActions({
                   {t(
                     moveOwnership.authority === 'shared-primary-controller'
                       ? 'za.encounters.bossActions.ownership.sharedPrimary.help'
-                      : 'za.encounters.bossActions.ownership.follower.help'
+                      : followerHelpKey
                   )}
                 </p>
               </div>
@@ -959,6 +962,8 @@ function formatScriptedBossAffectedScope(
       return t('za.encounters.bossActions.ownership.scope.kakunaFollowers');
     case 'beedrill-battle-beedrill-followers':
       return t('za.encounters.bossActions.ownership.scope.beedrillFollowers');
+    case 'barbaracle-battle-binacle-followers':
+      return t('za.encounters.bossActions.ownership.scope.barbaracleBinacleFollowers');
     case 'banette-primary-and-clone-controllers':
       return t('za.encounters.bossActions.ownership.scope.banettePrimaryAndClones');
     default:

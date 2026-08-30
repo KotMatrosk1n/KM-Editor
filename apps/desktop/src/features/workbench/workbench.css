@@ -271,9 +271,10 @@
 
 .km-record-tab-item {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 0 min(220px, 72vw);
   align-items: stretch;
-  max-width: 280px;
+  min-width: 0;
+  max-width: min(220px, 72vw);
 }
 
 .km-record-tab,
@@ -286,14 +287,16 @@
 
 .km-record-tab {
   display: flex;
+  flex: 1 1 auto;
   gap: 8px;
   align-items: center;
-  min-width: 100px;
+  min-width: 0;
   padding: 7px 10px;
   border-radius: 7px 0 0 7px;
 }
 
 .km-record-tab span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -337,10 +340,31 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.km-inspector-heading > div {
+  min-width: 0;
+}
+
+.km-inspector-heading h2 {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .km-inspector-heading p,
 .km-inspector-heading small {
   margin: 0;
   color: var(--color-text-muted);
+}
+
+.km-inspector-heading .km-inspector-target-scope {
+  margin-top: 4px;
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.km-inspector-heading .km-inspector-target-summary {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 
 .km-inspector-tabs {
@@ -1042,6 +1066,12 @@
 
 .analysis-preparation-header > div {
   min-width: 0;
+}
+
+.analysis-preparation-header strong {
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 900;
 }
 
 .analysis-preparation-header svg {

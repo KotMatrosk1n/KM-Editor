@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { X } from 'lucide-react';
+import { useLayoutEffect, useRef } from 'react';
 import { useLocalization } from '../../localization';
 import type { WorkbenchLocation } from '../../workbench/workbenchLocation';
 
@@ -26,7 +27,16 @@ export function RecordTabRail({
   tabs
 }: RecordTabRailProps) {
   const { t } = useLocalization();
-  if (tabs.length < 2) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const firstTabKey = tabs[0]?.key ?? null;
+
+  useLayoutEffect(() => {
+    if (firstTabKey !== null && railRef.current) {
+      railRef.current.scrollLeft = 0;
+    }
+  }, [firstTabKey]);
+
+  if (tabs.length === 0) {
     return null;
   }
 
@@ -34,6 +44,7 @@ export function RecordTabRail({
     <div
       aria-label={t('workbench.tabs.label')}
       className="km-record-tab-rail"
+      ref={railRef}
       role="tablist"
     >
       {tabs.map((tab, index) => {
@@ -65,6 +76,7 @@ export function RecordTabRail({
               }}
               role="tab"
               tabIndex={isActive || (activeTabKey === null && index === 0) ? 0 : -1}
+              title={tab.label}
               type="button"
             >
               <span>{tab.label}</span>

@@ -68,6 +68,7 @@ export function PerformanceDiagnosticsPanel() {
               {t('settings.performance.summary.title')}
             </h4>
             <p>{t('settings.performance.summary.description')}</p>
+            <p>{t('settings.performance.summary.outcomeHelp')}</p>
           </div>
           {commandSummaries.length === 0 ? (
             <p className="km-performance-summary-empty">
@@ -85,7 +86,9 @@ export function PerformanceDiagnosticsPanel() {
                   <tr>
                     <th scope="col">{t('settings.performance.summary.command')}</th>
                     <th scope="col">{t('settings.performance.summary.samples')}</th>
-                    <th scope="col">{t('settings.performance.summary.failures')}</th>
+                    <th scope="col">{t('settings.performance.summary.successes')}</th>
+                    <th scope="col">{t('settings.performance.summary.expectedRejections')}</th>
+                    <th scope="col">{t('settings.performance.summary.unexpectedFailures')}</th>
                     <th scope="col">{t('settings.performance.summary.median')}</th>
                     <th scope="col">{t('settings.performance.summary.p95')}</th>
                     <th scope="col">{t('settings.performance.summary.maximum')}</th>
@@ -101,8 +104,16 @@ export function PerformanceDiagnosticsPanel() {
                         <code data-localization-ignore="true">{summary.command}</code>
                       </th>
                       <td>{summary.sampleCount.toLocaleString(formatLocale)}</td>
-                      <td className={summary.failures > 0 ? 'km-performance-failures' : undefined}>
-                        {summary.failures.toLocaleString(formatLocale)}
+                      <td>{summary.successes.toLocaleString(formatLocale)}</td>
+                      <td>{summary.expectedRejections.toLocaleString(formatLocale)}</td>
+                      <td
+                        className={
+                          summary.unexpectedFailures > 0
+                            ? 'km-performance-unexpected-failures'
+                            : undefined
+                        }
+                      >
+                        {summary.unexpectedFailures.toLocaleString(formatLocale)}
                       </td>
                       <td>{formatDuration(summary.medianDurationMs)}</td>
                       <td>{formatDuration(summary.p95DurationMs)}</td>

@@ -199,7 +199,12 @@ public sealed class GuidedDesignApplicationService
         return new ReadGuidedDesignCapabilitiesResponse(
             completed.Revision,
             completed.Snapshots,
-            capabilityRead.Capabilities);
+            capabilityRead.Capabilities,
+            GuidedDesignProviders.FieldCatalogs(
+                completed.Revision.GameFamily,
+                capabilityRead.Capabilities
+                    .Where(capability => capability.State != SemanticCoverageStateDto.Unavailable)
+                    .SelectMany(capability => capability.ProposalKinds)));
     }
 
     private ProjectCapabilityRead ReadProjectCapabilities(

@@ -24,6 +24,10 @@ internal sealed class ZaShopsWorkflowService
     public const string ConditionArgumentsField = "zaConditionArguments";
     public const int MinimumItemId = 0;
     public const int MaximumItemId = 65_535;
+    public const int MinimumItemPrice = 0;
+    public const int MaximumItemPrice = 9_999_999;
+    public const int MinimumItemStackCap = 1;
+    public const int MaximumItemStackCap = 9_999;
     public const string SourceRowIdPrefix = "source:";
     public const string NewRowIdPrefix = "new:";
 
@@ -112,26 +116,10 @@ internal sealed class ZaShopsWorkflowService
                     diagnostic.Field,
                     ZaItemsWorkflowService.TechnicalMachineNumberField,
                     StringComparison.Ordinal)));
-            var requiresItemsRecovery = itemWorkflow.Diagnostics.Any(diagnostic =>
-                string.Equals(
-                    diagnostic.Code,
-                    ZaItemsDiagnosticCodes.LegacyTechnicalMachineNumbering,
-                    StringComparison.Ordinal));
-            if (requiresItemsRecovery)
-            {
-                diagnostics.Add(ZaWorkflowSupport.Warning(
-                    "Apply the reported Items TM recovery before adding TM162 Bug Buzz to a shop.",
-                    $"romfs/{ZaDataPaths.ItemDataArray}",
-                    ItemIdField,
-                    "Recovered physical TM table with the owned TM162 Bug Buzz item"));
-            }
-
             itemRecords = itemWorkflow.Items
                 .Where(item =>
                     !(item.Metadata.IsProjectedTechnicalMachineSlot
-                        && !item.Metadata.CanMaterializeTechnicalMachine)
-                    && (!requiresItemsRecovery
-                        || !item.IsOwnedTestTechnicalMachine))
+                        && !item.Metadata.CanMaterializeTechnicalMachine))
                 .ToArray();
             var itemLookup = itemRecords
                 .GroupBy(item => item.ItemId)
@@ -170,8 +158,6 @@ internal sealed class ZaShopsWorkflowService
             diagnostics)
         {
             KnownItemIds = itemRecords.Select(item => item.ItemId).ToHashSet(),
-            OwnedTestTechnicalMachineAvailable = itemRecords.Any(item =>
-                item.IsOwnedTestTechnicalMachine),
         };
     }
 
@@ -442,6 +428,7 @@ internal sealed class ZaShopsWorkflowService
     {
         var shopKind = master?.ShopKind ?? 0;
         var currency = ResolveCurrency(shopKind);
+        var priceField = ResolvePriceField(shopKind);
         var inventory = lineup.Inventory
             .OrderBy(row => row.DisplayIndex)
             .ThenBy(row => row.SourceIndex)
@@ -461,7 +448,15 @@ internal sealed class ZaShopsWorkflowService
             currency,
             inventory,
             new ZaShopProvenance(source.RelativePath, source.SourceLayer, source.FileState),
-            CanEditInventoryOrder: true);
+            CanEditInventoryOrder: true)
+        {
+            GlobalPriceField = priceField,
+            GlobalPriceMinimumValue = MinimumItemPrice,
+            GlobalPriceMaximumValue = MaximumItemPrice,
+            GlobalStockField = ZaItemsWorkflowService.StackCapField,
+            GlobalStockMinimumValue = MinimumItemStackCap,
+            GlobalStockMaximumValue = MaximumItemStackCap,
+        };
     }
 
     private static ZaShopInventoryRecord ToInventoryRecord(
@@ -500,12 +495,12 @@ internal sealed class ZaShopsWorkflowService
             item.Name,
             item.Price,
             item.IsKnown,
-            StockLimit: null,
+            item.StockLimit,
             values,
             displays,
             RowSupportedFields,
             PriceField: null,
-            CanEditPrice: false,
+            CanEditPrice: item.IsKnown,
             row.SourceIndex,
             row.RowId);
     }
@@ -518,7 +513,11 @@ internal sealed class ZaShopsWorkflowService
     {
         if (itemLookup.TryGetValue(itemId, out var item))
         {
-            return new ResolvedItem(item.Name, ResolvePrice(item, shopKind), IsKnown: true);
+            return new ResolvedItem(
+                item.Name,
+                ResolvePrice(item, shopKind),
+                item.FieldValues.GetValueOrDefault(ZaItemsWorkflowService.StackCapField),
+                IsKnown: true);
         }
 
         if (itemId > 0)
@@ -526,7 +525,11 @@ internal sealed class ZaShopsWorkflowService
             unresolvedItemIds.Add(itemId);
         }
 
-        return new ResolvedItem(itemId == 0 ? "None" : $"Item {itemId.ToString(CultureInfo.InvariantCulture)}", Price: 0, IsKnown: false);
+        return new ResolvedItem(
+            itemId == 0 ? "None" : $"Item {itemId.ToString(CultureInfo.InvariantCulture)}",
+            Price: 0,
+            StockLimit: null,
+            IsKnown: false);
     }
 
     private static int ResolvePrice(ZaItemRecord item, int shopKind)
@@ -536,6 +539,16 @@ internal sealed class ZaShopsWorkflowService
             7 => item.WattsPrice,
             8 => item.AlternatePrice,
             _ => item.BuyPrice,
+        };
+    }
+
+    private static string ResolvePriceField(int shopKind)
+    {
+        return shopKind switch
+        {
+            7 => ZaItemsWorkflowService.MegaShardPriceField,
+            8 => ZaItemsWorkflowService.ColorfulScrewPriceField,
+            _ => ZaItemsWorkflowService.PriceField,
         };
     }
 
@@ -699,7 +712,16 @@ internal sealed class ZaShopsWorkflowService
                     item.ItemId,
                     $"{item.ItemId.ToString(CultureInfo.InvariantCulture)} {item.Name}",
                     item.Name,
-                    item.BuyPrice));
+                    item.BuyPrice)
+                {
+                    Prices = new Dictionary<string, int>(StringComparer.Ordinal)
+                    {
+                        [ZaItemsWorkflowService.PriceField] = item.BuyPrice,
+                        [ZaItemsWorkflowService.MegaShardPriceField] = item.WattsPrice,
+                        [ZaItemsWorkflowService.ColorfulScrewPriceField] = item.AlternatePrice,
+                    },
+                    StockLimit = item.FieldValues.GetValueOrDefault(ZaItemsWorkflowService.StackCapField),
+                });
         }
 
         foreach (var item in shops.SelectMany(shop => shop.Inventory).Where(item => item.IsKnownItem))
@@ -745,6 +767,7 @@ internal sealed class ZaShopsWorkflowService
     private sealed record ResolvedItem(
         string Name,
         int Price,
+        int? StockLimit,
         bool IsKnown);
 
     public sealed record ShopMasterRow(

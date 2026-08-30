@@ -5,7 +5,7 @@ import {
   type RealQueryUnitStatus
 } from '../../utils/projectAsyncPolicy';
 
-export const analysisLoadingModes = ['reduced', 'balanced', 'fastest'] as const;
+export const analysisLoadingModes = ['minimal', 'balanced', 'performance'] as const;
 export type AnalysisLoadingMode = (typeof analysisLoadingModes)[number];
 
 export const analysisToolIds = [
@@ -111,6 +111,8 @@ export function readAnalysisLoadingMode(): AnalysisLoadingMode {
   if (typeof window === 'undefined') return 'balanced';
   try {
     const value = window.localStorage.getItem(analysisLoadingModeStorageKey);
+    if (value === 'reduced') return 'minimal';
+    if (value === 'fastest') return 'performance';
     return analysisLoadingModes.includes(value as AnalysisLoadingMode)
       ? value as AnalysisLoadingMode
       : 'balanced';
@@ -131,7 +133,7 @@ export function writeAnalysisLoadingMode(mode: AnalysisLoadingMode) {
 export function analysisPreloadOrder(
   mode: AnalysisLoadingMode
 ): readonly AnalysisToolId[] {
-  return mode === 'reduced' ? [] : analysisToolIds;
+  return mode === 'minimal' ? [] : analysisToolIds;
 }
 
 export function nextAnalysisPreloadTool(options: {
@@ -153,7 +155,7 @@ export function nextAnalysisPreloadTools(options: {
 }): readonly AnalysisToolId[] {
   if (options.semanticState !== 'ready') return [];
   const order = analysisPreloadOrder(options.mode);
-  if (options.mode === 'fastest') {
+  if (options.mode === 'performance') {
     return order.filter((tool) => !options.preloadTools.includes(tool));
   }
   const nextIndex = order.findIndex((tool) => !options.preloadTools.includes(tool));

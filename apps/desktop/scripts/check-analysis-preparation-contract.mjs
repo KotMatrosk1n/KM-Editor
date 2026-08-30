@@ -9,6 +9,16 @@ function read(relativePath) {
 }
 
 const model = read('../src/features/workbench/analysisPreparation.ts');
+assert.match(
+  model,
+  /analysisLoadingModes = \['minimal', 'balanced', 'performance'\]/,
+  'Analysis loading must use the same three user-facing mode identities as each game cache.'
+);
+assert.match(
+  model,
+  /value === 'reduced'\) return 'minimal';[\s\S]*?value === 'fastest'\) return 'performance';/,
+  'Legacy analysis loading preferences must migrate to Minimal and Performance.'
+);
 for (const unit of [
   'balanceLab: 1',
   'gameModules: 1',
@@ -52,8 +62,8 @@ assert.match(
 );
 assert.match(
   model,
-  /options\.mode === 'fastest'[\s\S]*?return order\.filter\(\(tool\) => !options\.preloadTools\.includes\(tool\)\)/,
-  'Fastest preparation must admit every independent tool together after semantic setup.'
+  /options\.mode === 'performance'[\s\S]*?return order\.filter\(\(tool\) => !options\.preloadTools\.includes\(tool\)\)/,
+  'Performance preparation must admit every independent tool together after semantic setup.'
 );
 
 const panel = read('../src/features/workbench/AnalysisPreparationPanel.tsx');
@@ -125,6 +135,43 @@ assert.doesNotMatch(
 );
 
 const app = read('../src/App.tsx');
+assert.match(
+  app,
+  /aria-label=\{t\('settings\.tabs\.label'\)\}[\s\S]*?className="settings-tabs"[\s\S]*?role="tablist"[\s\S]*?settingsTabs\.map/,
+  'Settings must expose its existing categories through one accessible tab list.'
+);
+assert.match(
+  app,
+  /effectiveActiveSettingsTab === 'analysis'[\s\S]*?role="tabpanel"[\s\S]*?\{analysisLoadingSettings\}/,
+  'Analysis loading settings must remain contained inside their own settings tab.'
+);
+assert.match(
+  app,
+  /\{translateLiteral\(option\.label\)\}[\s\S]*?translateLiteral\(option\.description\)/,
+  'Cache mode labels and descriptions must use the same localized presentation boundary as analysis loading.'
+);
+const settingsStyles = read('../src/styles.css');
+assert.match(
+  settingsStyles,
+  /\.settings-tabs \{[\s\S]*?overflow-x: auto;[\s\S]*?\.settings-tab\.is-selected/,
+  'Settings tabs must remain bounded, horizontally reachable, and visibly selected.'
+);
+for (const locale of ['de', 'en', 'es', 'fr', 'ru', 'uk', 'zh']) {
+  const resource = JSON.parse(read(`../src/localization/resources/${locale}.json`));
+  assert.deepEqual(
+    [
+      resource.keys['analysisLoading.mode.minimal.label'],
+      resource.keys['analysisLoading.mode.balanced.label'],
+      resource.keys['analysisLoading.mode.performance.label']
+    ],
+    [
+      resource.literals.Minimal,
+      resource.literals.Balanced,
+      resource.literals.Performance
+    ],
+    `${locale} analysis and cache modes must use identical names.`
+  );
+}
 const workbenchHomeStart = app.indexOf('<WorkbenchHomeSection');
 const workbenchHomeEnd = app.indexOf('/>', workbenchHomeStart);
 assert.ok(
@@ -160,8 +207,75 @@ assert.match(
 );
 assert.match(
   app,
-  /const projectSourceRevision = useProjectSourceRevision\(\{[\s\S]*?paths: activeProjectId \? gameDumpPaths : null,/,
+  /const projectSourceRevision = useProjectSourceRevision\(\{[\s\S]*?bridge: analysisBridge,[\s\S]*?paths: activeProjectId \? analysisProjectPaths : null,/,
   'Source observation must start with the active project instead of waiting behind cache bookkeeping.'
+);
+assert.match(
+  app,
+  /const analysisProjectPathsRef = useRef\(analysisProjectPaths\);[\s\S]*?createGameScopedProjectBridge\(\s*unscopedBridge,\s*\(\) => analysisProjectPathsRef\.current,\s*\(\) => projectScopeGenerationRef\.current\s*\)/,
+  'Read-only analysis must use its own current-path bridge while retaining project-generation guards.'
+);
+assert.match(
+  app,
+  /useSemanticExploreController\(\{\s*bridge: analysisBridge,\s*scope: semanticExploreScope\s*\}\)/,
+  'Semantic analysis requests must use the bridge bound to the sanitized analysis scope.'
+);
+for (const runtime of [
+  'BalanceLabRuntime',
+  'GameModulesRuntime',
+  'GuidedDesignRuntime',
+  'ResearchLabRuntime',
+  'SemanticMergeRuntime'
+]) {
+  const runtimeStart = app.indexOf(`<${runtime}`);
+  const runtimeEnd = app.indexOf('/>', runtimeStart);
+  assert.ok(
+    runtimeStart >= 0 &&
+      runtimeEnd > runtimeStart &&
+      app.slice(runtimeStart, runtimeEnd).includes('bridge={analysisBridge}'),
+    `${runtime} must use the bridge bound to the sanitized analysis scope.`
+  );
+}
+assert.match(
+  app,
+  /const projectScope = useMemo<OutputSafetyScope \| null>[\s\S]*?const outputSafetyScope = useMemo\([\s\S]*?isValidatedOutputSafetyScope\(projectScope, health\)/,
+  'General project reads and verified output-safety operations must use distinct scopes.'
+);
+assert.match(
+  app,
+  /const semanticExploreScope = useMemo\([\s\S]*?analysisProjectScope &&[\s\S]*?\.\.\.analysisProjectScope,[\s\S]*?useSemanticExploreController/,
+  'Read-only semantic analysis must retain its validated project scope when Output Root is unavailable.'
+);
+assert.match(
+  app,
+  /function resolveProjectAnalysisPaths\([\s\S]*?health\.canOpenEditableWorkflows && outputRoot\?\.status === 'valid'[\s\S]*?\? outputRoot\.path[\s\S]*?: null/,
+  'Read-only analysis must ignore an absent or invalid Output Root while retaining validated source paths.'
+);
+assert.match(
+  app,
+  /useOutputSafetyController\(\{[\s\S]*?scope: outputSafetyScope[\s\S]*?\}\)/,
+  'Automatic recovery checks must receive only the verified output-safety scope.'
+);
+assert.match(
+  app,
+  /function isValidatedOutputSafetyScope\([\s\S]*?!health\?\.canOpenEditableWorkflows[\s\S]*?requireValid && validation\.status !== 'valid'[\s\S]*?pathMatchesValidation\('baseRomFs',[\s\S]*?pathMatchesValidation\('outputRoot'/,
+  'Output safety must remain unavailable for absent, invalid, stale, or read-only Output Root health.'
+);
+const outputScopeValidatorStart = app.indexOf('function isValidatedOutputSafetyScope(');
+const outputScopeValidatorEnd = app.indexOf(
+  '\nfunction hasValidTrinitySupportFolder(',
+  outputScopeValidatorStart
+);
+const outputScopeValidator = app.slice(outputScopeValidatorStart, outputScopeValidatorEnd);
+assert.equal(
+  [...outputScopeValidator.matchAll(/, true\)/g)].length,
+  3,
+  'Only the two required base roots and Output Root may require valid path status for output safety.'
+);
+assert.match(
+  outputScopeValidator,
+  /pathMatchesValidation\(\s*'scarletVioletSupportFolder',[\s\S]*?\)\s*&& pathMatchesValidation\(\s*'pokemonLegendsZASupportFolder'/,
+  'Optional support folders must match the active health scope without becoming output-safety prerequisites.'
 );
 assert.match(
   app,
@@ -472,6 +586,28 @@ assert.ok(
 );
 const projectBridgeDispatcher = read(
   '../../../src/KM.Tools/Bridge/ProjectBridgeDispatcher.cs'
+);
+const sourceRevisionDispatchStart = projectBridgeDispatcher.indexOf(
+  ' DispatchReadProjectSourceRevision('
+);
+const sourceRevisionDispatchEnd = projectBridgeDispatcher.indexOf(
+  ' DispatchLoadTrainerPoolsWorkflow(',
+  sourceRevisionDispatchStart
+);
+const sourceRevisionDispatch = projectBridgeDispatcher.slice(
+  sourceRevisionDispatchStart,
+  sourceRevisionDispatchEnd
+);
+assert.ok(
+  sourceRevisionDispatchStart >= 0
+    && sourceRevisionDispatchEnd > sourceRevisionDispatchStart
+    && /ShouldProtectSourceObservationWithOutputSafetyLock\([\s\S]*?\? ExecuteExclusiveOutputOperation\(request\.Payload\.Paths, CaptureObservation\)[\s\S]*?: CaptureObservation\(\)/.test(
+      sourceRevisionDispatch
+    )
+    && /string\.IsNullOrWhiteSpace\(paths\.OutputRootPath\)[\s\S]*?return false;[\s\S]*?!Path\.IsPathFullyQualified\(paths\.OutputRootPath\)[\s\S]*?return true;[\s\S]*?Path\.GetFullPath\(paths\.OutputRootPath\)[\s\S]*?ArgumentException or[\s\S]*?NotSupportedException or[\s\S]*?PathTooLongException or[\s\S]*?System\.Security\.SecurityException[\s\S]*?return true;[\s\S]*?OutputSafetyApplicationService\.ResolveScope\([\s\S]*?new OutputScopeDto\(projectId, paths\)[\s\S]*?return true;[\s\S]*?catch \(OutputScopeMismatchException\)[\s\S]*?return false;/.test(
+      sourceRevisionDispatch
+    ),
+  'Source revision reads must bypass coordinator locking for unavailable or invalid output scopes while preserving fail-closed locking for verified output roots.'
 );
 const zaGameModuleBatchStart = projectBridgeDispatcher.indexOf(
   ' LoadGameModuleZaCapabilityBatchFresh('

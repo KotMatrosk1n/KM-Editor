@@ -248,8 +248,8 @@ internal sealed class ZaItemsWorkflowService
             var canProject = !technicalMachineRecovery.IsBlocked
                 && !projectionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             var provisioning = canProject
-                ? ZaTestTechnicalMachineProvisioner.ProjectAvailableSlots(projectedRows)
-                : new ZaTestTechnicalMachineProvisioningResult(
+                ? ZaOwnedTechnicalMachineProvisioner.ProjectAvailableSlots(projectedRows)
+                : new ZaOwnedTechnicalMachineProvisioningResult(
                     IsAvailable: false,
                     Added: false,
                     technicalMachineRecovery.BlockingReason
@@ -692,11 +692,7 @@ internal sealed class ZaItemsWorkflowService
             item.MachineIndex);
         var machineMoveId = item.MachineWaza;
         var machineMoveName = machineMoveId > 0
-            ? ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item)
-                ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(
-                    labels,
-                    machineMoveId)
-                : labels.Move(machineMoveId)
+            ? labels.Move(machineMoveId)
             : null;
         var sourceItemName = labels.Item(item.Id);
         var machineSlot = (ZaTechnicalMachineCatalog.IsTechnicalMachine(item) || isOwnedExtension)
@@ -740,28 +736,17 @@ internal sealed class ZaItemsWorkflowService
         {
             BaseMachineMoveId = baseItem?.IsTechnicalMachine == true
                 ? baseItem.MoveId
-                : isOwnedExtension
-                    && item.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
-                    && machineMoveId > 0
-                    ? ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId
-                    : isOwnedExtension && machineMoveId > 0
-                        ? machineMoveId
-                        : null,
+                : isOwnedExtension && machineMoveId > 0
+                    ? machineMoveId
+                    : null,
             BaseMachineMoveName = baseItem?.IsTechnicalMachine == true
                 ? labels.Move(baseItem.MoveId)
-                : isOwnedExtension
-                    && item.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
-                    && machineMoveId > 0
-                    ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(labels)
-                    : isOwnedExtension && machineMoveId > 0
-                        ? machineMoveName
-                        : null,
+                : isOwnedExtension && machineMoveId > 0
+                    ? machineMoveName
+                    : null,
             MachineAssignmentDiffersFromBase = baseItem?.IsTechnicalMachine == true
                 ? machineMoveId != baseItem.MoveId
-                : isOwnedExtension
-                    && item.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
-                    && machineMoveId > 0
-                    && machineMoveId != ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId,
+                : false,
             CompatiblePokemonCount = compatiblePokemonCount,
             IsOwnedTechnicalMachineSlot = isOwnedExtension,
             IsProjectedTechnicalMachineSlot = isOwnedExtension && !isPhysical,
@@ -789,7 +774,6 @@ internal sealed class ZaItemsWorkflowService
             RevertToVanillaBlockedReason = canRevertToVanilla
                 ? null
                 : "This item does not have an exact matching record in the verified vanilla item table.",
-            IsOwnedTestTechnicalMachine = ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item),
             IsOwnedTechnicalMachineExtension = isOwnedExtension,
         };
     }
@@ -1029,11 +1013,7 @@ internal sealed class ZaItemsWorkflowService
                         "TM move",
                         item.MachineWaza > 0
                             ? $"{item.MachineWaza.ToString(CultureInfo.InvariantCulture)} "
-                                + (ZaTechnicalMachineCatalog.IsOwnedTestTechnicalMachineRow(item)
-                                    ? ZaTechnicalMachineCatalog.ResolveTestTechnicalMachineMoveName(
-                                        labels,
-                                        item.MachineWaza)
-                                    : labels.Move(item.MachineWaza))
+                                + labels.Move(item.MachineWaza)
                             : "None"),
                 ]),
             new ZaItemDetailGroup(

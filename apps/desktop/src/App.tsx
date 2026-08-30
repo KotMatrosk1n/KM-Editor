@@ -24,6 +24,7 @@ import {
   MapPin,
   MessageSquareOff,
   Package,
+  Palette,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -84,7 +85,6 @@ import {
 import {
   type Dispatch,
   type ReactNode,
-  type RefObject,
   type SetStateAction,
   Component,
   Fragment,
@@ -585,12 +585,16 @@ import {
 import { RecordTabRail } from './features/workbench/RecordTabRail';
 import {
   AdaptiveInspector,
-  type AdaptiveInspectorTabViewModel
+  type AdaptiveInspectorTabViewModel,
+  type AdaptiveInspectorTargetViewModel
 } from './features/workbench/AdaptiveInspector';
 import { CapabilityDiscoveryDialog } from './features/workbench/CapabilityDiscoveryDialog';
 import { OutputProfileSwitchDialog } from './features/workbench/OutputProfileSwitchDialog';
 import { SemanticExploreSection } from './features/semantic-explore/SemanticExploreSection';
-import { useSemanticInspectorTabs } from './features/semantic-explore/SemanticInspectorTabs';
+import {
+  isPassiveSemanticInspectorRecordEligible,
+  useSemanticInspectorTabs
+} from './features/semantic-explore/SemanticInspectorTabs';
 import {
   useSemanticExploreController,
   type QueryableLayer
@@ -644,7 +648,10 @@ import {
 } from './workbench/guidedDesignNavigation';
 import { createSemanticMergeLocation } from './workbench/semanticMergeNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
-import { PersonalizationSettingsPanel } from './features/settings/PersonalizationSettingsPanel';
+import {
+  PersonalizationSettingsPanel,
+  ThemeSettingsPanel
+} from './features/settings/PersonalizationSettingsPanel';
 import { WhatChangedTour } from './features/updates/WhatChangedTour';
 import { shouldShowWhatChangedTour } from './features/updates/whatChangedCatalog';
 import {
@@ -678,6 +685,7 @@ import {
 import type { SemanticExploreRecordRef } from './bridge/semanticExploreContracts';
 import {
   mergeWorkspaceRecentTargetViewModels,
+  resolveRetainedRecordTabLabel,
   sortWorkspaceEntriesNewestFirst,
   type WorkspaceTargetViewModel
 } from './workbench/workspaceShellViewModels';
@@ -1408,6 +1416,10 @@ const encounterBatchUpdateProgressSteps = [
 ] as const;
 
 const buyPriceFieldName = 'buyPrice';
+const zaItemPriceFieldName = 'price';
+const zaMegaShardPriceFieldName = 'megaShardPrice';
+const zaColorfulScrewPriceFieldName = 'colorfulScrewPrice';
+const itemStackCapFieldName = 'stackCap';
 const sellPriceFieldName = 'sellPrice';
 const wattsPriceFieldName = 'wattsPrice';
 const alternatePriceFieldName = 'alternatePrice';
@@ -1549,20 +1561,6 @@ const zaCoreTrainerAiMask = (1 << 0) | (1 << 1) | (1 << 2);
 const zaChangeTrainerAiMask = 1 << 7;
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const supportSearchProgressEvent = 'km-editor://support-file-search-progress';
-
-function workspaceContentDraftScopeKey(location: WorkbenchLocation) {
-  if (
-    location.entity &&
-    (location.section === 'trainers' || location.section === 'encounters')
-  ) {
-    return `${location.section}:${semanticRecordRefKey({
-      ...location.entity,
-      subrecordId: null
-    })}`;
-  }
-
-  return workspaceTabKey(location);
-}
 
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
@@ -1843,6 +1841,7 @@ const shopGymBadgeOptions: ShopEditableFieldOption[] = Array.from({ length: 9 },
   label: value.toString(),
   price: 0,
   prices: {},
+  stockLimit: null,
   value
 }));
 const shopGymBadgeConditionValueOptions = shopGymBadgeOptions.map((option) => ({
@@ -1854,6 +1853,14 @@ const shopPriceEditableField: ShopEditableField = {
   label: 'Price',
   maximumValue: maximumShopItemPrice,
   minimumValue: 0,
+  options: [],
+  valueKind: 'integer'
+};
+const shopStockEditableField: ShopEditableField = {
+  field: itemStackCapFieldName,
+  label: 'Global stack cap',
+  maximumValue: null,
+  minimumValue: null,
   options: [],
   valueKind: 'integer'
 };
@@ -1946,6 +1953,20 @@ const virtualTableInitialRect = { height: 480, width: 800 };
 const virtualTableOverscan = 8;
 const virtualTableRowHeight = 40;
 const placementVirtualTableRowHeight = 56;
+
+function calculateVirtualTableScrollMargin({
+  bodyTop,
+  clientTop,
+  scrollTop,
+  scrollViewportTop
+}: {
+  bodyTop: number;
+  clientTop: number;
+  scrollTop: number;
+  scrollViewportTop: number;
+}) {
+  return Math.max(0, bodyTop - scrollViewportTop - clientTop + scrollTop);
+}
 const swShPlacementPageSize = 200;
 const CancelEditSessionContext = createContext<((onDiscard?: () => void) => void) | null>(
   null
@@ -2765,6 +2786,23 @@ export function App({
   const health = projectHealth;
   const selectedGame = draftPaths.selectedGame;
   const activeProjectId = openProject?.projectId ?? null;
+  // Keep read-only analysis bound to the paths that produced the active health snapshot.
+  // Project Setup drafts are not an active scope until validation accepts them.
+  const analysisProjectPaths = useMemo(
+    () => resolveProjectAnalysisPaths(gameDumpPaths, health),
+    [gameDumpPaths, health]
+  );
+  const analysisProjectPathsRef = useRef(analysisProjectPaths);
+  analysisProjectPathsRef.current = analysisProjectPaths;
+  const analysisBridge = useMemo(
+    () =>
+      createGameScopedProjectBridge(
+        unscopedBridge,
+        () => analysisProjectPathsRef.current,
+        () => projectScopeGenerationRef.current
+      ),
+    [unscopedBridge]
+  );
   const [svCacheStatus, setSvCacheStatus] = useState<TrinityCacheStatus | null>(null);
   const [svCacheStatusScopeKey, setSvCacheStatusScopeKey] = useState<string | null>(null);
   const [hasSvCacheRequestError, setHasSvCacheRequestError] = useState(false);
@@ -2792,9 +2830,9 @@ export function App({
   const currentSvCacheWarmupError =
     isCurrentSvCacheScope && hasSvCacheWarmupError;
   const projectSourceRevision = useProjectSourceRevision({
-    bridge,
+    bridge: analysisBridge,
     game: selectedGame,
-    paths: activeProjectId ? gameDumpPaths : null,
+    paths: activeProjectId ? analysisProjectPaths : null,
     projectId: activeProjectId
   });
   const ordinaryDraftProjectContext = useMemo<OrdinaryDraftProjectContext | null>(
@@ -2853,7 +2891,7 @@ export function App({
       isCurrentLoad = false;
     };
   }, [activeProjectId, personalWorkspaceRegistry, selectedGame]);
-  const outputSafetyScope = useMemo(
+  const projectScope = useMemo<OutputSafetyScope | null>(
     () => activeProjectId
       ? {
           paths: createProjectPaths(draftPaths),
@@ -2862,30 +2900,44 @@ export function App({
       : null,
     [activeProjectId, createProjectPaths, draftPaths, language]
   );
+  // Recovery checks own filesystem state and must never probe a read-only or stale draft scope.
+  const outputSafetyScope = useMemo(
+    () => isValidatedOutputSafetyScope(projectScope, health) ? projectScope : null,
+    [health, projectScope]
+  );
+  const analysisProjectScope = useMemo<OutputSafetyScope | null>(
+    () => activeProjectId
+      ? {
+          paths: analysisProjectPaths,
+          projectId: activeProjectId
+        }
+      : null,
+    [activeProjectId, analysisProjectPaths]
+  );
   const outputSafetyScopeRef = useRef(outputSafetyScope);
   outputSafetyScopeRef.current = outputSafetyScope;
   const semanticExploreScope = useMemo(
     () =>
-      outputSafetyScope &&
+      analysisProjectScope &&
       selectedGame &&
       projectSourceRevision.status === 'ready' &&
       projectSourceRevision.sourceObservationToken
       ? {
-          ...outputSafetyScope,
+          ...analysisProjectScope,
           pendingSession: editSession,
           sourceObservationToken: projectSourceRevision.sourceObservationToken
         }
       : null,
     [
       editSession,
-      outputSafetyScope,
+      analysisProjectScope,
       projectSourceRevision.sourceObservationToken,
       projectSourceRevision.status,
       selectedGame
     ]
   );
   const semanticExploreController = useSemanticExploreController({
-    bridge,
+    bridge: analysisBridge,
     scope: semanticExploreScope
   });
   const handleBalanceLabStaleRevision = useCallback(() => {
@@ -2927,6 +2979,10 @@ export function App({
   );
   const workspaceShellStateRef = useRef(workspaceShellState);
   workspaceShellStateRef.current = workspaceShellState;
+  const workspaceRecordLabelCacheRef = useRef<{
+    labels: Map<string, string>;
+    scopeKey: string;
+  }>({ labels: new Map(), scopeKey: '' });
   const workspaceShellProjectScopeGenerationRef = useRef(
     projectScopeGenerationRef.current
   );
@@ -3279,6 +3335,7 @@ export function App({
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
   );
+  const [workspaceContentDiscardRevision, setWorkspaceContentDiscardRevision] = useState(0);
   const editorDraftDirtySectionsRef = useRef(editorDraftDirtySections);
   editorDraftDirtySectionsRef.current = editorDraftDirtySections;
   const hasLatestLocalDraftProtection = useCallback(
@@ -3338,7 +3395,10 @@ export function App({
       commitOrdinaryEditorSearch('trainers', () => setTrainerSearchText(value)),
     [commitOrdinaryEditorSearch, setTrainerSearchText]
   );
-  const discardLocalEditorDraftProtection = useCallback(async () => true, []);
+  const discardLocalEditorDraftProtection = useCallback(async () => {
+    setWorkspaceContentDiscardRevision((revision) => revision + 1);
+    return true;
+  }, []);
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
   const isNativeUpdateApplying =
     updateCheckStatus.kind === 'preparing' ||
@@ -3538,7 +3598,7 @@ export function App({
     onActiveStagingTargetChange: handleActiveChangeSetTargetChange,
     onEffectiveState: handleChangeSetEffectiveState,
     onRequestOutputProfileSwitch: setPendingOutputProfileId,
-    scope: outputSafetyScope
+    scope: projectScope
   });
   const changeSetStageGateRef = useRef({
     activeChangeSetId: null as string | null,
@@ -5067,10 +5127,7 @@ export function App({
         case 'items':
           return typeof value === 'number' &&
             currentState.itemsWorkflow?.items.some((item) => item.itemId === value)
-            ? () => {
-                setItemSearchText('');
-                setSelectedItemId(value);
-              }
+            ? () => setSelectedItemId(value)
             : null;
         case 'pokemon': {
           if (typeof value !== 'number') {
@@ -5089,7 +5146,6 @@ export function App({
             return null;
           }
           return () => {
-            setPokemonSearchText('');
             setSelectedPokemonPersonalId(value);
             if (evolutionSlot !== null) {
               setSelectedPokemonEvolutionSlot(evolutionSlot);
@@ -5099,10 +5155,7 @@ export function App({
         case 'moves':
           return typeof value === 'number' &&
             currentState.movesWorkflow?.moves.some((move) => move.moveId === value)
-            ? () => {
-                setMovesSearchText('');
-                setSelectedMoveId(value);
-              }
+            ? () => setSelectedMoveId(value)
             : null;
         case 'text':
           return typeof value === 'string' &&
@@ -5123,7 +5176,6 @@ export function App({
             return null;
           }
           return () => {
-            setTrainerSearchText('');
             setSelectedTrainerId(value);
             if (slot !== null) {
               setSelectedTrainerPartySlot(slot);
@@ -5211,11 +5263,16 @@ export function App({
           if (typeof value !== 'string' || !currentState.exeFsPatchWorkflow) {
             return null;
           }
-          if (
-            recordKind === 'exefs-check' &&
-            currentState.exeFsPatchWorkflow.checks.some((check) => check.checkId === value)
-          ) {
-            return () => setSelectedExeFsCheckId(value);
+          if (recordKind === 'exefs-check') {
+            const check = currentState.exeFsPatchWorkflow.checks.find(
+              (candidate) => candidate.checkId === value
+            );
+            if (check) {
+              return () => {
+                setSelectedExeFsCheckId(value);
+                setSelectedExeFsPatchId(check.patchId);
+              };
+            }
           }
           if (
             recordKind === 'exefs-patch' &&
@@ -5260,12 +5317,9 @@ export function App({
       setSelectedExeFsCheckId,
       setSelectedExeFsPatchId,
       setSelectedFlagId,
-      setItemSearchText,
       setSelectedItemId,
-      setMovesSearchText,
       setSelectedMoveId,
       setSelectedPlacementObjectId,
-      setPokemonSearchText,
       setSelectedPokemonEvolutionSlot,
       setSelectedPokemonPersonalId,
       setSelectedRaidBattleTableId,
@@ -5279,8 +5333,7 @@ export function App({
       setSelectedTeraRaidRecordId,
       setSelectedTextKey,
       setSelectedTrainerId,
-      setSelectedTrainerPartySlot,
-      setTrainerSearchText
+      setSelectedTrainerPartySlot
     ]
   );
 
@@ -5418,7 +5471,17 @@ export function App({
         pending.target,
         preparation.onCommit,
         'push',
-        { rememberRecent: false },
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            pending.target,
+            sessionLocalEditorSections
+          )
+        },
         pending
       );
     }
@@ -5453,7 +5516,17 @@ export function App({
         pending.target,
         preparation.onCommit,
         'push',
-        { rememberRecent: false },
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            pending.target,
+            sessionLocalEditorSections
+          )
+        },
         pending
       );
     }
@@ -5466,7 +5539,16 @@ export function App({
       return void (async () => {
         const preparation = await prepareStableLocationCommit(location);
         if (preparation.kind === 'ready') {
-          handleNavigateLocation(location, preparation.onCommit);
+          handleNavigateLocation(location, preparation.onCommit, 'push', {
+            protectedTabKeys: getProtectedWorkspaceTabKeys(
+              workspaceShellStateRef.current.tabs,
+              editorDraftDirtySectionsRef.current
+            ),
+            tabEligible: isStableLocationTabEligible(
+              location,
+              sessionLocalEditorSections
+            )
+          });
         }
       })();
     },
@@ -5859,7 +5941,17 @@ export function App({
         destination,
         () => setSelectedPokemonEvolutionSlot(slot),
         'replace',
-        { rememberRecent: false }
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            destination,
+            sessionLocalEditorSections
+          )
+        }
       );
     },
     [
@@ -5904,7 +5996,17 @@ export function App({
         destination,
         () => setSelectedTrainerPartySlot(slot),
         'replace',
-        { rememberRecent: false },
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            destination,
+            sessionLocalEditorSections
+          )
+        },
         undefined,
         { preserveSameSectionDraftScope: true }
       );
@@ -5930,7 +6032,7 @@ export function App({
     [handleSelectStableLocation, setSelectedEncounterTableId]
   );
   const handleSelectEncounterSlotLocation = useCallback(
-    (slot: number | null) => {
+    (slot: number | null, retainInRecordTab = true) => {
       if (!activeProjectId || !selectedGame || selectedEncounterTableId === null) {
         setSelectedEncounterSlot(slot);
         return;
@@ -5946,7 +6048,19 @@ export function App({
         destination,
         () => setSelectedEncounterSlot(slot),
         'replace',
-        { rememberRecent: false }
+        retainInRecordTab
+          ? {
+              protectedTabKeys: getProtectedWorkspaceTabKeys(
+                workspaceShellStateRef.current.tabs,
+                editorDraftDirtySectionsRef.current
+              ),
+              rememberRecent: false,
+              tabEligible: isStableLocationTabEligible(
+                destination,
+                sessionLocalEditorSections
+              )
+            }
+          : { rememberRecent: false }
       );
     },
     [
@@ -6020,14 +6134,28 @@ export function App({
     [handleSelectStableLocation, setSelectedSaveBlockId]
   );
   const handleSelectExeFsCheckLocation = useCallback(
-    (checkId: string | null) =>
+    (checkId: string | null) => {
+      const patchId = checkId
+        ? exeFsPatchWorkflow?.checks.find((check) => check.checkId === checkId)?.patchId
+        : null;
       handleSelectStableLocation(
         'exefsPatches',
         checkId,
-        () => setSelectedExeFsCheckId(checkId),
+        () => {
+          setSelectedExeFsCheckId(checkId);
+          if (patchId) {
+            setSelectedExeFsPatchId(patchId);
+          }
+        },
         'exefs-check'
-      ),
-    [handleSelectStableLocation, setSelectedExeFsCheckId]
+      );
+    },
+    [
+      exeFsPatchWorkflow,
+      handleSelectStableLocation,
+      setSelectedExeFsCheckId,
+      setSelectedExeFsPatchId
+    ]
   );
   const handleSelectExeFsPatchLocation = useCallback(
     (patchId: string | null) =>
@@ -6095,6 +6223,48 @@ export function App({
     [activeScopedLocation]
   );
   const activePinLocation = activeRecordLocation;
+  const workspaceRecordLabelSources = useMemo<WorkspaceRecordLabelSources>(
+    () => ({
+      behaviorWorkflow,
+      encountersWorkflow,
+      exeFsPatchWorkflow,
+      flagworkSaveWorkflow,
+      itemsWorkflow,
+      movesWorkflow,
+      placementWorkflow,
+      pokemonWorkflow,
+      raidBattlesWorkflow,
+      raidBonusRewardsWorkflow,
+      raidRewardsWorkflow,
+      royalCandyWorkflow,
+      shopsWorkflow,
+      spreadsheetImportWorkflow,
+      startingItemsWorkflow,
+      teraRaidsWorkflow,
+      textWorkflow,
+      trainersWorkflow
+    }),
+    [
+      behaviorWorkflow,
+      encountersWorkflow,
+      exeFsPatchWorkflow,
+      flagworkSaveWorkflow,
+      itemsWorkflow,
+      movesWorkflow,
+      placementWorkflow,
+      pokemonWorkflow,
+      raidBattlesWorkflow,
+      raidBonusRewardsWorkflow,
+      raidRewardsWorkflow,
+      royalCandyWorkflow,
+      shopsWorkflow,
+      spreadsheetImportWorkflow,
+      startingItemsWorkflow,
+      teraRaidsWorkflow,
+      textWorkflow,
+      trainersWorkflow
+    ]
+  );
   const workspaceBookmarks = useMemo<WorkspaceTargetViewModel[]>(
     () => sortWorkspaceEntriesNewestFirst(
       (projectWorkspaceDocument?.bookmarks ?? [])
@@ -6106,19 +6276,20 @@ export function App({
           bookmark.location,
           activeProjectId
         );
+        const resolvedLabel = location
+          ? resolveWorkspaceLocationLabel(location, workspaceRecordLabelSources, t)
+          : null;
         return location
           ? [{
               description: t(getWorkbenchSectionLabelKey(location.section)),
               id: bookmark.bookmarkId,
-              label: bookmark.label ?? location.entity?.recordId ?? t(
-                getWorkbenchSectionLabelKey(location.section)
-              ),
-              labelIsRawData: Boolean(bookmark.label || location.entity),
+              label: bookmark.label || resolvedLabel!.label,
+              labelIsRawData: Boolean(bookmark.label) || resolvedLabel!.labelIsRawData,
               location
             }]
           : [];
       }),
-    [activeProjectId, projectWorkspaceDocument?.bookmarks, t]
+    [activeProjectId, projectWorkspaceDocument?.bookmarks, t, workspaceRecordLabelSources]
   );
   const workspacePins = useMemo<WorkspaceTargetViewModel[]>(
     () => sortWorkspaceEntriesNewestFirst(
@@ -6131,19 +6302,20 @@ export function App({
           withoutScopedLocationInspector(bookmark.location),
           activeProjectId
         );
+        const resolvedLabel = location
+          ? resolveWorkspaceLocationLabel(location, workspaceRecordLabelSources, t)
+          : null;
         return location
           ? [{
               description: t(getWorkbenchSectionLabelKey(location.section)),
               id: bookmark.bookmarkId,
-              label: bookmark.label ?? location.entity?.recordId ?? t(
-                getWorkbenchSectionLabelKey(location.section)
-              ),
-              labelIsRawData: Boolean(bookmark.label || location.entity),
+              label: bookmark.label || resolvedLabel!.label,
+              labelIsRawData: Boolean(bookmark.label) || resolvedLabel!.labelIsRawData,
               location
             }]
           : [];
       }),
-    [activeProjectId, projectWorkspaceDocument?.bookmarks, t]
+    [activeProjectId, projectWorkspaceDocument?.bookmarks, t, workspaceRecordLabelSources]
   );
   const persistedRecentTargets = useMemo<WorkspaceTargetViewModel[]>(
     () => sortWorkspaceEntriesNewestFirst(
@@ -6154,14 +6326,21 @@ export function App({
         withoutScopedLocationInspector(recent.location),
         activeProjectId
       );
-      return location ? [createWorkspaceTargetViewModel(location, t)] : [];
+      return location
+        ? [createWorkspaceTargetViewModel(location, workspaceRecordLabelSources, t)]
+        : [];
     }),
-    [activeProjectId, projectWorkspaceDocument?.recentTargets, t]
+    [
+      activeProjectId,
+      projectWorkspaceDocument?.recentTargets,
+      t,
+      workspaceRecordLabelSources
+    ]
   );
   const workspaceRecentTargets = useMemo<WorkspaceTargetViewModel[]>(
     () => {
       const sessionTargets = workspaceShellState.recents.map((location) =>
-        createWorkspaceTargetViewModel(location, t)
+        createWorkspaceTargetViewModel(location, workspaceRecordLabelSources, t)
       );
       return mergeWorkspaceRecentTargetViewModels(
         sessionTargets,
@@ -6169,7 +6348,7 @@ export function App({
         maximumWorkspaceRecentEntries
       );
     },
-    [persistedRecentTargets, t, workspaceShellState.recents]
+    [persistedRecentTargets, t, workspaceRecordLabelSources, workspaceShellState.recents]
   );
   const workspaceSavedViews = useMemo(
     () => (projectWorkspaceDocument?.savedViews ?? []).flatMap((view) => {
@@ -6837,9 +7016,9 @@ export function App({
   const semanticInspectorLayer = resolveSemanticInspectorLayer(
     semanticExploreController.capabilities.data?.snapshots ?? []
   );
-  const canPopulateSemanticInspector = Boolean(
-    activeLocation.entity &&
-    (isSemanticInspectorRequested || semanticExploreController.capabilities.data)
+  const canPopulateSemanticInspector = isPassiveSemanticInspectorRecordEligible(
+    activeLocation.entity ?? null,
+    semanticExploreController.capabilities.data
   );
   const semanticInspectorTabs = useSemanticInspectorTabs({
     controller: semanticExploreController,
@@ -7024,21 +7203,70 @@ export function App({
     personalWorkspaceRegistry
   ]);
   const workspaceRecordTabs = useMemo(
-    () =>
-      workspaceShellState.tabs.map((tab) => ({
-        hasProtectedDraft: editorDraftDirtySections.has(tab.location.section),
-        key: tab.key,
-        label:
-          tab.location.entity?.recordId ??
-          t(getWorkbenchSectionLabelKey(tab.location.section)),
-        labelIsRawData: Boolean(tab.location.entity),
-        location: tab.location
-      })),
+    () => {
+      const scopeKey = `${activeProjectId ?? 'no-project'}:${selectedGame}`;
+      if (workspaceRecordLabelCacheRef.current.scopeKey !== scopeKey) {
+        workspaceRecordLabelCacheRef.current = {
+          labels: new Map(),
+          scopeKey
+        };
+      }
+      const retainedLabels = workspaceRecordLabelCacheRef.current.labels;
+      const activeTabKeys = new Set(workspaceShellState.tabs.map((tab) => tab.key));
+      for (const retainedKey of retainedLabels.keys()) {
+        if (!activeTabKeys.has(retainedKey)) {
+          retainedLabels.delete(retainedKey);
+        }
+      }
+
+      return workspaceShellState.tabs.map((tab) => {
+        const liveLabel = resolveWorkspaceLocationLabel(
+          tab.location,
+          workspaceRecordLabelSources,
+          t
+        );
+        const resolvedLabel = resolveRetainedRecordTabLabel(
+          liveLabel,
+          retainedLabels.get(tab.key)
+        );
+        if (liveLabel.labelIsRawData) {
+          retainedLabels.set(tab.key, liveLabel.label);
+        }
+        return {
+          hasProtectedDraft: editorDraftDirtySections.has(tab.location.section),
+          key: tab.key,
+          ...resolvedLabel,
+          location: tab.location
+        };
+      });
+    },
     [
+      activeProjectId,
       editorDraftDirtySections,
+      selectedGame,
       t,
+      workspaceRecordLabelSources,
       workspaceShellState.tabs
     ]
+  );
+  const activeWorkspaceRecordLabel = useMemo(
+    () => resolveWorkspaceLocationLabel(activeLocation, workspaceRecordLabelSources, t),
+    [activeLocation, t, workspaceRecordLabelSources]
+  );
+  const activeInspectorTarget = useMemo<AdaptiveInspectorTargetViewModel>(
+    () => ({
+      label: activeWorkspaceRecordLabel.label,
+      labelIsRawData: activeWorkspaceRecordLabel.labelIsRawData,
+      scopeLabels: [
+        ...(activeLocation.game
+          ? [t(`semanticMerge.game.${activeLocation.game}`)]
+          : []),
+        t(getWorkbenchSectionLabelKey(activeLocation.section))
+      ],
+      summary: activeWorkspaceRecordLabel.summary,
+      summaryIsRawData: activeWorkspaceRecordLabel.summaryIsRawData
+    }),
+    [activeLocation.game, activeLocation.section, activeWorkspaceRecordLabel, t]
   );
   const workspaceCommands = useMemo(
     () =>
@@ -7112,7 +7340,15 @@ export function App({
         )
       ) {
         handleNavigateLocation(location, preparation.onCommit, 'push', {
-          rememberRecent: false
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            location,
+            sessionLocalEditorSections
+          )
         });
       }
     },
@@ -7169,7 +7405,16 @@ export function App({
         setWorkspaceShellState(nextState);
       },
       'push',
-      { rememberRecent: false }
+      {
+        protectedTabKeys: getProtectedWorkspaceTabKeys(
+          currentState.tabs,
+          editorDraftDirtySectionsRef.current
+        ),
+        rememberRecent: false,
+        tabEligible: destinationTab
+          ? isStableLocationTabEligible(destination, sessionLocalEditorSections)
+          : false
+      }
     );
   }, [
     activeLocation,
@@ -9550,7 +9795,12 @@ export function App({
       'shops',
       setIsShopsLoading,
       () => bridge.loadShopsWorkflow({ paths: createProjectPaths(draftPaths) }),
-      (response) => setShopsWorkflow(response.workflow)
+      (response) =>
+        setShopsWorkflow(
+          itemsWorkflow
+            ? overlayShopWorkflowItems(response.workflow, itemsWorkflow)
+            : response.workflow
+        )
     );
   };
 
@@ -13150,7 +13400,7 @@ export function App({
         const stageGate = changeSetStageGateRef.current;
         if (
           stageGate.enabled &&
-          outputSafetyScope !== null &&
+          projectScope !== null &&
           (stageGate.readiness !== 'ready' ||
             (stageGate.changeSetCount > 0 && stageGate.activeChangeSetId === null) ||
             (stageGate.activeChangeSetId !== null && stageGate.etag === null))
@@ -13760,7 +14010,12 @@ export function App({
             };
           },
           (response) => {
-            if (response.didSucceed && response.workflow) setItemsWorkflow(response.workflow);
+            if (response.didSucceed && response.workflow) {
+              setItemsWorkflow(response.workflow);
+              if (shopsWorkflow) {
+                setShopsWorkflow(overlayShopWorkflowItems(shopsWorkflow, response.workflow));
+              }
+            }
             setEditValidationDiagnostics(response.diagnostics);
           },
           undefined,
@@ -13925,6 +14180,9 @@ export function App({
         (updateResponse) => {
           if (updateResponse.didSucceed && updateResponse.workflow) {
             setItemsWorkflow(updateResponse.workflow);
+            if (shopsWorkflow) {
+              setShopsWorkflow(overlayShopWorkflowItems(shopsWorkflow, updateResponse.workflow));
+            }
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
@@ -13980,6 +14238,9 @@ export function App({
         (updateResponse) => {
           if (updateResponse.didSucceed && updateResponse.workflow) {
             setItemsWorkflow(updateResponse.workflow);
+            if (shopsWorkflow) {
+              setShopsWorkflow(overlayShopWorkflowItems(shopsWorkflow, updateResponse.workflow));
+            }
             setEditSessionSection(updateResponse.sessionSection);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
@@ -16306,19 +16567,19 @@ export function App({
   const handleUpdateShopChanges = async (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
-    priceChanges: ShopItemPriceChange[],
+    itemFieldChanges: ShopItemFieldChange[],
     rowFieldChanges: ShopInventoryDraftChange[] = []
   ) => {
     if (
       inventoryChanges.length === 0 &&
-      priceChanges.length === 0 &&
+      itemFieldChanges.length === 0 &&
       rowFieldChanges.length === 0
     ) {
       return false;
     }
 
     setIsShopUpdating(true);
-    if (priceChanges.length > 0) {
+    if (itemFieldChanges.length > 0) {
       setIsItemUpdating(true);
     }
     setBridgeDiagnostics([]);
@@ -16380,11 +16641,11 @@ export function App({
             }
           }
 
-          if (didSucceed && priceChanges.length > 0) {
+          if (didSucceed && itemFieldChanges.length > 0) {
             const updateResponse = await bridge.updateItemFields({
               paths: createProjectPaths(draftPaths),
               session: nextSession,
-              updates: priceChanges.map((change) => ({
+              updates: itemFieldChanges.map((change) => ({
                 field: change.field,
                 itemId: change.itemId,
                 value: change.value
@@ -16413,7 +16674,15 @@ export function App({
           }
           if (updateResponse.didSucceed && updateResponse.shopsWorkflow) {
             setShopsWorkflow(
-              overlayShopWorkflowItemPrices(updateResponse.shopsWorkflow, priceChanges)
+              updateResponse.itemsWorkflow
+                ? overlayShopWorkflowItems(
+                    updateResponse.shopsWorkflow,
+                    updateResponse.itemsWorkflow
+                  )
+                : overlayShopWorkflowItemFields(
+                    updateResponse.shopsWorkflow,
+                    itemFieldChanges
+                  )
             );
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
@@ -16426,33 +16695,14 @@ export function App({
       return false;
     } finally {
       setIsShopUpdating(false);
-      if (priceChanges.length > 0) {
+      if (itemFieldChanges.length > 0) {
         setIsItemUpdating(false);
       }
     }
   };
 
   const handleOpenShopItem = (itemId: number) => {
-    const destination = createWorkbenchLocation({
-      ...(activeProjectId && selectedGame
-        ? {
-            entity: {
-              domain: 'workflow.items',
-              gameFamily: projectGameToFamily(selectedGame),
-              recordId: String(itemId),
-              recordKind: { key: 'item', schemaVersion: 1 },
-              subrecordId: null
-            }
-          }
-        : {}),
-      game: selectedGame,
-      projectId: activeProjectId,
-      section: 'items'
-    });
-    handleNavigateLocation(destination, () => {
-      setSelectedItemId(itemId);
-      setItemSearchText('');
-    });
+    handleSelectStableLocation('items', itemId, () => setSelectedItemId(itemId));
   };
 
   const handleUpdateEncounterSlotFields = async (
@@ -17655,7 +17905,11 @@ export function App({
         async () => {
           const response = await bridge.loadShopsWorkflow({ paths });
           if (canCommitRefresh()) {
-            setShopsWorkflow(response.workflow);
+            setShopsWorkflow(
+              itemsWorkflow
+                ? overlayShopWorkflowItems(response.workflow, itemsWorkflow)
+                : response.workflow
+            );
           }
         }
       );
@@ -18425,10 +18679,10 @@ export function App({
           tabs={workspaceRecordTabs}
         />
 
-        <div
-          className="workspace-content"
-          key={`${activeProjectId ?? 'no-project'}:${selectedGame}:${workspaceContentDraftScopeKey(activeLocation)}`}
-        >
+        <div className="workspace-content">
+          <Fragment
+            key={`${activeProjectId ?? 'no-project'}:${selectedGame}:${activeSection}:${workspaceContentDiscardRevision}`}
+          >
           {activeSection === 'health' ? (
             <HealthSection
               analysisPreparation={activeProjectId ? (
@@ -18466,7 +18720,7 @@ export function App({
                   desktopServices={desktopServices}
                   onApplyBusyChange={handleProjectRelocationApplyingChange}
                   onRelocated={handleProjectRelocated}
-                  source={outputSafetyScope}
+                  source={projectScope}
                 />
               }
               onRequestSupportSearch={handleRequestSupportSearch}
@@ -18486,7 +18740,7 @@ export function App({
                 semanticExploreScope ? (
                   <BalanceLabRuntime
                     availableLayers={balanceLabAvailableLayers}
-                    bridge={bridge}
+                    bridge={analysisBridge}
                     capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     onEnsureCapabilities={semanticExploreController.ensureCapabilities}
@@ -18503,7 +18757,7 @@ export function App({
                 semanticExploreScope ? (
                   <GuidedDesignRuntime
                     authoringContextRevision={guidedDesignAuthoringContextRevision}
-                    bridge={bridge}
+                    bridge={analysisBridge}
                     capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     canImportChangeSet={
@@ -18553,7 +18807,7 @@ export function App({
                     )}
                   >
                     <GameModulesRuntime
-                      bridge={bridge}
+                      bridge={analysisBridge}
                       canNavigateRecord={canNavigateGameModuleRecord}
                       canOpenSection={(section) => availableWorkflowSectionIds.has(section)}
                       capabilityError={semanticExploreController.capabilities.error}
@@ -18581,7 +18835,7 @@ export function App({
                     )}
                   >
                     <ResearchLabRuntime
-                      bridge={bridge}
+                      bridge={analysisBridge}
                       canNavigateRecord={canNavigateGameModuleRecord}
                       capabilityError={semanticExploreController.capabilities.error}
                       capabilityStatus={semanticExploreController.capabilities.status}
@@ -18602,7 +18856,7 @@ export function App({
                 semanticExploreScope ? (
                   <SemanticMergeRuntime
                     authoringContextRevision={guidedDesignAuthoringContextRevision}
-                    bridge={bridge}
+                    bridge={analysisBridge}
                     capabilityError={semanticExploreController.capabilities.error}
                     capabilityStatus={semanticExploreController.capabilities.status}
                     canImportChangeSet={
@@ -20183,6 +20437,7 @@ export function App({
                   onReplayWhatChanged={() => setIsWhatChangedTourOpen(true)}
                 />
               }
+              themeSettings={<ThemeSettingsPanel />}
               editorLayout={editorLayout}
               hasSvCacheRequestError={currentSvCacheRequestError}
               isSvCacheClearing={isSvCacheClearing}
@@ -20234,6 +20489,7 @@ export function App({
               ) : null}
             </div>
           ) : null}
+          </Fragment>
         </div>
         <AdaptiveInspector
           activeTab={activeInspectorTab}
@@ -20241,8 +20497,7 @@ export function App({
           onClose={handleToggleInspector}
           onSelectTab={handleSelectInspectorTab}
           tabs={inspectorTabs}
-          targetLabel={activeLocation.entity?.recordId ?? ''}
-          targetLabelIsRawData={true}
+          target={activeInspectorTarget}
         />
       </section>
       {workProgress ? <WorkProgressModal progress={workProgress} /> : null}
@@ -20317,7 +20572,7 @@ export function App({
         onClose={handleDismissCapabilityDiscovery}
         onOpenCapability={handleNavigateSection}
       />
-      {pendingOutputProfile && outputSafetyScope && personalProjectTarget ? (
+      {pendingOutputProfile && projectScope && personalProjectTarget ? (
         <OutputProfileSwitchDialog
           armCriticalWriteGuard={armCriticalWriteGuard}
           bridge={bridge}
@@ -20329,7 +20584,7 @@ export function App({
             !isBusy
           }
           candidatePaths={{
-            ...outputSafetyScope.paths,
+            ...projectScope.paths,
             outputRootPath: pendingOutputProfile.outputRootPath
           }}
           onApplyBusyChange={handleOutputProfileSwitchApplyingChange}
@@ -20355,7 +20610,7 @@ export function App({
           }}
           onClose={() => setPendingOutputProfileId(null)}
           profileName={pendingOutputProfile.name}
-          source={outputSafetyScope}
+          source={projectScope}
         />
       ) : null}
       {exitPrompt ? (
@@ -20670,34 +20925,79 @@ function VirtualTableBody<T>({
   renderRow: (item: T, index: number) => ReactNode;
   resetKey?: string | number;
 }) {
-  const scrollParentRef = useRef<HTMLDivElement | null>(null);
-  useVirtualTableHeaderScrollSync(scrollParentRef, items);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const getScrollElement = useCallback(() => {
+    const tableElement = bodyRef.current?.parentElement;
+    return tableElement instanceof HTMLDivElement ? tableElement : null;
+  }, []);
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     estimateSize: () => estimateSize,
     getItemKey: (index) => getKey(items[index]!, index),
-    getScrollElement: () => scrollParentRef.current,
+    getScrollElement,
     initialRect: virtualTableInitialRect,
     overscan: virtualTableOverscan,
+    scrollMargin,
     ...(observeVirtualTableElementRect
       ? { observeElementRect: observeVirtualTableElementRect }
       : {})
   });
 
   useLayoutEffect(() => {
+    const bodyElement = bodyRef.current;
+    const scrollElement = getScrollElement();
+    if (!bodyElement || !scrollElement) {
+      return undefined;
+    }
+
+    const updateScrollMargin = () => {
+      const bodyRect = bodyElement.getBoundingClientRect();
+      const scrollRect = scrollElement.getBoundingClientRect();
+      const nextMargin = calculateVirtualTableScrollMargin({
+        bodyTop: bodyRect.top,
+        clientTop: scrollElement.clientTop,
+        scrollTop: scrollElement.scrollTop,
+        scrollViewportTop: scrollRect.top
+      });
+      setScrollMargin((currentMargin) =>
+        currentMargin === nextMargin ? currentMargin : nextMargin
+      );
+    };
+    updateScrollMargin();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateScrollMargin);
+    resizeObserver?.observe(scrollElement);
+    resizeObserver?.observe(bodyElement);
+    const headingElement = bodyElement.previousElementSibling;
+    if (headingElement instanceof HTMLElement) {
+      resizeObserver?.observe(headingElement);
+    }
+    window.addEventListener('resize', updateScrollMargin);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateScrollMargin);
+    };
+  }, [getScrollElement]);
+
+  useLayoutEffect(() => {
     if (resetKey === undefined) {
       return;
     }
 
-    if (scrollParentRef.current) {
-      scrollParentRef.current.scrollTop = 0;
-      scrollParentRef.current.scrollLeft = 0;
+    const scrollElement = getScrollElement();
+    if (scrollElement) {
+      scrollElement.scrollTop = 0;
+      scrollElement.scrollLeft = 0;
     }
     rowVirtualizer.scrollToOffset(0);
-  }, [resetKey]);
+  }, [getScrollElement, resetKey]);
 
   return (
-    <div className="virtual-table-body" ref={scrollParentRef} role="rowgroup">
+    <div className="virtual-table-body" ref={bodyRef} role="rowgroup">
       <div
         className="virtual-table-spacer"
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
@@ -20718,7 +21018,7 @@ function VirtualTableBody<T>({
               role="presentation"
               style={{
                 ...(measureRows ? {} : { height: `${virtualRow.size}px` }),
-                transform: `translateY(${virtualRow.start}px)`
+                transform: `translateY(${virtualRow.start - scrollMargin}px)`
               }}
             >
               {renderRow(item, virtualRow.index)}
@@ -20728,51 +21028,6 @@ function VirtualTableBody<T>({
       </div>
     </div>
   );
-}
-
-function useVirtualTableHeaderScrollSync<T>(
-  scrollParentRef: RefObject<HTMLDivElement | null>,
-  items: T[]
-) {
-  useLayoutEffect(() => {
-    const scrollElement = scrollParentRef.current;
-    const tableElement = scrollElement?.parentElement;
-
-    if (!scrollElement || !tableElement) {
-      return undefined;
-    }
-
-    const syncScrollState = () => {
-      tableElement.style.setProperty(
-        '--virtual-table-scroll-x',
-        `${scrollElement.scrollLeft}px`
-      );
-      tableElement.style.setProperty(
-        '--virtual-table-scroll-width',
-        `${Math.max(scrollElement.scrollWidth, scrollElement.clientWidth)}px`
-      );
-    };
-
-    syncScrollState();
-    scrollElement.addEventListener('scroll', syncScrollState, { passive: true });
-
-    const resizeObserver =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncScrollState);
-
-    resizeObserver?.observe(scrollElement);
-    const spacerElement = scrollElement.querySelector('.virtual-table-spacer');
-
-    if (spacerElement instanceof HTMLElement) {
-      resizeObserver?.observe(spacerElement);
-    }
-
-    return () => {
-      scrollElement.removeEventListener('scroll', syncScrollState);
-      resizeObserver?.disconnect();
-      tableElement.style.removeProperty('--virtual-table-scroll-x');
-      tableElement.style.removeProperty('--virtual-table-scroll-width');
-    };
-  }, [items, scrollParentRef]);
 }
 
 function HealthSection({
@@ -21289,7 +21544,8 @@ function ItemsSection({
   workflow
 }: ItemsSectionProps) {
   const { t } = useLocalization();
-  const [showUnusedItems, setShowUnusedItems] = useState(false);
+  const showUnusedItems = useWorkbenchStore((state) => state.showUnusedItems);
+  const setShowUnusedItems = useWorkbenchStore((state) => state.setShowUnusedItems);
   const loadedItems = useMemo(
     () => (workflow?.items ?? []).filter((item) => item.itemId !== 0),
     [workflow?.items]
@@ -21349,8 +21605,8 @@ function ItemsSection({
     ) ??
       false);
   const selectedItem = useMemo(
-    () => filteredItems.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
-    [filteredItems, selectedItemId]
+    () => loadedItems.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
+    [filteredItems, loadedItems, selectedItemId]
   );
   const secondaryPriceLabels = getItemSecondaryPriceLabels(editorFamily);
 
@@ -21579,6 +21835,7 @@ function SelectedItemPanel({
   >({});
   const [itemSourceMutationError, setItemSourceMutationError] = useState<string | null>(null);
   const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
+  const [showAllTechnicalMachinePokemon, setShowAllTechnicalMachinePokemon] = useState(false);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const contextualEditableFields = useMemo(
     () => getContextualItemEditableFields(editableFields, editorFamily, item),
@@ -21712,15 +21969,22 @@ function SelectedItemPanel({
     () => getZaTechnicalMachinePokemonCompatibilityRows(item, pokemonWorkflow),
     [item, pokemonWorkflow]
   );
+  const visibleTechnicalMachineCompatibilityRows = useMemo(
+    () =>
+      showAllTechnicalMachinePokemon
+        ? technicalMachineCompatibilityRows
+        : technicalMachineCompatibilityRows.filter((row) => row.pokemon.personal.isPresentInGame),
+    [showAllTechnicalMachinePokemon, technicalMachineCompatibilityRows]
+  );
   const filteredTechnicalMachineCompatibilityRows = useMemo(
     () =>
       filterZaTechnicalMachinePokemonCompatibilityRows(
-        technicalMachineCompatibilityRows,
+        visibleTechnicalMachineCompatibilityRows,
         compatibilitySearchText
       ),
-    [compatibilitySearchText, technicalMachineCompatibilityRows]
+    [compatibilitySearchText, visibleTechnicalMachineCompatibilityRows]
   );
-  const enabledTechnicalMachineCompatibilityCount = technicalMachineCompatibilityRows.filter(
+  const enabledTechnicalMachineCompatibilityCount = visibleTechnicalMachineCompatibilityRows.filter(
     (row) => row.entry.canLearn
   ).length;
   const showTechnicalMachineCompatibility =
@@ -22100,19 +22364,30 @@ function SelectedItemPanel({
                   <p className="field-note">
                     {t('za.items.compatibility.summary', {
                       enabled: enabledTechnicalMachineCompatibilityCount,
-                      total: technicalMachineCompatibilityRows.length
+                      total: visibleTechnicalMachineCompatibilityRows.length
                     })}
                   </p>
-                  <label className="search-box compatibility-search">
-                    <Search aria-hidden="true" size={16} />
-                    <input
-                      aria-label={t('za.items.compatibility.search')}
-                      onChange={(event) => setCompatibilitySearchText(event.target.value)}
-                      placeholder={t('za.items.compatibility.search')}
-                      type="search"
-                      value={compatibilitySearchText}
-                    />
-                  </label>
+                  <div className="za-tm-compatibility-toolbar">
+                    <label className="search-box compatibility-search">
+                      <Search aria-hidden="true" size={16} />
+                      <input
+                        aria-label={t('za.items.compatibility.search')}
+                        onChange={(event) => setCompatibilitySearchText(event.target.value)}
+                        placeholder={t('za.items.compatibility.search')}
+                        type="search"
+                        value={compatibilitySearchText}
+                      />
+                    </label>
+                    <label className="za-tm-show-all-toggle">
+                      <input
+                        checked={showAllTechnicalMachinePokemon}
+                        className="km-choice-control"
+                        onChange={(event) => setShowAllTechnicalMachinePokemon(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>{t('za.items.compatibility.showAllPokemon')}</span>
+                    </label>
+                  </div>
                   <ul className="compatibility-list za-tm-compatibility-list">
                     {filteredTechnicalMachineCompatibilityRows.map(({ entry, pokemon }) => (
                       <li key={pokemon.personalId}>
@@ -22284,7 +22559,7 @@ function PokemonSection({
       const explicitlySelectedPokemon =
         selectedPokemonId === null || selectedPokemonId === 0
           ? null
-          : filteredPokemon.find(
+          : pokemon.find(
               (candidate) =>
                 Number(candidate.personalId) === selectedPokemonId &&
                 !isPlaceholderPokemonRecord(candidate)
@@ -22297,18 +22572,8 @@ function PokemonSection({
         null
       );
     },
-    [filteredPokemon, selectedPokemonPersonalId]
+    [filteredPokemon, pokemon, selectedPokemonPersonalId]
   );
-
-  useEffect(() => {
-    if (
-      selectedPokemon !== null &&
-      (selectedPokemonPersonalId === null ||
-        Number(selectedPokemon.personalId) !== Number(selectedPokemonPersonalId))
-    ) {
-      onSelectPokemon(selectedPokemon.personalId);
-    }
-  }, [onSelectPokemon, selectedPokemon, selectedPokemonPersonalId]);
 
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
@@ -25908,10 +26173,10 @@ function MovesSection({
   );
   const selectedMove = useMemo(
     () =>
-      filteredMoves.find((candidate) => candidate.moveId === selectedMoveId) ??
+      moves.find((candidate) => candidate.moveId === selectedMoveId) ??
       filteredMoves[0] ??
       null,
-    [filteredMoves, selectedMoveId]
+    [filteredMoves, moves, selectedMoveId]
   );
   const canEditMoves = workflow?.summary.availability === 'available';
   const pendingMoveIds = useMemo(() => getPendingMoveIds(editSession), [editSession]);
@@ -28020,10 +28285,10 @@ function TextSection({
   );
   const selectedEntry = useMemo(
     () =>
-      filteredEntries.find((entry) => entry.textKey === selectedTextKey) ??
+      entries.find((entry) => entry.textKey === selectedTextKey) ??
       filteredEntries[0] ??
       null,
-    [filteredEntries, selectedTextKey]
+    [entries, filteredEntries, selectedTextKey]
   );
   const canEditText = workflow?.summary.availability === 'available';
   const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
@@ -28914,25 +29179,12 @@ function TrainersSection({
         : searchFilteredTrainers,
     [activeTrainerCategoryId, searchFilteredTrainers, supportsTrainerCategories]
   );
-  const selectedTrainerNeedsCategoryReveal =
-    searchText.trim().length === 0 &&
-    selectedTrainerId !== null &&
-    searchFilteredTrainers.some((trainer) => trainer.trainerId === selectedTrainerId) &&
-    !filteredTrainers.some((trainer) => trainer.trainerId === selectedTrainerId);
   const selectedTrainer = useMemo(
     () =>
-      (selectedTrainerNeedsCategoryReveal
-        ? searchFilteredTrainers.find((trainer) => trainer.trainerId === selectedTrainerId)
-        : null) ??
-      filteredTrainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
+      trainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
       filteredTrainers[0] ??
       null,
-    [
-      filteredTrainers,
-      searchFilteredTrainers,
-      selectedTrainerId,
-      selectedTrainerNeedsCategoryReveal
-    ]
+    [filteredTrainers, selectedTrainerId, trainers]
   );
   const selectedPokemon =
     selectedTrainer?.team.find((pokemon) => pokemon.slot === selectedTrainerPartySlot) ??
@@ -39758,7 +40010,7 @@ function ShopsSection({
   onUpdateShopChanges: (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
-    priceChanges: ShopItemPriceChange[],
+    itemFieldChanges: ShopItemFieldChange[],
     rowFieldChanges?: ShopInventoryDraftChange[]
   ) => Promise<boolean>;
   searchText: string;
@@ -39948,7 +40200,7 @@ function SelectedShopPanel({
   onUpdateShopChanges: (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
-    priceChanges: ShopItemPriceChange[],
+    itemFieldChanges: ShopItemFieldChange[],
     rowFieldChanges?: ShopInventoryDraftChange[]
   ) => Promise<boolean>;
   selectedSlot: number | null;
@@ -39964,6 +40216,18 @@ function SelectedShopPanel({
   const itemIdField = editableFields.find((field) => field.field === shopItemIdFieldName);
   const itemIdOptions = itemIdField?.options ?? [];
   const hasItemIdOptions = itemIdOptions.length > 0;
+  const priceEditableField: ShopEditableField = {
+    ...shopPriceEditableField,
+    field: shop?.globalPriceField ?? buyPriceFieldName,
+    maximumValue: shop?.globalPriceMaximumValue ?? maximumShopItemPrice,
+    minimumValue: shop?.globalPriceMinimumValue ?? 0
+  };
+  const stockEditableField: ShopEditableField = {
+    ...shopStockEditableField,
+    field: shop?.globalStockField ?? itemStackCapFieldName,
+    maximumValue: shop?.globalStockMaximumValue ?? null,
+    minimumValue: shop?.globalStockMinimumValue ?? null
+  };
   const defaultShopDraft = useMemo<ShopInventoryDraftState>(
     () => ({
       addedRows: [],
@@ -39975,7 +40239,8 @@ function SelectedShopPanel({
       nextAddedRowId: getNextShopInventoryDraftId(shop?.inventory ?? []),
       priceDrafts: {},
       rowOrder: shop?.inventory.map((item) => getShopExistingRowKey(item.slot)) ?? [],
-      removedSlots: []
+      removedSlots: [],
+      stockDrafts: {}
     }),
     [itemIdOptions, shop?.inventory, shop?.shopId]
   );
@@ -40050,8 +40315,8 @@ function SelectedShopPanel({
       }
     ];
   }, [itemIdField, shop, shopInventoryRows]);
-  const shopPriceDraftChanges = useMemo<ShopItemPriceChange[]>(() => {
-    const changes: ShopItemPriceChange[] = [];
+  const shopPriceDraftChanges = useMemo<ShopItemFieldChange[]>(() => {
+    const changes: ShopItemFieldChange[] = [];
     const changedItemIds = new Set<number>();
     const priceField = shop?.globalPriceField ?? null;
 
@@ -40068,7 +40333,7 @@ function SelectedShopPanel({
         parsedPrice === null ||
         row.priceField !== null ||
         !row.canEditPrice ||
-        !isIntegerDraftInFieldRange(parsedPrice, shopPriceEditableField) ||
+        !isIntegerDraftInFieldRange(parsedPrice, priceEditableField) ||
         parsedPrice === row.price ||
         changedItemIds.has(row.parsedItemId)
       ) {
@@ -40084,7 +40349,43 @@ function SelectedShopPanel({
     }
 
     return changes;
-  }, [shop?.globalPriceField, shopInventoryRows]);
+  }, [priceEditableField, shop?.globalPriceField, shopInventoryRows]);
+  const shopStockDraftChanges = useMemo<ShopItemFieldChange[]>(() => {
+    const changes: ShopItemFieldChange[] = [];
+    const changedItemIds = new Set<number>();
+    const stockField = shop?.globalStockField ?? null;
+
+    if (stockField === null) {
+      return changes;
+    }
+
+    for (const row of shopInventoryRows) {
+      if (
+        !row.isKnownItem ||
+        row.parsedItemId === null ||
+        row.parsedItemId === shopNoneItemId ||
+        row.parsedStock === null ||
+        !isIntegerDraftInFieldRange(row.parsedStock, stockEditableField) ||
+        row.parsedStock === row.stockLimit ||
+        changedItemIds.has(row.parsedItemId)
+      ) {
+        continue;
+      }
+
+      changedItemIds.add(row.parsedItemId);
+      changes.push({
+        field: stockField,
+        itemId: row.parsedItemId,
+        value: row.parsedStock.toString()
+      });
+    }
+
+    return changes;
+  }, [shop?.globalStockField, shopInventoryRows, stockEditableField]);
+  const shopItemFieldDraftChanges = useMemo(
+    () => [...shopPriceDraftChanges, ...shopStockDraftChanges],
+    [shopPriceDraftChanges, shopStockDraftChanges]
+  );
   const shopRowFieldDraftChanges = useMemo<ShopInventoryDraftChange[]>(() => {
     if (!shop) {
       return [];
@@ -40138,7 +40439,14 @@ function SelectedShopPanel({
       row.canEditPrice &&
       row.priceField === null &&
       shop?.globalPriceField != null &&
-      !isIntegerDraftInFieldRange(row.parsedPrice, shopPriceEditableField)
+      !isIntegerDraftInFieldRange(row.parsedPrice, priceEditableField)
+  ).length;
+  const invalidShopStockDraftCount = shopInventoryRows.filter(
+    (row) =>
+      row.isKnownItem &&
+      row.parsedItemId !== shopNoneItemId &&
+      shop?.globalStockField != null &&
+      !isIntegerDraftInFieldRange(row.parsedStock, stockEditableField)
   ).length;
   const invalidShopRowFieldDraftCount = shop
     ? shop.inventory.reduce((invalidCount, inventoryItem) => {
@@ -40169,10 +40477,11 @@ function SelectedShopPanel({
       }, 0)
     : 0;
   const changedSlotCount =
-    shopDraftChanges.length + shopPriceDraftChanges.length + shopRowFieldDraftChanges.length;
+    shopDraftChanges.length + shopItemFieldDraftChanges.length + shopRowFieldDraftChanges.length;
   const hasInvalidShopDrafts =
     invalidShopItemDraftCount > 0 ||
     invalidShopPriceDraftCount > 0 ||
+    invalidShopStockDraftCount > 0 ||
     invalidShopRowFieldDraftCount > 0;
   const canSaveShopDrafts =
     shop !== null &&
@@ -40217,6 +40526,12 @@ function SelectedShopPanel({
         (currentDraft.priceDrafts[item.sourceSlot] ?? item.price.toString()) ===
           item.price.toString()
     );
+    const hasDefaultExistingStocks = shopInventoryRows.every(
+      (item) =>
+        item.sourceSlot === null ||
+        (currentDraft.stockDrafts[item.sourceSlot] ?? item.stockLimit?.toString() ?? '') ===
+          (item.stockLimit?.toString() ?? '')
+    );
     const hasDefaultFieldDrafts = shop.inventory.every((item) => {
       const fieldDrafts = currentDraft.fieldDrafts[item.slot] ?? {};
       return Object.entries(fieldDrafts).every(
@@ -40233,6 +40548,7 @@ function SelectedShopPanel({
       currentDraft.newItemIdDraft === defaultShopDraft.newItemIdDraft &&
       hasDefaultExistingItems &&
       hasDefaultExistingPrices &&
+      hasDefaultExistingStocks &&
       hasDefaultFieldDrafts;
     if (!hasDefaultRowState) {
       return;
@@ -40274,6 +40590,12 @@ function SelectedShopPanel({
             ? [{
                 field: 'price',
                 message: `${invalidShopPriceDraftCount} shop price draft(s) contain invalid values.`
+              }]
+            : []),
+          ...(invalidShopStockDraftCount > 0
+            ? [{
+                field: 'stackCap',
+                message: `${invalidShopStockDraftCount} global item stack-cap draft(s) contain invalid values.`
               }]
             : []),
           ...(invalidShopRowFieldDraftCount > 0
@@ -40354,7 +40676,7 @@ function SelectedShopPanel({
                     const didSave = await onUpdateShopChanges(
                       shop.shopId,
                       shopDraftChanges,
-                      shopPriceDraftChanges,
+                      shopItemFieldDraftChanges,
                       shopRowFieldDraftChanges
                     );
                     if (didSave) {
@@ -40390,6 +40712,8 @@ function SelectedShopPanel({
                   {hasInvalidShopDrafts
                     ? invalidShopRowFieldDraftCount > 0
                       ? translateLiteral('Fix invalid slot fields.')
+                      : invalidShopStockDraftCount > 0
+                        ? t('za.shops.fixInvalidStackCaps')
                       : invalidShopPriceDraftCount > 0
                       ? translateLiteral('Fix invalid prices.')
                       : translateLiteral('Fix invalid inventory rows.')
@@ -40425,8 +40749,15 @@ function SelectedShopPanel({
                     item.canEditPrice &&
                     item.priceField === null &&
                     shop.globalPriceField !== null &&
-                    !isIntegerDraftInFieldRange(item.parsedPrice, shopPriceEditableField)
-                      ? getIntegerDraftFieldError(item.priceDraft, shopPriceEditableField)
+                    !isIntegerDraftInFieldRange(item.parsedPrice, priceEditableField)
+                      ? getIntegerDraftFieldError(item.priceDraft, priceEditableField)
+                      : null;
+                  const stockDraftError =
+                    item.isKnownItem &&
+                    item.parsedItemId !== shopNoneItemId &&
+                    shop.globalStockField !== null &&
+                    !isIntegerDraftInFieldRange(item.parsedStock, stockEditableField)
+                      ? getIntegerDraftFieldError(item.stockDraft, stockEditableField)
                       : null;
                   const isPriceDisabled =
                     !canEditShops ||
@@ -40435,11 +40766,22 @@ function SelectedShopPanel({
                     !item.canEditPrice ||
                     item.priceField !== null ||
                     shop.globalPriceField === null;
+                  const isStockDisabled =
+                    !canEditShops ||
+                    editSession === null ||
+                    !item.isKnownItem ||
+                    item.parsedItemId === shopNoneItemId ||
+                    shop.globalStockField === null;
                   const itemDraftErrorId = `shop-item-${shop.shopId}-${item.key}-error`;
                   const priceDraftErrorId = `shop-price-${shop.shopId}-${item.key}-error`;
+                  const stockDraftErrorId = `shop-stock-${shop.shopId}-${item.key}-error`;
                   const itemInputId = `shop-item-${shop.shopId}-${item.key}`;
                   const priceInputId = `shop-price-${shop.shopId}-${item.key}`;
                   const stockInputId = `shop-stock-${shop.shopId}-${item.key}`;
+                  const stockHelp =
+                    shop.globalStockField !== null
+                      ? t('za.shops.stockHelp')
+                      : 'Shop inventory data does not expose a limited-stock value here.';
 
                   return (
                     <div
@@ -40475,7 +40817,7 @@ function SelectedShopPanel({
                             id={itemInputId}
                             onChange={(value) =>
                               updateCurrentShopDraft((currentDraft) =>
-                                clearShopInventoryRowPriceDraft(
+                                clearShopInventoryRowItemFieldDrafts(
                                   {
                                     ...currentDraft,
                                     addedRows:
@@ -40520,7 +40862,7 @@ function SelectedShopPanel({
                             min={itemIdField?.minimumValue ?? undefined}
                             onChange={(event) =>
                               updateCurrentShopDraft((currentDraft) =>
-                                clearShopInventoryRowPriceDraft(
+                                clearShopInventoryRowItemFieldDrafts(
                                   {
                                     ...currentDraft,
                                     addedRows:
@@ -40576,8 +40918,8 @@ function SelectedShopPanel({
                             )}`}
                             disabled={isPriceDisabled}
                             id={priceInputId}
-                            max={maximumShopItemPrice}
-                            min={0}
+                            max={priceEditableField.maximumValue ?? undefined}
+                            min={priceEditableField.minimumValue ?? undefined}
                             onChange={(event) =>
                               updateCurrentShopDraft((currentDraft) =>
                                 setShopItemPriceDraft(
@@ -40598,28 +40940,54 @@ function SelectedShopPanel({
                           </small>
                         ) : null}
                       </div>
-                      <div className="path-field shop-read-only-field">
+                      <div
+                        className={`path-field ${
+                          isStockDisabled ? 'shop-read-only-field' : ''
+                        }`}
+                      >
                         <FieldLabel
-                          help={translateLiteral(
-                            'Shop inventory data does not expose a limited-stock value here.'
-                          )}
+                          help={stockHelp}
                           htmlFor={stockInputId}
-                          label={translateLiteral('Stock')}
+                          label={
+                            shop.globalStockField !== null
+                              ? t('za.shops.stockLabel')
+                              : translateLiteral('Stock')
+                          }
                         />
-                        <HoverTooltip
-                          content={translateLiteral(
-                            'Shop inventory data does not expose a limited-stock value here.'
-                          )}
-                        >
+                        <HoverTooltip content={stockHelp}>
                           <input
+                            aria-describedby={stockDraftError ? stockDraftErrorId : undefined}
+                            aria-invalid={stockDraftError ? true : undefined}
                             aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
                               'stock'
                             )}`}
-                            disabled
+                            disabled={isStockDisabled}
                             id={stockInputId}
-                            value={item.stockLimit ?? translateLiteral('None')}
+                            max={stockEditableField.maximumValue ?? undefined}
+                            min={stockEditableField.minimumValue ?? undefined}
+                            onChange={(event) =>
+                              updateCurrentShopDraft((currentDraft) =>
+                                setShopItemStockDraft(
+                                  currentDraft,
+                                  shopInventoryRows,
+                                  item,
+                                  event.target.value
+                                )
+                              )
+                            }
+                            type={shop.globalStockField !== null ? 'number' : 'text'}
+                            value={
+                              shop.globalStockField !== null
+                                ? item.stockDraft
+                                : item.stockLimit ?? translateLiteral('None')
+                            }
                           />
                         </HoverTooltip>
+                        {stockDraftError ? (
+                          <small className="editable-field-error" id={stockDraftErrorId}>
+                            {translateLiteral(stockDraftError)}
+                          </small>
+                        ) : null}
                       </div>
                       <div className="shop-inventory-row-actions">
                         {item.isKnownItem ? (
@@ -41115,14 +41483,16 @@ function normalizeShopInventoryDraft(
     return {
       ...draft,
       fieldDrafts: draft.fieldDrafts ?? {},
-      priceDrafts: draft.priceDrafts ?? {}
+      priceDrafts: draft.priceDrafts ?? {},
+      stockDrafts: draft.stockDrafts ?? {}
     };
   }
 
   const nextDraft = {
     ...draft,
     fieldDrafts: draft.fieldDrafts ?? {},
-    priceDrafts: draft.priceDrafts ?? {}
+    priceDrafts: draft.priceDrafts ?? {},
+    stockDrafts: draft.stockDrafts ?? {}
   };
   const rowOrder = normalizeShopInventoryRowOrder(nextDraft, shop);
   return areStringArraysEqual(rowOrder, nextDraft.rowOrder ?? [])
@@ -41193,6 +41563,9 @@ function createShopInventoryDraftRows(
         const optionPrice = getShopOptionPrice(itemOption, shop.globalPriceField);
         const price = optionPrice ?? (isOriginalItem ? inventoryItem.price : 0);
         const priceDraft = normalizedDraft.priceDrafts[sourceSlot] ?? price.toString();
+        const stockLimit = itemOption?.stockLimit ?? (isOriginalItem ? inventoryItem.stockLimit : null);
+        const stockDraft =
+          normalizedDraft.stockDrafts[sourceSlot] ?? stockLimit?.toString() ?? '';
 
         return {
           canEditPrice: inventoryItem.canEditPrice,
@@ -41212,12 +41585,14 @@ function createShopInventoryDraftRows(
           key,
           parsedItemId,
           parsedPrice: parseEditableIntegerDraft(priceDraft),
+          parsedStock: parseEditableIntegerDraft(stockDraft),
           price,
           priceDraft,
           priceField: inventoryItem.priceField,
           rowId: inventoryItem.rowId ?? key,
           sourceSlot,
-          stockLimit: isOriginalItem ? inventoryItem.stockLimit : null,
+          stockDraft,
+          stockLimit,
           supportedFields: inventoryItem.supportedFields
         };
       }
@@ -41237,6 +41612,8 @@ function createShopInventoryDraftRows(
         parsedItemId === null ? undefined : itemOptionsById.get(parsedItemId);
       const price = getShopOptionPrice(itemOption, shop.globalPriceField) ?? 0;
       const priceDraft = addedRow.priceDraft ?? price.toString();
+      const stockLimit = itemOption?.stockLimit ?? null;
+      const stockDraft = addedRow.stockDraft ?? stockLimit?.toString() ?? '';
 
       return {
         canEditPrice: true,
@@ -41253,12 +41630,14 @@ function createShopInventoryDraftRows(
         key,
         parsedItemId,
         parsedPrice: parseEditableIntegerDraft(priceDraft),
+        parsedStock: parseEditableIntegerDraft(stockDraft),
         price,
         priceDraft,
         priceField: null,
         rowId: key,
         sourceSlot: null,
-        stockLimit: null,
+        stockDraft,
+        stockLimit,
         supportedFields: []
       };
     })
@@ -41326,7 +41705,7 @@ function removeShopInventoryDraftRow(
   };
 }
 
-function clearShopInventoryRowPriceDraft(
+function clearShopInventoryRowItemFieldDrafts(
   draft: ShopInventoryDraftState,
   row: ShopInventoryDraftRow
 ): ShopInventoryDraftState {
@@ -41334,21 +41713,26 @@ function clearShopInventoryRowPriceDraft(
     ...draft,
     priceDrafts: {
       ...draft.priceDrafts
+    },
+    stockDrafts: {
+      ...draft.stockDrafts
     }
   };
 
   if (row.sourceSlot !== null) {
     delete nextDraft.priceDrafts[row.sourceSlot];
+    delete nextDraft.stockDrafts[row.sourceSlot];
   }
 
   if (row.draftId !== null) {
     nextDraft.addedRows = nextDraft.addedRows.map((draftRow) => {
-      if (draftRow.draftId !== row.draftId || draftRow.priceDraft === undefined) {
+      if (draftRow.draftId !== row.draftId) {
         return draftRow;
       }
 
       const nextRow = { ...draftRow };
       delete nextRow.priceDraft;
+      delete nextRow.stockDraft;
       return nextRow;
     });
   }
@@ -41391,22 +41775,57 @@ function setShopItemPriceDraft(
   };
 }
 
-function overlayShopWorkflowItemPrices(
-  workflow: ShopsWorkflow,
-  priceChanges: ShopItemPriceChange[]
-): ShopsWorkflow {
-  const pricesByFieldAndItemId = new Map<string, Map<number, number>>();
-  for (const change of priceChanges) {
-    const price = Number.parseInt(change.value, 10);
-    if (Number.isInteger(price)) {
-      const pricesByItemId =
-        pricesByFieldAndItemId.get(change.field) ?? new Map<number, number>();
-      pricesByItemId.set(change.itemId, price);
-      pricesByFieldAndItemId.set(change.field, pricesByItemId);
+function setShopItemStockDraft(
+  draft: ShopInventoryDraftState,
+  rows: ShopInventoryDraftRow[],
+  targetRow: ShopInventoryDraftRow,
+  value: string
+): ShopInventoryDraftState {
+  if (targetRow.parsedItemId === null) {
+    return draft;
+  }
+
+  const matchingDraftIds = new Set<number>();
+  const nextStockDrafts = { ...draft.stockDrafts };
+  for (const row of rows) {
+    if (row.parsedItemId !== targetRow.parsedItemId) {
+      continue;
+    }
+
+    if (row.sourceSlot !== null) {
+      nextStockDrafts[row.sourceSlot] = value;
+    }
+
+    if (row.draftId !== null) {
+      matchingDraftIds.add(row.draftId);
     }
   }
 
-  if (pricesByFieldAndItemId.size === 0) {
+  return {
+    ...draft,
+    addedRows: draft.addedRows.map((row) =>
+      matchingDraftIds.has(row.draftId) ? { ...row, stockDraft: value } : row
+    ),
+    stockDrafts: nextStockDrafts
+  };
+}
+
+function overlayShopWorkflowItemFields(
+  workflow: ShopsWorkflow,
+  itemFieldChanges: ShopItemFieldChange[]
+): ShopsWorkflow {
+  const valuesByFieldAndItemId = new Map<string, Map<number, number>>();
+  for (const change of itemFieldChanges) {
+    const value = Number.parseInt(change.value, 10);
+    if (Number.isInteger(value)) {
+      const valuesByItemId =
+        valuesByFieldAndItemId.get(change.field) ?? new Map<number, number>();
+      valuesByItemId.set(change.itemId, value);
+      valuesByFieldAndItemId.set(change.field, valuesByItemId);
+    }
+  }
+
+  if (valuesByFieldAndItemId.size === 0) {
     return workflow;
   }
 
@@ -41419,20 +41838,25 @@ function overlayShopWorkflowItemPrices(
             ...field,
             options: field.options.map((option) => {
               let nextOption = option;
-              for (const [priceField, pricesByItemId] of pricesByFieldAndItemId) {
-                const price = pricesByItemId.get(option.value);
-                if (price === undefined) {
+              for (const [itemField, valuesByItemId] of valuesByFieldAndItemId) {
+                const value = valuesByItemId.get(option.value);
+                if (value === undefined) {
                   continue;
                 }
 
-                nextOption = {
-                  ...nextOption,
-                  price: priceField === buyPriceFieldName ? price : nextOption.price,
-                  prices: {
-                    ...nextOption.prices,
-                    [priceField]: price
-                  }
-                };
+                nextOption = itemField === itemStackCapFieldName
+                  ? { ...nextOption, stockLimit: value }
+                  : {
+                      ...nextOption,
+                      price:
+                        itemField === buyPriceFieldName || itemField === zaItemPriceFieldName
+                          ? value
+                          : nextOption.price,
+                      prices: {
+                        ...nextOption.prices,
+                        [itemField]: value
+                      }
+                    };
               }
 
               return nextOption;
@@ -41445,16 +41869,44 @@ function overlayShopWorkflowItemPrices(
         const price =
           shop.globalPriceField === null
             ? undefined
-            : pricesByFieldAndItemId.get(shop.globalPriceField)?.get(item.itemId);
-        return price !== undefined
+            : valuesByFieldAndItemId.get(shop.globalPriceField)?.get(item.itemId);
+        const stockLimit =
+          shop.globalStockField === null
+            ? undefined
+            : valuesByFieldAndItemId.get(shop.globalStockField)?.get(item.itemId);
+        return price !== undefined || stockLimit !== undefined
           ? {
               ...item,
-              price
+              ...(price === undefined ? {} : { price }),
+              ...(stockLimit === undefined ? {} : { stockLimit })
             }
           : item;
       })
     }))
   };
+}
+
+function overlayShopWorkflowItems(
+  shopsWorkflow: ShopsWorkflow,
+  itemsWorkflow: ItemsWorkflow
+): ShopsWorkflow {
+  const itemFieldChanges: ShopItemFieldChange[] = [];
+  for (const item of itemsWorkflow.items) {
+    const fieldValues: Array<[string, number | null | undefined]> = [
+      [buyPriceFieldName, item.buyPrice],
+      [zaItemPriceFieldName, item.buyPrice],
+      [zaMegaShardPriceFieldName, item.wattsPrice],
+      [zaColorfulScrewPriceFieldName, item.alternatePrice],
+      [itemStackCapFieldName, item.fieldValues?.[itemStackCapFieldName]]
+    ];
+    for (const [field, value] of fieldValues) {
+      if (value !== null && value !== undefined) {
+        itemFieldChanges.push({ field, itemId: item.itemId, value: value.toString() });
+      }
+    }
+  }
+
+  return overlayShopWorkflowItemFields(shopsWorkflow, itemFieldChanges);
 }
 
 function isBadgeShopRecord(shop: ShopRecord) {
@@ -41477,7 +41929,7 @@ type EncountersSectionProps = {
     input: EncounterClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
   onSearchChange: (searchText: string) => void;
-  onSelectSlot: (slot: number | null) => void;
+  onSelectSlot: (slot: number | null, retainInRecordTab?: boolean) => void;
   onSelectTable: (tableId: string | null) => void;
   onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
   onStartEditSession: () => void;
@@ -41567,13 +42019,13 @@ function EncountersSection({
 
   useEffect(() => {
     if (!selectedTable) {
-      onSelectSlot(null);
+      onSelectSlot(null, false);
       return;
     }
 
     const hasSelectedSlot = selectedTable.slots.some((slot) => slot.slot === selectedSlot);
     if (!hasSelectedSlot) {
-      onSelectSlot(selectedTable.slots[0]?.slot ?? null);
+      onSelectSlot(selectedTable.slots[0]?.slot ?? null, false);
     }
   }, [onSelectSlot, selectedSlot, selectedTable?.slots, selectedTable?.tableId]);
 
@@ -48886,29 +49338,15 @@ function FlagworkSaveSection({
   const filteredFlags = filterFlagRecords(workflow?.flags ?? [], searchText);
   const filteredSaveBlocks = filterSaveBlockRecords(workflow?.saveBlocks ?? [], searchText);
   const selectedFlag =
-    filteredFlags.find((flag) => flag.flagId === selectedFlagId) ??
     workflow?.flags.find((flag) => flag.flagId === selectedFlagId) ??
     filteredFlags[0] ??
     workflow?.flags[0] ??
     null;
   const selectedSaveBlock =
-    filteredSaveBlocks.find((saveBlock) => saveBlock.blockId === selectedSaveBlockId) ??
     workflow?.saveBlocks.find((saveBlock) => saveBlock.blockId === selectedSaveBlockId) ??
     filteredSaveBlocks[0] ??
     workflow?.saveBlocks[0] ??
     null;
-
-  useEffect(() => {
-    if (selectedFlag && selectedFlag.flagId !== selectedFlagId) {
-      onSelectFlag(selectedFlag.flagId);
-    }
-  }, [onSelectFlag, selectedFlag?.flagId, selectedFlagId]);
-
-  useEffect(() => {
-    if (selectedSaveBlock && selectedSaveBlock.blockId !== selectedSaveBlockId) {
-      onSelectSaveBlock(selectedSaveBlock.blockId);
-    }
-  }, [onSelectSaveBlock, selectedSaveBlock?.blockId, selectedSaveBlockId]);
 
   return (
     <>
@@ -50677,15 +51115,24 @@ function ExeFsPatchSection({
   const filteredChecks = filterExeFsPatchCheckRecords(workflow?.checks ?? [], searchText);
   const filteredSegments = filterExeFsSegmentRecords(workflow?.segments ?? [], searchText);
   const selectedPatch =
-    filteredPatches.find((patch) => patch.patchId === selectedPatchId) ??
+    workflow?.patches.find((patch) => patch.patchId === selectedPatchId) ??
     filteredPatches[0] ??
+    workflow?.patches[0] ??
     null;
   const checksForSelectedPatch = selectedPatch
     ? filteredChecks.filter((check) => check.patchId === selectedPatch.patchId)
     : filteredChecks;
+  const explicitlySelectedCheck = workflow?.checks.find(
+    (check) => check.checkId === selectedCheckId
+  );
   const selectedCheck =
-    checksForSelectedPatch.find((check) => check.checkId === selectedCheckId) ??
+    (explicitlySelectedCheck?.patchId === selectedPatch?.patchId
+      ? explicitlySelectedCheck
+      : null) ??
     checksForSelectedPatch[0] ??
+    (selectedPatch
+      ? workflow?.checks.find((check) => check.patchId === selectedPatch.patchId)
+      : workflow?.checks[0]) ??
     null;
   const selectedCheckPatchName = selectedCheck
     ? workflow?.patches.find((patch) => patch.patchId === selectedCheck.patchId)?.name ??
@@ -50696,20 +51143,6 @@ function ExeFsPatchSection({
   const canStageWorkflow =
     workflow?.summary.availability === 'available' &&
     !workflow.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
-
-  useEffect(() => {
-    const nextPatchId = selectedPatch?.patchId ?? null;
-    if (nextPatchId !== selectedPatchId) {
-      onSelectPatch(nextPatchId);
-    }
-  }, [onSelectPatch, selectedPatch?.patchId, selectedPatchId]);
-
-  useEffect(() => {
-    const nextCheckId = selectedCheck?.checkId ?? null;
-    if (nextCheckId !== selectedCheckId) {
-      onSelectCheck(nextCheckId);
-    }
-  }, [onSelectCheck, selectedCheck?.checkId, selectedCheckId]);
 
   return (
     <>
@@ -50814,10 +51247,7 @@ function ExeFsPatchSection({
                       selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
                     }`}
                     key={check.checkId}
-                    onClick={() => {
-                      onSelectCheck(check.checkId);
-                      onSelectPatch(check.patchId);
-                    }}
+                    onClick={() => onSelectCheck(check.checkId)}
                     role="row"
                     type="button"
                   >
@@ -54519,11 +54949,21 @@ type PendingEditContext = {
   trainersWorkflow: TrainersWorkflow | null;
 };
 
+type SettingsTabId =
+  | 'updates'
+  | 'layout'
+  | 'themes'
+  | 'cache'
+  | 'analysis'
+  | 'language'
+  | 'personalization';
+
 function SettingsSection({
   analysisLoadingSettings,
   appVersion,
   availableUpdateKind,
   personalizationSettings,
+  themeSettings,
   editorLayout,
   hasSvCacheRequestError,
   isSvCacheClearing,
@@ -54548,6 +54988,7 @@ function SettingsSection({
   appVersion: string;
   availableUpdateKind: AvailableUpdate['kind'] | null;
   personalizationSettings: ReactNode;
+  themeSettings: ReactNode;
   editorLayout: EditorLayoutPreference;
   hasSvCacheRequestError: boolean;
   isSvCacheClearing: boolean;
@@ -54569,6 +55010,7 @@ function SettingsSection({
   svCacheStatus: TrinityCacheStatus | null;
 }) {
   const { formatLocale, interfaceLocale, t, translateLiteral } = useLocalization();
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('updates');
   usePublishCommonEditorError({
     domain: 'settings',
     field: 'cache',
@@ -54605,13 +55047,36 @@ function SettingsSection({
   const cacheModeLabel = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.modeLabel')
     : isPokemonLegendsZAGame(selectedGame)
-      ? 'Z-A cache mode'
-      : 'S/V cache mode';
+      ? translateLiteral('Z-A cache mode')
+      : translateLiteral('S/V cache mode');
   const cacheDescription = isSwordShieldGame(selectedGame)
     ? t('settings.cache.swsh.description')
     : isPokemonLegendsZAGame(selectedGame)
-      ? 'Controls how aggressively Z-A Trinity data is cached between editor loads.'
-      : 'Controls how aggressively S/V Trinity data is cached between editor loads.';
+      ? translateLiteral('Controls how aggressively Z-A Trinity data is cached between editor loads.')
+      : translateLiteral('Controls how aggressively S/V Trinity data is cached between editor loads.');
+  const effectiveActiveSettingsTab = activeSettingsTab === 'cache' && !canShowSvCacheSettings
+    ? 'updates'
+    : activeSettingsTab;
+  const settingsTabs: readonly {
+    id: SettingsTabId;
+    icon: LucideIcon;
+    label: string;
+  }[] = [
+    { id: 'updates', icon: RefreshCw, label: t('settings.tabs.updates') },
+    { id: 'layout', icon: Table2, label: t('settings.layout.title') },
+    { id: 'themes', icon: Palette, label: t('settings.themes.title') },
+    ...(canShowSvCacheSettings
+      ? [{ id: 'cache' as const, icon: Layers, label: cacheTitle }]
+      : []),
+    { id: 'analysis', icon: Activity, label: t('analysisLoading.title') },
+    { id: 'language', icon: Languages, label: t('settings.language.title') },
+    { id: 'personalization', icon: Sparkles, label: t('settings.tabs.personalization') }
+  ];
+  useEffect(() => {
+    if (activeSettingsTab === 'cache' && !canShowSvCacheSettings) {
+      setActiveSettingsTab('updates');
+    }
+  }, [activeSettingsTab, canShowSvCacheSettings]);
   const swShCacheModeDescriptionById: Record<TrinityCacheMode, string> = {
     balanced: t('settings.cache.swsh.mode.balanced.description'),
     minimal: t('settings.cache.swsh.mode.minimal.description'),
@@ -54650,7 +55115,63 @@ function SettingsSection({
         <h2 id="settings-heading">Settings</h2>
       </div>
 
-      <div className="settings-summary">
+      <div
+        aria-label={t('settings.tabs.label')}
+        className="settings-tabs"
+        role="tablist"
+      >
+        {settingsTabs.map((tab) => {
+          const TabIcon = tab.icon;
+          const isSelected = effectiveActiveSettingsTab === tab.id;
+          return (
+            <button
+              aria-controls={`settings-tabpanel-${tab.id}`}
+              aria-selected={isSelected}
+              className={`settings-tab${isSelected ? ' is-selected' : ''}`}
+              id={`settings-tab-${tab.id}`}
+              key={tab.id}
+              onClick={() => setActiveSettingsTab(tab.id)}
+              onKeyDown={(event) => {
+                if (!['Home', 'End', 'ArrowRight', 'ArrowLeft'].includes(event.key)) return;
+                event.preventDefault();
+                const currentIndex = settingsTabs.findIndex((candidate) => candidate.id === tab.id);
+                const lastIndex = settingsTabs.length - 1;
+                const nextIndex = event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? lastIndex
+                    : event.key === 'ArrowRight'
+                      ? (currentIndex + 1) % settingsTabs.length
+                      : event.key === 'ArrowLeft'
+                        ? (currentIndex - 1 + settingsTabs.length) % settingsTabs.length
+                        : currentIndex;
+                if (nextIndex === currentIndex) return;
+                const nextTab = settingsTabs[nextIndex];
+                if (!nextTab) return;
+                setActiveSettingsTab(nextTab.id);
+                window.requestAnimationFrame(() => {
+                  document.getElementById(`settings-tab-${nextTab.id}`)?.focus();
+                });
+              }}
+              role="tab"
+              tabIndex={isSelected ? 0 : -1}
+              type="button"
+            >
+              <TabIcon aria-hidden="true" size={18} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {effectiveActiveSettingsTab === 'updates' ? (
+        <div
+          aria-labelledby="settings-tab-updates"
+          className="settings-tab-panel"
+          id="settings-tabpanel-updates"
+          role="tabpanel"
+        >
+          <div className="settings-summary">
         <Metric label="Installed version" value={`v${appVersion}`} />
         <button
           className="primary-button"
@@ -54709,8 +55230,17 @@ function SettingsSection({
             ...(status.kind === 'restartRequired' ? [status.detail] : [])
           ]}
         />
-      </div>
+          </div>
+        </div>
+      ) : null}
 
+      {effectiveActiveSettingsTab === 'layout' ? (
+        <div
+          aria-labelledby="settings-tab-layout"
+          className="settings-tab-panel"
+          id="settings-tabpanel-layout"
+          role="tabpanel"
+        >
       <section aria-labelledby="layout-settings-heading" className="settings-subsection">
         <div className="settings-subsection-heading">
           <Table2 aria-hidden="true" size={18} />
@@ -54759,9 +55289,28 @@ function SettingsSection({
           })}
         </div>
       </section>
+        </div>
+      ) : null}
 
-      {canShowSvCacheSettings ? (
-        <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
+      {effectiveActiveSettingsTab === 'themes' ? (
+        <div
+          aria-labelledby="settings-tab-themes"
+          className="settings-tab-panel"
+          id="settings-tabpanel-themes"
+          role="tabpanel"
+        >
+          {themeSettings}
+        </div>
+      ) : null}
+
+      {canShowSvCacheSettings && effectiveActiveSettingsTab === 'cache' ? (
+        <div
+          aria-labelledby="settings-tab-cache"
+          className="settings-tab-panel"
+          id="settings-tabpanel-cache"
+          role="tabpanel"
+        >
+          <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
           <div className="settings-subsection-heading">
             <Layers aria-hidden="true" size={18} />
             <div>
@@ -54793,8 +55342,8 @@ function SettingsSection({
                   type="button"
                 >
                   <span>
-                    {option.label}
-                    {option.recommended ? <small>Recommended</small> : null}
+                    {translateLiteral(option.label)}
+                    {option.recommended ? <small>{t('analysisLoading.recommended')}</small> : null}
                     {isSelected ? (
                       <small className="sv-cache-mode-selected-label">
                         {t('settings.language.selected')}
@@ -54804,7 +55353,7 @@ function SettingsSection({
                   <p>
                     {isSwordShieldGame(selectedGame)
                       ? swShCacheModeDescriptionById[option.id]
-                      : option.description}
+                      : translateLiteral(option.description)}
                   </p>
                 </button>
               );
@@ -54887,10 +55436,27 @@ function SettingsSection({
             </button>
           </div>
         </section>
+        </div>
       ) : null}
 
-      {analysisLoadingSettings}
+      {effectiveActiveSettingsTab === 'analysis' ? (
+        <div
+          aria-labelledby="settings-tab-analysis"
+          className="settings-tab-panel"
+          id="settings-tabpanel-analysis"
+          role="tabpanel"
+        >
+          {analysisLoadingSettings}
+        </div>
+      ) : null}
 
+      {effectiveActiveSettingsTab === 'language' ? (
+        <div
+          aria-labelledby="settings-tab-language"
+          className="settings-tab-panel"
+          id="settings-tabpanel-language"
+          role="tabpanel"
+        >
       <section aria-labelledby="language-settings-heading" className="settings-subsection">
         <div className="settings-subsection-heading">
           <Languages aria-hidden="true" size={18} />
@@ -54935,7 +55501,18 @@ function SettingsSection({
           })}
         </div>
       </section>
-      {personalizationSettings}
+        </div>
+      ) : null}
+      {effectiveActiveSettingsTab === 'personalization' ? (
+        <div
+          aria-labelledby="settings-tab-personalization"
+          className="settings-tab-panel"
+          id="settings-tabpanel-personalization"
+          role="tabpanel"
+        >
+          {personalizationSettings}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -61243,7 +61820,7 @@ type ShopInventoryDraftChange = {
   value: string;
 };
 
-type ShopItemPriceChange = {
+type ShopItemFieldChange = {
   field: string;
   itemId: number;
   value: string;
@@ -61252,7 +61829,12 @@ type ShopItemPriceChange = {
 type ShopInventoryRecord = ShopRecord['inventory'][number];
 
 type ShopInventoryDraftState = {
-  addedRows: Array<{ draftId: number; itemIdDraft: string; priceDraft?: string }>;
+  addedRows: Array<{
+    draftId: number;
+    itemIdDraft: string;
+    priceDraft?: string;
+    stockDraft?: string;
+  }>;
   fieldDrafts: Record<number, Record<string, string>>;
   itemIdDrafts: Record<number, string>;
   newItemIdDraft: string;
@@ -61260,6 +61842,7 @@ type ShopInventoryDraftState = {
   priceDrafts: Record<number, string>;
   rowOrder: string[];
   removedSlots: number[];
+  stockDrafts: Record<number, string>;
 };
 
 type ShopInventoryDraftRow = {
@@ -61276,12 +61859,14 @@ type ShopInventoryDraftRow = {
   key: string;
   parsedItemId: number | null;
   parsedPrice: number | null;
+  parsedStock: number | null;
   price: number;
   priceDraft: string;
   priceField: string | null;
   rowId: string;
   sourceSlot: number | null;
   stockLimit: number | null;
+  stockDraft: string;
   supportedFields: string[];
 };
 
@@ -65420,6 +66005,71 @@ function hasValidPokemonLegendsZASupportFolder(health: ProjectHealth) {
   );
 }
 
+function resolveProjectAnalysisPaths(
+  paths: OutputSafetyScope['paths'],
+  health: ProjectHealth | null
+): OutputSafetyScope['paths'] {
+  if (!health) {
+    return paths;
+  }
+
+  const validation = (role: ProjectHealth['paths'][number]['role']) =>
+    health.paths.find((path) => path.role === role);
+  const outputRoot = validation('outputRoot');
+  return {
+    ...paths,
+    baseExeFsPath: validation('baseExeFs')?.path ?? null,
+    baseRomFsPath: validation('baseRomFs')?.path ?? null,
+    outputRootPath:
+      health.canOpenEditableWorkflows && outputRoot?.status === 'valid'
+        ? outputRoot.path
+        : null,
+    pokemonLegendsZASupportFolderPath:
+      validation('pokemonLegendsZASupportFolder')?.path ?? null,
+    saveFilePath: validation('saveFile')?.path ?? null,
+    scarletVioletSupportFolderPath:
+      validation('scarletVioletSupportFolder')?.path ?? null
+  };
+}
+
+function isValidatedOutputSafetyScope(
+  scope: OutputSafetyScope | null,
+  health: ProjectHealth | null
+) {
+  if (!scope || !health?.canOpenEditableWorkflows) {
+    return false;
+  }
+
+  const pathMatchesValidation = (
+    role: ProjectHealth['paths'][number]['role'],
+    configuredPath: string | null | undefined,
+    requireValid = false
+  ) => {
+    const validation = health.paths.find((path) => path.role === role);
+    if (!validation || (requireValid && validation.status !== 'valid')) {
+      return false;
+    }
+
+    const configured = configuredPath?.trim() || null;
+    const validated = validation.path?.trim() || null;
+    return configured === null || validated === null
+      ? configured === validated
+      : pathsEqual(configured, validated);
+  };
+
+  return pathMatchesValidation('baseRomFs', scope.paths.baseRomFsPath, true)
+    && pathMatchesValidation('baseExeFs', scope.paths.baseExeFsPath, true)
+    && pathMatchesValidation('outputRoot', scope.paths.outputRootPath, true)
+    && pathMatchesValidation(
+      'scarletVioletSupportFolder',
+      scope.paths.scarletVioletSupportFolderPath
+    )
+    && pathMatchesValidation(
+      'pokemonLegendsZASupportFolder',
+      scope.paths.pokemonLegendsZASupportFolderPath
+    );
+}
+
 function hasValidTrinitySupportFolder(
   game: ProjectGame | null | undefined,
   health: ProjectHealth
@@ -65946,19 +66596,335 @@ function scopedWorkspaceLocationsEqual(
   return workspaceScopedLocationKey(left) === workspaceScopedLocationKey(right);
 }
 
+type WorkspaceRecordLabelSources = Readonly<{
+  behaviorWorkflow: BehaviorWorkflow | null;
+  encountersWorkflow: EncountersWorkflow | null;
+  exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
+  flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
+  itemsWorkflow: ItemsWorkflow | null;
+  movesWorkflow: MovesWorkflow | null;
+  placementWorkflow: PlacementWorkflow | null;
+  pokemonWorkflow: PokemonWorkflow | null;
+  raidBattlesWorkflow: RaidBattlesWorkflow | null;
+  raidBonusRewardsWorkflow: RaidRewardsWorkflow | null;
+  raidRewardsWorkflow: RaidRewardsWorkflow | null;
+  royalCandyWorkflow: RoyalCandyWorkflow | null;
+  shopsWorkflow: ShopsWorkflow | null;
+  spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
+  startingItemsWorkflow: StartingItemsWorkflow | null;
+  teraRaidsWorkflow: TeraRaidsWorkflow | null;
+  textWorkflow: TextWorkflow | null;
+  trainersWorkflow: TrainersWorkflow | null;
+}>;
+
+function resolveWorkspaceLocationLabel(
+  location: WorkbenchLocation,
+  sources: WorkspaceRecordLabelSources,
+  translate: (key: string) => string
+) {
+  const fallback = {
+    label: translate(getWorkbenchSectionLabelKey(location.section)),
+    labelIsRawData: false,
+    summary: null,
+    summaryIsRawData: false
+  };
+  const selection = parseStableEntitySelection(location);
+  if (!selection) {
+    return fallback;
+  }
+
+  const { recordKind, value } = selection;
+  let label: string | null | undefined;
+  let labelIsRawData = true;
+  let summaryParts: Array<string | null | undefined> = [];
+  switch (selection.section) {
+    case 'items': {
+      const itemRecord = typeof value === 'number'
+        ? sources.itemsWorkflow?.items.find((candidate) => candidate.itemId === value)
+        : null;
+      label = itemRecord?.name;
+      summaryParts = [itemRecord?.category];
+      break;
+    }
+    case 'pokemon': {
+      const pokemon = typeof value === 'number'
+        ? sources.pokemonWorkflow?.pokemon.find((candidate) => candidate.personalId === value)
+        : null;
+      const editorFamily: EditorUiFamily = isPokemonLegendsZAGame(location.game)
+        ? 'za'
+        : isScarletVioletGame(location.game)
+          ? 'sv'
+          : 'swsh';
+      label = pokemon ? formatPokemonRecordName(pokemon, editorFamily) : null;
+      const evolutionSlot = parseWorkspaceSubrecordIndex(
+        selection.subrecordId,
+        'evolution-slot:'
+      );
+      const evolution = evolutionSlot === null
+        ? null
+        : pokemon?.evolutions.find((candidate) => candidate.slot === evolutionSlot);
+      const evolutionTarget = evolution
+        ? sources.pokemonWorkflow?.pokemon.find(
+            (candidate) =>
+              candidate.speciesId === evolution.species && candidate.form === evolution.form
+          )
+        : null;
+      summaryParts = [
+        pokemon?.formLabel,
+        formatWorkspaceDataLabel(pokemon?.type1, pokemon?.type2),
+        evolutionTarget ? formatPokemonRecordName(evolutionTarget, editorFamily) : null,
+        evolution?.methodName
+      ];
+      break;
+    }
+    case 'moves': {
+      const move = typeof value === 'number'
+        ? sources.movesWorkflow?.moves.find((candidate) => candidate.moveId === value)
+        : null;
+      label = move?.name;
+      summaryParts = [move?.typeName, move?.categoryName];
+      break;
+    }
+    case 'text': {
+      const entry = typeof value === 'string'
+        ? sources.textWorkflow?.entries.find((candidate) => candidate.textKey === value)
+        : null;
+      label = entry?.label || entry?.messageKey;
+      summaryParts = [entry?.language, entry?.messageKey];
+      break;
+    }
+    case 'trainers': {
+      const trainer = typeof value === 'number'
+        ? sources.trainersWorkflow?.trainers.find(
+            (candidate) => candidate.trainerId === value
+          )
+        : null;
+      label = trainer?.name || trainer?.trainerClass;
+      const partySlot = parseWorkspaceSubrecordIndex(selection.subrecordId, 'party-slot:');
+      const partyPokemon = partySlot === null
+        ? null
+        : trainer?.team.find((candidate) => candidate.slot === partySlot);
+      summaryParts = [partyPokemon?.species, trainer?.trainerClass, trainer?.location];
+      break;
+    }
+    case 'shops': {
+      const shop = typeof value === 'string'
+        ? sources.shopsWorkflow?.shops.find((candidate) => candidate.shopId === value)
+        : null;
+      label = formatWorkspaceDataLabel(shop?.name, shop?.inventoryLabel);
+      summaryParts = [shop?.location, shop?.kind, shop?.currency, shop?.inventorySummary];
+      break;
+    }
+    case 'encounters': {
+      const table = typeof value === 'string'
+        ? sources.encountersWorkflow?.tables.find((candidate) => candidate.tableId === value)
+        : null;
+      label = formatWorkspaceDataLabel(
+        table?.location || table?.area,
+        table?.tableLabel
+      );
+      const encounterSlot = parseWorkspaceSubrecordIndex(selection.subrecordId, 'slot:');
+      const slot = encounterSlot === null
+        ? null
+        : table?.slots.find((candidate) => candidate.slot === encounterSlot);
+      summaryParts = [
+        slot?.species,
+        table?.tableDetails,
+        table?.locationDetails,
+        table?.encounterType,
+        table?.gameVersion
+      ];
+      break;
+    }
+    case 'teraRaids': {
+      const raid = typeof value === 'string'
+        ? sources.teraRaidsWorkflow?.raids.find((candidate) => candidate.recordId === value)
+        : null;
+      label = formatWorkspaceDataLabel(raid?.species, raid?.starLabel);
+      summaryParts = [raid?.region, raid?.versionLabel, raid?.teraTypeLabel];
+      break;
+    }
+    case 'raidBattles': {
+      const table = typeof value === 'string'
+        ? sources.raidBattlesWorkflow?.tables.find((candidate) => candidate.tableId === value)
+        : null;
+      label = table?.displayName;
+      summaryParts = [table?.gameVersion, table?.denId];
+      break;
+    }
+    case 'raidRewards':
+    case 'raidBonusRewards': {
+      const workflow = selection.section === 'raidRewards'
+        ? sources.raidRewardsWorkflow
+        : sources.raidBonusRewardsWorkflow;
+      const table = typeof value === 'string'
+        ? workflow?.tables.find((candidate) => candidate.tableId === value)
+        : null;
+      label = table?.displayName;
+      summaryParts = [table?.rewardKindLabel, table?.gameVersion, table?.denId];
+      break;
+    }
+    case 'placement': {
+      const placedObject = typeof value === 'string'
+        ? sources.placementWorkflow?.objects.find((candidate) => candidate.objectId === value)
+        : null;
+      label =
+        placedObject?.label ||
+        placedObject?.itemName ||
+        placedObject?.categoryLabel ||
+        placedObject?.objectType;
+      summaryParts = [
+        placedObject?.map,
+        placedObject?.categoryLabel,
+        placedObject?.objectType,
+        placedObject?.previewText
+      ];
+      break;
+    }
+    case 'behavior': {
+      const entry = typeof value === 'string'
+        ? sources.behaviorWorkflow?.entries.find((candidate) => candidate.entryId === value)
+        : null;
+      label = entry?.label || formatWorkspaceDataLabel(entry?.speciesName, entry?.behaviorLabel);
+      summaryParts = [entry?.speciesName, entry?.behaviorLabel, entry?.modelPart];
+      break;
+    }
+    case 'flagworkSave': {
+      if (typeof value !== 'string') {
+        break;
+      }
+      const flag = recordKind === 'flag'
+        ? sources.flagworkSaveWorkflow?.flags.find((candidate) => candidate.flagId === value)
+        : null;
+      const saveBlock = recordKind === 'save-block'
+        ? sources.flagworkSaveWorkflow?.saveBlocks.find(
+            (candidate) => candidate.blockId === value
+          )
+        : null;
+      label = flag?.name || saveBlock?.name;
+      summaryParts = flag
+        ? [flag.category, flag.kind, flag.description]
+        : [saveBlock?.kind, saveBlock?.valueKind, saveBlock?.description];
+      break;
+    }
+    case 'exefsPatches': {
+      if (typeof value !== 'string') {
+        break;
+      }
+      const check = recordKind === 'exefs-check'
+        ? sources.exeFsPatchWorkflow?.checks.find(
+            (candidate) => candidate.checkId === value
+          )
+        : null;
+      const patch = recordKind === 'exefs-patch'
+        ? sources.exeFsPatchWorkflow?.patches.find(
+            (candidate) => candidate.patchId === value
+          )
+        : null;
+      label = check?.name || patch?.name;
+      summaryParts = check
+        ? [check.status, check.area, check.notes]
+        : [patch?.status, patch?.patchKind, patch?.targetFile, patch?.description];
+      break;
+    }
+    case 'royalCandy': {
+      if (typeof value !== 'string') {
+        break;
+      }
+      const check = recordKind === 'royal-candy-check'
+        ? sources.royalCandyWorkflow?.checks.find(
+            (candidate) => candidate.checkId === value
+          )
+        : null;
+      const workflow = recordKind === 'royal-candy-workflow'
+        ? sources.royalCandyWorkflow?.workflows.find(
+            (candidate) => candidate.workflowId === value
+          )
+        : check
+          ? sources.royalCandyWorkflow?.workflows.find(
+              (candidate) => candidate.workflowId === check.workflowId
+            )
+          : null;
+      label = check
+        ? formatWorkspaceDataLabel(workflow?.name, check.area)
+        : workflow?.name;
+      summaryParts = check
+        ? [check.target, check.status, check.message]
+        : [workflow?.status, workflow?.target, workflow?.description];
+      break;
+    }
+    case 'startingItems': {
+      const grant = typeof value === 'number'
+        ? sources.startingItemsWorkflow?.grants.find((candidate) => candidate.slot === value)
+        : null;
+      label = grant?.itemName?.trim() || `${fallback.label} · ${String(value)}`;
+      labelIsRawData = Boolean(grant?.itemName?.trim());
+      summaryParts = [grant?.owner, grant?.status];
+      break;
+    }
+    case 'spreadsheetImport': {
+      const profile = typeof value === 'string'
+        ? sources.spreadsheetImportWorkflow?.profiles.find(
+            (candidate) => candidate.profileId === value
+          )
+        : null;
+      label = profile?.name;
+      summaryParts = [
+        profile?.targetWorkflow,
+        profile?.sourceKind,
+        profile?.status,
+        profile?.description
+      ];
+      break;
+    }
+  }
+
+  const normalizedLabel = label?.trim();
+  if (!normalizedLabel) {
+    return fallback;
+  }
+  const summary = formatWorkspaceDataLabel(
+    ...summaryParts.filter((part) => part?.trim() !== normalizedLabel)
+  );
+  return {
+    label: normalizedLabel,
+    labelIsRawData,
+    summary,
+    summaryIsRawData: summary !== null
+  };
+}
+
+function formatWorkspaceDataLabel(...values: Array<string | null | undefined>) {
+  const labels: string[] = [];
+  for (const value of values) {
+    const normalizedValue = value?.trim();
+    if (normalizedValue && !labels.includes(normalizedValue)) {
+      labels.push(normalizedValue);
+    }
+  }
+  return labels.length > 0 ? labels.join(' · ') : null;
+}
+
+function parseWorkspaceSubrecordIndex(subrecordId: string | null, prefix: string) {
+  if (!subrecordId?.startsWith(prefix)) {
+    return null;
+  }
+  const value = Number(subrecordId.slice(prefix.length));
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
 function createWorkspaceTargetViewModel(
   location: WorkbenchLocation,
+  sources: WorkspaceRecordLabelSources,
   translate: (key: string) => string
 ): WorkspaceTargetViewModel {
+  const resolvedLabel = resolveWorkspaceLocationLabel(location, sources, translate);
   return {
     description: location.entity
       ? translate(getWorkbenchSectionLabelKey(location.section))
       : null,
     id: serializeWorkbenchLocation(location),
-    label: location.entity
-      ? location.entity.recordId
-      : translate(getWorkbenchSectionLabelKey(location.section)),
-    labelIsRawData: Boolean(location.entity),
+    ...resolvedLabel,
     location
   };
 }

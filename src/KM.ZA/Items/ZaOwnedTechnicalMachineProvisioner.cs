@@ -5,26 +5,25 @@ using KM.ZA.Data;
 
 namespace KM.ZA.Items;
 
-internal sealed record ZaTestTechnicalMachineProvisioningResult(
+internal sealed record ZaOwnedTechnicalMachineProvisioningResult(
     bool IsAvailable,
     bool Added,
     string? UnavailableReason = null);
 
 /// <summary>
-/// Owns the deliberately narrow unused-TM extension. The historical type name is
-/// retained because Pokemon and Shops use the TM162 default-provisioning contract.
-/// Items additionally use the generalized slot APIs for TM162 through TM201.
+/// Owns validation and materialization for KM Editor's deliberately narrow
+/// unused-TM extension. Projected slots TM162 through TM201 all begin unassigned.
 /// </summary>
-internal static class ZaTestTechnicalMachineProvisioner
+internal static class ZaOwnedTechnicalMachineProvisioner
 {
-    public static ZaTestTechnicalMachineProvisioningResult ProjectAvailableSlots(
+    public static ZaOwnedTechnicalMachineProvisioningResult ProjectAvailableSlots(
         IList<ZaItemsEditSessionService.ItemRow> rows)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
         if (!TryValidateSupportedPhysicalSource(rows, out var unavailableReason))
         {
-            return new ZaTestTechnicalMachineProvisioningResult(false, false, unavailableReason);
+            return new ZaOwnedTechnicalMachineProvisioningResult(false, false, unavailableReason);
         }
 
         var added = false;
@@ -45,49 +44,18 @@ internal static class ZaTestTechnicalMachineProvisioner
                 continue;
             }
 
-            var defaultMoveId = slot == ZaTechnicalMachineCatalog.TestTechnicalMachineSlot
-                && rows.All(row => !IsTechnicalMachine(row)
-                    || row.MachineWaza != ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId)
-                    ? ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId
-                    : 0;
             InsertInIdOrder(
                 rows,
                 ZaItemsEditSessionService.ItemRow.CreateOwnedTechnicalMachineExtension(
                     slot,
-                    checked((ushort)defaultMoveId)));
+                    moveId: 0));
             added = true;
         }
 
-        return new ZaTestTechnicalMachineProvisioningResult(true, added);
+        return new ZaOwnedTechnicalMachineProvisioningResult(true, added);
     }
 
-    public static ZaTestTechnicalMachineProvisioningResult Provision(
-        byte[] itemData,
-        out byte[] provisionedItemData)
-    {
-        ArgumentNullException.ThrowIfNull(itemData);
-
-        var rows = ZaItemsEditSessionService.ReadRows(itemData);
-        var result = Provision(rows);
-        provisionedItemData = result.Added
-            ? ZaItemsEditSessionService.WriteRows(rows)
-            : itemData;
-        if (result.IsAvailable)
-        {
-            EnsureValidOwnedExtensions(ZaItemsEditSessionService.ReadRows(provisionedItemData));
-        }
-
-        return result;
-    }
-
-    public static ZaTestTechnicalMachineProvisioningResult Provision(
-        IList<ZaItemsEditSessionService.ItemRow> rows) =>
-        ProvisionSlot(
-            rows,
-            ZaTechnicalMachineCatalog.TestTechnicalMachineSlot,
-            ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId);
-
-    public static ZaTestTechnicalMachineProvisioningResult ProvisionSlot(
+    public static ZaOwnedTechnicalMachineProvisioningResult ProvisionSlot(
         IList<ZaItemsEditSessionService.ItemRow> rows,
         int slot,
         int moveId)
@@ -97,7 +65,7 @@ internal static class ZaTestTechnicalMachineProvisioner
         if (!ZaTechnicalMachineCatalog.IsOwnedExtensionSlot(slot)
             || moveId is <= 0 or > ushort.MaxValue)
         {
-            return new ZaTestTechnicalMachineProvisioningResult(
+            return new ZaOwnedTechnicalMachineProvisioningResult(
                 false,
                 false,
                 $"TM{slot.ToString(CultureInfo.InvariantCulture)} requires an owned slot from TM162 through TM201 and an assigned move.");
@@ -110,7 +78,7 @@ internal static class ZaTestTechnicalMachineProvisioner
             if (ownedRows.Length != 1
                 || !IsOwnedTechnicalMachineExtensionRow(ownedRows[0]))
             {
-                return new ZaTestTechnicalMachineProvisioningResult(
+                return new ZaOwnedTechnicalMachineProvisioningResult(
                     false,
                     false,
                     $"Item {itemId.ToString(CultureInfo.InvariantCulture)} already exists but does not match KM Editor's owned TM{slot.ToString(CultureInfo.InvariantCulture)} slot identity.");
@@ -118,18 +86,18 @@ internal static class ZaTestTechnicalMachineProvisioner
 
             if (!HasValidOwnedExtensions(rows))
             {
-                return new ZaTestTechnicalMachineProvisioningResult(
+                return new ZaOwnedTechnicalMachineProvisioningResult(
                     false,
                     false,
                     $"TM{slot.ToString(CultureInfo.InvariantCulture)} collides with another item ID, TM number, internal token, or move assignment.");
             }
 
-            return new ZaTestTechnicalMachineProvisioningResult(true, false);
+            return new ZaOwnedTechnicalMachineProvisioningResult(true, false);
         }
 
         if (!TryValidateSupportedPhysicalSource(rows, out var unavailableReason))
         {
-            return new ZaTestTechnicalMachineProvisioningResult(false, false, unavailableReason);
+            return new ZaOwnedTechnicalMachineProvisioningResult(false, false, unavailableReason);
         }
 
         var internalName = ZaTechnicalMachineCatalog.GetOwnedExtensionInternalName(slot);
@@ -137,7 +105,7 @@ internal static class ZaTestTechnicalMachineProvisioner
             || rows.Any(row => IsTechnicalMachine(row) && row.SortNum == slot)
             || rows.Any(row => IsTechnicalMachine(row) && row.MachineWaza == moveId))
         {
-            return new ZaTestTechnicalMachineProvisioningResult(
+            return new ZaOwnedTechnicalMachineProvisioningResult(
                 false,
                 false,
                 $"TM{slot.ToString(CultureInfo.InvariantCulture)} cannot be materialized because its item ID, internal token, TM number, or selected move is already owned.");
@@ -149,15 +117,7 @@ internal static class ZaTestTechnicalMachineProvisioner
                 slot,
                 checked((ushort)moveId)));
         EnsureValidOwnedExtensions(rows);
-        return new ZaTestTechnicalMachineProvisioningResult(true, true);
-    }
-
-    public static bool IsOwnedTestTechnicalMachineRow(
-        ZaItemsEditSessionService.ItemRow row)
-    {
-        ArgumentNullException.ThrowIfNull(row);
-        return row.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId
-            && IsOwnedTechnicalMachineExtensionRow(row);
+        return new ZaOwnedTechnicalMachineProvisioningResult(true, true);
     }
 
     public static bool IsOwnedTechnicalMachineExtensionRow(
@@ -195,11 +155,14 @@ internal static class ZaTestTechnicalMachineProvisioner
         var machines = rows.Where(IsTechnicalMachine).ToArray();
         var assignments = CreateAssignments(machines);
         var hasTemplate = rows.Count(row =>
-            row.Id == ZaTechnicalMachineCatalog.TestTechnicalMachineTemplateItemId
+            row.Id == ZaTechnicalMachineCatalog.OwnedExtensionTemplateItemId
             && row.ItemType == 5
             && row.Pocket == 6
             && row.MachineWaza > 0
-            && string.Equals(row.InternalName, "WAZAMASIN161", StringComparison.Ordinal)) == 1;
+            && string.Equals(
+                row.InternalName,
+                ZaTechnicalMachineCatalog.OwnedExtensionTemplateInternalName,
+                StringComparison.Ordinal)) == 1;
         var ownedExtensionRowsAreValid = machines
             .Where(row => ZaTechnicalMachineCatalog.IsOwnedExtensionItemId(row.Id))
             .All(IsOwnedTechnicalMachineExtensionRow);

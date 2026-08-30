@@ -146,6 +146,10 @@ public sealed record ZaFashionLineupEntryRecord(
     IReadOnlyList<string> ShopIds,
     uint ItemId);
 
+public sealed record ZaFashionCatalogTextLabel(
+    string Key,
+    string Label);
+
 public sealed record ZaFashionCatalogSnapshot(
     string SourceRevision,
     string DressUpItemsRevision,
@@ -175,6 +179,7 @@ public sealed record ZaFashionCatalogWorkflowStats(
 public sealed record ZaFashionCatalogWorkflow(
     ZaWorkflowSummary Summary,
     ZaFashionCatalogSnapshot Snapshot,
+    IReadOnlyList<ZaFashionCatalogTextLabel> TextLabels,
     ZaFashionCatalogWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics,
     bool CanStage);

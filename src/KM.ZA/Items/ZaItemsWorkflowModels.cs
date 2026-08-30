@@ -90,8 +90,6 @@ public sealed record ZaItemRecord(
 
     public string? RevertToVanillaBlockedReason { get; init; }
 
-    internal bool IsOwnedTestTechnicalMachine { get; init; }
-
     internal bool IsOwnedTechnicalMachineExtension { get; init; }
 }
 

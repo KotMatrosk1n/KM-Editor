@@ -118,7 +118,7 @@ export const guidedDesignFeatureSchema = z.enum([
   'spoilerRaceExport'
 ]);
 
-export const guidedDesignProposalKindSchema = z.enum([
+export const guidedDesignProposalKindValues = [
   'trainerLevelAdjustment',
   'encounterLevelAdjustment',
   'encounterWeightScale',
@@ -126,7 +126,9 @@ export const guidedDesignProposalKindSchema = z.enum([
   'evolutionLevelClamp',
   'trainerEvArchetype',
   'pokemonBaseStatShuffle'
-]);
+] as const;
+
+export const guidedDesignProposalKindSchema = z.enum(guidedDesignProposalKindValues);
 
 export const guidedDesignRoundingSchema = z.enum(['floor', 'nearest', 'ceiling']);
 export const guidedDesignTrainerArchetypeSchema = z.enum([
@@ -134,6 +136,7 @@ export const guidedDesignTrainerArchetypeSchema = z.enum([
   'specialAttackSpeed',
   'balanced'
 ]);
+export const guidedDesignFieldSelectionModeSchema = z.enum(['fixed', 'subset']);
 export const guidedDesignFindingSeveritySchema = z.enum(['info', 'warning', 'error']);
 export const guidedDesignCapabilityStateSchema = z.enum(['complete', 'partial', 'unavailable']);
 export const guidedDesignConfidenceSchema = z.enum(['verified', 'derived', 'unknown']);
@@ -153,6 +156,29 @@ export const guidedDesignCapabilitySchema = z.strictObject({
     { message: 'Guided Design source layers must be unique.' }
   ),
   state: guidedDesignCapabilityStateSchema
+});
+
+export const guidedDesignFieldCatalogSchema = z.strictObject({
+  fieldKeys: z.array(fieldKeySchema).min(1).max(guidedDesignMaximumFieldKeys).refine(
+    (values) => new Set(values).size === values.length,
+    { message: 'Guided Design eligible fields must be unique.' }
+  ),
+  kind: guidedDesignProposalKindSchema,
+  minimumSelections: z.number().int().min(1).max(guidedDesignMaximumFieldKeys),
+  selectionMode: guidedDesignFieldSelectionModeSchema
+}).superRefine((catalog, context) => {
+  if (
+    catalog.minimumSelections > catalog.fieldKeys.length ||
+    catalog.selectionMode === 'fixed' &&
+      catalog.minimumSelections !== catalog.fieldKeys.length ||
+    catalog.selectionMode === 'subset' &&
+      catalog.kind !== 'pokemonBaseStatShuffle'
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'The Guided Design field-selection boundary is inconsistent.'
+    });
+  }
 });
 
 export const guidedDesignPinSchema = z.strictObject({
@@ -286,6 +312,8 @@ export const guidedDesignCapabilitiesRequestSchema = z.strictObject({
 export const guidedDesignCapabilitiesResponseSchema = z
   .strictObject({
     capabilities: z.array(guidedDesignCapabilitySchema).length(9),
+    fieldCatalogs: z.array(guidedDesignFieldCatalogSchema)
+      .max(guidedDesignProposalKindValues.length),
     revision: semanticExploreRevisionSchema,
     snapshots: z.array(semanticExploreSourceSnapshotSchema).max(4)
   })
@@ -297,6 +325,31 @@ export const guidedDesignCapabilitiesResponseSchema = z
         path: ['capabilities']
       });
     }
+    const availableKinds = new Set(response.capabilities
+      .filter((capability) => capability.state !== 'unavailable')
+      .flatMap((capability) => capability.proposalKinds));
+    const catalogKinds = response.fieldCatalogs.map((catalog) => catalog.kind);
+    if (
+      new Set(catalogKinds).size !== catalogKinds.length ||
+      catalogKinds.length !== availableKinds.size ||
+      catalogKinds.some((kind) => !availableKinds.has(kind))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Guided Design field catalogs must exactly cover available proposals.',
+        path: ['fieldCatalogs']
+      });
+    }
+    response.fieldCatalogs.forEach((catalog, index) => {
+      const expected = guidedDesignExpectedFields(response.revision.gameFamily, catalog.kind);
+      if (expected === null || JSON.stringify(catalog.fieldKeys) !== JSON.stringify(expected)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'A Guided Design field catalog is unsupported or does not match its verified provider.',
+          path: ['fieldCatalogs', index, 'fieldKeys']
+        });
+      }
+    });
   });
 
 export const guidedDesignPreviewRequestSchema = z
@@ -518,10 +571,42 @@ export const guidedDesignImportResponseSchema = z
     }
   });
 
+function guidedDesignExpectedFields(
+  family: 'swordShield' | 'scarletViolet' | 'legendsZA',
+  kind: z.infer<typeof guidedDesignProposalKindSchema>
+): readonly string[] | null {
+  switch (kind) {
+    case 'trainerLevelAdjustment':
+      return family === 'swordShield' ? null : ['level'];
+    case 'encounterLevelAdjustment':
+      return ['levelMin', 'levelMax'];
+    case 'encounterWeightScale':
+      return family === 'scarletViolet'
+        ? ['probability']
+        : family === 'legendsZA' ? ['weight'] : null;
+    case 'economyPrimaryPriceScale':
+      return family === 'legendsZA' ? ['price'] : ['buyPrice'];
+    case 'evolutionLevelClamp':
+      return family === 'legendsZA' ? ['level'] : null;
+    case 'trainerEvArchetype':
+      return family === 'swordShield' ? null : [
+        'evHp',
+        'evAttack',
+        'evDefense',
+        'evSpecialAttack',
+        'evSpecialDefense',
+        'evSpeed'
+      ];
+    case 'pokemonBaseStatShuffle':
+      return ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed'];
+  }
+}
+
 export type GuidedDesignFeature = z.infer<typeof guidedDesignFeatureSchema>;
 export type GuidedDesignProposalKind = z.infer<typeof guidedDesignProposalKindSchema>;
 export type GuidedDesignRounding = z.infer<typeof guidedDesignRoundingSchema>;
 export type GuidedDesignTrainerArchetype = z.infer<typeof guidedDesignTrainerArchetypeSchema>;
+export type GuidedDesignFieldCatalog = z.infer<typeof guidedDesignFieldCatalogSchema>;
 export type GuidedDesignCapability = z.infer<typeof guidedDesignCapabilitySchema>;
 export type GuidedDesignPin = z.infer<typeof guidedDesignPinSchema>;
 export type GuidedDesignInput = z.infer<typeof guidedDesignInputSchema>;

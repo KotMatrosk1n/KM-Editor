@@ -100,6 +100,9 @@ public static class ZaFashionCatalogBridgeMapper
                 row.VariantCode)).ToArray(),
             snapshot.DressUpLineups.Select(ToDto).ToArray(),
             snapshot.HairAndMakeupLineups.Select(ToDto).ToArray(),
+            workflow.TextLabels.Select(label => new FashionCatalogTextLabelDto(
+                label.Key,
+                label.Label)).ToArray(),
             new FashionCatalogStatsDto(
                 workflow.Stats.DressUpItemCount,
                 workflow.Stats.DressUpGroupCount,

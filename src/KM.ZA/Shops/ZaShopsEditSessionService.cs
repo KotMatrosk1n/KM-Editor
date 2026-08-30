@@ -218,41 +218,16 @@ internal sealed class ZaShopsEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var shopSource = fileSource.Read(project, ZaDataPaths.ShopItemArray);
             var lineupSource = fileSource.Read(project, ZaDataPaths.ShopItemLineupArray);
-            var effectiveWorkflow = OverlayPendingEdits(
-                shopsWorkflowService.Load(project),
-                session.PendingEdits);
-            var referencesTestTechnicalMachine = ReferencesTestTechnicalMachine(effectiveWorkflow);
-            ZaWorkflowFile? itemSource = null;
-            ZaTestTechnicalMachineProvisioningResult? itemProvisioning = null;
-            if (referencesTestTechnicalMachine)
-            {
-                itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
-                itemProvisioning = ZaTestTechnicalMachineProvisioner.Provision(
-                    itemSource.Bytes,
-                    out _);
-                if (!itemProvisioning.IsAvailable)
-                {
-                    throw new InvalidDataException(
-                        itemProvisioning.UnavailableReason
-                            ?? "TM162 Bug Buzz could not be provisioned safely.");
-                }
-            }
-
             var planSources = session.PendingEdits
                 .SelectMany(edit => edit.Sources)
                 .Append(ZaWorkflowFileSource.CreateReference(shopSource))
                 .Append(ZaWorkflowFileSource.CreateReference(lineupSource))
-                .ToList();
-            if (itemSource is not null)
-            {
-                planSources.Add(ZaWorkflowFileSource.CreateReference(itemSource));
-            }
-
-            var distinctPlanSources = planSources.Distinct().ToArray();
+                .Distinct()
+                .ToArray();
             var lineupWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
                 paths,
                 ZaDataPaths.ShopItemLineupArray,
-                distinctPlanSources,
+                planSources,
                 outputMode);
             var lineupReason = session.PendingEdits.Count == 1
                 ? $"Apply pending Shops edit: {session.PendingEdits[0].Summary}"
@@ -267,38 +242,14 @@ internal sealed class ZaShopsEditSessionService
                     outputMode,
                     shopSource,
                     lineupSource,
-                    itemSource,
-                    itemProvisioning?.Added == true,
                     session.PendingEdits)));
-
-            if (itemSource is not null && itemProvisioning?.Added == true)
-            {
-                var itemWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
-                    paths,
-                    ZaDataPaths.ItemDataArray,
-                    [ZaWorkflowFileSource.CreateReference(itemSource)],
-                    outputMode);
-                writes.Add(new PlannedFileWrite(
-                    itemWriteInfo.TargetRelativePath,
-                    itemWriteInfo.Sources,
-                    itemWriteInfo.ReplacesExistingOutput,
-                    "Provision the owned TM162 Bug Buzz item before the reviewed shop references it.",
-                    CreatePlanSourceFingerprint(
-                        paths,
-                        outputMode,
-                        shopSource,
-                        lineupSource,
-                        itemSource,
-                        provisionsTestTechnicalMachine: true,
-                        session.PendingEdits)));
-            }
 
             if (outputMode == ZaOutputMode.Standalone)
             {
                 var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
                 var descriptorPreview = ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
                     paths,
-                    CreatePlannedVirtualPaths(itemProvisioning?.Added == true));
+                    [ZaDataPaths.ShopItemLineupArray]);
                 writes.Add(new PlannedFileWrite(
                     descriptorWriteInfo.TargetRelativePath,
                     descriptorWriteInfo.Sources,
@@ -354,7 +305,6 @@ internal sealed class ZaShopsEditSessionService
         }
 
         var planBecameStale = false;
-        var wroteItemData = false;
         try
         {
             ZaWorkflowFileSource.ApplyHybridMixedBatch(
@@ -383,39 +333,12 @@ internal sealed class ZaShopsEditSessionService
                     var project = projectWorkspaceService.Open(paths);
                     var shopSource = fileSource.Read(project, ZaDataPaths.ShopItemArray);
                     var lineupSource = fileSource.Read(project, ZaDataPaths.ShopItemLineupArray);
-                    var effectiveWorkflow = OverlayPendingEdits(
-                        shopsWorkflowService.Load(project),
-                        session.PendingEdits);
-                    var referencesTestTechnicalMachine = ReferencesTestTechnicalMachine(effectiveWorkflow);
-                    ZaWorkflowFile? itemSource = null;
-                    ZaTestTechnicalMachineProvisioningResult? itemProvisioning = null;
-                    byte[]? provisionedItemBytes = null;
-                    if (referencesTestTechnicalMachine)
-                    {
-                        itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
-                        itemProvisioning = ZaTestTechnicalMachineProvisioner.Provision(
-                            itemSource.Bytes,
-                            out provisionedItemBytes);
-                        if (!itemProvisioning.IsAvailable)
-                        {
-                            diagnostics.Add(CreateDiagnostic(
-                                DiagnosticSeverity.Error,
-                                itemProvisioning.UnavailableReason
-                                    ?? "TM162 Bug Buzz could not be provisioned safely.",
-                                file: $"romfs/{ZaDataPaths.ItemDataArray}",
-                                expected: "Supported unique 160-TM source with unclaimed item 2222"));
-                            throw new InvalidDataException("TM162 Bug Buzz could not be provisioned safely.");
-                        }
-                    }
-
                     if (!PlanSourcesMatch(
                             paths,
                             lockedPlan,
                             outputMode,
                             shopSource,
                             lineupSource,
-                            itemSource,
-                            itemProvisioning?.Added == true,
                             session.PendingEdits))
                     {
                         diagnostics.Add(CreateDiagnostic(
@@ -439,35 +362,12 @@ internal sealed class ZaShopsEditSessionService
                         throw new InvalidDataException("A staged Shops edit failed final validation under the output lock.");
                     }
 
-                    var outputReferencesTestTechnicalMachine =
-                        effectiveWorkflow.OwnedTestTechnicalMachineAvailable
-                        && lineupRows
-                            .SelectMany(row => row.Inventory)
-                            .Any(row => row.ItemId == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId);
-                    if (outputReferencesTestTechnicalMachine != referencesTestTechnicalMachine)
-                    {
-                        diagnostics.Add(CreateDiagnostic(
-                            DiagnosticSeverity.Error,
-                            "The reviewed TM162 shop reference changed while output was being prepared. Review the change plan again before applying.",
-                            expected: "The exact reviewed shop inventory and item provisioning requirement"));
-                        planBecameStale = true;
-                        throw new InvalidDataException("The reviewed TM162 shop reference changed during output preparation.");
-                    }
-
                     var dataWrites = new List<ZaWorkflowFileWrite>
                     {
                         new(
                             ZaDataPaths.ShopItemLineupArray,
                             ZaShopsWorkflowService.WriteLineupRows(lineupRows)),
                     };
-                    if (itemProvisioning?.Added == true && provisionedItemBytes is not null)
-                    {
-                        dataWrites.Add(new ZaWorkflowFileWrite(
-                            ZaDataPaths.ItemDataArray,
-                            provisionedItemBytes));
-                        wroteItemData = true;
-                    }
-
                     var reviewedDescriptorBytes = outputMode == ZaOutputMode.Standalone
                         ? ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
                             paths,
@@ -496,13 +396,6 @@ internal sealed class ZaShopsEditSessionService
                         CreateChangePlan(paths, session, outputMode)));
 
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ShopItemLineupArray, outputMode));
-            if (wroteItemData)
-            {
-                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
-                    ZaDataPaths.ItemDataArray,
-                    outputMode));
-            }
-
             if (outputMode == ZaOutputMode.Standalone)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
@@ -835,6 +728,11 @@ internal sealed class ZaShopsEditSessionService
 
     private static ZaShopsWorkflow OverlayPendingEdit(ZaShopsWorkflow workflow, PendingEdit edit)
     {
+        if (string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal))
+        {
+            return OverlayPendingItemField(workflow, edit);
+        }
+
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.ShopsDomain, StringComparison.Ordinal)
             || !TryParseRecordRowId(edit.RecordId, out var shopId, out var slot, out var rowId))
         {
@@ -846,6 +744,73 @@ internal sealed class ZaShopsEditSessionService
             Shops = workflow.Shops
                 .Select(shop => shop.ShopId == shopId ? OverlayShop(workflow, shop, slot, rowId, edit) : shop)
                 .ToArray(),
+        };
+    }
+
+    private static ZaShopsWorkflow OverlayPendingItemField(
+        ZaShopsWorkflow workflow,
+        PendingEdit edit)
+    {
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+            || !int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            || edit.Field is not (
+                ZaItemsWorkflowService.PriceField
+                or ZaItemsWorkflowService.MegaShardPriceField
+                or ZaItemsWorkflowService.ColorfulScrewPriceField
+                or ZaItemsWorkflowService.StackCapField))
+        {
+            return workflow;
+        }
+
+        return workflow with
+        {
+            EditableFields = workflow.EditableFields
+                .Select(field => field.Field != ZaShopsWorkflowService.ItemIdField
+                    ? field
+                    : field with
+                    {
+                        Options = field.Options
+                            .Select(option => option.Value == itemId
+                                ? OverlayItemOptionField(option, edit.Field, value)
+                                : option)
+                            .ToArray(),
+                    })
+                .ToArray(),
+            Shops = workflow.Shops
+                .Select(shop => shop with
+                {
+                    Inventory = shop.Inventory
+                        .Select(item => item.ItemId == itemId
+                            ? item with
+                            {
+                                Price = shop.GlobalPriceField == edit.Field ? value : item.Price,
+                                StockLimit = shop.GlobalStockField == edit.Field ? value : item.StockLimit,
+                            }
+                            : item)
+                        .ToArray(),
+                })
+                .ToArray(),
+        };
+    }
+
+    private static ZaShopEditableFieldOption OverlayItemOptionField(
+        ZaShopEditableFieldOption option,
+        string field,
+        int value)
+    {
+        if (field == ZaItemsWorkflowService.StackCapField)
+        {
+            return option with { StockLimit = value };
+        }
+
+        var prices = new Dictionary<string, int>(option.Prices, StringComparer.Ordinal)
+        {
+            [field] = value,
+        };
+        return option with
+        {
+            Price = field == ZaItemsWorkflowService.PriceField ? value : option.Price,
+            Prices = prices,
         };
     }
 
@@ -876,10 +841,11 @@ internal sealed class ZaShopsEditSessionService
                     var source = inventoryByIndex.ElementAtOrDefault(index);
                     var overlay = OverlayInventoryItemId(
                         workflow,
+                        shop,
                         source ?? CreatePlaceholderInventoryRecord(index + 1),
                         index + 1,
                         row.ItemId);
-                    return OverlayInventoryField(workflow, overlay, ZaShopsWorkflowService.DisplayIndexField, (index + 1).ToString(CultureInfo.InvariantCulture));
+                    return OverlayInventoryField(workflow, shop, overlay, ZaShopsWorkflowService.DisplayIndexField, (index + 1).ToString(CultureInfo.InvariantCulture));
                 })
                 .ToArray();
 
@@ -902,9 +868,9 @@ internal sealed class ZaShopsEditSessionService
                 .ToList();
             nextInventory.Insert(
                 Math.Clamp(slot - 1, 0, nextInventory.Count),
-                OverlayInventoryItemId(workflow, CreatePlaceholderInventoryRecord(slot), slot, itemId));
+                OverlayInventoryItemId(workflow, shop, CreatePlaceholderInventoryRecord(slot), slot, itemId));
             var renumbered = nextInventory
-                .Select((item, index) => OverlayInventoryField(workflow, item with { Slot = index + 1 }, ZaShopsWorkflowService.DisplayIndexField, (index + 1).ToString(CultureInfo.InvariantCulture)))
+                .Select((item, index) => OverlayInventoryField(workflow, shop, item with { Slot = index + 1 }, ZaShopsWorkflowService.DisplayIndexField, (index + 1).ToString(CultureInfo.InvariantCulture)))
                 .ToArray();
             return shop with
             {
@@ -917,7 +883,7 @@ internal sealed class ZaShopsEditSessionService
         {
             var nextInventory = shop.Inventory
                 .Where(item => !IsTargetInventoryItem(item, slot, rowId))
-                .Select((item, index) => OverlayInventoryField(workflow, item with { Slot = index + 1 }, ZaShopsWorkflowService.DisplayIndexField, (index + 1).ToString(CultureInfo.InvariantCulture)))
+                .Select((item, index) => OverlayInventoryField(workflow, shop, item with { Slot = index + 1 }, ZaShopsWorkflowService.DisplayIndexField, (index + 1).ToString(CultureInfo.InvariantCulture)))
                 .ToArray();
             return shop with
             {
@@ -928,7 +894,7 @@ internal sealed class ZaShopsEditSessionService
 
         var updatedInventory = shop.Inventory
             .Select(item => IsTargetInventoryItem(item, slot, rowId)
-                ? OverlayInventoryField(workflow, item, edit.Field ?? string.Empty, edit.NewValue ?? string.Empty)
+                ? OverlayInventoryField(workflow, shop, item, edit.Field ?? string.Empty, edit.NewValue ?? string.Empty)
                 : item)
             .ToArray();
         if (edit.Field == ZaShopsWorkflowService.DisplayIndexField)
@@ -949,6 +915,7 @@ internal sealed class ZaShopsEditSessionService
 
     private static ZaShopInventoryRecord OverlayInventoryField(
         ZaShopsWorkflow workflow,
+        ZaShopRecord shop,
         ZaShopInventoryRecord item,
         string field,
         string value)
@@ -956,7 +923,7 @@ internal sealed class ZaShopsEditSessionService
         if (field == ZaShopsWorkflowService.ItemIdField
             && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId))
         {
-            return OverlayInventoryItemId(workflow, item, item.Slot, itemId);
+            return OverlayInventoryItemId(workflow, shop, item, item.Slot, itemId);
         }
 
         var fieldValues = new Dictionary<string, string>(item.FieldValues, StringComparer.Ordinal)
@@ -1000,9 +967,10 @@ internal sealed class ZaShopsEditSessionService
                 source = CreatePlaceholderInventoryRecord(index + 1, row.RowId);
             }
 
-            var overlay = OverlayInventoryItemId(workflow, source, index + 1, row.ItemId);
+            var overlay = OverlayInventoryItemId(workflow, shop, source, index + 1, row.ItemId);
             overlay = OverlayInventoryField(
                 workflow,
+                shop,
                 overlay,
                 ZaShopsWorkflowService.DisplayIndexField,
                 (index + 1).ToString(CultureInfo.InvariantCulture));
@@ -1034,6 +1002,7 @@ internal sealed class ZaShopsEditSessionService
 
     private static ZaShopInventoryRecord OverlayInventoryItemId(
         ZaShopsWorkflow workflow,
+        ZaShopRecord shop,
         ZaShopInventoryRecord source,
         int slot,
         int itemId)
@@ -1050,8 +1019,14 @@ internal sealed class ZaShopsEditSessionService
             Slot = slot,
             ItemId = itemId,
             ItemName = option?.ItemName ?? (itemId == 0 ? "None" : $"Item {itemId.ToString(CultureInfo.InvariantCulture)}"),
-            Price = option?.Price ?? 0,
+            Price = option is null
+                ? 0
+                : shop.GlobalPriceField is null
+                    ? option.Price
+                    : option.Prices.GetValueOrDefault(shop.GlobalPriceField, option.Price),
             IsKnownItem = option is not null,
+            StockLimit = shop.GlobalStockField is null ? null : option?.StockLimit,
+            CanEditPrice = option is not null && shop.GlobalPriceField is not null,
             FieldValues = values,
             FieldDisplayValues = new Dictionary<string, string>(source.FieldDisplayValues, StringComparer.Ordinal)
             {
@@ -1781,8 +1756,6 @@ internal sealed class ZaShopsEditSessionService
         ZaOutputMode outputMode,
         ZaWorkflowFile shopSource,
         ZaWorkflowFile lineupSource,
-        ZaWorkflowFile? itemSource,
-        bool provisionsTestTechnicalMachine,
         IEnumerable<PendingEdit> edits)
     {
         var targetRelativePath = ZaWorkflowFileSource.CreatePlannedWrite(
@@ -1805,8 +1778,6 @@ internal sealed class ZaShopsEditSessionService
                     outputMode,
                     shopSource,
                     lineupSource,
-                    itemSource,
-                    provisionsTestTechnicalMachine,
                     edits));
     }
 
@@ -1815,26 +1786,14 @@ internal sealed class ZaShopsEditSessionService
         ZaOutputMode outputMode,
         ZaWorkflowFile shopSource,
         ZaWorkflowFile lineupSource,
-        ZaWorkflowFile? itemSource,
-        bool provisionsTestTechnicalMachine,
         IEnumerable<PendingEdit> edits)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendFingerprintValue(hash, "KM.ZA.Shops.Source.v2");
+        AppendFingerprintValue(hash, "KM.ZA.Shops.Source.v3");
         AppendFingerprintValue(hash, outputMode.ToString());
         AppendFingerprintSource(hash, ZaDataPaths.ShopItemArray, shopSource);
         AppendFingerprintSource(hash, ZaDataPaths.ShopItemLineupArray, lineupSource);
-        AppendFingerprintValue(hash, provisionsTestTechnicalMachine ? "ProvisionTM162" : "NoTM162Provision");
-        if (itemSource is not null)
-        {
-            AppendFingerprintSource(hash, ZaDataPaths.ItemDataArray, itemSource);
-        }
-
         AppendFingerprintTarget(hash, paths, ZaDataPaths.ShopItemLineupArray, outputMode);
-        if (provisionsTestTechnicalMachine)
-        {
-            AppendFingerprintTarget(hash, paths, ZaDataPaths.ItemDataArray, outputMode);
-        }
 
         foreach (var (edit, index) in OrderPendingEdits(edits).Select((edit, index) => (edit, index)))
         {
@@ -1854,18 +1813,6 @@ internal sealed class ZaShopsEditSessionService
 
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
-
-    private static bool ReferencesTestTechnicalMachine(ZaShopsWorkflow workflow) =>
-        workflow.OwnedTestTechnicalMachineAvailable
-        && workflow.Shops
-            .SelectMany(shop => shop.Inventory)
-            .Any(item => item.ItemId == ZaTechnicalMachineCatalog.TestTechnicalMachineItemId);
-
-    private static IReadOnlyList<string> CreatePlannedVirtualPaths(
-        bool provisionsTestTechnicalMachine) =>
-        provisionsTestTechnicalMachine
-            ? [ZaDataPaths.ShopItemLineupArray, ZaDataPaths.ItemDataArray]
-            : [ZaDataPaths.ShopItemLineupArray];
 
     private static string CreateDescriptorPlanFingerprint(
         ProjectPaths paths,

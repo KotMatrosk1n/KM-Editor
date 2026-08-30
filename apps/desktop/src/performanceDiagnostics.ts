@@ -7,7 +7,10 @@ export const performanceDiagnosticsPreferenceStorageKey =
   'km-editor.performance-diagnostics.v1';
 export const performanceDiagnosticsPreferenceVersion = 1 as const;
 
-export type PerformanceDiagnosticOutcome = 'success' | 'failure';
+export type PerformanceDiagnosticOutcome =
+  | 'success'
+  | 'expected-rejection'
+  | 'unexpected-failure';
 export type PerformanceDiagnosticSample = Readonly<{
   command: KmCommandName;
   durationMs: number;
@@ -21,17 +24,20 @@ export type PerformanceDiagnosticsSnapshot = Readonly<{
 
 export type PerformanceDiagnosticCommandSummary = Readonly<{
   command: KmCommandName;
-  failures: number;
+  expectedRejections: number;
   maximumDurationMs: number;
   medianDurationMs: number;
   p95DurationMs: number;
   sampleCount: number;
+  successes: number;
+  unexpectedFailures: number;
 }>;
 
 const listeners = new Set<() => void>();
 let enabled = readPerformanceDiagnosticsEnabledPreference();
 let samples: readonly PerformanceDiagnosticSample[] = [];
 let snapshot: PerformanceDiagnosticsSnapshot = { enabled, samples };
+const samplesByAssociatedResult = new WeakMap<object, PerformanceDiagnosticSample>();
 
 export function setPerformanceDiagnosticsEnabled(nextEnabled: boolean) {
   if (enabled === nextEnabled) {
@@ -60,7 +66,8 @@ export function clearPerformanceDiagnostics() {
 export function recordBridgePerformanceDiagnostic(
   command: KmCommandName,
   durationMs: number,
-  outcome: PerformanceDiagnosticOutcome
+  outcome: PerformanceDiagnosticOutcome,
+  associatedResult?: unknown
 ) {
   if (!enabled || !Number.isFinite(durationMs)) {
     return;
@@ -71,6 +78,33 @@ export function recordBridgePerformanceDiagnostic(
     outcome
   });
   samples = Object.freeze([...samples.slice(-(maximumPerformanceDiagnosticSamples - 1)), sample]);
+  if (isWeakMapKey(associatedResult)) {
+    samplesByAssociatedResult.set(associatedResult, sample);
+  }
+  publish();
+}
+
+export function reclassifyBridgePerformanceDiagnostic(
+  associatedResult: unknown,
+  outcome: PerformanceDiagnosticOutcome
+) {
+  if (!isWeakMapKey(associatedResult)) {
+    return;
+  }
+  const currentSample = samplesByAssociatedResult.get(associatedResult);
+  if (!currentSample || currentSample.outcome === outcome) {
+    return;
+  }
+  const sampleIndex = samples.indexOf(currentSample);
+  if (sampleIndex < 0) {
+    samplesByAssociatedResult.delete(associatedResult);
+    return;
+  }
+  const replacement = Object.freeze({ ...currentSample, outcome });
+  samples = Object.freeze(samples.map((sample, index) =>
+    index === sampleIndex ? replacement : sample
+  ));
+  samplesByAssociatedResult.set(associatedResult, replacement);
   publish();
 }
 
@@ -85,13 +119,20 @@ export function subscribeToPerformanceDiagnostics(listener: () => void) {
 
 export function createPerformanceDiagnosticsSummary() {
   const commands = summarizePerformanceDiagnostics(samples);
+  const outcomeCounts = summarizePerformanceDiagnosticOutcomes(samples);
 
   return JSON.stringify(
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       sessionOnly: true,
       contentBlind: true,
       sampleCount: samples.length,
+      outcomeDefinitions: {
+        success: 'Command returned a valid response.',
+        expectedRejection: 'Command was canceled, superseded, unsupported, or safely rejected by a known guard.',
+        unexpectedFailure: 'Command failed outside the known rejection and cancellation catalog.'
+      },
+      outcomeCounts,
       commands
     },
     null,
@@ -116,12 +157,31 @@ export function summarizePerformanceDiagnostics(
       return Object.freeze({
         command,
         sampleCount: commandSamples.length,
-        failures: commandSamples.filter((sample) => sample.outcome === 'failure').length,
+        successes: countOutcome(commandSamples, 'success'),
+        expectedRejections: countOutcome(commandSamples, 'expected-rejection'),
+        unexpectedFailures: countOutcome(commandSamples, 'unexpected-failure'),
         medianDurationMs: percentile(durations, 0.5),
         p95DurationMs: percentile(durations, 0.95),
         maximumDurationMs: durations.at(-1) ?? 0
       });
     });
+}
+
+function summarizePerformanceDiagnosticOutcomes(
+  sourceSamples: readonly PerformanceDiagnosticSample[]
+) {
+  return Object.freeze({
+    successes: countOutcome(sourceSamples, 'success'),
+    expectedRejections: countOutcome(sourceSamples, 'expected-rejection'),
+    unexpectedFailures: countOutcome(sourceSamples, 'unexpected-failure')
+  });
+}
+
+function countOutcome(
+  sourceSamples: readonly PerformanceDiagnosticSample[],
+  outcome: PerformanceDiagnosticOutcome
+) {
+  return sourceSamples.filter((sample) => sample.outcome === outcome).length;
 }
 
 export function formatPerformanceDiagnosticCommand(command: KmCommandName) {
@@ -159,6 +219,10 @@ function percentile(values: readonly number[], fraction: number) {
     return 0;
   }
   return values[Math.min(values.length - 1, Math.ceil(values.length * fraction) - 1)];
+}
+
+function isWeakMapKey(value: unknown): value is object {
+  return (typeof value === 'object' && value !== null) || typeof value === 'function';
 }
 
 function publish() {

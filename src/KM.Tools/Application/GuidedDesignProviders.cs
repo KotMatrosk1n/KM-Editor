@@ -192,6 +192,67 @@ internal static class GuidedDesignProviders
         ];
     }
 
+    public static IReadOnlyList<GuidedDesignFieldCatalogDto> FieldCatalogs(
+        SemanticGameFamilyDto family,
+        IEnumerable<GuidedDesignProposalKindDto> availableKinds)
+    {
+        ArgumentNullException.ThrowIfNull(availableKinds);
+        return availableKinds
+            .Distinct()
+            .Order()
+            .Select(kind =>
+            {
+                var fields = FieldsFor(family, kind);
+                var selectionMode = kind == GuidedDesignProposalKindDto.PokemonBaseStatShuffle
+                    ? GuidedDesignFieldSelectionModeDto.Subset
+                    : GuidedDesignFieldSelectionModeDto.Fixed;
+                return new GuidedDesignFieldCatalogDto(
+                    kind,
+                    selectionMode,
+                    selectionMode == GuidedDesignFieldSelectionModeDto.Subset
+                        ? 2
+                        : fields.Length,
+                    fields);
+            })
+            .ToArray();
+    }
+
+    private static string[] FieldsFor(
+        SemanticGameFamilyDto family,
+        GuidedDesignProposalKindDto kind)
+    {
+        return kind switch
+        {
+            GuidedDesignProposalKindDto.TrainerLevelAdjustment =>
+                family == SemanticGameFamilyDto.SwordShield
+                    ? throw Unsupported(
+                        "The selected family has no verified trainer-level provider.")
+                    : ["level"],
+            GuidedDesignProposalKindDto.EncounterLevelAdjustment => ["levelMin", "levelMax"],
+            GuidedDesignProposalKindDto.EncounterWeightScale => family switch
+            {
+                SemanticGameFamilyDto.ScarletViolet => ["probability"],
+                SemanticGameFamilyDto.LegendsZA => ["weight"],
+                _ => throw Unsupported(
+                    "The selected family has no verified encounter-weight field."),
+            },
+            GuidedDesignProposalKindDto.EconomyPrimaryPriceScale =>
+                family == SemanticGameFamilyDto.LegendsZA ? ["price"] : ["buyPrice"],
+            GuidedDesignProposalKindDto.EvolutionLevelClamp =>
+                family == SemanticGameFamilyDto.LegendsZA
+                    ? ["level"]
+                    : throw Unsupported(
+                        "The selected family has no verified evolution-level provider."),
+            GuidedDesignProposalKindDto.TrainerEvArchetype =>
+                family == SemanticGameFamilyDto.SwordShield
+                    ? throw Unsupported(
+                        "The selected family has no verified trainer-EV provider.")
+                    : [.. EvFields],
+            GuidedDesignProposalKindDto.PokemonBaseStatShuffle => [.. StatFields],
+            _ => throw Unsupported("The selected Guided Design field catalog is unavailable."),
+        };
+    }
+
     public static string DomainFor(GuidedDesignProposalKindDto kind)
     {
         return kind switch
@@ -801,7 +862,7 @@ internal static class GuidedDesignProviders
             return Selection(
                 input,
                 providerId,
-                [],
+                ["level"],
                 eligible.Select(target => TargetOption(target.Record, target.Pokemon.Name)));
         }
 
@@ -809,7 +870,7 @@ internal static class GuidedDesignProviders
         var normalized = NormalizeInput(
             input,
             selected.Select(target => target.Record),
-            [],
+            ["level"],
             allowEvolutionPinChildren: true);
         var pins = CreatePinMap(normalized, ["level"], requireInputFields: false);
         var mutations = new List<GuidedDesignMutationDto>();

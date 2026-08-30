@@ -83,6 +83,12 @@ public enum GuidedDesignTrainerArchetypeDto
     Balanced,
 }
 
+public enum GuidedDesignFieldSelectionModeDto
+{
+    Fixed,
+    Subset,
+}
+
 public enum GuidedDesignFindingSeverityDto
 {
     Info,
@@ -104,6 +110,12 @@ public sealed record GuidedDesignCapabilityDto(
     string? ReasonCode,
     IReadOnlyList<GuidedDesignProposalKindDto> ProposalKinds,
     IReadOnlyList<SemanticSourceLayerKindDto> SourceLayers);
+
+public sealed record GuidedDesignFieldCatalogDto(
+    GuidedDesignProposalKindDto Kind,
+    GuidedDesignFieldSelectionModeDto SelectionMode,
+    int MinimumSelections,
+    IReadOnlyList<string> FieldKeys);
 
 public sealed record GuidedDesignPinDto(
     SemanticRecordRefDto Record,
@@ -168,7 +180,8 @@ public sealed record ReadGuidedDesignCapabilitiesRequest(SemanticExploreScopeDto
 public sealed record ReadGuidedDesignCapabilitiesResponse(
     SemanticProjectRevisionDto Revision,
     IReadOnlyList<SemanticSourceSnapshotDto> Snapshots,
-    IReadOnlyList<GuidedDesignCapabilityDto> Capabilities);
+    IReadOnlyList<GuidedDesignCapabilityDto> Capabilities,
+    IReadOnlyList<GuidedDesignFieldCatalogDto> FieldCatalogs);
 
 public sealed record PreviewGuidedDesignRequest(
     SemanticExploreScopeDto Scope,

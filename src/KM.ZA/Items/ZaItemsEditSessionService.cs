@@ -662,7 +662,6 @@ internal sealed class ZaItemsEditSessionService
                 source,
                 baseItemSource,
                 includeTechnicalMachineMoveSources: RequiresOwnedExtensionMoveResolution(
-                    source.Bytes,
                     effectiveSession.PendingEdits));
             if (!CapturedSourcesMatchPlan(
                     paths,
@@ -699,7 +698,7 @@ internal sealed class ZaItemsEditSessionService
                          loadedWorkflow,
                          effectiveSession))
             {
-                var provisioning = ZaTestTechnicalMachineProvisioner.ProvisionSlot(
+                var provisioning = ZaOwnedTechnicalMachineProvisioner.ProvisionSlot(
                     rows,
                     extension.Slot,
                     extension.MoveId);
@@ -786,6 +785,12 @@ internal sealed class ZaItemsEditSessionService
                 rows,
                 currentPlan,
                 outputMode,
+                diagnostics);
+            RemoveUnassignedOwnedTechnicalMachineRows(
+                project,
+                rows,
+                loadedWorkflow,
+                effectiveSession,
                 diagnostics);
 
             ValidateVerifiedBaseItemRows(
@@ -1101,7 +1106,6 @@ internal sealed class ZaItemsEditSessionService
                 source,
                 baseSource,
                 includeTechnicalMachineMoveSources: RequiresOwnedExtensionMoveResolution(
-                    source.Bytes,
                     pendingEdits));
             writes[itemWriteIndex] = writes[itemWriteIndex] with
             {
@@ -1994,7 +1998,7 @@ internal sealed class ZaItemsEditSessionService
 
         var editableField = GetEditableField(workflow, normalizedField)!;
         if (!isVerifiedBaseRestore
-            && (!CanEditTestTechnicalMachineIdentity(item, editableField, diagnostics)
+            && (!CanEditOwnedTechnicalMachineIdentity(item, editableField, diagnostics)
                 || !CanEditProjectedTechnicalMachineSlot(item, editableField, diagnostics)))
         {
             return null;
@@ -2284,7 +2288,7 @@ internal sealed class ZaItemsEditSessionService
         var isVerifiedBaseRestore = item.Provenance.SourceLayer != ProjectFileLayer.Base
             && HasVanillaRestoreSourceMarker(edit);
         if (!isVerifiedBaseRestore
-            && (!CanEditTestTechnicalMachineIdentity(item, editableField, diagnostics)
+            && (!CanEditOwnedTechnicalMachineIdentity(item, editableField, diagnostics)
                 || !CanEditProjectedTechnicalMachineSlot(item, editableField, diagnostics)))
         {
             return;
@@ -2411,6 +2415,11 @@ internal sealed class ZaItemsEditSessionService
                     || item.Metadata.MachineMoveId is not { } oldMoveId
                     || item.Metadata.BaseMachineMoveId is not { } baseMoveId
                     || oldMoveId == moveId)
+                {
+                    return false;
+                }
+
+                if (moveId == 0 && item.IsOwnedTechnicalMachineExtension)
                 {
                     return false;
                 }
@@ -2574,6 +2583,49 @@ internal sealed class ZaItemsEditSessionService
                     ZaEditSessionSupport.ItemsDomain,
                     field: ZaItemsWorkflowService.MachineMoveIdField,
                     expected: "Physical TM with a unique current and clean base move"));
+                continue;
+            }
+
+            if (newMoveId == 0
+                && item.IsOwnedTechnicalMachineExtension
+                && ZaItemsWorkflowService.IsTechnicalMachineRecord(item))
+            {
+                var hasSiblingItemFieldEdits = session.PendingEdits.Any(candidate =>
+                    string.Equals(
+                        candidate.Domain,
+                        ZaEditSessionSupport.ItemsDomain,
+                        StringComparison.Ordinal)
+                    && int.TryParse(
+                        candidate.RecordId,
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var candidateItemId)
+                    && candidateItemId == itemId
+                    && !string.Equals(
+                        candidate.Field,
+                        ZaItemsWorkflowService.MachineMoveIdField,
+                        StringComparison.Ordinal));
+                if (hasSiblingItemFieldEdits)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"TM{item.Metadata.MachineSlot!.Value.ToString(CultureInfo.InvariantCulture)} cannot return to an unassigned owned slot while other item field edits are pending for it.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField,
+                        expected: "Apply or clear the owned TM's other item field edits before unassigning its move"));
+                    continue;
+                }
+
+                if (!CanRemoveOwnedTechnicalMachineExtension(project, itemId, diagnostics))
+                {
+                    continue;
+                }
+
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"TM{item.Metadata.MachineSlot!.Value.ToString(CultureInfo.InvariantCulture)} will return to an unassigned owned slot without changing Pokemon compatibility.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField));
                 continue;
             }
 
@@ -2836,6 +2888,17 @@ internal sealed class ZaItemsEditSessionService
                 continue;
             }
 
+            if (row.MachineWaza == 0
+                && sourceItem.IsOwnedTechnicalMachineExtension
+                && ZaItemsWorkflowService.IsTechnicalMachineRecord(sourceItem))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"Returned TM{sourceItem.Metadata.MachineSlot!.Value.ToString(CultureInfo.InvariantCulture)} to an unassigned owned slot without rewriting Pokemon compatibility.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField));
+                continue;
+            }
 
             if (sourceItem.Metadata.IsProjectedTechnicalMachineSlot
                 && sourceItem.Metadata.MachineMoveId is null)
@@ -3155,6 +3218,7 @@ internal sealed class ZaItemsEditSessionService
         EditSession session)
     {
         var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
+        var effectiveItemsById = effectiveWorkflow.Items.ToDictionary(item => item.ItemId);
         var editedItemIds = session.PendingEdits
             .Where(edit => string.Equals(
                 edit.Domain,
@@ -3168,21 +3232,21 @@ internal sealed class ZaItemsEditSessionService
                 ? itemId
                 : -1)
             .ToHashSet();
-        return effectiveWorkflow.Items
+        return workflow.Items
             .Where(item =>
                 editedItemIds.Contains(item.ItemId)
                 && item.Metadata.IsProjectedTechnicalMachineSlot)
+            .Select(item => effectiveItemsById[item.ItemId])
+            .Where(item => item.Metadata.MachineMoveId is > 0)
             .Select(item => new ProjectedTechnicalMachineTarget(
                 item.Metadata.MachineSlot ?? 0,
-                item.Metadata.MachineMoveId ?? 0))
+                item.Metadata.MachineMoveId!.Value))
             .ToArray();
     }
 
     private static bool RequiresOwnedExtensionMoveResolution(
-        byte[] activeItemBytes,
         IEnumerable<PendingEdit> pendingEdits)
     {
-        _ = activeItemBytes;
         return pendingEdits.Any(edit =>
             string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
             && string.Equals(
@@ -3195,6 +3259,12 @@ internal sealed class ZaItemsEditSessionService
                 CultureInfo.InvariantCulture,
                 out var itemId)
             && ZaTechnicalMachineCatalog.IsOwnedExtensionItemId(itemId)
+            && int.TryParse(
+                edit.NewValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var moveId)
+            && moveId > 0
         );
     }
 
@@ -3252,7 +3322,7 @@ internal sealed class ZaItemsEditSessionService
         return false;
     }
 
-    private static bool CanEditTestTechnicalMachineIdentity(
+    private static bool CanEditOwnedTechnicalMachineIdentity(
         ZaItemRecord item,
         ZaItemEditableField field,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -3559,6 +3629,14 @@ internal sealed class ZaItemsEditSessionService
             return true;
         }
 
+        if (item.IsOwnedTechnicalMachineExtension
+            && field == ZaItemsWorkflowService.MachineMoveIdField
+            && value == 0
+            && ZaItemsWorkflowService.IsTechnicalMachineRecord(item))
+        {
+            return true;
+        }
+
         var currentlyTechnicalMachine = ZaItemsWorkflowService.IsTechnicalMachineRecord(item);
         var pocket = field == ZaItemsWorkflowService.PocketField
             ? value
@@ -3712,6 +3790,11 @@ internal sealed class ZaItemsEditSessionService
                     MachineMoveId = value > 0 ? value : null,
                     MachineMoveName = value > 0 ? ResolveMoveName(workflow, value) : null,
                     MachineAssignmentDiffersFromBase = metadata.BaseMachineMoveId != value,
+                    IsProjectedTechnicalMachineSlot = item.IsOwnedTechnicalMachineExtension
+                        && value == 0,
+                    IsTechnicalMachineProvisioned = item.IsOwnedTechnicalMachineExtension
+                        ? value > 0
+                        : metadata.IsTechnicalMachineProvisioned,
                     CanMaterializeTechnicalMachine = metadata.IsProjectedTechnicalMachineSlot
                         && value > 0,
                 },
@@ -3778,10 +3861,121 @@ internal sealed class ZaItemsEditSessionService
 
     private static ZaItemRecord UpdateTechnicalMachineName(ZaItemRecord item)
     {
-        return item.Metadata.MachineSlot is { } machineSlot
-            && item.Metadata.MachineMoveName is { Length: > 0 } machineMoveName
-                ? item with { Name = ZaItemsWorkflowService.FormatTechnicalMachineName(machineSlot, machineMoveName) }
-                : item;
+        if (item.Metadata.MachineSlot is not { } machineSlot)
+        {
+            return item;
+        }
+
+        if (item.Metadata.MachineMoveName is { Length: > 0 } machineMoveName)
+        {
+            return item with
+            {
+                Name = ZaItemsWorkflowService.FormatTechnicalMachineName(machineSlot, machineMoveName),
+            };
+        }
+
+        return item.IsOwnedTechnicalMachineExtension
+            ? item with
+            {
+                Name = ZaItemsWorkflowService.FormatTechnicalMachineName(machineSlot, "Unassigned"),
+            }
+            : item;
+    }
+
+    private void RemoveUnassignedOwnedTechnicalMachineRows(
+        OpenedProject project,
+        List<ItemRow> rows,
+        ZaItemsWorkflow sourceWorkflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var targets = new HashSet<int>();
+        foreach (var edit in session.PendingEdits)
+        {
+            if (!string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.Field, ZaItemsWorkflowService.MachineMoveIdField, StringComparison.Ordinal)
+                || !string.Equals(edit.NewValue, "0", StringComparison.Ordinal)
+                || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || sourceWorkflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } sourceItem
+                || !sourceItem.IsOwnedTechnicalMachineExtension
+                || sourceItem.Metadata.MachineMoveId is not > 0)
+            {
+                continue;
+            }
+
+            targets.Add(itemId);
+        }
+
+        foreach (var itemId in targets)
+        {
+            if (!CanRemoveOwnedTechnicalMachineExtension(project, itemId, diagnostics))
+            {
+                continue;
+            }
+
+            var matches = rows
+                .Select((row, index) => (Row: row, Index: index))
+                .Where(candidate => candidate.Row.Id == itemId)
+                .ToArray();
+            if (matches.Length != 1
+                || !ZaTechnicalMachineCatalog.HasOwnedExtensionIdentity(
+                    matches[0].Row.Id,
+                    matches[0].Row.ItemType,
+                    matches[0].Row.InternalName,
+                    matches[0].Row.Pocket,
+                    matches[0].Row.SortNum,
+                    matches[0].Row.MachineIndex)
+                || matches[0].Row.MachineWaza != 0)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Owned TM item {itemId.ToString(CultureInfo.InvariantCulture)} could not be returned to an unassigned slot because its reviewed identity changed.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "One structurally owned extension row with the reviewed unassigned move"));
+                continue;
+            }
+
+            rows.RemoveAt(matches[0].Index);
+        }
+    }
+
+    private bool CanRemoveOwnedTechnicalMachineExtension(
+        OpenedProject project,
+        int itemId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            var lineup = fileSource.Read(project, ZaDataPaths.ShopItemLineupArray);
+            var referencedByShop = ZaShopsWorkflowService.ReadLineupRows(lineup.Bytes)
+                .SelectMany(row => row.Inventory)
+                .Any(row => row.ItemId == itemId);
+            if (!referencedByShop)
+            {
+                return true;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"TM item {itemId.ToString(CultureInfo.InvariantCulture)} is still referenced by a shop and cannot return to an unassigned slot yet.",
+                ZaEditSessionSupport.ItemsDomain,
+                file: $"romfs/{ZaDataPaths.ShopItemLineupArray}",
+                field: ZaItemsWorkflowService.MachineMoveIdField,
+                expected: "Remove the owned extension item from Shops, apply, and then unassign its move"));
+            return false;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shop references could not be checked before unassigning the owned TM slot: {exception.Message}",
+                ZaEditSessionSupport.ItemsDomain,
+                file: $"romfs/{ZaDataPaths.ShopItemLineupArray}",
+                field: ZaItemsWorkflowService.MachineMoveIdField,
+                expected: "Readable shop lineup with no references to the owned extension item"));
+            return false;
+        }
     }
 
     private static string ResolveMoveName(ZaItemsWorkflow workflow, int moveId)
@@ -4163,8 +4357,8 @@ internal sealed class ZaItemsEditSessionService
             && HasValidTechnicalMachineNumbering(assignments, hasOwnedExtensions)
             && (!hasOwnedExtensions
                 || ownedExtensionRows.All(
-                    ZaTestTechnicalMachineProvisioner.IsOwnedTechnicalMachineExtensionRow)
-                && ZaTestTechnicalMachineProvisioner.HasOwnedRowsInIdOrder(rows))
+                    ZaOwnedTechnicalMachineProvisioner.IsOwnedTechnicalMachineExtensionRow)
+                && ZaOwnedTechnicalMachineProvisioner.HasOwnedRowsInIdOrder(rows))
             && machines.All(row =>
                 expectedTechnicalMachines.TryGetValue(row.Id, out var expected)
                 && row.MachineWaza == expected.MoveId
@@ -4267,13 +4461,6 @@ internal sealed class ZaItemsEditSessionService
         public bool CanUseInBattle { get; set; }
         public int SwapIntoId { get; set; }
 
-        public static ItemRow CreateTestTechnicalMachine()
-        {
-            return CreateOwnedTechnicalMachineExtension(
-                ZaTechnicalMachineCatalog.TestTechnicalMachineSlot,
-                ZaTechnicalMachineCatalog.TestTechnicalMachineMoveId);
-        }
-
         public static ItemRow CreateOwnedTechnicalMachineExtension(int slot, ushort moveId)
         {
             return new ItemRow
@@ -4281,7 +4468,7 @@ internal sealed class ZaItemsEditSessionService
                 Id = ZaTechnicalMachineCatalog.GetOwnedExtensionItemId(slot),
                 ItemType = 5,
                 InternalName = ZaTechnicalMachineCatalog.GetOwnedExtensionInternalName(slot),
-                IconName = ZaTechnicalMachineCatalog.TestTechnicalMachineIconName,
+                IconName = ZaTechnicalMachineCatalog.OwnedExtensionIconName,
                 Pocket = 6,
                 SlotMaxNum = 1,
                 SortNum = slot,

@@ -18,14 +18,21 @@ export type AdaptiveInspectorTabViewModel = {
   labelKey: string;
 };
 
+export type AdaptiveInspectorTargetViewModel = {
+  label: string;
+  labelIsRawData: boolean;
+  scopeLabels: readonly string[];
+  summary: string | null;
+  summaryIsRawData: boolean;
+};
+
 export type AdaptiveInspectorProps = {
   activeTab: WorkbenchInspectorTab | null;
   isOpen: boolean;
   onClose: () => void;
   onSelectTab: (tab: WorkbenchInspectorTab) => void;
   tabs: readonly AdaptiveInspectorTabViewModel[];
-  targetLabel: string;
-  targetLabelIsRawData: boolean;
+  target: AdaptiveInspectorTargetViewModel;
 };
 
 export const adaptiveInspectorNarrowMediaQuery = '(max-width: 1100px)';
@@ -75,8 +82,7 @@ function InspectorBody({
   onClose,
   onSelectTab,
   tabs,
-  targetLabel,
-  targetLabelIsRawData
+  target
 }: AdaptiveInspectorProps & { headingId: string }) {
   const { t } = useLocalization();
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]!;
@@ -86,10 +92,21 @@ function InspectorBody({
       <header className="km-inspector-heading">
         <div>
           <p>{t('workbench.inspector.eyebrow')}</p>
-          <h2 id={headingId}>{t('workbench.inspector.title')}</h2>
-          <small data-localization-ignore={targetLabelIsRawData ? 'true' : undefined}>
-            {targetLabel}
-          </small>
+          <h2
+            data-localization-ignore={target.labelIsRawData ? 'true' : undefined}
+            id={headingId}
+          >
+            {target.label}
+          </h2>
+          <p className="km-inspector-target-scope">{target.scopeLabels.join(' · ')}</p>
+          {target.summary ? (
+            <small
+              className="km-inspector-target-summary"
+              data-localization-ignore={target.summaryIsRawData ? 'true' : undefined}
+            >
+              {target.summary}
+            </small>
+          ) : null}
         </div>
         <button
           aria-label={t('workbench.inspector.close')}

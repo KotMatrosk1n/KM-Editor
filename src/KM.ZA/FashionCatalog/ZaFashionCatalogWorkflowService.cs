@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.ZA.Data;
 using KM.ZA.Workflows;
 
@@ -18,6 +19,8 @@ internal sealed class ZaFashionCatalogWorkflowService
     private const string WorkflowLabel = "Fashion Catalog";
     private const string WorkflowDescription =
         "Edit Pokemon Legends Z-A dress-up, hair and makeup catalogs and their proven shop lineups.";
+    private const string DressUpItemNamesTable = "common/dressup_item_name";
+    private const string DressUpInterfaceTable = "common/dressup";
 
     private readonly ZaWorkflowFileSource fileSource;
     private readonly ZaFashionCatalogService catalogService;
@@ -93,8 +96,9 @@ internal sealed class ZaFashionCatalogWorkflowService
                 Reference(dressUpLineups),
                 Reference(hairAndMakeupLineups),
             };
-            var diagnostics = Array.Empty<ValidationDiagnostic>();
-            var workflow = CreateWorkflow(project, snapshot, diagnostics);
+            var diagnostics = new List<ValidationDiagnostic>();
+            var textLabels = LoadTextLabels(project, diagnostics);
+            var workflow = CreateWorkflow(project, snapshot, diagnostics, textLabels);
             state = new ZaFashionCatalogLoadedState(
                 workflow,
                 sources,
@@ -207,10 +211,11 @@ internal sealed class ZaFashionCatalogWorkflowService
                 ?? "Fashion Catalog sources could not be loaded safely.");
     }
 
-    private static ZaFashionCatalogWorkflow CreateWorkflow(
+    private ZaFashionCatalogWorkflow CreateWorkflow(
         OpenedProject project,
         ZaFashionCatalogSnapshot snapshot,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        IReadOnlyList<ZaFashionCatalogTextLabel>? textLabels = null)
     {
         var summary = ZaWorkflowSupport.CreateSummary(
             project,
@@ -225,6 +230,7 @@ internal sealed class ZaFashionCatalogWorkflowService
         return new ZaFashionCatalogWorkflow(
             summary,
             snapshot,
+            textLabels ?? Array.Empty<ZaFashionCatalogTextLabel>(),
             new ZaFashionCatalogWorkflowStats(
                 snapshot.DressUpItems.Count,
                 snapshot.DressUpGroups.Count,
@@ -234,6 +240,101 @@ internal sealed class ZaFashionCatalogWorkflowService
             allDiagnostics,
             summary.Availability == ZaWorkflowAvailability.Available
                 && allDiagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error));
+    }
+
+    private IReadOnlyList<ZaFashionCatalogTextLabel> LoadTextLabels(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var language = ZaGameTextLanguage.Resolve(project.Paths);
+        var labels = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var table in new[] { DressUpItemNamesTable, DressUpInterfaceTable })
+        {
+            var loaded = TryLoadTextLabelTable(project, language, table, diagnostics);
+            if (loaded is null
+                && !string.Equals(language, ZaGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
+            {
+                loaded = TryLoadTextLabelTable(
+                    project,
+                    ZaGameTextLanguage.English,
+                    table,
+                    diagnostics);
+            }
+
+            if (loaded is null)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Fashion Catalog display names from '{table}' are unavailable; stored keys and IDs remain visible.",
+                    expected: "Readable localized Fashion Catalog message data and key tables"));
+                continue;
+            }
+
+            foreach (var label in loaded)
+            {
+                labels.TryAdd(label.Key, label.Label);
+            }
+        }
+
+        return labels
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new ZaFashionCatalogTextLabel(pair.Key, pair.Value))
+            .ToArray();
+    }
+
+    private IReadOnlyList<ZaFashionCatalogTextLabel>? TryLoadTextLabelTable(
+        OpenedProject project,
+        string language,
+        string table,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var dataPath = $"ik_message/dat/{language}/{table}.dat";
+        var keyPath = $"ik_message/dat/{language}/{table}.tbl";
+        try
+        {
+            var values = SwShGameTextFile.Parse(
+                    fileSource.Read(project, dataPath).Bytes,
+                    fileSource.BoundedTableRecordLimit)
+                .Lines
+                .Select(line => line.Text)
+                .ToArray();
+            var keys = SwShAhtbFile.Parse(
+                    fileSource.Read(project, keyPath).Bytes,
+                    fileSource.BoundedTableRecordLimit)
+                .Entries
+                .Select(entry => entry.Name)
+                .ToArray();
+            var count = Math.Min(values.Length, keys.Length);
+            if (count != values.Length)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Fashion Catalog message table 'romfs/{dataPath}' has {values.Length} values but only {keys.Length} usable keys. Matched entries were retained by exact index.",
+                    $"romfs/{keyPath}",
+                    expected: $"At least {values.Length} message keys"));
+            }
+
+            return Enumerable.Range(0, count)
+                .Where(index =>
+                    !string.IsNullOrWhiteSpace(keys[index])
+                    && !string.IsNullOrWhiteSpace(values[index]))
+                .Select(index => new ZaFashionCatalogTextLabel(keys[index], values[index]))
+                .GroupBy(label => label.Key, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToArray();
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception exception) when (
+            (exception is IOException or InvalidDataException or ArgumentException)
+            && !fileSource.IsBoundedSemanticLimit(exception))
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                $"Fashion Catalog message table 'romfs/{dataPath}' could not be decoded: {exception.Message}",
+                $"romfs/{dataPath}",
+                expected: "Pokemon Legends Z-A encrypted text and AHTB key tables"));
+            return null;
+        }
     }
 
     private static ZaFashionCatalogSnapshot EmptySnapshot() =>

@@ -85,6 +85,143 @@
   --km-panel-gap: 0.7rem;
 }
 
+/*
+ * Renegade is a visual theme, independent from the accessibility palette in
+ * data-km-theme. Keep this block before those palette overrides so high
+ * contrast and color-safe preferences continue to take precedence.
+ */
+:root[data-km-visual-theme='renegade'] {
+  color: #f6f3f4;
+  background: #08090a;
+  --color-bg: #08090a;
+  --color-bg-deep: #030405;
+  --color-canvas: #0b0c0e;
+  --color-sidebar: #070809;
+  --color-surface: #141518;
+  --color-surface-strong: #1c1e22;
+  --color-surface-muted: #0e0f12;
+  --color-surface-soft: #17191d;
+  --color-border: #2b2e34;
+  --color-border-strong: #484c55;
+  --color-control-border: #3c4048;
+  --color-control: #111316;
+  --color-control-hover: #1a1c20;
+  --color-popover: #101114;
+  --color-text: #f6f3f4;
+  --color-text-muted: #aeb1b8;
+  --color-text-soft: #dadadd;
+  --color-text-subtle: #c2c3c8;
+  --color-accent: #a4162d;
+  --color-accent-rgb: 164 22 45;
+  --color-accent-bright: #ff4d63;
+  --color-accent-bright-rgb: 255 77 99;
+  --color-accent-dark: #650c1d;
+  --color-accent-hover: #7c1024;
+  --color-primary: var(--color-accent-bright);
+  --color-gold: #ff5267;
+  --color-gold-rgb: 255 82 103;
+  --color-gold-dark: #8f1b2d;
+  --color-success: #68d9a0;
+  --color-success-rgb: 104 217 160;
+  --color-success-soft: #9de9c2;
+  --color-warning: #efc76b;
+  --color-warning-rgb: 239 199 107;
+  --color-warning-soft: #ffe09a;
+  --color-warning-surface: #2b2415;
+  --color-danger: #ff9388;
+  --color-danger-rgb: 255 147 136;
+  --color-danger-border: #a84743;
+  --color-focus: #ff7689;
+  --color-focus-ring: var(--color-focus);
+  --color-on-accent: #fff;
+  --color-overlay: rgb(2 3 4 / 82%);
+  --color-tooltip: #090a0c;
+  --color-tooltip-border: #5b606a;
+  --shadow-panel:
+    0 22px 64px rgb(0 0 0 / 46%),
+    0 0 30px rgb(var(--color-accent-rgb) / 5%);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 5%);
+  --shadow-tooltip: 0 16px 42px rgb(0 0 0 / 68%);
+  /* Compatibility aliases used by a few bounded workflow surfaces. */
+  --surface: var(--color-surface);
+  --surface-raised: color-mix(in srgb, var(--color-surface-strong) 82%, transparent);
+  --border-color: var(--color-border);
+  --accent: var(--color-accent-bright);
+  --muted-text: var(--color-text-muted);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+}
+
+/*
+ * Royal shares the visual-theme layer with Renegade while deliberately using
+ * a light color scheme. Accessibility palettes follow this block and remain
+ * authoritative when users select high contrast or color-safe colors.
+ */
+:root[data-km-visual-theme='royal'] {
+  color-scheme: light;
+  color: #251d12;
+  background: #e8ddc7;
+  --color-bg: #e8ddc7;
+  --color-bg-deep: #d7c6a5;
+  --color-canvas: #f4ecdc;
+  --color-sidebar: #eadfca;
+  --color-surface: #fffaf0;
+  --color-surface-strong: #f1e3c8;
+  --color-surface-muted: #eee4d1;
+  --color-surface-soft: #f8eedb;
+  --color-border: #b89a62;
+  --color-border-strong: #806128;
+  --color-control-border: #9d7b3d;
+  --color-control: #fffdf7;
+  --color-control-hover: #f3e1ba;
+  --color-popover: #fff9eb;
+  --color-text: #251d12;
+  --color-text-muted: #665238;
+  --color-text-soft: #3d2f1e;
+  --color-text-subtle: #57452d;
+  --color-text-secondary: var(--color-text-muted);
+  --color-muted: var(--color-text-muted);
+  --color-accent: #985b00;
+  --color-accent-rgb: 152 91 0;
+  --color-accent-bright: #d09112;
+  --color-accent-bright-rgb: 208 145 18;
+  --color-accent-dark: #704000;
+  --color-accent-hover: #8a5200;
+  --color-primary: #985b00;
+  --color-gold: #8a5500;
+  --color-gold-rgb: 138 85 0;
+  --color-gold-dark: #5c3700;
+  --color-success: #21643f;
+  --color-success-rgb: 33 100 63;
+  --color-success-soft: #d9f0e2;
+  --color-warning: #865000;
+  --color-warning-rgb: 134 80 0;
+  --color-warning-soft: #f6dfae;
+  --color-warning-surface: #fff1d0;
+  --color-danger: #a12f3b;
+  --color-danger-rgb: 161 47 59;
+  --color-danger-border: #a84a51;
+  --color-focus: #704000;
+  --color-focus-ring: var(--color-focus);
+  --color-on-accent: #fff;
+  --color-overlay: rgb(39 26 8 / 58%);
+  --color-tooltip: #fff9eb;
+  --color-tooltip-border: #b99655;
+  --shadow-panel:
+    0 22px 62px rgb(70 43 7 / 18%),
+    0 1px 0 rgb(255 255 255 / 86%) inset;
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 72%);
+  --shadow-tooltip: 0 16px 42px rgb(43 28 8 / 32%);
+  /* Compatibility aliases used by a few bounded workflow surfaces. */
+  --surface: var(--color-surface);
+  --surface-raised: color-mix(in srgb, var(--color-surface-strong) 88%, white);
+  --border-color: var(--color-border);
+  --accent: var(--color-accent);
+  --muted-text: var(--color-text-muted);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+}
+
 :root[data-km-theme='highContrast'] {
   --color-bg: #000;
   --color-bg-deep: #000;
@@ -131,6 +268,10 @@
   --shadow-tooltip: none;
 }
 
+:root[data-km-visual-theme='royal'][data-km-theme='highContrast'] {
+  color-scheme: dark;
+}
+
 :root[data-km-theme='colorSafe'] {
   --color-accent: #0072b2;
   --color-accent-rgb: 0 114 178;
@@ -152,6 +293,33 @@
   --color-danger-rgb: 213 94 0;
   --color-danger-border: #ff935b;
   --color-focus: #56b4e9;
+}
+
+/* Color-safe semantic colors are deepened for Royal luminous surfaces. */
+:root[data-km-visual-theme='royal'][data-km-theme='colorSafe'] {
+  --color-accent: #075a8c;
+  --color-accent-rgb: 7 90 140;
+  --color-accent-bright: #0879b8;
+  --color-accent-bright-rgb: 8 121 184;
+  --color-accent-dark: #043d60;
+  --color-accent-hover: #064e78;
+  --color-primary: #075a8c;
+  --color-gold: #716800;
+  --color-gold-rgb: 113 104 0;
+  --color-gold-dark: #4e4700;
+  --color-success: #006b4f;
+  --color-success-rgb: 0 107 79;
+  --color-success-soft: #d3eee4;
+  --color-warning: #7a5100;
+  --color-warning-rgb: 122 81 0;
+  --color-warning-soft: #f4dfad;
+  --color-warning-surface: #fff0c9;
+  --color-danger: #a33e00;
+  --color-danger-rgb: 163 62 0;
+  --color-danger-border: #a44a1d;
+  --color-focus: #075a8c;
+  --color-focus-ring: var(--color-focus);
+  --color-on-accent: #fff;
 }
 
 @media (min-height: 920px) {
@@ -3548,18 +3716,18 @@ h2 {
 .moves-table,
 .text-table,
 .trainers-table {
-  --virtual-table-scroll-x: 0px;
-  --virtual-table-scroll-width: 100%;
   grid-template-columns: minmax(0, 1fr);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .items-table {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-self: start;
   min-width: 0;
   max-height: var(--editor-table-max-height);
-  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 8px;
 }
@@ -3614,9 +3782,10 @@ h2 {
 .moves-row.moves-row-heading,
 .text-row.text-row-heading,
 .trainers-row.trainers-row-heading {
-  width: max(100%, var(--virtual-table-scroll-width, 100%));
-  transform: translateX(calc(0px - var(--virtual-table-scroll-x, 0px)));
-  will-change: transform;
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  width: 100%;
 }
 
 .items-row span {
@@ -3627,12 +3796,8 @@ h2 {
 }
 
 .virtual-table-body {
-  max-height: calc(var(--editor-visible-row-count) * var(--editor-row-height));
   min-width: 0;
-  overflow: auto;
-  overscroll-behavior-x: contain;
-  overscroll-behavior-y: auto;
-  scrollbar-gutter: stable;
+  overflow: visible;
 }
 
 .virtual-table-spacer {
@@ -3652,7 +3817,7 @@ h2 {
 .virtual-table-row > .text-row,
 .virtual-table-row > .trainers-row {
   height: 100%;
-  width: max(100%, var(--virtual-table-scroll-width, 100%));
+  width: 100%;
 }
 
 .item-inspector {
@@ -5581,11 +5746,10 @@ h2 {
 
 .moves-table {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-self: start;
   min-width: 0;
   max-height: var(--editor-table-max-height);
-  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 8px;
 }
@@ -6391,11 +6555,10 @@ h2 {
 
 .text-table {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-self: start;
   min-width: 0;
   max-height: var(--editor-table-max-height);
-  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 8px;
 }
@@ -6757,11 +6920,10 @@ h2 {
 
 .trainers-table {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-self: start;
   min-width: 0;
   max-height: var(--editor-table-max-height);
-  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 8px;
 }
@@ -7148,6 +7310,24 @@ h2 {
 
 .za-tm-compatibility-editor {
   margin-top: 10px;
+}
+
+.za-tm-compatibility-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.za-tm-compatibility-toolbar .compatibility-search {
+  flex: 1 1 18rem;
+}
+
+.za-tm-show-all-toggle {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
 }
 
 .za-tm-compatibility-list {
@@ -7747,22 +7927,25 @@ h2 {
 }
 
 .placement-object-table {
-  max-height: none;
-  overflow: hidden;
+  max-height: var(--editor-table-max-height);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .placement-object-table .virtual-table-body {
-  max-height: var(--editor-table-max-height);
+  max-height: none;
 }
 
 .placement-object-table .raid-rewards-row-heading {
-  width: max(100%, var(--virtual-table-scroll-width, 100%));
-  transform: translateX(calc(0px - var(--virtual-table-scroll-x, 0px)));
-  will-change: transform;
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  width: 100%;
 }
 
 .placement-object-table .virtual-table-row > .placement-object-row {
-  width: max(100%, var(--virtual-table-scroll-width, 100%));
+  width: 100%;
   min-height: 56px;
   height: auto;
 }
@@ -12205,6 +12388,64 @@ button.sv-encounter-condition-row:hover {
   margin-top: 16px;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 16px;
+  padding-bottom: 10px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(93 113 151 / 32%);
+  scrollbar-width: thin;
+}
+
+.settings-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-height: 42px;
+  align-items: center;
+  padding: 9px 12px;
+  color: var(--color-text-muted);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.settings-tab svg {
+  flex: 0 0 auto;
+  color: var(--color-gold);
+}
+
+.settings-tab:hover,
+.settings-tab.is-selected {
+  color: var(--color-text);
+  background: rgb(var(--color-accent-rgb) / 18%);
+  border-color: rgb(var(--color-accent-bright-rgb) / 62%);
+}
+
+.settings-tab.is-selected {
+  box-shadow: inset 0 -2px 0 var(--color-gold);
+}
+
+.settings-tab-panel {
+  min-width: 0;
+  margin-top: 18px;
+}
+
+.settings-tab-panel .settings-summary,
+.settings-tab-panel > .settings-subsection {
+  margin-top: 0;
+}
+
+.settings-tab-panel > .settings-subsection {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .settings-subsection {
   display: grid;
   gap: 14px;
@@ -13485,6 +13726,7 @@ input {
 
 @container workspace (max-width: 1300px) {
   .items-layout,
+  .za-items-section .items-layout,
   .moves-layout,
   .text-layout,
   .trainers-layout,
@@ -15276,7 +15518,7 @@ select.km-select-control:dir(rtl) {
   overflow-wrap: anywhere;
 }
 
-.km-performance-summary .km-performance-failures {
+.km-performance-summary .km-performance-unexpected-failures {
   color: var(--color-warning-soft);
   font-weight: 800;
 }
@@ -15920,5 +16162,1312 @@ select.km-select-control:dir(rtl) {
   .battle-cafe-actions button {
     justify-content: center;
     width: 100%;
+  }
+}
+
+.theme-settings,
+.visual-theme-option-copy {
+  min-width: 0;
+}
+
+.visual-theme-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.visual-theme-option {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.7fr) minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  gap: 12px 16px;
+  align-items: center;
+  min-height: 132px;
+  padding: 14px;
+  color: var(--color-text-soft);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.visual-theme-option:not(:disabled):hover {
+  color: var(--color-text);
+  background: var(--color-surface-soft);
+  border-color: var(--color-accent-bright);
+}
+
+.visual-theme-option-selected,
+.visual-theme-option-selected:disabled {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-muted));
+  border-color: rgb(var(--color-accent-bright-rgb) / 70%);
+  box-shadow:
+    inset 4px 0 0 var(--color-gold),
+    0 10px 28px rgb(var(--color-accent-rgb) / 12%);
+  cursor: default;
+  opacity: 1;
+}
+
+.visual-theme-option-preview {
+  grid-row: 1 / -1;
+  display: block;
+  position: relative;
+  min-height: 96px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 7%);
+}
+
+.visual-theme-option-preview::before,
+.visual-theme-option-preview::after,
+.visual-theme-option-preview-surface,
+.visual-theme-option-preview-accent,
+.visual-theme-option-preview-emblem {
+  content: '';
+  display: block;
+  position: absolute;
+}
+
+.visual-theme-option-preview-classic {
+  background:
+    radial-gradient(circle at 78% 16%, rgb(214 168 66 / 26%), transparent 38%),
+    linear-gradient(145deg, #050814, #10192b 55%, #080d16);
+}
+
+.visual-theme-option-preview-classic::before {
+  inset: 14% 9% 48% 24%;
+  background: #18233a;
+  border: 1px solid #3b4d70;
+  border-radius: 4px;
+}
+
+.visual-theme-option-preview-classic .visual-theme-option-preview-surface {
+  inset: 56% 9% 14% 24%;
+  background: #121b2d;
+  border: 1px solid #26344d;
+  border-radius: 4px;
+}
+
+.visual-theme-option-preview-classic .visual-theme-option-preview-accent {
+  inset: 14% auto 14% 9%;
+  width: 9%;
+  background: linear-gradient(180deg, #6d73ff, #302e86);
+  border-radius: 999px;
+}
+
+.visual-theme-option-preview-classic .visual-theme-option-preview-emblem {
+  right: 15%;
+  bottom: 22%;
+  width: 18px;
+  height: 18px;
+  background: #d6a842;
+  border: 3px solid #111a2c;
+  border-radius: 50%;
+}
+
+.visual-theme-option-preview-renegade {
+  background:
+    radial-gradient(circle at 76% 20%, rgb(255 77 99 / 22%), transparent 34%),
+    linear-gradient(146deg, transparent 0 38%, rgb(255 255 255 / 5%) 38% 58%, transparent 58%),
+    linear-gradient(145deg, #030405, #16181b 56%, #070809);
+}
+
+.visual-theme-option-preview-renegade::before {
+  inset: 14% 9% 48% 24%;
+  background: #1c1e22;
+  border: 1px solid #484c55;
+  border-radius: 4px;
+}
+
+.visual-theme-option-preview-renegade .visual-theme-option-preview-surface {
+  inset: 56% 9% 14% 24%;
+  background: #141518;
+  border: 1px solid #2b2e34;
+  border-radius: 4px;
+}
+
+.visual-theme-option-preview-renegade .visual-theme-option-preview-accent {
+  inset: 14% auto 14% 9%;
+  width: 9%;
+  background: linear-gradient(180deg, #ff4d63, #650c1d);
+  border-radius: 999px;
+  box-shadow: 0 0 12px rgb(255 77 99 / 46%);
+}
+
+.visual-theme-option-preview-renegade .visual-theme-option-preview-emblem {
+  right: 15%;
+  bottom: 22%;
+  width: 18px;
+  height: 18px;
+  background: #ff5267;
+  border: 3px solid #17191d;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgb(255 77 99 / 38%);
+  transform: rotate(45deg);
+}
+
+.visual-theme-option-preview-royal {
+  border-color: #b68b39;
+  background:
+    radial-gradient(circle at 74% 18%, rgb(255 255 255 / 92%), transparent 31%),
+    linear-gradient(146deg, transparent 0 40%, rgb(168 103 5 / 10%) 40% 58%, transparent 58%),
+    linear-gradient(145deg, #d7c6a5, #fffaf0 54%, #eadfca);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 90%),
+    0 0 16px rgb(208 145 18 / 16%);
+}
+
+.visual-theme-option-preview-royal::before {
+  inset: 14% 9% 48% 24%;
+  background: linear-gradient(180deg, #fffdf7, #f1e3c8);
+  border: 1px solid #9d7b3d;
+  border-radius: 4px;
+}
+
+.visual-theme-option-preview-royal .visual-theme-option-preview-surface {
+  inset: 56% 9% 14% 24%;
+  background: #fffaf0;
+  border: 1px solid #b89a62;
+  border-radius: 4px;
+}
+
+.visual-theme-option-preview-royal .visual-theme-option-preview-accent {
+  inset: 14% auto 14% 9%;
+  width: 9%;
+  background: linear-gradient(180deg, #e3ad35, #704000);
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgb(208 145 18 / 34%);
+}
+
+.visual-theme-option-preview-royal .visual-theme-option-preview-emblem {
+  right: 15%;
+  bottom: 22%;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(135deg, #fffdf7, #d09112);
+  border: 3px solid #8a5200;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgb(208 145 18 / 34%);
+  transform: rotate(45deg);
+}
+
+.visual-theme-option-copy {
+  display: grid;
+  align-self: end;
+  gap: 4px;
+}
+
+.visual-theme-option-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.visual-theme-option-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 76%, transparent);
+  border-radius: 11px;
+  box-shadow:
+    0 8px 18px rgb(0 0 0 / 20%),
+    inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+.visual-theme-option-copy strong {
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.visual-theme-option-copy span,
+.visual-theme-live-note {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.visual-theme-option-selected-label {
+  align-self: start;
+  justify-self: start;
+  padding: 3px 8px;
+  color: var(--color-text);
+  background: rgb(var(--color-accent-rgb) / 24%);
+  border: 1px solid rgb(var(--color-accent-bright-rgb) / 42%);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 900;
+}
+
+.visual-theme-live-note {
+  margin: 0;
+}
+
+:root[data-km-theme='highContrast'] .visual-theme-option-preview,
+:root[data-km-theme='highContrast'] .visual-theme-option-preview::before,
+:root[data-km-theme='highContrast'] .visual-theme-option-preview::after,
+:root[data-km-theme='highContrast'] .visual-theme-option-preview-surface,
+:root[data-km-theme='highContrast'] .visual-theme-option-preview-accent,
+:root[data-km-theme='highContrast'] .visual-theme-option-preview-emblem {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
+}
+
+:root[data-km-theme='highContrast'] .visual-theme-option-icon {
+  border-color: var(--color-border-strong);
+  box-shadow: none;
+  filter: grayscale(1) contrast(1.35);
+}
+
+@media (max-width: 620px) {
+  .visual-theme-option {
+    grid-template-columns: 1fr;
+  }
+
+  .visual-theme-option-preview {
+    grid-row: auto;
+  }
+}
+
+/* Renegade visual treatment -------------------------------------------------
+ * All presentation overrides are guarded from high contrast. Color-safe mode
+ * intentionally retains the graphite geometry while its later token values
+ * replace the Renegade accent and semantic hues.
+ */
+:root[data-km-visual-theme='renegade'] .brand-logo,
+:root[data-km-visual-theme='renegade'] .game-selection-logo {
+  content: url('./assets/renegade-logo.png');
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) body {
+  background:
+    radial-gradient(
+      ellipse at 76% 8%,
+      rgb(var(--color-accent-bright-rgb) / 13%),
+      transparent 24rem
+    ),
+    linear-gradient(
+      124deg,
+      transparent 0 66%,
+      rgb(var(--color-accent-bright-rgb) / 36%) 66.08%,
+      rgb(var(--color-accent-bright-rgb) / 8%) 66.28%,
+      transparent 66.5%
+    ),
+    linear-gradient(146deg, transparent 0 24%, rgb(255 255 255 / 2.5%) 24% 40%, transparent 40%),
+    linear-gradient(34deg, transparent 0 58%, rgb(255 255 255 / 2%) 58% 74%, transparent 74%),
+    linear-gradient(145deg, var(--color-bg-deep), var(--color-bg) 48%, #0d0e10);
+  background-attachment: fixed;
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) ::selection {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent-bright) 46%, var(--color-control));
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .app-shell {
+  background:
+    linear-gradient(90deg, rgb(2 3 4 / 90%), transparent 24rem),
+    radial-gradient(
+      ellipse at 62% -8%,
+      rgb(var(--color-accent-rgb) / 14%),
+      transparent 38rem
+    );
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .game-selection-shell {
+  background:
+    linear-gradient(135deg, rgb(3 4 5 / 86%), rgb(12 13 15 / 92%)),
+    radial-gradient(
+      circle at 50% 10%,
+      rgb(var(--color-accent-bright-rgb) / 12%),
+      transparent 30rem
+    );
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.game-selection-panel, .panel, .modal-panel, .km-modal, .km-settings-group) {
+  background:
+    linear-gradient(155deg, rgb(29 31 35 / 97%), rgb(13 14 17 / 98%)),
+    var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-border-strong) 78%, var(--color-accent) 22%);
+  box-shadow: var(--shadow-panel), var(--shadow-inset);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .sidebar {
+  background:
+    linear-gradient(180deg, rgb(13 14 16 / 97%), rgb(4 5 6 / 99%)),
+    var(--color-sidebar);
+  border-right-color: rgb(var(--color-accent-bright-rgb) / 22%);
+  box-shadow:
+    18px 0 58px rgb(0 0 0 / 44%),
+    1px 0 0 rgb(var(--color-accent-bright-rgb) / 7%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .toolbar {
+  background: linear-gradient(180deg, rgb(24 25 29 / 96%), rgb(12 13 16 / 97%));
+  border-bottom-color: rgb(var(--color-accent-bright-rgb) / 18%);
+  box-shadow: 0 16px 44px rgb(0 0 0 / 32%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.brand-logo, .game-selection-logo) {
+  border-color: rgb(var(--color-accent-bright-rgb) / 70%);
+  box-shadow:
+    0 0 22px rgb(var(--color-accent-bright-rgb) / 24%),
+    0 0 0 1px rgb(255 255 255 / 8%) inset;
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.game-choice-button, .sidebar-toggle, .secondary-button) {
+  color: var(--color-text-soft);
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface));
+  border-color: var(--color-control-border);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.game-choice-button, .sidebar-toggle, .secondary-button):hover:not(
+    :disabled,
+    [aria-disabled='true']
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-strong)),
+    var(--color-surface)
+  );
+  border-color: rgb(var(--color-accent-bright-rgb) / 58%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.primary-button, .purple-button) {
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
+  border-color: rgb(var(--color-accent-bright-rgb) / 58%);
+  box-shadow:
+    0 10px 28px rgb(var(--color-accent-rgb) / 28%),
+    var(--shadow-inset);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: linear-gradient(
+    135deg,
+    var(--color-accent),
+    color-mix(in srgb, var(--color-accent-bright) 72%, var(--color-accent))
+  );
+  border-color: var(--color-accent-bright);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .danger-button,
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .danger-icon-button {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 11%, var(--color-control));
+  border-color: var(--color-danger-border);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.danger-button, .danger-icon-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-danger) 19%, var(--color-control));
+  border-color: var(--color-danger);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .items-row-heading,
+    .moves-row-heading,
+    .text-row-heading,
+    .trainers-row-heading,
+    .shops-row-heading,
+    .encounters-row-heading,
+    .raid-rewards-row-heading,
+    .flagwork-row-heading,
+    .exefs-row-heading
+  ) {
+  --editor-table-heading-background: linear-gradient(
+    180deg,
+    var(--color-surface-strong),
+    var(--color-popover)
+  );
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .items-row:not(.items-row-heading):hover,
+    .items-row-selected,
+    .moves-row:not(.moves-row-heading):hover,
+    .moves-row-selected,
+    .text-row:not(.text-row-heading):hover,
+    .text-row-selected,
+    .trainers-row:not(.trainers-row-heading):hover,
+    .trainers-row-selected,
+    .shops-row:not(.shops-row-heading):hover,
+    .shops-row-selected,
+    .encounters-row:not(.encounters-row-heading):hover,
+    .encounters-row-selected,
+    .raid-rewards-row:not(.raid-rewards-row-heading):hover,
+    .raid-rewards-row-selected,
+    .flagwork-row:not(.flagwork-row-heading):hover,
+    .flagwork-row-selected,
+    .exefs-row:not(.exefs-row-heading):hover,
+    .exefs-row-selected,
+    .learnset-row:hover,
+    .learnset-row-selected
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent-dark) 84%, var(--color-control)),
+    var(--color-accent)
+  );
+  border-color: rgb(var(--color-accent-bright-rgb) / 64%);
+  box-shadow:
+    inset 4px 0 0 var(--color-accent-bright),
+    0 12px 30px rgb(0 0 0 / 30%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(.item-inspector, .text-inspector, .trainer-inspector, .shop-inspector, .encounter-inspector) {
+  background: linear-gradient(180deg, var(--color-popover), var(--color-surface-muted));
+  border-color: var(--color-border-strong);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .diagnostic-count,
+    .diagnostic-code,
+    .technical-tool-counts > div,
+    .technical-tool-contract-grid > div,
+    .technical-tool-instruction-table > div,
+    .shop-slot-detail-field,
+    .shop-inventory-editor-row,
+    .encounters-section-row,
+    .type-chart-grid,
+    .type-chart-axis-label,
+    .type-chart-cell,
+    .type-chart-cell-normal,
+    .ange-fight-intro,
+    .ange-fight-group,
+    .ange-fight-number-field,
+    .ange-fight-technical-map div,
+    .fairy-gym-boost-card,
+    .fairy-gym-source-summary,
+    .npc-item-gift-card,
+    .npc-item-gift-source-table-wrap,
+    .sv-encounter-browser,
+    .za-encounter-group-browser,
+    .za-placement-object-browser,
+    .sv-encounter-navigator,
+    .sv-encounter-browser-summary span,
+    .sv-encounter-facet,
+    .read-only-slot,
+    .changes-progress li > span,
+    .pending-edit-group-heading > div > span,
+    .workflow-loading-steps li
+  ) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .technical-tool-component-header,
+    .editor-session-bar,
+    .shiny-rate-preset,
+    .fairy-gym-trainer-tab.is-selected
+  ) {
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface));
+  border-color: var(--color-border-strong);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .swsh-pokemon-selected-stack > .panel-heading,
+    .sv-pokemon-selected-stack > .panel-heading,
+    .za-pokemon-selected-stack > .panel-heading,
+    .swsh-pokemon-selected-stack > .item-provenance-list,
+    .sv-pokemon-selected-stack > .item-provenance-list,
+    .za-pokemon-selected-stack > .item-provenance-list,
+    .swsh-pokemon-stats-block,
+    .sv-pokemon-stats-block,
+    .za-pokemon-stats-block,
+    .swsh-pokemon-traits-block,
+    .sv-pokemon-traits-block,
+    .za-pokemon-traits-block,
+    .za-pokemon-dex-placement-block,
+    .za-pokemon-alpha-move-block,
+    .swsh-pokemon-personal-edit-block,
+    .sv-pokemon-personal-edit-block,
+    .za-pokemon-personal-edit-block,
+    .swsh-pokemon-compatibility-block,
+    .sv-pokemon-compatibility-block,
+    .za-pokemon-compatibility-block,
+    .swsh-pokemon-evolutions-block,
+    .sv-pokemon-evolutions-block,
+    .za-pokemon-evolutions-block,
+    .swsh-pokemon-learnset-block,
+    .sv-pokemon-learnset-block,
+    .za-pokemon-learnset-block,
+    .za-dex-layout-size-control,
+    .za-dex-layout-dex,
+    .za-dex-layout-inspector
+  ) {
+  background: linear-gradient(180deg, var(--color-popover), var(--color-surface-muted));
+  border-color: var(--color-border);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .trainer-party-card:hover,
+    .trainer-party-card[aria-pressed='true'],
+    .placement-object-picker-row[aria-selected='true'],
+    .sv-encounter-condition-row-selected,
+    .za-encounter-group-row-selected,
+    .za-encounter-placement-row-selected,
+    .condition-tab-button[aria-selected='true'],
+    .slot-tab-button[aria-pressed='true']
+  ) {
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
+  border-color: rgb(var(--color-accent-bright-rgb) / 62%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .za-dex-layout-row:hover:not(:disabled),
+    .text-category-tabs button:hover:not(:disabled),
+    .shiny-rate-preset:hover:not(:disabled),
+    .shiny-rate-preset:focus-visible
+  ) {
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-strong));
+  border-color: rgb(var(--color-accent-bright-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-pill-info {
+  color: var(--color-text-soft);
+  background: rgb(var(--color-accent-rgb) / 22%);
+  border-color: rgb(var(--color-accent-bright-rgb) / 42%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .fatal-error-screen {
+  background: var(--color-bg-deep);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-ready {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface-muted));
+  border-color: rgb(var(--color-success-rgb) / 45%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-warning {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface-muted));
+  border-color: rgb(var(--color-warning-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-blocked {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-muted));
+  border-color: rgb(var(--color-danger-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) ::-webkit-scrollbar-track,
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  ::-webkit-scrollbar-corner {
+  background: var(--color-bg-deep);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  ::-webkit-scrollbar-thumb {
+  background: var(--color-control-border);
+  border-color: var(--color-bg-deep);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-accent-bright) 58%, var(--color-control-border));
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) {
+  scrollbar-color: var(--color-control-border) var(--color-bg-deep);
+}
+
+/* Royal visual treatment ----------------------------------------------------
+ * Royal uses a luminous ivory canvas with warm metal structure. The selectors
+ * stay scoped so Classic and Renegade retain their original presentation.
+ */
+:root[data-km-visual-theme='royal'] .brand-logo,
+:root[data-km-visual-theme='royal'] .game-selection-logo {
+  content: url('./assets/royal-logo.png');
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) body {
+  background:
+    radial-gradient(
+      ellipse at 78% 4%,
+      rgb(var(--color-accent-bright-rgb) / 18%),
+      transparent 28rem
+    ),
+    linear-gradient(
+      124deg,
+      transparent 0 66%,
+      rgb(255 255 255 / 78%) 66.08%,
+      rgb(var(--color-accent-bright-rgb) / 14%) 66.28%,
+      transparent 66.5%
+    ),
+    linear-gradient(146deg, transparent 0 24%, rgb(255 255 255 / 30%) 24% 40%, transparent 40%),
+    linear-gradient(34deg, transparent 0 58%, rgb(112 64 0 / 5%) 58% 74%, transparent 74%),
+    linear-gradient(145deg, var(--color-bg-deep), var(--color-bg) 46%, #f5eddf);
+  background-attachment: fixed;
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) ::selection {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent-bright) 36%, var(--color-control));
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .app-shell {
+  background:
+    linear-gradient(90deg, rgb(112 64 0 / 7%), transparent 27rem),
+    radial-gradient(ellipse at 64% -8%, rgb(var(--color-accent-bright-rgb) / 16%), transparent 40rem);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .game-selection-shell {
+  background:
+    linear-gradient(135deg, rgb(234 223 202 / 92%), rgb(255 250 240 / 94%)),
+    radial-gradient(circle at 50% 8%, rgb(255 255 255 / 84%), transparent 31rem);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.game-selection-panel, .panel, .modal-panel, .km-modal, .km-settings-group) {
+  background:
+    linear-gradient(155deg, rgb(255 253 247 / 98%), rgb(246 236 216 / 97%)),
+    var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-border-strong) 68%, var(--color-gold) 32%);
+  box-shadow: var(--shadow-panel), var(--shadow-inset);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .sidebar {
+  background:
+    linear-gradient(180deg, rgb(247 238 221 / 98%), rgb(224 208 177 / 99%)),
+    var(--color-sidebar);
+  border-right-color: rgb(var(--color-gold-rgb) / 42%);
+  box-shadow:
+    18px 0 54px rgb(74 47 10 / 17%),
+    1px 0 0 rgb(255 255 255 / 70%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .toolbar {
+  background: linear-gradient(180deg, rgb(255 251 243 / 97%), rgb(236 222 196 / 97%));
+  border-bottom-color: rgb(var(--color-gold-rgb) / 38%);
+  box-shadow: 0 16px 42px rgb(74 47 10 / 13%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.brand-logo, .game-selection-logo) {
+  border-color: rgb(var(--color-accent-bright-rgb) / 84%);
+  box-shadow:
+    0 0 22px rgb(var(--color-accent-bright-rgb) / 26%),
+    0 0 0 1px rgb(255 255 255 / 78%) inset;
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.game-choice-button, .sidebar-toggle, .secondary-button) {
+  color: var(--color-text-soft);
+  background: linear-gradient(180deg, var(--color-control), var(--color-surface-strong));
+  border-color: var(--color-control-border);
+  box-shadow: var(--shadow-inset);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.game-choice-button, .sidebar-toggle, .secondary-button):hover:not(
+    :disabled,
+    [aria-disabled='true']
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent-bright) 16%, var(--color-control)),
+    var(--color-surface-strong)
+  );
+  border-color: var(--color-accent);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.primary-button, .purple-button) {
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
+  border-color: color-mix(in srgb, var(--color-accent-bright) 62%, var(--color-accent-dark));
+  box-shadow:
+    0 10px 28px rgb(var(--color-accent-rgb) / 24%),
+    var(--shadow-inset);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: linear-gradient(135deg, #7d4800, #935700);
+  border-color: var(--color-accent-bright);
+}
+
+:root[data-km-visual-theme='royal'][data-km-theme='colorSafe']
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .danger-button,
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .danger-icon-button {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-control));
+  border-color: var(--color-danger-border);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.danger-button, .danger-icon-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-danger) 15%, var(--color-control));
+  border-color: var(--color-danger);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .items-row-heading,
+    .moves-row-heading,
+    .text-row-heading,
+    .trainers-row-heading,
+    .shops-row-heading,
+    .encounters-row-heading,
+    .raid-rewards-row-heading,
+    .flagwork-row-heading,
+    .exefs-row-heading
+  ) {
+  --editor-table-heading-background: linear-gradient(
+    180deg,
+    var(--color-surface-strong),
+    var(--color-popover)
+  );
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .items-row:not(.items-row-heading):hover,
+    .items-row-selected,
+    .moves-row:not(.moves-row-heading):hover,
+    .moves-row-selected,
+    .text-row:not(.text-row-heading):hover,
+    .text-row-selected,
+    .trainers-row:not(.trainers-row-heading):hover,
+    .trainers-row-selected,
+    .shops-row:not(.shops-row-heading):hover,
+    .shops-row-selected,
+    .encounters-row:not(.encounters-row-heading):hover,
+    .encounters-row-selected,
+    .raid-rewards-row:not(.raid-rewards-row-heading):hover,
+    .raid-rewards-row-selected,
+    .flagwork-row:not(.flagwork-row-heading):hover,
+    .flagwork-row-selected,
+    .exefs-row:not(.exefs-row-heading):hover,
+    .exefs-row-selected,
+    .learnset-row:hover,
+    .learnset-row-selected
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent-bright) 19%, var(--color-control)),
+    color-mix(in srgb, var(--color-gold) 28%, var(--color-surface-strong))
+  );
+  border-color: rgb(var(--color-accent-rgb) / 68%);
+  box-shadow:
+    inset 4px 0 0 var(--color-accent),
+    0 10px 24px rgb(74 47 10 / 10%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.item-inspector, .text-inspector, .trainer-inspector, .shop-inspector, .encounter-inspector) {
+  background: linear-gradient(180deg, var(--color-popover), var(--color-surface-muted));
+  border-color: var(--color-border-strong);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .diagnostic-count,
+    .diagnostic-code,
+    .technical-tool-counts > div,
+    .technical-tool-contract-grid > div,
+    .technical-tool-instruction-table > div,
+    .shop-slot-detail-field,
+    .shop-inventory-editor-row,
+    .encounters-section-row,
+    .type-chart-grid,
+    .type-chart-axis-label,
+    .type-chart-cell,
+    .type-chart-cell-normal,
+    .ange-fight-intro,
+    .ange-fight-group,
+    .ange-fight-number-field,
+    .ange-fight-technical-map div,
+    .fairy-gym-boost-card,
+    .fairy-gym-source-summary,
+    .npc-item-gift-card,
+    .npc-item-gift-source-table-wrap,
+    .sv-encounter-browser,
+    .za-encounter-group-browser,
+    .za-placement-object-browser,
+    .sv-encounter-navigator,
+    .sv-encounter-browser-summary span,
+    .sv-encounter-facet,
+    .read-only-slot,
+    .changes-progress li > span,
+    .pending-edit-group-heading > div > span,
+    .workflow-loading-steps li
+  ) {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .technical-tool-component-header,
+    .editor-session-bar,
+    .shiny-rate-preset,
+    .fairy-gym-trainer-tab.is-selected
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface));
+  border-color: var(--color-border-strong);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .swsh-pokemon-selected-stack > .panel-heading,
+    .sv-pokemon-selected-stack > .panel-heading,
+    .za-pokemon-selected-stack > .panel-heading,
+    .swsh-pokemon-selected-stack > .item-provenance-list,
+    .sv-pokemon-selected-stack > .item-provenance-list,
+    .za-pokemon-selected-stack > .item-provenance-list,
+    .swsh-pokemon-stats-block,
+    .sv-pokemon-stats-block,
+    .za-pokemon-stats-block,
+    .swsh-pokemon-traits-block,
+    .sv-pokemon-traits-block,
+    .za-pokemon-traits-block,
+    .za-pokemon-dex-placement-block,
+    .za-pokemon-alpha-move-block,
+    .swsh-pokemon-personal-edit-block,
+    .sv-pokemon-personal-edit-block,
+    .za-pokemon-personal-edit-block,
+    .swsh-pokemon-compatibility-block,
+    .sv-pokemon-compatibility-block,
+    .za-pokemon-compatibility-block,
+    .swsh-pokemon-evolutions-block,
+    .sv-pokemon-evolutions-block,
+    .za-pokemon-evolutions-block,
+    .swsh-pokemon-learnset-block,
+    .sv-pokemon-learnset-block,
+    .za-pokemon-learnset-block,
+    .za-dex-layout-size-control,
+    .za-dex-layout-dex,
+    .za-dex-layout-inspector
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(180deg, var(--color-popover), var(--color-surface-muted));
+  border-color: var(--color-border);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .trainer-party-card:hover,
+    .trainer-party-card[aria-pressed='true'],
+    .placement-object-picker-row[aria-selected='true'],
+    .sv-encounter-condition-row-selected,
+    .za-encounter-group-row-selected,
+    .za-encounter-placement-row-selected,
+    .condition-tab-button[aria-selected='true'],
+    .slot-tab-button[aria-pressed='true']
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent-bright) 20%, var(--color-control)),
+    color-mix(in srgb, var(--color-gold) 30%, var(--color-surface-strong))
+  );
+  border-color: rgb(var(--color-accent-rgb) / 66%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.nav-button:hover, .nav-button[aria-current='page'], .searchable-option-row:hover, .searchable-option-row.is-active) {
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
+  border-color: var(--color-accent-bright);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.searchable-option-row:hover, .searchable-option-row.is-active) small {
+  color: rgb(255 255 255 / 82%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .learnset-row:hover .learnset-mastery-cell,
+    .learnset-row-selected .learnset-mastery-cell,
+    .trainer-party-card[aria-pressed='true'] span,
+    .placement-category-tab[aria-selected='true'] small,
+    .trainer-category-tab[aria-selected='true'] small
+  ) {
+  color: var(--color-text-muted);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.text-category-tabs button:hover:not(:disabled), .text-category-tabs button.is-active) {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent-bright) 17%, var(--color-surface-strong));
+  border-color: rgb(var(--color-accent-rgb) / 58%);
+}
+
+/* Normalize legacy editor cards that predate the semantic surface tokens. */
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .diagnostic-group,
+    .game-dump-review-bar,
+    .game-dump-progress-panel,
+    .game-dump-category,
+    .game-dump-result,
+    .swsh-pokemon-summary-card,
+    .sv-pokemon-summary-card,
+    .za-pokemon-summary-card,
+    .za-dex-layout-membership-preview ul,
+    .editable-field-group,
+    .move-player-damage-control,
+    .move-player-damage-invocation,
+    .move-player-damage-timeline-group,
+    .move-player-damage-shoot-action,
+    .move-scripted-boss-ownership,
+    .move-scripted-boss-technical-grid > div,
+    .move-scripted-boss-owner-phases > span,
+    .move-scripted-boss-owner-empty,
+    .move-player-damage-controller-availability,
+    .text-category-browser,
+    .text-page-bar,
+    .text-control-guide,
+    .text-control-guide dl > div,
+    .placement-category-tab small,
+    .trainer-category-tab small,
+    .placement-load-status,
+    .shiny-rate-preset:disabled,
+    .type-chart-cell-immune,
+    .encounter-total-relative,
+    .za-encounter-ownership-summary > span,
+    .za-player-partner-editor,
+    .za-player-partner-summary,
+    .za-player-partner-guidance p,
+    .za-scripted-boss-actions,
+    .za-scripted-boss-actions-locked,
+    .za-scripted-boss-profile-summary,
+    .za-scripted-boss-phase-guide,
+    .za-scripted-boss-phase-stages > section,
+    .za-scripted-boss-phase-stages > section > div > span,
+    .za-scripted-boss-action-list li,
+    .za-encounter-advanced-data,
+    .za-encounter-advanced-heading > span,
+    .za-encounter-advanced-grid > div,
+    .changes-progress li,
+    .pending-edit-group,
+    .workflow-loading-steps li,
+    .output-safety-group,
+    .output-recovery-targets ul,
+    .tm-machine-control-source > div
+  ) {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-muted) 88%, var(--color-control));
+  border-color: var(--color-border);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.modal-backdrop, .app-shell.sidebar-is-constrained.sidebar-overlay-open .sidebar-scrim) {
+  background: var(--color-overlay);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .path-field,
+    .path-row dt,
+    .path-status,
+    .path-status-muted,
+    .diagnostic-code,
+    .technical-tool-path-list code,
+    .technical-tool-contract-grid code,
+    .technical-tool-instruction-table code,
+    .pokemon-stat-total,
+    .move-player-damage-scope-flow,
+    .move-player-damage-timeline-heading strong,
+    .move-player-damage-timeline-heading code,
+    .move-player-damage-shoot-action-heading,
+    .move-player-damage-launch-condition,
+    .move-player-damage-launch-condition-detail,
+    .move-player-damage-launch-condition-technical code,
+    .move-player-damage-invocation code,
+    .move-scripted-boss-owner-list svg,
+    .compact-checkbox,
+    .text-category-tabs button,
+    .text-category-tabs button small,
+    .text-control-guide summary,
+    .text-control-guide dt strong,
+    .shop-slot-detail-field .editable-field-label-row,
+    .shiny-rate-preset:disabled,
+    .shiny-rate-custom-result span,
+    .type-chart-axis-label,
+    .type-chart-cell-immune,
+    .ange-fight-staged-note,
+    .ange-fight-count-pill,
+    .ange-fight-attack-badges span,
+    .ange-fight-shared-note,
+    .ange-fight-number-field > span,
+    .ange-fight-number-field small,
+    .ange-fight-technical-map dt,
+    .ange-fight-source-card dt,
+    .ange-fight-technical-map dd,
+    .ange-fight-source-card dd,
+    .fairy-gym-trainer-tab,
+    .fairy-gym-answer-role.is-none,
+    .fairy-gym-answer-choice,
+    .npc-item-gift-tab-group h3,
+    .npc-item-gift-source-table tbody th,
+    .za-wild-zone-completion-status-excluded,
+    .condition-tab-button:disabled,
+    .condition-tab-button-unavailable,
+    .encounter-total-relative,
+    .za-spawner-count-warnings small,
+    .za-scripted-boss-status-locked,
+    .za-scripted-move-ownership-notice p,
+    .za-scripted-boss-replacement-caveat,
+    .za-scripted-boss-phase-stages > section > strong,
+    .za-scripted-boss-phase-stages > section > div > span,
+    .za-scripted-boss-phase-stages > section > div > span > strong,
+    .za-scripted-boss-phase-stages > section > div > span > small,
+    .za-scripted-boss-phase-model-status strong,
+    .za-scripted-boss-action-list code,
+    .za-scripted-boss-action-lock-reason,
+    .za-scripted-boss-affected-scope,
+    .za-scripted-boss-phase-availability-label,
+    .za-scripted-boss-phase-pill.is-unverified,
+    .za-scripted-boss-phase-legend > .is-unverified,
+    .za-scripted-boss-phase-detail.is-locked,
+    .za-scripted-boss-phase-detail.is-unverified,
+    .za-scripted-boss-selection-compatibility,
+    .za-encounter-advanced-heading > span
+  ) {
+  color: var(--color-text-muted);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .diagnostic-group-warning > summary,
+    .fatal-error-code code,
+    .za-dex-layout-validation,
+    .move-player-damage-mapping-status.is-unverified,
+    .move-player-damage-unverified,
+    .move-scripted-boss-owner-phases > span.is-unverified small,
+    .text-token-button code,
+    .text-control-guide dt code,
+    .shiny-rate-preset strong,
+    .type-chart-axis-line span:last-child,
+    .type-chart-cell,
+    .ange-fight-ember-note,
+    .ange-fight-attack-badges span.is-warning,
+    .ange-fight-repeat-warning,
+    .ange-fight-repeat-warning svg,
+    .fairy-gym-effect-pill,
+    .npc-item-gift-warning,
+    .npc-item-gift-warning svg,
+    .npc-item-gift-card-badges > span,
+    .npc-item-gift-status.is-repairable,
+    .za-wild-zone-completion-note,
+    .za-wild-zone-completion-note svg,
+    .za-wild-zone-completion-note strong,
+    .za-wild-zone-completion-status,
+    .slot-tab-button .slot-tab-pill,
+    .za-scripted-move-ownership-notice,
+    .za-scripted-boss-phase-detail.is-context-only,
+    .za-scripted-boss-phase-pill.is-context-only,
+    .za-scripted-boss-phase-legend > .is-context-only
+  ) {
+  color: var(--color-warning);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .move-player-damage-mapping-status.is-verified,
+    .move-scripted-boss-owner-phases > span.is-available small,
+    .fairy-gym-answer-role.is-increase,
+    .npc-item-gift-status.is-available,
+    .update-status-available,
+    .update-status-downloading,
+    .update-status-installing,
+    .update-status-restartRequired,
+    .update-status-restarting,
+    .update-status-upToDate,
+    .changes-progress li.is-complete,
+    .changes-progress li.is-complete > span
+  ) {
+  color: var(--color-success);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .diagnostic-group-error > summary,
+    .text-value-length-help.is-invalid,
+    .ange-fight-blocker,
+    .ange-fight-blocker svg,
+    .fairy-gym-answer-role.is-decrease,
+    .npc-item-gift-blocker,
+    .npc-item-gift-blocker svg,
+    .npc-item-gift-status.is-damaged,
+    .npc-item-gift-status.is-missing,
+    .npc-item-gift-card-blocker,
+    .npc-item-gift-card-blocker svg,
+    .za-scripted-boss-actions-broken .za-scripted-boss-actions-heading > svg,
+    .za-scripted-boss-status-broken,
+    .za-scripted-boss-compatibility-known-incompatible,
+    .update-status-error,
+    .pending-edit-remove-button
+  ) {
+  color: var(--color-danger);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .move-player-damage-controller-availability-heading > svg,
+    .za-player-partner-title > svg,
+    .za-scripted-boss-actions-heading > svg
+  ) {
+  color: var(--color-accent);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(.mod-merger-selection-status, .mod-merger-resolution-selected, .encounter-total-status) {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 9%, var(--color-surface));
+  border-color: rgb(var(--color-success-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  :is(
+    .za-dex-layout-row:hover:not(:disabled),
+    .text-category-tabs button:hover:not(:disabled),
+    .shiny-rate-preset:hover:not(:disabled),
+    .shiny-rate-preset:focus-visible
+  ) {
+  background: color-mix(in srgb, var(--color-accent-bright) 15%, var(--color-surface-strong));
+  border-color: rgb(var(--color-accent-rgb) / 58%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .status-pill-info {
+  color: var(--color-accent-dark);
+  background: rgb(var(--color-accent-bright-rgb) / 17%);
+  border-color: rgb(var(--color-accent-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .fatal-error-screen {
+  background: var(--color-bg-deep);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .status-ready {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 9%, var(--color-surface));
+  border-color: rgb(var(--color-success-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .status-warning {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 9%, var(--color-surface));
+  border-color: rgb(var(--color-warning-rgb) / 50%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .status-blocked {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  border-color: rgb(var(--color-danger-rgb) / 50%);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) ::-webkit-scrollbar-track,
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) ::-webkit-scrollbar-corner {
+  background: var(--color-bg-deep);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  ::-webkit-scrollbar-thumb {
+  background: var(--color-control-border);
+  border-color: var(--color-bg-deep);
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast'])
+  ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-accent) 70%, var(--color-control-border));
+}
+
+:root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) {
+  scrollbar-color: var(--color-control-border) var(--color-bg-deep);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'])
+    :is(.brand-logo, .game-selection-logo, .visual-theme-option-icon) {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :root[data-km-visual-theme='renegade'] body,
+  :root[data-km-visual-theme='renegade'] .app-shell,
+  :root[data-km-visual-theme='renegade'] .game-selection-shell,
+  :root[data-km-visual-theme='renegade'] .sidebar,
+  :root[data-km-visual-theme='renegade'] .toolbar,
+  :root[data-km-visual-theme='renegade']
+    :is(.game-selection-panel, .panel, .modal-panel, .km-modal, .km-settings-group) {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  :root[data-km-visual-theme='renegade'] :is(.brand-logo, .game-selection-logo) {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  :root[data-km-visual-theme='royal'] body,
+  :root[data-km-visual-theme='royal'] .app-shell,
+  :root[data-km-visual-theme='royal'] .game-selection-shell,
+  :root[data-km-visual-theme='royal'] .sidebar,
+  :root[data-km-visual-theme='royal'] .toolbar,
+  :root[data-km-visual-theme='royal']
+    :is(.game-selection-panel, .panel, .modal-panel, .km-modal, .km-settings-group) {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  :root[data-km-visual-theme='royal']
+    :is(.brand-logo, .game-selection-logo, .visual-theme-option-icon) {
+    border-color: CanvasText;
+    box-shadow: none;
+    filter: none;
+  }
+
+  :root .visual-theme-option-preview,
+  :root .visual-theme-option-preview::before,
+  :root .visual-theme-option-preview::after,
+  :root .visual-theme-option-preview-surface,
+  :root .visual-theme-option-preview-accent,
+  :root .visual-theme-option-preview-emblem {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
   }
 }

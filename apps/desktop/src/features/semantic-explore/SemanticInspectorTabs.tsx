@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocalization } from '../../localization';
 import type { AdaptiveInspectorTabViewModel } from '../workbench/AdaptiveInspector';
 import type {
+  SemanticExploreCapabilities,
   SemanticExploreCoverage,
   SemanticExploreRecordRef
 } from '../../bridge/semanticExploreContracts';
@@ -25,6 +26,35 @@ export type SemanticInspectorTabsOptions = {
   onNavigateEntity: (record: SemanticExploreRecordRef) => void;
   record: SemanticExploreRecordRef | null;
 };
+
+const passiveSemanticInspectorRootKinds: Readonly<Record<string, string>> = {
+  'workflow.items': 'item',
+  'workflow.moves': 'move',
+  'workflow.pokemon': 'pokemon-personal'
+};
+
+export function isPassiveSemanticInspectorRecordEligible(
+  record: SemanticExploreRecordRef | null,
+  capabilities: SemanticExploreCapabilities | null
+): boolean {
+  if (
+    !record ||
+    !capabilities ||
+    record.gameFamily !== capabilities.revision.gameFamily ||
+    record.recordKind.schemaVersion !== 1 ||
+    record.subrecordId !== null ||
+    passiveSemanticInspectorRootKinds[record.domain] !== record.recordKind.key
+  ) {
+    return false;
+  }
+
+  return capabilities.providers.some((provider) => (
+    provider.domains.includes(record.domain) &&
+    provider.features.includes('entity') &&
+    provider.coverage.state !== 'unavailable' &&
+    provider.coverage.domains.includes(record.domain)
+  ));
+}
 
 export function useSemanticInspectorTabs({
   controller,

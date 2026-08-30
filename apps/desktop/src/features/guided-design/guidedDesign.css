@@ -213,6 +213,50 @@
   grid-column: 1 / -1;
 }
 
+.km-guided-field-selector {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.km-guided-field-selector > small {
+  color: var(--km-guided-muted);
+}
+
+.km-guided-field-selector details {
+  min-width: 0;
+  background: var(--km-guided-surface);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.45rem;
+}
+
+.km-guided-field-selector summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.65rem 0.75rem;
+}
+
+.km-guided-field-selector ul {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  list-style: none;
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.km-guided-field-selector li label {
+  align-items: center;
+  background: var(--color-canvas);
+  border: 1px solid var(--km-guided-border);
+  border-radius: 0.4rem;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
 .km-guided-constraint-summary,
 .km-guided-result-summary,
 .km-guided-details dl {

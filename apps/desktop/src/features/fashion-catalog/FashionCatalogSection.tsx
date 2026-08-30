@@ -30,6 +30,7 @@ import {
 import './FashionCatalogSection.css';
 
 const pageSize = 50;
+const optionRenderLimit = 500;
 const catalogFiles = [
   'dressUpItems',
   'dressUpGroups',
@@ -69,12 +70,57 @@ type FashionCatalogSectionProps = {
 
 type FieldDefinition = {
   field: string;
+  hintKey: string;
   label: string;
   optional?: boolean;
+  readOnly?: boolean;
   valueKind: 'number' | 'option';
 };
 
+type FashionCatalogPresentation = {
+  catalogGroupCodeByModelPart: ReadonlyMap<string, string>;
+  colorLabelByValue: ReadonlyMap<string, string>;
+  dressItemTitleById: ReadonlyMap<string, string>;
+  dressVariantLabelByValue: ReadonlyMap<string, string>;
+  groupLabelByModelPart: ReadonlyMap<string, string>;
+  hairItemTitleById: ReadonlyMap<string, string>;
+  hairModelLabelByValue: ReadonlyMap<string, string>;
+  textLabelByKey: ReadonlyMap<string, string>;
+};
+
+const dressUpCatalogGroupTextKeys: Readonly<Record<string, string>> = {
+  '0': 'dressup_07_01',
+  '1': 'dressup_07_02',
+  '2': 'dressup_07_00',
+  '3': 'dressup_07_03',
+  '4': 'dressup_07_04',
+  '5': 'dressup_07_05',
+  '6': 'dressup_07_06',
+  '7': 'dressup_07_07',
+  '8': 'dressup_07_08',
+  '9': 'dressup_07_09'
+};
+
+const hairCatalogTypeTextKeys: Readonly<Record<string, string>> = {
+  '0': 'dressup_06_13',
+  '1': 'dressup_06_14',
+  '2': 'dressup_06_15',
+  '3': 'dressup_06_16',
+  '4': 'dressup_06_17',
+  '5': 'dressup_06_00',
+  '6': 'dressup_06_01',
+  '7': 'dressup_06_02',
+  '8': 'dressup_06_03',
+  '9': 'dressup_06_04',
+  '10': 'dressup_06_06',
+  '11': 'dressup_06_08',
+  '12': 'dressup_06_09',
+  '13': 'dressup_06_10',
+  '14': 'dressup_06_18'
+};
+
 type Translate = (key: string, values?: Record<string, string | number>) => string;
+type TranslateLiteral = (literal: string) => string;
 
 export function FashionCatalogSection({
   editSession,
@@ -103,13 +149,18 @@ export function FashionCatalogSection({
   });
   const feedbackRef = useRef<HTMLDivElement | null>(null);
 
+  const presentation = useMemo(
+    () => createFashionCatalogPresentation(workflow),
+    [workflow]
+  );
+
   const rows = useMemo(() => getRows(workflow, catalogFile), [catalogFile, workflow]);
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return query.length === 0
       ? rows
-      : rows.filter((row) => getSearchText(row).toLocaleLowerCase().includes(query));
-  }, [rows, search]);
+      : rows.filter((row) => getSearchText(row, presentation, catalogFile).toLocaleLowerCase().includes(query));
+  }, [catalogFile, presentation, rows, search]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const visibleRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize);
   const selectedRow = visibleRows.find((row) => row.physicalRowId === selectedRowId) ?? null;
@@ -142,16 +193,36 @@ export function FashionCatalogSection({
     () => getLoadedOptions(workflow, catalogFile, field?.field ?? ''),
     [catalogFile, field?.field, workflow]
   );
-  const filteredOptions = useMemo(() => {
+  const optionWindow = useMemo(() => {
     const query = optionSearch.trim().toLocaleLowerCase();
     const matches = query.length === 0
       ? options
-      : options.filter((option) => option.toLocaleLowerCase().includes(query));
+      : options.filter((option) => {
+          const label = getOptionLabel(
+            catalogFile,
+            field?.field ?? '',
+            option,
+            presentation
+          );
+          return option.toLocaleLowerCase().includes(query)
+            || label.toLocaleLowerCase().includes(query);
+        });
     const selected = draftValue.length > 0 && options.includes(draftValue)
       ? [draftValue]
       : [];
-    return Array.from(new Set([...selected, ...matches])).slice(0, 250);
-  }, [draftValue, optionSearch, options]);
+    const selectedMatchesQuery = selected.length > 0 && matches.includes(draftValue);
+    const nonSelectedMatches = matches.filter((option) => option !== draftValue);
+    const visibleMatches = nonSelectedMatches.slice(
+      0,
+      Math.max(0, optionRenderLimit - selected.length)
+    );
+    return {
+      matchingCount: matches.length,
+      options: [...selected, ...visibleMatches],
+      shownMatchingCount: visibleMatches.length + (selectedMatchesQuery ? 1 : 0)
+    };
+  }, [catalogFile, draftValue, field?.field, optionSearch, options, presentation]);
+  const filteredOptions = optionWindow.options;
   const pendingCount = editSession?.pendingEdits.filter(
     (edit) => edit.domain === 'workflow.fashionCatalog'
   ).length ?? 0;
@@ -217,6 +288,7 @@ export function FashionCatalogSection({
     workflow.canStage &&
     selectedRow !== null &&
     field !== undefined &&
+    !field.readOnly &&
     draftValue !== sourceValue &&
     !isStaging &&
     (field.valueKind === 'option'
@@ -388,7 +460,7 @@ export function FashionCatalogSection({
               {visibleRows.length === 0 ? (
                 <p className="empty-copy">{t('fashionCatalog.search.noResults')}</p>
               ) : visibleRows.map((row) => {
-                const subtitle = getRowSubtitle(row);
+                const subtitle = getRowSubtitle(row, presentation, translateLiteral);
                 return (
                   <button
                     aria-pressed={selectedRowId === row.physicalRowId}
@@ -397,7 +469,7 @@ export function FashionCatalogSection({
                     onClick={() => setSelectedRowId(row.physicalRowId)}
                     type="button"
                   >
-                    <strong>{getRowTitle(row)}</strong>
+                    <strong>{getRowTitle(row, presentation, catalogFile)}</strong>
                     {subtitle ? <span>{subtitle}</span> : null}
                   </button>
                 );
@@ -428,7 +500,7 @@ export function FashionCatalogSection({
             {selectedRow && field ? (
               <>
                 <div className="fashion-catalog-selection-heading">
-                  <strong>{getRowTitle(selectedRow)}</strong>
+                  <strong>{getRowTitle(selectedRow, presentation, catalogFile)}</strong>
                   <span>{t('fashionCatalog.editor.rowNumber', {
                     row: selectedRow.physicalIndex + 1
                   })}</span>
@@ -443,11 +515,33 @@ export function FashionCatalogSection({
                   value={field.field}
                 >
                   {fields.map((candidate) => (
-                    <option key={candidate.field} value={candidate.field}>{candidate.label}</option>
+                    <option key={candidate.field} value={candidate.field}>
+                      {candidate.label}
+                      {candidate.readOnly ? ` - ${translateLiteral('Read-only')}` : ''}
+                    </option>
                   ))}
                 </select>
 
-                {field.valueKind === 'option' ? (
+                <p className="field-hint">{t(field.hintKey)}</p>
+
+                {field.readOnly ? (
+                  <>
+                    <label className="field-label" htmlFor="fashion-catalog-value">
+                      {t('fashionCatalog.editor.value')}
+                    </label>
+                    <input
+                      id="fashion-catalog-value"
+                      readOnly
+                      type="text"
+                      value={getOptionLabel(
+                        catalogFile,
+                        field.field,
+                        sourceValue,
+                        presentation
+                      )}
+                    />
+                  </>
+                ) : field.valueKind === 'option' ? (
                   <>
                     <label className="field-label" htmlFor="fashion-catalog-option-search">
                       {t('fashionCatalog.editor.optionSearch')}
@@ -474,12 +568,27 @@ export function FashionCatalogSection({
                           : t('fashionCatalog.editor.chooseOption')}
                       </option>
                       {filteredOptions.map((option) => (
-                        <option key={option} value={option}>{option}</option>
+                        <option key={option} value={option}>
+                          {getOptionLabel(
+                            catalogFile,
+                            field.field,
+                            option,
+                            presentation
+                          )}
+                        </option>
                       ))}
                     </select>
                     <p className="field-hint">
                       {t('fashionCatalog.editor.provenOptions', { count: options.length })}
                     </p>
+                    {optionWindow.shownMatchingCount < optionWindow.matchingCount ? (
+                      <p className="field-hint">
+                        {t('fashionCatalog.editor.optionResultsLimited', {
+                          count: optionWindow.matchingCount,
+                          shown: optionWindow.shownMatchingCount
+                        })}
+                      </p>
+                    ) : null}
                   </>
                 ) : (
                   <>
@@ -510,7 +619,7 @@ export function FashionCatalogSection({
                   >
                     {isStaging ? t('fashionCatalog.editor.staging') : t('fashionCatalog.editor.stage')}
                   </button>
-                  {field.optional ? (
+                  {field.optional && !field.readOnly ? (
                     <button
                       disabled={
                         isStaging ||
@@ -584,43 +693,67 @@ function getRows(
   }
 }
 
-function getSearchText(row: CatalogRecord): string {
+function getSearchText(
+  row: CatalogRecord,
+  presentation: FashionCatalogPresentation,
+  file: FashionCatalogFile
+): string {
   if ('lineupId' in row) {
-    return `${row.itemId} ${row.lineupId} ${row.shopIds.join(' ')}`;
+    return `${row.itemId} ${resolveLineupItemLabel(row.itemId, presentation, file)} ${row.lineupId} ${row.shopIds.join(' ')}`;
   }
   if ('modelVariant' in row) {
-    return `${row.itemId} ${row.modelPart} ${row.modelVariant} ${row.primaryColorLabel} ${row.secondaryColorLabel}`;
+    return `${row.itemId} ${presentation.dressItemTitleById.get(String(row.itemId)) ?? ''} ${row.modelPart} ${row.modelVariant} ${row.primaryColorLabel} ${resolveTextLabel(row.primaryColorLabel, presentation)} ${row.secondaryColorLabel} ${resolveTextLabel(row.secondaryColorLabel, presentation)}`;
   }
   if ('displayLabel' in row) {
-    return `${row.modelPart} ${row.displayLabel} ${row.displayOrder}`;
+    return `${row.modelPart} ${row.displayLabel} ${resolveTextLabel(row.displayLabel, presentation)} ${row.displayOrder}`;
   }
-  return `${row.itemId} ${row.modelKey} ${row.colorValue ?? ''} ${row.labelKey ?? ''}`;
+  return `${row.itemId} ${presentation.hairItemTitleById.get(String(row.itemId)) ?? ''} ${row.modelKey} ${row.colorValue ?? ''} ${row.labelKey ?? ''} ${resolveTextLabel(row.labelKey, presentation)}`;
 }
 
-function getRowTitle(row: CatalogRecord): string {
+function getRowTitle(
+  row: CatalogRecord,
+  presentation: FashionCatalogPresentation,
+  file: FashionCatalogFile
+): string {
   if ('lineupId' in row) {
-    return `${row.itemId} · ${row.lineupId}`;
+    return resolveLineupItemLabel(row.itemId, presentation, file);
   }
   if ('modelVariant' in row) {
-    return `${row.itemId} · ${row.modelPart}`;
+    return presentation.dressItemTitleById.get(String(row.itemId))
+      ?? `${row.itemId} · ${row.modelPart}`;
   }
   if ('displayLabel' in row) {
-    return row.displayLabel || row.modelPart;
+    return resolveTextLabel(row.displayLabel, presentation)
+      || row.displayLabel
+      || row.modelPart;
   }
-  return `${row.itemId} · ${row.modelKey}`;
+  return presentation.hairItemTitleById.get(String(row.itemId))
+    ?? `${row.itemId} · ${row.modelKey}`;
 }
 
-function getRowSubtitle(row: CatalogRecord): string | null {
+function getRowSubtitle(
+  row: CatalogRecord,
+  presentation: FashionCatalogPresentation,
+  translateLiteral: TranslateLiteral
+): string | null {
   if ('lineupId' in row) {
-    return row.shopIds.join(', ') || String(row.entryPhysicalIndex + 1);
+    const exactShopIds = row.shopIds.join(', ');
+    return exactShopIds.length > 0
+      ? `${translateLiteral('Shop')}: ${row.shopIds.length}`
+      : String(row.entryPhysicalIndex + 1);
   }
   if ('modelVariant' in row) {
     return null;
   }
   if ('displayLabel' in row) {
+    const catalogGroup = resolveDressUpCatalogGroupForModelPart(row.modelPart, presentation);
+    if (catalogGroup) {
+      return catalogGroup;
+    }
     return row.modelPart;
   }
-  return row.labelKey ?? row.colorValue ?? '';
+  return resolveHairCatalogTypeLabel(row.catalogTypeCode, presentation)
+    ?? row.labelKey ?? row.colorValue ?? '';
 }
 
 function getFieldDefinitions(
@@ -641,7 +774,9 @@ function getFieldDefinitions(
       ['variantOrder', 'number']
     ].map(([field, valueKind]) => ({
       field,
+      hintKey: getFieldHintKey(file, field),
       label: t(`fashionCatalog.fields.${field}`),
+      readOnly: field === 'categoryCode' || field === 'colorVariantCode',
       valueKind: valueKind as FieldDefinition['valueKind']
     }));
   }
@@ -652,6 +787,7 @@ function getFieldDefinitions(
       ['displayLabel', 'option']
     ].map(([field, valueKind]) => ({
       field,
+      hintKey: getFieldHintKey(file, field),
       label: t(`fashionCatalog.fields.${field}`),
       valueKind: valueKind as FieldDefinition['valueKind']
     }));
@@ -659,24 +795,242 @@ function getFieldDefinitions(
   if (file === 'dressUpLineups' || file === 'hairAndMakeupLineups') {
     return [{
       field: 'itemId',
+      hintKey: 'fashionCatalog.editor.safety',
       label: t('fashionCatalog.fields.itemId'),
       valueKind: 'option'
     }];
   }
   const definitions: Array<Omit<FieldDefinition, 'label'>> = [
-    { field: 'itemId', valueKind: 'number' },
-    { field: 'modelKey', valueKind: 'option' },
-    { field: 'catalogTypeCode', valueKind: 'option' },
-    { field: 'colorValue', optional: true, valueKind: 'option' },
-    { field: 'labelKey', optional: true, valueKind: 'option' },
-    { field: 'displayOrder', valueKind: 'number' },
-    { field: 'groupCode', valueKind: 'option' },
-    { field: 'variantCode', valueKind: 'option' }
+    { field: 'itemId', hintKey: getFieldHintKey(file, 'itemId'), valueKind: 'number' },
+    { field: 'modelKey', hintKey: getFieldHintKey(file, 'modelKey'), valueKind: 'option' },
+    { field: 'catalogTypeCode', hintKey: getFieldHintKey(file, 'catalogTypeCode'), valueKind: 'option' },
+    { field: 'colorValue', hintKey: getFieldHintKey(file, 'colorValue'), optional: true, valueKind: 'option' },
+    { field: 'labelKey', hintKey: getFieldHintKey(file, 'labelKey'), optional: true, valueKind: 'option' },
+    { field: 'displayOrder', hintKey: getFieldHintKey(file, 'displayOrder'), valueKind: 'number' },
+    { field: 'groupCode', hintKey: getFieldHintKey(file, 'groupCode'), readOnly: true, valueKind: 'option' },
+    { field: 'variantCode', hintKey: getFieldHintKey(file, 'variantCode'), readOnly: true, valueKind: 'option' }
   ];
   return definitions.map((definition) => ({
     ...definition,
     label: t(`fashionCatalog.fields.${definition.field}`)
   }));
+}
+
+function getFieldHintKey(file: FashionCatalogFile, field: string): string {
+  if (
+    field === 'categoryCode'
+    || field === 'colorVariantCode'
+    || field === 'groupCode'
+    || field === 'variantCode'
+  ) {
+    return 'fieldHelp.catalog.raw.unverified';
+  }
+  if (
+    field === 'displayLabel'
+    || field === 'primaryColorLabel'
+    || field === 'secondaryColorLabel'
+    || field === 'labelKey'
+  ) {
+    return 'fashionCatalog.editor.safety';
+  }
+  if (field === 'catalogGroupCode' || field === 'catalogTypeCode') {
+    return 'fashionCatalog.editor.safety';
+  }
+  if (field === 'modelPart' || field === 'modelVariant' || field === 'modelKey') {
+    return 'fashionCatalog.editor.safety';
+  }
+  if ((file === 'dressUpLineups' || file === 'hairAndMakeupLineups') && field === 'itemId') {
+    return 'fashionCatalog.editor.safety';
+  }
+  return 'fieldHelp.catalog.generic.value';
+}
+
+function createFashionCatalogPresentation(
+  workflow: FashionCatalogWorkflow | null
+): FashionCatalogPresentation {
+  const textLabelByKey = new Map(
+    workflow?.textLabels.map((label) => [label.key, label.label] as const) ?? []
+  );
+  const groupNamesByModelPart = new Map<string, Set<string>>();
+  const catalogGroupCodesByModelPart = new Map<string, Set<string>>();
+  const dressItemTitlesById = new Map<string, Set<string>>();
+  const dressVariantNames = new Map<string, Set<string>>();
+  const hairItemTitlesById = new Map<string, Set<string>>();
+  const hairModelNames = new Map<string, Set<string>>();
+  const colorNames = new Map<string, Set<string>>();
+
+  for (const row of workflow?.dressUpGroups ?? []) {
+    addCandidateLabel(
+      groupNamesByModelPart,
+      row.modelPart,
+      textLabelByKey.get(row.displayLabel) ?? row.displayLabel
+    );
+  }
+  const groupLabelByModelPart = createUniqueLabelMap(groupNamesByModelPart);
+
+  for (const row of workflow?.dressUpItems ?? []) {
+    addCandidateLabel(
+      catalogGroupCodesByModelPart,
+      row.modelPart,
+      String(row.catalogGroupCode)
+    );
+    const groupLabel = groupLabelByModelPart.get(row.modelPart) ?? row.modelPart;
+    const colorLabels = [row.primaryColorLabel, row.secondaryColorLabel]
+      .map((key) => textLabelByKey.get(key) ?? key)
+      .filter((label, index, labels) => label.length > 0 && labels.indexOf(label) === index);
+    const label = colorLabels.length > 0
+      ? `${groupLabel} - ${colorLabels.join(' / ')} (#${row.itemId})`
+      : `${groupLabel} (#${row.itemId})`;
+    addCandidateLabel(dressItemTitlesById, String(row.itemId), label);
+    addCandidateLabel(dressVariantNames, row.modelVariant, label);
+  }
+
+  for (const row of workflow?.hairAndMakeup ?? []) {
+    const resolvedName = row.labelKey
+      ? textLabelByKey.get(row.labelKey) ?? row.labelKey
+      : '';
+    addCandidateLabel(
+      hairItemTitlesById,
+      String(row.itemId),
+      resolvedName.length > 0 ? `${resolvedName} (#${row.itemId})` : `#${row.itemId}`
+    );
+    if (resolvedName.length > 0) {
+      addCandidateLabel(hairModelNames, row.modelKey, resolvedName);
+      if (row.colorValue) {
+        addCandidateLabel(colorNames, row.colorValue, resolvedName);
+      }
+    }
+  }
+
+  return {
+    catalogGroupCodeByModelPart: createUniqueLabelMap(catalogGroupCodesByModelPart),
+    colorLabelByValue: createUniqueLabelMap(colorNames),
+    dressItemTitleById: createUniqueLabelMap(dressItemTitlesById),
+    dressVariantLabelByValue: createUniqueLabelMap(dressVariantNames),
+    groupLabelByModelPart,
+    hairItemTitleById: createUniqueLabelMap(hairItemTitlesById),
+    hairModelLabelByValue: createUniqueLabelMap(hairModelNames),
+    textLabelByKey
+  };
+}
+
+function addCandidateLabel(
+  candidates: Map<string, Set<string>>,
+  value: string,
+  label: string
+) {
+  const labels = candidates.get(value) ?? new Set<string>();
+  labels.add(label);
+  candidates.set(value, labels);
+}
+
+function createUniqueLabelMap(
+  candidates: ReadonlyMap<string, ReadonlySet<string>>
+): ReadonlyMap<string, string> {
+  return new Map(
+    [...candidates]
+      .filter(([, labels]) => labels.size === 1)
+      .map(([value, labels]) => [value, [...labels][0]])
+  );
+}
+
+function getOptionLabel(
+  file: FashionCatalogFile,
+  field: string,
+  value: string,
+  presentation: FashionCatalogPresentation
+): string {
+  if ((file === 'dressUpLineups' || file === 'hairAndMakeupLineups') && field === 'itemId') {
+    return resolveLineupItemLabel(Number(value), presentation, file);
+  }
+  if (field === 'modelPart') {
+    return presentation.groupLabelByModelPart.get(value)
+      ?? value;
+  }
+  if (field === 'modelVariant') {
+    return presentation.dressVariantLabelByValue.get(value)
+      ?? value;
+  }
+  if (
+    field === 'primaryColorLabel'
+    || field === 'secondaryColorLabel'
+    || field === 'displayLabel'
+    || field === 'labelKey'
+  ) {
+    return presentation.textLabelByKey.get(value)
+      ?? value;
+  }
+  if (field === 'catalogGroupCode') {
+    return resolveCatalogGroupLabel(value, presentation)
+      ?? value;
+  }
+  if (field === 'catalogTypeCode') {
+    return resolveHairCatalogTypeLabel(Number(value), presentation)
+      ?? value;
+  }
+  if (field === 'colorValue') {
+    const colorName = presentation.colorLabelByValue.get(value);
+    return colorName ? `${colorName} - ${value}` : value;
+  }
+  if (field === 'modelKey') {
+    const modelName = presentation.hairModelLabelByValue.get(value);
+    return modelName ? `${modelName} - ${value}` : value;
+  }
+  if (
+    field === 'categoryCode'
+    || field === 'colorVariantCode'
+    || field === 'groupCode'
+    || field === 'variantCode'
+  ) {
+    return value;
+  }
+  return value;
+}
+
+function resolveLineupItemLabel(
+  itemId: number,
+  presentation: FashionCatalogPresentation,
+  file: FashionCatalogFile
+): string {
+  const key = String(itemId);
+  if (file === 'dressUpLineups') {
+    return presentation.dressItemTitleById.get(key) ?? `#${itemId}`;
+  }
+  if (file === 'hairAndMakeupLineups') {
+    return presentation.hairItemTitleById.get(key) ?? `#${itemId}`;
+  }
+  return `#${itemId}`;
+}
+
+function resolveTextLabel(
+  key: string | null | undefined,
+  presentation: FashionCatalogPresentation
+): string {
+  return key ? presentation.textLabelByKey.get(key) ?? '' : '';
+}
+
+function resolveCatalogGroupLabel(
+  code: string,
+  presentation: FashionCatalogPresentation
+): string | null {
+  const key = dressUpCatalogGroupTextKeys[code];
+  return key ? presentation.textLabelByKey.get(key) ?? null : null;
+}
+
+function resolveDressUpCatalogGroupForModelPart(
+  modelPart: string,
+  presentation: FashionCatalogPresentation
+): string | null {
+  const code = presentation.catalogGroupCodeByModelPart.get(modelPart);
+  return code ? resolveCatalogGroupLabel(code, presentation) : null;
+}
+
+function resolveHairCatalogTypeLabel(
+  code: number,
+  presentation: FashionCatalogPresentation
+): string | null {
+  const key = hairCatalogTypeTextKeys[String(code)];
+  return key ? presentation.textLabelByKey.get(key) ?? null : null;
 }
 
 function getLoadedOptions(

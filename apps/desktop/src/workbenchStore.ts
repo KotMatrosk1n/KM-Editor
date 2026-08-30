@@ -106,6 +106,7 @@ type WorkbenchState = {
   dynamaxAdventureSearchText: string;
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
   itemSearchText: string;
+  showUnusedItems: boolean;
   itemsWorkflow: ItemsWorkflow | null;
   movesSearchText: string;
   movesWorkflow: MovesWorkflow | null;
@@ -217,6 +218,7 @@ type WorkbenchState = {
   ) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
+  setShowUnusedItems: (showUnusedItems: boolean) => void;
   setMovesSearchText: (movesSearchText: string) => void;
   setMovesWorkflow: (movesWorkflow: MovesWorkflow) => void;
   setOpenProject: (project: OpenProjectState) => void;
@@ -415,6 +417,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     dynamaxAdventureSearchText: '',
     dynamaxAdventuresWorkflow: null,
     itemSearchText: '',
+    showUnusedItems: false,
     itemsWorkflow: null,
     movesSearchText: '',
     movesWorkflow: null,
@@ -527,6 +530,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   dynamaxAdventureSearchText: '',
   dynamaxAdventuresWorkflow: null,
   itemSearchText: '',
+  showUnusedItems: false,
   itemsWorkflow: null,
   movesSearchText: '',
   movesWorkflow: null,
@@ -778,6 +782,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       };
     }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
+  setShowUnusedItems: (showUnusedItems) => set({ showUnusedItems }),
   setMovesSearchText: (movesSearchText) => set({ movesSearchText }),
   setShopSearchText: (shopSearchText) => set({ shopSearchText }),
   setTextSearchText: (textSearchText) => set({ textSearchText }),

@@ -2,6 +2,7 @@
 
 import { type OpenProjectRequest } from './contracts';
 import { type ProjectBridge } from './projectBridge';
+import { reclassifyBridgePerformanceDiagnostic } from '../performanceDiagnostics';
 
 export type ProjectScopePaths = OpenProjectRequest['paths'];
 
@@ -68,6 +69,7 @@ export function createGameScopedProjectBridge(
             getCurrentGeneration
           );
           if (staleScopeError) {
+            reclassifyBridgePerformanceDiagnostic(error, 'expected-rejection');
             throw staleScopeError;
           }
 
@@ -81,6 +83,7 @@ export function createGameScopedProjectBridge(
           getCurrentGeneration
         );
         if (staleScopeError) {
+          reclassifyBridgePerformanceDiagnostic(response, 'expected-rejection');
           throw staleScopeError;
         }
 
