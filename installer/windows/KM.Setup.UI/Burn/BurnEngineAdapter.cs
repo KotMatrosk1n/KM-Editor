@@ -64,7 +64,8 @@ internal sealed class BurnEngineAdapter
 {
     private const int CancellationAllowed = 0;
     private const int CancellationRequested = 1;
-    private const int CancellationClosed = 2;
+    private const int CancellationDelivered = 2;
+    private const int CancellationClosed = 3;
     private const int ErrorInstallUserExit = 1602;
     private const int ErrorInstallFailure = 1603;
     private const int ErrorSuccessRebootInitiated = 1641;
@@ -104,6 +105,8 @@ internal sealed class BurnEngineAdapter
     private bool recoveryRequired;
     private bool forceReinstallMsi;
     private bool missingMsiRecovery;
+    private bool missingMsiRecoveryFromRelatedBundle;
+    private bool convergenceRecovery;
     private bool currentBundleMsiScopeMismatch;
     private bool msiDetectionMetadataMismatch;
     private bool relatedMsiConflict;
@@ -113,18 +116,22 @@ internal sealed class BurnEngineAdapter
     private bool shortcutPreferencesEdited;
     private bool shortcutPreferencesLoaded;
     private bool deleteUserSettings;
+    private HashSet<BundleScope>? convergenceRecoveryMsiScopes;
     private IntPtr parentWindowHandle;
     private LaunchAction retryActionAfterDetection = LaunchAction.Unknown;
     private FreshInstallScope plannedFreshInstallScope = FreshInstallScope.Default;
     private FreshInstallScope retryFreshInstallScopeAfterDetection = FreshInstallScope.Default;
     private BundleScope? currentMsiScope;
     private BundleScope? missingMsiRecoveryScope;
+    private BundleScope? convergenceRecoveryScope;
     private BundleScope? requestedPlanScope;
     private BundleScope? shortcutPreferenceScope;
     private BundleScope? relatedMsiScope;
     private BundleScope? supersededUnregisterScope;
     private string? currentMsiInstallFolder;
     private string? missingMsiRecoveryInstallFolder;
+    private string? missingMsiRecoveryBundleCode;
+    private string? convergenceRecoveryInstallFolder;
     private ProductMarkerState missingMsiRecoveryMarkerState;
     private Version? currentMsiVersion;
     private Version? missingMsiRecoveryVersion;
@@ -234,7 +241,7 @@ internal sealed class BurnEngineAdapter
 
     public bool UsesVisibleTiming => ShouldShowWindow;
 
-    public bool CanRequestCancel => Volatile.Read(ref cancellationState) != CancellationClosed;
+    public bool CanRequestCancel => Volatile.Read(ref cancellationState) == CancellationAllowed;
 
     public bool ShouldExitAfterVisibleCompletion => ShouldShowWindow && ShouldPlanAutomatically;
 
@@ -397,6 +404,17 @@ internal sealed class BurnEngineAdapter
         return Volatile.Read(ref cancellationState) == CancellationRequested;
     }
 
+    private bool TryDeliverCancellation()
+    {
+        // Returning Cancel asks Burn to leave forward execution and begin its
+        // rollback path. Deliver that request once; repeating it on later MSI
+        // callbacks also cancels the rollback that is restoring the old owner.
+        return Interlocked.CompareExchange(
+            ref cancellationState,
+            CancellationDelivered,
+            CancellationRequested) == CancellationRequested;
+    }
+
     private void ResetCancellation()
     {
         Interlocked.Exchange(ref cancellationState, CancellationAllowed);
@@ -478,6 +496,8 @@ internal sealed class BurnEngineAdapter
         recoveryRequired = false;
         forceReinstallMsi = false;
         missingMsiRecovery = false;
+        missingMsiRecoveryFromRelatedBundle = false;
+        convergenceRecovery = false;
         currentBundleMsiScopeMismatch = false;
         msiDetectionMetadataMismatch = false;
         legacyNsisInstallFolder = null;
@@ -489,13 +509,17 @@ internal sealed class BurnEngineAdapter
         seenPerUserRelatedBundleIds.Clear();
         relatedBundleDuplicateOccurrences.Clear();
         relatedBundlePlanOccurrenceIndices.Clear();
+        convergenceRecoveryMsiScopes = null;
         currentMsiScope = null;
         missingMsiRecoveryScope = null;
+        convergenceRecoveryScope = null;
         requestedPlanScope = null;
         relatedMsiScope = null;
         supersededUnregisterScope = null;
         currentMsiInstallFolder = null;
         missingMsiRecoveryInstallFolder = null;
+        missingMsiRecoveryBundleCode = null;
+        convergenceRecoveryInstallFolder = null;
         missingMsiRecoveryMarkerState = ProductMarkerState.Absent;
         currentMsiVersion = null;
         missingMsiRecoveryVersion = null;
@@ -543,6 +567,7 @@ internal sealed class BurnEngineAdapter
         if (relatedBundleOwners.TryGetValue(key, out var existingOwner))
         {
             relatedBundleOwners[key] = new RelatedBundleDetection(
+                e.ProductCode,
                 scope,
                 existingOwner.RelationType == e.RelationType
                     ? e.RelationType
@@ -553,6 +578,7 @@ internal sealed class BurnEngineAdapter
         else
         {
             relatedBundleOwners[key] = new RelatedBundleDetection(
+                e.ProductCode,
                 scope,
                 e.RelationType,
                 version,
@@ -685,6 +711,7 @@ internal sealed class BurnEngineAdapter
 
         if (IsCancellationRequested())
         {
+            CloseCancellation();
             retryActionAfterDetection = LaunchAction.Unknown;
             retryFreshInstallScopeAfterDetection = FreshInstallScope.Default;
             ExitCode = ErrorInstallUserExit;
@@ -732,7 +759,14 @@ internal sealed class BurnEngineAdapter
             var recoverableMissingMsi = TryCaptureMissingMsiRecovery(
                 capturedExactCurrentMsi,
                 exactCurrentMsiRegistered);
-            if ((installed || exactCurrentMsiRegistered || currentMsiScope.HasValue) &&
+            var relatedBundleMissingMsi = !installed &&
+                relatedBundleOwners.Count != 0 &&
+                relatedMsiProducts.Count == 0 &&
+                !HasExistingMsiRegistration();
+            if ((installed ||
+                 exactCurrentMsiRegistered ||
+                 currentMsiScope.HasValue ||
+                 relatedBundleMissingMsi) &&
                 !capturedExactCurrentMsi &&
                 !recoverableFullBundleMsi &&
                 !recoverableMissingMsi)
@@ -757,7 +791,14 @@ internal sealed class BurnEngineAdapter
             }
 
             var existingMsiVersionState = GetExistingMsiVersionState();
-            if (relatedMsiConflict ||
+            var legacyState = DetectLegacyNsisState(out var validatedLegacyFolder, out var legacyVersion);
+            if (legacyState == LegacyNsisState.Confirmed && IsLegacyVersionNewer(legacyVersion))
+            {
+                // A proven newer legacy owner remains a downgrade boundary even
+                // when damaged MSI or Burn metadata also exists.
+                blockingResourceKey = "NewerInstallDescription";
+            }
+            else if (relatedMsiConflict ||
                 RelatedMsiScopeConflictsWithRegisteredBundle() &&
                     !recoverableFullBundleMsi &&
                     !recoverableMissingMsi ||
@@ -771,15 +812,10 @@ internal sealed class BurnEngineAdapter
             }
             else
             {
-                var legacyState = DetectLegacyNsisState(out var validatedLegacyFolder, out var legacyVersion);
                 if (legacyState == LegacyNsisState.Confirmed &&
                     (installed || relatedMsiProducts.Count != 0 || HasExistingMsiRegistration()))
                 {
                     blockingResourceKey = "ExistingInstallConflictDescription";
-                }
-                else if (legacyState == LegacyNsisState.Confirmed && IsLegacyVersionNewer(legacyVersion))
-                {
-                    blockingResourceKey = "NewerInstallDescription";
                 }
                 else if (legacyState == LegacyNsisState.Confirmed)
                 {
@@ -799,6 +835,15 @@ internal sealed class BurnEngineAdapter
             !legacyMigrationRequired)
         {
             ConfigureRecoveryTakeover(capturedExactCurrentMsi);
+        }
+
+        if (string.Equals(
+                blockingResourceKey,
+                "ExistingInstallConflictDescription",
+                StringComparison.Ordinal) &&
+            TryConfigureConvergenceRecovery())
+        {
+            blockingResourceKey = null;
         }
 
         if (blockingResourceKey is null &&
@@ -911,6 +956,7 @@ internal sealed class BurnEngineAdapter
 
         if (IsCancellationRequested())
         {
+            CloseCancellation();
             ExitCode = ErrorInstallUserExit;
             PhaseChanged?.Invoke(InstallerPhase.Cancelled);
             var relaunchWarning = TryRelaunchAtTerminal();
@@ -958,44 +1004,44 @@ internal sealed class BurnEngineAdapter
     private void OnCacheBegin(object? sender, CacheBeginEventArgs e)
     {
         ActivityChanged?.Invoke(InstallerActivity.Caching);
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnProgress(object? sender, ProgressEventArgs e)
     {
         ProgressChanged?.Invoke(Math.Clamp(e.OverallPercentage, 0, 100));
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnCacheAcquireProgress(object? sender, CacheAcquireProgressEventArgs e)
     {
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnCacheContainerOrPayloadVerifyProgress(object? sender, CacheContainerOrPayloadVerifyProgressEventArgs e)
     {
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnCachePayloadExtractProgress(object? sender, CachePayloadExtractProgressEventArgs e)
     {
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnCacheVerifyProgress(object? sender, CacheVerifyProgressEventArgs e)
     {
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnExecuteProgress(object? sender, ExecuteProgressEventArgs e)
     {
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnExecuteBegin(object? sender, ExecuteBeginEventArgs e)
     {
         ActivityChanged?.Invoke(InstallerActivity.Executing);
-        e.Cancel = IsCancellationRequested();
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnExecuteComplete(object? sender, ExecuteCompleteEventArgs e)
@@ -1011,17 +1057,32 @@ internal sealed class BurnEngineAdapter
             ? package.DisplayName
             : e.PackageId;
         PackageChanged?.Invoke(packageName ?? e.PackageId);
-        e.Cancel = IsCancellationRequested();
+
+        if (!e.ShouldExecute)
+        {
+            // Burn has left forward execution. A new close request at this point
+            // must not cancel the package that is restoring the previous state.
+            CloseCancellation();
+            e.Cancel = false;
+            return;
+        }
+
+        e.Cancel = TryDeliverCancellation();
     }
 
     private void OnError(object? sender, ErrorEventArgs e)
     {
         lastError = e.ErrorMessage;
         ErrorReported?.Invoke(e.ErrorMessage);
-        if (IsCancellationRequested())
+        if (TryDeliverCancellation())
         {
             e.Result = Result.Cancel;
+            return;
         }
+
+        // Once forward execution has failed, any subsequent close request must
+        // not be delivered to the rollback callbacks that repair the old state.
+        CloseCancellation();
     }
 
     private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
@@ -1108,6 +1169,11 @@ internal sealed class BurnEngineAdapter
         if (legacyMigrationRequired)
         {
             return BundleScope.PerUser;
+        }
+
+        if (recoveryRequired && convergenceRecovery && convergenceRecoveryScope.HasValue)
+        {
+            return convergenceRecoveryScope.Value;
         }
 
         if (recoveryRequired && currentMsiScope.HasValue)
@@ -1326,12 +1392,22 @@ internal sealed class BurnEngineAdapter
                 (rawValue != "0" && rawValue != "1") ||
                 !long.TryParse(rawValue, out value))
             {
-                engine.Log(LogLevel.Error, $"Shortcut preference {searchVariable} was not 0 or 1.");
-                return false;
+                engine.Log(
+                    LogLevel.Standard,
+                    $"Ignored malformed saved shortcut preference {searchVariable}; the authored default will be used.");
+                return true;
             }
         }
 
-        if (value is < 0 or > 1 || !SetNumericVariable(targetVariable, value))
+        if (value is < 0 or > 1)
+        {
+            engine.Log(
+                LogLevel.Standard,
+                $"Ignored out-of-range saved shortcut preference {searchVariable}; the authored default will be used.");
+            return true;
+        }
+
+        if (!SetNumericVariable(targetVariable, value))
         {
             return false;
         }
@@ -1388,8 +1464,7 @@ internal sealed class BurnEngineAdapter
         bool capturedExactCurrentMsi,
         bool exactCurrentMsiRegistered)
     {
-        if (!installed ||
-            capturedExactCurrentMsi ||
+        if (capturedExactCurrentMsi ||
             exactCurrentMsiRegistered ||
             currentMsiScope.HasValue ||
             relatedMsiProducts.Count != 0 ||
@@ -1399,10 +1474,9 @@ internal sealed class BurnEngineAdapter
             return false;
         }
 
-        var detectedBundleScope = TryGetDetectedBundleScope();
-        var bundleVersion = TryNormalizeVersion(BundleVersion);
-        if (!detectedBundleScope.HasValue ||
-            bundleVersion is null ||
+        var candidateVersion = TryNormalizeVersion(BundleVersion);
+        if (candidateVersion is null ||
+            HasProvenNewerOwner(candidateVersion) ||
             !applicationData.Bundle.Packages.TryGetValue(KmMsiPackageId, out var package) ||
             package.Type != PackageType.Msi ||
             string.IsNullOrWhiteSpace(package.ProductCode) ||
@@ -1413,6 +1487,51 @@ internal sealed class BurnEngineAdapter
                 LogLevel.Error,
                 "The Full bundle registration did not provide a complete authored MSI identity and scope for recovery.");
             return false;
+        }
+
+        BundleScope ownerScope;
+        Version ownerVersion;
+        string? ownerBundleCode = null;
+        var fromRelatedBundle = false;
+        if (installed)
+        {
+            var detectedBundleScope = TryGetDetectedBundleScope();
+            if (!detectedBundleScope.HasValue)
+            {
+                relatedMsiConflict = true;
+                engine.Log(
+                    LogLevel.Error,
+                    "The Full bundle has no MSI, but setup could not prove its registered scope.");
+                return false;
+            }
+
+            ownerScope = detectedBundleScope.Value;
+            ownerVersion = candidateVersion;
+        }
+        else
+        {
+            // An interrupted major upgrade can remove the older MSI before its
+            // own bundle registration is retired. Only one cached KM upgrade
+            // owner plus its complete source-version marker is enough evidence
+            // to lay down this setup's authored MSI and replace that stale owner.
+            var relatedOwner = TryGetSingleMissingMsiRelatedBundle(candidateVersion);
+            if (relatedOwner is null)
+            {
+                if (relatedBundleOwners.Count != 0)
+                {
+                    relatedMsiConflict = true;
+                    engine.Log(
+                        LogLevel.Error,
+                        "A related KM bundle has no MSI, but setup could not prove exactly one cached same-or-older upgrade owner.");
+                }
+
+                return false;
+            }
+
+            ownerScope = relatedOwner.Scope;
+            ownerVersion = relatedOwner.Version!;
+            ownerBundleCode = relatedOwner.BundleCode;
+            fromRelatedBundle = true;
         }
 
         var relatedProductCodes = MsiProductInfo.TryGetRelatedProductCodes(package.UpgradeCode);
@@ -1426,8 +1545,8 @@ internal sealed class BurnEngineAdapter
         }
 
         if (!TryResolveMissingMsiRecoveryEvidence(
-                detectedBundleScope.Value,
-                bundleVersion,
+                ownerScope,
+                ownerVersion,
                 out var installFolder,
                 out var markerState))
         {
@@ -1438,17 +1557,46 @@ internal sealed class BurnEngineAdapter
             return false;
         }
 
+        if (fromRelatedBundle && markerState != ProductMarkerState.Matching)
+        {
+            relatedMsiConflict = true;
+            engine.Log(
+                LogLevel.Error,
+                "The related KM bundle has no MSI, and no complete scope-correct KM product marker proves its source version and install path.");
+            return false;
+        }
+
         missingMsiRecovery = true;
-        missingMsiRecoveryScope = detectedBundleScope.Value;
+        missingMsiRecoveryFromRelatedBundle = fromRelatedBundle;
+        missingMsiRecoveryBundleCode = ownerBundleCode;
+        missingMsiRecoveryScope = ownerScope;
         missingMsiRecoveryInstallFolder = installFolder;
         missingMsiRecoveryMarkerState = markerState;
-        missingMsiRecoveryVersion = bundleVersion;
+        missingMsiRecoveryVersion = ownerVersion;
         engine.Log(
             LogLevel.Standard,
-            markerState == ProductMarkerState.Matching
-                ? "The Full bundle has no MSI; setup will reinstall the current package at the matching KM product marker path."
-                : "The Full bundle has no MSI or KM product marker; setup will reinstall the current package at the authored scope default.");
+            fromRelatedBundle
+                ? "One cached older KM bundle has no MSI; setup will reinstall the current package at its matching product marker path and replace the stale owner."
+                : markerState == ProductMarkerState.Matching
+                    ? "The Full bundle has no MSI; setup will reinstall the current package at the matching KM product marker path."
+                    : "The Full bundle has no MSI or KM product marker; setup will reinstall the current package at the authored scope default.");
         return true;
+    }
+
+    private RelatedBundleDetection? TryGetSingleMissingMsiRelatedBundle(Version candidateVersion)
+    {
+        if (relatedBundleOwners.Count != 1)
+        {
+            return null;
+        }
+
+        var owner = relatedBundleOwners.Values.Single();
+        return owner.RelationType == RelationType.Upgrade &&
+            owner.Version is not null &&
+            owner.Version <= candidateVersion &&
+            !owner.MissingFromCache
+                ? owner
+                : null;
     }
 
     private bool TryResolveMissingMsiRecoveryEvidence(
@@ -1852,8 +2000,23 @@ internal sealed class BurnEngineAdapter
 
     private void ConfigureRecoveryTakeover(bool capturedExactCurrentMsi)
     {
-        if (installed &&
-            missingMsiRecovery &&
+        var candidateVersion = TryNormalizeVersion(BundleVersion);
+        if (candidateVersion is null)
+        {
+            blockingResourceKey = "ExistingInstallConflictDescription";
+            return;
+        }
+
+        if (HasProvenNewerOwner(candidateVersion))
+        {
+            blockingResourceKey = "NewerInstallDescription";
+            engine.Log(
+                LogLevel.Error,
+                "A newer KM bundle or MSI owner is present; this setup will not plan a downgrade recovery.");
+            return;
+        }
+
+        if (missingMsiRecovery &&
             missingMsiRecoveryScope.HasValue &&
             !string.IsNullOrWhiteSpace(missingMsiRecoveryInstallFolder) &&
             missingMsiRecoveryVersion is not null)
@@ -1862,7 +2025,9 @@ internal sealed class BurnEngineAdapter
             recoveryRequired = true;
             engine.Log(
                 LogLevel.Standard,
-                "The Full bundle registration is missing its MSI; setup will force the current package present in the verified bundle scope.");
+                missingMsiRecoveryFromRelatedBundle
+                    ? "The verified older bundle registration is missing its MSI; setup will force the current package present and replace that stale owner."
+                    : "The Full bundle registration is missing its MSI; setup will force the current package present in the verified bundle scope.");
             return;
         }
 
@@ -1999,6 +2164,171 @@ internal sealed class BurnEngineAdapter
         }
     }
 
+    private bool TryConfigureConvergenceRecovery()
+    {
+        var candidateVersion = TryNormalizeVersion(BundleVersion);
+        if (candidateVersion is null ||
+            !applicationData.Bundle.Packages.TryGetValue(KmMsiPackageId, out var package) ||
+            package.Type != PackageType.Msi ||
+            string.IsNullOrWhiteSpace(package.ProductCode) ||
+            string.IsNullOrWhiteSpace(package.UpgradeCode) ||
+            HasProvenNewerOwner(candidateVersion))
+        {
+            if (candidateVersion is not null)
+            {
+                blockingResourceKey = "NewerInstallDescription";
+            }
+
+            return false;
+        }
+
+        var detectedMsiScopes = TryGetLiveRelatedMsiScopes(
+            package.UpgradeCode,
+            candidateVersion,
+            out var newerMsiDetected);
+        if (newerMsiDetected)
+        {
+            blockingResourceKey = "NewerInstallDescription";
+            return false;
+        }
+
+        var scope = ResolveConvergenceScope();
+        var installFolder = TryResolveAuthoredDefaultInstallFolder(scope);
+        if (installFolder is null)
+        {
+            return false;
+        }
+
+        // Installation is the recovery primitive. Conflicting or partial old
+        // metadata may limit stale-owner cleanup, but it must not prevent the
+        // current setup from laying down its own package at a KM-authored path.
+        // No unverified custom path or legacy UninstallString is used here.
+        convergenceRecovery = true;
+        convergenceRecoveryScope = scope;
+        convergenceRecoveryInstallFolder = installFolder;
+        convergenceRecoveryMsiScopes = detectedMsiScopes;
+        forceReinstallMsi = true;
+        recoveryRequired = true;
+        engine.Log(
+            LogLevel.Standard,
+            "Existing KM ownership is partial or contradictory; setup will reinstall the current package at the authored scope default and let verified package engines retire any stale owners they recognize.");
+        return true;
+    }
+
+    private BundleScope ResolveConvergenceScope()
+    {
+        var detectedBundleScope = TryGetDetectedBundleScope();
+        if (installed && detectedBundleScope.HasValue)
+        {
+            return detectedBundleScope.Value;
+        }
+
+        if (currentMsiScope.HasValue)
+        {
+            return currentMsiScope.Value;
+        }
+
+        var relatedMsiScopes = relatedMsiProducts.Values
+            .Select(product => product.Scope)
+            .Distinct()
+            .ToArray();
+        if (relatedMsiScopes.Length == 1)
+        {
+            return relatedMsiScopes[0];
+        }
+
+        var relatedBundleScopes = relatedBundleOwners.Values
+            .Where(owner => owner.RelationType == RelationType.Upgrade)
+            .Select(owner => owner.Scope)
+            .Distinct()
+            .ToArray();
+        if (relatedBundleScopes.Length == 1)
+        {
+            return relatedBundleScopes[0];
+        }
+
+        var perUserMarker = HasProductMarkerEvidence(BundleScope.PerUser);
+        var perMachineMarker = HasProductMarkerEvidence(BundleScope.PerMachine);
+        return perMachineMarker && !perUserMarker
+            ? BundleScope.PerMachine
+            : BundleScope.PerUser;
+    }
+
+    private bool HasProvenNewerOwner(Version candidateVersion)
+    {
+        if (currentMsiVersion is not null && currentMsiVersion > candidateVersion ||
+            relatedMsiProducts.Values.Any(product => product.Version > candidateVersion) ||
+            relatedBundleOwners.Values.Any(owner => owner.Version is not null && owner.Version > candidateVersion))
+        {
+            return true;
+        }
+
+        var searchedVersion = TryNormalizeVersion(TryGetVariableString("ExistingMsiVersion"));
+        return searchedVersion is not null && searchedVersion > candidateVersion;
+    }
+
+    private static bool ScopeSetsEqual(
+        HashSet<BundleScope>? first,
+        HashSet<BundleScope>? second)
+    {
+        return first is null || second is null || first.SetEquals(second);
+    }
+
+    private HashSet<BundleScope>? TryGetLiveRelatedMsiScopes(
+        string upgradeCode,
+        Version candidateVersion,
+        out bool newerMsiDetected)
+    {
+        newerMsiDetected = false;
+        var productCodes = MsiProductInfo.TryGetRelatedProductCodes(upgradeCode);
+        if (productCodes is null)
+        {
+            return null;
+        }
+
+        var scopes = new HashSet<BundleScope>();
+        foreach (var productCode in productCodes)
+        {
+            var registration = MsiProductInfo.TryGetRegistration(productCode);
+            if (registration is null)
+            {
+                continue;
+            }
+
+            newerMsiDetected |= registration.Version > candidateVersion;
+            scopes.Add(registration.Scope);
+        }
+
+        return scopes;
+    }
+
+    private bool HasProductMarkerEvidence(BundleScope scope)
+    {
+        var prefix = scope == BundleScope.PerMachine
+            ? "KMPerMachineProduct"
+            : "KMPerUserProduct";
+        return new[]
+        {
+            TryGetVariableString($"{prefix}InstallLocation"),
+            TryGetVariableString($"{prefix}InstallDir"),
+            TryGetVariableString($"{prefix}InstallScope"),
+            TryGetVariableString($"{prefix}InstallerFamily"),
+            TryGetVariableString($"{prefix}MainBinaryName"),
+            TryGetVariableString($"{prefix}Version"),
+        }.Any(value => !string.IsNullOrWhiteSpace(value));
+    }
+
+    private string? TryResolveAuthoredDefaultInstallFolder(BundleScope scope)
+    {
+        var executableVariable = scope == BundleScope.PerMachine
+            ? "KMPerMachineExecutablePath"
+            : "KMPerUserExecutablePath";
+        var executablePath = TryGetFormattedVariableString(executableVariable);
+        return InstallPathPolicy.TryNormalizeLocalFolder(
+            Path.GetDirectoryName(executablePath),
+            mustExist: false);
+    }
+
     private ProductMarkerState GetProductMarkerState(
         BundleScope scope,
         string installFolder,
@@ -2047,6 +2377,11 @@ internal sealed class BurnEngineAdapter
     {
         scope = default;
         installFolder = string.Empty;
+
+        if (convergenceRecovery)
+        {
+            return TryRevalidateConvergenceRecovery(out scope, out installFolder);
+        }
 
         if (missingMsiRecovery)
         {
@@ -2118,12 +2453,64 @@ internal sealed class BurnEngineAdapter
         return true;
     }
 
+    private bool TryRevalidateConvergenceRecovery(out BundleScope scope, out string installFolder)
+    {
+        scope = default;
+        installFolder = string.Empty;
+        var candidateVersion = TryNormalizeVersion(BundleVersion);
+        if (!convergenceRecoveryScope.HasValue ||
+            string.IsNullOrWhiteSpace(convergenceRecoveryInstallFolder) ||
+            candidateVersion is null ||
+            HasProvenNewerOwner(candidateVersion) ||
+            !applicationData.Bundle.Packages.TryGetValue(KmMsiPackageId, out var package) ||
+            package.Type != PackageType.Msi ||
+            string.IsNullOrWhiteSpace(package.ProductCode) ||
+            string.IsNullOrWhiteSpace(package.UpgradeCode))
+        {
+            return false;
+        }
+
+        var liveMsiScopes = TryGetLiveRelatedMsiScopes(
+            package.UpgradeCode,
+            candidateVersion,
+            out var newerMsiDetected);
+        if (newerMsiDetected ||
+            !ScopeSetsEqual(convergenceRecoveryMsiScopes, liveMsiScopes))
+        {
+            return false;
+        }
+
+        if (liveMsiScopes is null)
+        {
+            // Do not recreate the original soft lock when Windows Installer's
+            // advisory enumeration is unavailable. The authored MajorUpgrade
+            // table remains the Apply-time downgrade authority; incomplete
+            // registrations without a readable version are recovery inputs.
+            engine.Log(
+                LogLevel.Standard,
+                "Windows Installer could not enumerate the upgrade family before Plan; setup will let the authored MSI enforce downgrade protection during Apply.");
+        }
+
+        var authoredInstallFolder = TryResolveAuthoredDefaultInstallFolder(convergenceRecoveryScope.Value);
+        if (authoredInstallFolder is null ||
+            !string.Equals(
+                authoredInstallFolder,
+                convergenceRecoveryInstallFolder,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        scope = convergenceRecoveryScope.Value;
+        installFolder = authoredInstallFolder;
+        return true;
+    }
+
     private bool TryRevalidateMissingMsiRecovery(out BundleScope scope, out string installFolder)
     {
         scope = default;
         installFolder = string.Empty;
-        if (!installed ||
-            !missingMsiRecoveryScope.HasValue ||
+        if (!missingMsiRecoveryScope.HasValue ||
             string.IsNullOrWhiteSpace(missingMsiRecoveryInstallFolder) ||
             missingMsiRecoveryVersion is null ||
             !applicationData.Bundle.Packages.TryGetValue(KmMsiPackageId, out var package) ||
@@ -2136,13 +2523,44 @@ internal sealed class BurnEngineAdapter
             return false;
         }
 
-        var detectedBundleScope = TryGetDetectedBundleScope();
-        var bundleVersion = TryNormalizeVersion(BundleVersion);
+        var candidateVersion = TryNormalizeVersion(BundleVersion);
+        if (candidateVersion is null || HasProvenNewerOwner(candidateVersion))
+        {
+            return false;
+        }
+
+        if (missingMsiRecoveryFromRelatedBundle)
+        {
+            var relatedOwner = TryGetSingleMissingMsiRelatedBundle(candidateVersion);
+            if (installed ||
+                relatedOwner is null ||
+                string.IsNullOrWhiteSpace(missingMsiRecoveryBundleCode) ||
+                !string.Equals(
+                    relatedOwner.BundleCode,
+                    missingMsiRecoveryBundleCode,
+                    StringComparison.OrdinalIgnoreCase) ||
+                relatedOwner.Scope != missingMsiRecoveryScope.Value ||
+                relatedOwner.Version != missingMsiRecoveryVersion ||
+                missingMsiRecoveryMarkerState != ProductMarkerState.Matching)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            var detectedBundleScope = TryGetDetectedBundleScope();
+            if (!installed ||
+                missingMsiRecoveryBundleCode is not null ||
+                !detectedBundleScope.HasValue ||
+                detectedBundleScope.Value != missingMsiRecoveryScope.Value ||
+                candidateVersion != missingMsiRecoveryVersion)
+            {
+                return false;
+            }
+        }
+
         var relatedProductCodes = MsiProductInfo.TryGetRelatedProductCodes(package.UpgradeCode);
-        if (!detectedBundleScope.HasValue ||
-            detectedBundleScope.Value != missingMsiRecoveryScope.Value ||
-            bundleVersion != missingMsiRecoveryVersion ||
-            relatedProductCodes is null ||
+        if (relatedProductCodes is null ||
             relatedProductCodes.Count != 0 ||
             !TryResolveMissingMsiRecoveryEvidence(
                 missingMsiRecoveryScope.Value,
@@ -2441,6 +2859,7 @@ internal sealed class BurnEngineAdapter
         Version Version);
 
     private sealed record RelatedBundleDetection(
+        string BundleCode,
         BundleScope Scope,
         RelationType RelationType,
         Version? Version,

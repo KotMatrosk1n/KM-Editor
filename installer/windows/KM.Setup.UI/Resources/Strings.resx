@@ -33,7 +33,7 @@
   <data name="ReadyUpdateHeading" xml:space="preserve"><value>Update ready</value></data>
   <data name="ReadyUpdateDescription" xml:space="preserve"><value>The verified update is ready. It will replace the application and clear editor cache while keeping your settings.</value></data>
   <data name="ReadyRecoveryHeading" xml:space="preserve"><value>Repair installation ownership</value></data>
-  <data name="ReadyRecoveryDescription" xml:space="preserve"><value>Setup verified one KM Editor package, but its installer ownership or application files are incomplete. Repair and reinstall will restore the current files and register this setup as the maintenance owner.</value></data>
+  <data name="ReadyRecoveryDescription" xml:space="preserve"><value>KM Editor is missing files or has incomplete setup records. Repair and reinstall will write the current version from this installer, preserve your settings, and restore this setup as the maintenance owner.</value></data>
   <data name="ReadyMigrationHeading" xml:space="preserve"><value>Ready to upgrade KM Editor</value></data>
   <data name="ReadyMigrationDescription" xml:space="preserve"><value>Setup verified the existing installation and will transfer it to the new repairable installer. Editor cache will be cleared and your settings will be kept.</value></data>
   <data name="PlanningInstallHeading" xml:space="preserve"><value>Preparing installation</value></data>
