@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { type ReactNode, useId, useMemo } from 'react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticSummary } from '../diagnostics';
 import { useDiagnosticNavigation } from '../diagnosticActions';
@@ -18,6 +18,11 @@ import {
   presentationDiagnosticSeverity
 } from '../features/workbench/analysisPresentationUtils';
 import { ContextHelp } from './ContextHelp';
+import {
+  useCommonEditorDiagnostics,
+  usePublishCommonEditorDiagnostics
+} from './CommonEditorDiagnostics';
+import { mergeEditorDiagnostics } from './commonEditorDiagnosticsState';
 import { ReportableDiagnosticIssuesLink } from './ReportableErrorScreen';
 
 export type WorkflowPanelOutput = {
@@ -251,7 +256,22 @@ export function DiagnosticsSection({
   diagnostics: ApiDiagnostic[];
   scrollAfterEntries?: number;
 }) {
+  usePublishCommonEditorDiagnostics(diagnostics);
+  // Scrolling is now decided by the single common presentation rather than by
+  // whichever editor happened to publish an entry first.
+  void scrollAfterEntries;
+  return null;
+}
+
+function DiagnosticsPanel({
+  diagnostics,
+  scrollAfterEntries
+}: {
+  diagnostics: ApiDiagnostic[];
+  scrollAfterEntries?: number;
+}) {
   const { t, translateLiteral } = useLocalization();
+  const headingId = useId();
   const diagnosticNavigation = useDiagnosticNavigation();
   const formatMessage = (diagnostic: ApiDiagnostic) => (
     formatDiagnosticSummary(diagnostic, translateLiteral, t)
@@ -305,10 +325,10 @@ export function DiagnosticsSection({
     .find((action) => action !== null);
 
   return (
-    <section aria-labelledby="diagnostics-heading" className="panel">
+    <section aria-labelledby={headingId} className="panel wide-panel">
       <div className="panel-heading">
         <Activity aria-hidden="true" size={18} />
-        <h2 id="diagnostics-heading">{translateLiteral('Diagnostics')}</h2>
+        <h2 id={headingId}>{translateLiteral('Diagnostics')}</h2>
         <ContextHelp label={translateLiteral('Diagnostics')}>
           {t('workflowPanels.diagnosticsHelp')}
         </ContextHelp>
@@ -370,6 +390,28 @@ export function DiagnosticsSection({
       </div>
     </section>
   );
+}
+
+/**
+ * Single presentation for diagnostics published by active editor surfaces plus
+ * diagnostics owned by the app shell itself.
+ */
+export function CommonBottomDiagnosticsSection({
+  diagnostics
+}: {
+  diagnostics: ApiDiagnostic[];
+}) {
+  const publishedDiagnostics = useCommonEditorDiagnostics();
+  const combinedDiagnostics = useMemo(
+    () => mergeEditorDiagnostics(diagnostics, publishedDiagnostics),
+    [diagnostics, publishedDiagnostics]
+  );
+
+  return combinedDiagnostics.length > 0 ? (
+    <DiagnosticsPanel
+      diagnostics={combinedDiagnostics}
+    />
+  ) : null;
 }
 
 function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][number]['layer']) {

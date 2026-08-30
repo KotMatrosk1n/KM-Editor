@@ -55,7 +55,6 @@
   --shadow-tooltip: 0 14px 38px rgb(0 0 0 / 58%);
   --editor-list-column: minmax(420px, 560px);
   --editor-detail-column: minmax(0, 1fr);
-  --focused-editor-browser-width: 1320px;
   --inspector-section-column: minmax(260px, 1fr);
   --editor-visible-row-count: 5;
   --editor-row-height: 40px;
@@ -3083,6 +3082,19 @@ h2 {
   min-width: 0;
 }
 
+.editor-session-bar-title {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.editor-session-bar-title > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .editor-session-bar-copy strong {
   color: var(--color-text);
   font-size: 0.8125rem;
@@ -3664,6 +3676,7 @@ h2 {
 }
 
 .item-inspector > .panel-heading,
+.item-inspector > .ordinary-draft-status,
 .item-inspector > .item-edit-form,
 .item-inspector > .empty-copy {
   grid-column: 1 / -1;
@@ -3746,7 +3759,7 @@ h2 {
 .za-pokemon-diagnostics-row {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
   justify-content: stretch;
@@ -3901,6 +3914,9 @@ h2 {
 .swsh-pokemon-selected-stack > .panel-heading,
 .sv-pokemon-selected-stack > .panel-heading,
 .za-pokemon-selected-stack > .panel-heading,
+.swsh-pokemon-selected-stack > .ordinary-draft-status,
+.sv-pokemon-selected-stack > .ordinary-draft-status,
+.za-pokemon-selected-stack > .ordinary-draft-status,
 .swsh-pokemon-selected-stack > .pokemon-summary-card,
 .sv-pokemon-selected-stack > .pokemon-summary-card,
 .za-pokemon-selected-stack > .pokemon-summary-card,
@@ -6457,6 +6473,7 @@ h2 {
 
 .text-inspector > .panel-heading,
 .text-inspector > .item-provenance-list,
+.text-inspector > .ordinary-draft-status,
 .text-inspector > .text-edit-form,
 .text-inspector > .empty-copy {
   grid-column: 1 / -1;
@@ -6852,6 +6869,10 @@ h2 {
 
 .trainer-inspector > .panel-heading,
 .trainer-inspector > .item-provenance-list,
+.trainer-inspector > .ordinary-draft-status,
+.trainer-inspector > .pokemon-summary-grid,
+.trainer-inspector > .technical-tool-notice,
+.trainer-inspector > .trainer-identity-actions,
 .trainer-inspector > .trainer-edit-form,
 .trainer-inspector > .empty-copy {
   grid-column: 1 / -1;
@@ -12520,8 +12541,8 @@ button.sv-encounter-condition-row:hover {
   .za-dex-layout-workspace > .za-dex-layout-dexes
 ) {
   width: 100%;
-  max-width: var(--focused-editor-browser-width);
-  justify-self: center;
+  max-width: none;
+  justify-self: stretch;
 }
 
 .editor-layout-focused .dynamax-adventures-layout {
@@ -12554,8 +12575,8 @@ button.sv-encounter-condition-row:hover {
   grid-column: 1;
   order: 1;
   width: 100%;
-  max-width: var(--focused-editor-browser-width);
-  justify-self: center;
+  max-width: none;
+  justify-self: stretch;
 }
 
 .editor-layout-focused :is(
@@ -13046,6 +13067,10 @@ button.sv-encounter-condition-row:hover {
   width: min(620px, 100%);
 }
 
+.work-progress-heading .status-pill {
+  margin-left: auto;
+}
+
 .work-progress-fill {
   transition: width 220ms ease;
 }
@@ -13082,52 +13107,13 @@ button.sv-encounter-condition-row:hover {
   font-weight: 800;
 }
 
-.work-progress-step-list {
-  display: grid;
-  gap: 8px;
+.work-progress-phases {
   margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.work-progress-step {
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
-  font-weight: 800;
-}
-
-.work-progress-step span {
-  width: 9px;
-  height: 9px;
-  background: #31415f;
-  border-radius: 999px;
-}
-
-.work-progress-step strong {
+.work-progress-phases strong {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.work-progress-step-complete {
-  color: var(--color-text-soft);
-}
-
-.work-progress-step-complete span {
-  background: var(--color-success);
-}
-
-.work-progress-step-active {
-  color: var(--color-text);
-}
-
-.work-progress-step-active span {
-  background: var(--color-gold);
-  box-shadow: 0 0 0 4px rgb(var(--color-gold-rgb) / 18%);
 }
 
 @keyframes km-spin {

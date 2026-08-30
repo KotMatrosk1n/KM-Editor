@@ -35,6 +35,13 @@ import {
   changeSetMaximumPortablePackageBytes
 } from '../../bridge/changeSetContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import {
+  areStringSetsEqual,
+  reconcileEligibleDraftSelection,
+  reconcileSourceBackedDraft,
+  resolveSubmittedEditorDraft
+} from '../../components/localEditorDraftState';
 import { DiagnosticsSection } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 import type {
@@ -64,6 +71,11 @@ export function ChangeSetWorkspacePanel({
   const [newName, setNewName] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [isAdvancedAuthoringBusy, setIsAdvancedAuthoringBusy] = useState(false);
+  usePublishCommonEditorError({
+    domain: 'workflow.changeSets',
+    field: 'import',
+    message: importError
+  });
   const importInputRef = useRef<HTMLInputElement>(null);
   const selectedChangeSet = useMemo(
     () => controller.changeSets.find((changeSet) => (
@@ -90,12 +102,17 @@ export function ChangeSetWorkspacePanel({
     }
   }, [selectedChangeSet, showArchived]);
 
-  const handleCreate = (event: FormEvent) => {
+  const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
-    const name = newName.trim();
+    const submittedName = newName;
+    const name = submittedName.trim();
     if (!name || !isReady || isBusy) return;
-    controller.onCreate(name);
-    setNewName('');
+    const created = await controller.onCreate(name);
+    if (created) {
+      setNewName((current) =>
+        resolveSubmittedEditorDraft(current, submittedName, '')
+      );
+    }
   };
 
   return (
@@ -118,6 +135,7 @@ export function ChangeSetWorkspacePanel({
               accept="application/json,.json"
               className="change-set-hidden-input"
               disabled={!isReady || isBusy}
+              id="change-set-import-file"
               onChange={(event) => {
                 const input = event.currentTarget;
                 const file = input.files?.[0];
@@ -261,7 +279,6 @@ export function ChangeSetWorkspacePanel({
                   <div>
                     <input
                       autoComplete="off"
-                      disabled={isBusy}
                       id="change-set-new-name"
                       maxLength={128}
                       onChange={(event) => setNewName(event.currentTarget.value)}
@@ -427,6 +444,7 @@ function ChangeSetList({
                       : 'changeSets.enableNamed', { name: exactName })}
                     checked={changeSet.isEnabled}
                     disabled={isBusy}
+                    id={`change-set-enabled-${changeSet.id}`}
                     onChange={(event) => controller.onSetEnabled(
                       changeSet.id,
                       event.currentTarget.checked
@@ -517,15 +535,66 @@ function ChangeSetDetail({
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const parsedTags = parseTags(tags);
+  usePublishCommonEditorError({
+    domain: 'workflow.changeSets',
+    field: 'tags',
+    message: parsedTags ? null : t('changeSets.tagsInvalid')
+  });
   const exactName = formatCollisionAwareName(changeSet, controller.changeSets);
+  const sourceTags = changeSet.tags.join(', ');
+  const sourceDependencyKey = [...changeSet.dependencyIds].sort().join('|');
+  const sourceDetailRef = useRef({
+    dependencyIds: new Set(changeSet.dependencyIds),
+    id: changeSet.id,
+    name: changeSet.name,
+    notes: changeSet.notes,
+    tags: sourceTags
+  });
 
   useEffect(() => {
-    setName(changeSet.name);
-    setNotes(changeSet.notes);
-    setTags(changeSet.tags.join(', '));
-    setDependencyIds(new Set(changeSet.dependencyIds));
-    setConfirmDelete(false);
-  }, [changeSet.id, changeSet.updatedAtUtc]);
+    const previous = sourceDetailRef.current;
+    const nextTags = sourceTags;
+    const nextDependencyIds = new Set(changeSet.dependencyIds);
+    if (previous.id !== changeSet.id) {
+      setName(changeSet.name);
+      setNotes(changeSet.notes);
+      setTags(nextTags);
+      setDependencyIds(nextDependencyIds);
+      setConfirmDelete(false);
+    } else {
+      setName((current) =>
+        reconcileSourceBackedDraft(current, previous.name, changeSet.name, Object.is)
+      );
+      setNotes((current) =>
+        reconcileSourceBackedDraft(current, previous.notes, changeSet.notes, Object.is)
+      );
+      setTags((current) =>
+        reconcileSourceBackedDraft(current, previous.tags, nextTags, Object.is)
+      );
+      setDependencyIds((current) =>
+        reconcileSourceBackedDraft(
+          current,
+          previous.dependencyIds,
+          nextDependencyIds,
+          areStringSetsEqual
+        )
+      );
+    }
+    sourceDetailRef.current = {
+      dependencyIds: nextDependencyIds,
+      id: changeSet.id,
+      name: changeSet.name,
+      notes: changeSet.notes,
+      tags: nextTags
+    };
+  }, [
+    changeSet.id,
+    changeSet.name,
+    changeSet.notes,
+    changeSet.updatedAtUtc,
+    sourceDependencyKey,
+    sourceTags
+  ]);
 
   const handleRename = (event: FormEvent) => {
     event.preventDefault();
@@ -662,7 +731,7 @@ function ChangeSetDetail({
             <label htmlFor="change-set-name">{t('changeSets.name')}</label>
             <div className="change-set-inline-field">
               <input
-                disabled={isBusy || changeSet.isArchived}
+                disabled={changeSet.isArchived}
                 id="change-set-name"
                 maxLength={128}
                 onChange={(event) => setName(event.currentTarget.value)}
@@ -681,7 +750,7 @@ function ChangeSetDetail({
           <form className="change-set-fields" onSubmit={handleMetadata}>
             <label htmlFor="change-set-tags">{t('changeSets.tags')}</label>
             <input
-              disabled={isBusy || changeSet.isArchived}
+              disabled={changeSet.isArchived}
               id="change-set-tags"
               maxLength={2110}
               onChange={(event) => setTags(event.currentTarget.value)}
@@ -695,7 +764,7 @@ function ChangeSetDetail({
             ) : null}
             <label htmlFor="change-set-notes">{t('changeSets.notes')}</label>
             <textarea
-              disabled={isBusy || changeSet.isArchived}
+              disabled={changeSet.isArchived}
               id="change-set-notes"
               maxLength={32768}
               onChange={(event) => setNotes(event.currentTarget.value)}
@@ -715,7 +784,6 @@ function ChangeSetDetail({
                           checked={dependencyIds.has(candidate.id)}
                           className="km-choice-control"
                           disabled={
-                            isBusy ||
                             changeSet.isArchived ||
                             (!dependencyIds.has(candidate.id) &&
                               dependencyIds.size >= changeSetMaximumDependencyCount)
@@ -818,9 +886,11 @@ function BuildVariants({
     candidate.isEnabled && !candidate.isArchived
   ));
   const enabledChangeSetKey = enabledChangeSets.map((candidate) => candidate.id).join('|');
+  const enabledChangeSetIds = new Set(enabledChangeSets.map((candidate) => candidate.id));
   const [selectedVariantSetIds, setSelectedVariantSetIds] = useState<Set<string>>(
-    () => new Set(enabledChangeSets.map((candidate) => candidate.id))
+    enabledChangeSetIds
   );
+  const previousEnabledChangeSetIdsRef = useRef(enabledChangeSetIds);
   useEffect(() => {
     if (!outputMode && controller.availableOutputModes[0]) {
       setOutputMode(controller.availableOutputModes[0].id);
@@ -836,24 +906,33 @@ function BuildVariants({
     }
   }, [controller.availableOutputModes, controller.availableOutputProfiles, outputMode, outputProfileId]);
   useEffect(() => {
-    setSelectedVariantSetIds(new Set(enabledChangeSets.map((candidate) => candidate.id)));
-  // The stable key intentionally resets the draft only when set eligibility changes.
+    const previousEligibleIds = previousEnabledChangeSetIdsRef.current;
+    setSelectedVariantSetIds((current) =>
+      reconcileEligibleDraftSelection(current, previousEligibleIds, enabledChangeSetIds)
+    );
+    previousEnabledChangeSetIdsRef.current = enabledChangeSetIds;
+  // The stable key intentionally reconciles only when set eligibility changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledChangeSetKey]);
-  const createVariant = (event: FormEvent) => {
+  const createVariant = async (event: FormEvent) => {
     event.preventDefault();
-    const nextName = name.trim();
-    if (!nextName) return;
+    const submittedName = name;
+    const nextName = submittedName.trim();
+    if (!nextName || isBusy) return;
     const enabledChangeSetIds = enabledChangeSets
       .filter((candidate) => selectedVariantSetIds.has(candidate.id))
       .map((candidate) => candidate.id);
-    controller.onCreateBuildVariant(
+    const created = await controller.onCreateBuildVariant(
       nextName,
       enabledChangeSetIds,
       outputMode || null,
       outputProfileId || null
     );
-    setName('');
+    if (created) {
+      setName((current) =>
+        resolveSubmittedEditorDraft(current, submittedName, '')
+      );
+    }
   };
 
   return (
@@ -912,7 +991,6 @@ function BuildVariants({
           <label htmlFor="change-set-new-variant">{t('changeSets.variants.newName')}</label>
           <div>
             <input
-              disabled={isBusy}
               id="change-set-new-variant"
               maxLength={128}
               onChange={(event) => setName(event.currentTarget.value)}
@@ -933,7 +1011,7 @@ function BuildVariants({
           </label>
           <select
             className="km-select-control"
-            disabled={isBusy || controller.availableOutputModes.length === 0}
+            disabled={controller.availableOutputModes.length === 0}
             id="change-set-variant-output-mode"
             onChange={(event) => setOutputMode(event.currentTarget.value)}
             value={outputMode}
@@ -949,7 +1027,6 @@ function BuildVariants({
           </label>
           <select
             className="km-select-control"
-            disabled={isBusy}
             id="change-set-variant-output-profile"
             onChange={(event) => setOutputProfileId(event.currentTarget.value)}
             value={outputProfileId}
@@ -971,7 +1048,6 @@ function BuildVariants({
                       <input
                         checked={selectedVariantSetIds.has(candidate.id)}
                         className="km-choice-control"
-                        disabled={isBusy}
                         onChange={(event) => {
                           const checked = event.currentTarget.checked;
                           setSelectedVariantSetIds((current) => {
@@ -1143,12 +1219,20 @@ function ChangeSetComparison({
     entry,
     key: changeSetComparisonEntryKey(entry, index)
   })) ?? [], [currentComparison?.entries]);
+  const comparisonEntryKeys = new Set(entriesWithKeys.map(({ key }) => key));
+  const previousComparisonEntryKeysRef = useRef(comparisonEntryKeys);
   const comparisonIdentityLabels = useMemo(
     () => createComparisonIdentityLabels(currentComparison?.entries ?? []),
     [currentComparison?.entries]
   );
   useEffect(() => {
-    setSelectedEntryKeys(new Set(entriesWithKeys.map(({ key }) => key)));
+    const previousEligibleIds = previousComparisonEntryKeysRef.current;
+    setSelectedEntryKeys((current) =>
+      reconcileEligibleDraftSelection(current, previousEligibleIds, comparisonEntryKeys)
+    );
+    previousComparisonEntryKeysRef.current = comparisonEntryKeys;
+  // entriesWithKeys is the stable comparison-result trigger.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entriesWithKeys]);
   const kinds = useMemo(
     () => [...new Set(entriesWithKeys.map(({ entry }) => entry.kind))].sort(),

@@ -10,6 +10,7 @@ import {
   useRef,
   useState
 } from 'react';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 import {
@@ -61,6 +62,13 @@ function OpenCommandPalette({
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [entityCommands, setEntityCommands] = useState<readonly WorkspaceCommand[]>([]);
   const [entitySearchState, setEntitySearchState] = useState<'idle' | 'loading' | 'error'>('idle');
+  usePublishCommonEditorError({
+    domain: 'workbench.commandPalette',
+    field: 'entitySearch',
+    message: entitySearchState === 'error'
+      ? t('semanticExplore.command.error')
+      : null
+  });
   const entityRequestGenerationRef = useRef(0);
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
   const closePalette = useCallback(() => {

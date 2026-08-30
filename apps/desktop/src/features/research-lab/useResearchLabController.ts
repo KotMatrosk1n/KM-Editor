@@ -107,7 +107,7 @@ export type ResearchLabController = ResearchLabControllerSnapshot & {
   clearByteWindow: () => void;
   clearSource: (slot: 0 | 1) => Promise<void>;
   compare: (selectedRelativePaths?: readonly string[]) => Promise<void>;
-  deleteAnnotation: (annotationId: string) => Promise<void>;
+  deleteAnnotation: (annotationId: string) => Promise<boolean>;
   expireSources: () => void;
   loadAnnotations: () => Promise<void>;
   loadByteWindow: (
@@ -120,7 +120,7 @@ export type ResearchLabController = ResearchLabControllerSnapshot & {
   openSource: (slot: 0 | 1, rootPath: string) => Promise<void>;
   refreshAnnotations: () => Promise<void>;
   refreshCapabilities: () => Promise<void>;
-  upsertAnnotation: (draft: ResearchAnnotationDraft) => Promise<void>;
+  upsertAnnotation: (draft: ResearchAnnotationDraft) => Promise<boolean>;
 };
 
 type RequestChannel =
@@ -682,9 +682,9 @@ class ResearchLabControllerStore {
       }
     } catch (error) {
       this.rejectAnnotationPrecondition(error);
-      return;
+      return false;
     }
-    await this.mutateAnnotation({
+    return this.mutateAnnotation({
       expectedAnnotationId: draft.annotationId,
       mutation: { annotationId: null, kind: 'upsert', upsert: draft }
     });
@@ -700,9 +700,9 @@ class ResearchLabControllerStore {
       }
     } catch (error) {
       this.rejectAnnotationPrecondition(error);
-      return;
+      return false;
     }
-    await this.mutateAnnotation({
+    return this.mutateAnnotation({
       expectedAnnotationId: annotationId,
       mutation: { annotationId, kind: 'delete', upsert: null }
     });
@@ -739,7 +739,7 @@ class ResearchLabControllerStore {
         this.bridge,
         (bridge) => bridge.mutateResearchAnnotations(request)
       );
-      if (!this.isCurrent(token)) return;
+      if (!this.isCurrent(token)) return false;
       assertAnnotationMutationResponse({
         expectedAnnotationId: options.expectedAnnotationId,
         previous: retained,
@@ -762,8 +762,10 @@ class ResearchLabControllerStore {
         }
       };
       this.emit();
+      return true;
     } catch (error) {
       this.failAnnotations(token, retained, true, error);
+      return false;
     } finally {
       this.finish(token);
     }

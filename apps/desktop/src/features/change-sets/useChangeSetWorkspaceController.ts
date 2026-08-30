@@ -495,11 +495,13 @@ export function useChangeSetWorkspaceController({
     t
   ]);
 
-  const runControllerAction = useCallback((operation: () => Promise<unknown>) => {
+  const runControllerAction = useCallback(async (operation: () => Promise<unknown>) => {
     try {
-      void operation().catch(() => undefined);
+      await operation();
+      return true;
     } catch (error) {
       reportError(error);
+      return false;
     }
   }, [reportError]);
   const updateSet = useCallback((
@@ -550,22 +552,31 @@ export function useChangeSetWorkspaceController({
       );
       const next = await mutate('create', { kind: 'createSet', name });
       const created = next.document.changeSets.find((set) => !priorIds.has(set.changeSetId));
-      if (created) setSelectedChangeSetId(created.changeSetId);
+      if (!created) {
+        throw new Error('The change-set create response did not contain the new change set.');
+      }
+      setSelectedChangeSetId(created.changeSetId);
     }),
-    onCreateBuildVariant: (name, enabledChangeSetIds, outputMode, outputProfileId) => (
-      runControllerAction(() => mutate('variant', {
-        kind: 'createVariant',
-        variant: {
-          changeSetIds: [...enabledChangeSetIds],
-          createdAtUtc: new Date().toISOString(),
-          name,
-          outputMode: parseOutputMode(outputMode),
-          outputProfileId,
-          updatedAtUtc: new Date().toISOString(),
-          variantId: createStableId('variant')
+    onCreateBuildVariant: (name, enabledChangeSetIds, outputMode, outputProfileId) => {
+      const variantId = createStableId('variant');
+      return runControllerAction(async () => {
+        const next = await mutate('variant', {
+          kind: 'createVariant',
+          variant: {
+            changeSetIds: [...enabledChangeSetIds],
+            createdAtUtc: new Date().toISOString(),
+            name,
+            outputMode: parseOutputMode(outputMode),
+            outputProfileId,
+            updatedAtUtc: new Date().toISOString(),
+            variantId
+          }
+        });
+        if (!next.document.buildVariants.some((variant) => variant.variantId === variantId)) {
+          throw new Error('The build-variant create response did not contain the new variant.');
         }
-      }))
-    ),
+      });
+    },
     onDeleteBuildVariant: (variantId) => runControllerAction(() => mutate(
       'variant',
       { kind: 'deleteVariant', variantId }

@@ -31,6 +31,7 @@ import {
   type RestoreRandomizerResponse
 } from '../../bridge/contracts';
 import { ApplyResultSection, DiagnosticsSection, Metric } from '../../components/workflowPanels';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { ContextHelp } from '../../components/ContextHelp';
 import { FieldLabel } from '../../components/FieldLabel';
 import { HoverTooltip } from '../../components/HoverTooltip';
@@ -376,7 +377,15 @@ export function RandomizerSection({
   const [isRestoring, setIsRestoring] = useState(false);
   const [lastOperation, setLastOperation] = useState<RandomizerOperation | null>(null);
   const [copySeedStatus, setCopySeedStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  usePublishCommonEditorError({
+    domain: 'workflow.randomizer',
+    field: 'seedClipboard',
+    message: copySeedStatus === 'failed'
+      ? translateLiteral('The Randomizer seed could not be copied.')
+      : null
+  });
   const copySeedStatusTimerRef = useRef<number | null>(null);
+  const draftRevisionRef = useRef(0);
   const selectedOptionCount = useMemo(
     () => Object.entries(options).filter(([key, value]) => key.startsWith('randomize') && value).length,
     [options]
@@ -475,6 +484,7 @@ export function RandomizerSection({
   };
 
   const handleUserSeedChange = (value: string) => {
+    draftRevisionRef.current += 1;
     setUserSeed(value.slice(0, 20));
     clearImportedReplay();
   };
@@ -493,6 +503,7 @@ export function RandomizerSection({
   };
 
   const handleToggleOption = (key: RandomizerOptionKey) => {
+    draftRevisionRef.current += 1;
     setOptions((current) => {
       const next = {
         ...current,
@@ -513,6 +524,7 @@ export function RandomizerSection({
   };
 
   const handleResetOptions = () => {
+    draftRevisionRef.current += 1;
     setOptions(defaultRandomizerOptions);
     setExpandedCategoryIds(new Set(['stats']));
     clearImportedReplay();
@@ -546,12 +558,16 @@ export function RandomizerSection({
     if (!seed) {
       return;
     }
+    const submittedDraftRevision = draftRevisionRef.current;
 
     setIsSeedConfirmOpen(false);
     beginOperation();
     setIsImporting(true);
     try {
       const importResponse = await onImportSeed(seed);
+      if (draftRevisionRef.current !== submittedDraftRevision) {
+        return;
+      }
       const importDiagnostics = importResponse.config
         ? importResponse.diagnostics
         : ensureErrorDiagnostic(importResponse.diagnostics, 'Randomizer needs attention');
@@ -660,7 +676,6 @@ export function RandomizerSection({
             <HoverTooltip content={t('randomizer.seed.baseHelp')}>
               <input
                 aria-label="Base Seed"
-                disabled={isConfigurationLocked}
                 id="randomizer-base-seed"
                 maxLength={20}
                 onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
@@ -729,7 +744,6 @@ export function RandomizerSection({
                     <input
                       checked={categoryEnabled}
                       className="km-choice-control"
-                      disabled={isConfigurationLocked}
                       id={`randomizer-${category.id}-enabled`}
                       onChange={() => handleToggleOption(category.enabledKey)}
                       type="checkbox"
@@ -751,7 +765,7 @@ export function RandomizerSection({
                         <input
                           checked={isFieldChecked}
                           className="km-choice-control"
-                          disabled={isConfigurationLocked || !categoryEnabled}
+                          disabled={!categoryEnabled}
                           id={inputId}
                           onChange={() => handleToggleOption(field.key)}
                           type="checkbox"
@@ -780,7 +794,6 @@ export function RandomizerSection({
                   <input
                     checked={options[option.key]}
                     className="km-choice-control"
-                    disabled={isConfigurationLocked}
                     id={inputId}
                     onChange={() => handleToggleOption(option.key)}
                     type="checkbox"
@@ -804,7 +817,6 @@ export function RandomizerSection({
               <input
                 checked={options.randomizeTypeChart}
                 className="km-choice-control"
-                disabled={isConfigurationLocked}
                 id="randomizer-type-chart-enabled"
                 onChange={() => handleToggleOption('randomizeTypeChart')}
                 type="checkbox"
@@ -826,7 +838,7 @@ export function RandomizerSection({
                   <input
                     checked={isChecked}
                     className="km-choice-control"
-                    disabled={isConfigurationLocked || !options.randomizeTypeChart}
+                    disabled={!options.randomizeTypeChart}
                     id={inputId}
                     onChange={() => handleToggleOption(option.key)}
                     type="checkbox"
@@ -851,7 +863,6 @@ export function RandomizerSection({
         <div className="randomizer-action-row">
           <button
             className="secondary-button"
-            disabled={isConfigurationLocked}
             onClick={handleResetOptions}
             title={t('randomizer.reset.help')}
             type="button"
@@ -922,9 +933,11 @@ export function RandomizerSection({
             <HoverTooltip content={t('randomizer.seed.sharedHelp')}>
               <textarea
                 aria-label="Shared Randomization Seed"
-                disabled={isConfigurationLocked}
                 id="randomizer-shared-seed"
-                onChange={(event) => setImportSeedText(event.currentTarget.value)}
+                onChange={(event) => {
+                  draftRevisionRef.current += 1;
+                  setImportSeedText(event.currentTarget.value);
+                }}
                 rows={3}
                 value={importSeedText}
               />

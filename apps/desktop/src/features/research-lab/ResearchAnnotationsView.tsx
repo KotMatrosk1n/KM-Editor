@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   researchLabMaximumAnnotationTags,
   researchLabMaximumAnnotationTextLength,
+  researchAnnotationTargetIdentity,
   researchPortableCaseFold,
   researchRevisionIdentity,
   type ResearchAnnotation,
@@ -15,12 +16,22 @@ import type {
   SemanticExploreRecordRef,
   SemanticExploreRevision
 } from '../../bridge/semanticExploreContracts';
+import {
+  PublishCommonEditorError,
+  usePublishCommonEditorError
+} from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import {
   researchErrorKey,
   researchTargetKindKey
 } from './researchLabPresentation';
+import {
+  clearSavedResearchAnnotationEditorDraft,
+  discardResearchAnnotationEditorDraft,
+  setResearchAnnotationEditorDraft,
+  type ResearchAnnotationEditorDraft
+} from './researchAnnotationDraftState';
 import type { ResearchLabController } from './useResearchLabController';
 
 const maximumTagEditorLength = researchLabMaximumAnnotationTags * 128 +
@@ -31,6 +42,7 @@ export function ResearchAnnotationsView({
   controller,
   draftTarget,
   onClearDraftTarget,
+  onDirtyStateChange,
   onNavigateRecord,
   revision
 }: {
@@ -38,33 +50,43 @@ export function ResearchAnnotationsView({
   controller: ResearchLabController;
   draftTarget: ResearchAnnotationTarget | null;
   onClearDraftTarget: () => void;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   revision: SemanticExploreRevision;
 }) {
   const { t } = useLocalization();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [tags, setTags] = useState('');
-  const [text, setText] = useState('');
-  const loadedETag = controller.annotations.data?.etag ?? null;
-  const documentIdentity = controller.annotations.data ? loadedETag ?? 'absent' : null;
-  const previousDocumentIdentityRef = useRef<string | null>(documentIdentity);
+  const [editorDrafts, setEditorDrafts] = useState<
+    Record<string, ResearchAnnotationEditorDraft>
+  >({});
+  const editorDraftsRef = useRef(editorDrafts);
   const annotations = controller.annotations.data?.document?.annotations ?? [];
   const editing = useMemo(() => (
     editingId ? annotations.find((annotation) => annotation.annotationId === editingId) ?? null : null
   ), [annotations, editingId]);
-  const target = editing?.target ?? draftTarget;
+  const incomingTargetDraftKey = draftTarget ? targetDraftKey(draftTarget) : null;
+  const draftKey = editingId
+    ? annotationDraftKey(editingId)
+    : incomingTargetDraftKey;
+  const editorDraft = draftKey ? editorDrafts[draftKey] : undefined;
+  const target = editorDraft?.target ?? editing?.target ?? draftTarget;
+  const sourceTags = editing?.tags.join(', ') ?? '';
+  const sourceText = editing?.text ?? '';
+  const tags = editorDraft?.tags ?? sourceTags;
+  const text = editorDraft?.text ?? sourceText;
   const targetIsCurrent = target !== null && isResearchTargetCurrent(target, revision, controller);
 
   useEffect(() => {
-    const previous = previousDocumentIdentityRef.current;
-    previousDocumentIdentityRef.current = documentIdentity;
-    if (previous !== null && previous !== documentIdentity) {
+    if (incomingTargetDraftKey) {
       setEditingId(null);
-      setTags('');
-      setText('');
-      onClearDraftTarget();
     }
-  }, [documentIdentity, onClearDraftTarget]);
+  }, [incomingTargetDraftKey]);
+
+  useEffect(() => {
+    onDirtyStateChange?.(Object.keys(editorDrafts).length > 0);
+  }, [editorDrafts, onDirtyStateChange]);
+
+  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
   const parsedTags = tags.split(',')
     .map((tag) => tag.trim().normalize('NFC'))
@@ -75,26 +97,89 @@ export function ResearchAnnotationsView({
 
   const beginEdit = (annotation: ResearchAnnotation) => {
     setEditingId(annotation.annotationId);
-    setText(annotation.text);
-    setTags(annotation.tags.join(', '));
     onClearDraftTarget();
   };
   const cancelEdit = () => {
+    if (draftKey) {
+      const nextDrafts = discardResearchAnnotationEditorDraft(
+        editorDraftsRef.current,
+        draftKey
+      );
+      editorDraftsRef.current = nextDrafts;
+      setEditorDrafts(nextDrafts);
+    }
     setEditingId(null);
-    setText('');
-    setTags('');
     onClearDraftTarget();
   };
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const updateEditorDraft = (patch: Partial<Pick<ResearchAnnotationEditorDraft, 'tags' | 'text'>>) => {
+    if (!draftKey || !target) {
+      return;
+    }
+    const nextDrafts = setResearchAnnotationEditorDraft(
+      editorDraftsRef.current,
+      draftKey,
+      {
+        annotationId: editingId,
+        tags: patch.tags ?? tags,
+        target,
+        text: patch.text ?? text
+      },
+      { tags: sourceTags, text: sourceText }
+    );
+    editorDraftsRef.current = nextDrafts;
+    setEditorDrafts(nextDrafts);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!target || !targetIsCurrent || controller.annotations.status !== 'ready') return;
+    if (!draftKey || !target || !targetIsCurrent || controller.annotations.status !== 'ready') return;
+    const stagedEditorDraft: ResearchAnnotationEditorDraft = {
+      annotationId: editingId,
+      tags,
+      target,
+      text
+    };
     const draft: ResearchAnnotationDraft = {
       annotationId: editingId,
       tags: parsedTags,
       target,
       text: text.trim().normalize('NFC')
     };
-    void controller.upsertAnnotation(draft);
+    const didSave = await controller.upsertAnnotation(draft);
+    if (!didSave) {
+      return;
+    }
+    const latestDrafts = editorDraftsRef.current;
+    const resolvedDrafts = clearSavedResearchAnnotationEditorDraft(
+      latestDrafts,
+      draftKey,
+      stagedEditorDraft
+    );
+    const submittedDraftIsStillCurrent =
+      latestDrafts[draftKey] === undefined || resolvedDrafts !== latestDrafts;
+    editorDraftsRef.current = resolvedDrafts;
+    setEditorDrafts(resolvedDrafts);
+    if (!submittedDraftIsStillCurrent) {
+      return;
+    }
+    setEditingId(null);
+    onClearDraftTarget();
+  };
+  const deleteAnnotation = async (annotationId: string) => {
+    const didDelete = await controller.deleteAnnotation(annotationId);
+    if (!didDelete) {
+      return;
+    }
+    const deletedDraftKey = annotationDraftKey(annotationId);
+    const nextDrafts = discardResearchAnnotationEditorDraft(
+      editorDraftsRef.current,
+      deletedDraftKey
+    );
+    editorDraftsRef.current = nextDrafts;
+    setEditorDrafts(nextDrafts);
+    if (editingId === annotationId) {
+      setEditingId(null);
+      onClearDraftTarget();
+    }
   };
 
   return (
@@ -139,9 +224,8 @@ export function ResearchAnnotationsView({
           <label>
             <span>{t('researchLab.annotations.text')}</span>
             <textarea
-              disabled={controller.annotations.isSaving}
               maxLength={researchLabMaximumAnnotationTextLength}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => updateEditorDraft({ text: event.target.value })}
               placeholder={t('researchLab.annotations.textPlaceholder')}
               required
               value={text}
@@ -150,9 +234,8 @@ export function ResearchAnnotationsView({
           <label>
             <span>{t('researchLab.annotations.tags')}</span>
             <input
-              disabled={controller.annotations.isSaving}
               maxLength={maximumTagEditorLength}
-              onChange={(event) => setTags(event.target.value)}
+              onChange={(event) => updateEditorDraft({ tags: event.target.value })}
               placeholder={t('researchLab.annotations.tagsPlaceholder')}
               type="text"
               value={tags}
@@ -160,11 +243,20 @@ export function ResearchAnnotationsView({
           </label>
           <p className="km-research-lab-help">{t('researchLab.annotations.privateHelp')}</p>
           {tagsInvalid ? (
-            <p className="km-research-lab-inline-status" role="alert">
-              {t('researchLab.annotations.tagsInvalid', {
-                maximum: researchLabMaximumAnnotationTags
-              })}
-            </p>
+            <>
+              <PublishCommonEditorError
+                domain="analysis.researchLab"
+                field="annotationTags"
+                message={t('researchLab.annotations.tagsInvalid', {
+                  maximum: researchLabMaximumAnnotationTags
+                })}
+              />
+              <p className="km-research-lab-inline-status" role="alert">
+                {t('researchLab.annotations.tagsInvalid', {
+                  maximum: researchLabMaximumAnnotationTags
+                })}
+              </p>
+            </>
           ) : null}
           <div className="km-research-lab-annotation-actions">
             <button
@@ -271,7 +363,7 @@ export function ResearchAnnotationsView({
                         controller.annotations.isSaving ||
                         controller.annotations.status !== 'ready'
                       }
-                      onClick={() => void controller.deleteAnnotation(annotation.annotationId)}
+                      onClick={() => void deleteAnnotation(annotation.annotationId)}
                       type="button"
                     >
                       <Trash2 aria-hidden="true" size={14} />
@@ -289,6 +381,14 @@ export function ResearchAnnotationsView({
       )}
     </section>
   );
+}
+
+function annotationDraftKey(annotationId: string) {
+  return `annotation:${annotationId}`;
+}
+
+function targetDraftKey(target: ResearchAnnotationTarget) {
+  return `target:${researchAnnotationTargetIdentity(target)}`;
 }
 
 function TargetSummary({
@@ -358,6 +458,8 @@ function Status({
   messageKey: string;
 }) {
   const { t } = useLocalization();
+  const errorMessage = error ? t(messageKey) : null;
+  usePublishCommonEditorError({ domain: 'analysis.researchLab', message: errorMessage });
   if (!error) {
     return (
       <div className="km-research-lab-inline-status">
@@ -371,7 +473,7 @@ function Status({
       className="km-research-lab-inline-status"
       role="alert"
     >
-      <span>{t(messageKey)}</span>
+      <span>{errorMessage}</span>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ClipboardCheck, RotateCcw, Save, Swords, Trash2 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type EditSession,
   type ProjectGame,
@@ -14,6 +14,7 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -71,21 +72,35 @@ export function TypeChartSection({
   const isUninstallStaged = stagedState?.kind === 'uninstall';
   const cleanValues = stagedValues ?? workflowValues ?? createDefaultTypeChartValues();
   const cleanValuesKey = cleanValues.join(',');
-  const cleanIdentityKey = [
+  const draftIdentityKey = [
     workflow?.detectedGame ?? 'unknown',
     workflow?.buildId ?? 'unknown',
     workflow?.chartOffsetHex ?? 'unknown',
-    workflow?.source?.relativePath ?? 'none',
-    workflow?.source?.provenance.sourceLayer ?? 'none',
-    stagedState?.kind ?? 'none',
-    editSession?.sessionId ?? 'none'
+    workflow?.source?.relativePath ?? 'none'
   ].join('|');
   const [draftValues, setDraftValues] =
     useState<TypeChartEffectivenessValue[]>(cleanValues);
+  const sourceDraftRef = useRef({
+    identityKey: draftIdentityKey,
+    values: cleanValues
+  });
 
   useEffect(() => {
-    setDraftValues(cleanValues);
-  }, [cleanIdentityKey, cleanValuesKey]);
+    const previous = sourceDraftRef.current;
+    setDraftValues((current) =>
+      previous.identityKey !== draftIdentityKey
+        ? cleanValues
+        : reconcileSourceBackedDraft(
+            current,
+            previous.values,
+            cleanValues,
+            areTypeChartValuesEqual
+          )
+    );
+    sourceDraftRef.current = { identityKey: draftIdentityKey, values: cleanValues };
+  // cleanValuesKey is the stable source trigger; cleanValues is derived each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanValuesKey, draftIdentityKey]);
 
   const isDirty = !areTypeChartValuesEqual(draftValues, cleanValues);
   const hasStagedChange = stagedValues !== null || isUninstallStaged;
@@ -93,16 +108,14 @@ export function TypeChartSection({
     workflow?.detectedGame === 'scarlet' ||
     workflow?.detectedGame === 'violet' ||
     workflow?.detectedGame === 'za';
+  const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
   const canEdit =
     workflow?.summary.availability === 'available' &&
     workflow.installStatus !== 'blocked' &&
     workflow.source?.status === 'available' &&
     isSupportedTypeChartGame(workflow.detectedGame) &&
-    !isUninstallStaged &&
-    !isStaging &&
-    !isChangePlanCreating &&
-    !isChangePlanApplying;
-  const canStage = canEdit && isDirty;
+    !isUninstallStaged;
+  const canStage = canEdit && !isBusy && isDirty;
   const canStageUninstall =
     supportsUninstall &&
     !isUninstallStaged &&

@@ -10,6 +10,7 @@ import type {
 } from '../../bridge/inGameSettingsPackageContracts';
 import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import './InGameSettingsPackagePanel.css';
 
@@ -56,6 +57,14 @@ export function InGameSettingsPackagePanel({
   const [busy, setBusy] = useState<PackageBusyState>(null);
   const [messageKey, setMessageKey] = useState<string | null>(null);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
+  const errorMessage = messageKey && !messageKey.endsWith('Committed')
+    ? t(messageKey)
+    : null;
+  usePublishCommonEditorError({
+    domain: 'workflow.gameplaySettings',
+    field: 'inGamePackage',
+    message: errorMessage
+  });
   const [installationTarget, setInstallationTarget] =
     useState<InGameSettingsInstallationTarget>('atmosphere');
   const requestGenerationRef = useRef(0);
@@ -896,6 +905,7 @@ export function InGameSettingsPackagePanel({
             <input
               checked={reviewAcknowledged}
               disabled={busy !== null}
+              id="in-game-settings-review-confirmation"
               onChange={(event) => setReviewAcknowledged(event.currentTarget.checked)}
               type="checkbox"
             />

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import type { ProjectGame } from '../bridge/contracts';
+import { calculatePayloadBytesSha256 } from '../utils/pendingPayloadHash';
 import {
   RowClipboardError,
   rowClipboardEnvelopeSchemaVersion,
@@ -311,17 +312,7 @@ async function computeChecksum(
 }
 
 async function sha256UpperHex(bytes: Uint8Array): Promise<string> {
-  if (!globalThis.crypto?.subtle) {
-    throw new RowClipboardError('checksum-unavailable');
-  }
-  const digest = await globalThis.crypto.subtle.digest(
-    'SHA-256',
-    bytes as unknown as BufferSource
-  );
-  return [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase();
+  return calculatePayloadBytesSha256(bytes);
 }
 
 function normalizeEnvelopePayload(

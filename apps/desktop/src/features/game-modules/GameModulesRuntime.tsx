@@ -8,6 +8,7 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import type { WorkbenchSection } from '../../workbench/workbenchSections';
 import type {
@@ -83,6 +84,13 @@ export default function GameModulesRuntime({
           </div>
         </header>
         {isError ? (
+          <>
+          <PublishCommonEditorError
+            domain="analysis.gameModules"
+            message={t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'gameModules.error')}
+          />
           <div aria-live="polite" className="km-game-module-status" role="alert">
             <p>{t(capabilityError
               ? `semanticExplore.query.error.${capabilityError}`
@@ -91,6 +99,7 @@ export default function GameModulesRuntime({
               {t('gameModules.retry')}
             </button>
           </div>
+          </>
         ) : (
           <div className="km-game-module-status">
             <LoadingProgress label={t('gameModules.loading')} />

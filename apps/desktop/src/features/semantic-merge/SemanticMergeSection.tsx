@@ -48,6 +48,11 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import {
+  PublishCommonEditorError,
+  usePublishCommonEditorDiagnostics,
+  usePublishCommonEditorError
+} from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
@@ -400,10 +405,15 @@ function MergeSurface({
     isChangeSetWorkspaceBusy ||
     controller.isQuerying;
   const sourceIdentity = `${controller.sourceA.data?.instanceId ?? ''}:${controller.sourceB.data?.instanceId ?? ''}`;
+  const previousResolutionSourceRef = useRef<{
+    sourceIdentity: string;
+    values: Map<string, SemanticMergeConflictChoice>;
+  }>({ sourceIdentity, values: new Map() });
 
   useEffect(() => {
     setSelectedRows(new Map());
     setResolutionDraft(new Map());
+    previousResolutionSourceRef.current = { sourceIdentity, values: new Map() };
     setSearchDraft('');
     setImportError(false);
   }, [sourceIdentity]);
@@ -417,15 +427,30 @@ function MergeSurface({
   }, []);
   useEffect(() => {
     if (!preview || preview.selectionRequired) return;
-    setImportError(false);
-    setResolutionDraft(new Map(
+    const previewSourceIdentity = `${preview.sourceASnapshot.layer.instanceId ?? ''}:${preview.sourceBSnapshot.layer.instanceId ?? ''}`;
+    if (previewSourceIdentity !== sourceIdentity) return;
+    const nextSourceValues = new Map(
       preview.normalizedResolutions.map((resolution) => [
         resolution.conflictId,
         resolution.choice
       ])
+    );
+    const previousSourceValues =
+      previousResolutionSourceRef.current.sourceIdentity === sourceIdentity
+        ? previousResolutionSourceRef.current.values
+        : new Map<string, SemanticMergeConflictChoice>();
+    setImportError(false);
+    setResolutionDraft((current) => reconcileResolutionDraft(
+      current,
+      previousSourceValues,
+      nextSourceValues
     ));
+    previousResolutionSourceRef.current = {
+      sourceIdentity,
+      values: nextSourceValues
+    };
     resultsHeadingRef.current?.focus({ preventScroll: true });
-  }, [preview?.proposalFingerprint]);
+  }, [preview?.proposalFingerprint, sourceIdentity]);
   useEffect(() => {
     if (importError) importStatusRef.current?.focus({ preventScroll: true });
   }, [importError]);
@@ -481,7 +506,6 @@ function MergeSurface({
   const discover = async (event: FormEvent) => {
     event.preventDefault();
     if (normalizedSearch === null) return;
-    setResolutionDraft(new Map());
     await controller.previewMerge([], [], normalizedSearch);
   };
   const toggleTarget = (row: SemanticMergeRow, checked: boolean) => {
@@ -502,7 +526,6 @@ function MergeSurface({
   };
   const generate = async () => {
     if (selectedTargets.length === 0) return;
-    setResolutionDraft(new Map());
     await controller.previewMerge(selectedTargets, [], null);
   };
   const updateChoices = async () => {
@@ -616,7 +639,7 @@ function MergeSurface({
                 <div>
                   <Search aria-hidden="true" size={16} />
                   <input
-                    disabled={isBlocked || controller.mergePreview.status === 'loading'}
+                    disabled={!isAvailable}
                     id="semantic-merge-target-search"
                     maxLength={semanticMergeMaximumTargetSearchTextLength}
                     onChange={(event) => setSearchDraft(event.target.value)}
@@ -628,7 +651,7 @@ function MergeSurface({
                 </div>
               </form>
               <SelectedTargets
-                disabled={isBlocked}
+                disabled={!isAvailable}
                 rows={[...selectedRows.values()]}
                 onClear={() => setSelectedRows(new Map())}
                 onRemove={(row) => toggleTarget(row, false)}
@@ -671,7 +694,7 @@ function MergeSurface({
 
           {preview?.selectionRequired && searchMatchesPreview ? (
             <TargetDiscovery
-              disabled={isBlocked}
+              disabled={!isAvailable}
               loading={controller.mergePreview.isAppending}
               onAdd={(row) => toggleTarget(row, true)}
               onLoadMore={controller.loadMoreMerge}
@@ -769,9 +792,16 @@ function MergeSurface({
                     />
                   ) : null}
                   {importError ? (
-                    <div ref={importStatusRef} role="alert" tabIndex={-1}>
-                      {t('semanticMerge.import.error')}
-                    </div>
+                    <>
+                      <PublishCommonEditorError
+                        domain="analysis.semanticMerge"
+                        field="proposalImport"
+                        message={t('semanticMerge.import.error')}
+                      />
+                      <div ref={importStatusRef} role="alert" tabIndex={-1}>
+                        {t('semanticMerge.import.error')}
+                      </div>
+                    </>
                   ) : null}
                 </fieldset>
               ) : null}
@@ -1529,7 +1559,7 @@ function RecipeSurface({
                     <input
                       checked={selectedRootIds.has(changeSet.changeSetId)}
                       className="km-choice-control"
-                      disabled={busy || recipeExportEligibility(
+                      disabled={recipeExportEligibility(
                         changeSet,
                         exportCapability
                       ) !== 'eligible'}
@@ -1556,7 +1586,7 @@ function RecipeSurface({
               <div className="km-semantic-merge-selection-actions">
                 <button
                   className="secondary-button compact-button"
-                  disabled={busy || availableSets.every((changeSet) => (
+                  disabled={availableSets.every((changeSet) => (
                     recipeExportEligibility(changeSet, exportCapability) !== 'eligible' ||
                     selectedRootIds.has(changeSet.changeSetId)
                   ))}
@@ -1573,7 +1603,7 @@ function RecipeSurface({
                 </button>
                 <button
                   className="secondary-button compact-button"
-                  disabled={busy || selectedRootIds.size === 0}
+                  disabled={selectedRootIds.size === 0}
                   onClick={() => setSelectedRootIds(new Set())}
                   type="button"
                 >
@@ -1658,9 +1688,16 @@ function RecipeSurface({
             <QueryError error={controller.recipeValidation.error} />
           ) : null}
           {fileError ? (
-            <div ref={importStatusRef} role="alert" tabIndex={-1}>
-              {t('semanticMerge.recipes.import.fileError')}
-            </div>
+            <>
+              <PublishCommonEditorError
+                domain="analysis.semanticMerge"
+                field="recipeFile"
+                message={t('semanticMerge.recipes.import.fileError')}
+              />
+              <div ref={importStatusRef} role="alert" tabIndex={-1}>
+                {t('semanticMerge.recipes.import.fileError')}
+              </div>
+            </>
           ) : null}
         </fieldset>
       </div>
@@ -1804,9 +1841,16 @@ function RecipeSurface({
               />
             ) : null}
             {importError ? (
-              <div ref={importStatusRef} role="alert" tabIndex={-1}>
-                {t('semanticMerge.import.error')}
-              </div>
+              <>
+                <PublishCommonEditorError
+                  domain="analysis.semanticMerge"
+                  field="recipeImport"
+                  message={t('semanticMerge.import.error')}
+                />
+                <div ref={importStatusRef} role="alert" tabIndex={-1}>
+                  {t('semanticMerge.import.error')}
+                </div>
+              </>
             ) : null}
           </fieldset>
         </section>
@@ -1825,6 +1869,11 @@ function RecipeArtifactCard({
 }) {
   const { t } = useLocalization();
   const [status, setStatus] = useState<'idle' | 'copied' | 'downloaded' | 'error'>('idle');
+  usePublishCommonEditorError({
+    domain: 'analysis.semanticMerge',
+    field: 'recipeExport',
+    message: status === 'error' ? t('semanticMerge.recipes.export.error') : null
+  });
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(artifact.content);
@@ -1883,6 +1932,7 @@ function ScalarValue({ label, value }: { label: string; value: string | undefine
 function Diagnostics({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
   const { t, translateLiteral } = useLocalization();
   const diagnosticNavigation = useDiagnosticNavigation();
+  usePublishCommonEditorDiagnostics(diagnostics);
   if (diagnostics.length === 0) return null;
   const formatMessage = (diagnostic: ApiDiagnostic) => {
     const message = safeDiagnosticMessage(diagnostic.message);
@@ -1959,15 +2009,23 @@ function QueryError({
   onRetry?: () => void | Promise<void>;
 }) {
   const { t } = useLocalization();
+  const message = t(`semanticMerge.error.${error}`);
   return (
-    <div className="km-semantic-merge-error" role="alert">
-      <p>{t(`semanticMerge.error.${error}`)}</p>
-      {onRetry ? (
-        <button onClick={() => void onRetry()} type="button">
-          {t('semanticMerge.retry')}
-        </button>
-      ) : null}
-    </div>
+    <>
+      <PublishCommonEditorError
+        domain="analysis.semanticMerge"
+        field="query"
+        message={message}
+      />
+      <div className="km-semantic-merge-error" role="alert">
+        <p>{message}</p>
+        {onRetry ? (
+          <button onClick={() => void onRetry()} type="button">
+            {t('semanticMerge.retry')}
+          </button>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -2110,6 +2168,35 @@ function recipeExportEligibility(
   ))
     ? 'eligible'
     : 'provider';
+}
+
+function reconcileResolutionDraft(
+  current: Map<string, SemanticMergeConflictChoice>,
+  previousSource: ReadonlyMap<string, SemanticMergeConflictChoice>,
+  nextSource: ReadonlyMap<string, SemanticMergeConflictChoice>
+) {
+  const next = new Map<string, SemanticMergeConflictChoice>();
+  for (const [conflictId, nextSourceChoice] of nextSource) {
+    const currentChoice = current.get(conflictId);
+    const previousSourceChoice = previousSource.get(conflictId);
+    const hasLocalChoice = currentChoice !== undefined && (
+      previousSourceChoice === undefined
+        ? currentChoice !== nextSourceChoice
+        : currentChoice !== previousSourceChoice
+    );
+    next.set(
+      conflictId,
+      hasLocalChoice ? currentChoice : nextSourceChoice
+    );
+  }
+
+  if (
+    current.size === next.size &&
+    [...next].every(([conflictId, choice]) => current.get(conflictId) === choice)
+  ) {
+    return current;
+  }
+  return next;
 }
 
 function safeDiagnosticMessage(message: string) {

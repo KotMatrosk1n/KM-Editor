@@ -52,7 +52,7 @@ export type OutputSafetyController = {
   checkpoints: ListOutputCheckpointsResponse | null;
   cleanupPreview: PreviewOutputCleanupResponse | null;
   cleanupResult: ApplyOutputCleanupResponse | null;
-  createCheckpoint: (label: string | null) => Promise<void>;
+  createCheckpoint: (label: string | null) => Promise<boolean>;
   deleteCheckpoint: (checkpoint: OutputCheckpoint) => Promise<void>;
   history: ListOutputHistoryResponse | null;
   integrity: ScanOutputIntegrityResponse | null;
@@ -249,7 +249,7 @@ export function useOutputSafetyController({
   ) => {
     const activeScope = scopeRef.current;
     if (!activeScope || !scopeKey || !beginAction(action)) {
-      return;
+      return false;
     }
 
     const generation = generationRef.current;
@@ -270,7 +270,7 @@ export function useOutputSafetyController({
         if (isCurrent(generation, scopeKey) && busyActionRef.current === action) {
           endAction(action);
         }
-        return;
+        return false;
       }
     }
     const safetyEpoch = isMutation
@@ -286,7 +286,9 @@ export function useOutputSafetyController({
       const result = await operation(activeScope);
       if (isCurrent(generation, scopeKey) && safetyEpochRef.current === safetyEpoch) {
         await commit(result);
+        return true;
       }
+      return false;
     } catch (error) {
       if (isCurrent(generation, scopeKey) && safetyEpochRef.current === safetyEpoch) {
         setActionDiagnostics(toProjectBridgeDiagnostics(error, fallbackMessage));
@@ -304,6 +306,7 @@ export function useOutputSafetyController({
           }
         }
       }
+      return false;
     } finally {
       if (isCurrent(generation, scopeKey)) {
         endAction(action);
@@ -511,9 +514,9 @@ export function useOutputSafetyController({
 
   const createCheckpoint = useCallback(async (label: string | null) => {
     if (!checkpoints) {
-      return;
+      return false;
     }
-    await runScopedAction('checkpointCreate', (activeScope) =>
+    return await runScopedAction('checkpointCreate', (activeScope) =>
       bridge.createOutputCheckpoint({
         expectedOutputRevision: checkpoints.outputRevision,
         label: label && label.trim().length > 0 ? label.trim() : null,

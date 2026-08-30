@@ -22,6 +22,7 @@ import {
   type ResearchFileFinding
 } from '../../bridge/researchLabContracts';
 import type { SemanticExploreRevision } from '../../bridge/semanticExploreContracts';
+import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import {
@@ -203,7 +204,7 @@ export function ResearchComparisonView({
         </span>
         <button
           className="secondary-button compact-button"
-          disabled={controller.isBusy || selectedPaths.length === 0}
+          disabled={selectedPaths.length === 0}
           onClick={() => setSelectedPaths([])}
           type="button"
         >
@@ -417,7 +418,14 @@ function SourceCard({
         ? 'researchLab.source.registered'
         : 'researchLab.source.private')}</span>
       {source.error ? (
-        <span role="alert">{t(researchErrorKey(source.error))}</span>
+        <>
+          <PublishCommonEditorError
+            domain="analysis.researchLab"
+            field={`comparisonSource${slot + 1}`}
+            message={t(researchErrorKey(source.error))}
+          />
+          <span role="alert">{t(researchErrorKey(source.error))}</span>
+        </>
       ) : null}
       {source.status === 'loading' ? (
         <LoadingProgress className="is-compact" label={t('semanticExplore.loading')} />
@@ -655,21 +663,29 @@ function Status({
   messageKey: string;
 }) {
   const { t } = useLocalization();
+  const message = t(messageKey);
   if (!error) {
     return (
       <div className="km-research-lab-inline-status">
-        <LoadingProgress className={compact ? 'is-compact' : undefined} label={t(messageKey)} />
+        <LoadingProgress className={compact ? 'is-compact' : undefined} label={message} />
       </div>
     );
   }
   return (
-    <div
-      aria-live="polite"
-      className="km-research-lab-inline-status"
-      role="alert"
-    >
-      <span>{t(messageKey)}</span>
-    </div>
+    <>
+      <PublishCommonEditorError
+        domain="analysis.researchLab"
+        field="comparison"
+        message={message}
+      />
+      <div
+        aria-live="polite"
+        className="km-research-lab-inline-status"
+        role="alert"
+      >
+        <span>{message}</span>
+      </div>
+    </>
   );
 }
 

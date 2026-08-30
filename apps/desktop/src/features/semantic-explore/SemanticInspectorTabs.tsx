@@ -7,6 +7,7 @@ import type {
   SemanticExploreCoverage,
   SemanticExploreRecordRef
 } from '../../bridge/semanticExploreContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { semanticRecordRefKey } from '../../workbench/semanticContracts';
 import { TechnicalDetails } from '../workbench/AnalysisPresentation';
@@ -387,6 +388,10 @@ function InspectorBoundary<T>({
   state: SemanticQueryState<T>;
 }) {
   const { t } = useLocalization();
+  const errorMessage = state.status === 'error'
+    ? t(`semanticExplore.query.error.${state.error ?? 'generic'}`)
+    : null;
+  usePublishCommonEditorError({ domain: 'analysis.semanticExplore', message: errorMessage });
   if ((state.status === 'loading' || state.status === 'idle') && !state.data) {
     return <LoadingProgress label={t('semanticExplore.loading')} />;
   }
@@ -397,7 +402,7 @@ function InspectorBoundary<T>({
       ) : null}
       {state.status === 'error' ? (
         <p className="km-semantic-query-error" role="alert">
-          {t(`semanticExplore.query.error.${state.error ?? 'generic'}`)}
+          {errorMessage}
         </p>
       ) : null}
       {children}

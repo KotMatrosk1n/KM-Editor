@@ -26,6 +26,7 @@ import {
   type AuthoringStagedSourceTransition,
   type AuthoringTransform
 } from '../../authoring/advancedAuthoringTypes';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey, type SemanticRecordRef } from '../../workbench/semanticContracts';
 
@@ -73,6 +74,12 @@ export function AdvancedAuthoringPanel({
   } | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const errorMessage = errorKey ? t(errorKey) : null;
+  usePublishCommonEditorError({
+    domain: 'workflow.changeSets',
+    field: 'advancedAuthoring',
+    message: errorMessage
+  });
 
   const workspace = workspaces.find((candidate) => candidate.adapterId === adapterId)
     ?? workspaces[0]
@@ -172,6 +179,15 @@ export function AdvancedAuthoringPanel({
     ? storedPreview.value
     : null;
   const operationInputKeyRef = useRef(operationInputKey);
+  const controllerRef = useRef(controller);
+  const adapterIdRef = useRef(adapterId);
+  const fieldKeyRef = useRef(fieldKey);
+  const sourceRecordKeyRef = useRef(sourceRecordKey);
+  const pasteGroupIdRef = useRef(pasteGroupId);
+  adapterIdRef.current = adapterId;
+  fieldKeyRef.current = fieldKey;
+  sourceRecordKeyRef.current = sourceRecordKey;
+  pasteGroupIdRef.current = pasteGroupId;
 
   useEffect(() => {
     if (operationInputKeyRef.current === operationInputKey) return;
@@ -181,15 +197,44 @@ export function AdvancedAuthoringPanel({
 
   useEffect(() => {
     const nextWorkspaces = controller.getWorkspaces();
-    const nextWorkspace = nextWorkspaces[0];
+    const controllerChanged = controllerRef.current !== controller;
+    controllerRef.current = controller;
+    const nextWorkspace = controllerChanged
+      ? nextWorkspaces[0]
+      : nextWorkspaces.find(
+          (candidate) => candidate.adapterId === adapterIdRef.current
+        ) ?? nextWorkspaces[0];
+    const nextFieldKey =
+      !controllerChanged &&
+      nextWorkspace?.fields.some(
+        (candidate) => candidate.fieldKey === fieldKeyRef.current
+      )
+        ? fieldKeyRef.current
+        : nextWorkspace?.fields[0]?.fieldKey ?? '';
+    const nextSourceRecordKey =
+      !controllerChanged &&
+      nextWorkspace?.records.some(
+        (record) => semanticRecordRefKey(record.record) === sourceRecordKeyRef.current
+      )
+        ? sourceRecordKeyRef.current
+        : nextWorkspace?.records[0]
+          ? semanticRecordRefKey(nextWorkspace.records[0].record)
+          : '';
+    const nextPasteGroupId =
+      !controllerChanged &&
+      nextWorkspace?.pasteSpecialGroups.some(
+        (group) => group.id === pasteGroupIdRef.current
+      )
+        ? pasteGroupIdRef.current
+        : nextWorkspace?.pasteSpecialGroups[0]?.id ?? '';
     setSnapshot(controller.getSnapshot());
     setAdapterId(nextWorkspace?.adapterId ?? '');
-    setFieldKey(nextWorkspace?.fields[0]?.fieldKey ?? '');
-    setSourceRecordKey(nextWorkspace?.records[0]
-      ? semanticRecordRefKey(nextWorkspace.records[0].record)
-      : '');
-    setPasteGroupId(nextWorkspace?.pasteSpecialGroups[0]?.id ?? '');
-    setRecordQuery('');
+    setFieldKey(nextFieldKey);
+    setSourceRecordKey(nextSourceRecordKey);
+    setPasteGroupId(nextPasteGroupId);
+    if (controllerChanged) {
+      setRecordQuery('');
+    }
     setStoredPreview(null);
     setErrorKey(null);
   }, [controller, revisionKey]);
@@ -423,7 +468,7 @@ export function AdvancedAuthoringPanel({
         </div>
       </header>
 
-      {errorKey ? <p className="change-set-local-error" role="alert">{t(errorKey)}</p> : null}
+      {errorMessage ? <p className="change-set-local-error" role="alert">{errorMessage}</p> : null}
 
       <div className="change-set-authoring-grid">
         <section className="change-set-card change-set-authoring-selection">
@@ -434,7 +479,6 @@ export function AdvancedAuthoringPanel({
           <label htmlFor="change-set-authoring-adapter">{t('changeSets.authoring.loadedEditor')}</label>
           <select
             className="km-select-control"
-            disabled={controlsBusy}
             id="change-set-authoring-adapter"
             onChange={(event) => handleAdapterChange(event.currentTarget.value)}
             value={workspace.adapterId}
@@ -449,7 +493,6 @@ export function AdvancedAuthoringPanel({
             {t('changeSets.authoring.searchRecords')}
           </label>
           <input
-            disabled={controlsBusy}
             id="change-set-authoring-record-search"
             maxLength={512}
             onChange={(event) => setRecordQuery(event.currentTarget.value)}
@@ -462,7 +505,6 @@ export function AdvancedAuthoringPanel({
           </label>
           <select
             className="km-select-control"
-            disabled={controlsBusy}
             id="change-set-authoring-record-order"
             onChange={(event) => setRecordOrder(event.currentTarget.value as typeof recordOrder)}
             value={recordOrder}
@@ -478,7 +520,6 @@ export function AdvancedAuthoringPanel({
                   <input
                     checked={selectedRecordKeys.has(key)}
                     className="km-choice-control"
-                    disabled={controlsBusy}
                     onChange={() => {
                       run(() => controller.toggleRecord(workspace.adapterId, record.record));
                       setStoredPreview(null);
@@ -546,7 +587,6 @@ export function AdvancedAuthoringPanel({
           <label htmlFor="change-set-authoring-field">{t('changeSets.authoring.field')}</label>
           <select
             className="km-select-control"
-            disabled={controlsBusy}
             id="change-set-authoring-field"
             onChange={(event) => {
               setFieldKey(event.currentTarget.value);
@@ -563,7 +603,6 @@ export function AdvancedAuthoringPanel({
           <label htmlFor="change-set-authoring-transform">{t('changeSets.authoring.transform')}</label>
           <select
             className="km-select-control"
-            disabled={controlsBusy}
             id="change-set-authoring-transform"
             onChange={(event) => {
               setTransformKind(event.currentTarget.value as typeof transformKind);
@@ -579,7 +618,6 @@ export function AdvancedAuthoringPanel({
             ))}
           </select>
           <TransformInputs
-            disabled={controlsBusy}
             kind={transformKind}
             onPrimaryChange={(value) => {
               setPrimaryValue(value);
@@ -615,7 +653,6 @@ export function AdvancedAuthoringPanel({
           <label htmlFor="change-set-authoring-source">{t('changeSets.authoring.source')}</label>
           <select
             className="km-select-control"
-            disabled={controlsBusy}
             id="change-set-authoring-source"
             onChange={(event) => {
               setSourceRecordKey(event.currentTarget.value);
@@ -663,7 +700,6 @@ export function AdvancedAuthoringPanel({
               </label>
               <select
                 className="km-select-control"
-                disabled={controlsBusy}
                 id="change-set-authoring-paste-group"
                 onChange={(event) => {
                   setPasteGroupId(event.currentTarget.value);
@@ -739,7 +775,6 @@ export function AdvancedAuthoringPanel({
 }
 
 function TransformInputs({
-  disabled,
   kind,
   onPrimaryChange,
   onRoundingChange,
@@ -748,7 +783,6 @@ function TransformInputs({
   rounding,
   secondaryValue
 }: {
-  disabled: boolean;
   kind: 'replace' | AuthoringRelativeTransformKind;
   onPrimaryChange: (value: string) => void;
   onRoundingChange: (value: 'ceil' | 'floor' | 'nearest') => void;
@@ -763,11 +797,11 @@ function TransformInputs({
       <div className="change-set-authoring-values">
         <label>
           <span>{t('changeSets.authoring.minimum')}</span>
-          <input disabled={disabled} onChange={(event) => onPrimaryChange(event.currentTarget.value)} type="number" value={primaryValue} />
+          <input onChange={(event) => onPrimaryChange(event.currentTarget.value)} type="number" value={primaryValue} />
         </label>
         <label>
           <span>{t('changeSets.authoring.maximum')}</span>
-          <input disabled={disabled} onChange={(event) => onSecondaryChange(event.currentTarget.value)} type="number" value={secondaryValue} />
+          <input onChange={(event) => onSecondaryChange(event.currentTarget.value)} type="number" value={secondaryValue} />
         </label>
       </div>
     );
@@ -781,7 +815,6 @@ function TransformInputs({
             ? 'changeSets.authoring.factor'
             : 'changeSets.authoring.value')}</span>
         <input
-          disabled={disabled}
           onChange={(event) => onPrimaryChange(event.currentTarget.value)}
           step={kind === 'multiply' ? 'any' : '1'}
           type="number"
@@ -793,7 +826,6 @@ function TransformInputs({
           <span>{t('changeSets.authoring.rounding')}</span>
           <select
             className="km-select-control"
-            disabled={disabled}
             onChange={(event) => onRoundingChange(event.currentTarget.value as typeof rounding)}
             value={rounding}
           >

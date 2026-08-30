@@ -36,7 +36,11 @@ public static class NsoRegisteredRegionCompositionVerifier
         {
             var retail = NsoFile.Parse(retailMain.ToArray());
             if (!TryGetOpaqueSpans(retailMain, retail, out var retailOpaque)
-                || !CandidateHeaderMatchesRetail(candidateMain, retail, retailOpaque))
+                || !CandidateHeaderMatchesRetail(
+                    candidateMain,
+                    retailMain,
+                    retail,
+                    retailOpaque))
             {
                 return false;
             }
@@ -86,6 +90,7 @@ public static class NsoRegisteredRegionCompositionVerifier
             return TryGetOpaqueSpans(retailMain, retail, out var retailOpaque)
                 && CandidateHeaderMatchesRetail(
                     candidateMain,
+                    retailMain,
                     retail,
                     retailOpaque);
         }
@@ -100,6 +105,7 @@ public static class NsoRegisteredRegionCompositionVerifier
 
     private static bool CandidateHeaderMatchesRetail(
         ReadOnlySpan<byte> candidate,
+        ReadOnlySpan<byte> retailBytes,
         NsoFile retail,
         OpaqueSpans retailOpaque)
     {
@@ -117,6 +123,7 @@ public static class NsoRegisteredRegionCompositionVerifier
             && CandidateSegmentHeaderMatches(candidate, 0x30, retail.Data)
             && CandidateFileLayoutIsSafe(
                 candidate,
+                retailBytes,
                 retail,
                 retailOpaque);
     }
@@ -134,6 +141,7 @@ public static class NsoRegisteredRegionCompositionVerifier
 
     private static bool CandidateFileLayoutIsSafe(
         ReadOnlySpan<byte> candidate,
+        ReadOnlySpan<byte> retailBytes,
         NsoFile retail,
         OpaqueSpans retailOpaque)
     {
@@ -180,7 +188,11 @@ public static class NsoRegisteredRegionCompositionVerifier
             new SpanRange(
                 (int)dataEnd,
                 candidate.Length - (int)dataEnd));
-        return OpaqueSpanLengthsMatch(retailOpaque, candidateOpaque);
+        return OpaqueSpansAreCompatible(
+            retailBytes,
+            retailOpaque,
+            candidate,
+            candidateOpaque);
     }
 
     private static RawSegment ReadRawSegment(
@@ -262,26 +274,11 @@ public static class NsoRegisteredRegionCompositionVerifier
     {
         return TryGetOpaqueSpans(retailBytes, retail, out var retailOpaque)
             && TryGetOpaqueSpans(candidateBytes, candidate, out var candidateOpaque)
-            && OpaqueSpanMatches(
+            && OpaqueSpansAreCompatible(
                 retailBytes,
-                retailOpaque.BeforeText,
+                retailOpaque,
                 candidateBytes,
-                candidateOpaque.BeforeText)
-            && OpaqueSpanMatches(
-                retailBytes,
-                retailOpaque.BeforeRo,
-                candidateBytes,
-                candidateOpaque.BeforeRo)
-            && OpaqueSpanMatches(
-                retailBytes,
-                retailOpaque.BeforeData,
-                candidateBytes,
-                candidateOpaque.BeforeData)
-            && OpaqueSpanMatches(
-                retailBytes,
-                retailOpaque.Trailing,
-                candidateBytes,
-                candidateOpaque.Trailing);
+                candidateOpaque);
     }
 
     private static bool TryGetOpaqueSpans(
@@ -353,14 +350,64 @@ public static class NsoRegisteredRegionCompositionVerifier
                 candidate.Slice(candidateRange.Start, candidateRange.Length));
     }
 
-    private static bool OpaqueSpanLengthsMatch(
+    private static bool OpaqueSpansAreCompatible(
+        ReadOnlySpan<byte> retailBytes,
         OpaqueSpans retail,
+        ReadOnlySpan<byte> candidateBytes,
         OpaqueSpans candidate)
     {
-        return retail.BeforeText.Length == candidate.BeforeText.Length
-            && retail.BeforeRo.Length == candidate.BeforeRo.Length
-            && retail.BeforeData.Length == candidate.BeforeData.Length
-            && retail.Trailing.Length == candidate.Trailing.Length;
+        return OpaqueSpanMatches(
+                retailBytes,
+                retail.BeforeText,
+                candidateBytes,
+                candidate.BeforeText)
+            && OpaquePaddingMatches(
+                retailBytes,
+                retail.BeforeRo,
+                candidateBytes,
+                candidate.BeforeRo)
+            && OpaquePaddingMatches(
+                retailBytes,
+                retail.BeforeData,
+                candidateBytes,
+                candidate.BeforeData)
+            && OpaquePaddingMatches(
+                retailBytes,
+                retail.Trailing,
+                candidateBytes,
+                candidate.Trailing);
+    }
+
+    private static bool OpaquePaddingMatches(
+        ReadOnlySpan<byte> retail,
+        SpanRange retailRange,
+        ReadOnlySpan<byte> candidate,
+        SpanRange candidateRange)
+    {
+        var retailPadding = retail.Slice(retailRange.Start, retailRange.Length);
+        var candidatePadding = candidate.Slice(
+            candidateRange.Start,
+            candidateRange.Length);
+        // Recompressing a segment can relocate the following segment and make
+        // the NSO writer append zero alignment after the opaque bytes it
+        // preserves. Require that exact trusted prefix and permit only the
+        // writer's zero suffix; never permit shortening or replacement.
+        return candidatePadding.Length >= retailPadding.Length
+            && candidatePadding[..retailPadding.Length].SequenceEqual(retailPadding)
+            && IsAllZero(candidatePadding[retailPadding.Length..]);
+    }
+
+    private static bool IsAllZero(ReadOnlySpan<byte> bytes)
+    {
+        foreach (var value in bytes)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static byte[] NormalizeHeader(NsoFile nso)

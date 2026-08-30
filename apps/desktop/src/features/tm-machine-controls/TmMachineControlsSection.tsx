@@ -15,6 +15,7 @@ import type { EditSession } from '../../bridge/contracts';
 import type {
   TmMachineControlsWorkflow
 } from '../../bridge/tmMachineControlsContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -126,6 +127,11 @@ export function TmMachineControlsSection({
     panelOutput.changePlan.writes.length > 0 &&
     !hasConflictingEditSession &&
     !isBusy;
+  usePublishCommonEditorError({
+    domain: 'workflow.tmMachineControls',
+    field: 'editSession',
+    message: hasConflictingEditSession ? t('tmMachineControls.sessionConflict') : null
+  });
 
   return (
     <>

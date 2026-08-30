@@ -9,10 +9,17 @@ import {
   type BattleCafeRewardRowEdit,
   type BattleCafeRewardsWorkflow
 } from '../../bridge/battleCafeRewardsContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import {
+  filterAndRankSearchableOptions,
+  findExactSearchableOption,
+  parseBoundedWholeNumberDraft
+} from '../gameplayInputDrafts';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
@@ -21,12 +28,10 @@ const battleCafeRewardsRecordId = 'battle-cafe-rewards';
 const battleCafeRewardsField = 'rows';
 const maximumSuggestions = 20;
 
-type DraftRow = Pick<
-  BattleCafeRewardRow,
-  'rowIndex' | 'itemId' | 'dwightPercent' | 'bernardPercent' | 'richardPercent'
->;
-
 type OwnerKey = 'dwightPercent' | 'bernardPercent' | 'richardPercent';
+
+type DraftRow = Pick<BattleCafeRewardRow, 'rowIndex' | 'itemId'> &
+  Record<OwnerKey, string>;
 
 export function BattleCafeRewardsSection({
   editSession,
@@ -47,7 +52,10 @@ export function BattleCafeRewardsSection({
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
   onDirtyChange: (isDirty: boolean) => void;
-  onStageRows: (rows: BattleCafeRewardRowEdit[]) => void;
+  onStageRows: (
+    rows: BattleCafeRewardRowEdit[],
+    isSubmittedDraftCurrent: () => boolean
+  ) => void;
   panelOutput: WorkflowPanelOutput;
   workflow: BattleCafeRewardsWorkflow | null;
 }) {
@@ -75,13 +83,49 @@ export function BattleCafeRewardsSection({
     [decodedStagedRows, workflow?.rewards]
   );
   const cleanRowsKey = useMemo(() => encodeDraftRows(cleanRows), [cleanRows]);
+  const draftIdentityKey = [
+    workflow?.provenance?.sourceFile ?? 'none',
+    cleanRows.map((row) => row.rowIndex).join(',')
+  ].join('|');
   const [draftRows, setDraftRows] = useState<DraftRow[]>(cleanRows);
+  const draftContextSignature = JSON.stringify([
+    draftIdentityKey,
+    cleanRowsKey,
+    encodeDraftRows(draftRows)
+  ]);
+  const draftContextSignatureRef = useRef(draftContextSignature);
+  draftContextSignatureRef.current = draftContextSignature;
+  const draftContextIsActiveRef = useRef(true);
   const cleanRowsRef = useRef(cleanRows);
+  const sourceRowsRef = useRef({
+    identityKey: draftIdentityKey,
+    rows: cleanRows
+  });
   cleanRowsRef.current = cleanRows;
 
   useEffect(() => {
-    setDraftRows(cleanRows);
-  }, [cleanRowsKey]);
+    draftContextIsActiveRef.current = true;
+    return () => {
+      draftContextIsActiveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const previous = sourceRowsRef.current;
+    setDraftRows((current) =>
+      previous.identityKey !== draftIdentityKey
+        ? cleanRows
+        : reconcileSourceBackedDraft(
+            current,
+            previous.rows,
+            cleanRows,
+            (left, right) => encodeDraftRows(left) === encodeDraftRows(right)
+          )
+    );
+    sourceRowsRef.current = { identityKey: draftIdentityKey, rows: cleanRows };
+  // cleanRowsKey is the stable source trigger; cleanRows is derived each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanRowsKey, draftIdentityKey]);
 
   const dirtyRowIndexes = useMemo(() => {
     const cleanByIndex = new Map(cleanRows.map((row) => [row.rowIndex, row]));
@@ -93,15 +137,49 @@ export function BattleCafeRewardsSection({
   }, [cleanRows, draftRows]);
   const totals = useMemo(() => calculateTotals(draftRows), [draftRows]);
   const totalsAreExact = ownerKeys.every((owner) => totals[owner] === 100);
+  const percentagesAreValid = draftRows.every((row) =>
+    ownerKeys.every((owner) => parsePercentDraft(row[owner]) !== null)
+  );
   const itemChoicesAreUnique = new Set(draftRows.map((row) => row.itemId)).size === draftRows.length;
   const hasDirtyDraft = dirtyRowIndexes.size > 0;
   const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
-  const canEdit = workflow?.summary.availability === 'available' && !hasInvalidStagedChange && !isBusy;
-  const canStage = canEdit && hasDirtyDraft;
+  const canEdit = workflow?.summary.availability === 'available';
+  const canStage =
+    canEdit &&
+    !hasInvalidStagedChange &&
+    !isBusy &&
+    hasDirtyDraft &&
+    percentagesAreValid;
   const canReview = hasStagedChange && !hasInvalidStagedChange && !hasDirtyDraft &&
     totalsAreExact && itemChoicesAreUnique && !isBusy;
   const canApply = canReview && panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply && panelOutput.changePlan.writes.length > 0;
+  usePublishCommonEditorError({
+    domain: battleCafeRewardsDomain,
+    field: 'percentages',
+    message: workflow === null || percentagesAreValid
+      ? null
+      : translateLiteral('Every reward percentage must be a whole number from 0 through 100.')
+  });
+  usePublishCommonEditorError({
+    domain: battleCafeRewardsDomain,
+    field: 'totals',
+    message: workflow === null || totalsAreExact ? null : t('battleCafeRewards.validation.totals')
+  });
+  usePublishCommonEditorError({
+    domain: battleCafeRewardsDomain,
+    field: 'items',
+    message: workflow === null || itemChoicesAreUnique
+      ? null
+      : t('battleCafeRewards.validation.uniqueItems')
+  });
+  usePublishCommonEditorError({
+    domain: battleCafeRewardsDomain,
+    field: battleCafeRewardsField,
+    message: hasInvalidStagedChange
+      ? t('battleCafeRewards.validation.invalidStaged')
+      : null
+  });
 
   useEffect(() => {
     onDirtyChange(hasDirtyDraft);
@@ -130,21 +208,28 @@ export function BattleCafeRewardsSection({
       .filter((row) => dirtyRowIndexes.has(row.rowIndex))
       .map((row): BattleCafeRewardRowEdit | null => {
         const source = sourceByIndex.get(row.rowIndex);
-        return source ? {
+        const parsed = parseDraftRow(row);
+        return source && parsed ? {
           rowIndex: row.rowIndex,
           expectedItemId: source.itemId,
           expectedDwightPercent: source.dwightPercent,
           expectedBernardPercent: source.bernardPercent,
           expectedRichardPercent: source.richardPercent,
-          itemId: row.itemId,
-          dwightPercent: row.dwightPercent,
-          bernardPercent: row.bernardPercent,
-          richardPercent: row.richardPercent
+          itemId: parsed.itemId,
+          dwightPercent: parsed.dwightPercent,
+          bernardPercent: parsed.bernardPercent,
+          richardPercent: parsed.richardPercent
         } : null;
       })
       .filter((row): row is BattleCafeRewardRowEdit => row !== null);
     if (rows.length > 0) {
-      onStageRows(rows);
+      const submittedDraftSignature = draftContextSignature;
+      onStageRows(
+        rows,
+        () =>
+          draftContextIsActiveRef.current &&
+          draftContextSignatureRef.current === submittedDraftSignature
+      );
     }
   };
 
@@ -167,7 +252,7 @@ export function BattleCafeRewardsSection({
                   <div className={`battle-cafe-total ${isExact ? 'is-valid' : 'is-invalid'}`} key={owner}>
                     {isExact ? <CheckCircle2 aria-hidden="true" size={18} /> : <TriangleAlert aria-hidden="true" size={18} />}
                     <span>{t(`battleCafeRewards.owner.${owner}`)}</span>
-                    <strong>{t('battleCafeRewards.totals.value', { total: totals[owner] })}</strong>
+                    <strong>{t('battleCafeRewards.totals.value', { total: totals[owner] ?? '-' })}</strong>
                   </div>
                 );
               })}
@@ -346,16 +431,11 @@ function BattleCafeRewardCard({
                 })}
                 disabled={disabled}
                 inputMode="numeric"
-                max={100}
-                min={0}
-                onChange={(event) => {
-                  const next = parseBoundedPercent(event.target.value);
-                  if (next !== null) {
-                    onChange({ [owner]: next });
-                  }
-                }}
+                aria-invalid={parsePercentDraft(row[owner]) === null ? 'true' : undefined}
+                onChange={(event) => onChange({ [owner]: event.currentTarget.value })}
                 onFocus={(event) => event.currentTarget.select()}
-                type="number"
+                pattern="[0-9]*"
+                type="text"
                 value={row[owner]}
               />
               <span aria-hidden="true">%</span>
@@ -387,28 +467,62 @@ function BattleCafeItemPicker({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const suggestions = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    const matches = normalized.length === 0
-      ? itemOptions
-      : itemOptions.filter((option) =>
-        option.name.toLocaleLowerCase().includes(normalized) ||
-        option.category.toLocaleLowerCase().includes(normalized) ||
-        option.itemId.toString().includes(normalized)
-      );
-    return matches.slice(0, maximumSuggestions);
-  }, [itemOptions, query]);
+  const suggestions = useMemo(
+    () => filterAndRankSearchableOptions(
+      itemOptions,
+      query,
+      maximumSuggestions,
+      (option) => option.itemId,
+      (option) => option.name,
+      (option) => [option.name, option.category, option.itemId.toString()]
+    ),
+    [itemOptions, query]
+  );
 
   useEffect(() => {
     setQuery(selected?.name ?? '');
   }, [selected?.itemId, selected?.name]);
 
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+      setActiveIndex(0);
+      setQuery(selected?.name ?? '');
+    }
+  }, [disabled, selected?.name]);
+
   const select = (option: BattleCafeRewardItemOption) => {
+    if (disabled) {
+      return;
+    }
     onChange(option.itemId);
     setQuery(option.name);
     setIsOpen(false);
     setActiveIndex(0);
     inputRef.current?.focus();
+  };
+
+  const resolveExactQuery = () => {
+    if (disabled) {
+      setQuery(selected?.name ?? '');
+      setIsOpen(false);
+      setActiveIndex(0);
+      return;
+    }
+    const exact = findExactSearchableOption(
+      itemOptions,
+      query,
+      (option) => option.itemId,
+      (option) => option.name
+    );
+    if (exact) {
+      onChange(exact.itemId);
+      setQuery(exact.name);
+    } else {
+      setQuery(selected?.name ?? '');
+    }
+    setIsOpen(false);
+    setActiveIndex(0);
   };
 
   return (
@@ -420,20 +534,19 @@ function BattleCafeItemPicker({
           aria-activedescendant={isOpen && suggestions[activeIndex] ? `${listId}-${suggestions[activeIndex].itemId}` : undefined}
           aria-autocomplete="list"
           aria-controls={listId}
-          aria-expanded={isOpen}
+           aria-expanded={isOpen && !disabled}
           aria-label={t('battleCafeRewards.row.itemSearch', { row: rowIndex })}
           disabled={disabled}
           id={`${listId}-input`}
-          onBlur={() => window.setTimeout(() => {
-            setIsOpen(false);
-            setQuery(selected?.name ?? '');
-          }, 100)}
+          onBlur={resolveExactQuery}
           onChange={(event) => {
             setQuery(event.target.value);
             setIsOpen(true);
             setActiveIndex(0);
           }}
-          onFocus={() => setIsOpen(true)}
+           onFocus={() => {
+             if (!disabled) setIsOpen(true);
+           }}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
@@ -442,7 +555,12 @@ function BattleCafeItemPicker({
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setActiveIndex((current) => Math.max(0, current - 1));
-            } else if (event.key === 'Enter' && isOpen && suggestions[activeIndex]) {
+             } else if (
+               event.key === 'Enter' &&
+               !event.nativeEvent.isComposing &&
+               isOpen &&
+               suggestions[activeIndex]
+             ) {
               event.preventDefault();
               select(suggestions[activeIndex]);
             } else if (event.key === 'Escape') {
@@ -457,7 +575,7 @@ function BattleCafeItemPicker({
           value={query}
         />
       </div>
-      {isOpen ? (
+       {isOpen && !disabled ? (
         <ul aria-label={t('battleCafeRewards.row.itemResults')} className="battle-cafe-item-results" id={listId} role="listbox">
           {suggestions.length > 0 ? suggestions.map((option, index) => (
             <li key={option.itemId} role="none">
@@ -541,9 +659,9 @@ function mergeRows(sourceRows: BattleCafeRewardRow[], stagedRows: BattleCafeRewa
     return {
       rowIndex: source.rowIndex,
       itemId: staged?.itemId ?? source.itemId,
-      dwightPercent: staged?.dwightPercent ?? source.dwightPercent,
-      bernardPercent: staged?.bernardPercent ?? source.bernardPercent,
-      richardPercent: staged?.richardPercent ?? source.richardPercent
+      dwightPercent: (staged?.dwightPercent ?? source.dwightPercent).toString(),
+      bernardPercent: (staged?.bernardPercent ?? source.bernardPercent).toString(),
+      richardPercent: (staged?.richardPercent ?? source.richardPercent).toString()
     };
   });
 }
@@ -551,17 +669,24 @@ function mergeRows(sourceRows: BattleCafeRewardRow[], stagedRows: BattleCafeRewa
 const ownerKeys: OwnerKey[] = ['dwightPercent', 'bernardPercent', 'richardPercent'];
 
 function calculateTotals(rows: DraftRow[]) {
-  return rows.reduce((totals, row) => ({
-    dwightPercent: totals.dwightPercent + row.dwightPercent,
-    bernardPercent: totals.bernardPercent + row.bernardPercent,
-    richardPercent: totals.richardPercent + row.richardPercent
-  }), { dwightPercent: 0, bernardPercent: 0, richardPercent: 0 });
+  return Object.fromEntries(ownerKeys.map((owner) => {
+    const parsed = rows.map((row) => parsePercentDraft(row[owner]));
+    return [
+      owner,
+      parsed.some((value) => value === null)
+        ? null
+        : parsed.reduce<number>((total, value) => total + (value ?? 0), 0)
+    ];
+  })) as Record<OwnerKey, number | null>;
 }
 
 function sameDraftRow(left: DraftRow, right: DraftRow | undefined) {
   return right !== undefined && left.itemId === right.itemId &&
-    left.dwightPercent === right.dwightPercent && left.bernardPercent === right.bernardPercent &&
-    left.richardPercent === right.richardPercent;
+    ownerKeys.every((owner) => {
+      const leftValue = parsePercentDraft(left[owner]);
+      const rightValue = parsePercentDraft(right[owner]);
+      return leftValue !== null && leftValue === rightValue;
+    });
 }
 
 function encodeDraftRows(rows: DraftRow[]) {
@@ -569,10 +694,21 @@ function encodeDraftRows(rows: DraftRow[]) {
     row.bernardPercent, row.richardPercent].join(',')).join(';');
 }
 
-function parseBoundedPercent(value: string) {
-  if (!/^\d{1,3}$/.test(value)) {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+function parsePercentDraft(value: string) {
+  return parseBoundedWholeNumberDraft(value, 0, 100);
+}
+
+function parseDraftRow(row: DraftRow) {
+  const dwightPercent = parsePercentDraft(row.dwightPercent);
+  const bernardPercent = parsePercentDraft(row.bernardPercent);
+  const richardPercent = parsePercentDraft(row.richardPercent);
+  return dwightPercent === null || bernardPercent === null || richardPercent === null
+    ? null
+    : {
+      rowIndex: row.rowIndex,
+      itemId: row.itemId,
+      dwightPercent,
+      bernardPercent,
+      richardPercent
+    };
 }

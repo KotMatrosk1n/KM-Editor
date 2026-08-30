@@ -8,13 +8,14 @@ import {
   Trash2,
   TriangleAlert
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type AngeFightAttackRecord,
   type AngeFightAttackSelection,
   type AngeFightWorkflow
 } from '../../bridge/angeFightContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -22,6 +23,7 @@ import {
 } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
 import { FieldLabel } from '../../components/FieldLabel';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import {
   formatFileState,
@@ -98,38 +100,64 @@ export function AngeFightSection({
     editSession?.pendingEdits.some((edit) => edit.domain !== 'workflow.angeFight') ?? false;
   const cleanValues = stagedValues ?? workflowValues ?? createEmptyAngeFightValues();
   const cleanValuesKey = encodeAngeFightPendingValues(cleanValues);
-  const cleanIdentityKey = [
-    workflow?.sources
-      .map(
-        (source) =>
-          `${source.id}:${source.effectiveSha256}:${source.vanillaSha256}:${source.provenance.sourceLayer}`
-      )
-      .join('|') ?? 'none',
-    stagedState?.kind ?? 'none',
-    angePendingEdits[0]?.newValue ?? 'none',
-    editSession?.sessionId ?? 'none'
-  ].join('||');
-  const [draft, setDraft] = useState<AngeFightDraft>(() =>
-    createAngeFightDraft(cleanValues)
-  );
+  const draftIdentityKey = workflow
+    ? [
+        workflow.flowers.map((flower) => flower.flowerId).join(','),
+        workflow.attacks.map((attack) => attack.attackId).join(',')
+      ].join('|')
+    : 'none';
+  const cleanDraft = createAngeFightDraft(cleanValues);
+  const [draft, setDraft] = useState<AngeFightDraft>(cleanDraft);
+  const sourceDraftRef = useRef({
+    draft: cleanDraft,
+    identityKey: draftIdentityKey
+  });
 
   useEffect(() => {
-    setDraft(createAngeFightDraft(cleanValues));
-  }, [cleanIdentityKey, cleanValuesKey]);
+    const previous = sourceDraftRef.current;
+    setDraft((current) =>
+      previous.identityKey !== draftIdentityKey
+        ? cleanDraft
+        : reconcileSourceBackedDraft(
+            current,
+            previous.draft,
+            cleanDraft,
+            (left, right) => getDraftKey(left) === getDraftKey(right)
+          )
+    );
+    sourceDraftRef.current = { draft: cleanDraft, identityKey: draftIdentityKey };
+  // The encoded source value is the stable trigger; cleanDraft is rebuilt each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanValuesKey, draftIdentityKey]);
 
   const parsedDraft = useMemo(() => parseAngeFightDraft(draft), [draft]);
   const isDirty = getDraftKey(draft) !== getDraftKey(createAngeFightDraft(cleanValues));
+  const editorError = hasInvalidPendingEdit
+    ? 'Ange Fight has a non-canonical pending edit. Discard it before editing.'
+    : hasConflictingPendingEdit
+      ? 'Ange Fight needs its own edit session. Finish or discard the other pending changes first.'
+      : parsedDraft === null && isDirty
+        ? 'Fix the highlighted values before staging. HP must be at least 1; damage may be 0 or higher.'
+        : null;
+  usePublishCommonEditorError({
+    domain: 'workflow.angeFight',
+    field: 'editor',
+    message: editorError
+  });
   const hasStagedChange = stagedState !== null;
   const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
   const canDisplayEditor = isDisplayableAngeFightWorkflow(workflow);
   const canEdit =
     canDisplayEditor &&
     workflow?.installStatus !== 'readOnly' &&
-    !isUninstallStaged &&
+    !isUninstallStaged;
+  const canStage =
+    canEdit &&
     !hasInvalidPendingEdit &&
     !hasConflictingPendingEdit &&
-    !isBusy;
-  const canStage = canEdit && isDirty && parsedDraft !== null;
+    !isBusy &&
+    isDirty &&
+    parsedDraft !== null;
   const canResetToVanilla =
     canEdit &&
     vanillaValues !== null &&

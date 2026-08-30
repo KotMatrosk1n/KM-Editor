@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { Check, Keyboard, Pencil, RotateCcw, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 import {
@@ -47,7 +48,14 @@ function OpenShortcutOverlay({
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
   const [draftChord, setDraftChord] = useState('');
   const [feedback, setFeedback] = useState<{ id: string; key: string } | null>(null);
+  usePublishCommonEditorError({
+    domain: 'workbench.shortcuts',
+    field: feedback?.id,
+    message: feedback ? t(feedback.key) : null
+  });
   const [isMutationBusy, setIsMutationBusy] = useState(false);
+  const draftChordRef = useRef(draftChord);
+  draftChordRef.current = draftChord;
   const dialogRef = useModalDialog<HTMLDivElement>({
     canClose: !isMutationBusy,
     onClose
@@ -76,9 +84,10 @@ function OpenShortcutOverlay({
     if (isMutationBusy || !onSetShortcut || !isSafeWorkspaceShortcutId(shortcut.id)) {
       return;
     }
+    const submittedDraftChord = draftChord;
     let normalizedChord: string;
     try {
-      normalizedChord = normalizeWorkspaceShortcut(draftChord);
+      normalizedChord = normalizeWorkspaceShortcut(submittedDraftChord);
     } catch {
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.invalid' });
       return;
@@ -95,7 +104,11 @@ function OpenShortcutOverlay({
     setIsMutationBusy(true);
     try {
       await onSetShortcut(shortcut.id, normalizedChord);
-      setEditingShortcutId(null);
+      setEditingShortcutId((current) =>
+        current === shortcut.id && draftChordRef.current === submittedDraftChord
+          ? null
+          : current
+      );
       setFeedback(null);
     } catch {
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.saveError' });
@@ -124,10 +137,15 @@ function OpenShortcutOverlay({
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.conflict' });
       return;
     }
+    const submittedDraftChord = draftChordRef.current;
     setIsMutationBusy(true);
     try {
       await onResetShortcut(shortcut.id);
-      setEditingShortcutId((current) => current === shortcut.id ? null : current);
+      setEditingShortcutId((current) =>
+        current === shortcut.id && draftChordRef.current === submittedDraftChord
+          ? null
+          : current
+      );
       setFeedback(null);
     } catch {
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.resetError' });
@@ -175,7 +193,6 @@ function OpenShortcutOverlay({
           </span>
           <input
             autoComplete="off"
-            disabled={isMutationBusy}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('workbench.shortcuts.placeholder')}
             type="search"
@@ -236,7 +253,6 @@ function OpenShortcutOverlay({
                         </span>
                         <input
                           autoFocus
-                          disabled={isMutationBusy}
                           maxLength={64}
                           onChange={(event) => {
                             setDraftChord(event.target.value);
