@@ -68,6 +68,10 @@ public sealed record FashionLineupEntryRecordDto(
     IReadOnlyList<string> ShopIds,
     uint ItemId);
 
+public sealed record FashionCatalogTextLabelDto(
+    string Key,
+    string Label);
+
 public sealed record FashionCatalogStatsDto(
     int DressUpItemCount,
     int DressUpGroupCount,
@@ -89,6 +93,7 @@ public sealed record FashionCatalogWorkflowDto(
     IReadOnlyList<HairAndMakeupRecordDto> HairAndMakeup,
     IReadOnlyList<FashionLineupEntryRecordDto> DressUpLineups,
     IReadOnlyList<FashionLineupEntryRecordDto> HairAndMakeupLineups,
+    IReadOnlyList<FashionCatalogTextLabelDto> TextLabels,
     FashionCatalogStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics,
     bool CanStage);

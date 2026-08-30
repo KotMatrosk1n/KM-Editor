@@ -8,6 +8,7 @@ import {
   type KmCommandName
 } from './contracts';
 import { ProjectBridgeError } from './projectBridgeError';
+import { isExpectedProjectBridgeRejection } from './projectBridgeErrorClassification';
 import { recordBridgePerformanceDiagnostic } from '../performanceDiagnostics';
 
 export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
@@ -42,10 +43,20 @@ export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny
   const startedAt = performance.now();
   try {
     const response = await sendProjectBridgeRequestInner(transport, command, payload, payloadSchema);
-    recordBridgePerformanceDiagnostic(command, performance.now() - startedAt, 'success');
+    recordBridgePerformanceDiagnostic(
+      command,
+      performance.now() - startedAt,
+      'success',
+      response
+    );
     return response;
   } catch (error) {
-    recordBridgePerformanceDiagnostic(command, performance.now() - startedAt, 'failure');
+    recordBridgePerformanceDiagnostic(
+      command,
+      performance.now() - startedAt,
+      isExpectedProjectBridgeRejection(error) ? 'expected-rejection' : 'unexpected-failure',
+      error
+    );
     throw error;
   }
 }

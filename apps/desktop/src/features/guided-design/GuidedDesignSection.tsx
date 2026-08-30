@@ -27,10 +27,12 @@ import {
   guidedDesignMaximumPins,
   guidedDesignMaximumTargets,
   guidedDesignMaximumTargetSearchLength,
+  guidedDesignProposalKindValues,
   guidedDesignSchemaVersion,
   type GuidedDesignCanonicalExport,
   type GuidedDesignCapability,
   type GuidedDesignFeature,
+  type GuidedDesignFieldCatalog,
   type GuidedDesignImportRequest,
   type GuidedDesignImportResponse,
   type GuidedDesignInput,
@@ -79,15 +81,7 @@ import type {
 } from './useGuidedDesignController';
 import './guidedDesign.css';
 
-const proposalKinds: readonly GuidedDesignProposalKind[] = [
-  'trainerLevelAdjustment',
-  'encounterLevelAdjustment',
-  'encounterWeightScale',
-  'economyPrimaryPriceScale',
-  'evolutionLevelClamp',
-  'trainerEvArchetype',
-  'pokemonBaseStatShuffle'
-];
+const proposalKinds: readonly GuidedDesignProposalKind[] = guidedDesignProposalKindValues;
 const maximumVisibleTargetSuggestions = 8;
 
 export type GuidedDesignSectionProps = {
@@ -121,6 +115,7 @@ export function GuidedDesignSection({
 }: GuidedDesignSectionProps) {
   const { t } = useLocalization();
   const capabilities = controller.capabilities.data?.capabilities ?? [];
+  const fieldCatalogs = controller.capabilities.data?.fieldCatalogs ?? [];
   const availableKinds = useMemo(
     () => proposalKinds.filter((kind) => capabilities.some(
       (capability) => capability.state !== 'unavailable' &&
@@ -172,6 +167,16 @@ export function GuidedDesignSection({
     if (kind && availableKinds.includes(kind)) return;
     setKind(availableKinds[0] ?? null);
   }, [availableKinds, kind]);
+
+  const selectedFieldCatalog = kind
+    ? fieldCatalogs.find((catalog) => catalog.kind === kind) ?? null
+    : null;
+  const selectedFieldCatalogIdentity = selectedFieldCatalog
+    ? JSON.stringify(selectedFieldCatalog)
+    : null;
+  useEffect(() => {
+    setFieldKeys(selectedFieldCatalog?.fieldKeys.join(',') ?? '');
+  }, [selectedFieldCatalogIdentity]);
 
   const parsedInput = useMemo(
     () => buildInput({
@@ -324,9 +329,14 @@ export function GuidedDesignSection({
                   <span>{t('guidedDesign.inputs.kind')}</span>
                   <select
                     className="km-select-control"
-                    onChange={(event) => setKind(
-                      event.currentTarget.value as GuidedDesignProposalKind
-                    )}
+                    onChange={(event) => {
+                      const nextKind = event.currentTarget.value as GuidedDesignProposalKind;
+                      setKind(nextKind);
+                      setFieldKeys(
+                        fieldCatalogs.find((catalog) => catalog.kind === nextKind)
+                          ?.fieldKeys.join(',') ?? ''
+                      );
+                    }}
                     value={kind ?? ''}
                   >
                     {proposalKinds.map((value) => (
@@ -343,19 +353,13 @@ export function GuidedDesignSection({
                     ))}
                   </select>
                 </label>
-                <label className="km-guided-control-wide">
-                  <span>{t('guidedDesign.inputs.fields')}</span>
-                  <input
-                    autoComplete="off"
-                    maxLength={1024}
-                    onChange={(event) => setFieldKeys(event.currentTarget.value)}
-                    placeholder={t('guidedDesign.inputs.fieldsPlaceholder')}
-                    spellCheck={false}
-                    type="text"
-                    value={fieldKeys}
+                {selectedFieldCatalog ? (
+                  <GuidedFieldSelector
+                    catalog={selectedFieldCatalog}
+                    onChange={(values) => setFieldKeys(values.join(','))}
+                    selectedValues={parseFieldKeys(fieldKeys)}
                   />
-                  <small>{t('guidedDesign.inputs.fieldsHelp')}</small>
-                </label>
+                ) : null}
                 <label className="km-guided-control-wide">
                   <span>{t('guidedDesign.inputs.targetSearch')}</span>
                   <input
@@ -2262,6 +2266,67 @@ function NumberControl({
   );
 }
 
+function GuidedFieldSelector({
+  catalog,
+  onChange,
+  selectedValues
+}: {
+  catalog: GuidedDesignFieldCatalog;
+  onChange: (values: readonly string[]) => void;
+  selectedValues: readonly string[];
+}) {
+  const { t } = useLocalization();
+  const selected = new Set(
+    selectedValues.filter((value) => catalog.fieldKeys.includes(value))
+  );
+  const toggle = (fieldKey: string, checked: boolean) => {
+    if (catalog.selectionMode === 'fixed') return;
+    const next = new Set(selected);
+    if (checked) next.add(fieldKey);
+    else if (next.size > catalog.minimumSelections) next.delete(fieldKey);
+    onChange(catalog.fieldKeys.filter((candidate) => next.has(candidate)));
+  };
+  return (
+    <div className="km-guided-control-wide km-guided-field-selector">
+      <span>{t('guidedDesign.inputs.fields')}</span>
+      <details>
+        <summary>
+          {t('guidedDesign.inputs.fieldsSelected', { count: selected.size })}
+        </summary>
+        <ul aria-label={t('guidedDesign.inputs.fields')}>
+          {catalog.fieldKeys.map((fieldKey) => {
+            const checked = selected.has(fieldKey);
+            return (
+              <li key={fieldKey}>
+                <label>
+                  <input
+                    checked={checked}
+                    className="km-choice-control"
+                    disabled={
+                      catalog.selectionMode === 'fixed' ||
+                      checked && selected.size <= catalog.minimumSelections
+                    }
+                    onChange={(event) => toggle(fieldKey, event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>{t(`guidedDesign.field.${fieldKey}`)}</span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      </details>
+      <small>
+        {catalog.selectionMode === 'fixed'
+          ? t('guidedDesign.inputs.fieldsFixedHelp')
+          : t('guidedDesign.inputs.fieldsSubsetHelp', {
+              minimum: catalog.minimumSelections
+            })}
+      </small>
+    </div>
+  );
+}
+
 function SelectControl({
   labelKey,
   onChange,
@@ -2354,9 +2419,7 @@ function buildInput(options: {
   const input: GuidedDesignInput = {
     archetype: options.kind === 'trainerEvArchetype' ? options.archetype : null,
     delta: usesDelta(options.kind) ? parseInteger(options.delta) : null,
-    fieldKeys: options.fieldKeys.trim()
-      ? options.fieldKeys.split(',').map((value) => value.trim()).filter(Boolean)
-      : [],
+    fieldKeys: options.fieldKeys.trim() ? parseFieldKeys(options.fieldKeys) : [],
     kind: options.kind,
     maximumValue: options.kind === 'evolutionLevelClamp'
       ? parseInteger(options.maximumValue)
@@ -2380,6 +2443,10 @@ function buildInput(options: {
 function parseInteger(value: string) {
   if (!/^-?(?:0|[1-9][0-9]*)$/u.test(value)) return Number.NaN;
   return Number(value);
+}
+
+function parseFieldKeys(value: string) {
+  return value.split(',').map((candidate) => candidate.trim()).filter(Boolean);
 }
 
 function usesDelta(kind: GuidedDesignProposalKind) {

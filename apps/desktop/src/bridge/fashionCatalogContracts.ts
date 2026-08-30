@@ -77,6 +77,11 @@ export const fashionLineupEntryRecordSchema = z.strictObject({
   shopIds: z.array(z.string().min(1)).max(50_000)
 });
 
+export const fashionCatalogTextLabelSchema = z.strictObject({
+  key: z.string().min(1),
+  label: z.string().min(1)
+});
+
 export const fashionCatalogWorkflowSchema = z
   .strictObject({
     canStage: z.boolean(),
@@ -100,7 +105,8 @@ export const fashionCatalogWorkflowSchema = z
       hairAndMakeupCount: z.number().int().nonnegative().max(50_000),
       hairAndMakeupLineupEntryCount: z.number().int().nonnegative().max(50_000)
     }),
-    summary: workflowSummarySchema
+    summary: workflowSummarySchema,
+    textLabels: z.array(fashionCatalogTextLabelSchema).max(5_000)
   })
   .superRefine((workflow, context) => {
     if (
@@ -181,6 +187,17 @@ export const fashionCatalogWorkflowSchema = z
         });
       }
     }
+    const labelKeys = new Set<string>();
+    for (const [index, label] of workflow.textLabels.entries()) {
+      if (labelKeys.has(label.key)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Fashion Catalog text-label keys must be unique.',
+          path: ['textLabels', index, 'key']
+        });
+      }
+      labelKeys.add(label.key);
+    }
   });
 
 const zaPathsSchema = projectPathsSchema.superRefine((paths, context) => {
@@ -242,6 +259,7 @@ export type DressUpItemRecord = z.infer<typeof dressUpItemRecordSchema>;
 export type DressUpGroupRecord = z.infer<typeof dressUpGroupRecordSchema>;
 export type HairAndMakeupRecord = z.infer<typeof hairAndMakeupRecordSchema>;
 export type FashionLineupEntryRecord = z.infer<typeof fashionLineupEntryRecordSchema>;
+export type FashionCatalogTextLabel = z.infer<typeof fashionCatalogTextLabelSchema>;
 export type FashionCatalogWorkflow = z.infer<typeof fashionCatalogWorkflowSchema>;
 export type LoadFashionCatalogWorkflowRequest = z.infer<
   typeof loadFashionCatalogWorkflowRequestSchema

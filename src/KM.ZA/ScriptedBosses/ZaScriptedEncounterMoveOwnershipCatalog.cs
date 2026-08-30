@@ -28,6 +28,7 @@ internal static class ZaScriptedEncounterMoveOwnershipCatalog
 
     private const string KakunaFollowerProfileKey = "14:0:boss_0015:follower";
     private const string BeedrillFollowerProfileKey = "15:0:boss_0015:follower";
+    private const string BinacleFollowerProfileKey = "688:0:boss_0689:follower";
     private const string BanettePrimaryProfileKey = "354:1";
 
     private static readonly ZaScriptedBossAffectedScopeRecord SharedBeedrillFollowersScope =
@@ -54,6 +55,17 @@ internal static class ZaScriptedEncounterMoveOwnershipCatalog
             [15],
             IncludesPrimaryController: false);
 
+    // boss_btl_data_global consumes spn_boss_0689_sim2 and spn_boss_0689_re even though
+    // those follower tables are not materialized. The boss-context resolver intentionally
+    // routes them to the retained _sim and _rus Binacle follower lineages, respectively.
+    private static readonly ZaScriptedBossAffectedScopeRecord BarbaracleBinacleFollowersScope =
+        new(
+            "barbaracle-battle-binacle-followers",
+            "Both Binacle follower pools in every Barbaracle boss battle",
+            ["story", "simulation", "simulation-dlc", "rematch", "rush"],
+            [688],
+            IncludesPrimaryController: false);
+
     private static readonly ZaScriptedBossAffectedScopeRecord BanetteControllerScope =
         new(
             "banette-primary-and-clone-controllers",
@@ -70,6 +82,9 @@ internal static class ZaScriptedEncounterMoveOwnershipCatalog
                 [17629] = [SharedBeedrillFollowersScope], // String Shot
                 [22312] = [KakunaFollowersScope], // Harden
                 [22313] = [BeedrillFollowersScope], // Pin Missile
+                [22254] = [BarbaracleBinacleFollowersScope], // Water Gun
+                [22255] = [BarbaracleBinacleFollowersScope], // Slash
+                [22256] = [BarbaracleBinacleFollowersScope], // Bulldoze
                 [17631] = [BanetteControllerScope], // Confuse Ray
                 [17617] = [BanetteControllerScope], // Shadow Ball
                 [17616] = [BanetteControllerScope], // Shadow Claw
@@ -105,6 +120,23 @@ internal static class ZaScriptedEncounterMoveOwnershipCatalog
                 ("spn_boss_0015_01_follower02", "ect_boss_0015_01_follower02"),
                 ("spn_boss_0015_sim_follower02", "ect_boss_0015_sim_follower02"),
                 ("spn_boss_0015_rus_follower02", "ect_boss_0015_rush_follower02"))),
+        new(
+            BinacleFollowerProfileKey,
+            SpeciesId: 688,
+            Form: 0,
+            DedicatedFollowerActionTemplateAuthority,
+            "This encounter WazaList is loaded but does not choose attacks. The Barbaracle "
+                + "boss-follower action template invokes the listed selectors directly for both "
+                + "Binacle follower pools; replacements preserve the existing choreography but "
+                + "remain subject to targeting and animation compatibility.",
+            [22254, 22255, 22256],
+            CreatePlacements(
+                ("spn_boss_0689_01_follower01", "ect_boss_0689_01_follower01"),
+                ("spn_boss_0689_01_follower02", "ect_boss_0689_01_follower02"),
+                ("spn_boss_0689_sim_follower01", "ect_boss_0689_sim_follower01"),
+                ("spn_boss_0689_sim_follower02", "ect_boss_0689_sim_follower02"),
+                ("spn_boss_0689_rus_follower01", "ect_boss_0689_rush_follower01"),
+                ("spn_boss_0689_rus_follower02", "ect_boss_0689_rush_follower02"))),
         new(
             BanettePrimaryProfileKey,
             SpeciesId: 354,

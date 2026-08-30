@@ -96,6 +96,7 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<GameModuleMaturityDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignFeatureDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignProposalKindDto>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<GuidedDesignFieldSelectionModeDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignRoundingDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignTrainerArchetypeDto>(JsonNamingPolicy.CamelCase, false));
         options.Converters.Add(new JsonStringEnumConverter<GuidedDesignFindingSeverityDto>(JsonNamingPolicy.CamelCase, false));

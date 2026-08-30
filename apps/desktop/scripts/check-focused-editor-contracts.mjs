@@ -120,6 +120,23 @@ const fashionSource = focusedEditors.find((editor) => editor.label === 'Fashion 
 const fashionSearchText = functionBody(fashionSource, 'getSearchText');
 const fashionRowSubtitle = functionBody(fashionSource, 'getRowSubtitle');
 const fashionFieldDefinitions = functionBody(fashionSource, 'getFieldDefinitions');
+const fashionPresentation = functionBody(fashionSource, 'createFashionCatalogPresentation');
+const fashionUniqueLabelMap = functionBody(fashionSource, 'createUniqueLabelMap');
+assert.match(
+  fashionSource,
+  /const optionRenderLimit = 500;/,
+  'Fashion Catalog must bound the number of native option elements rendered at once.'
+);
+assert.match(
+  fashionSource,
+  /nonSelectedMatches\.slice\([\s\S]*?optionRenderLimit - selected\.length/,
+  'Fashion Catalog must keep the selected value while windowing the remaining matches.'
+);
+assert.match(
+  fashionSource,
+  /fashionCatalog\.editor\.optionResultsLimited/,
+  'Fashion Catalog must explain how to reach options outside the current rendered window.'
+);
 assert.match(
   fashionSearchText,
   /'modelVariant' in row[\s\S]*?row\.modelVariant/,
@@ -155,4 +172,49 @@ assert.match(
   fashionSource,
   /\{subtitle \? <span>\{subtitle\}<\/span> : null\}/,
   'Fashion Catalog must omit the subtitle element when a row has no useful subtitle.'
+);
+assert.match(
+  fashionUniqueLabelMap,
+  /labels\.size === 1/,
+  'Fashion Catalog may derive a friendly value label only from one unambiguous semantic label.'
+);
+for (const exactOnlyMapping of [
+  /catalogGroupCodeByModelPart: createUniqueLabelMap\(catalogGroupCodesByModelPart\)/,
+  /colorLabelByValue: createUniqueLabelMap\(colorNames\)/,
+  /dressItemTitleById: createUniqueLabelMap\(dressItemTitlesById\)/,
+  /dressVariantLabelByValue: createUniqueLabelMap\(dressVariantNames\)/,
+  /hairItemTitleById: createUniqueLabelMap\(hairItemTitlesById\)/,
+  /const groupLabelByModelPart = createUniqueLabelMap\(groupNamesByModelPart\)/,
+  /hairModelLabelByValue: createUniqueLabelMap\(hairModelNames\)/
+]) {
+  assert.match(
+    fashionPresentation,
+    exactOnlyMapping,
+    'Fashion Catalog derived option labels must fall back to raw identities when source usage is ambiguous.'
+  );
+}
+assert.doesNotMatch(
+  fashionPresentation,
+  /dressVariantLabelByValue\.set|names\]\.join\(' \/ '\)/,
+  'Fashion Catalog must not overwrite or concatenate conflicting observed meanings into a factual label.'
+);
+
+const workflowSupport = read('src/workflowGameSupport.ts');
+const editorsGroup = workflowSupport.slice(
+  workflowSupport.indexOf("id: 'editors'"),
+  workflowSupport.indexOf("id: 'encountersPokemonSources'")
+);
+const toolsGroup = workflowSupport.slice(
+  workflowSupport.indexOf("id: 'tools'"),
+  workflowSupport.indexOf("id: 'hooks'")
+);
+assert.doesNotMatch(
+  editorsGroup,
+  /'fashionCatalog'/,
+  'Fashion Catalog must not remain in the Editors navigation group.'
+);
+assert.match(
+  toolsGroup,
+  /sectionIds: \['fashionCatalog'/,
+  'Fashion Catalog must be listed in Tools while retaining its existing route identity.'
 );

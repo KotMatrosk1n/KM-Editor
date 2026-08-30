@@ -56,6 +56,16 @@ public sealed record ShopRecordDto(
     public bool CanEditInventoryOrder { get; init; } = true;
 
     public string? GlobalPriceField { get; init; }
+
+    public int GlobalPriceMinimumValue { get; init; }
+
+    public int GlobalPriceMaximumValue { get; init; } = 999_999;
+
+    public string? GlobalStockField { get; init; }
+
+    public int? GlobalStockMinimumValue { get; init; }
+
+    public int? GlobalStockMaximumValue { get; init; }
 }
 
 public sealed record ShopEditableFieldDto(
@@ -74,6 +84,8 @@ public sealed record ShopEditableFieldOptionDto(
 {
     public IReadOnlyDictionary<string, int> Prices { get; init; } =
         new Dictionary<string, int>(StringComparer.Ordinal);
+
+    public int? StockLimit { get; init; }
 }
 
 public sealed record ShopsWorkflowStatsDto(

@@ -16,8 +16,7 @@ internal sealed record ZaTechnicalMachineMove(
     int MachineIndex,
     int MoveId,
     string MoveName,
-    string Label,
-    bool IsOwnedTestTechnicalMachine);
+    string Label);
 
 internal readonly record struct ZaTechnicalMachineNumberAssignment(
     int ItemId,
@@ -33,14 +32,8 @@ internal static class ZaTechnicalMachineCatalog
 {
     public const int LegacySyntheticTechnicalMachineItemId = 2161;
     public const int LegacyMissingTechnicalMachineSlot = 101;
-    public const int TestTechnicalMachineTemplateItemId = 2221;
-    public const int TestTechnicalMachineItemId = 2222;
-    public const int TestTechnicalMachineSlot = 162;
-    public const int TestTechnicalMachineIndex = TestTechnicalMachineSlot - 1;
-    public const int TestTechnicalMachineMoveId = 405;
-    public const string TestTechnicalMachineInternalName = "WAZAMASIN162";
-    public const string TestTechnicalMachineIconName = "item_0403";
-    public const string TestTechnicalMachineMoveName = "Bug Buzz";
+    public const int OwnedExtensionTemplateItemId = 2221;
+    public const string OwnedExtensionIconName = "item_0403";
 
     public const int BaseTechnicalMachineCount = 160;
     public const int FirstOwnedExtensionSlot = 162;
@@ -48,7 +41,7 @@ internal static class ZaTechnicalMachineCatalog
     public const int FirstOwnedExtensionItemId = 2222;
     public const int LastOwnedExtensionItemId = 2261;
 
-    private const string TestTechnicalMachineTemplateInternalName = "WAZAMASIN161";
+    public const string OwnedExtensionTemplateInternalName = "WAZAMASIN161";
 
     public static IReadOnlyList<ZaTechnicalMachineMove> Load(
         OpenedProject project,
@@ -74,7 +67,7 @@ internal static class ZaTechnicalMachineCatalog
                 return [];
             }
 
-            return Read(source.Bytes, labels, recovery, fileSource, diagnostics);
+            return Read(source.Bytes, labels, recovery, fileSource);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -93,20 +86,17 @@ internal static class ZaTechnicalMachineCatalog
             itemData,
             labels,
             ZaTechnicalMachineLegacyRecovery.None,
-            boundedFileSource: null,
-            diagnostics: null);
+            boundedFileSource: null);
     }
 
     private static IReadOnlyList<ZaTechnicalMachineMove> Read(
         byte[] itemData,
         ZaTextLabelLookup labels,
         ZaTechnicalMachineLegacyRecovery recovery,
-        ZaWorkflowFileSource? boundedFileSource,
-        ICollection<ValidationDiagnostic>? diagnostics)
+        ZaWorkflowFileSource? boundedFileSource)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(itemData));
         boundedFileSource?.EnsureBoundedTableCount(table.ValuesLength, "The Z-A TM item table");
-        var items = new List<ZaItemData>(table.ValuesLength);
         var records = new List<ZaTechnicalMachineMove>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
@@ -116,7 +106,6 @@ internal static class ZaTechnicalMachineCatalog
                 continue;
             }
 
-            items.Add(item.Value);
             if (!IsTechnicalMachine(item.Value))
             {
                 continue;
@@ -144,20 +133,15 @@ internal static class ZaTechnicalMachineCatalog
             }
 
             var moveId = item.Value.MachineWaza;
-            var moveName = IsOwnedTestTechnicalMachineRow(item.Value)
-                ? ResolveTestTechnicalMachineMoveName(labels, moveId)
-                : labels.Move(moveId);
+            var moveName = labels.Move(moveId);
             records.Add(new ZaTechnicalMachineMove(
                 resolvedNumber,
                 item.Value.Id,
                 hasRecoveredNumber ? resolvedNumber - 1 : item.Value.MachineIndex,
                 moveId,
                 moveName,
-                $"{FormatMachineLabel(resolvedNumber)} {moveName}",
-                IsOwnedTestTechnicalMachineRow(item.Value)));
+                $"{FormatMachineLabel(resolvedNumber)} {moveName}"));
         }
-
-        ApplyTestTechnicalMachineProjection(items, records, labels, diagnostics);
 
         return records
             .GroupBy(record => record.MoveId)
@@ -227,12 +211,6 @@ internal static class ZaTechnicalMachineCatalog
                 .Select(assignment => assignment.SortNum)
                 .Order()
                 .SequenceEqual(Enumerable.Range(1, assignments.Count));
-    }
-
-    public static bool HasCompleteNumberingWithTestTechnicalMachineExtension(
-        IReadOnlyList<ZaTechnicalMachineNumberAssignment> assignments)
-    {
-        return HasCompleteNumberingWithOwnedExtensions(assignments);
     }
 
     public static bool HasCompleteNumberingWithOwnedExtensions(
@@ -310,41 +288,6 @@ internal static class ZaTechnicalMachineCatalog
             && pocket == 6
             && sortNum == slot
             && machineIndex == slot - 1;
-    }
-
-    public static bool HasTestTechnicalMachineIdentity(
-        int itemId,
-        int itemType,
-        string? internalName,
-        string? iconName,
-        int pocket,
-        int sortNum,
-        int machineIndex,
-        int moveId)
-    {
-        _ = iconName;
-        return itemId == TestTechnicalMachineItemId
-            && HasOwnedExtensionIdentity(
-                itemId,
-                itemType,
-                internalName,
-                pocket,
-                sortNum,
-                machineIndex)
-            && moveId > 0;
-    }
-
-    public static bool IsOwnedTestTechnicalMachineRow(ZaItemData item)
-    {
-        return HasTestTechnicalMachineIdentity(
-            item.Id,
-            item.ItemType,
-            item.InternalName,
-            item.IconName,
-            item.Pocket,
-            item.SortNum,
-            item.MachineIndex,
-            item.MachineWaza);
     }
 
     public static bool IsOwnedTechnicalMachineExtensionRow(ZaItemData item)
@@ -464,147 +407,4 @@ internal static class ZaTechnicalMachineCatalog
         return string.Create(CultureInfo.InvariantCulture, $"TM{slot:000}");
     }
 
-    private static void ApplyTestTechnicalMachineProjection(
-        IReadOnlyList<ZaItemData> items,
-        List<ZaTechnicalMachineMove> records,
-        ZaTextLabelLookup labels,
-        ICollection<ValidationDiagnostic>? diagnostics)
-    {
-        var existingTm162Rows = items
-            .Where(item => item.Id == TestTechnicalMachineItemId)
-            .ToArray();
-        if (existingTm162Rows.Length > 1)
-        {
-            records.RemoveAll(record => record.ItemId == TestTechnicalMachineItemId);
-            AddTestTechnicalMachineCollisionDiagnostic(
-                diagnostics,
-                $"Item {TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture)} is duplicated, so KM Editor cannot determine a safe TM162 owner.");
-            return;
-        }
-        if (existingTm162Rows.Length == 1
-            && !IsOwnedTestTechnicalMachineRow(existingTm162Rows[0]))
-        {
-            AddTestTechnicalMachineCollisionDiagnostic(
-                diagnostics,
-                $"Item {TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture)} already exists but does not match KM Editor's owned TM162 slot identity. The existing item remains available and is not modified.");
-            return;
-        }
-
-        var assignments = records
-            .Select(record => new ZaTechnicalMachineNumberAssignment(
-                record.ItemId,
-                record.Slot,
-                record.MachineIndex))
-            .ToArray();
-        var templateRows = items
-            .Where(item =>
-                item.Id == TestTechnicalMachineTemplateItemId
-                && item.ItemType == 5
-                && item.Pocket == 6
-                && item.MachineWaza > 0
-                && string.Equals(
-                    item.InternalName,
-                    TestTechnicalMachineTemplateInternalName,
-                    StringComparison.Ordinal))
-            .ToArray();
-        var ownedExtensionRowsAreValid = records
-            .Where(record => IsOwnedExtensionItemId(record.ItemId))
-            .All(record => items.Count(item =>
-                item.Id == record.ItemId
-                && IsOwnedTechnicalMachineExtensionRow(item)) == 1);
-        var sourceIsEligible = items.Select(item => item.Id).Distinct().Count() == items.Count
-            && templateRows.Length == 1
-            && records.Select(record => record.ItemId).Distinct().Count() == records.Count
-            && records.Select(record => record.MoveId).Distinct().Count() == records.Count
-            && ownedExtensionRowsAreValid
-            && (HasCompleteNumbering(assignments)
-                || HasCompleteNumberingWithOwnedExtensions(assignments));
-        if (!sourceIsEligible)
-        {
-            diagnostics?.Add(ZaWorkflowSupport.Warning(
-                "Unused TM slots were not projected because the loaded item data is not the supported complete 160-TM source or a valid KM-owned extension.",
-                $"romfs/{ZaDataPaths.ItemDataArray}",
-                field: "tmNumber",
-                expected: "Unique physical TM numbers 1 through 160 plus structurally owned slots from 162 through 201"));
-            return;
-        }
-
-        var ownedItemRows = items
-            .Where(item => item.Id == TestTechnicalMachineItemId)
-            .ToArray();
-        if (ownedItemRows.Length > 0)
-        {
-            if (ownedItemRows.Length != 1)
-            {
-                records.RemoveAll(record => record.ItemId == TestTechnicalMachineItemId);
-                AddTestTechnicalMachineCollisionDiagnostic(
-                    diagnostics,
-                    $"Item {TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture)} is duplicated, so KM Editor cannot determine a safe TM162 owner.");
-                return;
-            }
-
-            if (!IsOwnedTestTechnicalMachineRow(ownedItemRows[0]))
-            {
-                AddTestTechnicalMachineCollisionDiagnostic(
-                    diagnostics,
-                    $"Item {TestTechnicalMachineItemId.ToString(CultureInfo.InvariantCulture)} already exists but does not match KM Editor's owned TM162 slot identity. The existing item remains available and is not modified.");
-            }
-
-            return;
-        }
-
-        var hasItemIdCollision = records.Any(record => record.ItemId == TestTechnicalMachineItemId);
-        var hasSlotCollision = records.Any(record => record.Slot == TestTechnicalMachineSlot);
-        var hasMoveCollisionWithoutExtension = records.Any(record => record.MoveId == TestTechnicalMachineMoveId);
-        var hasInternalNameCollision = items.Any(item => string.Equals(
-            item.InternalName,
-            TestTechnicalMachineInternalName,
-            StringComparison.Ordinal));
-        if (hasItemIdCollision
-            || hasSlotCollision
-            || hasMoveCollisionWithoutExtension
-            || hasInternalNameCollision)
-        {
-            AddTestTechnicalMachineCollisionDiagnostic(
-                diagnostics,
-                "TM162 Bug Buzz was not projected because its item ID, internal token, TM number, or move is already owned by the loaded item data.");
-            return;
-        }
-
-        var moveName = ResolveTestTechnicalMachineMoveName(labels, TestTechnicalMachineMoveId);
-        records.Add(new ZaTechnicalMachineMove(
-            TestTechnicalMachineSlot,
-            TestTechnicalMachineItemId,
-            TestTechnicalMachineIndex,
-            TestTechnicalMachineMoveId,
-            moveName,
-            $"{FormatMachineLabel(TestTechnicalMachineSlot)} {moveName}",
-            IsOwnedTestTechnicalMachine: true));
-    }
-
-    internal static string ResolveTestTechnicalMachineMoveName(
-        ZaTextLabelLookup labels,
-        int moveId = TestTechnicalMachineMoveId)
-    {
-        var resolved = labels.Move(moveId);
-        return string.Equals(
-            resolved,
-            $"Move {moveId.ToString(CultureInfo.InvariantCulture)}",
-            StringComparison.Ordinal)
-                ? moveId == TestTechnicalMachineMoveId
-                    ? TestTechnicalMachineMoveName
-                    : resolved
-                : resolved;
-    }
-
-    private static void AddTestTechnicalMachineCollisionDiagnostic(
-        ICollection<ValidationDiagnostic>? diagnostics,
-        string message)
-    {
-        diagnostics?.Add(ZaWorkflowSupport.Warning(
-            message,
-            $"romfs/{ZaDataPaths.ItemDataArray}",
-            field: "tmNumber",
-            expected: "Unclaimed item 2222 and TM162, with an unclaimed default Bug Buzz assignment"));
-    }
 }

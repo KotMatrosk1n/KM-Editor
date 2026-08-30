@@ -28,6 +28,7 @@ import {
   kmRecipeMaximumBytes,
   kmRecipeMaximumOperations,
   kmRecipeMaximumSteps,
+  kmRecipeCompatibilityStateValues,
   semanticMergeContractKeys,
   semanticMergeMaximumChangeSetNameLength,
   semanticMergeMaximumTargetSearchTextLength,
@@ -457,6 +458,11 @@ function MergeSurface({
 
   const selectedTargets = [...selectedRows.values()].map((row) => row.target);
   const selectedDomain = selectedTargets[0]?.record.domain ?? null;
+  const eligibleFieldKeys = useMemo(() => [...new Set(
+    (capability?.domains ?? [])
+      .filter((domain) => selectedDomain === null || domain.domain === selectedDomain)
+      .flatMap((domain) => domain.fieldKeys)
+  )].sort(), [capability, selectedDomain]);
   const selectionMatchesProposal = Boolean(
     preview && !preview.selectionRequired &&
     sameFieldRefSet(selectedTargets, preview.normalizedTargets)
@@ -695,6 +701,7 @@ function MergeSurface({
           {preview?.selectionRequired && searchMatchesPreview ? (
             <TargetDiscovery
               disabled={!isAvailable}
+              fieldKeys={eligibleFieldKeys}
               loading={controller.mergePreview.isAppending}
               onAdd={(row) => toggleTarget(row, true)}
               onLoadMore={controller.loadMoreMerge}
@@ -944,6 +951,7 @@ function SelectedTargets({
 
 function TargetDiscovery({
   disabled,
+  fieldKeys,
   loading,
   onAdd,
   onLoadMore,
@@ -952,6 +960,7 @@ function TargetDiscovery({
   selectedKeys
 }: {
   disabled: boolean;
+  fieldKeys: readonly string[];
   loading: boolean;
   onAdd: (row: SemanticMergeRow) => void;
   onLoadMore: () => Promise<void>;
@@ -962,10 +971,6 @@ function TargetDiscovery({
   const { t } = useLocalization();
   const [fieldFilter, setFieldFilter] = useState('all');
   const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'state'>('record');
-  const fieldKeys = useMemo(
-    () => [...new Set(preview.rows.map((row) => row.target.fieldKey))].sort(),
-    [preview.rows]
-  );
   useEffect(() => {
     if (fieldFilter !== 'all' && !fieldKeys.includes(fieldFilter)) setFieldFilter('all');
   }, [fieldFilter, fieldKeys]);
@@ -1389,16 +1394,7 @@ function RecipeSurface({
     recipeChangeSetName.trim().length <= semanticMergeMaximumChangeSetNameLength &&
     safeDiagnosticMessage(recipeChangeSetName.trim()) !== null
   );
-  const compatibleStates = useMemo(
-    () => [...new Set(preview?.compatibility.map((row) => row.state) ?? [])].sort(),
-    [preview?.compatibility]
-  );
-  useEffect(() => {
-    if (
-      compatibilityFilter !== 'all' &&
-      !compatibleStates.some((state) => state === compatibilityFilter)
-    ) setCompatibilityFilter('all');
-  }, [compatibilityFilter, compatibleStates]);
+  const compatibleStates = kmRecipeCompatibilityStateValues;
   useEffect(() => {
     controller.clearExport();
   }, [controller.clearExport, exportName, selectedRootIds]);

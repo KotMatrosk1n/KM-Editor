@@ -39,13 +39,32 @@ public sealed record ZaShopRecord(
     string Currency,
     IReadOnlyList<ZaShopInventoryRecord> Inventory,
     ZaShopProvenance Provenance,
-    bool CanEditInventoryOrder);
+    bool CanEditInventoryOrder)
+{
+    public string? GlobalPriceField { get; init; }
+
+    public int GlobalPriceMinimumValue { get; init; }
+
+    public int GlobalPriceMaximumValue { get; init; }
+
+    public string? GlobalStockField { get; init; }
+
+    public int? GlobalStockMinimumValue { get; init; }
+
+    public int? GlobalStockMaximumValue { get; init; }
+}
 
 public sealed record ZaShopEditableFieldOption(
     int Value,
     string Label,
     string ItemName,
-    int Price);
+    int Price)
+{
+    public IReadOnlyDictionary<string, int> Prices { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+
+    public int? StockLimit { get; init; }
+}
 
 public sealed record ZaShopEditableField(
     string Field,
@@ -68,6 +87,4 @@ public sealed record ZaShopsWorkflow(
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
     public IReadOnlySet<int> KnownItemIds { get; init; } = new HashSet<int>();
-
-    internal bool OwnedTestTechnicalMachineAvailable { get; init; }
 }

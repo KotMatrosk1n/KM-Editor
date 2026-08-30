@@ -77,7 +77,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'editors',
     label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'trainerPools', 'fashionCatalog', 'moves', 'items', 'placement', 'behavior', 'text']
+    sectionIds: ['pokemon', 'trainers', 'trainerPools', 'moves', 'items', 'placement', 'behavior', 'text']
   },
   {
     id: 'encountersPokemonSources',
@@ -98,7 +98,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     label: 'Economy',
     sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
   },
-  { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['fashionCatalog', 'fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',

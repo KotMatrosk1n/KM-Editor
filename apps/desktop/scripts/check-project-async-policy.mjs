@@ -39,8 +39,111 @@ const {
   nextAnalysisPreloadTools,
   resolveAnalysisPreparationScopeState
 } = preparationModule;
+const gameScopedBridgeSource = readFileSync(
+  new URL('../src/bridge/gameScopedProjectBridge.ts', import.meta.url),
+  'utf8'
+).replace(
+  "import { reclassifyBridgePerformanceDiagnostic } from '../performanceDiagnostics';",
+  'const reclassifyBridgePerformanceDiagnostic = () => undefined;'
+);
+const gameScopedBridgeModule = await import(`data:text/javascript;base64,${Buffer.from(
+  ts.transpileModule(gameScopedBridgeSource, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
+  }).outputText
+).toString('base64')}`);
+const {
+  createGameScopedProjectBridge,
+  StaleProjectScopeError
+} = gameScopedBridgeModule;
 
 const delay = (milliseconds = 0) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function checkAnalysisScopedBridge() {
+  const readOnlyPaths = Object.freeze({
+    selectedGame: 'pokemon-legends-za',
+    baseRomFsPath: 'C:\\project\\romfs',
+    baseExeFsPath: 'C:\\project\\exefs',
+    gameTextLanguage: 'en',
+    outputRootPath: null,
+    saveFilePath: null,
+    scarletVioletSupportFolderPath: null,
+    pokemonLegendsZASupportFolderPath: 'C:\\project\\za-support'
+  });
+  const draftPathsWithInvalidOutput = Object.freeze({
+    ...readOnlyPaths,
+    outputRootPath: 'C:\\project\\romfs\\overlapping-output'
+  });
+  let generation = 11;
+  const draftScopedBridge = createGameScopedProjectBridge(
+    {
+      readProjectSourceRevision: async () => ({
+        sourceObservationToken: 'wrong-scope-source'
+      })
+    },
+    () => draftPathsWithInvalidOutput,
+    () => generation
+  );
+  await assert.rejects(
+    draftScopedBridge.readProjectSourceRevision({
+      paths: readOnlyPaths,
+      projectId: 'read-only-project'
+    }),
+    (error) => (
+      error instanceof StaleProjectScopeError &&
+      error.requestScope !== error.currentScope
+    ),
+    'A sanitized read-only request must not be compared against an invalid draft Output Root.'
+  );
+
+  const acceptedBridge = createGameScopedProjectBridge(
+    {
+      readProjectSourceRevision: async (request) => ({
+        outputRootPath: request.paths.outputRootPath,
+        sourceObservationToken: 'read-only-source'
+      })
+    },
+    () => readOnlyPaths,
+    () => generation
+  );
+  assert.deepEqual(
+    await acceptedBridge.readProjectSourceRevision({
+      paths: readOnlyPaths,
+      projectId: 'read-only-project'
+    }),
+    {
+      outputRootPath: null,
+      sourceObservationToken: 'read-only-source'
+    },
+    'A read-only analysis bridge must accept its validated source scope when Output Root is absent.'
+  );
+
+  let completeStaleRequest;
+  const staleBridge = createGameScopedProjectBridge(
+    {
+      readProjectSourceRevision: () => new Promise((resolve) => {
+        completeStaleRequest = resolve;
+      })
+    },
+    () => readOnlyPaths,
+    () => generation
+  );
+  const staleRequest = staleBridge.readProjectSourceRevision({
+    paths: readOnlyPaths,
+    projectId: 'read-only-project'
+  });
+  generation += 1;
+  completeStaleRequest({ sourceObservationToken: 'obsolete-source' });
+  await assert.rejects(
+    staleRequest,
+    (error) => (
+      error instanceof StaleProjectScopeError &&
+      error.requestGeneration === 11 &&
+      error.currentGeneration === 12 &&
+      error.requestScope === error.currentScope
+    ),
+    'Analysis responses from an obsolete project generation must still be discarded.'
+  );
+}
 
 async function checkSingleFlight() {
   const owner = {};
@@ -318,13 +421,13 @@ function checkPreparationModesAndMonotonicity() {
   assert.deepEqual(
     nextAnalysisPreloadTools({
       deferBackgroundWork: false,
-      mode: 'reduced',
+      mode: 'minimal',
       preloadTools: [],
       semanticState: 'ready',
       states: readySemanticStates
     }),
     [],
-    'Reduced mode must retain on-demand admission.'
+    'Minimal mode must retain on-demand admission.'
   );
   assert.deepEqual(
     nextAnalysisPreloadTools({
@@ -340,13 +443,13 @@ function checkPreparationModesAndMonotonicity() {
   assert.deepEqual(
     nextAnalysisPreloadTools({
       deferBackgroundWork: false,
-      mode: 'fastest',
+      mode: 'performance',
       preloadTools: [],
       semanticState: 'ready',
       states: readySemanticStates
     }),
     analysisToolIds,
-    'Fastest mode must admit all independent tools together.'
+    'Performance mode must admit all independent tools together.'
   );
   assert.deepEqual(
     nextAnalysisPreloadTools({
@@ -375,7 +478,7 @@ function checkPreparationModesAndMonotonicity() {
   }
   almostReady.researchLab = createAnalysisPreparationProgress('researchLab', 'loading', 1);
   const incomplete = createAnalysisPreparationSnapshot({
-    mode: 'fastest',
+    mode: 'performance',
     progressBySystem: almostReady
   });
   assert.equal(incomplete.percent, 87);
@@ -430,6 +533,7 @@ function checkOperationPolicy() {
   assert.equal(analysisBridgeOperationPolicies.validateKmRecipe, 'orderedRead');
 }
 
+await checkAnalysisScopedBridge();
 await checkSingleFlight();
 checkLruBounds();
 checkFreshness();

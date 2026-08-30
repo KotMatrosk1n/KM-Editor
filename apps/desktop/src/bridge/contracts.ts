@@ -4269,6 +4269,7 @@ export const shopEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
   price: z.number().int().nonnegative(),
   prices: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  stockLimit: z.number().int().nonnegative().nullable().default(null),
   value: z.number().int(),
 });
 
@@ -4286,6 +4287,11 @@ export const shopRecordSchema = z.strictObject({
   currency: z.string(),
   editorFamily: z.enum(["swsh", "sv", "za"]).default("swsh"),
   globalPriceField: z.string().nullable().default(null),
+  globalPriceMaximumValue: z.number().int().nonnegative().default(999_999),
+  globalPriceMinimumValue: z.number().int().nonnegative().default(0),
+  globalStockField: z.string().nullable().default(null),
+  globalStockMaximumValue: z.number().int().positive().nullable().default(null),
+  globalStockMinimumValue: z.number().int().positive().nullable().default(null),
   inventory: z.array(shopInventoryRecordSchema),
   inventoryCount: z.number().int().positive().default(1),
   inventoryIndex: z.number().int().positive().default(1),

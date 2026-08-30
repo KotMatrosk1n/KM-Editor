@@ -1,20 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import type { ApiDiagnostic } from './bridge/contracts';
+import { isExpectedProjectBridgeRejection } from './bridge/projectBridgeErrorClassification';
 import { isStaleProjectScopeError } from './bridge/gameScopedProjectBridge';
 import { ProjectBridgeError } from './bridge/projectBridgeError';
 import { DesktopServiceError } from './desktopServices';
 import {
   desktopErrorCodes,
-  guidedDesignErrorCodes,
   isKmErrorCode,
-  kmRecipeErrorCodes,
   projectBridgeErrorCodes,
-  researchLabErrorCodes,
-  semanticMergeErrorCodes,
-  semanticExploreErrorCodes,
-  swshPlacementErrorCodes,
-  swshDynamaxAdventuresErrorCodes,
   type KmErrorCode
 } from './errorCodes';
 import {
@@ -25,29 +19,6 @@ import {
 
 const maximumBackendDiagnosticSourceUnits = 16 * 1024;
 const maximumBackendDiagnosticTextLength = 4_000;
-
-const expectedBridgeErrorCodes = new Set<KmErrorCode>([
-  ...Object.values(guidedDesignErrorCodes),
-  ...Object.values(kmRecipeErrorCodes),
-  ...Object.values(semanticMergeErrorCodes),
-  ...Object.values(semanticExploreErrorCodes),
-  ...Object.values(researchLabErrorCodes),
-  swshDynamaxAdventuresErrorCodes.seedInvalid,
-  swshDynamaxAdventuresErrorCodes.seedLimitInvalid,
-  swshDynamaxAdventuresErrorCodes.startSeedInvalid,
-  swshPlacementErrorCodes.catalogStale,
-  projectBridgeErrorCodes.gameMismatch,
-  projectBridgeErrorCodes.outputCheckpointConflict,
-  projectBridgeErrorCodes.outputCheckpointNotFound,
-  projectBridgeErrorCodes.outputConcurrentModification,
-  projectBridgeErrorCodes.outputLimitExceeded,
-  projectBridgeErrorCodes.outputOwnershipUnproven,
-  projectBridgeErrorCodes.outputRecoveryRequired,
-  projectBridgeErrorCodes.outputRootBusy,
-  projectBridgeErrorCodes.outputUnsafePath,
-  projectBridgeErrorCodes.projectRelocationConflict,
-  projectBridgeErrorCodes.projectRelocationMismatch
-]);
 
 export function toProjectBridgeDiagnostics(
   error: unknown,
@@ -67,7 +38,7 @@ export function toProjectBridgeDiagnostics(
     }
 
     const semanticCode = error.semanticCode ?? projectBridgeErrorCodes.unexpected;
-    if (expectedBridgeErrorCodes.has(semanticCode)) {
+    if (isExpectedProjectBridgeRejection(error)) {
       return [createDiagnostic(semanticCode, error.apiError.message, 'bridge')];
     }
 

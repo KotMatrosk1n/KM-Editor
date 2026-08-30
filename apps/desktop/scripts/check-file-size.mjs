@@ -5,8 +5,11 @@
 // contract checks remain attached here so the existing typecheck command runs them.
 import './check-analysis-preparation-contract.mjs';
 import './check-project-async-policy.mjs';
+import './check-performance-diagnostics-contract.mjs';
 import './check-focused-editor-contracts.mjs';
+import './check-semantic-inspector-contract.mjs';
 import './check-trainer-naming-contract.mjs';
+import './check-visual-theme-contract.mjs';
 
 import { checkControlTheme } from './check-control-theme.mjs';
 

@@ -3078,9 +3078,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             return (Fingerprint: observedFingerprint, Token: sourceObservationToken);
         }
 
-        var completedObservation = string.IsNullOrWhiteSpace(request.Payload.Paths.OutputRootPath)
-            ? CaptureObservation()
-            : ExecuteExclusiveOutputOperation(request.Payload.Paths, CaptureObservation);
+        var completedObservation = ShouldProtectSourceObservationWithOutputSafetyLock(
+                actualProjectId,
+                request.Payload.Paths)
+            ? ExecuteExclusiveOutputOperation(request.Payload.Paths, CaptureObservation)
+            : CaptureObservation();
 
         return SerializeSuccess(
             new ReadProjectSourceRevisionResponse(
@@ -3089,6 +3091,55 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 completedObservation.Fingerprint,
                 completedObservation.Token),
             request.RequestId);
+    }
+
+    private static bool ShouldProtectSourceObservationWithOutputSafetyLock(
+        string projectId,
+        ProjectPathsDto paths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            return false;
+        }
+
+        if (!Path.IsPathFullyQualified(paths.OutputRootPath))
+        {
+            return true;
+        }
+
+        try
+        {
+            _ = Path.GetFullPath(paths.OutputRootPath);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            NotSupportedException or
+            PathTooLongException or
+            System.Security.SecurityException)
+        {
+            // A malformed configured path is not an optional missing directory. Keep it on
+            // the fail-closed boundary so its normal output-scope rejection remains visible.
+            return true;
+        }
+
+        // Output Root is optional for read-only project analysis. The durable output
+        // coordinator deliberately accepts only a currently safe output project scope.
+        // Missing, unsafe, overlapping, and otherwise read-only output roots must not turn
+        // an independent source read into a rejected output operation. A verified existing
+        // scope still uses the exclusive coordinator and therefore remains fail closed.
+        try
+        {
+            _ = OutputSafetyApplicationService.ResolveScope(
+                new OutputScopeDto(projectId, paths));
+            return true;
+        }
+        catch (OutputScopeMismatchException)
+        {
+            // The source fingerprint is still captured twice and each game workflow retains
+            // its process-wide output mutex, so source changes remain observable without
+            // claiming that this invalid output scope is safe for writes.
+            return false;
+        }
     }
 
     private string DispatchLoadTrainerPoolsWorkflow(string requestJson)

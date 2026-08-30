@@ -3,6 +3,32 @@
 import type { ProjectGame } from '../bridge/contracts';
 import type { WorkbenchLocation } from './workbenchLocation';
 
+export function promoteRecentRecordTab<TTab extends { key: string }>(
+  tabs: readonly TTab[],
+  nextTab: TTab
+) {
+  return [nextTab, ...tabs.filter((tab) => tab.key !== nextTab.key)];
+}
+
+export type RecentRecordTabLabel = Readonly<{
+  label: string;
+  labelIsRawData: boolean;
+}>;
+
+export function resolveRetainedRecordTabLabel(
+  resolvedLabel: RecentRecordTabLabel,
+  retainedRecordName: string | undefined
+): RecentRecordTabLabel {
+  if (resolvedLabel.labelIsRawData || !retainedRecordName) {
+    return resolvedLabel;
+  }
+
+  return {
+    label: retainedRecordName,
+    labelIsRawData: true
+  };
+}
+
 export type WorkspaceTargetViewModel = {
   description: string | null;
   id: string;

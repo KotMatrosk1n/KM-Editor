@@ -192,12 +192,13 @@ export const semanticMergeFallbackKindSchema = z.enum([
   'unavailable'
 ]);
 export const semanticMergeFallbackTargetSchema = z.literal('legacyModMerger');
-export const kmRecipeCompatibilityStateSchema = z.enum([
+export const kmRecipeCompatibilityStateValues = [
   'compatible',
   'alreadyApplied',
   'conflict',
   'unsupported'
-]);
+] as const;
+export const kmRecipeCompatibilityStateSchema = z.enum(kmRecipeCompatibilityStateValues);
 const semanticCoverageStateSchema = z.enum(['complete', 'partial', 'unavailable']);
 const semanticConfidenceSchema = z.enum(['verified', 'derived', 'unknown']);
 

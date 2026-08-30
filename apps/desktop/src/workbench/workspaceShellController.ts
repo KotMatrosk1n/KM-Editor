@@ -2,6 +2,7 @@
 
 import type { ProjectGame } from '../bridge/contracts';
 import { semanticRecordRefKey } from './semanticContracts';
+import { promoteRecentRecordTab } from './workspaceShellViewModels';
 import {
   createWorkbenchLocation,
   parseWorkbenchLocation,
@@ -293,7 +294,10 @@ export function workspaceTabKey(location: WorkbenchLocation) {
   if (!location.entity) {
     return null;
   }
-  return `${location.section}:${semanticRecordRefKey(location.entity)}`;
+  return `${location.section}:${semanticRecordRefKey({
+    ...location.entity,
+    subrecordId: null
+  })}`;
 }
 
 export function serializeWorkbenchLocationHash(location: WorkbenchLocation) {
@@ -372,11 +376,8 @@ function rememberEligibleTab(
     return tabs;
   }
 
-  const existingIndex = tabs.findIndex((tab) => tab.key === key);
   const nextTab = { key, lastAccessRevision: revision, location: withoutInspector(location) };
-  const nextTabs = existingIndex >= 0
-    ? tabs.map((tab, index) => (index === existingIndex ? nextTab : tab))
-    : [...tabs, nextTab];
+  const nextTabs = promoteRecentRecordTab(tabs, nextTab);
   if (nextTabs.length <= maximumWorkspaceTabs) {
     return nextTabs;
   }

@@ -2098,6 +2098,12 @@ public static class ZaBridgeMapper
         {
             EditorFamily = "za",
             CanEditInventoryOrder = shop.CanEditInventoryOrder,
+            GlobalPriceField = shop.GlobalPriceField,
+            GlobalPriceMinimumValue = shop.GlobalPriceMinimumValue,
+            GlobalPriceMaximumValue = shop.GlobalPriceMaximumValue,
+            GlobalStockField = shop.GlobalStockField,
+            GlobalStockMinimumValue = shop.GlobalStockMinimumValue,
+            GlobalStockMaximumValue = shop.GlobalStockMaximumValue,
         };
     }
 
@@ -2145,7 +2151,11 @@ public static class ZaBridgeMapper
             option.Value,
             option.Label,
             option.ItemName,
-            option.Price);
+            option.Price)
+        {
+            Prices = option.Prices,
+            StockLimit = option.StockLimit,
+        };
     }
 
     private static TrainerRecordDto ToDto(ZaTrainerRecord trainer)
