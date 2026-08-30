@@ -4851,6 +4851,23 @@ export function App({
     ]
   );
 
+  const completeEditSessionCancellation = useCallback(
+    async (onDiscard?: () => void): Promise<boolean> => {
+      if (!(await discardUnassignedPendingEdits())) {
+        return false;
+      }
+      if (
+        sessionLocalEditorSections.has(activeSection) &&
+        !(await discardLocalEditorDraftProtection())
+      ) {
+        return false;
+      }
+      onDiscard?.();
+      return true;
+    },
+    [activeSection, discardLocalEditorDraftProtection, discardUnassignedPendingEdits]
+  );
+
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
       if (
@@ -4863,29 +4880,19 @@ export function App({
         return;
       }
 
-      cancelDiscardActionRef.current = onDiscard ?? null;
-
       if (unassignedPendingEditCount > 0) {
+        cancelDiscardActionRef.current = onDiscard ?? null;
         setExitPrompt({ destination: null, kind: 'cancel', mode: 'confirm' });
         return;
       }
 
-      if (sessionLocalEditorSections.has(activeSection)) {
-        void discardLocalEditorDraftProtection().then((didDiscard) => {
-          if (didDiscard) {
-            onDiscard?.();
-          }
-        });
-      } else {
-        onDiscard?.();
-      }
+      void completeEditSessionCancellation(onDiscard);
     },
     [
       isChangePlanApplying,
       isChangePlanCreating,
       isSessionValidating,
-      activeSection,
-      discardLocalEditorDraftProtection,
+      completeEditSessionCancellation,
       unassignedPendingEditCount
     ]
   );
@@ -7216,16 +7223,13 @@ export function App({
     if (prompt.kind === 'cancel') {
       pendingWorkspaceNavigationRef.current = null;
       pendingNavigationCommitActionRef.current = null;
-      if (!(await discardUnassignedPendingEdits())) {
-        return;
-      }
       if (
-        sessionLocalEditorSections.has(activeSection) &&
-        !(await discardLocalEditorDraftProtection())
+        !(await completeEditSessionCancellation(
+          cancelDiscardActionRef.current ?? undefined
+        ))
       ) {
         return;
       }
-      cancelDiscardActionRef.current?.();
       cancelDiscardActionRef.current = null;
       clearLoadedWorkflowData();
       setBridgeDiagnostics([]);
@@ -7312,6 +7316,7 @@ export function App({
   }, [
     activeSection,
     clearLoadedWorkflowData,
+    completeEditSessionCancellation,
     desktopServices.isAvailable,
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
