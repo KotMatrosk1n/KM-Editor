@@ -309,7 +309,7 @@
             <Button
                 Margin="0,0,10,0"
                 Command="{Binding RepairCommand}"
-                Content="{localization:Loc RepairButton}">
+                Content="{Binding MaintenanceActionText}">
               <Button.Style>
                 <Style TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
                   <Setter Property="Visibility" Value="Collapsed" />

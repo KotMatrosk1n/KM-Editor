@@ -9,6 +9,8 @@ namespace KM.Setup.UI.Burn;
 internal static class MsiProductInfo
 {
     private const uint ErrorSuccess = 0;
+    private const uint ErrorNoMoreItems = 259;
+    private const int ProductCodeBufferLength = 39;
     private const int MaximumInstallerPropertyLength = 32_767;
 
     public static string? TryGetInstallLocation(string productCode, bool mustExist = true)
@@ -24,19 +26,45 @@ internal static class MsiProductInfo
         // uninstall must still be able to retire the registration.
         var installLocation = TryGetInstallLocation(productCode, mustExist: false);
         var assignmentType = TryGetProductProperty(productCode, "AssignmentType");
-        if (installLocation is null || !int.TryParse(assignmentType, out var assignment) || assignment is < 0 or > 1)
+        var versionValue = TryGetProductProperty(productCode, "VersionString");
+        if (installLocation is null ||
+            !int.TryParse(assignmentType, out var assignment) ||
+            assignment is < 0 or > 1 ||
+            !Version.TryParse(versionValue, out var version))
         {
             return null;
         }
 
         return new MsiProductRegistration(
             assignment == 1 ? BundleScope.PerMachine : BundleScope.PerUser,
-            installLocation);
+            installLocation,
+            NormalizeVersion(version));
     }
 
     public static bool IsRegistered(string productCode)
     {
         return TryGetProductProperty(productCode, "VersionString") is not null;
+    }
+
+    public static IReadOnlyList<string>? TryGetRelatedProductCodes(string upgradeCode)
+    {
+        var productCodes = new List<string>();
+        for (uint index = 0; ; index++)
+        {
+            var productCode = new StringBuilder(ProductCodeBufferLength);
+            var result = MsiEnumRelatedProducts(upgradeCode, 0, index, productCode);
+            if (result == ErrorNoMoreItems)
+            {
+                return productCodes;
+            }
+
+            if (result != ErrorSuccess || productCode.Length == 0)
+            {
+                return null;
+            }
+
+            productCodes.Add(productCode.ToString());
+        }
     }
 
     private static string? TryGetProductProperty(string productCode, string property)
@@ -47,6 +75,23 @@ internal static class MsiProductInfo
         return result == ErrorSuccess ? value.ToString() : null;
     }
 
+    private static Version NormalizeVersion(Version version)
+    {
+        return new Version(
+            version.Major,
+            version.Minor,
+            Math.Max(version.Build, 0),
+            Math.Max(version.Revision, 0));
+    }
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiEnumRelatedProductsW")]
+    private static extern uint MsiEnumRelatedProducts(
+        string upgradeCode,
+        uint reserved,
+        uint productIndex,
+        StringBuilder productCode);
+
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiGetProductInfoW")]
     private static extern uint MsiGetProductInfo(
@@ -56,4 +101,7 @@ internal static class MsiProductInfo
         ref uint valueLength);
 }
 
-internal sealed record MsiProductRegistration(BundleScope Scope, string InstallFolder);
+internal sealed record MsiProductRegistration(
+    BundleScope Scope,
+    string InstallFolder,
+    Version Version);

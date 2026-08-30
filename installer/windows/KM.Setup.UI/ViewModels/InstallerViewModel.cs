@@ -54,7 +54,7 @@ internal sealed class InstallerViewModel : ObservableObject
             () => adapter.Plan(LaunchAction.Install),
             () => Phase == InstallerPhase.Ready && !Installed);
         repairCommand = new RelayCommand(
-            () => adapter.Plan(LaunchAction.Repair),
+            () => adapter.Plan(adapter.IsRecovery ? LaunchAction.Install : LaunchAction.Repair),
             () => Phase == InstallerPhase.Ready && Installed);
         uninstallCommand = new RelayCommand(
             () => adapter.Plan(LaunchAction.Uninstall),
@@ -197,11 +197,13 @@ internal sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    public string WindowTitle => adapter.IsUpdate || adapter.IsLegacyMigration
-        ? strings["UpdateWindowTitle"]
-        : Installed
-            ? strings["ManageWindowTitle"]
-            : strings["InstallWindowTitle"];
+    public string WindowTitle => adapter.IsRecovery
+        ? strings["RecoveryWindowTitle"]
+        : adapter.IsUpdate || adapter.IsLegacyMigration
+            ? strings["UpdateWindowTitle"]
+            : Installed
+                ? strings["ManageWindowTitle"]
+                : strings["InstallWindowTitle"];
 
     public string VersionText => string.IsNullOrWhiteSpace(adapter.BundleVersion)
         ? string.Empty
@@ -209,9 +211,15 @@ internal sealed class InstallerViewModel : ObservableObject
 
     public string ProgressText => strings.Format("ProgressLabel", ProgressPercent);
 
-    public string PrimaryActionText => adapter.IsUpdate
-        ? strings["UpdateButton"]
-        : strings["InstallButton"];
+    public string PrimaryActionText => adapter.IsRecovery
+        ? strings["RecoveryButton"]
+        : adapter.IsUpdate
+            ? strings["UpdateButton"]
+            : strings["InstallButton"];
+
+    public string MaintenanceActionText => adapter.IsRecovery
+        ? strings["RecoveryButton"]
+        : strings["RepairButton"];
 
     public bool ShowReadyPage => Phase == InstallerPhase.Ready;
 
@@ -222,6 +230,7 @@ internal sealed class InstallerViewModel : ObservableObject
         InstallerPhase.Detecting or
         InstallerPhase.Planning or
         InstallerPhase.Applying or
+        InstallerPhase.Finalizing or
         InstallerPhase.Cancelling;
 
     public bool ShowSuccessPage => Phase == InstallerPhase.Succeeded;
@@ -237,13 +246,15 @@ internal sealed class InstallerViewModel : ObservableObject
     public bool ShowBlockedPage => Phase == InstallerPhase.Blocked;
 
     public bool ShowUninstallAction => Installed &&
-        (Phase == InstallerPhase.Ready || Phase == InstallerPhase.Blocked && canSafelyUninstall);
+        canSafelyUninstall &&
+        Phase is InstallerPhase.Ready or InstallerPhase.Blocked;
 
     public bool IsIndeterminate => Phase is InstallerPhase.Initializing or InstallerPhase.Detecting or InstallerPhase.Planning;
 
     public bool ShowProgressPercentage => ShowProgressPage && !IsIndeterminate;
 
     public bool CanCancel => !completionPending &&
+        adapter.CanRequestCancel &&
         (Phase is InstallerPhase.Detecting or InstallerPhase.Planning or InstallerPhase.Applying);
 
     public ICommand InstallCommand => installCommand;
@@ -316,11 +327,19 @@ internal sealed class InstallerViewModel : ObservableObject
 
         if (Phase is InstallerPhase.Detecting or InstallerPhase.Planning or InstallerPhase.Applying or InstallerPhase.Cancelling)
         {
-            adapter.RequestCancel();
+            if (adapter.CanRequestCancel)
+            {
+                adapter.RequestCancel();
+            }
             return;
         }
 
-        if (Phase == InstallerPhase.Ready)
+        if (Phase == InstallerPhase.Finalizing)
+        {
+            return;
+        }
+
+        if (Phase is InstallerPhase.Initializing or InstallerPhase.Ready)
         {
             adapter.ExitWithoutApply();
             return;
@@ -507,6 +526,7 @@ internal sealed class InstallerViewModel : ObservableObject
         {
             InstallerPhase.Initializing => (strings["InitializingHeading"], strings["InitializingDescription"]),
             InstallerPhase.Detecting => (strings["DetectingHeading"], strings["DetectingDescription"]),
+            InstallerPhase.Ready when adapter.IsRecovery => (strings["ReadyRecoveryHeading"], strings["ReadyRecoveryDescription"]),
             InstallerPhase.Ready when adapter.IsLegacyMigration => (strings["ReadyMigrationHeading"], strings["ReadyMigrationDescription"]),
             InstallerPhase.Ready when adapter.IsUpdate => (strings["ReadyUpdateHeading"], strings["ReadyUpdateDescription"]),
             InstallerPhase.Ready when Installed => (strings["ReadyMaintenanceHeading"], strings["ReadyMaintenanceDescription"]),
@@ -515,9 +535,11 @@ internal sealed class InstallerViewModel : ObservableObject
             InstallerPhase.Applying when activity == InstallerActivity.Caching => GetOperationCopy("Caching"),
             InstallerPhase.Applying when activity == InstallerActivity.Finalizing => GetOperationCopy("Finalizing"),
             InstallerPhase.Applying => GetOperationCopy("Executing"),
+            InstallerPhase.Finalizing => GetOperationCopy("Finalizing"),
             InstallerPhase.Cancelling => (strings["CancellingHeading"], strings["CancellingDescription"]),
             InstallerPhase.Succeeded when adapter.PlannedAction == LaunchAction.Uninstall => (strings["UninstallSuccessHeading"], strings["UninstallSuccessDescription"]),
             InstallerPhase.Succeeded when adapter.PlannedAction == LaunchAction.Repair => (strings["RepairSuccessHeading"], strings["RepairSuccessDescription"]),
+            InstallerPhase.Succeeded when adapter.IsRecovery => (strings["RecoverySuccessHeading"], strings["RecoverySuccessDescription"]),
             InstallerPhase.Succeeded when adapter.IsUpdate => (strings["UpdateSuccessHeading"], strings["UpdateSuccessDescription"]),
             InstallerPhase.Succeeded => (strings["InstallSuccessHeading"], strings["InstallSuccessDescription"]),
             InstallerPhase.Cancelled => (strings["CancelledHeading"], strings["CancelledDescription"]),
@@ -529,6 +551,7 @@ internal sealed class InstallerViewModel : ObservableObject
         OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(VersionText));
         OnPropertyChanged(nameof(PrimaryActionText));
+        OnPropertyChanged(nameof(MaintenanceActionText));
         OnPropertyChanged(nameof(CurrentPackage));
     }
 
@@ -538,6 +561,7 @@ internal sealed class InstallerViewModel : ObservableObject
         {
             LaunchAction.Uninstall => "Uninstall",
             LaunchAction.Repair => "Repair",
+            _ when adapter.IsRecovery => "Recovery",
             _ when adapter.IsUpdate => "Update",
             _ => "Install",
         };
@@ -564,6 +588,7 @@ internal sealed class InstallerViewModel : ObservableObject
     {
         LaunchAction.Uninstall => "Uninstall",
         LaunchAction.Repair => "Repair",
+        _ when adapter.IsRecovery => "Recovery",
         _ when adapter.IsUpdate => "Update",
         _ => "Install",
     };

@@ -8899,6 +8899,17 @@ export function App({
     }
 
     if (availableUpdate.kind === 'native') {
+      if (hasCriticalWriteOperation) {
+        setUpdateCheckStatus({
+          kind: 'error',
+          message: 'Finish the current write operation before installing the update.'
+        });
+        return;
+      }
+      if (criticalWriteOperationRef.current) {
+        return;
+      }
+
       let downloadedBytes = 0;
       let contentLength: number | null = null;
       let diagnosticFallback: UiDiagnosticFallback = {
@@ -8908,7 +8919,7 @@ export function App({
 
       setUpdateCheckStatus({
         kind: 'preparing',
-        message: 'Clearing local cache.'
+        message: 'Preparing update.'
       });
       const didArmCloseGuard = await armCriticalWriteGuard();
       if (!isAppMountedRef.current) return;
@@ -8919,6 +8930,41 @@ export function App({
         });
         return;
       }
+
+      if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
+        if (isAppMountedRef.current) {
+          setUpdateCheckStatus({
+            kind: 'error',
+            message: 'Save the active note before installing the update.'
+          });
+        }
+        return;
+      }
+      if (!(await settleLocalEditorDrafts())) {
+        if (isAppMountedRef.current) {
+          setUpdateCheckStatus({
+            kind: 'error',
+            message: 'Finish or cancel the current editor input before installing the update.'
+          });
+        }
+        return;
+      }
+      if (!isAppMountedRef.current) return;
+
+      const hasLocalDrafts =
+        editorDraftDirtySectionsRef.current.size > 0 || hasLatestLocalDraftProtection();
+      if (editSessionRef.current !== null || hasLocalDrafts) {
+        setUpdateCheckStatus({
+          kind: 'error',
+          message: 'Finish or cancel the current edit session before installing the update.'
+        });
+        return;
+      }
+
+      setUpdateCheckStatus({
+        kind: 'preparing',
+        message: 'Clearing local cache.'
+      });
 
       try {
         svCacheWarmupRunRef.current += 1;
@@ -9068,8 +9114,11 @@ export function App({
     desktopServices.openExternalUrl,
     desktopServices.recycleProjectBridge,
     evictUnprotectedWorkflowPayloads,
+    hasCriticalWriteOperation,
+    hasLatestLocalDraftProtection,
     handleRestartAfterUpdate,
-    selectedGame
+    selectedGame,
+    settleLocalEditorDrafts
   ]);
 
   const handleOpenActiveWiki = useCallback(() => {
