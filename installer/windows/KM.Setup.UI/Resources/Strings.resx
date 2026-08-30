@@ -18,6 +18,7 @@
   <data name="SetupWindowTitle" xml:space="preserve"><value>KM Editor Setup</value></data>
   <data name="InstallWindowTitle" xml:space="preserve"><value>Install KM Editor</value></data>
   <data name="UpdateWindowTitle" xml:space="preserve"><value>Update KM Editor</value></data>
+  <data name="RecoveryWindowTitle" xml:space="preserve"><value>Repair and reinstall KM Editor</value></data>
   <data name="ManageWindowTitle" xml:space="preserve"><value>Manage KM Editor</value></data>
   <data name="InstallerEyebrow" xml:space="preserve"><value>KM EDITOR FOR WINDOWS</value></data>
   <data name="InstallerTagline" xml:space="preserve"><value>Build and maintain your installation with the same dark KM experience.</value></data>
@@ -31,12 +32,16 @@
   <data name="ReadyMaintenanceDescription" xml:space="preserve"><value>You can repair KM Editor or remove it from this PC. Uninstall always clears editor cache; deleting settings is optional.</value></data>
   <data name="ReadyUpdateHeading" xml:space="preserve"><value>Update ready</value></data>
   <data name="ReadyUpdateDescription" xml:space="preserve"><value>The verified update is ready. It will replace the application and clear editor cache while keeping your settings.</value></data>
+  <data name="ReadyRecoveryHeading" xml:space="preserve"><value>Repair installation ownership</value></data>
+  <data name="ReadyRecoveryDescription" xml:space="preserve"><value>Setup verified one KM Editor package, but its installer ownership or application files are incomplete. Repair and reinstall will restore the current files and register this setup as the maintenance owner.</value></data>
   <data name="ReadyMigrationHeading" xml:space="preserve"><value>Ready to upgrade KM Editor</value></data>
   <data name="ReadyMigrationDescription" xml:space="preserve"><value>Setup verified the existing installation and will transfer it to the new repairable installer. Editor cache will be cleared and your settings will be kept.</value></data>
   <data name="PlanningInstallHeading" xml:space="preserve"><value>Preparing installation</value></data>
   <data name="PlanningInstallDescription" xml:space="preserve"><value>Windows Installer is calculating the files and registration needed to install KM Editor.</value></data>
   <data name="PlanningUpdateHeading" xml:space="preserve"><value>Preparing the update</value></data>
   <data name="PlanningUpdateDescription" xml:space="preserve"><value>Windows Installer is calculating the changes needed to update KM Editor safely.</value></data>
+  <data name="PlanningRecoveryHeading" xml:space="preserve"><value>Preparing repair and reinstall</value></data>
+  <data name="PlanningRecoveryDescription" xml:space="preserve"><value>Windows Installer is verifying the recovery source and calculating the files and ownership to restore.</value></data>
   <data name="PlanningRepairHeading" xml:space="preserve"><value>Preparing the repair</value></data>
   <data name="PlanningRepairDescription" xml:space="preserve"><value>Windows Installer is determining which KM Editor files and registrations need repair.</value></data>
   <data name="PlanningUninstallHeading" xml:space="preserve"><value>Preparing removal</value></data>
@@ -45,6 +50,8 @@
   <data name="CachingInstallDescription" xml:space="preserve"><value>Checking the installer payload and staging the files required to install KM Editor.</value></data>
   <data name="CachingUpdateHeading" xml:space="preserve"><value>Preparing update files</value></data>
   <data name="CachingUpdateDescription" xml:space="preserve"><value>Checking the verified update payload and staging the replacement files.</value></data>
+  <data name="CachingRecoveryHeading" xml:space="preserve"><value>Preparing recovery files</value></data>
+  <data name="CachingRecoveryDescription" xml:space="preserve"><value>Checking the setup payload and staging the complete package needed to repair and reinstall KM Editor.</value></data>
   <data name="CachingRepairHeading" xml:space="preserve"><value>Preparing repair files</value></data>
   <data name="CachingRepairDescription" xml:space="preserve"><value>Checking the installer payload before restoring KM Editor.</value></data>
   <data name="CachingUninstallHeading" xml:space="preserve"><value>Preparing to uninstall</value></data>
@@ -53,6 +60,8 @@
   <data name="ExecutingInstallDescription" xml:space="preserve"><value>Copying application files, registering KM Editor, and clearing old editor cache. Your settings are being kept.</value></data>
   <data name="ExecutingUpdateHeading" xml:space="preserve"><value>Updating KM Editor</value></data>
   <data name="ExecutingUpdateDescription" xml:space="preserve"><value>Replacing application files and clearing editor cache while keeping your settings.</value></data>
+  <data name="ExecutingRecoveryHeading" xml:space="preserve"><value>Repairing and reinstalling KM Editor</value></data>
+  <data name="ExecutingRecoveryDescription" xml:space="preserve"><value>Restoring the complete application package and its installer ownership while keeping your settings.</value></data>
   <data name="ExecutingRepairHeading" xml:space="preserve"><value>Repairing KM Editor</value></data>
   <data name="ExecutingRepairDescription" xml:space="preserve"><value>Verifying installed files and restoring anything that is missing or damaged.</value></data>
   <data name="ExecutingUninstallHeading" xml:space="preserve"><value>Uninstalling KM Editor</value></data>
@@ -61,6 +70,8 @@
   <data name="FinalizingInstallDescription" xml:space="preserve"><value>Completing registration and final checks for the new installation.</value></data>
   <data name="FinalizingUpdateHeading" xml:space="preserve"><value>Finishing the update</value></data>
   <data name="FinalizingUpdateDescription" xml:space="preserve"><value>Completing registration and cleaning up superseded installer data.</value></data>
+  <data name="FinalizingRecoveryHeading" xml:space="preserve"><value>Finishing repair and reinstall</value></data>
+  <data name="FinalizingRecoveryDescription" xml:space="preserve"><value>Completing the recovered installation registration and final checks.</value></data>
   <data name="FinalizingRepairHeading" xml:space="preserve"><value>Finishing the repair</value></data>
   <data name="FinalizingRepairDescription" xml:space="preserve"><value>Completing registration and final verification of the repaired installation.</value></data>
   <data name="FinalizingUninstallHeading" xml:space="preserve"><value>Finishing removal</value></data>
@@ -79,6 +90,8 @@
   <data name="InstallSuccessDescription" xml:space="preserve"><value>Installation completed successfully. Old editor cache was cleared and your settings were kept.</value></data>
   <data name="UpdateSuccessHeading" xml:space="preserve"><value>KM Editor is up to date</value></data>
   <data name="UpdateSuccessDescription" xml:space="preserve"><value>The update completed successfully. Editor cache was cleared and your settings were kept.</value></data>
+  <data name="RecoverySuccessHeading" xml:space="preserve"><value>Repair and reinstall complete</value></data>
+  <data name="RecoverySuccessDescription" xml:space="preserve"><value>KM Editor files and installer ownership were restored successfully.</value></data>
   <data name="RepairSuccessHeading" xml:space="preserve"><value>Repair complete</value></data>
   <data name="RepairSuccessDescription" xml:space="preserve"><value>KM Editor was repaired successfully.</value></data>
   <data name="UninstallSuccessHeading" xml:space="preserve"><value>KM Editor was removed</value></data>
@@ -101,18 +114,22 @@
   <data name="StatusDetecting" xml:space="preserve"><value>Checking installed versions and ownership</value></data>
   <data name="StatusPlanningInstall" xml:space="preserve"><value>Calculating the installation plan</value></data>
   <data name="StatusPlanningUpdate" xml:space="preserve"><value>Calculating the update plan</value></data>
+  <data name="StatusPlanningRecovery" xml:space="preserve"><value>Calculating the repair and reinstall plan</value></data>
   <data name="StatusPlanningRepair" xml:space="preserve"><value>Calculating the repair plan</value></data>
   <data name="StatusPlanningUninstall" xml:space="preserve"><value>Calculating the uninstall plan</value></data>
   <data name="StatusCachingInstall" xml:space="preserve"><value>Verifying and staging installation files</value></data>
   <data name="StatusCachingUpdate" xml:space="preserve"><value>Verifying and staging update files</value></data>
+  <data name="StatusCachingRecovery" xml:space="preserve"><value>Verifying and staging recovery files</value></data>
   <data name="StatusCachingRepair" xml:space="preserve"><value>Verifying files needed for repair</value></data>
   <data name="StatusCachingUninstall" xml:space="preserve"><value>Verifying the registered installation</value></data>
   <data name="StatusExecutingInstall" xml:space="preserve"><value>Installing files and clearing old editor cache</value></data>
   <data name="StatusExecutingUpdate" xml:space="preserve"><value>Updating files and clearing editor cache</value></data>
+  <data name="StatusExecutingRecovery" xml:space="preserve"><value>Repairing files and installer ownership</value></data>
   <data name="StatusExecutingRepair" xml:space="preserve"><value>Repairing KM Editor files</value></data>
   <data name="StatusExecutingUninstall" xml:space="preserve"><value>Removing KM Editor and editor cache</value></data>
   <data name="StatusFinalizingInstall" xml:space="preserve"><value>Completing installation and registration</value></data>
   <data name="StatusFinalizingUpdate" xml:space="preserve"><value>Completing the update and cleanup</value></data>
+  <data name="StatusFinalizingRecovery" xml:space="preserve"><value>Completing repaired installation ownership</value></data>
   <data name="StatusFinalizingRepair" xml:space="preserve"><value>Completing repair and verification</value></data>
   <data name="StatusFinalizingUninstall" xml:space="preserve"><value>Completing cache cleanup and removal</value></data>
   <data name="StatusCancelling" xml:space="preserve"><value>Waiting for a safe point to stop</value></data>
@@ -122,6 +139,7 @@
   <data name="LogFileLabel" xml:space="preserve"><value>Installation log</value></data>
   <data name="InstallButton" xml:space="preserve"><value>Install</value></data>
   <data name="UpdateButton" xml:space="preserve"><value>Update</value></data>
+  <data name="RecoveryButton" xml:space="preserve"><value>Repair and reinstall</value></data>
   <data name="RepairButton" xml:space="preserve"><value>Repair</value></data>
   <data name="UninstallButton" xml:space="preserve"><value>Uninstall</value></data>
   <data name="CancelButton" xml:space="preserve"><value>Cancel</value></data>

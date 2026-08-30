@@ -85,6 +85,50 @@
       Key="$(KmProductRegistryKey)"
       Result="value" />
 
+    <!-- When an MSI-owned product marker survives, recovery requires every
+         identity field to agree with the authoritative MSI registration. -->
+    <util:RegistrySearch
+      Id="SearchPerUserProductInstallLocation"
+      Variable="KMPerUserProductInstallLocation"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Result="value" />
+    <util:RegistrySearch
+      Id="SearchPerUserProductInstallDir"
+      Variable="KMPerUserProductInstallDir"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Value="InstallDir"
+      Result="value" />
+    <util:RegistrySearch
+      Id="SearchPerUserProductInstallScope"
+      Variable="KMPerUserProductInstallScope"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Value="InstallScope"
+      Result="value" />
+    <util:RegistrySearch
+      Id="SearchPerUserProductInstallerFamily"
+      Variable="KMPerUserProductInstallerFamily"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Value="InstallerFamily"
+      Result="value" />
+    <util:RegistrySearch
+      Id="SearchPerUserProductMainBinaryName"
+      Variable="KMPerUserProductMainBinaryName"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Value="MainBinaryName"
+      Result="value" />
+    <util:RegistrySearch
+      Id="SearchPerUserProductVersion"
+      Variable="KMPerUserProductVersion"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Value="Version"
+      Result="value" />
+
     <!-- The MSI registration uses HKMU, so upgrade cleanup must also prove a
          per-machine product path from the 64-bit HKLM registry view. -->
     <util:RegistrySearch
@@ -92,6 +136,46 @@
       Variable="KMPerMachineProductInstallLocation"
       Root="HKLM"
       Key="$(KmProductRegistryKey)"
+      Result="value"
+      Bitness="always64" />
+    <util:RegistrySearch
+      Id="SearchPerMachineProductInstallDir"
+      Variable="KMPerMachineProductInstallDir"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)"
+      Value="InstallDir"
+      Result="value"
+      Bitness="always64" />
+    <util:RegistrySearch
+      Id="SearchPerMachineProductInstallScope"
+      Variable="KMPerMachineProductInstallScope"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)"
+      Value="InstallScope"
+      Result="value"
+      Bitness="always64" />
+    <util:RegistrySearch
+      Id="SearchPerMachineProductInstallerFamily"
+      Variable="KMPerMachineProductInstallerFamily"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)"
+      Value="InstallerFamily"
+      Result="value"
+      Bitness="always64" />
+    <util:RegistrySearch
+      Id="SearchPerMachineProductMainBinaryName"
+      Variable="KMPerMachineProductMainBinaryName"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)"
+      Value="MainBinaryName"
+      Result="value"
+      Bitness="always64" />
+    <util:RegistrySearch
+      Id="SearchPerMachineProductVersion"
+      Variable="KMPerMachineProductVersion"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)"
+      Value="Version"
       Result="value"
       Bitness="always64" />
 
