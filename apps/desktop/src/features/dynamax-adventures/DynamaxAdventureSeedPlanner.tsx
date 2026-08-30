@@ -20,11 +20,13 @@ import type {
   PlanDynamaxAdventureSeedRequest,
   SearchDynamaxAdventureSeedRequest
 } from '../../bridge/contracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { DiagnosticsSection } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
 import { desktopErrorCodes } from '../../errorCodes';
 import { useLocalization, type LocalizationContextValue } from '../../localization';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
+import { parseBoundedWholeNumberDraft } from '../gameplayInputDrafts';
 
 type PlanSeedInput = Omit<PlanDynamaxAdventureSeedRequest, 'paths'>;
 type SearchSeedInput = Omit<SearchDynamaxAdventureSeedRequest, 'paths'>;
@@ -43,6 +45,14 @@ export type DynamaxAdventureSeedPlannerProps = {
 const maximumSeed = 0xffffffffffffffffn;
 const maximumSearchLimit = 10_000n;
 
+type SeedPlannerDraftInputs = {
+  maximumResults: string;
+  npcCount: number;
+  requiredRowsText: string;
+  searchLimit: string;
+  seed: string;
+};
+
 export function DynamaxAdventureSeedPlanner({
   armCriticalWriteGuard,
   encounters,
@@ -58,13 +68,27 @@ export function DynamaxAdventureSeedPlanner({
   const [npcCount, setNpcCount] = useState(3);
   const [requiredRowsText, setRequiredRowsText] = useState('');
   const [searchLimit, setSearchLimit] = useState('10000');
-  const [maximumResults, setMaximumResults] = useState(25);
+  const [maximumResults, setMaximumResults] = useState('25');
   const [plan, setPlan] = useState<DynamaxAdventureSeedPlan | null>(null);
   const [searchResult, setSearchResult] = useState<DynamaxAdventureSeedSearch | null>(null);
   const [saveResult, setSaveResult] = useState<DynamaxAdventureSaveSeedResult | null>(null);
   const [diagnostics, setDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [busyOperation, setBusyOperation] = useState<'plan' | 'search' | 'save' | null>(null);
   const [saveSeedToConfirm, setSaveSeedToConfirm] = useState<string | null>(null);
+  const draftInputsRef = useRef({
+    maximumResults,
+    npcCount,
+    requiredRowsText,
+    searchLimit,
+    seed
+  });
+  draftInputsRef.current = {
+    maximumResults,
+    npcCount,
+    requiredRowsText,
+    searchLimit,
+    seed
+  };
   const operationRevisionRef = useRef(0);
   const saveGuardRevisionRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
@@ -82,6 +106,30 @@ export function DynamaxAdventureSeedPlanner({
   );
   const seedError = validateSeed(seed, t);
   const searchLimitError = validateSearchLimit(searchLimit, t);
+  const parsedMaximumResults = parseBoundedWholeNumberDraft(maximumResults, 1, 1_000);
+  const maximumResultsError = parsedMaximumResults === null
+    ? t('routePlanner.validation.maximumResults')
+    : null;
+  usePublishCommonEditorError({
+    domain: 'workflow.dynamaxAdventures',
+    field: 'seed',
+    message: seedError
+  });
+  usePublishCommonEditorError({
+    domain: 'workflow.dynamaxAdventures',
+    field: 'requiredRows',
+    message: parsedRows.error
+  });
+  usePublishCommonEditorError({
+    domain: 'workflow.dynamaxAdventures',
+    field: 'searchLimit',
+    message: searchLimitError
+  });
+  usePublishCommonEditorError({
+    domain: 'workflow.dynamaxAdventures',
+    field: 'maximumResults',
+    message: maximumResultsError
+  });
   const canPlan = !busyOperation && !seedError && !parsedRows.error;
   const canSearch =
     !busyOperation &&
@@ -89,8 +137,7 @@ export function DynamaxAdventureSeedPlanner({
     !searchLimitError &&
     !parsedRows.error &&
     parsedRows.rows.length > 0 &&
-    maximumResults >= 1 &&
-    maximumResults <= 1_000;
+    parsedMaximumResults !== null;
 
   const beginSaveGuard = useCallback(async (revision: number) => {
     saveGuardRevisionRef.current = revision;
@@ -139,6 +186,11 @@ export function DynamaxAdventureSeedPlanner({
   const handlePlan = async (nextSeed = seed) => {
     const normalizedSeed = nextSeed.trim();
     if (validateSeed(normalizedSeed, t) || parsedRows.error) return;
+    const submittedInputs = {
+      npcCount,
+      requiredRowsText,
+      seed: nextSeed
+    };
     const revision = beginOperation('plan');
     try {
       const nextPlan = await onPlanSeed({
@@ -146,8 +198,11 @@ export function DynamaxAdventureSeedPlanner({
         requiredRows: parsedRows.rows,
         seed: normalizedSeed
       });
-      if (operationRevisionRef.current !== revision) return;
-      setSeed(nextPlan.seed);
+      if (
+        operationRevisionRef.current !== revision ||
+        !samePlanInputs(draftInputsRef.current, submittedInputs)
+      ) return;
+      setSeed((current) => current === submittedInputs.seed ? nextPlan.seed : current);
       setPlan(nextPlan);
       setDiagnostics(nextPlan.diagnostics);
     } catch (error) {
@@ -160,17 +215,28 @@ export function DynamaxAdventureSeedPlanner({
   };
 
   const handleSearch = async () => {
-    if (!canSearch) return;
+    const maxResults = parseBoundedWholeNumberDraft(maximumResults, 1, 1_000);
+    if (!canSearch || maxResults === null) return;
+    const submittedInputs = {
+      maximumResults,
+      npcCount,
+      requiredRowsText,
+      searchLimit,
+      seed
+    };
     const revision = beginOperation('search');
     try {
       const nextSearch = await onSearchSeeds({
         limit: searchLimit.trim(),
-        maxResults: maximumResults,
+        maxResults,
         npcCount,
         requiredRows: parsedRows.rows,
         startSeed: seed.trim()
       });
-      if (operationRevisionRef.current !== revision) return;
+      if (
+        operationRevisionRef.current !== revision ||
+        !sameSearchInputs(draftInputsRef.current, submittedInputs)
+      ) return;
       setSearchResult(nextSearch);
       setDiagnostics(nextSearch.diagnostics);
     } catch (error) {
@@ -245,7 +311,6 @@ export function DynamaxAdventureSeedPlanner({
           <span>{t('routePlanner.seed')}</span>
           <input
             aria-invalid={Boolean(seedError)}
-            disabled={Boolean(busyOperation)}
             onChange={(event) => setSeed(event.target.value)}
             spellCheck={false}
             value={seed}
@@ -255,7 +320,6 @@ export function DynamaxAdventureSeedPlanner({
         <label>
           <span>{t('routePlanner.npcCount')}</span>
           <select
-            disabled={Boolean(busyOperation)}
             onChange={(event) => setNpcCount(Number(event.target.value))}
             value={npcCount}
           >
@@ -268,7 +332,6 @@ export function DynamaxAdventureSeedPlanner({
           <span>{t('routePlanner.requiredRows')}</span>
           <input
             aria-invalid={Boolean(parsedRows.error)}
-            disabled={Boolean(busyOperation)}
             onChange={(event) => setRequiredRowsText(event.target.value)}
             placeholder={t('routePlanner.requiredRowsPlaceholder')}
             value={requiredRowsText}
@@ -278,7 +341,6 @@ export function DynamaxAdventureSeedPlanner({
         <button
           className="secondary-button compact-button"
           disabled={
-            Boolean(busyOperation) ||
             selectedEntryIndex === null ||
             !rowLabelByIndex.has(selectedEntryIndex)
           }
@@ -294,7 +356,6 @@ export function DynamaxAdventureSeedPlanner({
           <span>{t('routePlanner.searchCount')}</span>
           <input
             aria-invalid={Boolean(searchLimitError)}
-            disabled={Boolean(busyOperation)}
             inputMode="numeric"
             onChange={(event) => setSearchLimit(event.target.value)}
             value={searchLimit}
@@ -304,13 +365,16 @@ export function DynamaxAdventureSeedPlanner({
         <label>
           <span>{t('routePlanner.maximumResults')}</span>
           <input
-            disabled={Boolean(busyOperation)}
-            max={1000}
-            min={1}
-            onChange={(event) => setMaximumResults(Number(event.target.value))}
-            type="number"
+            aria-invalid={Boolean(maximumResultsError)}
+            inputMode="numeric"
+            onChange={(event) => setMaximumResults(event.currentTarget.value)}
+            pattern="[0-9]*"
+            type="text"
             value={maximumResults}
           />
+          {maximumResultsError ? (
+            <small className="editable-field-error">{maximumResultsError}</small>
+          ) : null}
         </label>
         <div className="draft-action-row">
           <button
@@ -467,6 +531,28 @@ export function DynamaxAdventureSeedPlanner({
         />
       ) : null}
     </section>
+  );
+}
+
+function samePlanInputs(
+  current: SeedPlannerDraftInputs,
+  submitted: Pick<SeedPlannerDraftInputs, 'npcCount' | 'requiredRowsText' | 'seed'>
+) {
+  return (
+    current.npcCount === submitted.npcCount &&
+    current.requiredRowsText === submitted.requiredRowsText &&
+    current.seed === submitted.seed
+  );
+}
+
+function sameSearchInputs(
+  current: SeedPlannerDraftInputs,
+  submitted: SeedPlannerDraftInputs
+) {
+  return (
+    samePlanInputs(current, submitted) &&
+    current.maximumResults === submitted.maximumResults &&
+    current.searchLimit === submitted.searchLimit
   );
 }
 

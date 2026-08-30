@@ -8,6 +8,7 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import type {
   SemanticQueryError,
@@ -28,6 +29,7 @@ export type ResearchLabRuntimeProps = {
   capabilityError: SemanticQueryError | null;
   capabilityStatus: SemanticQueryStatus;
   onEnsureCapabilities: () => Promise<void>;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onPickSource: (slot: 0 | 1) => Promise<string | null>;
   onPreparationStateChange?: (progress: AnalysisPreparationProgress) => void;
@@ -43,6 +45,7 @@ export default function ResearchLabRuntime({
   capabilityError,
   capabilityStatus,
   onEnsureCapabilities,
+  onDirtyStateChange,
   onNavigateRecord,
   onPickSource,
   onPreparationStateChange,
@@ -78,6 +81,13 @@ export default function ResearchLabRuntime({
           </div>
         </header>
         {isError ? (
+          <>
+          <PublishCommonEditorError
+            domain="analysis.researchLab"
+            message={t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'researchLab.error.generic')}
+          />
           <div aria-live="polite" className="km-research-lab-status" role="alert">
             <p>{t(capabilityError
               ? `semanticExplore.query.error.${capabilityError}`
@@ -86,6 +96,7 @@ export default function ResearchLabRuntime({
               {t('researchLab.retry')}
             </button>
           </div>
+          </>
         ) : (
           <div className="km-research-lab-status">
             <LoadingProgress label={t('researchLab.loading')} />
@@ -99,6 +110,7 @@ export default function ResearchLabRuntime({
     <ResearchLabReadyRuntime
       bridge={bridge}
       canNavigateRecord={canNavigateRecord}
+      onDirtyStateChange={onDirtyStateChange}
       onNavigateRecord={onNavigateRecord}
       onPickSource={onPickSource}
       onPreparationStateChange={onPreparationStateChange}
@@ -112,6 +124,7 @@ export default function ResearchLabRuntime({
 function ResearchLabReadyRuntime({
   bridge,
   canNavigateRecord,
+  onDirtyStateChange,
   onNavigateRecord,
   onPickSource,
   onPreparationStateChange,
@@ -165,6 +178,7 @@ function ResearchLabReadyRuntime({
     <ResearchLabSection
       canNavigateRecord={canNavigateRecord}
       controller={controller}
+      onDirtyStateChange={onDirtyStateChange}
       onNavigateRecord={onNavigateRecord}
       onPickSource={onPickSource}
       revision={revision}

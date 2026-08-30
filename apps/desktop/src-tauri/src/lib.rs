@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use std::collections::VecDeque;
+use std::future::Future;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -66,6 +67,8 @@ const MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES: usize =
     };
 const PROJECT_BRIDGE_RECYCLED_ERROR: &str =
     "Project bridge request was canceled because the bridge was recycled.";
+const PROJECT_BRIDGE_READ_PREEMPTED_ERROR: &str =
+    "Read-only project preparation was restarted behind a pending output operation.";
 const PROJECT_BRIDGE_PROJECT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const PROJECT_BRIDGE_OUTPUT_READ_TIMEOUT: Duration = Duration::from_secs(45);
 const PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS: u64 = 75;
@@ -443,6 +446,8 @@ struct ProjectBridgeState {
     read_processes: Arc<Vec<Mutex<Option<Arc<ProjectBridgeProcess>>>>>,
     process_lifecycle: Arc<Mutex<()>>,
     generation: Arc<AtomicUsize>,
+    read_generation: Arc<AtomicUsize>,
+    read_worker_requests: Arc<ProjectBridgeReadWorkerRequestState>,
     execution_gate: Arc<tokio::sync::RwLock<()>>,
     pending_requests: Arc<Mutex<ProjectBridgePendingRequestState>>,
 }
@@ -467,6 +472,8 @@ impl ProjectBridgeState {
             ),
             process_lifecycle: Arc::new(Mutex::new(())),
             generation: Arc::new(AtomicUsize::new(0)),
+            read_generation: Arc::new(AtomicUsize::new(0)),
+            read_worker_requests: Arc::new(ProjectBridgeReadWorkerRequestState::default()),
             execution_gate: Arc::new(tokio::sync::RwLock::with_max_readers(
                 (),
                 maximum_parallel_reads,
@@ -511,20 +518,119 @@ impl ProjectBridgeState {
         concurrency: ProjectBridgeCommandConcurrency,
     ) -> Result<ProjectBridgeExecutionPermit, String> {
         let permit = match concurrency {
-            ProjectBridgeCommandConcurrency::IndependentRead(_)
-            | ProjectBridgeCommandConcurrency::AffinityOrdered(_)
-            | ProjectBridgeCommandConcurrency::OwnerOrdered => {
+            ProjectBridgeCommandConcurrency::IndependentRead(_) => {
+                let guard = Arc::new(Mutex::new(Some(
+                    self.execution_gate.clone().read_owned().await,
+                )));
+                let request = ProjectBridgeReadWorkerRequest::begin(
+                    self.read_worker_requests.clone(),
+                    ProjectBridgeReadWorkerRequestKind::Disposable,
+                    Some(&guard),
+                )?;
                 ProjectBridgeExecutionPermit::IndependentRead {
-                    _guard: self.execution_gate.clone().read_owned().await,
+                    _guard: None,
+                    _revocable_guard: Some(guard),
+                    _read_worker_request: Some(request),
                 }
             }
-            ProjectBridgeCommandConcurrency::AffinityExclusive(_)
-            | ProjectBridgeCommandConcurrency::Exclusive => ProjectBridgeExecutionPermit::Ordered {
+            ProjectBridgeCommandConcurrency::OwnerOrdered => {
+                ProjectBridgeExecutionPermit::IndependentRead {
+                    _guard: Some(self.execution_gate.clone().read_owned().await),
+                    _revocable_guard: None,
+                    _read_worker_request: None,
+                }
+            }
+            ProjectBridgeCommandConcurrency::AffinityOrdered(_) => {
+                let guard = self.execution_gate.clone().read_owned().await;
+                let protected_request = ProjectBridgeReadWorkerRequest::begin(
+                    self.read_worker_requests.clone(),
+                    ProjectBridgeReadWorkerRequestKind::Protected,
+                    None,
+                );
+                ProjectBridgeExecutionPermit::IndependentRead {
+                    _guard: Some(guard),
+                    _revocable_guard: None,
+                    _read_worker_request: Some(protected_request?),
+                }
+            }
+            ProjectBridgeCommandConcurrency::AffinityExclusive(_) => {
+                let guard = self.execution_gate.clone().write_owned().await;
+                let protected_request = ProjectBridgeReadWorkerRequest::begin(
+                    self.read_worker_requests.clone(),
+                    ProjectBridgeReadWorkerRequestKind::Protected,
+                    None,
+                );
+                ProjectBridgeExecutionPermit::Ordered {
+                    _guard: guard,
+                    _read_worker_request: Some(protected_request?),
+                }
+            }
+            ProjectBridgeCommandConcurrency::Exclusive => ProjectBridgeExecutionPermit::Ordered {
                 _guard: self.execution_gate.clone().write_owned().await,
+                _read_worker_request: None,
             },
         };
         ensure_project_bridge_request_is_current(self, request_generation)?;
         Ok(permit)
+    }
+
+    async fn acquire_execution_permit_for_request(
+        &self,
+        request_generation: usize,
+        policy: ProjectBridgeRequestPolicy,
+    ) -> Result<ProjectBridgeExecutionPermit, String> {
+        if !policy.writer_priority_before_execution
+            || !matches!(
+                policy.concurrency,
+                ProjectBridgeCommandConcurrency::Exclusive
+                    | ProjectBridgeCommandConcurrency::OwnerOrdered
+            )
+        {
+            return self
+                .acquire_execution_permit_for_generation(request_generation, policy.concurrency)
+                .await;
+        }
+
+        // Register the writer with Tokio's fair RwLock before canceling disposable readers. Once
+        // this future has been polled, later reads queue behind it instead of replacing the work we
+        // just stopped. The owning sidecar is never part of this preemption path.
+        let gate = self.execution_gate.clone();
+        let (queued_sender, queued_receiver) = tokio::sync::oneshot::channel();
+        let writer_task = tauri::async_runtime::spawn(async move {
+            let mut writer = Box::pin(gate.write_owned());
+            let mut queued_sender = Some(queued_sender);
+            std::future::poll_fn(|context| {
+                let result = writer.as_mut().poll(context);
+                if let Some(sender) = queued_sender.take() {
+                    let _ = sender.send(());
+                }
+                result
+            })
+            .await
+        });
+        queued_receiver
+            .await
+            .map_err(|_| "Project bridge writer admission stopped unexpectedly.".to_owned())?;
+
+        let preemption_state = self.clone();
+        let writer_cleanup = tauri::async_runtime::spawn_blocking(move || {
+            preempt_project_bridge_read_workers(&preemption_state)
+        })
+        .await
+        .map_err(|error| format!("Project bridge reader preemption task failed: {error}"))??;
+
+        let guard = writer_task
+            .await
+            .map_err(|error| format!("Project bridge writer admission task failed: {error}"))?;
+        // A reader may already own a read guard while being descheduled immediately before it
+        // registers in read_worker_requests. Keep the cleanup marker until this write guard is
+        // actually owned so that such a reader resumes into PREEMPTED and releases its guard.
+        drop(writer_cleanup);
+        ensure_project_bridge_request_is_current(self, request_generation)?;
+        Ok(ProjectBridgeExecutionPermit::Ordered {
+            _guard: guard,
+            _read_worker_request: None,
+        })
     }
 }
 
@@ -542,11 +648,242 @@ struct ProjectBridgePendingRequestGuard {
 #[derive(Debug)]
 enum ProjectBridgeExecutionPermit {
     IndependentRead {
-        _guard: tokio::sync::OwnedRwLockReadGuard<()>,
+        _guard: Option<tokio::sync::OwnedRwLockReadGuard<()>>,
+        _revocable_guard: Option<ProjectBridgeRevocableReadGuard>,
+        _read_worker_request: Option<ProjectBridgeReadWorkerRequest>,
     },
     Ordered {
         _guard: tokio::sync::OwnedRwLockWriteGuard<()>,
+        _read_worker_request: Option<ProjectBridgeReadWorkerRequest>,
     },
+}
+
+type ProjectBridgeRevocableReadGuard = Arc<Mutex<Option<tokio::sync::OwnedRwLockReadGuard<()>>>>;
+type ProjectBridgeWeakRevocableReadGuard =
+    Weak<Mutex<Option<tokio::sync::OwnedRwLockReadGuard<()>>>>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectBridgeReadWorkerRequestKind {
+    Disposable,
+    Protected,
+}
+
+#[derive(Debug, Default)]
+struct ProjectBridgeReadWorkerRequestState {
+    state: Mutex<ProjectBridgeReadWorkerRequestStateInner>,
+    changed: Condvar,
+}
+
+#[derive(Debug, Default)]
+struct ProjectBridgeReadWorkerRequestStateInner {
+    active_disposable_requests: usize,
+    active_protected_requests: usize,
+    writer_cleanup_waiters: usize,
+    owner_cleanup_waiters: usize,
+    disposable_execution_guards: Vec<ProjectBridgeWeakRevocableReadGuard>,
+}
+
+impl ProjectBridgeReadWorkerRequestState {
+    fn revoke_disposable_execution_guards(&self) -> Result<(), String> {
+        let guards = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| "Project bridge read-worker request lock was poisoned.".to_owned())?;
+            state
+                .disposable_execution_guards
+                .retain(|guard| guard.strong_count() != 0);
+            state
+                .disposable_execution_guards
+                .iter()
+                .filter_map(Weak::upgrade)
+                .collect::<Vec<_>>()
+        };
+        for guard in guards {
+            let execution_guard = match guard.lock() {
+                Ok(mut execution_guard) => execution_guard.take(),
+                Err(poisoned) => poisoned.into_inner().take(),
+            };
+            drop(execution_guard);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl ProjectBridgeReadWorkerRequestState {
+    fn active_protected_requests(&self) -> usize {
+        self.state
+            .lock()
+            .expect("inspect protected read-worker requests")
+            .active_protected_requests
+    }
+}
+
+#[derive(Debug)]
+struct ProjectBridgeReadWorkerRequest {
+    requests: Arc<ProjectBridgeReadWorkerRequestState>,
+    kind: ProjectBridgeReadWorkerRequestKind,
+    disposable_execution_guard: Option<ProjectBridgeWeakRevocableReadGuard>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectBridgeReadWorkerCleanupKind {
+    WriterPreemption,
+    OwnerTimeout,
+}
+
+struct ProjectBridgeReadWorkerCleanup {
+    requests: Arc<ProjectBridgeReadWorkerRequestState>,
+    kind: ProjectBridgeReadWorkerCleanupKind,
+}
+
+impl ProjectBridgeReadWorkerRequest {
+    fn begin(
+        requests: Arc<ProjectBridgeReadWorkerRequestState>,
+        kind: ProjectBridgeReadWorkerRequestKind,
+        disposable_execution_guard: Option<&ProjectBridgeRevocableReadGuard>,
+    ) -> Result<Self, String> {
+        let mut state = requests
+            .state
+            .lock()
+            .map_err(|_| "Project bridge read-worker request lock was poisoned.".to_owned())?;
+        let blocked = match kind {
+            ProjectBridgeReadWorkerRequestKind::Disposable => state.writer_cleanup_waiters != 0,
+            ProjectBridgeReadWorkerRequestKind::Protected => {
+                state.writer_cleanup_waiters != 0 || state.owner_cleanup_waiters != 0
+            }
+        };
+        if blocked {
+            return Err(match kind {
+                ProjectBridgeReadWorkerRequestKind::Disposable => {
+                    PROJECT_BRIDGE_READ_PREEMPTED_ERROR.to_owned()
+                }
+                ProjectBridgeReadWorkerRequestKind::Protected => {
+                    PROJECT_BRIDGE_RECYCLED_ERROR.to_owned()
+                }
+            });
+        }
+
+        let disposable_execution_guard = match kind {
+            ProjectBridgeReadWorkerRequestKind::Disposable => {
+                let guard = disposable_execution_guard.ok_or_else(|| {
+                    "Disposable project bridge reads require a revocable execution guard."
+                        .to_owned()
+                })?;
+                Some(Arc::downgrade(guard))
+            }
+            ProjectBridgeReadWorkerRequestKind::Protected => {
+                if disposable_execution_guard.is_some() {
+                    return Err(
+                        "Protected project bridge work cannot use a revocable execution guard."
+                            .to_owned(),
+                    );
+                }
+                None
+            }
+        };
+
+        let active_requests = match kind {
+            ProjectBridgeReadWorkerRequestKind::Disposable => &mut state.active_disposable_requests,
+            ProjectBridgeReadWorkerRequestKind::Protected => &mut state.active_protected_requests,
+        };
+        *active_requests = active_requests
+            .checked_add(1)
+            .ok_or_else(|| "Project bridge read-worker request count overflowed.".to_owned())?;
+        if let Some(guard) = disposable_execution_guard.as_ref() {
+            state.disposable_execution_guards.push(guard.clone());
+        }
+        drop(state);
+        Ok(Self {
+            requests,
+            kind,
+            disposable_execution_guard,
+        })
+    }
+}
+
+impl Drop for ProjectBridgeReadWorkerRequest {
+    fn drop(&mut self) {
+        let mut state = match self.requests.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let active_requests = match self.kind {
+            ProjectBridgeReadWorkerRequestKind::Disposable => &mut state.active_disposable_requests,
+            ProjectBridgeReadWorkerRequestKind::Protected => &mut state.active_protected_requests,
+        };
+        *active_requests = active_requests.saturating_sub(1);
+        if let Some(guard) = self.disposable_execution_guard.as_ref() {
+            state
+                .disposable_execution_guards
+                .retain(|candidate| !Weak::ptr_eq(candidate, guard));
+        }
+        self.requests.changed.notify_all();
+    }
+}
+
+impl ProjectBridgeReadWorkerCleanup {
+    fn begin(
+        requests: Arc<ProjectBridgeReadWorkerRequestState>,
+        kind: ProjectBridgeReadWorkerCleanupKind,
+    ) -> Result<Self, String> {
+        let mut state = requests
+            .state
+            .lock()
+            .map_err(|_| "Project bridge read-worker request lock was poisoned.".to_owned())?;
+        let cleanup_waiters = match kind {
+            ProjectBridgeReadWorkerCleanupKind::WriterPreemption => {
+                &mut state.writer_cleanup_waiters
+            }
+            ProjectBridgeReadWorkerCleanupKind::OwnerTimeout => &mut state.owner_cleanup_waiters,
+        };
+        *cleanup_waiters = cleanup_waiters
+            .checked_add(1)
+            .ok_or_else(|| "Project bridge read-worker cleanup count overflowed.".to_owned())?;
+        drop(state);
+        Ok(Self { requests, kind })
+    }
+
+    fn wait_for_protected_response_boundary(&self) -> Result<(), String> {
+        let mut state = self
+            .requests
+            .state
+            .lock()
+            .map_err(|_| "Project bridge read-worker request lock was poisoned.".to_owned())?;
+        while state.active_protected_requests != 0 {
+            state =
+                self.requests.changed.wait(state).map_err(|_| {
+                    "Project bridge read-worker request lock was poisoned.".to_owned()
+                })?;
+        }
+        Ok(())
+    }
+
+    fn has_disposable_requests(&self) -> Result<bool, String> {
+        self.requests
+            .state
+            .lock()
+            .map(|state| state.active_disposable_requests != 0)
+            .map_err(|_| "Project bridge read-worker request lock was poisoned.".to_owned())
+    }
+}
+
+impl Drop for ProjectBridgeReadWorkerCleanup {
+    fn drop(&mut self) {
+        let mut state = match self.requests.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let cleanup_waiters = match self.kind {
+            ProjectBridgeReadWorkerCleanupKind::WriterPreemption => {
+                &mut state.writer_cleanup_waiters
+            }
+            ProjectBridgeReadWorkerCleanupKind::OwnerTimeout => &mut state.owner_cleanup_waiters,
+        };
+        *cleanup_waiters = cleanup_waiters.saturating_sub(1);
+        self.requests.changed.notify_all();
+    }
 }
 
 impl Drop for ProjectBridgePendingRequestGuard {
@@ -560,6 +897,7 @@ impl Drop for ProjectBridgePendingRequestGuard {
 
 struct ProjectBridgeProcess {
     active_request_token: AtomicUsize,
+    active_preemptible_request: AtomicBool,
     next_request_token: AtomicUsize,
     child: Mutex<Option<Child>>,
     admission: ProjectBridgeAdmission,
@@ -593,6 +931,8 @@ struct ProjectBridgeRequestCancellation {
     request_state: Option<Arc<AtomicUsize>>,
     generation: Arc<AtomicUsize>,
     request_generation: usize,
+    read_generation: Option<Arc<AtomicUsize>>,
+    request_read_generation: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -619,6 +959,7 @@ struct ProjectBridgeRequestPolicy {
     execution_timeout: Option<Duration>,
     retry_after_transport_failure: bool,
     concurrency: ProjectBridgeCommandConcurrency,
+    writer_priority_before_execution: bool,
     recycle_read_workers_before_execution: bool,
     recycle_read_workers_after_execution: bool,
 }
@@ -667,6 +1008,7 @@ struct ProjectBridgeRequestWatchdog {
 
 struct ProjectBridgeActiveRequest<'a> {
     active_request_token: &'a AtomicUsize,
+    active_preemptible_request: &'a AtomicBool,
     request_token: usize,
 }
 
@@ -698,52 +1040,132 @@ async fn project_bridge(
     validate_project_bridge_request_transport(&request_json)?;
 
     let bridge_state = bridge_state.inner().clone();
-    let pending_request = bridge_state.reserve_pending_request(request_json.len())?;
+    let _pending_request = bridge_state.reserve_pending_request(request_json.len())?;
     let request_policy = resolved_project_bridge_request_policy(&request_json);
-    let request_generation = bridge_state.generation.load(Ordering::Acquire);
-    let execution_permit = bridge_state
-        .acquire_execution_permit_for_generation(request_generation, request_policy.concurrency)
-        .await?;
-    let request_bridge_state = bridge_state.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let _pending_request = pending_request;
-        let _execution_permit = execution_permit;
-        if request_policy.recycle_read_workers_before_execution {
-            recycle_project_bridge_read_workers(&request_bridge_state)?;
-        }
+    loop {
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+        let execution_permit = match bridge_state
+            .acquire_execution_permit_for_request(request_generation, request_policy)
+            .await
+        {
+            Ok(permit) => permit,
+            Err(error)
+                if project_bridge_request_should_restart_after_preemption(
+                    request_policy,
+                    &error,
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let request_bridge_state = bridge_state.clone();
+        let request_app_handle = app_handle.clone();
+        let request_json_for_attempt = request_json.clone();
+        let mut response = tauri::async_runtime::spawn_blocking(move || {
+            let _execution_permit = execution_permit;
+            if request_policy.recycle_read_workers_before_execution {
+                recycle_project_bridge_read_workers(&request_bridge_state)?;
+            }
 
-        let response = match request_policy.concurrency {
-            ProjectBridgeCommandConcurrency::IndependentRead(affinity)
-            | ProjectBridgeCommandConcurrency::AffinityOrdered(affinity)
-            | ProjectBridgeCommandConcurrency::AffinityExclusive(affinity) => {
-                run_project_bridge_read_request(
-                    &app_handle,
+            let response = match request_policy.concurrency {
+                ProjectBridgeCommandConcurrency::IndependentRead(affinity) => {
+                    run_project_bridge_read_request(
+                        &request_app_handle,
+                        &request_bridge_state,
+                        request_generation,
+                        Some(request_read_generation),
+                        request_json_for_attempt,
+                        request_policy,
+                        affinity,
+                    )
+                }
+                ProjectBridgeCommandConcurrency::AffinityOrdered(affinity)
+                | ProjectBridgeCommandConcurrency::AffinityExclusive(affinity) => {
+                    run_project_bridge_read_request(
+                        &request_app_handle,
+                        &request_bridge_state,
+                        request_generation,
+                        None,
+                        request_json_for_attempt,
+                        request_policy,
+                        affinity,
+                    )
+                }
+                ProjectBridgeCommandConcurrency::OwnerOrdered
+                | ProjectBridgeCommandConcurrency::Exclusive => run_project_bridge_request(
+                    &request_app_handle,
                     &request_bridge_state,
                     request_generation,
-                    request_json,
+                    request_json_for_attempt,
                     request_policy,
-                    affinity,
-                )
+                ),
+            };
+            if request_policy.recycle_read_workers_after_execution {
+                let recycle_result = recycle_project_bridge_read_workers(&request_bridge_state);
+                if response.is_ok() {
+                    recycle_result?;
+                }
             }
-            ProjectBridgeCommandConcurrency::OwnerOrdered
-            | ProjectBridgeCommandConcurrency::Exclusive => run_project_bridge_request(
-                &app_handle,
-                &request_bridge_state,
-                request_generation,
-                request_json,
-                request_policy,
-            ),
-        };
-        if request_policy.recycle_read_workers_after_execution {
-            let recycle_result = recycle_project_bridge_read_workers(&request_bridge_state);
-            if response.is_ok() {
-                recycle_result?;
-            }
+            response
+        })
+        .await
+        .map_err(|error| format!("Project bridge request task failed: {error}"))?;
+
+        response = accept_project_bridge_response_for_epoch(
+            &bridge_state,
+            request_generation,
+            request_read_generation,
+            request_policy.concurrency,
+            response,
+        );
+
+        if response.as_ref().is_err_and(|error| {
+            project_bridge_request_should_restart_after_preemption(request_policy, error)
+        }) {
+            // The old read permit has been dropped by the blocking task. Re-admit the same
+            // replay-safe read behind the queued writer using the new read generation so
+            // background preparation recovers without surfacing a false editor error.
+            continue;
         }
-        response
-    })
-    .await
-    .map_err(|error| format!("Project bridge request task failed: {error}"))?
+        return response;
+    }
+}
+
+fn project_bridge_concurrency_is_preemptible_read(
+    concurrency: ProjectBridgeCommandConcurrency,
+) -> bool {
+    matches!(
+        concurrency,
+        ProjectBridgeCommandConcurrency::IndependentRead(_)
+    )
+}
+
+fn project_bridge_request_should_restart_after_preemption(
+    policy: ProjectBridgeRequestPolicy,
+    error: &str,
+) -> bool {
+    error == PROJECT_BRIDGE_READ_PREEMPTED_ERROR
+        && policy.retry_after_transport_failure
+        && project_bridge_concurrency_is_preemptible_read(policy.concurrency)
+}
+
+fn accept_project_bridge_response_for_epoch(
+    bridge_state: &ProjectBridgeState,
+    request_generation: usize,
+    request_read_generation: usize,
+    concurrency: ProjectBridgeCommandConcurrency,
+    response: Result<String, String>,
+) -> Result<String, String> {
+    let request_read_generation = project_bridge_concurrency_is_preemptible_read(concurrency)
+        .then_some(request_read_generation);
+    ensure_project_bridge_request_epoch_is_current(
+        bridge_state,
+        request_generation,
+        request_read_generation,
+    )?;
+    response
 }
 
 fn validate_project_bridge_request_transport(request_json: &str) -> Result<(), String> {
@@ -797,6 +1219,7 @@ fn run_project_bridge_request(
         request_generation,
         &request_json,
         request_policy,
+        None,
         &bridge_state.process,
         || start_project_bridge_process(app_handle, None),
     )
@@ -806,6 +1229,7 @@ fn run_project_bridge_read_request(
     app_handle: &tauri::AppHandle,
     bridge_state: &ProjectBridgeState,
     request_generation: usize,
+    request_read_generation: Option<usize>,
     request_json: String,
     request_policy: ProjectBridgeRequestPolicy,
     affinity: ProjectBridgeReadAffinity,
@@ -817,6 +1241,7 @@ fn run_project_bridge_read_request(
         request_generation,
         &request_json,
         request_policy,
+        request_read_generation,
         process_slot,
         || start_project_bridge_process(app_handle, Some(bridge_state.read_processes.len())),
     )
@@ -827,6 +1252,7 @@ fn run_project_bridge_request_with<F>(
     request_generation: usize,
     request_json: &str,
     request_policy: ProjectBridgeRequestPolicy,
+    request_read_generation: Option<usize>,
     process_slot: &Mutex<Option<Arc<ProjectBridgeProcess>>>,
     mut start_process: F,
 ) -> Result<String, String>
@@ -836,6 +1262,11 @@ where
     let may_retry = request_policy.retry_after_transport_failure;
 
     for attempt in 0..2 {
+        ensure_project_bridge_request_epoch_is_current(
+            bridge_state,
+            request_generation,
+            request_read_generation,
+        )?;
         let process = get_or_start_project_bridge_process(
             bridge_state,
             request_generation,
@@ -847,9 +1278,17 @@ where
             request_generation,
             request_json,
             request_policy.execution_timeout,
+            request_read_generation,
         );
         match request_result {
-            Ok(response) => return Ok(response),
+            Ok(response) => {
+                ensure_project_bridge_request_epoch_is_current(
+                    bridge_state,
+                    request_generation,
+                    request_read_generation,
+                )?;
+                return Ok(response);
+            }
             Err(ProjectBridgeRequestFailure::TimedOut(error)) => return Err(error),
             Err(ProjectBridgeRequestFailure::NonRetryable(error)) => {
                 remove_failed_project_bridge_process(bridge_state, process_slot, &process)?;
@@ -857,7 +1296,11 @@ where
             }
             Err(ProjectBridgeRequestFailure::Retryable(error)) => {
                 remove_failed_project_bridge_process(bridge_state, process_slot, &process)?;
-                ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
+                ensure_project_bridge_request_epoch_is_current(
+                    bridge_state,
+                    request_generation,
+                    request_read_generation,
+                )?;
                 if !may_retry || attempt > 0 {
                     return Err(error);
                 }
@@ -925,6 +1368,7 @@ impl ProjectBridgeProcess {
     fn new(child: Child, stdin: ChildStdin, stdout: ChildStdout) -> Self {
         Self {
             active_request_token: AtomicUsize::new(PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN),
+            active_preemptible_request: AtomicBool::new(false),
             next_request_token: AtomicUsize::new(1),
             child: Mutex::new(Some(child)),
             admission: ProjectBridgeAdmission::default(),
@@ -942,6 +1386,7 @@ impl ProjectBridgeProcess {
         request_generation: usize,
         request_json: &str,
         execution_timeout: Option<Duration>,
+        request_read_generation: Option<usize>,
     ) -> Result<String, ProjectBridgeRequestFailure> {
         let request_token = self.allocate_request_token();
         let _admission = match self.admission.acquire(request_token) {
@@ -957,8 +1402,12 @@ impl ProjectBridgeProcess {
                 "Project bridge I/O lock was poisoned.".to_owned(),
             )
         })?;
-        let _active_request =
-            ProjectBridgeActiveRequest::begin(&self.active_request_token, request_token);
+        let _active_request = ProjectBridgeActiveRequest::begin(
+            &self.active_request_token,
+            &self.active_preemptible_request,
+            request_token,
+            request_read_generation.is_some(),
+        );
         let watchdog = execution_timeout.map(|timeout| {
             ProjectBridgeRequestWatchdog::start(
                 bridge_state.clone(),
@@ -974,6 +1423,8 @@ impl ProjectBridgeProcess {
                 .map(ProjectBridgeRequestWatchdog::request_state),
             generation: bridge_state.generation.clone(),
             request_generation,
+            read_generation: request_read_generation.map(|_| bridge_state.read_generation.clone()),
+            request_read_generation,
         };
 
         let request_result = (|| -> Result<String, ProjectBridgeRequestFailure> {
@@ -1000,8 +1451,12 @@ impl ProjectBridgeProcess {
                 response.pop();
             }
 
-            ensure_project_bridge_request_is_current(bridge_state, request_generation)
-                .map_err(ProjectBridgeRequestFailure::Retryable)?;
+            ensure_project_bridge_request_epoch_is_current(
+                bridge_state,
+                request_generation,
+                request_read_generation,
+            )
+            .map_err(ProjectBridgeRequestFailure::Retryable)?;
             Ok(response)
         })();
         let timed_out = watchdog.is_some_and(ProjectBridgeRequestWatchdog::finish);
@@ -1127,8 +1582,13 @@ fn read_bounded_project_bridge_response(
     buffered_stdout: &mut Vec<u8>,
     cancellation: &ProjectBridgeRequestCancellation,
 ) -> Result<String, ProjectBridgeRequestFailure> {
+    let mut response_scan_offset = 0;
     loop {
-        if let Some(response) = take_project_bridge_response_frame(buffered_stdout)? {
+        cancellation.ensure_active()?;
+        if let Some(response) =
+            take_project_bridge_response_frame(buffered_stdout, &mut response_scan_offset)?
+        {
+            cancellation.ensure_active()?;
             return decode_project_bridge_response(response);
         }
 
@@ -1165,25 +1625,46 @@ fn read_bounded_project_bridge_response(
 
 fn take_project_bridge_response_frame(
     buffered_stdout: &mut Vec<u8>,
+    response_scan_offset: &mut usize,
 ) -> Result<Option<Vec<u8>>, ProjectBridgeRequestFailure> {
-    let newline = buffered_stdout.iter().position(|byte| *byte == b'\n');
-    if let Some(index) = newline {
+    take_project_bridge_response_frame_with_limit(
+        buffered_stdout,
+        response_scan_offset,
+        MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES,
+    )
+}
+
+fn take_project_bridge_response_frame_with_limit(
+    buffered_stdout: &mut Vec<u8>,
+    response_scan_offset: &mut usize,
+    maximum_framed_response_bytes: usize,
+) -> Result<Option<Vec<u8>>, ProjectBridgeRequestFailure> {
+    let search_start = (*response_scan_offset).min(buffered_stdout.len());
+    let newline = buffered_stdout[search_start..]
+        .iter()
+        .position(|byte| *byte == b'\n');
+    if let Some(relative_index) = newline {
+        let index = search_start + relative_index;
         let frame_length = index + 1;
-        if frame_length > MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES {
+        if frame_length > maximum_framed_response_bytes {
             reset_project_bridge_response_buffer(buffered_stdout);
+            *response_scan_offset = 0;
             return Err(project_bridge_response_size_failure());
         }
 
         let remainder = buffered_stdout.split_off(frame_length);
         let response = std::mem::replace(buffered_stdout, remainder);
+        *response_scan_offset = 0;
         return Ok(Some(response));
     }
 
-    if buffered_stdout.len() > MAX_PROJECT_BRIDGE_FRAMED_RESPONSE_BYTES {
+    if buffered_stdout.len() > maximum_framed_response_bytes {
         reset_project_bridge_response_buffer(buffered_stdout);
+        *response_scan_offset = 0;
         return Err(project_bridge_response_size_failure());
     }
 
+    *response_scan_offset = buffered_stdout.len();
     Ok(None)
 }
 
@@ -1248,6 +1729,15 @@ impl ProjectBridgeRequestCancellation {
             return Err(ProjectBridgeRequestFailure::Retryable(
                 PROJECT_BRIDGE_RECYCLED_ERROR.to_owned(),
             ));
+        }
+        if let (Some(read_generation), Some(request_read_generation)) =
+            (&self.read_generation, self.request_read_generation)
+        {
+            if read_generation.load(Ordering::Acquire) != request_read_generation {
+                return Err(ProjectBridgeRequestFailure::Retryable(
+                    PROJECT_BRIDGE_READ_PREEMPTED_ERROR.to_owned(),
+                ));
+            }
         }
 
         Ok(())
@@ -1406,11 +1896,18 @@ unsafe extern "C" {
 }
 
 impl<'a> ProjectBridgeActiveRequest<'a> {
-    fn begin(active_request_token: &'a AtomicUsize, request_token: usize) -> Self {
+    fn begin(
+        active_request_token: &'a AtomicUsize,
+        active_preemptible_request: &'a AtomicBool,
+        request_token: usize,
+        is_preemptible: bool,
+    ) -> Self {
         debug_assert_ne!(request_token, PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN);
+        active_preemptible_request.store(is_preemptible, Ordering::Release);
         active_request_token.store(request_token, Ordering::Release);
         Self {
             active_request_token,
+            active_preemptible_request,
             request_token,
         }
     }
@@ -1418,6 +1915,8 @@ impl<'a> ProjectBridgeActiveRequest<'a> {
 
 impl Drop for ProjectBridgeActiveRequest<'_> {
     fn drop(&mut self) {
+        self.active_preemptible_request
+            .store(false, Ordering::Release);
         let _ = self.active_request_token.compare_exchange(
             self.request_token,
             PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN,
@@ -1500,8 +1999,14 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
     let command = request.get("command")?.as_str()?;
     let concurrency = project_bridge_command_concurrency(command)?;
     let recycles_read_workers = project_bridge_command_recycles_read_workers(command);
-    let recycle_read_workers_before_execution =
-        recycles_read_workers && matches!(concurrency, ProjectBridgeCommandConcurrency::Exclusive);
+    let recycle_read_workers_before_execution = recycles_read_workers
+        && matches!(
+            concurrency,
+            ProjectBridgeCommandConcurrency::Exclusive
+                | ProjectBridgeCommandConcurrency::OwnerOrdered
+        );
+    let writer_priority_before_execution =
+        recycle_read_workers_before_execution || command == "changePlan.create";
     let recycle_read_workers_after_execution = recycles_read_workers
         && matches!(
             concurrency,
@@ -1615,6 +2120,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
         execution_timeout,
         retry_after_transport_failure,
         concurrency,
+        writer_priority_before_execution,
         recycle_read_workers_before_execution,
         recycle_read_workers_after_execution,
     })
@@ -1625,6 +2131,7 @@ fn resolved_project_bridge_request_policy(request_json: &str) -> ProjectBridgeRe
         execution_timeout: Some(PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT),
         retry_after_transport_failure: false,
         concurrency: ProjectBridgeCommandConcurrency::Exclusive,
+        writer_priority_before_execution: false,
         recycle_read_workers_before_execution: false,
         recycle_read_workers_after_execution: false,
     })
@@ -1674,7 +2181,10 @@ fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeComm
             ProjectBridgeReadAffinity::SemanticMerge,
         ));
     }
-    if command == "recipes.export" {
+    if matches!(
+        command,
+        "recipes.export" | "recipes.preview" | "semanticMerge.preview"
+    ) {
         return Some(ProjectBridgeCommandConcurrency::AffinityOrdered(
             ProjectBridgeReadAffinity::SemanticMerge,
         ));
@@ -1684,7 +2194,13 @@ fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeComm
             ProjectBridgeReadAffinity::ResearchLab,
         ));
     }
-    if command == "researchLab.source.close" {
+    if matches!(
+        command,
+        "researchLab.byteWindow"
+            | "researchLab.compare"
+            | "researchLab.source.close"
+            | "researchLab.source.open"
+    ) {
         return Some(ProjectBridgeCommandConcurrency::AffinityOrdered(
             ProjectBridgeReadAffinity::ResearchLab,
         ));
@@ -2025,6 +2541,27 @@ fn timeout_project_bridge_process(
     request_generation: usize,
     timed_out_process: &Arc<ProjectBridgeProcess>,
 ) -> Result<(), String> {
+    // An owner timeout invalidates every sidecar generation, but affinity-ordered work may be
+    // finishing a process-held or file-producing response on a read worker at the same time. Mark
+    // the lifecycle transition before waiting so no new protected request can enter, then wait
+    // without holding the process-lifecycle lock that a protected request may need for recovery.
+    let timed_out_owner = bridge_state
+        .process
+        .lock()
+        .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?
+        .as_ref()
+        .is_some_and(|process| Arc::ptr_eq(process, timed_out_process));
+    let protected_boundary = if timed_out_owner {
+        let boundary = ProjectBridgeReadWorkerCleanup::begin(
+            bridge_state.read_worker_requests.clone(),
+            ProjectBridgeReadWorkerCleanupKind::OwnerTimeout,
+        )?;
+        boundary.wait_for_protected_response_boundary()?;
+        Some(boundary)
+    } else {
+        None
+    };
+
     let _lifecycle = bridge_state
         .process_lifecycle
         .lock()
@@ -2067,7 +2604,9 @@ fn timeout_project_bridge_process(
             removed
         }
     };
-    terminate_project_bridge_processes(removed)
+    let result = terminate_project_bridge_processes(removed);
+    drop(protected_boundary);
+    result
 }
 
 fn create_project_bridge_timeout_error(timeout: Duration) -> String {
@@ -2085,6 +2624,21 @@ fn ensure_project_bridge_request_is_current(
         Ok(())
     } else {
         Err(PROJECT_BRIDGE_RECYCLED_ERROR.to_owned())
+    }
+}
+
+fn ensure_project_bridge_request_epoch_is_current(
+    bridge_state: &ProjectBridgeState,
+    request_generation: usize,
+    request_read_generation: Option<usize>,
+) -> Result<(), String> {
+    ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
+    if request_read_generation.is_some_and(|request_read_generation| {
+        bridge_state.read_generation.load(Ordering::Acquire) != request_read_generation
+    }) {
+        Err(PROJECT_BRIDGE_READ_PREEMPTED_ERROR.to_owned())
+    } else {
+        Ok(())
     }
 }
 
@@ -2528,6 +3082,66 @@ fn recycle_project_bridge_read_workers(bridge_state: &ProjectBridgeState) -> Res
     terminate_project_bridge_processes(take_project_bridge_read_workers_unlocked(bridge_state)?)
 }
 
+fn preempt_project_bridge_read_workers(
+    bridge_state: &ProjectBridgeState,
+) -> Result<ProjectBridgeReadWorkerCleanup, String> {
+    // Register a cleanup boundary before waiting. New disposable readers are rejected behind the
+    // already-queued writer, while protected requests that crossed admission first are allowed to
+    // finish. The condition variable releases its state lock while waiting, and the process
+    // lifecycle lock is acquired only after the protected response boundary, avoiding inversion
+    // with protected transport recovery.
+    let protected_boundary = ProjectBridgeReadWorkerCleanup::begin(
+        bridge_state.read_worker_requests.clone(),
+        ProjectBridgeReadWorkerCleanupKind::WriterPreemption,
+    )?;
+    protected_boundary.wait_for_protected_response_boundary()?;
+    let has_disposable_requests = protected_boundary.has_disposable_requests()?;
+
+    let _lifecycle = bridge_state
+        .process_lifecycle
+        .lock()
+        .map_err(|_| "Project bridge process lifecycle lock was poisoned.".to_owned())?;
+    // Detach active disposable workers before changing the read generation so none can race into
+    // a new process slot. Every writer boundary also invalidates responses that completed their
+    // worker section but have not yet crossed the async command's final acceptance check.
+    let processes = if has_disposable_requests {
+        take_active_preemptible_project_bridge_read_workers_unlocked(bridge_state)?
+    } else {
+        Vec::new()
+    };
+    bridge_state.read_generation.fetch_add(1, Ordering::AcqRel);
+    terminate_project_bridge_processes(processes)?;
+    if has_disposable_requests {
+        // A canceled or otherwise blocked spawn_blocking task may retain its permit after its
+        // sidecar is gone. Revoking the registered read guards lets the queued writer proceed while
+        // stale cleanup remains fenced by the old read generation.
+        bridge_state
+            .read_worker_requests
+            .revoke_disposable_execution_guards()?;
+    }
+    Ok(protected_boundary)
+}
+
+fn take_active_preemptible_project_bridge_read_workers_unlocked(
+    bridge_state: &ProjectBridgeState,
+) -> Result<Vec<Arc<ProjectBridgeProcess>>, String> {
+    let mut processes = Vec::with_capacity(bridge_state.read_processes.len());
+    for process_slot in bridge_state.read_processes.iter() {
+        let mut current = process_slot
+            .lock()
+            .map_err(|_| "Project bridge read-worker lock was poisoned.".to_owned())?;
+        if current
+            .as_ref()
+            .is_some_and(|process| process.active_preemptible_request.load(Ordering::Acquire))
+        {
+            if let Some(process) = current.take() {
+                processes.push(process);
+            }
+        }
+    }
+    Ok(processes)
+}
+
 fn take_project_bridge_read_workers_unlocked(
     bridge_state: &ProjectBridgeState,
 ) -> Result<Vec<Arc<ProjectBridgeProcess>>, String> {
@@ -2591,6 +3205,7 @@ pub fn run() {
         })
         .manage(SupportSearchState::default())
         .manage(ProjectBridgeState::default())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -2799,6 +3414,7 @@ mod tests {
             Some(PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT)
         );
         assert!(!policy.retry_after_transport_failure);
+        assert!(!policy.writer_priority_before_execution);
         assert!(!policy.recycle_read_workers_before_execution);
         assert!(!policy.recycle_read_workers_after_execution);
     }
@@ -2904,6 +3520,75 @@ mod tests {
                 "{command} is stateless or recreates its exact immutable revision and should remain replayable"
             );
         }
+    }
+
+    #[test]
+    fn process_held_read_commands_are_protected_and_preemption_obeys_replay_policy() {
+        for command in [
+            "semanticMerge.preview",
+            "recipes.preview",
+            "researchLab.source.open",
+            "researchLab.compare",
+            "researchLab.byteWindow",
+        ] {
+            let policy = project_bridge_request_policy(&format!(r#"{{"command":"{command}"}}"#))
+                .unwrap_or_else(|| panic!("missing request policy for {command}"));
+            assert!(matches!(
+                policy.concurrency,
+                ProjectBridgeCommandConcurrency::AffinityOrdered(_)
+            ));
+            assert!(!policy.retry_after_transport_failure);
+            assert!(
+                !project_bridge_request_should_restart_after_preemption(
+                    policy,
+                    PROJECT_BRIDGE_READ_PREEMPTED_ERROR,
+                ),
+                "{command} must not replay after losing process-held state"
+            );
+        }
+
+        let replayable = project_bridge_request_policy(
+            r#"{"command":"project.sourceRevision.read","requestId":"read"}"#,
+        )
+        .expect("replay-safe read policy");
+        assert!(project_bridge_request_should_restart_after_preemption(
+            replayable,
+            PROJECT_BRIDGE_READ_PREEMPTED_ERROR,
+        ));
+
+        let non_replayable_read = ProjectBridgeRequestPolicy {
+            execution_timeout: Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
+            retry_after_transport_failure: false,
+            concurrency: ProjectBridgeCommandConcurrency::IndependentRead(
+                ProjectBridgeReadAffinity::GeneralProject,
+            ),
+            writer_priority_before_execution: false,
+            recycle_read_workers_before_execution: false,
+            recycle_read_workers_after_execution: false,
+        };
+        assert!(!project_bridge_request_should_restart_after_preemption(
+            non_replayable_read,
+            PROJECT_BRIDGE_READ_PREEMPTED_ERROR,
+        ));
+    }
+
+    #[test]
+    fn change_plan_creation_has_writer_priority_without_leaving_the_owner_process() {
+        let policy =
+            project_bridge_request_policy(r#"{"command":"changePlan.create","requestId":"plan"}"#)
+                .expect("change-plan creation policy");
+        assert_eq!(
+            policy.concurrency,
+            ProjectBridgeCommandConcurrency::OwnerOrdered
+        );
+        assert!(policy.writer_priority_before_execution);
+        assert!(!policy.recycle_read_workers_before_execution);
+        assert!(!policy.recycle_read_workers_after_execution);
+        assert!(policy.retry_after_transport_failure);
+        assert_eq!(
+            policy.execution_timeout,
+            Some(PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT)
+        );
     }
 
     #[test]
@@ -3120,6 +3805,8 @@ mod tests {
             request_state: Some(request_state),
             generation: bridge_state.generation.clone(),
             request_generation: bridge_state.generation.load(Ordering::Acquire),
+            read_generation: None,
+            request_read_generation: None,
         };
         let wait_was_called = Arc::new(AtomicBool::new(false));
         let wait_was_called_by_closure = wait_was_called.clone();
@@ -3153,6 +3840,8 @@ mod tests {
             request_state: None,
             generation: bridge_state.generation.clone(),
             request_generation,
+            read_generation: None,
+            request_read_generation: None,
         };
         bridge_state.generation.fetch_add(1, Ordering::AcqRel);
 
@@ -3168,16 +3857,51 @@ mod tests {
     }
 
     #[test]
+    fn preempted_read_generation_rejects_an_already_buffered_response() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+        let cancellation = ProjectBridgeRequestCancellation {
+            request_state: None,
+            generation: bridge_state.generation.clone(),
+            request_generation,
+            read_generation: Some(bridge_state.read_generation.clone()),
+            request_read_generation: Some(request_read_generation),
+        };
+        bridge_state.read_generation.fetch_add(1, Ordering::AcqRel);
+        let mut child = spawn_partial_response_fixture();
+        let mut stdout = child
+            .stdout
+            .take()
+            .expect("buffered-response fixture stdout");
+        let mut buffered = b"stale-response\n".to_vec();
+
+        let result =
+            read_bounded_project_bridge_response(&mut stdout, &mut buffered, &cancellation);
+        assert!(matches!(
+            result,
+            Err(ProjectBridgeRequestFailure::Retryable(error))
+                if error == PROJECT_BRIDGE_READ_PREEMPTED_ERROR
+        ));
+        assert_eq!(
+            buffered, b"stale-response\n",
+            "cancellation must win before a buffered stale frame is extracted"
+        );
+        child.wait().expect("reap buffered-response fixture");
+    }
+
+    #[test]
     fn response_framing_retains_bytes_for_the_next_ordered_request() {
         let mut buffered = b"{\"first\":true}\r\n{\"second\":true}\n".to_vec();
-        let first = take_project_bridge_response_frame(&mut buffered)
+        let mut response_scan_offset = 0;
+        let first = take_project_bridge_response_frame(&mut buffered, &mut response_scan_offset)
             .expect("the first frame should be valid")
             .expect("the first frame should be complete");
         assert_eq!(
             decode_project_bridge_response(first).expect("decode the first response"),
             r#"{"first":true}"#
         );
-        let second = take_project_bridge_response_frame(&mut buffered)
+        let second = take_project_bridge_response_frame(&mut buffered, &mut response_scan_offset)
             .expect("the second frame should be valid")
             .expect("the second frame should be complete");
         assert_eq!(
@@ -3185,6 +3909,71 @@ mod tests {
             r#"{"second":true}"#
         );
         assert!(buffered.is_empty());
+        assert_eq!(response_scan_offset, 0);
+    }
+
+    #[test]
+    fn response_framing_scans_large_frames_incrementally() {
+        let mut buffered = Vec::with_capacity(PROJECT_BRIDGE_EXPECTED_RESPONSE_BYTES + 1);
+        let mut response_scan_offset = 0;
+
+        while buffered.len() < PROJECT_BRIDGE_EXPECTED_RESPONSE_BYTES {
+            let next_length = buffered
+                .len()
+                .saturating_add(PROJECT_BRIDGE_READ_CHUNK_BYTES)
+                .min(PROJECT_BRIDGE_EXPECTED_RESPONSE_BYTES);
+            buffered.resize(next_length, b'x');
+            assert!(
+                take_project_bridge_response_frame(&mut buffered, &mut response_scan_offset)
+                    .expect("a bounded partial frame should remain valid")
+                    .is_none()
+            );
+            assert_eq!(
+                response_scan_offset,
+                buffered.len(),
+                "the next scan must start after every byte already inspected"
+            );
+        }
+
+        buffered.push(b'\n');
+        let response = take_project_bridge_response_frame(&mut buffered, &mut response_scan_offset)
+            .expect("the expected large frame should be valid")
+            .expect("the expected large frame should be complete");
+        assert_eq!(response.len(), PROJECT_BRIDGE_EXPECTED_RESPONSE_BYTES + 1);
+        assert!(buffered.is_empty());
+        assert_eq!(response_scan_offset, 0);
+    }
+
+    #[test]
+    fn response_framing_enforces_the_exact_frame_limit() {
+        const TEST_FRAME_LIMIT: usize = 8;
+        let mut exact = b"1234567\n".to_vec();
+        let mut exact_scan_offset = 0;
+        let response = take_project_bridge_response_frame_with_limit(
+            &mut exact,
+            &mut exact_scan_offset,
+            TEST_FRAME_LIMIT,
+        )
+        .expect("an exact-limit frame should be valid")
+        .expect("an exact-limit frame should be complete");
+        assert_eq!(response, b"1234567\n");
+        assert!(exact.is_empty());
+        assert_eq!(exact_scan_offset, 0);
+
+        let mut oversized = b"12345678\n".to_vec();
+        let mut oversized_scan_offset = 0;
+        let result = take_project_bridge_response_frame_with_limit(
+            &mut oversized,
+            &mut oversized_scan_offset,
+            TEST_FRAME_LIMIT,
+        );
+        assert!(matches!(
+            result,
+            Err(ProjectBridgeRequestFailure::NonRetryable(error))
+                if error.contains("exceeded the supported size limit")
+        ));
+        assert!(oversized.is_empty());
+        assert_eq!(oversized_scan_offset, 0);
     }
 
     #[test]
@@ -3195,6 +3984,8 @@ mod tests {
             request_state: None,
             generation: bridge_state.generation.clone(),
             request_generation,
+            read_generation: None,
+            request_read_generation: None,
         };
         let mut child = spawn_partial_response_fixture();
         let mut stdout = child.stdout.take().expect("partial fixture stdout");
@@ -3237,6 +4028,7 @@ mod tests {
                             request_generation,
                             &request,
                             Some(Duration::from_secs(5)),
+                            None,
                         )
                         .unwrap_or_else(|error| {
                             panic!("request {request_index} failed: {error:?}")
@@ -3263,6 +4055,7 @@ mod tests {
             concurrency: ProjectBridgeCommandConcurrency::IndependentRead(
                 ProjectBridgeReadAffinity::GeneralProject,
             ),
+            writer_priority_before_execution: false,
             recycle_read_workers_before_execution: false,
             recycle_read_workers_after_execution: false,
         };
@@ -3272,6 +4065,7 @@ mod tests {
             request_generation,
             request,
             policy,
+            None,
             &bridge_state.process,
             || {
                 starts += 1;
@@ -3315,6 +4109,7 @@ mod tests {
                 request_generation,
                 request,
                 policy,
+                None,
                 &request_state.process,
                 || Ok(spawn_delayed_echo_project_bridge_fixture()),
             );
@@ -3379,6 +4174,7 @@ mod tests {
             request_generation,
             &request,
             Some(Duration::from_millis(50)),
+            None,
         );
         assert!(matches!(
             result,
@@ -3456,6 +4252,966 @@ mod tests {
         waiting.join().expect("lifecycle waiter thread");
         detached.terminate().expect("terminate detached fixture");
         recycle_project_bridge_process(&bridge_state).expect("terminate replacement fixture");
+    }
+
+    #[test]
+    fn process_pool_reuses_its_bounded_slots_and_recycles_every_child() {
+        const READ_WORKER_LIMIT: usize = 4;
+        assert_eq!(
+            MAX_PROJECT_BRIDGE_PARALLEL_READ_WORKERS, READ_WORKER_LIMIT,
+            "raising the process ceiling requires an explicit memory and lifecycle review"
+        );
+        assert!((1..=READ_WORKER_LIMIT).contains(&project_bridge_parallel_read_worker_limit()));
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(READ_WORKER_LIMIT);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let affinities = [
+            ProjectBridgeReadAffinity::SemanticExplore,
+            ProjectBridgeReadAffinity::BalanceLab,
+            ProjectBridgeReadAffinity::GameModules,
+            ProjectBridgeReadAffinity::GuidedDesign,
+            ProjectBridgeReadAffinity::SemanticMerge,
+            ProjectBridgeReadAffinity::ResearchLab,
+            ProjectBridgeReadAffinity::Workflow(0),
+            ProjectBridgeReadAffinity::Workflow(1),
+            ProjectBridgeReadAffinity::GeneralProject,
+        ];
+        let mut owner_starts = 0;
+        let mut read_worker_starts = 0;
+
+        for _ in 0..3 {
+            get_or_start_project_bridge_process(
+                &bridge_state,
+                request_generation,
+                &bridge_state.process,
+                &mut || {
+                    owner_starts += 1;
+                    Ok(spawn_echo_project_bridge_fixture())
+                },
+            )
+            .expect("reuse the owning bridge process");
+
+            for affinity in affinities {
+                let process_index = affinity.stable_index() % bridge_state.read_processes.len();
+                get_or_start_project_bridge_process(
+                    &bridge_state,
+                    request_generation,
+                    &bridge_state.read_processes[process_index],
+                    &mut || {
+                        read_worker_starts += 1;
+                        Ok(spawn_echo_project_bridge_fixture())
+                    },
+                )
+                .expect("reuse the bounded read-worker slot");
+            }
+        }
+
+        assert_eq!(owner_starts, 1, "the owner process must be long-lived");
+        assert_eq!(
+            read_worker_starts, READ_WORKER_LIMIT,
+            "affinities must reuse the fixed read-worker slots"
+        );
+        assert_eq!(bridge_state.read_processes.len(), READ_WORKER_LIMIT);
+        assert!(bridge_state
+            .process
+            .lock()
+            .expect("owner process slot")
+            .is_some());
+        assert_eq!(
+            bridge_state
+                .read_processes
+                .iter()
+                .filter(|slot| slot.lock().expect("read-worker slot").is_some())
+                .count(),
+            READ_WORKER_LIMIT
+        );
+
+        recycle_project_bridge_process(&bridge_state).expect("recycle the complete bridge pool");
+        assert!(bridge_state
+            .process
+            .lock()
+            .expect("owner process slot")
+            .is_none());
+        assert!(bridge_state
+            .read_processes
+            .iter()
+            .all(|slot| slot.lock().expect("read-worker slot").is_none()));
+    }
+
+    #[test]
+    fn durable_writer_preempts_only_read_work_and_the_read_restarts_after_output() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            let read_request = r#"{"command":"project.sourceRevision.read","requestId":"read"}"#;
+            let read_policy = project_bridge_request_policy(read_request).expect("read policy");
+            assert!(project_bridge_concurrency_is_preemptible_read(
+                read_policy.concurrency
+            ));
+
+            let owner = Arc::new(spawn_echo_project_bridge_fixture());
+            *bridge_state.process.lock().expect("owner process slot") = Some(owner.clone());
+            let read_process = Arc::new(spawn_silent_project_bridge_fixture());
+            *bridge_state.read_processes[0]
+                .lock()
+                .expect("read process slot") = Some(read_process.clone());
+
+            let read_state = bridge_state.clone();
+            let (read_result_sender, read_result_receiver) = mpsc::channel();
+            let read_thread = std::thread::spawn(move || {
+                let permit = tauri::async_runtime::block_on(
+                    read_state.acquire_execution_permit_for_generation(
+                        request_generation,
+                        read_policy.concurrency,
+                    ),
+                )
+                .expect("admit long read");
+                let result = run_project_bridge_request_with(
+                    &read_state,
+                    request_generation,
+                    read_request,
+                    read_policy,
+                    Some(request_read_generation),
+                    &read_state.read_processes[0],
+                    || panic!("the preempted generation must not start another worker"),
+                );
+                drop(permit);
+                read_result_sender.send(result).expect("send read result");
+            });
+            wait_for_active_project_bridge_request(&read_process);
+
+            let write_request = r#"{"command":"changePlan.apply","requestId":"write"}"#;
+            let write_policy = project_bridge_request_policy(write_request).expect("write policy");
+            assert!(write_policy.recycle_read_workers_before_execution);
+            let started = Instant::now();
+            let write_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, write_policy)
+                .await
+                .expect("durable writer must acquire after canceling the disposable read");
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "a durable writer must not inherit the read operation's multi-minute timeout"
+            );
+            let read_error = read_result_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("preempted read must release its permit")
+                .expect_err("the old read generation must not publish a response");
+            assert_eq!(read_error, PROJECT_BRIDGE_READ_PREEMPTED_ERROR);
+            read_thread.join().expect("preempted read thread");
+            assert!(bridge_state.read_processes[0]
+                .lock()
+                .expect("read process slot")
+                .is_none());
+            assert!(bridge_state
+                .process
+                .lock()
+                .expect("owner process slot")
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &owner)));
+
+            drop(write_permit);
+            let restarted_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            assert_ne!(restarted_read_generation, request_read_generation);
+            let restarted_permit = bridge_state
+                .acquire_execution_permit_for_generation(
+                    request_generation,
+                    read_policy.concurrency,
+                )
+                .await
+                .expect("read must restart after output");
+            let restarted_response = run_project_bridge_request_with(
+                &bridge_state,
+                request_generation,
+                read_request,
+                read_policy,
+                Some(restarted_read_generation),
+                &bridge_state.read_processes[0],
+                || Ok(spawn_echo_project_bridge_fixture()),
+            )
+            .expect("fresh read generation");
+            assert_eq!(restarted_response, read_request);
+            drop(restarted_permit);
+
+            let owner_probe = r#"{"requestId":"owner-still-alive"}"#;
+            assert_eq!(
+                owner
+                    .request(
+                        &bridge_state,
+                        request_generation,
+                        owner_probe,
+                        Some(Duration::from_secs(5)),
+                        None,
+                    )
+                    .expect("writer preemption must never terminate the owner"),
+                owner_probe
+            );
+            recycle_project_bridge_process(&bridge_state).expect("reap bridge fixtures");
+        });
+    }
+
+    #[test]
+    fn durable_writer_revokes_a_detached_blocking_reads_execution_guard() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let read_policy = project_bridge_request_policy(
+                r#"{"command":"project.sourceRevision.read","requestId":"read"}"#,
+            )
+            .expect("read policy");
+            let read_permit = bridge_state
+                .acquire_execution_permit_for_generation(
+                    request_generation,
+                    read_policy.concurrency,
+                )
+                .await
+                .expect("admit detached blocking read");
+            let (started_sender, started_receiver) = mpsc::channel();
+            let (release_sender, release_receiver) = mpsc::channel();
+            let (finished_sender, finished_receiver) = mpsc::channel();
+            let cleanup_finished = Arc::new(AtomicBool::new(false));
+            let cleanup_finished_task = cleanup_finished.clone();
+            let read_task = tauri::async_runtime::spawn_blocking(move || {
+                started_sender.send(()).expect("signal blocking read");
+                release_receiver.recv().expect("release blocking read");
+                drop(read_permit);
+                cleanup_finished_task.store(true, Ordering::Release);
+                finished_sender.send(()).expect("signal read cleanup");
+            });
+            started_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("blocking read starts");
+            drop(read_task);
+
+            let write_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.apply","requestId":"write"}"#,
+            )
+            .expect("writer policy");
+            let write_permit = tokio::time::timeout(
+                Duration::from_secs(5),
+                bridge_state.acquire_execution_permit_for_request(request_generation, write_policy),
+            )
+            .await
+            .expect("writer admission must not inherit blocking cleanup")
+            .expect("writer must revoke the disposable read guard");
+            assert!(
+                !cleanup_finished.load(Ordering::Acquire),
+                "writer must acquire while stale blocking cleanup remains detached"
+            );
+            {
+                let state = bridge_state
+                    .read_worker_requests
+                    .state
+                    .lock()
+                    .expect("inspect revoked disposable read");
+                assert_eq!(state.active_disposable_requests, 1);
+                assert_eq!(state.writer_cleanup_waiters, 0);
+                assert_eq!(state.disposable_execution_guards.len(), 1);
+            }
+
+            drop(write_permit);
+            release_sender.send(()).expect("release stale cleanup");
+            finished_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("stale cleanup finishes");
+            assert!(cleanup_finished.load(Ordering::Acquire));
+            let state = bridge_state
+                .read_worker_requests
+                .state
+                .lock()
+                .expect("inspect completed disposable cleanup");
+            assert_eq!(state.active_disposable_requests, 0);
+            assert!(state.disposable_execution_guards.is_empty());
+        });
+    }
+
+    #[test]
+    fn change_plan_creation_preempts_disposable_analysis_and_preserves_the_owner() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            let read_request = r#"{"command":"project.sourceRevision.read","requestId":"read"}"#;
+            let read_policy = project_bridge_request_policy(read_request).expect("read policy");
+
+            let owner = Arc::new(spawn_echo_project_bridge_fixture());
+            *bridge_state.process.lock().expect("owner process slot") = Some(owner.clone());
+            let read_process = Arc::new(spawn_silent_project_bridge_fixture());
+            *bridge_state.read_processes[0]
+                .lock()
+                .expect("read process slot") = Some(read_process.clone());
+
+            let read_state = bridge_state.clone();
+            let (read_result_sender, read_result_receiver) = mpsc::channel();
+            let read_thread = std::thread::spawn(move || {
+                let permit = tauri::async_runtime::block_on(
+                    read_state.acquire_execution_permit_for_generation(
+                        request_generation,
+                        read_policy.concurrency,
+                    ),
+                )
+                .expect("admit disposable analysis");
+                let result = run_project_bridge_request_with(
+                    &read_state,
+                    request_generation,
+                    read_request,
+                    read_policy,
+                    Some(request_read_generation),
+                    &read_state.read_processes[0],
+                    || panic!("the preempted generation must not start another worker"),
+                );
+                drop(permit);
+                read_result_sender.send(result).expect("send read result");
+            });
+            wait_for_active_project_bridge_request(&read_process);
+
+            let create_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.create","requestId":"plan"}"#,
+            )
+            .expect("change-plan creation policy");
+            let started = Instant::now();
+            let create_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, create_policy)
+                .await
+                .expect("change-plan creation must preempt disposable analysis");
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "change-plan creation must not inherit the analysis timeout"
+            );
+            let read_error = read_result_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("preempted analysis result")
+                .expect_err("the stale analysis generation must not publish");
+            assert_eq!(read_error, PROJECT_BRIDGE_READ_PREEMPTED_ERROR);
+            read_thread.join().expect("analysis thread");
+            assert!(bridge_state.read_processes[0]
+                .lock()
+                .expect("read process slot")
+                .is_none());
+            assert!(bridge_state
+                .process
+                .lock()
+                .expect("owner process slot")
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &owner)));
+
+            drop(create_permit);
+            recycle_project_bridge_process(&bridge_state).expect("reap bridge fixtures");
+        });
+    }
+
+    #[test]
+    fn change_plan_creation_priority_preserves_an_idle_affinity_handle_worker() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(2);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let create_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.create","requestId":"plan"}"#,
+            )
+            .expect("change-plan creation policy");
+            assert!(create_policy.writer_priority_before_execution);
+            assert!(
+                !create_policy.recycle_read_workers_before_execution,
+                "plan creation does not mutate the source revision"
+            );
+
+            let semantic_merge_process = Arc::new(spawn_echo_project_bridge_fixture());
+            let semantic_merge_slot = ProjectBridgeReadAffinity::SemanticMerge.stable_index()
+                % bridge_state.read_processes.len();
+            *bridge_state.read_processes[semantic_merge_slot]
+                .lock()
+                .expect("semantic-merge worker slot") = Some(semantic_merge_process.clone());
+
+            let create_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, create_policy)
+                .await
+                .expect("admit prioritized plan creation");
+            assert!(bridge_state.read_processes[semantic_merge_slot]
+                .lock()
+                .expect("semantic-merge worker slot")
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &semantic_merge_process)));
+
+            drop(create_permit);
+            recycle_project_bridge_process(&bridge_state).expect("reap affinity fixture");
+        });
+    }
+
+    #[test]
+    fn writer_boundary_invalidates_a_completed_read_before_outer_delivery() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let completed_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            let read_policy = project_bridge_request_policy(
+                r#"{"command":"project.sourceRevision.read","requestId":"read"}"#,
+            )
+            .expect("read policy");
+
+            // Model the gap after the blocking worker has produced its response and released its
+            // execution permit, but before project_bridge performs its final async acceptance.
+            let completed_read_permit = bridge_state
+                .acquire_execution_permit_for_generation(
+                    request_generation,
+                    read_policy.concurrency,
+                )
+                .await
+                .expect("admit completed read");
+            drop(completed_read_permit);
+            assert_eq!(
+                bridge_state
+                    .read_worker_requests
+                    .state
+                    .lock()
+                    .expect("inspect read-worker requests")
+                    .active_disposable_requests,
+                0
+            );
+
+            let write_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.apply","requestId":"write"}"#,
+            )
+            .expect("writer policy");
+            let write_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, write_policy)
+                .await
+                .expect("admit writer boundary");
+
+            assert_ne!(
+                bridge_state.read_generation.load(Ordering::Acquire),
+                completed_read_generation,
+                "a writer must invalidate even a response no longer counted as active"
+            );
+            assert_eq!(
+                ensure_project_bridge_request_epoch_is_current(
+                    &bridge_state,
+                    request_generation,
+                    Some(completed_read_generation),
+                )
+                .expect_err("the completed response must fail final acceptance"),
+                PROJECT_BRIDGE_READ_PREEMPTED_ERROR
+            );
+            drop(write_permit);
+        });
+    }
+
+    #[test]
+    fn global_recycle_rejects_a_completed_owner_response_before_outer_delivery() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            let owner_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.create","requestId":"plan"}"#,
+            )
+            .expect("owner policy");
+
+            // Model the gap after the blocking owner request has produced its response and
+            // released its permit, but before project_bridge accepts the async task result.
+            let completed_owner_permit = bridge_state
+                .acquire_execution_permit_for_generation(
+                    request_generation,
+                    owner_policy.concurrency,
+                )
+                .await
+                .expect("admit completed owner request");
+            let completed_response = Ok("completed-owner-response".to_owned());
+            drop(completed_owner_permit);
+            bridge_state.generation.fetch_add(1, Ordering::AcqRel);
+
+            let error = accept_project_bridge_response_for_epoch(
+                &bridge_state,
+                request_generation,
+                request_read_generation,
+                owner_policy.concurrency,
+                completed_response,
+            )
+            .expect_err("the recycled owner response must fail outer acceptance");
+            assert_eq!(error, PROJECT_BRIDGE_RECYCLED_ERROR);
+            assert!(
+                !project_bridge_request_should_restart_after_preemption(owner_policy, &error),
+                "a global recycle must never transparently replay an owner command"
+            );
+        });
+    }
+
+    #[test]
+    fn writer_cleanup_covers_the_read_guard_to_registration_gap() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let write_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.apply","requestId":"write"}"#,
+            )
+            .expect("writer policy");
+
+            // Model an IndependentRead that acquired its fair-gate guard and was descheduled
+            // immediately before registering as disposable.
+            let unregistered_read_guard = bridge_state.execution_gate.clone().read_owned().await;
+            let writer_state = bridge_state.clone();
+            let (writer_result_sender, writer_result_receiver) = mpsc::channel();
+            let writer_thread = std::thread::spawn(move || {
+                let result = tauri::async_runtime::block_on(
+                    writer_state
+                        .acquire_execution_permit_for_request(request_generation, write_policy),
+                );
+                writer_result_sender
+                    .send(result)
+                    .expect("send writer admission result");
+            });
+
+            let cleanup_deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let cleanup_waiters = bridge_state
+                    .read_worker_requests
+                    .state
+                    .lock()
+                    .expect("inspect writer cleanup")
+                    .writer_cleanup_waiters;
+                if cleanup_waiters == 1 {
+                    break;
+                }
+                assert!(
+                    Instant::now() < cleanup_deadline,
+                    "writer did not establish its cleanup boundary"
+                );
+                std::thread::yield_now();
+            }
+
+            let registration_error = ProjectBridgeReadWorkerRequest::begin(
+                bridge_state.read_worker_requests.clone(),
+                ProjectBridgeReadWorkerRequestKind::Disposable,
+                None,
+            )
+            .expect_err("the admission-gap read must be preempted");
+            assert_eq!(registration_error, PROJECT_BRIDGE_READ_PREEMPTED_ERROR);
+            assert_eq!(
+                bridge_state
+                    .read_worker_requests
+                    .state
+                    .lock()
+                    .expect("inspect retained writer cleanup")
+                    .writer_cleanup_waiters,
+                1,
+                "cleanup must remain registered until the writer owns the gate"
+            );
+
+            drop(unregistered_read_guard);
+            let writer_permit = writer_result_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("writer admission result")
+                .expect("writer acquires after the admission-gap guard drops");
+            assert_eq!(
+                bridge_state
+                    .read_worker_requests
+                    .state
+                    .lock()
+                    .expect("inspect completed writer cleanup")
+                    .writer_cleanup_waiters,
+                0
+            );
+            drop(writer_permit);
+            writer_thread.join().expect("writer admission thread");
+        });
+    }
+
+    #[test]
+    fn durable_writer_waits_for_protected_work_then_preempts_disposable_analysis() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(2);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            let read_request = r#"{"command":"project.sourceRevision.read","requestId":"read"}"#;
+            let read_policy = project_bridge_request_policy(read_request).expect("read policy");
+            let protected_request =
+                r#"{"command":"researchLab.source.close","requestId":"protected"}"#;
+            let protected_policy =
+                project_bridge_request_policy(protected_request).expect("protected policy");
+            assert_eq!(
+                read_policy.concurrency,
+                ProjectBridgeCommandConcurrency::IndependentRead(
+                    ProjectBridgeReadAffinity::SemanticExplore
+                )
+            );
+            assert_eq!(
+                protected_policy.concurrency,
+                ProjectBridgeCommandConcurrency::AffinityOrdered(
+                    ProjectBridgeReadAffinity::ResearchLab
+                )
+            );
+
+            let read_process = Arc::new(spawn_silent_project_bridge_fixture());
+            *bridge_state.read_processes[0]
+                .lock()
+                .expect("read process slot") = Some(read_process.clone());
+            let protected_process = Arc::new(spawn_delayed_echo_project_bridge_fixture());
+            *bridge_state.read_processes[1]
+                .lock()
+                .expect("protected process slot") = Some(protected_process.clone());
+
+            let read_state = bridge_state.clone();
+            let (read_result_sender, read_result_receiver) = mpsc::channel();
+            let read_thread = std::thread::spawn(move || {
+                let permit = tauri::async_runtime::block_on(
+                    read_state.acquire_execution_permit_for_generation(
+                        request_generation,
+                        read_policy.concurrency,
+                    ),
+                )
+                .expect("admit disposable analysis");
+                let result = run_project_bridge_request_with(
+                    &read_state,
+                    request_generation,
+                    read_request,
+                    read_policy,
+                    Some(request_read_generation),
+                    &read_state.read_processes[0],
+                    || panic!("the preempted generation must not start another worker"),
+                );
+                drop(permit);
+                read_result_sender.send(result).expect("send read result");
+            });
+            wait_for_active_project_bridge_request(&read_process);
+
+            let protected_state = bridge_state.clone();
+            let (protected_result_sender, protected_result_receiver) = mpsc::channel();
+            let protected_thread = std::thread::spawn(move || {
+                let permit = tauri::async_runtime::block_on(
+                    protected_state.acquire_execution_permit_for_generation(
+                        request_generation,
+                        protected_policy.concurrency,
+                    ),
+                )
+                .expect("admit protected request");
+                let result = run_project_bridge_request_with(
+                    &protected_state,
+                    request_generation,
+                    protected_request,
+                    protected_policy,
+                    None,
+                    &protected_state.read_processes[1],
+                    || panic!("the protected process already exists"),
+                );
+                drop(permit);
+                protected_result_sender
+                    .send(result)
+                    .expect("send protected result");
+            });
+            wait_for_active_project_bridge_request(&protected_process);
+
+            let write_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.apply","requestId":"write"}"#,
+            )
+            .expect("writer policy");
+            let started = Instant::now();
+            let write_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, write_policy)
+                .await
+                .expect("writer waits for protected work then preempts analysis");
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "writer must not inherit the disposable analysis timeout"
+            );
+            assert_eq!(
+                protected_result_receiver
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("protected result")
+                    .expect("protected request must finish before preemption"),
+                protected_request
+            );
+            let read_error = read_result_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("preempted analysis result")
+                .expect_err("disposable analysis must be preempted");
+            assert_eq!(read_error, PROJECT_BRIDGE_READ_PREEMPTED_ERROR);
+            protected_thread.join().expect("protected request thread");
+            read_thread.join().expect("analysis thread");
+            assert!(bridge_state.read_processes[0]
+                .lock()
+                .expect("read process slot")
+                .is_none());
+            assert!(bridge_state.read_processes[1]
+                .lock()
+                .expect("protected process slot")
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &protected_process)));
+
+            drop(write_permit);
+            recycle_project_bridge_process(&bridge_state).expect("reap bridge fixtures");
+        });
+    }
+
+    #[test]
+    fn owner_timeout_waits_for_the_protected_read_worker_response_boundary() {
+        let bridge_state = ProjectBridgeState::with_parallel_read_limit(2);
+        let request_generation = bridge_state.generation.load(Ordering::Acquire);
+        let owner = Arc::new(spawn_echo_project_bridge_fixture());
+        *bridge_state.process.lock().expect("owner process slot") = Some(owner.clone());
+
+        let protected_request = r#"{"command":"researchLab.source.close","requestId":"protected"}"#;
+        let protected_policy =
+            project_bridge_request_policy(protected_request).expect("protected policy");
+        let protected_process = Arc::new(spawn_delayed_echo_project_bridge_fixture());
+        *bridge_state.read_processes[1]
+            .lock()
+            .expect("protected process slot") = Some(protected_process.clone());
+
+        let protected_state = bridge_state.clone();
+        let (protected_result_sender, protected_result_receiver) = mpsc::channel();
+        let protected_thread = std::thread::spawn(move || {
+            let permit = tauri::async_runtime::block_on(
+                protected_state.acquire_execution_permit_for_generation(
+                    request_generation,
+                    protected_policy.concurrency,
+                ),
+            )
+            .expect("admit protected request");
+            let result = run_project_bridge_request_with(
+                &protected_state,
+                request_generation,
+                protected_request,
+                protected_policy,
+                None,
+                &protected_state.read_processes[1],
+                || panic!("the protected process already exists"),
+            );
+            drop(permit);
+            protected_result_sender
+                .send(result)
+                .expect("send protected result");
+        });
+        wait_for_active_project_bridge_request(&protected_process);
+        assert_eq!(
+            bridge_state
+                .read_worker_requests
+                .active_protected_requests(),
+            1
+        );
+
+        let timeout_state = bridge_state.clone();
+        let timeout_owner = owner.clone();
+        let (timeout_started_sender, timeout_started_receiver) = mpsc::channel();
+        let (timeout_result_sender, timeout_result_receiver) = mpsc::channel();
+        let timeout_thread = std::thread::spawn(move || {
+            timeout_started_sender
+                .send(())
+                .expect("signal timeout start");
+            let result =
+                timeout_project_bridge_process(&timeout_state, request_generation, &timeout_owner);
+            timeout_result_sender
+                .send(result)
+                .expect("send timeout result");
+        });
+        timeout_started_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timeout thread started");
+        let cleanup_deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let cleanup_waiters = bridge_state
+                .read_worker_requests
+                .state
+                .lock()
+                .expect("inspect read-worker cleanup")
+                .owner_cleanup_waiters;
+            if cleanup_waiters == 1 {
+                break;
+            }
+            assert!(
+                Instant::now() < cleanup_deadline,
+                "owner timeout did not enter the protected response boundary"
+            );
+            std::thread::yield_now();
+        }
+        assert!(
+            timeout_result_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "owner timeout must remain blocked while protected work is active"
+        );
+        assert_eq!(
+            protected_result_receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("protected result")
+                .expect("owner timeout must not interrupt the protected response"),
+            protected_request
+        );
+        timeout_result_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("owner timeout result")
+            .expect("owner timeout cleanup");
+        protected_thread.join().expect("protected request thread");
+        timeout_thread.join().expect("owner timeout thread");
+        assert_ne!(
+            bridge_state.generation.load(Ordering::Acquire),
+            request_generation
+        );
+        assert!(bridge_state
+            .process
+            .lock()
+            .expect("owner process slot")
+            .is_none());
+        assert!(bridge_state
+            .read_processes
+            .iter()
+            .all(|slot| slot.lock().expect("read-worker slot").is_none()));
+    }
+
+    #[test]
+    fn durable_writer_waits_for_a_stateful_read_worker_writer_boundary() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let protected_request = r#"{"command":"semanticMerge.import","requestId":"protected"}"#;
+            let protected_policy =
+                project_bridge_request_policy(protected_request).expect("protected policy");
+            assert!(matches!(
+                protected_policy.concurrency,
+                ProjectBridgeCommandConcurrency::AffinityExclusive(_)
+            ));
+            let protected_process = Arc::new(spawn_delayed_echo_project_bridge_fixture());
+            *bridge_state.read_processes[0]
+                .lock()
+                .expect("protected process slot") = Some(protected_process.clone());
+
+            let protected_state = bridge_state.clone();
+            let (protected_result_sender, protected_result_receiver) = mpsc::channel();
+            let protected_thread = std::thread::spawn(move || {
+                let permit = tauri::async_runtime::block_on(
+                    protected_state.acquire_execution_permit_for_generation(
+                        request_generation,
+                        protected_policy.concurrency,
+                    ),
+                )
+                .expect("admit protected writer");
+                let result = run_project_bridge_request_with(
+                    &protected_state,
+                    request_generation,
+                    protected_request,
+                    protected_policy,
+                    None,
+                    &protected_state.read_processes[0],
+                    || panic!("protected process already exists"),
+                );
+                drop(permit);
+                protected_result_sender
+                    .send(result)
+                    .expect("send protected result");
+            });
+            wait_for_active_project_bridge_request(&protected_process);
+            assert_eq!(
+                bridge_state
+                    .read_worker_requests
+                    .active_protected_requests(),
+                1
+            );
+
+            let write_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.apply","requestId":"write"}"#,
+            )
+            .expect("write policy");
+            let write_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, write_policy)
+                .await
+                .expect("writer waits for the protected response boundary");
+            assert_eq!(
+                protected_result_receiver
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("protected request result")
+                    .expect("protected request must not be killed"),
+                protected_request
+            );
+            protected_thread.join().expect("protected request thread");
+            assert!(bridge_state.read_processes[0]
+                .lock()
+                .expect("protected process slot")
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &protected_process)));
+            drop(write_permit);
+            recycle_project_bridge_process(&bridge_state).expect("reap protected fixture");
+        });
+    }
+
+    #[test]
+    fn durable_writer_does_not_preempt_an_affinity_ordered_file_operation() {
+        tauri::async_runtime::block_on(async {
+            let bridge_state = ProjectBridgeState::with_parallel_read_limit(1);
+            let request_generation = bridge_state.generation.load(Ordering::Acquire);
+            let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+            let protected_request = r#"{"command":"recipes.export","requestId":"export"}"#;
+            let protected_policy =
+                project_bridge_request_policy(protected_request).expect("export policy");
+            assert!(matches!(
+                protected_policy.concurrency,
+                ProjectBridgeCommandConcurrency::AffinityOrdered(_)
+            ));
+            assert!(!project_bridge_concurrency_is_preemptible_read(
+                protected_policy.concurrency
+            ));
+            let protected_process = Arc::new(spawn_delayed_echo_project_bridge_fixture());
+            *bridge_state.read_processes[0]
+                .lock()
+                .expect("export process slot") = Some(protected_process.clone());
+
+            let protected_state = bridge_state.clone();
+            let (protected_result_sender, protected_result_receiver) = mpsc::channel();
+            let protected_thread = std::thread::spawn(move || {
+                let permit = tauri::async_runtime::block_on(
+                    protected_state.acquire_execution_permit_for_generation(
+                        request_generation,
+                        protected_policy.concurrency,
+                    ),
+                )
+                .expect("admit export");
+                let result = run_project_bridge_request_with(
+                    &protected_state,
+                    request_generation,
+                    protected_request,
+                    protected_policy,
+                    None,
+                    &protected_state.read_processes[0],
+                    || panic!("export process already exists"),
+                );
+                drop(permit);
+                protected_result_sender
+                    .send(result)
+                    .expect("send export result");
+            });
+            wait_for_active_project_bridge_request(&protected_process);
+            assert_eq!(
+                bridge_state
+                    .read_worker_requests
+                    .active_protected_requests(),
+                1
+            );
+
+            let write_policy = project_bridge_request_policy(
+                r#"{"command":"changePlan.apply","requestId":"write"}"#,
+            )
+            .expect("write policy");
+            let write_permit = bridge_state
+                .acquire_execution_permit_for_request(request_generation, write_policy)
+                .await
+                .expect("writer waits for export response boundary");
+            assert_eq!(
+                protected_result_receiver
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("export result")
+                    .expect("export must not be killed"),
+                protected_request
+            );
+            protected_thread.join().expect("export thread");
+            assert_ne!(
+                bridge_state.read_generation.load(Ordering::Acquire),
+                request_read_generation,
+                "every writer boundary must invalidate undelivered disposable responses"
+            );
+            assert!(bridge_state.read_processes[0]
+                .lock()
+                .expect("export process slot")
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &protected_process)));
+            drop(write_permit);
+            recycle_project_bridge_process(&bridge_state).expect("reap export fixture");
+        });
     }
 
     #[test]
@@ -3706,6 +5462,19 @@ mod tests {
             assert!(
                 Instant::now() < deadline,
                 "the request did not enter the admission queue"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    fn wait_for_active_project_bridge_request(process: &ProjectBridgeProcess) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while process.active_request_token.load(Ordering::Acquire)
+            == PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN
+        {
+            assert!(
+                Instant::now() < deadline,
+                "the fixture did not begin its bridge request"
             );
             std::thread::yield_now();
         }

@@ -426,6 +426,27 @@ export function createTrainerPartyClipboardRowFromFieldValues(
   );
 }
 
+export function createTrainerPartyClipboardFieldValues(
+  fields: readonly Readonly<{ field: string }>[],
+  getCurrentValue: (field: string) => number | null,
+  drafts?: Readonly<Record<string, string>>
+) {
+  return Object.fromEntries(
+    fields.flatMap((field): Array<[string, string]> => {
+      const currentValue = getCurrentValue(field.field);
+      const draftValue = drafts?.[field.field];
+      if (draftValue !== undefined) {
+        // Null plus blank is unchanged editor state; omit it so the row's canonical
+        // fallback (for example, a sparse move slot's zero) remains authoritative.
+        return currentValue === null && draftValue.trim().length === 0
+          ? []
+          : [[field.field, draftValue]];
+      }
+      return currentValue === null ? [] : [[field.field, currentValue.toString()]];
+    })
+  );
+}
+
 export function applyTrainerPartyClipboardOwnedValues(
   member: TrainerPokemonRecord,
   values: readonly RowClipboardOwnedValue[]

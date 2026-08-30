@@ -11,6 +11,7 @@ import {
   FocusedEditorMetrics,
   FocusedEditorWorkspace
 } from '../../components/FocusedEditorWorkspace';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 
@@ -45,7 +46,14 @@ export function TrainerPoolsSection({
   const [actionFeedback, setActionFeedback] = useState<
     { kind: 'error' | 'success'; message: string } | null
   >(null);
+  usePublishCommonEditorError({
+    domain: 'workflow.trainerPools',
+    field: 'identitySwap',
+    message: actionFeedback?.kind === 'error' ? actionFeedback.message : null
+  });
   const actionFeedbackRef = useRef<HTMLDivElement | null>(null);
+  const selectionRef = useRef({ destination, source });
+  selectionRef.current = { destination, source };
 
   useEffect(() => {
     if (!workflow) {
@@ -190,13 +198,26 @@ export function TrainerPoolsSection({
             disabled={!canStage}
             onClick={async () => {
               if (!source || !destination) return;
+              const requestedSource = source;
+              const requestedDestination = destination;
               setActionFeedback(null);
-              const didSucceed = await onStageSwap({
-                destinationLogicalPoolId: destination.logicalPoolId,
-                destinationRawTrainerId: destination.rawTrainerId,
-                sourceLogicalPoolId: source.logicalPoolId,
-                sourceRawTrainerId: source.rawTrainerId
-              });
+              let didSucceed = false;
+              try {
+                didSucceed = await onStageSwap({
+                  destinationLogicalPoolId: destination.logicalPoolId,
+                  destinationRawTrainerId: destination.rawTrainerId,
+                  sourceLogicalPoolId: source.logicalPoolId,
+                  sourceRawTrainerId: source.rawTrainerId
+                });
+              } catch {
+                didSucceed = false;
+              }
+              if (
+                !sameSelection(selectionRef.current.source, requestedSource) ||
+                !sameSelection(selectionRef.current.destination, requestedDestination)
+              ) {
+                return;
+              }
               setActionFeedback({
                 kind: didSucceed ? 'success' : 'error',
                 message: didSucceed
@@ -343,6 +364,14 @@ function keepValidSelection(
   if (!selection) return null;
   const pool = findPool(pools, selection.logicalPoolId);
   return findMember(pool, selection.rawTrainerId) ? selection : null;
+}
+
+function sameSelection(
+  left: PoolMemberSelection | null,
+  right: PoolMemberSelection | null
+) {
+  return left?.logicalPoolId === right?.logicalPoolId &&
+    left?.rawTrainerId === right?.rawTrainerId;
 }
 
 function findPool(pools: readonly TrainerPoolRecord[], logicalPoolId: string | null) {

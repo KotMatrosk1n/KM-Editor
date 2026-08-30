@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ClipboardCheck, Save, Sparkle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type ShinyRateMode,
@@ -13,7 +13,9 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FieldLabel } from '../../components/FieldLabel';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import {
   formatFileState,
@@ -62,7 +64,11 @@ export function ShinyRateSection({
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
   onDirtyChange: (isDirty: boolean) => void;
-  onStageRate: (mode: ShinyRateMode, rollCount: number | null) => void;
+  onStageRate: (
+    mode: ShinyRateMode,
+    rollCount: number | null,
+    isSubmittedDraftCurrent: () => boolean
+  ) => void;
   panelOutput: WorkflowPanelOutput;
   workflow: ShinyRateWorkflow | null;
 }) {
@@ -75,32 +81,92 @@ export function ShinyRateSection({
   const cleanSelection = stagedSelection ?? workflowSelection;
   const cleanSelectionKey = getSelectionKey(cleanSelection);
   const customDenominatorBaseline = getCustomDenominatorBaseline(cleanSelection, workflow);
+  const draftIdentityKey = [
+    workflow?.detectedGame ?? 'unknown',
+    workflow?.buildId ?? 'unknown',
+    workflow?.functionOffsetHex ?? 'unknown'
+  ].join('|');
   const [draftSelection, setDraftSelection] = useState<ShinyRateSelection>(cleanSelection);
   const [customDenominator, setCustomDenominator] = useState(
     customDenominatorBaseline.toString()
   );
+  const draftContextSignature = JSON.stringify([
+    draftIdentityKey,
+    cleanSelectionKey,
+    getSelectionKey(draftSelection),
+    customDenominator
+  ]);
+  const draftContextSignatureRef = useRef(draftContextSignature);
+  draftContextSignatureRef.current = draftContextSignature;
+  const draftContextIsActiveRef = useRef(true);
+  const sourceSelectionRef = useRef({
+    identityKey: draftIdentityKey,
+    selection: cleanSelection
+  });
+  const sourceDenominatorRef = useRef({
+    identityKey: draftIdentityKey,
+    value: customDenominatorBaseline.toString()
+  });
 
   useEffect(() => {
-    setDraftSelection(cleanSelection);
-  }, [cleanSelectionKey]);
+    draftContextIsActiveRef.current = true;
+    return () => {
+      draftContextIsActiveRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
-    setCustomDenominator(customDenominatorBaseline.toString());
-  }, [customDenominatorBaseline]);
+    const previous = sourceSelectionRef.current;
+    setDraftSelection((current) =>
+      previous.identityKey !== draftIdentityKey
+        ? cleanSelection
+        : reconcileSourceBackedDraft(
+            current,
+            previous.selection,
+            cleanSelection,
+            (left, right) => getSelectionKey(left) === getSelectionKey(right)
+          )
+    );
+    sourceSelectionRef.current = { identityKey: draftIdentityKey, selection: cleanSelection };
+  // cleanSelectionKey is the stable source trigger; cleanSelection is derived each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanSelectionKey, draftIdentityKey]);
+
+  useEffect(() => {
+    const nextValue = customDenominatorBaseline.toString();
+    const previous = sourceDenominatorRef.current;
+    setCustomDenominator((current) =>
+      previous.identityKey !== draftIdentityKey
+        ? nextValue
+        : reconcileSourceBackedDraft(
+            current,
+            previous.value,
+            nextValue,
+            Object.is
+          )
+    );
+    sourceDenominatorRef.current = { identityKey: draftIdentityKey, value: nextValue };
+  }, [customDenominatorBaseline, draftIdentityKey]);
 
   const customCalculation = useMemo(
     () => calculateCustomRate(customDenominator, workflow),
     [customDenominator, workflow]
   );
+  usePublishCommonEditorError({
+    domain: 'workflow.shinyRate',
+    field: 'customDenominator',
+    message:
+      workflow !== null && customCalculation === null
+        ? translateLiteral('Enter odds from 1/2 to 1/4096.')
+        : null
+  });
   const isDirty = getSelectionKey(draftSelection) !== cleanSelectionKey;
   const hasStagedChange = stagedSelection !== null;
+  const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
   const canEdit =
     workflow?.summary.availability === 'available' &&
-    workflow.installStatus !== 'blocked' &&
-    !isStaging &&
-    !isChangePlanCreating &&
-    !isChangePlanApplying;
-  const canStage = canEdit && isDirty;
+    workflow.installStatus !== 'blocked';
+  const canStage = canEdit && !isBusy && isDirty;
   const canReviewPlan =
     hasStagedChange &&
     !isDirty &&
@@ -292,7 +358,16 @@ export function ShinyRateSection({
                 aria-busy={isStaging || undefined}
                 className="primary-button"
                 disabled={!canStage}
-                onClick={() => onStageRate(draftSelection.mode, draftSelection.rollCount)}
+                onClick={() => {
+                  const submittedDraftSignature = draftContextSignature;
+                  onStageRate(
+                    draftSelection.mode,
+                    draftSelection.rollCount,
+                    () =>
+                      draftContextIsActiveRef.current &&
+                      draftContextSignatureRef.current === submittedDraftSignature
+                  );
+                }}
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />

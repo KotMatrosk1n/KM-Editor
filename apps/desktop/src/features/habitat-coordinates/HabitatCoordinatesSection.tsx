@@ -23,12 +23,20 @@ import type {
   HabitatCoordinatesWorkflow,
   HabitatRowBinding
 } from '../../bridge/habitatCoordinatesContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import {
   Metric,
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
+import {
+  clearStagedHabitatCoordinateDraftValue,
+  createHabitatCoordinateDraftKey,
+  reconcileHabitatSearchDraftAfterAcceptedQuery,
+  setHabitatCoordinateDraftValue
+} from './habitatCoordinateDraftState';
 import './HabitatCoordinatesSection.css';
 
 const regionOrder = ['paldea', 'kitakami', 'blueberry'] as const;
@@ -45,9 +53,13 @@ type HabitatCoordinatesSectionProps = {
   editSession: EditSession | null;
   isLoading: boolean;
   isStaging: boolean;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   onLoadQuery: (query: HabitatCoordinatesQuery) => Promise<boolean>;
   onOpenChanges: () => void;
-  onStageCoordinate: (input: HabitatCoordinateStageInput) => Promise<boolean>;
+  onStageCoordinate: (
+    input: HabitatCoordinateStageInput,
+    isSubmittedDraftCurrent: () => boolean
+  ) => Promise<boolean>;
   panelOutput: WorkflowPanelOutput;
   workflow: HabitatCoordinatesWorkflow | null;
 };
@@ -56,6 +68,7 @@ export function HabitatCoordinatesSection({
   editSession,
   isLoading,
   isStaging,
+  onDirtyStateChange,
   onLoadQuery,
   onOpenChanges,
   onStageCoordinate,
@@ -63,17 +76,21 @@ export function HabitatCoordinatesSection({
   workflow
 }: HabitatCoordinatesSectionProps) {
   const { t } = useLocalization();
-  const [searchDraft, setSearchDraft] = useState('');
+  const page = workflow?.page ?? null;
+  const initialSearchSource = page?.search ?? '';
+  const [searchDraft, setSearchDraft] = useState(initialSearchSource);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [coordinateDraft, setCoordinateDraft] = useState('');
+  const [coordinateDrafts, setCoordinateDrafts] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<'success' | 'error' | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const searchDraftRef = useRef(searchDraft);
+  const searchSourceRef = useRef(initialSearchSource);
+  searchDraftRef.current = searchDraft;
   const regionTabRefs = useRef<Record<HabitatRegion, HTMLButtonElement | null>>({
     blueberry: null,
     kitakami: null,
     paldea: null
   });
-  const page = workflow?.page ?? null;
   const selectedRegion = workflow?.regions.find((region) => region.region === page?.region) ?? null;
   const selectedRecord = page?.records.find((record) => rowKey(record) === selectedKey) ?? null;
   const pendingCount = editSession?.pendingEdits.filter(
@@ -87,6 +104,21 @@ export function HabitatCoordinatesSection({
   const effectiveCoordinate = selectedRecord?.stagedCoordinate ?? (
     selectedRecord ? { x: selectedRecord.x, y: selectedRecord.y } : null
   );
+  const coordinateDraftKey = selectedRecord && page
+    ? createHabitatCoordinateDraftKey(page.region, selectedRecord)
+    : null;
+  const sourceCoordinateValue = effectiveCoordinate ? coordinateKey(effectiveCoordinate) : '';
+  const coordinateDraft = coordinateDraftKey
+    ? coordinateDrafts[coordinateDraftKey] ?? sourceCoordinateValue
+    : '';
+  const coordinateDraftContextRef = useRef({
+    key: coordinateDraftKey,
+    value: coordinateDraft
+  });
+  coordinateDraftContextRef.current = {
+    key: coordinateDraftKey,
+    value: coordinateDraft
+  };
   const nextOffset = page ? page.offset + page.records.length : 0;
   const canGoNext = page !== null && nextOffset < page.totalMatches;
   const canGoPrevious = page !== null && page.offset > 0;
@@ -100,10 +132,28 @@ export function HabitatCoordinatesSection({
     coordinateKey(selectedDraft) !== coordinateKey(effectiveCoordinate) &&
     !isLoading &&
     !isStaging;
+  usePublishCommonEditorError({
+    domain: 'workflow.habitatCoordinates',
+    field: 'coordinate',
+    message: feedback === 'error'
+      ? t('habitatCoordinates.feedback.error')
+      : null
+  });
 
   useEffect(() => {
     if (page) {
-      setSearchDraft(page.search);
+      const previousSource = searchSourceRef.current;
+      searchSourceRef.current = page.search;
+      setSearchDraft((currentDraft) => {
+        const nextDraft = reconcileSourceBackedDraft(
+          currentDraft,
+          previousSource,
+          page.search,
+          Object.is
+        );
+        searchDraftRef.current = nextDraft;
+        return nextDraft;
+      });
     }
   }, [page?.region, page?.search]);
 
@@ -115,9 +165,14 @@ export function HabitatCoordinatesSection({
   }, [page?.records, selectedKey]);
 
   useEffect(() => {
-    setCoordinateDraft(effectiveCoordinate ? coordinateKey(effectiveCoordinate) : '');
     setFeedback(null);
-  }, [selectedKey, effectiveCoordinate?.x, effectiveCoordinate?.y]);
+  }, [coordinateDraftKey]);
+
+  useEffect(() => {
+    onDirtyStateChange?.(Object.keys(coordinateDrafts).length > 0);
+  }, [coordinateDrafts, onDirtyStateChange]);
+
+  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
   useEffect(() => {
     if (feedback) {
@@ -127,7 +182,25 @@ export function HabitatCoordinatesSection({
 
   const loadQuery = async (query: HabitatCoordinatesQuery) => {
     setFeedback(null);
-    await onLoadQuery(query);
+    const submittedSearch = {
+      draft: searchDraftRef.current,
+      source: searchSourceRef.current
+    };
+    const didLoad = await onLoadQuery(query);
+    if (!didLoad) {
+      return;
+    }
+
+    searchSourceRef.current = query.search;
+    setSearchDraft((currentDraft) => {
+      const nextDraft = reconcileHabitatSearchDraftAfterAcceptedQuery(
+        currentDraft,
+        submittedSearch,
+        query.search
+      );
+      searchDraftRef.current = nextDraft;
+      return nextDraft;
+    });
   };
 
   const loadRegion = (region: HabitatRegion) => {
@@ -188,16 +261,50 @@ export function HabitatCoordinatesSection({
   };
 
   const stage = async () => {
-    if (!canStage || !page || !selectedRecord || !selectedDraft) {
+    if (!canStage || !page || !selectedRecord || !selectedDraft || !coordinateDraftKey) {
       return;
     }
-    const succeeded = await onStageCoordinate({
-      binding: selectedRecord.binding,
-      coordinate: selectedDraft,
-      query: queryFromPage(page, {}),
-      region: page.region
-    });
-    setFeedback(succeeded ? 'success' : 'error');
+    const stagedDraftKey = coordinateDraftKey;
+    const stagedDraftValue = coordinateDraft;
+    const isSubmittedDraftCurrent = () =>
+      coordinateDraftContextRef.current.key === stagedDraftKey &&
+      coordinateDraftContextRef.current.value === stagedDraftValue;
+    const succeeded = await onStageCoordinate(
+      {
+        binding: selectedRecord.binding,
+        coordinate: selectedDraft,
+        query: queryFromPage(page, {}),
+        region: page.region
+      },
+      isSubmittedDraftCurrent
+    );
+    if (isSubmittedDraftCurrent()) {
+      setFeedback(succeeded ? 'success' : 'error');
+    }
+    if (succeeded) {
+      setCoordinateDrafts((currentDrafts) =>
+        clearStagedHabitatCoordinateDraftValue(
+          currentDrafts,
+          stagedDraftKey,
+          stagedDraftValue
+        )
+      );
+    }
+  };
+
+  const updateCoordinateDraft = (value: string) => {
+    if (!coordinateDraftKey) {
+      return;
+    }
+    setFeedback(null);
+    setCoordinateDrafts((currentDrafts) =>
+      setHabitatCoordinateDraftValue(
+        currentDrafts,
+        coordinateDraftKey,
+        value,
+        sourceCoordinateValue
+      )
+    );
   };
 
   return (
@@ -300,10 +407,13 @@ export function HabitatCoordinatesSection({
               <div className="search-box habitat-coordinate-search-field">
                 <Search aria-hidden="true" size={16} />
                 <input
-                  disabled={!workflow || isLoading}
+                  disabled={!workflow}
                   id="habitat-coordinate-search"
                   maxLength={80}
-                  onChange={(event) => setSearchDraft(event.target.value)}
+                  onChange={(event) => {
+                    searchDraftRef.current = event.target.value;
+                    setSearchDraft(event.target.value);
+                  }}
                   placeholder={t('habitatCoordinates.search.placeholder')}
                   type="search"
                   value={searchDraft}
@@ -493,9 +603,9 @@ export function HabitatCoordinatesSection({
                 <select
                   aria-describedby="habitat-coordinate-observed-hint"
                   className="km-select-control"
-                  disabled={!selectedRegion.canStage || isLoading || isStaging}
+                  disabled={!selectedRegion.canStage}
                   id="habitat-coordinate-value"
-                  onChange={(event) => setCoordinateDraft(event.target.value)}
+                  onChange={(event) => updateCoordinateDraft(event.target.value)}
                   value={coordinateDraft}
                 >
                   {coordinateOptions.map((coordinate) => (
@@ -572,7 +682,13 @@ function parseCoordinate(value: string): HabitatCoordinateChoice | null {
 
 function rowKey(record: HabitatCoordinateRecord): string {
   const binding = record.binding;
-  return `${binding.sourceRevision}:${binding.outerGroupOccurrence}:${binding.rowOccurrence}:${binding.rowPreimageSha256}`;
+  return JSON.stringify([
+    binding.sourceFile,
+    binding.devNo,
+    binding.formNo,
+    binding.outerGroupOccurrence,
+    binding.rowOccurrence
+  ]);
 }
 
 function queryFromPage(

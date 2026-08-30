@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ClipboardCheck, RotateCcw, Save, Sparkles } from 'lucide-react';
-import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type FairyGymBoostRecord,
@@ -15,6 +15,7 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { FieldLabel } from '../../components/FieldLabel';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -97,24 +98,34 @@ export function FairyGymBoostsSection({
     [workflow]
   );
   const cleanSelectionsKey = encodeSelectionsKey(cleanSelections);
-  const cleanIdentityKey = [
+  const draftIdentityKey = [
     workflow?.detectedGame ?? 'unknown',
-    workflow?.sources
-      .map(
-        (source) =>
-          `${source.sourceId}:${source.status}:${source.provenance.sourceLayer}:${source.payloadOffsetHex}`
-      )
-      .join(',') ?? 'none',
-    editSession?.sessionId ?? 'none',
-    fairyGymBoostsPendingEdits[0]?.newValue ?? 'none'
+    workflow?.trainers
+      .flatMap((trainer) => trainer.boosts.map((boost) => boost.boostId))
+      .join(',') ?? 'none'
   ].join('|');
 
   const [selectedTrainerId, setSelectedTrainerId] = useState<number | null>(null);
-  const [drafts, setDrafts] = useState<FairyGymDrafts>(() => createDrafts(cleanSelections));
+  const cleanDrafts = createDrafts(cleanSelections);
+  const [drafts, setDrafts] = useState<FairyGymDrafts>(cleanDrafts);
+  const sourceDraftRef = useRef({ drafts: cleanDrafts, identityKey: draftIdentityKey });
 
   useEffect(() => {
-    setDrafts(createDrafts(cleanSelections));
-  }, [cleanIdentityKey, cleanSelectionsKey]);
+    const previous = sourceDraftRef.current;
+    setDrafts((current) =>
+      previous.identityKey !== draftIdentityKey
+        ? cleanDrafts
+        : reconcileSourceBackedDraft(
+            current,
+            previous.drafts,
+            cleanDrafts,
+            (left, right) => encodeDraftsKey(left) === encodeDraftsKey(right)
+          )
+    );
+    sourceDraftRef.current = { drafts: cleanDrafts, identityKey: draftIdentityKey };
+  // The encoded source value is the stable trigger; cleanDrafts is rebuilt each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanSelectionsKey, draftIdentityKey]);
 
   useEffect(() => {
     if (sortedTrainers.length === 0) {
@@ -144,19 +155,20 @@ export function FairyGymBoostsSection({
     editSession?.pendingEdits.some(
       (edit) => edit.domain !== 'workflow.fairyGymBoosts'
     ) ?? false;
+  const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
   const canEdit =
     workflow?.summary.availability === 'available' &&
     (workflow.detectedGame === 'sword' || workflow.detectedGame === 'shield') &&
     workflow.sources.every((source) => source.status === 'available') &&
     workflow.trainers.every((trainer) =>
       trainer.boosts.every((boost) => boost.isAvailable)
-    ) &&
+    );
+  const canStage =
+    canEdit &&
     !hasInvalidPendingEdit &&
     !hasConflictingPendingEdit &&
-    !isStaging &&
-    !isChangePlanCreating &&
-    !isChangePlanApplying;
-  const canStage = canEdit && isDirty;
+    !isBusy &&
+    isDirty;
   const canRestoreVanilla = canEdit && !areSelectionsEqual(draftSelections, vanillaSelections);
   const canReviewPlan =
     hasStagedChange &&
@@ -523,6 +535,12 @@ function createDrafts(selections: readonly FairyGymBoostSelection[]): FairyGymDr
   return Object.fromEntries(
     selections.map((selection) => [selection.boostId, selection])
   ) as FairyGymDrafts;
+}
+
+function encodeDraftsKey(drafts: FairyGymDrafts) {
+  return encodeSelectionsKey(
+    Object.values(drafts).sort((left, right) => left.boostId.localeCompare(right.boostId))
+  );
 }
 
 function getOrderedDraftSelections(

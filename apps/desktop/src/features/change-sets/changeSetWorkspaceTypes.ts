@@ -122,13 +122,13 @@ export type ChangeSetWorkspaceController = {
   externalBusy: boolean;
   legacyUnsupportedOperationCount: number;
   onArchive: (changeSetId: string) => void;
-  onCreate: (name: string) => void;
+  onCreate: (name: string) => Promise<boolean>;
   onCreateBuildVariant: (
     name: string,
     enabledChangeSetIds: readonly string[],
     outputMode: string | null,
     outputProfileId: string | null
-  ) => void;
+  ) => Promise<boolean>;
   onDeleteBuildVariant: (variantId: string) => void;
   onDeleteSet: (changeSetId: string) => void;
   onDuplicate: (changeSetId: string) => void;

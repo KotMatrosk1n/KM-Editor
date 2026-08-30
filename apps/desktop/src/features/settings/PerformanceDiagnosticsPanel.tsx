@@ -2,6 +2,7 @@
 
 import { useState, useSyncExternalStore } from 'react';
 import { useLocalization } from '../../localization';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import {
   clearPerformanceDiagnostics,
   createPerformanceDiagnosticsSummary,
@@ -20,6 +21,11 @@ export function PerformanceDiagnosticsPanel() {
     getPerformanceDiagnosticsSnapshot
   );
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  usePublishCommonEditorError({
+    domain: 'settings.performance',
+    field: 'clipboard',
+    message: copyState === 'failed' ? t('settings.performance.copyFailed') : null
+  });
   const commandSummaries = summarizePerformanceDiagnostics(snapshot.samples);
   const formatDuration = (durationMs: number) =>
     `${durationMs.toLocaleString(formatLocale)} ms`;

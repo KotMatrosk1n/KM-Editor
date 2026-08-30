@@ -14,6 +14,7 @@ import type {
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import type {
   SemanticQueryError,
@@ -121,6 +122,13 @@ export function SemanticMergeRuntime({
           </div>
         </header>
         {isError ? (
+          <>
+          <PublishCommonEditorError
+            domain="analysis.semanticMerge"
+            message={t(capabilityError
+              ? `semanticExplore.query.error.${capabilityError}`
+              : 'semanticMerge.error.generic')}
+          />
           <div aria-live="polite" className="km-semantic-merge-status" role="alert">
             <p>{t(capabilityError
               ? `semanticExplore.query.error.${capabilityError}`
@@ -129,6 +137,7 @@ export function SemanticMergeRuntime({
               {t('semanticMerge.retry')}
             </button>
           </div>
+          </>
         ) : (
           <div className="km-semantic-merge-status">
             <LoadingProgress label={t('semanticMerge.capabilities.loading')} />

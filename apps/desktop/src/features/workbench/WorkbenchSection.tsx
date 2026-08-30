@@ -20,6 +20,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { resolveSubmittedEditorDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { workspaceMaximumNoteBytes } from '../../bridge/workspacePersonalStateContracts';
 import type { CapabilityDiscoveryViewModel } from '../../workbench/capabilityDiscovery';
@@ -42,8 +43,8 @@ export type WorkbenchSectionProps = {
   guidedDesign?: ReactNode;
   semanticMerge?: ReactNode;
   note: WorkspaceNoteViewModel | null;
-  onCreateBookmark?: (label: string) => void;
-  onCreateOutputProfile?: (name: string) => void;
+  onCreateBookmark?: (label: string) => Promise<boolean>;
+  onCreateOutputProfile?: (name: string) => Promise<boolean>;
   onDeleteBookmark?: (bookmarkId: string) => void;
   onDeleteOutputProfile?: (profileId: string) => void;
   onDeleteSavedView?: (viewId: string) => void;
@@ -260,6 +261,7 @@ export function WorkbenchSection({
               inputLabelKey="workbench.bookmarks.createLabel"
               onCreate={onCreateBookmark}
               placeholderKey="workbench.bookmarks.createPlaceholder"
+              scopeKey={preparationScopeKey}
               submitKey="workbench.bookmarks.create"
             />
           ) : null}
@@ -418,6 +420,7 @@ export function WorkbenchSection({
               inputLabelKey="workbench.outputProfiles.createLabel"
               onCreate={onCreateOutputProfile}
               placeholderKey="workbench.outputProfiles.createPlaceholder"
+              scopeKey={preparationScopeKey}
               submitKey="workbench.outputProfiles.create"
             />
           ) : null}
@@ -480,7 +483,6 @@ export function WorkbenchSection({
               <label>
                 <span data-localization-ignore="true">{note.entityLabel}</span>
                 <textarea
-                  disabled={note.isBusy}
                   maxLength={workspaceMaximumNoteBytes / 4}
                   onBlur={onSaveNote}
                   onChange={(event) => onNoteChange?.(event.target.value)}
@@ -603,23 +605,41 @@ function WorkspaceCreateControl({
   inputLabelKey,
   onCreate,
   placeholderKey,
+  scopeKey,
   submitKey
 }: {
   inputLabelKey: string;
-  onCreate: (name: string) => void;
+  onCreate: (name: string) => Promise<boolean>;
   placeholderKey: string;
+  scopeKey?: string | null;
   submitKey: string;
 }) {
   const { t } = useLocalization();
   const [name, setName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
   const normalizedName = name.trim();
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!normalizedName) {
+    if (!normalizedName || isCreating) {
       return;
     }
-    onCreate(normalizedName);
-    setName('');
+    const submittedName = name;
+    const submittedScopeKey = scopeKeyRef.current;
+    setIsCreating(true);
+    try {
+      const created = await onCreate(normalizedName);
+      if (created && scopeKeyRef.current === submittedScopeKey) {
+        setName((current) =>
+          resolveSubmittedEditorDraft(current, submittedName, '')
+        );
+      }
+    } catch {
+      // The owner reports the failed create; retain the user's exact draft.
+    } finally {
+      setIsCreating(false);
+    }
   };
   return (
     <form className="km-workbench-create-control" onSubmit={handleSubmit}>
@@ -634,8 +654,9 @@ function WorkspaceCreateControl({
         />
       </label>
       <button
+        aria-busy={isCreating || undefined}
         className="secondary-button compact-button"
-        disabled={!normalizedName}
+        disabled={!normalizedName || isCreating}
         type="submit"
       >
         <Plus aria-hidden="true" size={14} />

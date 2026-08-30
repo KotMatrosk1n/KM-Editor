@@ -24,6 +24,10 @@ import type {
   SemanticExploreScalar,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import {
+  PublishCommonEditorError,
+  usePublishCommonEditorError
+} from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey } from '../../workbench/semanticContracts';
@@ -527,9 +531,16 @@ function CompareModulePanel({
         <p className="km-semantic-advisory">{t('semanticExplore.external.busy')}</p>
       ) : null}
       {externalPickFailed ? (
-        <p className="km-semantic-query-error" role="alert">
-          {t('semanticExplore.query.error.generic')}
-        </p>
+        <>
+          <PublishCommonEditorError
+            domain="analysis.semanticExplore"
+            field="externalComparison"
+            message={t('semanticExplore.query.error.generic')}
+          />
+          <p className="km-semantic-query-error" role="alert">
+            {t('semanticExplore.query.error.generic')}
+          </p>
+        </>
       ) : null}
       <QueryBoundary state={state} idleKey="semanticExplore.compare.empty">
         {!visibleComparison && state.status === 'ready' ? (
@@ -1212,6 +1223,10 @@ function QueryBoundary<T>({
   state: SemanticQueryState<T>;
 }) {
   const { t } = useLocalization();
+  const errorMessage = state.status === 'error'
+    ? t(`semanticExplore.query.error.${state.error ?? 'generic'}`)
+    : null;
+  usePublishCommonEditorError({ domain: 'analysis.semanticExplore', message: errorMessage });
   if (state.status === 'idle') {
     return <p className="km-workbench-empty">{t(idleKey)}</p>;
   }
@@ -1225,7 +1240,7 @@ function QueryBoundary<T>({
       ) : null}
       {state.status === 'error' ? (
         <p className="km-semantic-query-error" role="alert">
-          {t(`semanticExplore.query.error.${state.error ?? 'generic'}`)}
+          {errorMessage}
         </p>
       ) : null}
       {children}
@@ -1246,6 +1261,10 @@ function SemanticStatus({
   const label = t(kind === 'error' && error
     ? `semanticExplore.query.error.${error}`
     : `semanticExplore.${kind}`);
+  usePublishCommonEditorError({
+    domain: 'analysis.semanticExplore',
+    message: kind === 'error' ? label : null
+  });
   if (kind === 'loading') {
     return (
       <div className="km-semantic-status">

@@ -25,6 +25,7 @@ import type {
   SemanticExploreRecordRef,
   SemanticExploreRevision
 } from '../../bridge/semanticExploreContracts';
+import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { ResearchAnnotationsView } from './ResearchAnnotationsView';
@@ -63,12 +64,14 @@ const viewIcons: Readonly<Record<ResearchLabView, ReactNode>> = {
 export function ResearchLabSection({
   canNavigateRecord,
   controller,
+  onDirtyStateChange,
   onNavigateRecord,
   onPickSource,
   revision
 }: {
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
   controller: ResearchLabController;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   onPickSource: (slot: 0 | 1) => Promise<string | null>;
   revision: SemanticExploreRevision;
@@ -159,12 +162,18 @@ export function ResearchLabSection({
         <Status compact={Boolean(capabilities)} messageKey="researchLab.loading" />
       ) : null}
       {controller.capabilities.error ? (
-        <div className="km-research-lab-status" role="alert">
-          <p>{t(researchErrorKey(controller.capabilities.error))}</p>
-          <button onClick={() => void controller.refreshCapabilities()} type="button">
-            {t('researchLab.retry')}
-          </button>
-        </div>
+        <>
+          <PublishCommonEditorError
+            domain="analysis.researchLab"
+            message={t(researchErrorKey(controller.capabilities.error))}
+          />
+          <div className="km-research-lab-status" role="alert">
+            <p>{t(researchErrorKey(controller.capabilities.error))}</p>
+            <button onClick={() => void controller.refreshCapabilities()} type="button">
+              {t('researchLab.retry')}
+            </button>
+          </div>
+        </>
       ) : null}
 
       {capabilities ? (
@@ -215,6 +224,7 @@ export function ResearchLabSection({
               controller={controller}
               draftTarget={draftTarget}
               onClearDraftTarget={clearDraftTarget}
+              onDirtyStateChange={onDirtyStateChange}
               onNavigateRecord={onNavigateRecord}
               revision={revision}
             />

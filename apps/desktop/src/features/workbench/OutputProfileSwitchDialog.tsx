@@ -10,9 +10,8 @@ import type {
 } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import { LoadingProgress } from '../../components/LoadingProgress';
-import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
+import { DiagnosticsSection } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
-import { formatDiagnosticMessage } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import './workbench.css';
@@ -352,20 +351,7 @@ export function OutputProfileSwitchDialog({
           </div>
         ) : null}
 
-        {diagnostics.length > 0 ? (
-          <ul aria-live="polite" className="km-output-profile-switch-diagnostics">
-            {diagnostics.map((diagnostic, index) => (
-              <li
-                className={`diagnostic-${diagnostic.severity}`}
-                key={`${diagnostic.code ?? 'diagnostic'}-${index}`}
-              >
-                <AlertCircle aria-hidden="true" size={15} />
-                <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
-                <ReportableDiagnosticIssuesLink messages={[diagnostic.message]} />
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <DiagnosticsSection diagnostics={[...diagnostics]} />
       </div>
     </div>
   );

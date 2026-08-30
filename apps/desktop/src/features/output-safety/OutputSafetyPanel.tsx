@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { type OutputCheckpoint } from '../../bridge/outputSafetyContracts';
-import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
-import { formatDiagnosticMessage } from '../../diagnostics';
+import { DiagnosticsSection } from '../../components/workflowPanels';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import { type OutputSafetyController } from './useOutputSafetyController';
 
@@ -24,7 +24,16 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState('');
   const [checkpointPendingDelete, setCheckpointPendingDelete] = useState<string | null>(null);
-  const [supportReportCopied, setSupportReportCopied] = useState(false);
+  const [supportReportCopyState, setSupportReportCopyState] = useState<
+    'idle' | 'copied' | 'failed'
+  >('idle');
+  usePublishCommonEditorError({
+    domain: 'outputSafety',
+    field: 'supportReportClipboard',
+    message: supportReportCopyState === 'failed'
+      ? translateLiteral('The support report could not be copied.')
+      : null
+  });
   const forceOpen = controller.readiness === 'blocked' || controller.readiness === 'error';
   const bodyOpen = detailsOpen || forceOpen;
   const status = getStatusPresentation(controller.readiness);
@@ -53,12 +62,22 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
 
   useEffect(() => {
     setCheckpointPendingDelete(null);
-    setSupportReportCopied(false);
+    setSupportReportCopyState('idle');
   }, [controller.checkpoints, controller.supportReport]);
 
   if (!controller.isAvailable) {
     return null;
   }
+
+  const createCheckpoint = async () => {
+    const submittedLabel = checkpointLabel;
+    const created = await controller.createCheckpoint(submittedLabel);
+    if (created) {
+      setCheckpointLabel((current) =>
+        current === submittedLabel ? '' : current
+      );
+    }
+  };
 
   return (
     <section
@@ -359,10 +378,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                   <button
                     className="secondary-button compact-button"
                     disabled={controller.busyAction !== null || !controller.canApply}
-                    onClick={() => {
-                      void controller.createCheckpoint(checkpointLabel);
-                      setCheckpointLabel('');
-                    }}
+                    onClick={() => void createCheckpoint()}
                     type="button"
                   >
                     <ShieldCheck aria-hidden="true" size={15} />
@@ -434,33 +450,32 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
                   className="secondary-button compact-button"
                   onClick={() => {
                     if (!navigator.clipboard) {
+                      setSupportReportCopyState('failed');
                       return;
                     }
                     void navigator.clipboard
                       .writeText(JSON.stringify(controller.supportReport!.report, null, 2))
-                      .then(() => setSupportReportCopied(true))
-                      .catch(() => undefined);
+                      .then(() => setSupportReportCopyState('copied'))
+                      .catch(() => setSupportReportCopyState('failed'));
                   }}
                   type="button"
                 >
                   <Clipboard aria-hidden="true" size={15} />
-                  <span>{t(supportReportCopied ? 'outputSafety.support.copied' : 'outputSafety.support.copy')}</span>
+                  <span>
+                    {supportReportCopyState === 'failed'
+                      ? translateLiteral('The support report could not be copied.')
+                      : t(
+                          supportReportCopyState === 'copied'
+                            ? 'outputSafety.support.copied'
+                            : 'outputSafety.support.copy'
+                        )}
+                  </span>
                 </button>
               </div>
             ) : null}
           </section>
 
-          {allDiagnostics.length > 0 ? (
-            <ul className="output-safety-diagnostics">
-              {allDiagnostics.map((diagnostic, index) => (
-                <li className={`diagnostic-${diagnostic.severity}`} key={`${diagnostic.code ?? 'diagnostic'}-${index}`}>
-                  {diagnostic.severity === 'error' ? <AlertCircle aria-hidden="true" size={15} /> : <AlertTriangle aria-hidden="true" size={15} />}
-                  <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
-                  <ReportableDiagnosticIssuesLink messages={[diagnostic.message]} />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <DiagnosticsSection diagnostics={allDiagnostics} />
         </div>
       ) : null}
     </section>

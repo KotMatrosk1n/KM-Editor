@@ -15,7 +15,10 @@ const sha256RoundConstants = [
 ] as const;
 
 export function calculatePendingPayloadSha256(payload: string) {
-  const input = new TextEncoder().encode(payload);
+  return calculatePayloadBytesSha256(new TextEncoder().encode(payload));
+}
+
+export function calculatePayloadBytesSha256(input: Uint8Array) {
   const paddedLength = Math.ceil((input.length + 9) / 64) * 64;
   const padded = new Uint8Array(paddedLength);
   padded.set(input);

@@ -10,6 +10,7 @@ import {
   gameModuleMaximumAccumulatedRecords
 } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { getWorkbenchSectionLabelKey } from '../../workbench/capabilityRegistry';
@@ -355,6 +356,8 @@ function StatusPanel({
   onRetry?: () => void;
 }) {
   const { t } = useLocalization();
+  const errorMessage = kind === 'error' ? t('gameModules.error') : null;
+  usePublishCommonEditorError({ domain: 'analysis.gameModules', message: errorMessage });
   if (kind === 'loading') {
     return (
       <div className="km-game-module-status">
@@ -368,7 +371,7 @@ function StatusPanel({
       className="km-game-module-status"
       role="alert"
     >
-      <p>{t('gameModules.error')}</p>
+      <p>{errorMessage}</p>
       {onRetry ? <button onClick={onRetry} type="button">{t('gameModules.retry')}</button> : null}
     </div>
   );
@@ -376,9 +379,11 @@ function StatusPanel({
 
 function InlineError({ onRetry }: { onRetry: () => void }) {
   const { t } = useLocalization();
+  const message = t('gameModules.queryError');
+  usePublishCommonEditorError({ domain: 'analysis.gameModules', message });
   return (
     <div className="km-game-module-inline-error" role="alert">
-      <span>{t('gameModules.queryError')}</span>
+      <span>{message}</span>
       <button className="secondary-button compact-button" onClick={onRetry} type="button">
         {t('gameModules.retry')}
       </button>

@@ -10,6 +10,7 @@ import {
   type NpcItemGiftSelection,
   type NpcItemGiftWorkflow
 } from '../../bridge/npcItemGiftContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -17,6 +18,7 @@ import {
 } from '../../components/workflowPanels';
 import { FieldLabel } from '../../components/FieldLabel';
 import { HoverTooltip } from '../../components/HoverTooltip';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
@@ -126,6 +128,10 @@ export function NpcItemGiftSection({
     [workflowSelections, stagedSelections]
   );
   const cleanSelectionsKey = encodeSelectionsKey(cleanSelections);
+  const draftIdentityKey = [
+    workflow?.sources.map((source) => source.relativePath).join(',') ?? 'none',
+    Object.keys(cleanSelections).sort().join(',')
+  ].join('|');
   const itemOptionLookup = useMemo(
     () => new Map((workflow?.itemOptions ?? []).map((option) => [option.itemId, option])),
     [workflow?.itemOptions]
@@ -138,11 +144,18 @@ export function NpcItemGiftSection({
   );
   const draftsRef = useRef(drafts);
   const cleanSelectionsRef = useRef(cleanSelections);
+  const quantityInputOverridesRef = useRef(quantityInputOverrides);
+  const sourceDraftRef = useRef({
+    drafts: createDrafts(cleanSelections),
+    identityKey: draftIdentityKey
+  });
 
   cleanSelectionsRef.current = cleanSelections;
+  quantityInputOverridesRef.current = quantityInputOverrides;
 
   const replaceDrafts = (nextDrafts: NpcGiftDrafts) => {
     draftsRef.current = nextDrafts;
+    quantityInputOverridesRef.current = {};
     setQuantityInputOverrides({});
     setDrafts(nextDrafts);
   };
@@ -154,8 +167,29 @@ export function NpcItemGiftSection({
   };
 
   useEffect(() => {
-    replaceDrafts(createDrafts(cleanSelections));
-  }, [cleanSelectionsKey]);
+    const nextDrafts = createDrafts(cleanSelections);
+    const previous = sourceDraftRef.current;
+    const shouldResetForScope = previous.identityKey !== draftIdentityKey;
+    const nextVisibleDrafts = shouldResetForScope
+      ? nextDrafts
+      : reconcileSourceBackedDraft(
+          draftsRef.current,
+          previous.drafts,
+          nextDrafts,
+          (left, right) => encodeSelectionsKey(left) === encodeSelectionsKey(right)
+        );
+
+    if (
+      shouldResetForScope ||
+      (nextVisibleDrafts !== draftsRef.current &&
+        Object.keys(quantityInputOverridesRef.current).length === 0)
+    ) {
+      replaceDrafts(nextVisibleDrafts);
+    }
+    sourceDraftRef.current = { drafts: nextDrafts, identityKey: draftIdentityKey };
+  // cleanSelectionsKey is the stable source trigger; cleanSelections is derived each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanSelectionsKey, draftIdentityKey]);
 
   useEffect(() => {
     if (orderedNpcs.length === 0) {
@@ -226,13 +260,11 @@ export function NpcItemGiftSection({
   const dirtyGiftBlockers = [...dirtyGiftIds].flatMap(
     (giftId) => giftEditBlockers.get(giftId) ?? []
   );
-  const canEditWorkflow =
-    globalEditBlockers.length === 0 &&
-    !isStaging &&
-    !isChangePlanCreating &&
-    !isChangePlanApplying;
+  const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
+  const canEditWorkflow = globalEditBlockers.length === 0;
   const canStage =
     canEditWorkflow &&
+    !isBusy &&
     dirtyGiftBlockers.length === 0 &&
     invalidQuantityGiftIds.size === 0 &&
     selectedDraftSelections.length > 0 &&
@@ -254,6 +286,29 @@ export function NpcItemGiftSection({
     !isStaging &&
     !isChangePlanCreating &&
     !isChangePlanApplying;
+  usePublishCommonEditorError({
+    domain: NPC_ITEM_GIFT_DOMAIN,
+    field: NPC_ITEM_GIFT_FIELD,
+    message: hasInvalidStagedChange
+      ? translateLiteral(
+          'The staged NPC Item Gift entry is invalid. Discard it from Pending Changes before editing or reviewing this workflow.'
+        )
+      : null
+  });
+  usePublishCommonEditorError({
+    domain: NPC_ITEM_GIFT_DOMAIN,
+    field: 'quantity',
+    message: invalidQuantityGiftIds.size > 0
+      ? translateLiteral('Every changed gift quantity must be a whole number from 1 through 999.')
+      : null
+  });
+  usePublishCommonEditorError({
+    domain: NPC_ITEM_GIFT_DOMAIN,
+    field: 'selection',
+    message: globalEditBlockers.length > 0 || dirtyGiftBlockers.length > 0
+      ? [...new Set([...globalEditBlockers, ...dirtyGiftBlockers])].join(' ')
+      : null
+  });
 
   useEffect(() => {
     onDirtyChange(hasDirtyDrafts);
@@ -874,7 +929,7 @@ function NpcItemGiftItemPicker({
             return;
           }
 
-          if (event.key === 'Enter') {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
             event.preventDefault();
             commitTypedOption(true);
           }

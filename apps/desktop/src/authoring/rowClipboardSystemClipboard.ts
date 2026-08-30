@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import {
+  readText as readTauriClipboardText,
+  writeText as writeTauriClipboardText
+} from '@tauri-apps/plugin-clipboard-manager';
+
 import { RowClipboardController } from './rowClipboardController';
 import {
   RowClipboardError,
@@ -14,6 +19,11 @@ export type RowClipboardTextClipboard = Readonly<{
   readText: () => Promise<string>;
   writeText: (value: string) => Promise<void>;
 }>;
+
+const tauriSystemClipboard: RowClipboardTextClipboard = Object.freeze({
+  readText: readTauriClipboardText,
+  writeText: writeTauriClipboardText
+});
 
 export type RowClipboardSystemClipboardFailureReason =
   | 'clipboard-denied'
@@ -122,15 +132,30 @@ export async function readRowClipboardEnvelopeFromSystemClipboard(
 }
 
 function resolveSystemClipboard(): RowClipboardTextClipboard | null {
-  if (
-    typeof navigator === 'undefined' ||
-    !navigator.clipboard ||
-    typeof navigator.clipboard.readText !== 'function' ||
-    typeof navigator.clipboard.writeText !== 'function'
-  ) {
+  if (hasTauriRuntime()) {
+    return tauriSystemClipboard;
+  }
+
+  try {
+    if (typeof navigator === 'undefined') {
+      return null;
+    }
+    const clipboard = navigator.clipboard;
+    if (
+      !clipboard ||
+      typeof clipboard.readText !== 'function' ||
+      typeof clipboard.writeText !== 'function'
+    ) {
+      return null;
+    }
+    return clipboard;
+  } catch {
     return null;
   }
-  return navigator.clipboard;
+}
+
+function hasTauriRuntime() {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
 function serializedEnvelopeByteCount(value: string): number | null {

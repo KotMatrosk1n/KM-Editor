@@ -11,6 +11,7 @@ import type {
   FashionCatalogWorkflow,
   HairAndMakeupRecord
 } from '../../bridge/fashionCatalogContracts';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -21,6 +22,11 @@ import {
   FocusedEditorWorkspace
 } from '../../components/FocusedEditorWorkspace';
 import { useLocalization } from '../../localization';
+import {
+  clearStagedFashionCatalogDraftValue,
+  createFashionCatalogDraftKey,
+  setFashionCatalogDraftValue
+} from './fashionCatalogDraftState';
 import './FashionCatalogSection.css';
 
 const pageSize = 50;
@@ -54,6 +60,7 @@ export type FashionCatalogFieldEditInput = {
 type FashionCatalogSectionProps = {
   editSession: EditSession | null;
   isStaging: boolean;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   onOpenChanges: () => void;
   onStageFieldEdit: (edit: FashionCatalogFieldEditInput) => Promise<boolean>;
   panelOutput: WorkflowPanelOutput;
@@ -72,22 +79,28 @@ type Translate = (key: string, values?: Record<string, string | number>) => stri
 export function FashionCatalogSection({
   editSession,
   isStaging,
+  onDirtyStateChange,
   onOpenChanges,
   onStageFieldEdit,
   panelOutput,
   workflow
 }: FashionCatalogSectionProps) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [catalogFile, setCatalogFile] = useState<FashionCatalogFile>('dressUpItems');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState('itemId');
-  const [draftValue, setDraftValue] = useState('');
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
   const [optionSearch, setOptionSearch] = useState('');
   const [feedback, setFeedback] = useState<
     { kind: 'error' | 'success'; message: string } | null
   >(null);
+  usePublishCommonEditorError({
+    domain: 'workflow.fashionCatalog',
+    field: 'stage',
+    message: feedback?.kind === 'error' ? feedback.message : null
+  });
   const feedbackRef = useRef<HTMLDivElement | null>(null);
 
   const rows = useMemo(() => getRows(workflow, catalogFile), [catalogFile, workflow]);
@@ -105,6 +118,26 @@ export function FashionCatalogSection({
     [catalogFile, t]
   );
   const field = fields.find((candidate) => candidate.field === selectedField) ?? fields[0];
+  const draftKey = selectedRow && field
+    ? createFashionCatalogDraftKey(catalogFile, selectedRow.physicalRowId, field.field)
+    : null;
+  const sourceValue = selectedRow && field ? getFieldValue(selectedRow, field.field) : '';
+  const draftValue = draftKey ? draftValues[draftKey] ?? sourceValue : '';
+  const draftContextRef = useRef({ key: draftKey, value: draftValue });
+  draftContextRef.current = { key: draftKey, value: draftValue };
+  const numericDraftError = Boolean(
+    selectedRow &&
+    field?.valueKind === 'number' &&
+    draftValue !== sourceValue &&
+    !isValidNumericDraft(field.field, draftValue)
+  )
+    ? translateLiteral('Enter a whole number within the supported range.')
+    : null;
+  usePublishCommonEditorError({
+    domain: 'workflow.fashionCatalog',
+    field: field?.field ?? 'value',
+    message: numericDraftError
+  });
   const options = useMemo(
     () => getLoadedOptions(workflow, catalogFile, field?.field ?? ''),
     [catalogFile, field?.field, workflow]
@@ -148,9 +181,15 @@ export function FashionCatalogSection({
   }, [fields, selectedField]);
 
   useEffect(() => {
-    setDraftValue(selectedRow && field ? getFieldValue(selectedRow, field.field) : '');
     setOptionSearch('');
-  }, [field, selectedRow]);
+    setFeedback(null);
+  }, [draftKey]);
+
+  useEffect(() => {
+    onDirtyStateChange?.(Object.keys(draftValues).length > 0);
+  }, [draftValues, onDirtyStateChange]);
+
+  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
   useEffect(() => {
     if (feedback) {
@@ -178,7 +217,7 @@ export function FashionCatalogSection({
     workflow.canStage &&
     selectedRow !== null &&
     field !== undefined &&
-    draftValue !== getFieldValue(selectedRow, field.field) &&
+    draftValue !== sourceValue &&
     !isStaging &&
     (field.valueKind === 'option'
       ? options.includes(draftValue)
@@ -218,10 +257,12 @@ export function FashionCatalogSection({
   };
 
   const stage = async (clear: boolean) => {
-    if (!selectedRow || !field) {
+    if (!workflow.canStage || !selectedRow || !field || !draftKey) {
       return;
     }
 
+    const stagedDraftKey = draftKey;
+    const stagedDraftValue = draftValue;
     setFeedback(null);
     const succeeded = await onStageFieldEdit({
       binding: {
@@ -235,12 +276,37 @@ export function FashionCatalogSection({
       field: field.field,
       value: clear ? null : draftValue
     });
-    setFeedback({
-      kind: succeeded ? 'success' : 'error',
-      message: succeeded
-        ? t('fashionCatalog.feedback.staged')
-        : t('fashionCatalog.feedback.failed')
-    });
+    if (
+      draftContextRef.current.key === stagedDraftKey &&
+      draftContextRef.current.value === stagedDraftValue
+    ) {
+      setFeedback({
+        kind: succeeded ? 'success' : 'error',
+        message: succeeded
+          ? t('fashionCatalog.feedback.staged')
+          : t('fashionCatalog.feedback.failed')
+      });
+    }
+    if (succeeded) {
+      setDraftValues((currentDrafts) =>
+        clearStagedFashionCatalogDraftValue(
+          currentDrafts,
+          stagedDraftKey,
+          stagedDraftValue
+        )
+      );
+    }
+  };
+
+  const updateDraftValue = (value: string) => {
+    if (!draftKey) {
+      return;
+    }
+
+    setFeedback(null);
+    setDraftValues((currentDrafts) =>
+      setFashionCatalogDraftValue(currentDrafts, draftKey, value, sourceValue)
+    );
   };
 
   return (
@@ -399,10 +465,14 @@ export function FashionCatalogSection({
                     <select
                       className="km-select-control"
                       id="fashion-catalog-value"
-                      onChange={(event) => setDraftValue(event.target.value)}
+                      onChange={(event) => updateDraftValue(event.target.value)}
                       value={filteredOptions.includes(draftValue) ? draftValue : ''}
                     >
-                      <option disabled value="">{t('fashionCatalog.editor.chooseOption')}</option>
+                      <option disabled={!field.optional} value="">
+                        {field.optional
+                          ? t('fashionCatalog.editor.clear')
+                          : t('fashionCatalog.editor.chooseOption')}
+                      </option>
                       {filteredOptions.map((option) => (
                         <option key={option} value={option}>{option}</option>
                       ))}
@@ -417,11 +487,17 @@ export function FashionCatalogSection({
                       {t('fashionCatalog.editor.value')}
                     </label>
                     <input
+                      aria-invalid={numericDraftError ? true : undefined}
                       id="fashion-catalog-value"
-                      onChange={(event) => setDraftValue(event.target.value)}
+                      onChange={(event) => updateDraftValue(event.target.value)}
                       type="number"
                       value={draftValue}
                     />
+                    {numericDraftError ? (
+                      <p className="editable-field-error" role="alert">
+                        {numericDraftError}
+                      </p>
+                    ) : null}
                   </>
                 )}
 
@@ -436,8 +512,18 @@ export function FashionCatalogSection({
                   </button>
                   {field.optional ? (
                     <button
-                      disabled={isStaging || getFieldValue(selectedRow, field.field).length === 0}
-                      onClick={() => void stage(true)}
+                      disabled={
+                        isStaging ||
+                        (sourceValue.length > 0 ? !workflow.canStage : draftValue.length === 0)
+                      }
+                      onClick={() => {
+                        if (sourceValue.length === 0) {
+                          updateDraftValue('');
+                          setFeedback(null);
+                          return;
+                        }
+                        void stage(true);
+                      }}
                       type="button"
                     >
                       {t('fashionCatalog.editor.clear')}

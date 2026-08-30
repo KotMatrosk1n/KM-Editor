@@ -8,6 +8,10 @@ import {
   balanceLabMaximumContinuationStartCount
 } from '../../bridge/balanceLabContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
+import {
+  usePublishCommonEditorDiagnostics,
+  usePublishCommonEditorError
+} from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
@@ -294,6 +298,7 @@ function SelectControl({
 function DiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
   const { t, translateLiteral } = useLocalization();
   const diagnosticNavigation = useDiagnosticNavigation();
+  usePublishCommonEditorDiagnostics(diagnostics);
   if (diagnostics.length === 0) return null;
   const formatMessage = (diagnostic: ApiDiagnostic) => (
     safeDiagnosticMessage(diagnostic.message)
@@ -372,6 +377,10 @@ export function BalanceLabStatusPanel({
 }) {
   const { t } = useLocalization();
   const label = t(messageKey ?? (kind === 'loading' ? 'balanceLab.loading' : 'balanceLab.error'));
+  usePublishCommonEditorError({
+    domain: 'analysis.balanceLab',
+    message: kind === 'error' ? label : null
+  });
   if (kind === 'loading') {
     return (
       <div className="km-balance-status">
@@ -389,9 +398,11 @@ export function BalanceLabStatusPanel({
 
 function InlineError({ onRetry }: { onRetry: () => void }) {
   const { t } = useLocalization();
+  const message = t('balanceLab.query.error');
+  usePublishCommonEditorError({ domain: 'analysis.balanceLab', message });
   return (
     <div className="km-balance-inline-error" role="alert">
-      <span>{t('balanceLab.query.error')}</span>
+      <span>{message}</span>
       <button className="secondary-button compact-button" onClick={onRetry} type="button">
         {t('balanceLab.retry')}
       </button>

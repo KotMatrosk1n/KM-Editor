@@ -2,7 +2,12 @@
 
 import { Languages, ShieldAlert, UserRoundCog } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
+import {
+  clearStagedTrainerIdentityDraftValue,
+  setTrainerIdentityDraftValue
+} from './trainerIdentityDraftState';
 
 export type ZaTrainerTextTargetViewModel = {
   kind: string;
@@ -25,33 +30,85 @@ export type ZaTrainerIdentityViewModel = {
   classTextTarget: ZaTrainerTextTargetViewModel | null;
   name: string;
   nameTextTarget: ZaTrainerTextTargetViewModel | null;
+  trainerId: number;
   trainerClass: string;
 };
 
 export function ZaTrainerIdentityActions({
+  canEditChanges,
   canStageChanges,
   classPairOptions,
+  discardEpoch,
   isUpdating,
+  onDirtyStateChange,
   onNavigateTextTarget,
   onStageClassPair,
   trainer
 }: {
+  canEditChanges: boolean;
   canStageChanges: boolean;
   classPairOptions: readonly ZaTrainerClassPairOptionViewModel[];
+  discardEpoch: number;
   isUpdating: boolean;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   onNavigateTextTarget: (target: ZaTrainerTextTargetViewModel) => Promise<boolean>;
   onStageClassPair: (pairId: string) => Promise<boolean>;
   trainer: ZaTrainerIdentityViewModel;
 }) {
   const { t } = useLocalization();
-  const [selectedPairId, setSelectedPairId] = useState(trainer.classPairId ?? '');
+  const effectiveDraftIdentityKey = trainer.trainerId.toString();
+  const sourcePairId = trainer.classPairId ?? '';
+  const [selectedPairIds, setSelectedPairIds] = useState<Record<string, string>>({});
+  const selectedPairId = selectedPairIds[effectiveDraftIdentityKey] ?? sourcePairId;
+  const selectedPairIdsRef = useRef(selectedPairIds);
+  selectedPairIdsRef.current = selectedPairIds;
+  const effectiveDraftIdentityKeyRef = useRef(effectiveDraftIdentityKey);
+  effectiveDraftIdentityKeyRef.current = effectiveDraftIdentityKey;
+  const sourcePairIdRef = useRef(sourcePairId);
+  sourcePairIdRef.current = sourcePairId;
+  const trainerTextTargetContextRef = useRef({
+    classTargetSignature: createTrainerTextTargetSignature(trainer.classTextTarget),
+    nameTargetSignature: createTrainerTextTargetSignature(trainer.nameTextTarget),
+    trainerId: trainer.trainerId
+  });
+  trainerTextTargetContextRef.current = {
+    classTargetSignature: createTrainerTextTargetSignature(trainer.classTextTarget),
+    nameTargetSignature: createTrainerTextTargetSignature(trainer.nameTextTarget),
+    trainerId: trainer.trainerId
+  };
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  usePublishCommonEditorError({
+    domain: 'workflow.trainers',
+    field: 'identity',
+    message: feedback?.kind === 'error' ? feedback.text : null
+  });
   const feedbackRef = useRef<HTMLParagraphElement | null>(null);
 
   useEffect(() => {
-    setSelectedPairId(trainer.classPairId ?? '');
     setFeedback(null);
-  }, [trainer.classPairId]);
+  }, [effectiveDraftIdentityKey]);
+
+  useEffect(() => {
+    setSelectedPairIds({});
+    setFeedback(null);
+  }, [discardEpoch]);
+
+  useEffect(() => {
+    setSelectedPairIds((currentDrafts) =>
+      setTrainerIdentityDraftValue(
+        currentDrafts,
+        effectiveDraftIdentityKey,
+        currentDrafts[effectiveDraftIdentityKey] ?? sourcePairId,
+        sourcePairId
+      )
+    );
+  }, [effectiveDraftIdentityKey, sourcePairId]);
+
+  useEffect(() => {
+    onDirtyStateChange?.(Object.keys(selectedPairIds).length > 0);
+  }, [onDirtyStateChange, selectedPairIds]);
+
+  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
   const selectedOption = classPairOptions.find((option) => option.pairId === selectedPairId);
   const canStage =
@@ -77,9 +134,24 @@ export function ZaTrainerIdentityActions({
             disabled={!trainer.nameTextTarget || isUpdating}
             onClick={async () => {
               if (!trainer.nameTextTarget) return;
+              const requestedTrainerId = trainer.trainerId;
+              const requestedTarget = trainer.nameTextTarget;
+              const requestedTargetSignature = createTrainerTextTargetSignature(
+                requestedTarget
+              );
               setFeedback(null);
-              const opened = await onNavigateTextTarget(trainer.nameTextTarget);
-              if (!opened) setFeedback({ kind: 'error', text: t('trainers.identity.navigationFailure') });
+              const opened = await onNavigateTextTarget(requestedTarget);
+              if (
+                !opened &&
+                trainerTextTargetContextRef.current.trainerId === requestedTrainerId &&
+                trainerTextTargetContextRef.current.nameTargetSignature ===
+                  requestedTargetSignature
+              ) {
+                setFeedback({
+                  kind: 'error',
+                  text: t('trainers.identity.navigationFailure')
+                });
+              }
             }}
             type="button"
           >
@@ -106,9 +178,24 @@ export function ZaTrainerIdentityActions({
             disabled={!trainer.classTextTarget || isUpdating}
             onClick={async () => {
               if (!trainer.classTextTarget) return;
+              const requestedTrainerId = trainer.trainerId;
+              const requestedTarget = trainer.classTextTarget;
+              const requestedTargetSignature = createTrainerTextTargetSignature(
+                requestedTarget
+              );
               setFeedback(null);
-              const opened = await onNavigateTextTarget(trainer.classTextTarget);
-              if (!opened) setFeedback({ kind: 'error', text: t('trainers.identity.navigationFailure') });
+              const opened = await onNavigateTextTarget(requestedTarget);
+              if (
+                !opened &&
+                trainerTextTargetContextRef.current.trainerId === requestedTrainerId &&
+                trainerTextTargetContextRef.current.classTargetSignature ===
+                  requestedTargetSignature
+              ) {
+                setFeedback({
+                  kind: 'error',
+                  text: t('trainers.identity.navigationFailure')
+                });
+              }
             }}
             type="button"
           >
@@ -131,10 +218,18 @@ export function ZaTrainerIdentityActions({
         <label htmlFor="za-trainer-class-pair">{t('trainers.identity.classPair')}</label>
         <select
           className="km-select-control"
-          disabled={!canStageChanges || !trainer.canReassignClass || isUpdating}
+          disabled={!canEditChanges || !trainer.canReassignClass}
           id="za-trainer-class-pair"
           onChange={(event) => {
-            setSelectedPairId(event.target.value);
+            const value = event.target.value;
+            setSelectedPairIds((currentDrafts) =>
+              setTrainerIdentityDraftValue(
+                currentDrafts,
+                effectiveDraftIdentityKey,
+                value,
+                sourcePairId
+              )
+            );
             setFeedback(null);
           }}
           value={selectedPairId}
@@ -149,15 +244,35 @@ export function ZaTrainerIdentityActions({
           className="primary-button"
           disabled={!canStage}
           onClick={async () => {
+            const stagedDraftKey = effectiveDraftIdentityKey;
+            const stagedPairId = selectedPairId;
             setFeedback(null);
-            const didSucceed = await onStageClassPair(selectedPairId);
-            setFeedback({
-              kind: didSucceed ? 'success' : 'error',
-              text: didSucceed
-                ? t('trainers.identity.classStageSuccess')
-                : t('trainers.identity.classStageFailure')
-            });
-            window.requestAnimationFrame(() => feedbackRef.current?.focus());
+            const didSucceed = await onStageClassPair(stagedPairId);
+            const latestSelectedPairId =
+              selectedPairIdsRef.current[stagedDraftKey] ?? sourcePairIdRef.current;
+            const submittedDraftIsStillCurrent =
+              effectiveDraftIdentityKeyRef.current === stagedDraftKey &&
+              latestSelectedPairId === stagedPairId;
+            if (submittedDraftIsStillCurrent) {
+              setFeedback({
+                kind: didSucceed ? 'success' : 'error',
+                text: didSucceed
+                  ? t('trainers.identity.classStageSuccess')
+                  : t('trainers.identity.classStageFailure')
+              });
+            }
+            if (didSucceed) {
+              setSelectedPairIds((currentDrafts) =>
+                clearStagedTrainerIdentityDraftValue(
+                  currentDrafts,
+                  stagedDraftKey,
+                  stagedPairId
+                )
+              );
+            }
+            if (submittedDraftIsStillCurrent) {
+              window.requestAnimationFrame(() => feedbackRef.current?.focus());
+            }
           }}
           type="button"
         >
@@ -194,4 +309,17 @@ export function ZaTrainerIdentityActions({
       ) : null}
     </section>
   );
+}
+
+function createTrainerTextTargetSignature(
+  target: ZaTrainerTextTargetViewModel | null
+) {
+  return target
+    ? JSON.stringify([
+        target.kind,
+        target.lineIndex,
+        target.messageKey,
+        target.sharedTrainerCount
+      ])
+    : null;
 }

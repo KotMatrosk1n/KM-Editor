@@ -51,6 +51,12 @@ import {
   formatEncounterSlotWeightSummary
 } from './encounterWeights';
 import {
+  createProjectedSwShEncounterTableCopyUpdates,
+  findSwShEncounterAreaCopyTargetDraftCollisions,
+  type EncounterDraftRecords,
+  type SwShEncounterAreaCopyTargetDraftCollision
+} from './swshEncounterAreaCopy';
+import {
   buildZaEncounterGroups,
   getZaEncounterGroupKey,
   getZaWildZoneCompletionState,
@@ -252,7 +258,6 @@ import {
   type SvCacheMode,
   type SvCacheStatus
 } from './bridge/svCacheContracts';
-import { rowClipboardEnvelopeV1DtoSchema } from './bridge/rowClipboardContracts';
 import {
   type ZaCacheMode,
   type ZaCacheStatus
@@ -362,11 +367,23 @@ import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
   ApplyResultSection,
   ChangePlanSection,
+  CommonBottomDiagnosticsSection,
   DiagnosticsSection,
   Metric,
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from './components/workflowPanels';
+import {
+  CommonEditorDiagnosticsPublishingScope,
+  CommonEditorDiagnosticsProvider,
+  PublishCommonEditorError,
+  usePublishCommonEditorError,
+  usePublishCommonEditorDiagnostics
+} from './components/CommonEditorDiagnostics';
+import {
+  createLocalEditorValidationDiagnostics,
+  type LocalEditorValidationIssue
+} from './components/commonEditorDiagnosticsState';
 import { TechnicalDetails } from './features/workbench/AnalysisPresentation';
 import {
   EditorSessionActionsProvider,
@@ -377,6 +394,16 @@ import { FieldLabel } from './components/FieldLabel';
 import { ContextHelp } from './components/ContextHelp';
 import { HoverTooltip } from './components/HoverTooltip';
 import {
+  formatSearchableOptionValue,
+  getSmartOptionMatches,
+  transitionSearchableOptionInteraction
+} from './components/searchableOptionInputState';
+import {
+  clearSubmittedKeyedEditorDraft,
+  reconcileKeyedSourceBackedEditorDrafts,
+  reconcileSourceBackedDraft
+} from './components/localEditorDraftState';
+import {
   TooltipIconVisibilityProvider
 } from './components/TooltipIconVisibility';
 import { AppSidebar } from './components/AppSidebar';
@@ -386,15 +413,15 @@ import {
   TrainerPartySlotContextMenu,
   trainerPartySlotContextMenuId
 } from './components/TrainerPartySlotContextMenu';
-import { RowClipboardController } from './authoring/rowClipboardController';
+import { createScopedRowClipboardController } from './authoring/rowClipboardScopedController';
 import {
   applyEncounterClipboardOwnedValues,
   applyPokemonLearnsetClipboardOwnedValues,
   applyTrainerPartyClipboardOwnedValues,
   createEncounterClipboardRowFromFieldValues,
   createPokemonLearnsetClipboardRowFromFieldValues,
+  createTrainerPartyClipboardFieldValues,
   createTrainerPartyClipboardRowFromFieldValues,
-  rowClipboardAdapterRegistrations,
   rowClipboardEditorSchemas,
   rowClipboardProfileIds
 } from './authoring/rowClipboardAdapters';
@@ -403,7 +430,10 @@ import {
   writeRowClipboardEnvelopeToSystemClipboard,
   type RowClipboardSystemClipboardFeedbackKey
 } from './authoring/rowClipboardSystemClipboard';
-import type { RowClipboardOwnedValue } from './authoring/rowClipboardTypes';
+import {
+  RowClipboardError,
+  type RowClipboardLogicalRowV1
+} from './authoring/rowClipboardTypes';
 import { TrainerPoolsSection } from './features/trainer-pools/TrainerPoolsSection';
 import type { TrainerPoolsWorkflow } from './bridge/trainerPoolsContracts';
 import {
@@ -414,6 +444,11 @@ import {
   HabitatCoordinatesSection,
   type HabitatCoordinateStageInput
 } from './features/habitat-coordinates/HabitatCoordinatesSection';
+import {
+  canCommitHabitatCoordinatesLoad,
+  createHabitatCoordinatesQueryKey,
+  habitatCoordinateStageResponseMatchesRequest
+} from './features/habitat-coordinates/habitatCoordinateDraftState';
 import type {
   HabitatCoordinatesQuery
 } from './bridge/habitatCoordinatesContracts';
@@ -596,8 +631,7 @@ import {
 } from './workbench/workbenchLocation';
 import {
   projectGameToFamily,
-  semanticRecordRefKey,
-  type SemanticRecordRef
+  semanticRecordRefKey
 } from './workbench/semanticContracts';
 import { createSemanticExploreLocation } from './workbench/semanticExploreNavigation';
 import {
@@ -656,33 +690,14 @@ import {
   type PersonalWorkspaceSnapshot
 } from './workbench/personalWorkspaceRegistry';
 import {
-  createBridgeBackedProjectDraftRegistry,
-  type ProjectDraftAdapter
+  createBridgeBackedProjectDraftRegistry
 } from './workbench/draftRegistry';
 import {
-  OrdinaryEditorDraftProvider,
-  useOrdinaryEditorDraft,
-  useOrdinaryEditorDraftProtectionIndex,
-  useOrdinaryEditorDraftProtectionSnapshot,
-  type UseOrdinaryEditorDraftResult
-} from './workbench/OrdinaryEditorDraftProvider';
-import {
-  isOrdinaryFieldDraftClean,
-  isOrdinaryPokemonDraftClean,
-  isOrdinaryTrainerDraftClean,
-  ordinaryItemDraftAdapter,
-  ordinaryMoveDraftAdapter,
-  ordinaryPokemonDraftAdapter,
-  ordinaryTextDraftAdapter,
-  ordinaryTrainerDraftAdapter,
   type OrdinaryFieldDraftPayload,
   type OrdinaryPokemonDraftPayload,
   type OrdinaryTextDraftPayload,
   type OrdinaryTrainerDraftPayload
-} from './workbench/ordinaryEditorDraftAdapters';
-import { useOrdinaryEditorEntitySourceRevision } from './workbench/ordinaryEditorSourceRevision';
-import type { OrdinaryEditorDraftProtectionIndexSnapshot } from './workbench/ordinaryEditorDraftProtectionIndex';
-import type { OrdinaryEditorDraftScope } from './workbench/ordinaryEditorDraftStore';
+} from './workbench/sessionLocalEditorDraftPayloads';
 import { useProjectSourceRevision } from './workbench/useProjectSourceRevision';
 import { AdvancedAuthoringController } from './authoring/advancedAuthoringController';
 import {
@@ -1534,6 +1549,21 @@ const zaCoreTrainerAiMask = (1 << 0) | (1 << 1) | (1 << 2);
 const zaChangeTrainerAiMask = 1 << 7;
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const supportSearchProgressEvent = 'km-editor://support-file-search-progress';
+
+function workspaceContentDraftScopeKey(location: WorkbenchLocation) {
+  if (
+    location.entity &&
+    (location.section === 'trainers' || location.section === 'encounters')
+  ) {
+    return `${location.section}:${semanticRecordRefKey({
+      ...location.entity,
+      subrecordId: null
+    })}`;
+  }
+
+  return workspaceTabKey(location);
+}
+
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
   classBallIdFieldName,
@@ -2076,19 +2106,6 @@ export function App({
   const projectDraftRegistry = useMemo(
     () => createBridgeBackedProjectDraftRegistry(unscopedBridge),
     [unscopedBridge]
-  );
-  const ordinaryDraftProtectionIndexRef = useRef<
-    ReturnType<typeof useOrdinaryEditorDraftProtectionIndex> | null
-  >(null);
-  const [ordinaryDraftProtectionSnapshot, setOrdinaryDraftProtectionSnapshot] =
-    useState<OrdinaryEditorDraftProtectionIndexSnapshot>(
-      emptyOrdinaryDraftProtectionSnapshot
-    );
-  const handleOrdinaryDraftProtectionIndexChange = useCallback(
-    (index: ReturnType<typeof useOrdinaryEditorDraftProtectionIndex> | null) => {
-      ordinaryDraftProtectionIndexRef.current = index;
-    },
-    []
   );
   const [applicationWorkspaceSnapshot, setApplicationWorkspaceSnapshot] = useState<
     PersonalWorkspaceSnapshot<WorkspaceApplicationStateDocument>
@@ -2785,30 +2802,10 @@ export function App({
       selectedGame && activeProjectId
         ? {
             game: selectedGame,
-            projectId: activeProjectId,
-            projectSourceRevisionFingerprint: projectSourceRevision.fingerprint,
-            refreshProjectSourceRevision: projectSourceRevision.refresh,
-            sourceRevisionStatus: projectSourceRevision.status
+            projectId: activeProjectId
           }
         : null,
-    [
-      activeProjectId,
-      projectSourceRevision.fingerprint,
-      projectSourceRevision.refresh,
-      projectSourceRevision.status,
-      selectedGame
-    ]
-  );
-  const ordinaryDraftProtectionRefreshScope = useMemo(
-    () =>
-      selectedGame && activeProjectId && projectSourceRevision.fingerprint
-        ? {
-            game: selectedGame,
-            projectId: activeProjectId,
-            sourceRevisionFingerprint: projectSourceRevision.fingerprint
-          }
-        : null,
-    [activeProjectId, projectSourceRevision.fingerprint, selectedGame]
+    [activeProjectId, selectedGame]
   );
   const activeProjectIdRef = useRef(activeProjectId);
   activeProjectIdRef.current = activeProjectId;
@@ -3053,6 +3050,18 @@ export function App({
   const workflowLoadGenerationRef = useRef(new WorkflowLoadGeneration());
   const workflowLoadTailRef = useRef<Promise<void>>(Promise.resolve());
   const workflowRecencyRef = useRef<RetainedWorkflowSection[]>([]);
+  const habitatCoordinatesViewGenerationRef = useRef(0);
+  const habitatCoordinatesStageGenerationRef = useRef(0);
+  const habitatCoordinatesLatestQueryRef = useRef<HabitatCoordinatesQuery>(
+    habitatCoordinatesWorkflow
+      ? {
+          limit: habitatCoordinatesWorkflow.page.limit,
+          offset: habitatCoordinatesWorkflow.page.offset,
+          region: habitatCoordinatesWorkflow.page.region,
+          search: habitatCoordinatesWorkflow.page.search
+        }
+      : { limit: 50, offset: 0, region: 'paldea', search: '' }
+  );
   const [advancedAuthoringDraftProtection, setAdvancedAuthoringDraftProtection] =
     useState<AdvancedAuthoringDraftProtection>({
       scopeKey: null,
@@ -3270,34 +3279,26 @@ export function App({
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
   );
-  const ordinaryDraftProtectionSnapshotRef = useRef(
-    ordinaryDraftProtectionSnapshot
-  );
-  ordinaryDraftProtectionSnapshotRef.current = ordinaryDraftProtectionSnapshot;
-  const hasLatestOrdinaryDraftProtection = useCallback(
-    () =>
-      (
-        ordinaryDraftProtectionIndexRef.current?.getSnapshot() ??
-        ordinaryDraftProtectionSnapshotRef.current
-      ).protectedEntityKeys.size > 0,
+  const editorDraftDirtySectionsRef = useRef(editorDraftDirtySections);
+  editorDraftDirtySectionsRef.current = editorDraftDirtySections;
+  const hasLatestLocalDraftProtection = useCallback(
+    () => editorDraftDirtySectionsRef.current.size > 0,
     []
   );
-  const hasOrdinaryProtectedDrafts =
-    ordinaryDraftProtectionSnapshot.protectedEntityKeys.size > 0;
-  const flushOrdinaryEditorDrafts = useCallback(async () => {
-    const index = ordinaryDraftProtectionIndexRef.current;
-    if (!index || (await index.flushTracked())) {
-      return true;
-    }
-    setBridgeDiagnostics([
-      {
-        domain: 'workspace.drafts',
-        message: t('ordinaryDraft.flush.error'),
-        severity: 'error'
-      }
-    ]);
-    return false;
-  }, [setBridgeDiagnostics, t]);
+  const hasProtectedItemDrafts = editorDraftDirtySections.has('items');
+  const hasProtectedPokemonDrafts = editorDraftDirtySections.has('pokemon');
+  const hasProtectedTrainerDrafts = editorDraftDirtySections.has('trainers');
+  const bottomDiagnostics = useMemo(
+    () =>
+      deduplicateDiagnostics([
+        ...bridgeDiagnostics,
+        ...editValidationDiagnostics
+      ]),
+    [bridgeDiagnostics, editValidationDiagnostics]
+  );
+  // Ordinary editor input is intentionally session-local. Nothing is written,
+  // validated against storage, or reconciled while the user is typing.
+  const settleLocalEditorDrafts = useCallback(async () => true, []);
   const ordinaryEditorSearchRevisionRef = useRef<Record<string, number>>({});
   const commitOrdinaryEditorSearch = useCallback(
     async (
@@ -3307,7 +3308,7 @@ export function App({
       const revision = (ordinaryEditorSearchRevisionRef.current[section] ?? 0) + 1;
       ordinaryEditorSearchRevisionRef.current[section] = revision;
       if (
-        !(await flushOrdinaryEditorDrafts()) ||
+        !(await settleLocalEditorDrafts()) ||
         ordinaryEditorSearchRevisionRef.current[section] !== revision
       ) {
         return false;
@@ -3315,7 +3316,7 @@ export function App({
       commit();
       return true;
     },
-    [flushOrdinaryEditorDrafts]
+    [settleLocalEditorDrafts]
   );
   const handleItemSearchChange = useCallback(
     (value: string) =>
@@ -3337,31 +3338,7 @@ export function App({
       commitOrdinaryEditorSearch('trainers', () => setTrainerSearchText(value)),
     [commitOrdinaryEditorSearch, setTrainerSearchText]
   );
-  const discardOrdinaryEditorDrafts = useCallback(
-    async (section?: WorkbenchSection) => {
-      const index = ordinaryDraftProtectionIndexRef.current;
-      if (!index || !activeProjectId || !selectedGame) {
-        return true;
-      }
-      const didDiscard = await index.discardMatching({
-        adapterIds: ordinaryDraftAdapterIds,
-        game: selectedGame,
-        projectId: activeProjectId,
-        ...(section ? { section } : {})
-      });
-      if (!didDiscard) {
-        setBridgeDiagnostics([
-          {
-            domain: 'workspace.drafts',
-            message: t('ordinaryDraft.discard.error'),
-            severity: 'error'
-          }
-        ]);
-      }
-      return didDiscard;
-    },
-    [activeProjectId, selectedGame, setBridgeDiagnostics, t]
-  );
+  const discardLocalEditorDraftProtection = useCallback(async () => true, []);
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
   const isNativeUpdateApplying =
     updateCheckStatus.kind === 'preparing' ||
@@ -3714,6 +3691,7 @@ export function App({
         setPersonalWorkspaceError(null);
       } catch (error) {
         setPersonalWorkspaceError(getErrorMessage(error));
+        throw error;
       }
     },
     [personalWorkspaceRegistry]
@@ -3729,7 +3707,6 @@ export function App({
     setPersonalWorkspaceError(null);
   }, [personalWorkspaceRegistry]);
   const editSessionRef = useRef<EditSession | null>(editSession);
-  const editorDraftDirtySectionsRef = useRef(editorDraftDirtySections);
   const moveEditBaselineValuesRef = useRef<{
     sessionId: string;
     valuesByMoveId: MoveBaselineValuesByMoveId;
@@ -4035,11 +4012,7 @@ export function App({
     activeSection !== 'profanityFilter' &&
     activeSection !== 'randomizer' &&
     activeSection !== 'gameDump';
-  const activeEditorHasLocalDrafts = ordinaryDraftMigratedSections.has(activeSection)
-    ? [...ordinaryDraftProtectionSnapshot.protectedEntityKeys].some((key) =>
-        key.startsWith(`${activeSection}:`)
-      )
-    : editorDraftDirtySections.has(activeSection);
+  const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
   const editSessionCanBeSharedAcrossNormalEditors =
     editSession !== null &&
     (editSessionSection === null ||
@@ -4133,6 +4106,18 @@ export function App({
   );
   const handleGameplaySettingsDirtyChange = useCallback(
     (isDirty: boolean) => registerEditorDraftDirty('gameplaySettings', isDirty),
+    [registerEditorDraftDirty]
+  );
+  const handleResearchLabDirtyChange = useCallback(
+    (isDirty: boolean) => registerEditorDraftDirty('workbench', isDirty),
+    [registerEditorDraftDirty]
+  );
+  const handleFashionCatalogDirtyChange = useCallback(
+    (isDirty: boolean) => registerEditorDraftDirty('fashionCatalog', isDirty),
+    [registerEditorDraftDirty]
+  );
+  const handleHabitatCoordinatesDirtyChange = useCallback(
+    (isDirty: boolean) => registerEditorDraftDirty('habitatCoordinates', isDirty),
     [registerEditorDraftDirty]
   );
   const handleGameplaySettingsApplied = useCallback(
@@ -4247,14 +4232,6 @@ export function App({
           protectedSections.add(retainedSection);
         }
       }
-      for (const key of ordinaryDraftProtectionSnapshot.protectedEntityKeys) {
-        const separatorIndex = key.indexOf(':');
-        const section = key.slice(0, separatorIndex) as WorkbenchSection;
-        const retainedSection = resolveRetainedWorkflowSection(section);
-        if (retainedSection) {
-          protectedSections.add(retainedSection);
-        }
-      }
       if (hasModMergerLocalState) {
         protectedSections.add('modMerger');
       }
@@ -4288,7 +4265,6 @@ export function App({
       editSessionSection,
       editorDraftDirtySections,
       hasModMergerLocalState,
-      ordinaryDraftProtectionSnapshot.protectedEntityKeys,
       selectedGame
     ]
   );
@@ -4801,14 +4777,14 @@ export function App({
   }, []);
 
   const prepareProjectPathChange = useCallback(async () => {
-    if (!(await flushOrdinaryEditorDrafts())) {
+    if (!(await settleLocalEditorDrafts())) {
       return false;
     }
-    if (hasLatestOrdinaryDraftProtection()) {
+    if (hasLatestLocalDraftProtection()) {
       setBridgeDiagnostics([
         {
           domain: 'workspace.drafts',
-          message: t('ordinaryDraft.projectSwitch.error'),
+          message: t('localDraft.projectSwitch.error'),
           severity: 'warning'
         }
       ]);
@@ -4819,8 +4795,8 @@ export function App({
     }
     return true;
   }, [
-    flushOrdinaryEditorDrafts,
-    hasLatestOrdinaryDraftProtection,
+    settleLocalEditorDrafts,
+    hasLatestLocalDraftProtection,
     setBridgeDiagnostics,
     t
   ]);
@@ -4894,8 +4870,8 @@ export function App({
         return;
       }
 
-      if (ordinaryDraftMigratedSections.has(activeSection)) {
-        void discardOrdinaryEditorDrafts(activeSection).then((didDiscard) => {
+      if (sessionLocalEditorSections.has(activeSection)) {
+        void discardLocalEditorDraftProtection().then((didDiscard) => {
           if (didDiscard) {
             onDiscard?.();
           }
@@ -4909,7 +4885,7 @@ export function App({
       isChangePlanCreating,
       isSessionValidating,
       activeSection,
-      discardOrdinaryEditorDrafts,
+      discardLocalEditorDraftProtection,
       unassignedPendingEditCount
     ]
   );
@@ -5012,7 +4988,7 @@ export function App({
       if (!(await flushActiveNoteRef.current())) {
         return null;
       }
-      if (!(await flushOrdinaryEditorDrafts())) {
+      if (!(await settleLocalEditorDrafts())) {
         return null;
       }
       const currentScope = workspaceShellStateRef.current.scope;
@@ -5066,7 +5042,7 @@ export function App({
       }
       return decision;
     },
-    [clearPendingEditState, commitWorkbenchLocation, flushOrdinaryEditorDrafts]
+    [clearPendingEditState, commitWorkbenchLocation, settleLocalEditorDrafts]
   );
 
   const resolveStableLocationCommit = useCallback(
@@ -5364,7 +5340,7 @@ export function App({
 
       if (
         !(await flushActiveNoteRef.current()) ||
-        !(await flushOrdinaryEditorDrafts()) ||
+        !(await settleLocalEditorDrafts()) ||
         !isCurrentRequest()
       ) {
         return { kind: 'aborted' };
@@ -5398,7 +5374,7 @@ export function App({
       return { kind: 'ready', onCommit: preparedCommit };
     },
     [
-      flushOrdinaryEditorDrafts,
+      settleLocalEditorDrafts,
       resolveStableLocationCommit,
       setBridgeDiagnostics,
       stableLocationSourceIsLoaded,
@@ -5835,14 +5811,13 @@ export function App({
       });
       const protectedTabKeys = getProtectedWorkspaceTabKeys(
         workspaceShellStateRef.current.tabs,
-        ordinaryDraftProtectionSnapshotRef.current,
         editorDraftDirtySectionsRef.current
       );
       return handleNavigateLocation(destination, onCommit, 'push', {
         protectedTabKeys,
         tabEligible: isStableLocationTabEligible(
           destination,
-          ordinaryDraftMigratedSections
+          sessionLocalEditorSections
         )
       });
     },
@@ -6787,8 +6762,8 @@ export function App({
       setPersonalWorkspaceError(getErrorMessage(error));
     }
   }, [personalProjectTarget, personalWorkspaceRegistry]);
-  const handleCreateOutputProfile = useCallback(async (name: string) => {
-    if (!personalProjectTarget || !draftPaths.outputRootPath) return;
+  const handleCreateOutputProfile = useCallback(async (name: string): Promise<boolean> => {
+    if (!personalProjectTarget || !draftPaths.outputRootPath) return false;
     try {
       const snapshot = await personalWorkspaceRegistry.saveOutputProfile(
         personalProjectTarget,
@@ -6803,8 +6778,10 @@ export function App({
       if (activeProjectIdRef.current === personalProjectTarget.projectId) {
         setProjectWorkspaceSnapshot(snapshot);
       }
+      return true;
     } catch (error) {
       setPersonalWorkspaceError(getErrorMessage(error));
+      return false;
     }
   }, [
     draftPaths.outputRootPath,
@@ -6872,7 +6849,6 @@ export function App({
           <div className="km-workbench-note">
             <textarea
               aria-label={t('workbench.notes.title')}
-              disabled={activeNoteViewModel.isBusy}
               maxLength={workspaceMaximumNoteBytes / 4}
               onBlur={() => void saveActiveNote()}
               onChange={(event) => {
@@ -7043,10 +7019,7 @@ export function App({
   const workspaceRecordTabs = useMemo(
     () =>
       workspaceShellState.tabs.map((tab) => ({
-        hasProtectedDraft:
-          ordinaryDraftProtectionSnapshot.protectedEntityKeys.has(tab.key) ||
-          (!ordinaryDraftMigratedSections.has(tab.location.section) &&
-            editorDraftDirtySections.has(tab.location.section)),
+        hasProtectedDraft: editorDraftDirtySections.has(tab.location.section),
         key: tab.key,
         label:
           tab.location.entity?.recordId ??
@@ -7056,7 +7029,6 @@ export function App({
       })),
     [
       editorDraftDirtySections,
-      ordinaryDraftProtectionSnapshot.protectedEntityKeys,
       t,
       workspaceShellState.tabs
     ]
@@ -7143,7 +7115,6 @@ export function App({
     const currentState = workspaceShellStateRef.current;
     const protectedTabKeys = getProtectedWorkspaceTabKeys(
       currentState.tabs,
-      ordinaryDraftProtectionSnapshotRef.current,
       editorDraftDirtySectionsRef.current
     );
     if (protectedTabKeys.has(tabKey)) return;
@@ -7180,7 +7151,6 @@ export function App({
         const latestState = workspaceShellStateRef.current;
         const latestProtectedTabKeys = getProtectedWorkspaceTabKeys(
           latestState.tabs,
-          ordinaryDraftProtectionSnapshotRef.current,
           editorDraftDirtySectionsRef.current
         );
         const nextState = closeWorkspaceTab(
@@ -7250,8 +7220,8 @@ export function App({
         return;
       }
       if (
-        ordinaryDraftMigratedSections.has(activeSection) &&
-        !(await discardOrdinaryEditorDrafts(activeSection))
+        sessionLocalEditorSections.has(activeSection) &&
+        !(await discardLocalEditorDraftProtection())
       ) {
         return;
       }
@@ -7276,14 +7246,14 @@ export function App({
         if (!(await discardUnassignedPendingEdits())) {
           return;
         }
-        if (!(await discardOrdinaryEditorDrafts())) {
+        if (!(await discardLocalEditorDraftProtection())) {
           return;
         }
         clearLoadedWorkflowData();
       } else {
         if (
-          ordinaryDraftMigratedSections.has(activeSection) &&
-          !(await discardOrdinaryEditorDrafts(activeSection))
+          sessionLocalEditorSections.has(activeSection) &&
+          !(await discardLocalEditorDraftProtection())
         ) {
           return;
         }
@@ -7312,7 +7282,7 @@ export function App({
     if (!(await discardUnassignedPendingEdits())) {
       return;
     }
-    if (!(await discardOrdinaryEditorDrafts())) {
+    if (!(await discardLocalEditorDraftProtection())) {
       return;
     }
     clearLoadedWorkflowData();
@@ -7345,7 +7315,7 @@ export function App({
     desktopServices.isAvailable,
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
-    discardOrdinaryEditorDrafts,
+    discardLocalEditorDraftProtection,
     discardUnassignedPendingEdits,
     exitPrompt,
     isChangePlanApplying,
@@ -7421,7 +7391,6 @@ export function App({
         activeNoteIsDirty ||
           editSession !== null ||
           editorDraftDirtySections.size > 0 ||
-          hasOrdinaryProtectedDrafts ||
           hasCriticalWriteOperation
       )
       .catch((error) => {
@@ -7439,7 +7408,6 @@ export function App({
     desktopServices.setCloseGuardEnabled,
     editSession,
     editorDraftDirtySections,
-    hasOrdinaryProtectedDrafts,
     hasCriticalWriteOperation,
     setBridgeDiagnostics
   ]);
@@ -8195,7 +8163,7 @@ export function App({
   };
 
   const handleValidateProject = async () => {
-    if (!(await flushOrdinaryEditorDrafts())) {
+    if (!(await settleLocalEditorDrafts())) {
       return;
     }
     if (!(await recycleProjectBridgeBeforeScopeChange())) {
@@ -8216,13 +8184,13 @@ export function App({
       if (
         activeProjectId !== null &&
         response.projectId !== activeProjectId &&
-        hasLatestOrdinaryDraftProtection()
+        hasLatestLocalDraftProtection()
       ) {
         setProjectStatus('idle');
         setBridgeDiagnostics([
           {
             domain: 'workspace.drafts',
-            message: t('ordinaryDraft.projectSwitch.error'),
+            message: t('localDraft.projectSwitch.error'),
             severity: 'warning'
           }
         ]);
@@ -8250,7 +8218,7 @@ export function App({
   };
 
   const handleOpenRecentProject = async (projectId: string) => {
-    if (!(await flushOrdinaryEditorDrafts())) {
+    if (!(await settleLocalEditorDrafts())) {
       return;
     }
     if (
@@ -8260,7 +8228,7 @@ export function App({
       activeNoteSavePromiseRef.current !== null ||
       unassignedPendingEditCount > 0 ||
       editorDraftDirtySections.size > 0 ||
-      hasLatestOrdinaryDraftProtection()
+      hasLatestLocalDraftProtection()
     ) {
       return;
     }
@@ -8345,7 +8313,7 @@ export function App({
         if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
           return;
         }
-        if (!(await flushOrdinaryEditorDrafts())) {
+        if (!(await settleLocalEditorDrafts())) {
           return;
         }
         if (isDisposed) {
@@ -8354,7 +8322,7 @@ export function App({
 
         const hasLocalDrafts =
           editorDraftDirtySectionsRef.current.size > 0 ||
-          hasLatestOrdinaryDraftProtection();
+          hasLatestLocalDraftProtection();
         if (editSessionRef.current === null && !hasLocalDrafts) {
           try {
             await desktopServices.setCloseGuardEnabled(false);
@@ -8407,8 +8375,8 @@ export function App({
     desktopServices.isAvailable,
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
-    flushOrdinaryEditorDrafts,
-    hasLatestOrdinaryDraftProtection,
+    settleLocalEditorDrafts,
+    hasLatestLocalDraftProtection,
     setBridgeDiagnostics
   ]);
 
@@ -9278,7 +9246,7 @@ export function App({
 
     const queryRevision = textQueryRevisionRef.current + 1;
     textQueryRevisionRef.current = queryRevision;
-    if (!(await flushOrdinaryEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
+    if (!(await settleLocalEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
       return;
     }
     setIsTextQueryPending(true);
@@ -9294,7 +9262,7 @@ export function App({
 
     const queryRevision = textQueryRevisionRef.current + 1;
     textQueryRevisionRef.current = queryRevision;
-    if (!(await flushOrdinaryEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
+    if (!(await settleLocalEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
       return;
     }
     setIsTextQueryPending(true);
@@ -9310,7 +9278,7 @@ export function App({
 
     const queryRevision = textQueryRevisionRef.current + 1;
     textQueryRevisionRef.current = queryRevision;
-    if (!(await flushOrdinaryEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
+    if (!(await settleLocalEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
       return;
     }
     setIsTextQueryPending(true);
@@ -9326,7 +9294,7 @@ export function App({
 
     const queryRevision = textQueryRevisionRef.current + 1;
     textQueryRevisionRef.current = queryRevision;
-    if (!(await flushOrdinaryEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
+    if (!(await settleLocalEditorDrafts()) || textQueryRevisionRef.current !== queryRevision) {
       return;
     }
     setIsTextQueryPending(true);
@@ -9431,8 +9399,27 @@ export function App({
   };
 
   const handleOpenHabitatCoordinatesWorkflow = async (
-    query: HabitatCoordinatesQuery = getCurrentHabitatCoordinatesQuery()
+    query: HabitatCoordinatesQuery = getCurrentHabitatCoordinatesQuery(),
+    sessionOverride?: EditSession | null
   ) => {
+    const requestedQuery = { ...query };
+    habitatCoordinatesLatestQueryRef.current = requestedQuery;
+    const requestedViewGeneration = ++habitatCoordinatesViewGenerationRef.current;
+    const requestedStageGeneration = habitatCoordinatesStageGenerationRef.current;
+    const requestedSession =
+      sessionOverride === undefined
+        ? getEditSessionForSection('habitatCoordinates')
+        : sessionOverride;
+    const requestedSessionSignature = getEditSessionSignature(requestedSession);
+    const canCommitRequestedLoad = () =>
+      canCommitHabitatCoordinatesLoad({
+        currentSessionSignature: getEditSessionSignature(editSessionRef.current),
+        currentStageGeneration: habitatCoordinatesStageGenerationRef.current,
+        currentViewGeneration: habitatCoordinatesViewGenerationRef.current,
+        requestedSessionSignature,
+        requestedStageGeneration,
+        requestedViewGeneration
+      });
     let didLoad = false;
     await runRetainedWorkflowLoad(
       'habitatCoordinates',
@@ -9440,13 +9427,14 @@ export function App({
       () =>
         bridge.loadHabitatCoordinates({
           paths: createProjectPaths(draftPaths),
-          query,
-          session: getEditSessionForSection('habitatCoordinates')
+          query: requestedQuery,
+          session: requestedSession
         }),
       (response) => {
         setHabitatCoordinatesWorkflow(response.workflow);
         didLoad = true;
-      }
+      },
+      canCommitRequestedLoad
     );
     return didLoad;
   };
@@ -10176,7 +10164,11 @@ export function App({
     );
   };
 
-  const handleStageShinyRate = async (mode: ShinyRateMode, rollCount: number | null) => {
+  const handleStageShinyRate = async (
+    mode: ShinyRateMode,
+    rollCount: number | null,
+    isSubmittedDraftCurrent: () => boolean
+  ) => {
     setIsShinyRateStaging(true);
     setBridgeDiagnostics([]);
 
@@ -10202,19 +10194,28 @@ export function App({
         },
         (response) => {
           if (!response.didSucceed || !response.workflow) {
-            setBridgeDiagnostics(response.diagnostics);
+            if (isSubmittedDraftCurrent()) {
+              setBridgeDiagnostics(response.diagnostics);
+            }
             return;
           }
 
-          prepareScopedEditorPanelAction('shinyRate');
+          if (isSubmittedDraftCurrent()) {
+            prepareScopedEditorPanelAction('shinyRate');
+            setScopedEditorPanelDiagnostics('shinyRate', response.diagnostics);
+          } else {
+            setChangePlan(null);
+            setApplyResult(null);
+            clearScopedEditorPanelState('shinyRate');
+          }
           setShinyRateWorkflow(response.workflow);
           setEditSessionSection('shinyRate');
-          setScopedEditorPanelDiagnostics('shinyRate', response.diagnostics);
-          registerEditorDraftDirty('shinyRate', false);
         }
       );
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (isSubmittedDraftCurrent()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
       setIsShinyRateStaging(false);
     }
@@ -11341,7 +11342,10 @@ export function App({
     );
   };
 
-  const handleStageBattleCafeRewardRows = async (rows: BattleCafeRewardRowEdit[]) => {
+  const handleStageBattleCafeRewardRows = async (
+    rows: BattleCafeRewardRowEdit[],
+    isSubmittedDraftCurrent: () => boolean
+  ) => {
     setIsBattleCafeRewardsStaging(true);
     setBridgeDiagnostics([]);
 
@@ -11366,19 +11370,31 @@ export function App({
         },
         (response) => {
           if (!response.didSucceed || !response.workflow) {
-            setBridgeDiagnostics(response.diagnostics);
+            if (isSubmittedDraftCurrent()) {
+              setBridgeDiagnostics(response.diagnostics);
+            }
             return;
           }
 
-          prepareScopedEditorPanelAction('battleCafeRewards');
+          if (isSubmittedDraftCurrent()) {
+            prepareScopedEditorPanelAction('battleCafeRewards');
+            setScopedEditorPanelDiagnostics(
+              'battleCafeRewards',
+              response.diagnostics
+            );
+          } else {
+            setChangePlan(null);
+            setApplyResult(null);
+            clearScopedEditorPanelState('battleCafeRewards');
+          }
           setBattleCafeRewardsWorkflow(response.workflow);
           setEditSessionSection('battleCafeRewards');
-          setScopedEditorPanelDiagnostics('battleCafeRewards', response.diagnostics);
-          registerEditorDraftDirty('battleCafeRewards', false);
         }
       );
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (isSubmittedDraftCurrent()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
       setIsBattleCafeRewardsStaging(false);
     }
@@ -12524,6 +12540,9 @@ export function App({
   };
 
   const handleLoadFpsPatch = async () => {
+    const previousSourceSelection = fpsPatchStatus
+      ? getEnabledFpsPatchAnimationTimingComponentIds(fpsPatchStatus)
+      : [];
     setIsFpsPatchLoading(true);
     setBridgeDiagnostics([]);
 
@@ -12532,8 +12551,15 @@ export function App({
         paths: createProjectPaths(draftPaths)
       });
       setFpsPatchStatus(response.status);
-      setFpsPatchDesiredAnimationTimingComponentIds(
-        getEnabledFpsPatchAnimationTimingComponentIds(response.status)
+      const nextSourceSelection = getEnabledFpsPatchAnimationTimingComponentIds(
+        response.status
+      );
+      setFpsPatchDesiredAnimationTimingComponentIds((currentSelection) =>
+        reconcileFpsPatchAnimationTimingSelection(
+          currentSelection,
+          previousSourceSelection,
+          nextSourceSelection
+        )
       );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -12549,6 +12575,7 @@ export function App({
       return;
     }
 
+    const submittedSelection = [...enabledAnimationTimingComponentIds];
     setIsFpsPatchApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -12563,7 +12590,7 @@ export function App({
       const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyFpsPatch({
         paths,
-        enabledAnimationTimingComponentIds: [...enabledAnimationTimingComponentIds]
+        enabledAnimationTimingComponentIds: submittedSelection
       });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
@@ -12573,8 +12600,15 @@ export function App({
       );
       const applySucceeded = !hasApplyErrors && !response.recoveryRequired;
       if (applySucceeded) {
-        setFpsPatchDesiredAnimationTimingComponentIds(
-          getEnabledFpsPatchAnimationTimingComponentIds(response.status)
+        const nextSourceSelection = getEnabledFpsPatchAnimationTimingComponentIds(
+          response.status
+        );
+        setFpsPatchDesiredAnimationTimingComponentIds((currentSelection) =>
+          reconcileFpsPatchAnimationTimingSelection(
+            currentSelection,
+            submittedSelection,
+            nextSourceSelection
+          )
         );
       }
       if (response.recoveryRequired) {
@@ -12605,6 +12639,7 @@ export function App({
       return;
     }
 
+    const submittedSelection = [...fpsPatchDesiredAnimationTimingComponentIds];
     setIsFpsPatchApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -12626,8 +12661,15 @@ export function App({
       );
       const restoreSucceeded = !hasApplyErrors && !response.recoveryRequired;
       if (restoreSucceeded) {
-        setFpsPatchDesiredAnimationTimingComponentIds(
-          getEnabledFpsPatchAnimationTimingComponentIds(response.status)
+        const nextSourceSelection = getEnabledFpsPatchAnimationTimingComponentIds(
+          response.status
+        );
+        setFpsPatchDesiredAnimationTimingComponentIds((currentSelection) =>
+          reconcileFpsPatchAnimationTimingSelection(
+            currentSelection,
+            submittedSelection,
+            nextSourceSelection
+          )
         );
       }
       if (response.recoveryRequired) {
@@ -13312,6 +13354,8 @@ export function App({
   const [advancedAuthoringController, setAdvancedAuthoringController] =
     useState<AdvancedAuthoringController | null>(null);
   const [advancedAuthoringRevision, setAdvancedAuthoringRevision] = useState(0);
+  const [advancedAuthoringHistorySyncError, setAdvancedAuthoringHistorySyncError] =
+    useState<string | null>(null);
   const [isAdvancedAuthoringDraftPending, setIsAdvancedAuthoringDraftPending] =
     useState(false);
   const advancedAuthoringLoadRevisionRef = useRef(0);
@@ -13335,12 +13379,14 @@ export function App({
     if (!advancedAuthoringScope) {
       advancedAuthoringControllerRef.current = null;
       setAdvancedAuthoringController(null);
+      setAdvancedAuthoringHistorySyncError(null);
       setIsAdvancedAuthoringDraftPending(false);
       return;
     }
     if (advancedAuthoringWorkspaces.length === 0) {
       advancedAuthoringControllerRef.current = null;
       setAdvancedAuthoringController(null);
+      setAdvancedAuthoringHistorySyncError(null);
       return;
     }
 
@@ -13372,8 +13418,16 @@ export function App({
             )
           : null
       );
+      setAdvancedAuthoringHistorySyncError(null);
     } catch {
-      controller.syncStagedHistory(null);
+      setAdvancedAuthoringHistorySyncError(
+        'Advanced authoring history could not be synchronized. Refresh Changes before using staged undo or redo.'
+      );
+      try {
+        controller.syncStagedHistory(null);
+      } catch {
+        // The actionable failure is retained above even when the defensive reset also fails.
+      }
     }
     setAdvancedAuthoringRevision((revision) => revision + 1);
 
@@ -13893,23 +13947,37 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      await runEditSessionMutation(
-        (session) =>
-          bridge.updatePokemonField({
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.updatePokemonField({
             field,
             paths: createProjectPaths(draftPaths),
             personalId,
             session,
             value
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
         (response) => {
-          setPokemonWorkflow(response.workflow);
+          if (response.didSucceed && response.workflow) {
+            setPokemonWorkflow(response.workflow);
+          }
           setEditValidationDiagnostics(response.diagnostics);
         },
         getEditSessionForSection('pokemon')
       );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsPokemonUpdating(false);
     }
@@ -14032,7 +14100,8 @@ export function App({
 
   const handleSwapPokemonDexPlacement = async (
     sourceSpeciesId: number,
-    targetSpeciesId: number
+    targetSpeciesId: number,
+    isSubmittedDraftCurrent: () => boolean
   ) => {
     setIsPokemonUpdating(true);
     setBridgeDiagnostics([]);
@@ -14049,14 +14118,18 @@ export function App({
           }),
         (updateResponse) => {
           setPokemonWorkflow(updateResponse.workflow);
-          setEditValidationDiagnostics(updateResponse.diagnostics);
+          if (isSubmittedDraftCurrent()) {
+            setEditValidationDiagnostics(updateResponse.diagnostics);
+          }
         },
         getEditSessionForSection('pokemon')
       );
       return response !== null &&
         !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (isSubmittedDraftCurrent()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
       return false;
     } finally {
       setIsPokemonUpdating(false);
@@ -14733,7 +14806,7 @@ export function App({
 
   const handleCopyTrainerPartyClipboard = async (
     input: TrainerPartyClipboardCopyInput
-  ): Promise<TrainerPartyClipboardActionResult> => {
+  ): Promise<RowClipboardActionResult> => {
     const session = getEditSessionForSection('trainers');
     if (session === null) {
       return rowClipboardActionFailure('rowClipboard.feedback.copyInvalid');
@@ -14764,14 +14837,10 @@ export function App({
         input.member,
         input.values
       );
-      const controller = new RowClipboardController({
-        registrations: rowClipboardAdapterRegistrations,
-        scope: {
-          game: prepared.scope.game,
-          profileId: prepared.scope.profileId,
-          projectId: prepared.scope.projectId
-        }
-      });
+      const controller = createScopedRowClipboardController(
+        rowClipboardEditorSchemas.trainerParty,
+        prepared.scope
+      );
       const envelope = await controller.copy({
         dependencies: [],
         editor: rowClipboardEditorSchemas.trainerParty,
@@ -14786,138 +14855,55 @@ export function App({
       return writeResult.kind === 'failure'
         ? rowClipboardActionFailure(writeResult.feedbackKey)
         : { kind: 'success', operationCount: 1 };
-    } catch {
+    } catch (error) {
+      const clientDiagnostics = toRowClipboardClientDiagnostics(error);
+      if (clientDiagnostics) {
+        setEditValidationDiagnostics(clientDiagnostics);
+      } else {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
       return rowClipboardActionFailure('rowClipboard.feedback.copyInvalid');
     }
   };
 
   const handlePasteTrainerPartyClipboard = async (
-    input: TrainerPartyClipboardPasteInput
-  ): Promise<TrainerPartyClipboardActionResult> => {
-    const requiredSession = getEditSessionForSection('trainers');
-    if (requiredSession === null) {
+    _input: TrainerPartyClipboardPasteInput
+  ): Promise<RowClipboardPasteActionResult> => {
+    if (getEditSessionForSection('trainers') === null) {
       return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
     }
-
-    setIsTrainerUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
     try {
-      const paths = createProjectPaths(draftPaths);
       if (activeProjectId === null || selectedGame === null) {
         return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
       }
 
-      const controller = new RowClipboardController({
-        registrations: rowClipboardAdapterRegistrations,
-        scope: {
+      const controller = createScopedRowClipboardController(
+        rowClipboardEditorSchemas.trainerParty,
+        {
           game: selectedGame,
           profileId: getRowClipboardProfileId(selectedGame),
           projectId: activeProjectId
         }
-      });
+      );
       const readResult = await readRowClipboardEnvelopeFromSystemClipboard(controller);
       if (readResult.kind === 'failure') {
         return rowClipboardActionFailure(readResult.feedbackKey);
       }
-      const envelope = rowClipboardEnvelopeV1DtoSchema.parse(readResult.value);
-      const mode = 'replace' as const;
-      const target = {
-        kind: rowClipboardEditorSchemas.trainerParty.rowKind,
-        slot: input.targetSlot,
-        trainerId: input.targetTrainerId
+      return {
+        kind: 'success',
+        operationCount: readResult.value.rows.length,
+        rows: readResult.value.rows
       };
-
-      const response = await runEditSessionMutation(
-        async (session) => {
-          const incomingWorkflow = useWorkbenchStore.getState().trainersWorkflow;
-          if (!incomingWorkflow) {
-            throw new Error('The Trainers workflow must be loaded before staging edits.');
-          }
-          ensureTrainerEditBaseline(session, incomingWorkflow);
-          const previewResponse = await bridge.previewRowClipboardPaste({
-            envelope,
-            mode,
-            paths,
-            session,
-            target
-          });
-          const previewHasErrors = previewResponse.diagnostics.some(
-            (diagnostic) => diagnostic.severity === 'error'
-          );
-          if (
-            previewHasErrors ||
-            previewResponse.preview === null ||
-            !previewResponse.preview.canStage
-          ) {
-            return {
-              diagnostics: previewResponse.diagnostics,
-              didSucceed: false,
-              operationCount: 0,
-              previewRows: [],
-              session
-            };
-          }
-
-          const preview = previewResponse.preview;
-          const stageResponse = await bridge.stageRowClipboardPaste({
-            authorizationId: preview.authorizationId,
-            envelope,
-            expectedTargetRevision: preview.targetRevision,
-            mode,
-            paths,
-            session,
-            target
-          });
-          const didSucceed =
-            stageResponse.receipt !== null &&
-            !stageResponse.diagnostics.some(
-              (diagnostic) => diagnostic.severity === 'error'
-            );
-          return {
-            diagnostics: stageResponse.diagnostics,
-            didSucceed,
-            operationCount: didSucceed ? stageResponse.receipt!.operationCount : 0,
-            previewRows: didSucceed ? preview.rows : [],
-            session: didSucceed ? stageResponse.session : session
-          };
-        },
-        (stageResponse) => {
-          setEditValidationDiagnostics(stageResponse.diagnostics);
-          if (!stageResponse.didSucceed || stageResponse.previewRows.length === 0) {
-            return;
-          }
-          const incomingWorkflow = useWorkbenchStore.getState().trainersWorkflow;
-          if (!incomingWorkflow) {
-            return;
-          }
-          setTrainersWorkflow(
-            applyTrainerPartyClipboardPreviewToWorkflow(
-              incomingWorkflow,
-              input.targetTrainerId,
-              input.targetSlot,
-              stageResponse.previewRows,
-              pokemonWorkflow
-            )
-          );
-        },
-        requiredSession
-      );
-      if (response === null) {
-        return rowClipboardActionFailure('rowClipboard.feedback.previewChanged');
+    } catch (error) {
+      const clientDiagnostics = toRowClipboardClientDiagnostics(error);
+      if (clientDiagnostics) {
+        setEditValidationDiagnostics(clientDiagnostics);
+      } else {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
-      return response.didSucceed
-        ? { kind: 'success', operationCount: response.operationCount }
-        : rowClipboardActionFailure(
-            getRowClipboardDiagnosticFeedbackKey(
-              response.diagnostics,
-              'rowClipboard.feedback.pasteRejected'
-            )
-          );
-    } catch {
-      return rowClipboardActionFailure('rowClipboard.feedback.backendUnavailable');
-    } finally {
-      setIsTrainerUpdating(false);
+      return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
     }
   };
 
@@ -14953,10 +14939,10 @@ export function App({
         input.move,
         input.values
       );
-      const controller = new RowClipboardController({
-        registrations: rowClipboardAdapterRegistrations,
-        scope: prepared.scope
-      });
+      const controller = createScopedRowClipboardController(
+        rowClipboardEditorSchemas.pokemonLearnset,
+        prepared.scope
+      );
       const envelope = await controller.copy({
         dependencies: [],
         editor: rowClipboardEditorSchemas.pokemonLearnset,
@@ -14971,127 +14957,55 @@ export function App({
       return writeResult.kind === 'failure'
         ? rowClipboardActionFailure(writeResult.feedbackKey)
         : { kind: 'success', operationCount: 1 };
-    } catch {
+    } catch (error) {
+      const clientDiagnostics = toRowClipboardClientDiagnostics(error);
+      if (clientDiagnostics) {
+        setEditValidationDiagnostics(clientDiagnostics);
+      } else {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
       return rowClipboardActionFailure('rowClipboard.feedback.copyInvalid');
     }
   };
 
   const handlePastePokemonLearnsetClipboard = async (
-    input: PokemonLearnsetClipboardPasteInput
-  ): Promise<RowClipboardActionResult> => {
-    const requiredSession = getEditSessionForSection('pokemon');
-    if (requiredSession === null) {
+    _input: PokemonLearnsetClipboardPasteInput
+  ): Promise<RowClipboardPasteActionResult> => {
+    if (getEditSessionForSection('pokemon') === null) {
       return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
     }
-
-    setIsPokemonUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
     try {
-      const paths = createProjectPaths(draftPaths);
       if (activeProjectId === null || selectedGame === null) {
         return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
       }
 
-      const controller = new RowClipboardController({
-        registrations: rowClipboardAdapterRegistrations,
-        scope: {
+      const controller = createScopedRowClipboardController(
+        rowClipboardEditorSchemas.pokemonLearnset,
+        {
           game: selectedGame,
           profileId: getRowClipboardProfileId(selectedGame),
           projectId: activeProjectId
         }
-      });
+      );
       const readResult = await readRowClipboardEnvelopeFromSystemClipboard(controller);
       if (readResult.kind === 'failure') {
         return rowClipboardActionFailure(readResult.feedbackKey);
       }
-      const envelope = rowClipboardEnvelopeV1DtoSchema.parse(readResult.value);
-      const mode = 'replace' as const;
-      const target = {
-        kind: rowClipboardEditorSchemas.pokemonLearnset.rowKind,
-        personalId: input.personalId,
-        slot: input.targetSlot
+      return {
+        kind: 'success',
+        operationCount: readResult.value.rows.length,
+        rows: readResult.value.rows
       };
-
-      const response = await runEditSessionMutation(
-        async (session) => {
-          const previewResponse = await bridge.previewRowClipboardPaste({
-            envelope,
-            mode,
-            paths,
-            session,
-            target
-          });
-          if (
-            previewResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
-            previewResponse.preview === null ||
-            !previewResponse.preview.canStage
-          ) {
-            return {
-              diagnostics: previewResponse.diagnostics,
-              didSucceed: false,
-              operationCount: 0,
-              previewRows: [],
-              session
-            };
-          }
-
-          const preview = previewResponse.preview;
-          const stageResponse = await bridge.stageRowClipboardPaste({
-            authorizationId: preview.authorizationId,
-            envelope,
-            expectedTargetRevision: preview.targetRevision,
-            mode,
-            paths,
-            session,
-            target
-          });
-          const didSucceed =
-            stageResponse.receipt !== null &&
-            !stageResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
-          return {
-            diagnostics: stageResponse.diagnostics,
-            didSucceed,
-            operationCount: didSucceed ? stageResponse.receipt!.operationCount : 0,
-            previewRows: didSucceed ? preview.rows : [],
-            session: didSucceed ? stageResponse.session : session
-          };
-        },
-        (stageResponse) => {
-          setEditValidationDiagnostics(stageResponse.diagnostics);
-          if (!stageResponse.didSucceed || stageResponse.previewRows.length === 0) {
-            return;
-          }
-          const incomingWorkflow = useWorkbenchStore.getState().pokemonWorkflow;
-          if (!incomingWorkflow) {
-            return;
-          }
-          setPokemonWorkflow(
-            applyPokemonLearnsetClipboardPreviewToWorkflow(
-              incomingWorkflow,
-              input.personalId,
-              input.targetSlot,
-              stageResponse.previewRows
-            )
-          );
-        },
-        requiredSession
-      );
-      if (response === null) {
-        return rowClipboardActionFailure('rowClipboard.feedback.previewChanged');
+    } catch (error) {
+      const clientDiagnostics = toRowClipboardClientDiagnostics(error);
+      if (clientDiagnostics) {
+        setEditValidationDiagnostics(clientDiagnostics);
+      } else {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
-      return response.didSucceed
-        ? { kind: 'success', operationCount: response.operationCount }
-        : rowClipboardActionFailure(
-            getRowClipboardDiagnosticFeedbackKey(
-              response.diagnostics,
-              'rowClipboard.feedback.pasteRejected'
-            )
-          );
-    } catch {
-      return rowClipboardActionFailure('rowClipboard.feedback.backendUnavailable');
-    } finally {
-      setIsPokemonUpdating(false);
+      return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
     }
   };
 
@@ -15128,10 +15042,10 @@ export function App({
         input.slot,
         input.values
       );
-      const controller = new RowClipboardController({
-        registrations: rowClipboardAdapterRegistrations,
-        scope: prepared.scope
-      });
+      const controller = createScopedRowClipboardController(
+        rowClipboardEditorSchemas.encounterSlot,
+        prepared.scope
+      );
       const envelope = await controller.copy({
         dependencies: [],
         editor: rowClipboardEditorSchemas.encounterSlot,
@@ -15146,127 +15060,55 @@ export function App({
       return writeResult.kind === 'failure'
         ? rowClipboardActionFailure(writeResult.feedbackKey)
         : { kind: 'success', operationCount: 1 };
-    } catch {
+    } catch (error) {
+      const clientDiagnostics = toRowClipboardClientDiagnostics(error);
+      if (clientDiagnostics) {
+        setEditValidationDiagnostics(clientDiagnostics);
+      } else {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
       return rowClipboardActionFailure('rowClipboard.feedback.copyInvalid');
     }
   };
 
   const handlePasteEncounterClipboard = async (
-    input: EncounterClipboardPasteInput
-  ): Promise<RowClipboardActionResult> => {
-    const requiredSession = getEditSessionForSection('encounters');
-    if (requiredSession === null) {
+    _input: EncounterClipboardPasteInput
+  ): Promise<RowClipboardPasteActionResult> => {
+    if (getEditSessionForSection('encounters') === null) {
       return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
     }
-
-    setIsEncounterUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
     try {
-      const paths = createProjectPaths(draftPaths);
       if (activeProjectId === null || selectedGame === null) {
         return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
       }
 
-      const controller = new RowClipboardController({
-        registrations: rowClipboardAdapterRegistrations,
-        scope: {
+      const controller = createScopedRowClipboardController(
+        rowClipboardEditorSchemas.encounterSlot,
+        {
           game: selectedGame,
           profileId: getRowClipboardProfileId(selectedGame),
           projectId: activeProjectId
         }
-      });
+      );
       const readResult = await readRowClipboardEnvelopeFromSystemClipboard(controller);
       if (readResult.kind === 'failure') {
         return rowClipboardActionFailure(readResult.feedbackKey);
       }
-      const envelope = rowClipboardEnvelopeV1DtoSchema.parse(readResult.value);
-      const mode = 'replace' as const;
-      const target = {
-        kind: rowClipboardEditorSchemas.encounterSlot.rowKind,
-        slot: input.targetSlot,
-        tableId: input.tableId
+      return {
+        kind: 'success',
+        operationCount: readResult.value.rows.length,
+        rows: readResult.value.rows
       };
-
-      const response = await runEditSessionMutation(
-        async (session) => {
-          const previewResponse = await bridge.previewRowClipboardPaste({
-            envelope,
-            mode,
-            paths,
-            session,
-            target
-          });
-          if (
-            previewResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
-            previewResponse.preview === null ||
-            !previewResponse.preview.canStage
-          ) {
-            return {
-              diagnostics: previewResponse.diagnostics,
-              didSucceed: false,
-              operationCount: 0,
-              previewRows: [],
-              session
-            };
-          }
-
-          const preview = previewResponse.preview;
-          const stageResponse = await bridge.stageRowClipboardPaste({
-            authorizationId: preview.authorizationId,
-            envelope,
-            expectedTargetRevision: preview.targetRevision,
-            mode,
-            paths,
-            session,
-            target
-          });
-          const didSucceed =
-            stageResponse.receipt !== null &&
-            !stageResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
-          return {
-            diagnostics: stageResponse.diagnostics,
-            didSucceed,
-            operationCount: didSucceed ? stageResponse.receipt!.operationCount : 0,
-            previewRows: didSucceed ? preview.rows : [],
-            session: didSucceed ? stageResponse.session : session
-          };
-        },
-        (stageResponse) => {
-          setEditValidationDiagnostics(stageResponse.diagnostics);
-          if (!stageResponse.didSucceed || stageResponse.previewRows.length === 0) {
-            return;
-          }
-          const incomingWorkflow = useWorkbenchStore.getState().encountersWorkflow;
-          if (!incomingWorkflow) {
-            return;
-          }
-          setEncountersWorkflow(
-            applyEncounterClipboardPreviewToWorkflow(
-              incomingWorkflow,
-              input.tableId,
-              input.targetSlot,
-              stageResponse.previewRows
-            )
-          );
-        },
-        requiredSession
-      );
-      if (response === null) {
-        return rowClipboardActionFailure('rowClipboard.feedback.previewChanged');
+    } catch (error) {
+      const clientDiagnostics = toRowClipboardClientDiagnostics(error);
+      if (clientDiagnostics) {
+        setEditValidationDiagnostics(clientDiagnostics);
+      } else {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
-      return response.didSucceed
-        ? { kind: 'success', operationCount: response.operationCount }
-        : rowClipboardActionFailure(
-            getRowClipboardDiagnosticFeedbackKey(
-              response.diagnostics,
-              'rowClipboard.feedback.pasteRejected'
-            )
-          );
-    } catch {
-      return rowClipboardActionFailure('rowClipboard.feedback.backendUnavailable');
-    } finally {
-      setIsEncounterUpdating(false);
+      return rowClipboardActionFailure('rowClipboard.feedback.pasteRejected');
     }
   };
 
@@ -15353,19 +15195,12 @@ export function App({
           if (stageResponse.didSucceed && stageResponse.workflow) {
             setFashionCatalogWorkflow(stageResponse.workflow);
             setEditSessionSection('fashionCatalog');
-            registerEditorDraftDirty('fashionCatalog', false);
           }
-          setScopedEditorPanelDiagnostics('fashionCatalog', stageResponse.diagnostics);
-          setEditValidationDiagnostics(stageResponse.diagnostics);
         },
         requiredSession
       );
       return response?.didSucceed === true;
-    } catch (error) {
-      const diagnostics = toBridgeDiagnostics(error);
-      setBridgeDiagnostics(diagnostics);
-      setScopedEditorPanelDiagnostics('fashionCatalog', diagnostics);
-      setEditValidationDiagnostics(diagnostics);
+    } catch {
       return false;
     } finally {
       setIsFashionCatalogStaging(false);
@@ -15373,13 +15208,25 @@ export function App({
   };
 
   const handleStageHabitatCoordinate = async (
-    input: HabitatCoordinateStageInput
+    input: HabitatCoordinateStageInput,
+    isSubmittedDraftCurrent: () => boolean
   ) => {
     const sectionSession = getEditSessionForSection('habitatCoordinates');
     const requiredSession = editSessionRef.current === null ? undefined : sectionSession;
+    const stagedViewGeneration = habitatCoordinatesViewGenerationRef.current;
+    const stagedQueryKey = createHabitatCoordinatesQueryKey(input.query);
+    const isCurrentStageView = () =>
+      habitatCoordinatesViewGenerationRef.current === stagedViewGeneration &&
+      createHabitatCoordinatesQueryKey(
+        habitatCoordinatesLatestQueryRef.current
+      ) === stagedQueryKey;
+    const canPublishStageDiagnostics = () =>
+      isCurrentStageView() && isSubmittedDraftCurrent();
+    habitatCoordinatesStageGenerationRef.current += 1;
     setIsHabitatCoordinateStaging(true);
     prepareScopedEditorPanelAction('habitatCoordinates');
 
+    let didAdvanceSuccessfulStageGeneration = false;
     try {
       const response = await runEditSessionMutation(
         async (session) => {
@@ -15405,9 +15252,20 @@ export function App({
             stageResponse.session.pendingEdits.every(
               (edit) => edit.domain === 'workflow.habitatCoordinates'
             );
+          const matchesRequestedStageEvidence =
+            habitatCoordinateStageResponseMatchesRequest(
+              input,
+              stageResponse.workflow,
+              stageResponse.session
+            );
           if (
             !diagnostics.some((diagnostic) => diagnostic.severity === 'error') &&
-            (!matchesSummary || !matchesSession || !hasOnlyHabitatPendingEdits)
+            (
+              !matchesSummary ||
+              !matchesSession ||
+              !hasOnlyHabitatPendingEdits ||
+              !matchesRequestedStageEvidence
+            )
           ) {
             diagnostics.push({
               domain: 'workflow.habitatCoordinates',
@@ -15419,6 +15277,7 @@ export function App({
             matchesSummary &&
             matchesSession &&
             hasOnlyHabitatPendingEdits &&
+            matchesRequestedStageEvidence &&
             !diagnostics.some((diagnostic) => diagnostic.severity === 'error');
           return {
             ...stageResponse,
@@ -15430,24 +15289,41 @@ export function App({
         },
         (stageResponse) => {
           if (stageResponse.didSucceed && stageResponse.workflow) {
-            setHabitatCoordinatesWorkflow(stageResponse.workflow);
+            habitatCoordinatesStageGenerationRef.current += 1;
+            didAdvanceSuccessfulStageGeneration = true;
             setEditSessionSection('habitatCoordinates');
-            registerEditorDraftDirty('habitatCoordinates', false);
+            if (isCurrentStageView()) {
+              setHabitatCoordinatesWorkflow(stageResponse.workflow);
+            }
           }
-          setScopedEditorPanelDiagnostics(
-            'habitatCoordinates',
-            stageResponse.diagnostics
-          );
-          setEditValidationDiagnostics(stageResponse.diagnostics);
         },
         requiredSession
       );
-      return response?.didSucceed === true;
+      if (response && canPublishStageDiagnostics()) {
+        setScopedEditorPanelDiagnostics(
+          'habitatCoordinates',
+          response.diagnostics
+        );
+      }
+      if (response?.didSucceed !== true) {
+        return false;
+      }
+
+      if (!didAdvanceSuccessfulStageGeneration) {
+        habitatCoordinatesStageGenerationRef.current += 1;
+      }
+      await handleOpenHabitatCoordinatesWorkflow(
+        { ...habitatCoordinatesLatestQueryRef.current },
+        editSessionRef.current
+      );
+      return true;
     } catch (error) {
-      const diagnostics = toBridgeDiagnostics(error);
-      setBridgeDiagnostics(diagnostics);
-      setScopedEditorPanelDiagnostics('habitatCoordinates', diagnostics);
-      setEditValidationDiagnostics(diagnostics);
+      if (canPublishStageDiagnostics()) {
+        setScopedEditorPanelDiagnostics(
+          'habitatCoordinates',
+          toBridgeDiagnostics(error)
+        );
+      }
       return false;
     } finally {
       setIsHabitatCoordinateStaging(false);
@@ -18310,7 +18186,7 @@ export function App({
         setIsGamePickerOpen(false);
         return;
       }
-      if (!(await flushOrdinaryEditorDrafts())) {
+      if (!(await settleLocalEditorDrafts())) {
         return;
       }
       if (
@@ -18320,7 +18196,7 @@ export function App({
         activeNoteSavePromiseRef.current !== null ||
         unassignedPendingEditCount > 0 ||
         editorDraftDirtySections.size > 0 ||
-        hasLatestOrdinaryDraftProtection()
+        hasLatestLocalDraftProtection()
       ) {
         return;
       }
@@ -18352,9 +18228,9 @@ export function App({
       cancelSupportFileSearch,
       applicationWorkspaceSnapshot.document?.recentProjects,
       editorDraftDirtySections.size,
-      flushOrdinaryEditorDrafts,
+      settleLocalEditorDrafts,
       hasCriticalWriteOperation,
-      hasLatestOrdinaryDraftProtection,
+      hasLatestLocalDraftProtection,
       isEditSessionOperationBusy,
       isPersonalWorkspaceMutationBusy,
       recycleProjectBridgeBeforeScopeChange,
@@ -18367,13 +18243,13 @@ export function App({
   );
 
   const handleChangeGame = useCallback(async () => {
-    if (!(await flushOrdinaryEditorDrafts())) {
+    if (!(await settleLocalEditorDrafts())) {
       return;
     }
     if (
       hasCriticalWriteOperation ||
       editorDraftDirtySections.size > 0 ||
-      hasLatestOrdinaryDraftProtection()
+      hasLatestLocalDraftProtection()
     ) {
       return;
     }
@@ -18381,9 +18257,9 @@ export function App({
     setIsGamePickerOpen(true);
   }, [
     editorDraftDirtySections.size,
-    flushOrdinaryEditorDrafts,
+    settleLocalEditorDrafts,
     hasCriticalWriteOperation,
-    hasLatestOrdinaryDraftProtection
+    hasLatestLocalDraftProtection
   ]);
 
   if (!selectedGame || isGamePickerOpen) {
@@ -18412,12 +18288,8 @@ export function App({
       activeLocation={activeLocation}
       onNavigate={(location) => void handleNavigateWorkspaceTarget(location)}
     >
-    <OrdinaryEditorDraftProvider registry={projectDraftRegistry}>
-    <OrdinaryDraftProtectionObserver
-      onIndexChange={handleOrdinaryDraftProtectionIndexChange}
-      onSnapshotChange={setOrdinaryDraftProtectionSnapshot}
-      refreshScope={ordinaryDraftProtectionRefreshScope}
-    />
+    <CommonEditorDiagnosticsProvider>
+    <UpdateStatusDiagnostics status={updateCheckStatus} update={availableUpdate} />
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
     <EditorSessionActionsProvider>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
@@ -18499,7 +18371,10 @@ export function App({
           tabs={workspaceRecordTabs}
         />
 
-        <div className="workspace-content">
+        <div
+          className="workspace-content"
+          key={`${activeProjectId ?? 'no-project'}:${selectedGame}:${workspaceContentDraftScopeKey(activeLocation)}`}
+        >
           {activeSection === 'health' ? (
             <HealthSection
               analysisPreparation={activeProjectId ? (
@@ -18530,7 +18405,6 @@ export function App({
                   canRelocate={
                     unassignedPendingEditCount === 0 &&
                     editorDraftDirtySections.size === 0 &&
-                    !hasOrdinaryProtectedDrafts &&
                     !hasCriticalWriteOperation &&
                     !isBusy &&
                     outputSafety.canApply
@@ -18552,6 +18426,7 @@ export function App({
             />
           ) : null}
           <div className="km-retained-workbench" hidden={activeSection !== 'workbench'}>
+            <CommonEditorDiagnosticsPublishingScope enabled={activeSection === 'workbench'}>
             <WorkbenchHomeSection
               balanceLab={
                 semanticExploreScope ? (
@@ -18657,6 +18532,7 @@ export function App({
                       capabilityError={semanticExploreController.capabilities.error}
                       capabilityStatus={semanticExploreController.capabilities.status}
                       onEnsureCapabilities={semanticExploreController.ensureCapabilities}
+                      onDirtyStateChange={handleResearchLabDirtyChange}
                       onNavigateRecord={handleNavigateBalanceLabFinding}
                       onPickSource={handlePickResearchSource}
                       onPreparationStateChange={handleResearchLabPreparationState}
@@ -18730,10 +18606,10 @@ export function App({
               capabilities={capabilityDiscovery}
               note={activeNoteViewModel}
               onCreateBookmark={activeScopedLocation
-                ? (label) => void handleCreateBookmark(label)
+                ? handleCreateBookmark
                 : undefined}
               onCreateOutputProfile={draftPaths.outputRootPath
-                ? (name) => void handleCreateOutputProfile(name)
+                ? handleCreateOutputProfile
                 : undefined}
               onDeleteBookmark={(bookmarkId) => void handleRemoveBookmark(bookmarkId)}
               onDeleteOutputProfile={(profileId) => void handleDeleteOutputProfile(profileId)}
@@ -18894,12 +18770,15 @@ export function App({
                 />
               }
             />
+            </CommonEditorDiagnosticsPublishingScope>
           </div>
           {activeSection === 'items' ? (
             isItemsLoading && !itemsWorkflow ? (
               <WorkflowLoadingPanel label="Items" />
             ) : isPokemonLegendsZAProject ? (
               <ZaItemsSection
+                hasProtectedItemDrafts={hasProtectedItemDrafts}
+                hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 onSearchChange={handleItemSearchChange}
                 onSelectItem={handleSelectItemLocation}
@@ -18912,13 +18791,14 @@ export function App({
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
                 isPokemonLoading={isPokemonLoading}
-                isPokemonUpdating={isPokemonUpdating}
                 onUpdatePokemonField={handleUpdatePokemonField}
                 pokemonWorkflow={pokemonWorkflow}
                 workflow={itemsWorkflow}
               />
             ) : isScarletVioletProject ? (
               <SvItemsSection
+                hasProtectedItemDrafts={hasProtectedItemDrafts}
+                hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 onSearchChange={handleItemSearchChange}
                 onSelectItem={handleSelectItemLocation}
@@ -18933,6 +18813,8 @@ export function App({
               />
             ) : (
               <SwShItemsSection
+                hasProtectedItemDrafts={hasProtectedItemDrafts}
+                hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 onSearchChange={handleItemSearchChange}
                 onSelectItem={handleSelectItemLocation}
@@ -18952,6 +18834,7 @@ export function App({
               <WorkflowLoadingPanel label="Pokemon" />
             ) : isPokemonLegendsZAProject ? (
               <ZaPokemonSection
+                hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('pokemon')}
                 isEditStarting={isEditStarting}
@@ -18974,6 +18857,7 @@ export function App({
               />
             ) : isScarletVioletProject ? (
               <SvPokemonSection
+                hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('pokemon')}
                 isEditStarting={isEditStarting}
@@ -18995,6 +18879,7 @@ export function App({
               />
             ) : (
               <SwShPokemonSection
+                hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('pokemon')}
                 isEditStarting={isEditStarting}
@@ -19103,6 +18988,7 @@ export function App({
               <WorkflowLoadingPanel label="Trainers" />
             ) : isPokemonLegendsZAProject ? (
               <ZaTrainersSection
+                hasProtectedTrainerDrafts={hasProtectedTrainerDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('trainers')}
                 isEditStarting={isEditStarting}
@@ -19124,6 +19010,7 @@ export function App({
               />
             ) : isScarletVioletProject ? (
               <SvTrainersSection
+                hasProtectedTrainerDrafts={hasProtectedTrainerDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('trainers')}
                 isEditStarting={isEditStarting}
@@ -19144,6 +19031,7 @@ export function App({
               />
             ) : (
               <SwShTrainersSection
+                hasProtectedTrainerDrafts={hasProtectedTrainerDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('trainers')}
                 isEditStarting={isEditStarting}
@@ -19184,6 +19072,7 @@ export function App({
               <FashionCatalogSection
                 editSession={getEditSessionForSection('fashionCatalog')}
                 isStaging={isFashionCatalogStaging}
+                onDirtyStateChange={handleFashionCatalogDirtyChange}
                 onOpenChanges={() => void handleNavigateSection('changes')}
                 onStageFieldEdit={handleStageFashionCatalogFieldEdit}
                 panelOutput={getOutputSafeScopedEditorPanelOutput('fashionCatalog')}
@@ -19199,6 +19088,7 @@ export function App({
                 editSession={getEditSessionForSection('habitatCoordinates')}
                 isLoading={isHabitatCoordinatesLoading}
                 isStaging={isHabitatCoordinateStaging}
+                onDirtyStateChange={handleHabitatCoordinatesDirtyChange}
                 onLoadQuery={handleOpenHabitatCoordinatesWorkflow}
                 onOpenChanges={() => void handleNavigateSection('changes')}
                 onStageCoordinate={handleStageHabitatCoordinate}
@@ -20260,9 +20150,21 @@ export function App({
               svCacheStatus={currentSvCacheStatus}
             />
           ) : null}
-          {activeSection !== 'health' && bridgeDiagnostics.length > 0 ? (
-            <DiagnosticsSection diagnostics={bridgeDiagnostics} />
+          {personalWorkspaceError && activeSection === 'workbench' ? (
+            <PublishCommonEditorError
+              domain="workbench.personalState"
+              field="storage"
+              message={t('workbench.personalState.loadError')}
+            />
           ) : null}
+          {advancedAuthoringHistorySyncError && activeSection === 'changes' ? (
+            <PublishCommonEditorError
+              domain="workflow.changeSets"
+              field="advancedAuthoringHistory"
+              message={advancedAuthoringHistorySyncError}
+            />
+          ) : null}
+          <CommonBottomDiagnosticsSection diagnostics={bottomDiagnostics} />
           {personalWorkspaceError && activeSection === 'workbench' ? (
             <div className="diagnostic-error" role="alert">
               <p>{t('workbench.personalState.loadError')}</p>
@@ -20369,7 +20271,6 @@ export function App({
             outputSafety.canApply &&
             unassignedPendingEditCount === 0 &&
             editorDraftDirtySections.size === 0 &&
-            !hasOrdinaryProtectedDrafts &&
             !hasCriticalWriteOperation &&
             !isBusy
           }
@@ -20444,7 +20345,7 @@ export function App({
     </EditorDraftDirtyContext.Provider>
     </EditorSessionActionsProvider>
     </CancelEditSessionContext.Provider>
-    </OrdinaryEditorDraftProvider>
+    </CommonEditorDiagnosticsProvider>
     </DiagnosticNavigationProvider>
   );
 }
@@ -20558,6 +20459,80 @@ function BusyActionContent({
       <span>{translateLiteral(isBusy ? busyLabel : label)}</span>
     </>
   );
+}
+
+function PublishedInlineEditorError({
+  domain,
+  message
+}: {
+  domain: string;
+  message: string | null;
+}) {
+  const diagnostics = useMemo<ApiDiagnostic[]>(
+    () =>
+      message
+        ? [{ domain, message, severity: 'error' }]
+        : [],
+    [domain, message]
+  );
+  usePublishCommonEditorDiagnostics(diagnostics);
+
+  return message ? (
+    <p className="editable-field-error" role="alert">
+      {message}
+    </p>
+  ) : null;
+}
+
+/**
+ * Keeps locally rendered draft validation visible in the shared bottom
+ * diagnostics. Draft fields deliberately remain editable while these errors
+ * are present; this publisher is reporting only and never owns an edit gate.
+ */
+function PublishedLocalEditorValidationDiagnostics({
+  domain,
+  issues
+}: {
+  domain: string;
+  issues: readonly LocalEditorValidationIssue[];
+}) {
+  const diagnostics = useMemo<ApiDiagnostic[]>(
+    () => createLocalEditorValidationDiagnostics(domain, issues),
+    [domain, issues]
+  );
+  usePublishCommonEditorDiagnostics(diagnostics);
+  return null;
+}
+
+function UpdateStatusDiagnostics({
+  status,
+  update
+}: {
+  status: UpdateCheckStatus;
+  update: AvailableUpdate | null;
+}) {
+  const diagnostics = useMemo<ApiDiagnostic[]>(() => {
+    const nextDiagnostics: ApiDiagnostic[] = [];
+    if (status.kind === 'error') {
+      nextDiagnostics.push({
+        domain: 'desktop.update',
+        field: 'check',
+        message: status.message,
+        severity: 'error'
+      });
+    }
+    if (update?.kind === 'releasePage' && update.fallbackReason) {
+      nextDiagnostics.push({
+        domain: 'desktop.update',
+        field: 'nativeFallback',
+        message: update.fallbackReason,
+        severity: 'warning'
+      });
+    }
+    return nextDiagnostics;
+  }, [status, update]);
+  usePublishCommonEditorDiagnostics(diagnostics);
+  return null;
 }
 
 function EmptySelectionEditorSessionActions({
@@ -21204,10 +21179,11 @@ type CacheProgressSourceState = 'checking' | 'error' | 'ready' | 'setupRequired'
 type ItemsSectionProps = {
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
+  hasProtectedItemDrafts: boolean;
+  hasProtectedPokemonDrafts: boolean;
   isEditStarting: boolean;
   isItemUpdating: boolean;
   isPokemonLoading?: boolean;
-  isPokemonUpdating?: boolean;
   onSearchChange: (searchText: string) => void;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   onSelectItem: (itemId: number | null) => void;
@@ -21217,7 +21193,7 @@ type ItemsSectionProps = {
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
-  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<void>;
+  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<boolean>;
   pokemonWorkflow?: PokemonWorkflow | null;
   searchText: string;
   selectedItemId: number | null;
@@ -21241,10 +21217,11 @@ function ZaItemsSection(props: ItemsSectionPublicProps) {
 function ItemsSection({
   editSession,
   editorFamily,
+  hasProtectedItemDrafts,
+  hasProtectedPokemonDrafts,
   isEditStarting,
   isItemUpdating,
   isPokemonLoading = false,
-  isPokemonUpdating = false,
   onSearchChange,
   onSelectItem,
   onStartEditSession,
@@ -21399,6 +21376,7 @@ function ItemsSection({
                 editSession === null ||
                 isEditStarting ||
                 isItemUpdating ||
+                hasProtectedItemDrafts ||
                 isLegacyTechnicalMachineRepairStaged
               }
               onClick={() =>
@@ -21476,7 +21454,7 @@ function ItemsSection({
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               isPokemonLoading={isPokemonLoading}
-              isPokemonUpdating={isPokemonUpdating}
+              hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
               item={selectedItem}
               editableFields={workflow.editableFields}
               onStageItemVanilla={onStageItemVanilla}
@@ -21512,10 +21490,10 @@ function SelectedItemPanel({
   editSession,
   editorFamily,
   editableFields,
+  hasProtectedPokemonDrafts,
   isEditStarting,
   isItemUpdating,
   isPokemonLoading,
-  isPokemonUpdating,
   item,
   onStageItemVanilla,
   onUpdateItemFields,
@@ -21527,17 +21505,17 @@ function SelectedItemPanel({
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
   editableFields: ItemEditableField[];
+  hasProtectedPokemonDrafts: boolean;
   isEditStarting: boolean;
   isItemUpdating: boolean;
   isPokemonLoading: boolean;
-  isPokemonUpdating: boolean;
   item: ItemRecord | null;
   onStageItemVanilla?: (itemId: number) => Promise<boolean>;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
-  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<void>;
+  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   pokemonWorkflow: PokemonWorkflow | null;
 }) {
@@ -21545,6 +21523,7 @@ function SelectedItemPanel({
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [itemSourceMutationError, setItemSourceMutationError] = useState<string | null>(null);
   const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
   const cancelActiveEditSession = useCancelActiveEditSession();
   const contextualEditableFields = useMemo(
@@ -21601,28 +21580,14 @@ function SelectedItemPanel({
     },
     [itemDraftKey]
   );
-  const itemDurableDraft = useBoundOrdinaryEditorDraft({
-    adapter: ordinaryItemDraftAdapter,
+  const itemDraftBinding = useSessionLocalEditorDraftBinding({
     applyHydratedPayload: applyHydratedItemDraft,
-    emptyPayload: { fields: {} },
-    entityPreimage: item,
-    isClean: isOrdinaryFieldDraftClean,
+    bindingId: 'items',
     payload: itemDraftPayload,
     project: ordinaryDraftProject,
     recordValue: item?.itemId ?? null,
     section: 'items'
   });
-  const isItemDraftReady = isOrdinaryEditorDraftBindingReady(itemDurableDraft);
-  const rebaseItemDraft = useCallback(
-    (stalePayload: OrdinaryFieldDraftPayload): OrdinaryFieldDraftPayload => ({
-      fields: Object.fromEntries(
-        Object.entries(stalePayload.fields)
-          .filter(([field]) => writableItemFields.has(field))
-          .map(([field, value]) => [field, value])
-      )
-    }),
-    [writableItemFields]
-  );
   const itemDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -21641,24 +21606,18 @@ function SelectedItemPanel({
     item !== null &&
     editSession !== null &&
     canEditItems &&
-    isItemDraftReady &&
     !isItemUpdating &&
     itemDraftSummary.changedFields.length > 0 &&
     itemDraftSummary.invalidFields.length === 0;
-  const hasSelectedItemLocalDrafts =
-    itemDraftKey !== null && fieldDraftsByItemId[itemDraftKey] !== undefined;
-  const itemRevertMessage = hasSelectedItemLocalDrafts
-    ? 'Finish or discard the selected item drafts before reverting to vanilla.'
-    : item?.revertToVanillaBlockedReason ??
-      'Stages every verified base value for the selected item. Other items are preserved.';
+  const itemRevertMessage =
+    item?.revertToVanillaBlockedReason ??
+    'Stages every verified base value for the selected item. Other items are preserved.';
   const canRevertSelectedItem =
     item !== null &&
     onStageItemVanilla !== undefined &&
     item.canRevertToVanilla &&
     canEditItems &&
-    isItemDraftReady &&
     editSession !== null &&
-    !hasSelectedItemLocalDrafts &&
     !isEditStarting &&
     !isItemUpdating;
   const hasPendingTechnicalMachineMoveChange =
@@ -21724,10 +21683,8 @@ function SelectedItemPanel({
     onUpdatePokemonField !== undefined &&
     editSession !== null &&
     canEditItems &&
-    isItemDraftReady &&
-    !isEditStarting &&
-    !isItemUpdating &&
-    !isPokemonUpdating;
+    !hasProtectedPokemonDrafts &&
+    !isEditStarting;
 
   useEffect(() => {
     if (!item) {
@@ -21750,6 +21707,10 @@ function SelectedItemPanel({
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.items"
+        issues={itemDraftSummary.invalidFields}
+      />
       {editSession && !item ? (
         <EmptySelectionEditorSessionActions
           isBusy={isItemUpdating}
@@ -21762,11 +21723,9 @@ function SelectedItemPanel({
         <h3>Selected Item</h3>
       </div>
 
-      <OrdinaryEditorDraftStatus
-        binding={itemDurableDraft}
-        currentPayload={itemDraftPayload}
-        isClean={isOrdinaryFieldDraftClean}
-        rebase={rebaseItemDraft}
+      <PublishedInlineEditorError
+        domain="workflow.items"
+        message={itemSourceMutationError}
       />
 
       {item ? (
@@ -21850,21 +21809,36 @@ function SelectedItemPanel({
                   className="primary-button"
                   disabled={!canSaveItemDrafts}
                   onClick={async () => {
-                    const didSave = await onUpdateItemFields(
-                      item.itemId,
-                      stagedItemChanges.map((change) => ({
-                        field: change.field,
-                        value: change.value
-                      }))
-                    );
-                    if (didSave) {
-                      if (!(await itemDurableDraft.draft.discard())) {
-                        return;
-                      }
+                    const fieldsBeforeStage = itemDraftPayload.fields;
+                    const sourceMutation = await runSessionLocalEditorSourceMutation({
+                      binding: itemDraftBinding,
+                      didMutate: (didSave) => didSave,
+                      mutation: () =>
+                        onUpdateItemFields(
+                          item.itemId,
+                          stagedItemChanges.map((change) => ({
+                            field: change.field,
+                            value: change.value
+                          }))
+                        ),
+                      reduceLatestPayload: (latestPayload) => ({
+                        fields: removeMatchingFieldDraftValues(
+                          latestPayload.fields,
+                          fieldsBeforeStage
+                        )
+                      })
+                    });
+                    if (sourceMutation.kind === 'reservation-unavailable') {
+                      setItemSourceMutationError(sessionLocalDraftMutationBusyMessage);
+                      return;
+                    }
+                    setItemSourceMutationError(null);
+                    if (sourceMutation.kind === 'source-mutated') {
                       setFieldDraftsByItemId((currentDrafts) =>
-                        deleteFieldDraftRecord(
+                        updateSparseFieldDraftRecordAfterStage(
                           currentDrafts,
-                          getItemStorageDraftKey(item)
+                          getItemStorageDraftKey(item),
+                          fieldsBeforeStage
                         )
                       );
                     }
@@ -21926,9 +21900,7 @@ function SelectedItemPanel({
                           currentValue={currentValue}
                           disabled={
                             !canEditItems ||
-                            !isItemDraftReady ||
                             editSession === null ||
-                            isItemUpdating ||
                             disabledReason !== null
                           }
                           disabledReason={disabledReason ?? undefined}
@@ -21973,13 +21945,30 @@ function SelectedItemPanel({
                   className="danger-button"
                   disabled={!canRevertSelectedItem}
                   onClick={async () => {
-                    const didRestore = await onStageItemVanilla(item.itemId);
-                    if (didRestore) {
-                      if (!(await itemDurableDraft.draft.discard())) {
-                        return;
-                      }
+                    const fieldsBeforeStage = itemDraftPayload.fields;
+                    const sourceMutation = await runSessionLocalEditorSourceMutation({
+                      binding: itemDraftBinding,
+                      didMutate: (didRestore) => didRestore,
+                      mutation: () => onStageItemVanilla(item.itemId),
+                      reduceLatestPayload: (latestPayload) => ({
+                        fields: removeMatchingFieldDraftValues(
+                          latestPayload.fields,
+                          fieldsBeforeStage
+                        )
+                      })
+                    });
+                    if (sourceMutation.kind === 'reservation-unavailable') {
+                      setItemSourceMutationError(sessionLocalDraftMutationBusyMessage);
+                      return;
+                    }
+                    setItemSourceMutationError(null);
+                    if (sourceMutation.kind === 'source-mutated') {
                       setFieldDraftsByItemId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, getItemStorageDraftKey(item))
+                        updateSparseFieldDraftRecordAfterStage(
+                          currentDrafts,
+                          getItemStorageDraftKey(item),
+                          fieldsBeforeStage
+                        )
                       );
                     }
                   }}
@@ -21993,13 +21982,7 @@ function SelectedItemPanel({
                     label={t('za.encounters.revertToVanilla')}
                   />
                 </button>
-                <small
-                  className={
-                    hasSelectedItemLocalDrafts
-                      ? 'editable-field-error'
-                      : 'editable-field-status'
-                  }
-                >
+                <small className="editable-field-status">
                   {itemRevertMessage}
                 </small>
               </div>
@@ -22084,6 +22067,7 @@ function SelectedItemPanel({
                             checked={entry.canLearn}
                             className="km-choice-control"
                             disabled={!canEditTechnicalMachineCompatibility}
+                            id={`item-tm-compatibility-${pokemon.personalId}`}
                             onChange={(event) => {
                               if (onUpdatePokemonField) {
                                 void onUpdatePokemonField(
@@ -22148,6 +22132,7 @@ function isPlaceholderPokemonRecord(pokemon: Pick<PokemonRecord, 'name' | 'perso
 type PokemonSectionProps = {
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
+  hasProtectedPokemonDrafts: boolean;
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
@@ -22156,12 +22141,12 @@ type PokemonSectionProps = {
   ) => Promise<RowClipboardActionResult>;
   onPasteLearnsetRow: (
     input: PokemonLearnsetClipboardPasteInput
-  ) => Promise<RowClipboardActionResult>;
+  ) => Promise<RowClipboardPasteActionResult>;
   onSearchChange: (searchText: string) => void;
   onSelectPokemonEvolution: (slot: number | null) => void;
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
-  onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonField: (personalId: number, field: string, value: string) => Promise<boolean>;
   onUpdatePokemonFields: (
     personalId: number,
     changes: Array<{ field: string; value: string }>,
@@ -22187,7 +22172,8 @@ type PokemonSectionProps = {
   ) => Promise<boolean>;
   onSwapPokemonDexPlacement?: (
     sourceSpeciesId: number,
-    targetSpeciesId: number
+    targetSpeciesId: number,
+    isSubmittedDraftCurrent: () => boolean
   ) => Promise<boolean>;
   searchText: string;
   selectedPokemonEvolutionSlot: number | null;
@@ -22212,6 +22198,7 @@ function ZaPokemonSection(props: PokemonSectionPublicProps) {
 function PokemonSection({
   editSession,
   editorFamily,
+  hasProtectedPokemonDrafts,
   isEditStarting,
   isPokemonUpdating,
   onCopyLearnsetRow,
@@ -22272,7 +22259,11 @@ function PokemonSection({
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
   const canBulkUpdatePokemonYield =
-    workflow !== null && editSession !== null && canEditPokemon && !isPokemonUpdating;
+    workflow !== null &&
+    editSession !== null &&
+    canEditPokemon &&
+    !hasProtectedPokemonDrafts &&
+    !isPokemonUpdating;
   const [expYieldConfirmation, setExpYieldConfirmation] =
     useState<PokemonYieldConfirmationState>(null);
   const [evYieldConfirmation, setEvYieldConfirmation] =
@@ -22592,27 +22583,68 @@ function getPokemonRecordSpriteName(pokemon?: PokemonRecord | null) {
     : null;
 }
 
+type ZaPokemonDexSwapDraftSnapshot = Readonly<{
+  destinationDexKind: PokemonDexPlacement['dexKind'];
+  personalId: number;
+  target: string;
+}>;
+
+function areZaPokemonDexSwapDraftSnapshotsEqual(
+  left: ZaPokemonDexSwapDraftSnapshot,
+  right: ZaPokemonDexSwapDraftSnapshot
+) {
+  return (
+    left.personalId === right.personalId &&
+    left.destinationDexKind === right.destinationDexKind &&
+    left.target === right.target
+  );
+}
+
 function ZaPokemonDexPlacementEditor({
   canEditPokemon,
   dexEditor,
+  discardEpoch,
   editSessionActive,
   isPokemonUpdating,
+  onDirtyStateChange,
   onStageSwap,
   pokemon
 }: {
   canEditPokemon: boolean;
   dexEditor: PokemonDexEditor;
+  discardEpoch: number;
   editSessionActive: boolean;
   isPokemonUpdating: boolean;
-  onStageSwap?: (sourceSpeciesId: number, targetSpeciesId: number) => Promise<boolean>;
+  onDirtyStateChange?: (isDirty: boolean) => void;
+  onStageSwap?: (
+    sourceSpeciesId: number,
+    targetSpeciesId: number,
+    isSubmittedDraftCurrent: () => boolean
+  ) => Promise<boolean>;
   pokemon: PokemonRecord;
 }) {
   const { t, translateLiteral } = useLocalization();
   const currentPlacement =
     dexEditor.placements.find((placement) => placement.speciesId === pokemon.speciesId) ?? null;
+  const defaultDestinationDexKind: PokemonDexPlacement['dexKind'] =
+    currentPlacement?.dexKind === 'regular' ? 'hyperspace' : 'regular';
   const [destinationDexKind, setDestinationDexKind] =
-    useState<PokemonDexPlacement['dexKind']>('regular');
+    useState<PokemonDexPlacement['dexKind']>(defaultDestinationDexKind);
   const [targetSpeciesIdDraft, setTargetSpeciesIdDraft] = useState('');
+  const latestSwapDraftRef = useRef<ZaPokemonDexSwapDraftSnapshot>({
+    destinationDexKind,
+    personalId: pokemon.personalId,
+    target: targetSpeciesIdDraft
+  });
+  latestSwapDraftRef.current = {
+    destinationDexKind,
+    personalId: pokemon.personalId,
+    target: targetSpeciesIdDraft
+  };
+  const swapDraftIsActiveRef = useRef(true);
+  const previousScopeRef = useRef(pokemon.personalId);
+  const previousDefaultDestinationRef = useRef(defaultDestinationDexKind);
+  const previousDiscardEpochRef = useRef(discardEpoch);
   const formatPlacementLabel = useCallback(
     (placement: PokemonDexPlacement) =>
       `${translateLiteral(formatPokemonDexKind(placement.dexKind))} #${formatPokemonDexNumber(
@@ -22622,11 +22654,40 @@ function ZaPokemonDexPlacementEditor({
   );
 
   useEffect(() => {
-    setDestinationDexKind(
-      currentPlacement?.dexKind === 'regular' ? 'hyperspace' : 'regular'
+    const scopeChanged = previousScopeRef.current !== pokemon.personalId;
+    const discardRequested = previousDiscardEpochRef.current !== discardEpoch;
+    if (scopeChanged || discardRequested) {
+      setDestinationDexKind(defaultDestinationDexKind);
+      setTargetSpeciesIdDraft('');
+    } else {
+      setDestinationDexKind((currentDraft) =>
+        reconcileSourceBackedDraft(
+          currentDraft,
+          previousDefaultDestinationRef.current,
+          defaultDestinationDexKind,
+          Object.is
+        )
+      );
+    }
+    previousScopeRef.current = pokemon.personalId;
+    previousDefaultDestinationRef.current = defaultDestinationDexKind;
+    previousDiscardEpochRef.current = discardEpoch;
+  }, [defaultDestinationDexKind, discardEpoch, pokemon.personalId]);
+
+  useEffect(() => {
+    swapDraftIsActiveRef.current = true;
+    return () => {
+      swapDraftIsActiveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    onDirtyStateChange?.(
+      targetSpeciesIdDraft !== '' || destinationDexKind !== defaultDestinationDexKind
     );
-    setTargetSpeciesIdDraft('');
-  }, [currentPlacement?.dexKind, pokemon.speciesId]);
+  }, [defaultDestinationDexKind, destinationDexKind, onDirtyStateChange, targetSpeciesIdDraft]);
+
+  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
   const destinationOptions = useMemo(
     () =>
@@ -22711,12 +22772,7 @@ function ZaPokemonDexPlacementEditor({
               />
               <select
                 className="km-select-control"
-                disabled={
-                  !editSessionActive ||
-                  !canEditPokemon ||
-                  !dexEditor.canEdit ||
-                  isPokemonUpdating
-                }
+                disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit}
                 id="za-pokemon-destination-dex"
                 onChange={(event) => {
                   if (!editSessionActive) {
@@ -22747,12 +22803,7 @@ function ZaPokemonDexPlacementEditor({
               />
               <SearchableOptionInput
                 ariaLabel={translateLiteral('Occupied destination slot')}
-                disabled={
-                  !editSessionActive ||
-                  !canEditPokemon ||
-                  !dexEditor.canEdit ||
-                  isPokemonUpdating
-                }
+                disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit}
                 emptyOptionLabel="Choose a Pokédex slot"
                 id="za-pokemon-destination-slot"
                 onChange={(value) => {
@@ -22795,10 +22846,25 @@ function ZaPokemonDexPlacementEditor({
               disabled={!canStageSwap}
               onClick={async () => {
                 if (currentPlacement && targetPlacement && onStageSwap) {
-                  await onStageSwap(
+                  const submittedDraft: ZaPokemonDexSwapDraftSnapshot = {
+                    destinationDexKind,
+                    personalId: pokemon.personalId,
+                    target: targetSpeciesIdDraft
+                  };
+                  const isSubmittedDraftCurrent = () =>
+                    swapDraftIsActiveRef.current &&
+                    areZaPokemonDexSwapDraftSnapshotsEqual(
+                      latestSwapDraftRef.current,
+                      submittedDraft
+                    );
+                  const didStage = await onStageSwap(
                     currentPlacement.speciesId,
-                    targetPlacement.speciesId
+                    targetPlacement.speciesId,
+                    isSubmittedDraftCurrent
                   );
+                  if (didStage && isSubmittedDraftCurrent()) {
+                    setTargetSpeciesIdDraft('');
+                  }
                 }
               }}
               type="button"
@@ -22873,11 +22939,11 @@ function SelectedPokemonPanel({
   ) => Promise<RowClipboardActionResult>;
   onPasteLearnsetRow: (
     input: PokemonLearnsetClipboardPasteInput
-  ) => Promise<RowClipboardActionResult>;
+  ) => Promise<RowClipboardPasteActionResult>;
   onSelectPokemonEvolution: (slot: number | null) => void;
   onStartEditSession: () => void;
   pokemonTable: ReactNode;
-  onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonField: (personalId: number, field: string, value: string) => Promise<boolean>;
   onUpdatePokemonFields: (
     personalId: number,
     changes: Array<{ field: string; value: string }>,
@@ -22903,7 +22969,8 @@ function SelectedPokemonPanel({
   ) => Promise<boolean>;
   onSwapPokemonDexPlacement?: (
     sourceSpeciesId: number,
-    targetSpeciesId: number
+    targetSpeciesId: number,
+    isSubmittedDraftCurrent: () => boolean
   ) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   pokemon: PokemonRecord | null;
@@ -22923,7 +22990,30 @@ function SelectedPokemonPanel({
     isError: boolean;
     message: string;
   } | null>(null);
+  const learnsetClipboardDiagnostics = useMemo<ApiDiagnostic[]>(
+    () =>
+      learnsetClipboardFeedback?.isError
+        ? [{
+            domain: 'workflow.pokemon',
+            message: learnsetClipboardFeedback.message,
+            severity: 'error'
+          }]
+        : [],
+    [learnsetClipboardFeedback]
+  );
+  usePublishCommonEditorDiagnostics(learnsetClipboardDiagnostics);
+  const [pokemonSourceMutationError, setPokemonSourceMutationError] = useState<
+    string | null
+  >(null);
+  const [hasPokemonDexPlacementDrafts, setHasPokemonDexPlacementDrafts] = useState(false);
+  const [pokemonDraftDiscardEpoch, setPokemonDraftDiscardEpoch] = useState(0);
   const [isLearnsetClipboardBusy, setIsLearnsetClipboardBusy] = useState(false);
+  const learnsetClipboardOperationRef = useRef<symbol | null>(null);
+  const [isLearnsetPasteApplying, setIsLearnsetPasteApplying] = useState(false);
+  const [pokemonStructureMutationPending, setPokemonStructureMutationPending] = useState<
+    'evolution' | 'learnset' | null
+  >(null);
+  const pokemonStructureMutationOperationRef = useRef<symbol | null>(null);
   const personalDraftDefaults = useMemo(
     () => createPokemonPersonalDrafts(pokemon, editableFields),
     [editableFields, pokemon]
@@ -23118,52 +23208,51 @@ function SelectedPokemonPanel({
     },
     [alphaMoveDraftKey, pokemonDraftRecordKey]
   );
-  const pokemonDurableDraft = useBoundOrdinaryEditorDraft({
-    adapter: ordinaryPokemonDraftAdapter,
+  const pokemonDraftBinding = useSessionLocalEditorDraftBinding({
     applyHydratedPayload: applyHydratedPokemonDraft,
-    emptyPayload: {
-      alphaMove: null,
-      evolutionSlots: {},
-      fields: {},
-      learnsetSlots: {}
-    },
-    entityPreimage: pokemon,
-    isClean: isOrdinaryPokemonDraftClean,
+    bindingId: 'pokemon',
     payload: pokemonDraftPayload,
     project: ordinaryDraftProject,
     recordValue: pokemon?.personalId ?? null,
     section: 'pokemon'
   });
-  const isPokemonDraftReady =
-    isOrdinaryEditorDraftBindingReady(pokemonDurableDraft);
-  const rebasePokemonDraft = useCallback(
-    (stalePayload: OrdinaryPokemonDraftPayload): OrdinaryPokemonDraftPayload => {
-      const currentEvolutionSlots = new Set(
-        (pokemon?.evolutions ?? []).map((evolution) => evolution.slot.toString())
-      );
-      const currentLearnsetSlots = new Set(
-        (pokemon?.learnset ?? []).map((move) => move.slot.toString())
-      );
-      return {
-        alphaMove: pokemon?.alphaMove ? stalePayload.alphaMove : null,
-        evolutionSlots: Object.fromEntries(
-          Object.entries(stalePayload.evolutionSlots)
-            .filter(([slot]) => currentEvolutionSlots.has(slot))
-            .map(([slot, draft]) => [slot, { ...draft }])
-        ),
-        fields: Object.fromEntries(
-          Object.entries(stalePayload.fields)
-            .filter(([field]) => writablePersonalFields.has(field))
-            .map(([field, value]) => [field, value])
-        ),
-        learnsetSlots: Object.fromEntries(
-          Object.entries(stalePayload.learnsetSlots)
-            .filter(([slot]) => currentLearnsetSlots.has(slot))
-            .map(([slot, draft]) => [slot, { ...draft }])
-        )
-      };
+  const runSelectedPokemonSourceMutation = useCallback(
+    async (mutation: () => Promise<boolean>) => {
+      const sourceMutation = await runSessionLocalEditorSourceMutation({
+        binding: pokemonDraftBinding,
+        didMutate: (didMutate) => didMutate,
+        mutation,
+        reduceLatestPayload: (latestPayload) => latestPayload
+      });
+      if (sourceMutation.kind === 'reservation-unavailable') {
+        setPokemonSourceMutationError(sessionLocalDraftMutationBusyMessage);
+        return false;
+      }
+      setPokemonSourceMutationError(null);
+      return sourceMutation.kind === 'source-mutated';
     },
-    [pokemon, writablePersonalFields]
+    [pokemonDraftBinding, t]
+  );
+  const runSelectedPokemonStructuralMutation = useCallback(
+    async (kind: 'evolution' | 'learnset', mutation: () => Promise<boolean>) => {
+      if (pokemonStructureMutationOperationRef.current !== null) {
+        return false;
+      }
+      const operationToken = Symbol(`pokemon-${kind}-structure-mutation`);
+      pokemonStructureMutationOperationRef.current = operationToken;
+      setPokemonStructureMutationPending(kind);
+      try {
+        return await runSelectedPokemonSourceMutation(mutation);
+      } finally {
+        if (pokemonStructureMutationOperationRef.current === operationToken) {
+          pokemonStructureMutationOperationRef.current = null;
+          setPokemonStructureMutationPending((currentKind) =>
+            currentKind === kind ? null : currentKind
+          );
+        }
+      }
+    },
+    [runSelectedPokemonSourceMutation]
   );
   const pokemonSpeciesOptions = useMemo(
     () => {
@@ -23254,6 +23343,35 @@ function SelectedPokemonPanel({
   );
   const [newLearnsetMoveIdDraft, setNewLearnsetMoveIdDraft] = useState('');
   const [newLearnsetLevelDraft, setNewLearnsetLevelDraft] = useState('');
+  const newLearnsetCreationDraftSignature = JSON.stringify([
+    pokemon?.personalId ?? null,
+    newLearnsetMoveIdDraft,
+    newLearnsetLevelDraft
+  ]);
+  const newLearnsetCreationDraftSignatureRef = useRef(
+    newLearnsetCreationDraftSignature
+  );
+  newLearnsetCreationDraftSignatureRef.current = newLearnsetCreationDraftSignature;
+  const newEvolutionCreationDraftSignature = JSON.stringify([
+    pokemon?.personalId ?? null,
+    newEvolutionMethodDraft,
+    newEvolutionArgumentDraft,
+    newEvolutionSpeciesDraft,
+    newEvolutionFormDraft,
+    newEvolutionLevelDraft
+  ]);
+  const newEvolutionCreationDraftSignatureRef = useRef(
+    newEvolutionCreationDraftSignature
+  );
+  newEvolutionCreationDraftSignatureRef.current = newEvolutionCreationDraftSignature;
+  const hasPokemonCreationDrafts =
+    newEvolutionMethodDraft !== '' ||
+    newEvolutionArgumentDraft !== '0' ||
+    newEvolutionSpeciesDraft !== '' ||
+    newEvolutionFormDraft !== '0' ||
+    newEvolutionLevelDraft !== '' ||
+    newLearnsetMoveIdDraft !== '' ||
+    newLearnsetLevelDraft !== '';
   const [learnsetDragState, setLearnsetDragState] = useState<PokemonLearnsetDragState | null>(
     null
   );
@@ -23272,7 +23390,9 @@ function SelectedPokemonPanel({
     countFieldDraftRecords(personalDraftsByPokemonId) > 0 ||
       Object.keys(alphaMoveDraftsByPokemonKey).length > 0 ||
       Object.keys(evolutionDraftsByPokemonId).length > 0 ||
-      Object.keys(learnsetDraftsByPokemonId).length > 0
+      Object.keys(learnsetDraftsByPokemonId).length > 0 ||
+      hasPokemonCreationDrafts ||
+      hasPokemonDexPlacementDrafts
   );
 
   useEffect(() => {
@@ -23540,15 +23660,11 @@ function SelectedPokemonPanel({
   const alphaMoveDataDisabledReason = getPokemonAlphaMoveDisabledReason(alphaMove);
   const alphaMoveDisabledReason =
     alphaMoveDataDisabledReason ??
-    (!isPokemonDraftReady
-      ? t('ordinaryDraft.status.loading')
-      : !canEditPokemon
+    (!canEditPokemon
       ? 'Alpha-exclusive move editing is unavailable while Pokemon Data is read-only.'
       : editSession === null
         ? 'Alpha-exclusive move editing requires an active Pokemon edit session.'
-        : isPokemonUpdating
-          ? 'Alpha-exclusive move editing is temporarily unavailable while Pokemon changes are being staged.'
-          : null);
+        : null);
   const canEditAlphaMove = alphaMove !== null && alphaMoveDisabledReason === null;
   const alphaMoveErrorId = 'pokemon-alpha-exclusive-move-error';
   const alphaMoveStatusId = 'pokemon-alpha-exclusive-move-status';
@@ -23568,24 +23684,30 @@ function SelectedPokemonPanel({
       alphaMoveDraftValue !== alphaMove.vanillaMoveId &&
       (alphaMove.canRevertToVanilla ||
       (alphaMove.canEdit && alphaMove.moveId === alphaMove.vanillaMoveId)) &&
-      isPokemonDraftReady &&
       canEditPokemon &&
-      editSession !== null &&
-      !isPokemonUpdating
+      editSession !== null
   );
-  const canToggleCompatibility =
-    isPokemonDraftReady && canEditPokemon && editSession !== null && !isPokemonUpdating;
-  const canEditEvolution =
-    isPokemonDraftReady && canEditPokemon && editSession !== null && !isPokemonUpdating;
-  const canEditLearnset =
-    isPokemonDraftReady && canEditPokemon && editSession !== null && !isPokemonUpdating;
+  const canToggleCompatibility = canEditPokemon && editSession !== null;
+  const canEditEvolution = canEditPokemon && editSession !== null;
+  const canEditLearnset = canEditPokemon && editSession !== null;
   const learnsetMaximumLevel = getPokemonLearnsetMaximumLevel(editorFamily);
   const evolutionMaximumForm = getPokemonEvolutionMaximumForm(editorFamily);
   const evolutionMaximumLevel = getPokemonEvolutionMaximumLevel(editorFamily);
   const hasEvolutionDrafts = Object.keys(evolutionDraftsBySlot).length > 0;
   const hasLearnsetDrafts = Object.keys(learnsetDraftsBySlot).length > 0;
-  const canModifyEvolutionStructure = canEditEvolution && !hasEvolutionDrafts;
-  const canModifyLearnsetStructure = canEditLearnset && !hasLearnsetDrafts;
+  const canModifyEvolutionStructure =
+    canEditEvolution && !hasEvolutionDrafts && pokemonStructureMutationPending === null;
+  const canModifyLearnsetStructure =
+    canEditLearnset &&
+    !hasLearnsetDrafts &&
+    pokemonStructureMutationPending === null &&
+    !isLearnsetPasteApplying;
+  const canEditEvolutionFields =
+    canEditEvolution && pokemonStructureMutationPending !== 'evolution';
+  const canEditLearnsetFields =
+    canEditLearnset &&
+    pokemonStructureMutationPending !== 'learnset' &&
+    !isLearnsetPasteApplying;
   useEffect(() => {
     setLearnsetDragState(null);
     setDragOverLearnsetSlot(null);
@@ -23600,10 +23722,7 @@ function SelectedPokemonPanel({
     if (!canEditPokemon) {
       return t('rowClipboard.menu.unavailable');
     }
-    if (!isPokemonDraftReady) {
-      return t('ordinaryDraft.status.loading');
-    }
-    if (isPokemonUpdating || isLearnsetClipboardBusy) {
+    if (isLearnsetClipboardBusy) {
       return t('rowClipboard.menu.busy');
     }
     if (operation === 'copy' && pokemon) {
@@ -23624,9 +23743,16 @@ function SelectedPokemonPanel({
   };
   const handleCopyLearnsetClipboardRow = async () => {
     const target = learnsetClipboardMenu;
-    if (!pokemon || !target || learnsetClipboardDisabledReason(target.move, 'copy')) {
+    if (
+      !pokemon ||
+      !target ||
+      learnsetClipboardOperationRef.current !== null ||
+      learnsetClipboardDisabledReason(target.move, 'copy')
+    ) {
       return;
     }
+    const operationToken = Symbol('pokemon-learnset-clipboard-copy');
+    learnsetClipboardOperationRef.current = operationToken;
     setIsLearnsetClipboardBusy(true);
     setLearnsetClipboardFeedback(null);
     try {
@@ -23651,41 +23777,70 @@ function SelectedPokemonPanel({
         message: t('rowClipboard.feedback.copySuccess', { target: targetLabel })
       });
     } finally {
-      setIsLearnsetClipboardBusy(false);
+      if (learnsetClipboardOperationRef.current === operationToken) {
+        learnsetClipboardOperationRef.current = null;
+        setIsLearnsetClipboardBusy(false);
+      }
     }
   };
   const handlePasteLearnsetClipboardRow = async () => {
     const target = learnsetClipboardMenu;
-    if (!pokemon || !target || learnsetClipboardDisabledReason(target.move, 'paste')) {
+    if (
+      !pokemon ||
+      !target ||
+      learnsetClipboardOperationRef.current !== null ||
+      learnsetClipboardDisabledReason(target.move, 'paste')
+    ) {
       return;
     }
+    const operationToken = Symbol('pokemon-learnset-clipboard-paste');
+    learnsetClipboardOperationRef.current = operationToken;
     setIsLearnsetClipboardBusy(true);
+    setIsLearnsetPasteApplying(true);
     setLearnsetClipboardFeedback(null);
     try {
+      const targetSlot = target.move.slot;
       const result = await onPasteLearnsetRow({
         personalId: pokemon.personalId,
-        targetSlot: target.move.slot
+        targetSlot
       });
       if (result.kind === 'failure') {
         setLearnsetClipboardFeedback({ isError: true, message: t(result.feedbackKey) });
         return;
       }
-      if (!(await pokemonDurableDraft.draft.clearDurable())) {
+
+      const destinationRows = result.rows.map((row, offset) => {
+        const destination = pokemon.learnset.find((move) => move.slot === targetSlot + offset);
+        return destination ? { destination, row } : null;
+      });
+      if (
+        destinationRows.length === 0 ||
+        destinationRows.some((destinationRow) => destinationRow === null)
+      ) {
         setLearnsetClipboardFeedback({
           isError: true,
-          message: t('ordinaryDraft.error.storage')
+          message: t('rowClipboard.feedback.pasteRejected')
         });
         return;
       }
+
       const pokemonKey = pokemon.personalId.toString();
-      const targetSlot = target.move.slot;
       setLearnsetDraftsByPokemonId((currentDraftsByPokemonId) => {
-        const currentPokemonDrafts = currentDraftsByPokemonId[pokemonKey];
-        if (!currentPokemonDrafts?.[targetSlot]) {
-          return currentDraftsByPokemonId;
+        const nextPokemonDrafts = {
+          ...(currentDraftsByPokemonId[pokemonKey] ?? {})
+        };
+        for (const destinationRow of destinationRows) {
+          const { destination, row } = destinationRow!;
+          const destinationDefaults = createPokemonLearnsetDraftFields(destination);
+          const nextDraft = createPokemonLearnsetDraftFields(
+            applyPokemonLearnsetClipboardOwnedValues(destination, row.values)
+          );
+          if (pokemonLearnsetDraftFieldsEqual(nextDraft, destinationDefaults)) {
+            delete nextPokemonDrafts[destination.slot];
+          } else {
+            nextPokemonDrafts[destination.slot] = nextDraft;
+          }
         }
-        const nextPokemonDrafts = { ...currentPokemonDrafts };
-        delete nextPokemonDrafts[targetSlot];
         const nextDraftsByPokemonId = { ...currentDraftsByPokemonId };
         if (Object.keys(nextPokemonDrafts).length === 0) {
           delete nextDraftsByPokemonId[pokemonKey];
@@ -23697,7 +23852,7 @@ function SelectedPokemonPanel({
       setLearnsetClipboardFeedback({
         isError: false,
         message: t('rowClipboard.feedback.pasteSuccess', {
-          count: result.operationCount,
+          count: destinationRows.length,
           target: t('rowClipboard.learnset.target', {
             pokemon: formatPokemonRecordName(pokemon, editorFamily),
             slot: targetSlot + 1
@@ -23705,7 +23860,11 @@ function SelectedPokemonPanel({
         })
       });
     } finally {
-      setIsLearnsetClipboardBusy(false);
+      if (learnsetClipboardOperationRef.current === operationToken) {
+        learnsetClipboardOperationRef.current = null;
+        setIsLearnsetPasteApplying(false);
+        setIsLearnsetClipboardBusy(false);
+      }
     }
   };
   const parsedEvolutionSpecies = parseEditableIntegerDraft(
@@ -23756,6 +23915,7 @@ function SelectedPokemonPanel({
   const parsedNewLearnsetLevel = parseEditableIntegerDraft(newLearnsetLevelDraft);
   const canAddLearnsetMove =
     canModifyLearnsetStructure &&
+    !isPokemonUpdating &&
     (editorFamily !== 'swsh' || (pokemon?.learnset.length ?? 0) < swshPokemonMaximumLearnsetRows) &&
     isIntegerInRange(parsedNewLearnsetMoveId, 0, pokemonMaximumUshortValue) &&
     isIntegerInRange(parsedNewLearnsetLevel, 0, learnsetMaximumLevel) &&
@@ -23792,18 +23952,28 @@ function SelectedPokemonPanel({
         return;
       }
 
-      const didMove = await onUpdatePokemonLearnset(
-        pokemon.personalId,
-        'moveTo',
-        activeDrag.sourceSlot,
-        targetSlot,
-        null
+      const didMove = await runSelectedPokemonStructuralMutation(
+        'learnset',
+        () =>
+          onUpdatePokemonLearnset(
+            pokemon.personalId,
+            'moveTo',
+            activeDrag.sourceSlot,
+            targetSlot,
+            null
+          )
       );
       if (didMove) {
         setSelectedLearnsetSlot(targetSlot);
       }
     },
-    [canModifyLearnsetStructure, learnsetDragState, onUpdatePokemonLearnset, pokemon]
+    [
+      canModifyLearnsetStructure,
+      learnsetDragState,
+      onUpdatePokemonLearnset,
+      pokemon,
+      runSelectedPokemonStructuralMutation
+    ]
   );
   const evolutionDraftReview = useMemo(
     () =>
@@ -23840,8 +24010,7 @@ function SelectedPokemonPanel({
       : selectedEvolutionDraftChange === null
         ? 'Invalid'
         : 'Changed';
-  const canSaveSelectedEvolution =
-    canEditEvolution && selectedEvolutionDraftChange !== null;
+  const canSaveSelectedEvolution = canEditEvolution && selectedEvolutionDraftChange !== null;
   const learnsetDraftReview = useMemo(
     () =>
       reviewPokemonLearnsetDrafts(
@@ -23867,12 +24036,12 @@ function SelectedPokemonPanel({
     pokemon !== null &&
     editSession !== null &&
     canEditPokemon &&
-    isPokemonDraftReady &&
     !isPokemonUpdating &&
     pokemonDraftChangedCount > 0 &&
     pokemonDraftInvalidCount === 0;
   const canAddEvolution =
     canModifyEvolutionStructure &&
+    !isPokemonUpdating &&
     (editorFamily !== 'swsh' || orderedEvolutions.length < swshPokemonMaximumEvolutionRows) &&
     isIntegerInRange(parsedNewEvolutionMethod, 0, pokemonMaximumUshortValue) &&
     isIntegerInRange(parsedNewEvolutionArgument, 0, pokemonMaximumUshortValue) &&
@@ -23956,21 +24125,39 @@ function SelectedPokemonPanel({
     const pokemonKey = pokemon.personalId.toString();
     const evolutionSlot = selectedEvolution.slot;
     const savedDraft = selectedEvolutionDraft;
-    const didSave = await onUpdatePokemonEvolution(
-      pokemon.personalId,
-      'upsert',
-      evolutionSlot,
-      selectedEvolutionDraftChange.method,
-      selectedEvolutionDraftChange.argument,
-      selectedEvolutionDraftChange.species,
-      selectedEvolutionDraftChange.form,
-      selectedEvolutionDraftChange.level
-    );
-    if (!didSave) {
+    const sourceMutation = await runSessionLocalEditorSourceMutation({
+      binding: pokemonDraftBinding,
+      didMutate: (didSave) => didSave,
+      mutation: () =>
+        onUpdatePokemonEvolution(
+          pokemon.personalId,
+          'upsert',
+          evolutionSlot,
+          selectedEvolutionDraftChange.method,
+          selectedEvolutionDraftChange.argument,
+          selectedEvolutionDraftChange.species,
+          selectedEvolutionDraftChange.form,
+          selectedEvolutionDraftChange.level
+        ),
+      reduceLatestPayload: (latestPayload) => {
+        const latestDraft = latestPayload.evolutionSlots[evolutionSlot];
+        if (
+          !latestDraft ||
+          !pokemonEvolutionDraftFieldsEqual(latestDraft, savedDraft)
+        ) {
+          return latestPayload;
+        }
+        const nextEvolutionSlots = { ...latestPayload.evolutionSlots };
+        delete nextEvolutionSlots[evolutionSlot];
+        return { ...latestPayload, evolutionSlots: nextEvolutionSlots };
+      }
+    });
+    if (sourceMutation.kind === 'reservation-unavailable') {
+      setPokemonSourceMutationError(sessionLocalDraftMutationBusyMessage);
       return;
     }
-
-    if (!(await pokemonDurableDraft.draft.clearDurable())) {
+    setPokemonSourceMutationError(null);
+    if (sourceMutation.kind !== 'source-mutated') {
       return;
     }
 
@@ -24004,47 +24191,144 @@ function SelectedPokemonPanel({
       return;
     }
 
-    const didSave = await onUpdatePokemonFields(
-      pokemon.personalId,
-      [
-        ...personalDraftSummary.changedFields.map((change) => ({
-          field: change.field,
-          value: change.value
-        })),
-        ...(alphaMoveDraftState.isChanged && alphaMoveDraftState.normalizedValue !== null
-          ? [
-              {
-                field: pokemonAlphaMoveFieldName,
-                value: alphaMoveDraftState.normalizedValue
-              }
-            ]
-          : [])
-      ],
-      evolutionDraftReview.changes,
-      learnsetDraftReview.changes
-    );
-    if (!didSave) {
+    const payloadBeforeStage = pokemonDraftPayload;
+    const sourceMutation = await runSessionLocalEditorSourceMutation({
+      binding: pokemonDraftBinding,
+      didMutate: (didSave) => didSave,
+      mutation: () =>
+        onUpdatePokemonFields(
+          pokemon.personalId,
+          [
+            ...personalDraftSummary.changedFields.map((change) => ({
+              field: change.field,
+              value: change.value
+            })),
+            ...(alphaMoveDraftState.isChanged && alphaMoveDraftState.normalizedValue !== null
+              ? [
+                  {
+                    field: pokemonAlphaMoveFieldName,
+                    value: alphaMoveDraftState.normalizedValue
+                  }
+                ]
+              : [])
+          ],
+          evolutionDraftReview.changes,
+          learnsetDraftReview.changes
+        ),
+      reduceLatestPayload: (latestPayload) => ({
+        alphaMove:
+          latestPayload.alphaMove === payloadBeforeStage.alphaMove
+            ? null
+            : latestPayload.alphaMove,
+        evolutionSlots: Object.fromEntries(
+          Object.entries(latestPayload.evolutionSlots).filter(
+            ([slot, latestDraft]) => {
+              const submittedDraft = payloadBeforeStage.evolutionSlots[Number(slot)];
+              return (
+                submittedDraft === undefined ||
+                !pokemonEvolutionDraftFieldsEqual(latestDraft, submittedDraft)
+              );
+            }
+          )
+        ),
+        fields: removeMatchingFieldDraftValues(
+          latestPayload.fields,
+          payloadBeforeStage.fields
+        ),
+        learnsetSlots: Object.fromEntries(
+          Object.entries(latestPayload.learnsetSlots).filter(
+            ([slot, latestDraft]) => {
+              const submittedDraft = payloadBeforeStage.learnsetSlots[Number(slot)];
+              return (
+                submittedDraft === undefined ||
+                !pokemonLearnsetDraftFieldsEqual(latestDraft, submittedDraft)
+              );
+            }
+          )
+        )
+      })
+    });
+    if (sourceMutation.kind === 'reservation-unavailable') {
+      setPokemonSourceMutationError(sessionLocalDraftMutationBusyMessage);
       return;
     }
-
-    if (!(await pokemonDurableDraft.draft.discard())) {
+    setPokemonSourceMutationError(null);
+    if (sourceMutation.kind !== 'source-mutated') {
       return;
     }
 
     setPersonalDraftsByPokemonId((currentDrafts) =>
-      deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+      updateSparseFieldDraftRecordAfterStage(
+        currentDrafts,
+        pokemon.personalId,
+        payloadBeforeStage.fields
+      )
     );
     setAlphaMoveDraftsByPokemonKey((currentDrafts) => {
+      if (
+        payloadBeforeStage.alphaMove === null ||
+        currentDrafts[alphaMoveDraftKey] !== payloadBeforeStage.alphaMove
+      ) {
+        return currentDrafts;
+      }
       const nextDrafts = { ...currentDrafts };
       delete nextDrafts[alphaMoveDraftKey];
       return nextDrafts;
     });
-    setEvolutionDraftsByPokemonId((currentDrafts) =>
-      deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
-    );
-    setLearnsetDraftsByPokemonId((currentDrafts) =>
-      deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
-    );
+    setEvolutionDraftsByPokemonId((currentDrafts) => {
+      const pokemonKey = pokemon.personalId.toString();
+      const latestSlots = currentDrafts[pokemonKey];
+      if (!latestSlots) {
+        return currentDrafts;
+      }
+      const nextSlots = { ...latestSlots };
+      for (const [slot, submittedDraft] of Object.entries(
+        payloadBeforeStage.evolutionSlots
+      )) {
+        const slotNumber = Number(slot);
+        const latestDraft = nextSlots[slotNumber];
+        if (
+          latestDraft &&
+          pokemonEvolutionDraftFieldsEqual(latestDraft, submittedDraft)
+        ) {
+          delete nextSlots[slotNumber];
+        }
+      }
+      const nextDrafts = { ...currentDrafts };
+      if (Object.keys(nextSlots).length === 0) {
+        delete nextDrafts[pokemonKey];
+      } else {
+        nextDrafts[pokemonKey] = nextSlots;
+      }
+      return nextDrafts;
+    });
+    setLearnsetDraftsByPokemonId((currentDrafts) => {
+      const pokemonKey = pokemon.personalId.toString();
+      const latestSlots = currentDrafts[pokemonKey];
+      if (!latestSlots) {
+        return currentDrafts;
+      }
+      const nextSlots = { ...latestSlots };
+      for (const [slot, submittedDraft] of Object.entries(
+        payloadBeforeStage.learnsetSlots
+      )) {
+        const slotNumber = Number(slot);
+        const latestDraft = nextSlots[slotNumber];
+        if (
+          latestDraft &&
+          pokemonLearnsetDraftFieldsEqual(latestDraft, submittedDraft)
+        ) {
+          delete nextSlots[slotNumber];
+        }
+      }
+      const nextDrafts = { ...currentDrafts };
+      if (Object.keys(nextSlots).length === 0) {
+        delete nextDrafts[pokemonKey];
+      } else {
+        nextDrafts[pokemonKey] = nextSlots;
+      }
+      return nextDrafts;
+    });
   };
 
   const cancelPokemonEdit = () =>
@@ -24053,6 +24337,14 @@ function SelectedPokemonPanel({
       setAlphaMoveDraftsByPokemonKey({});
       setEvolutionDraftsByPokemonId({});
       setLearnsetDraftsByPokemonId({});
+      setNewEvolutionMethodDraft('');
+      setNewEvolutionArgumentDraft('0');
+      setNewEvolutionSpeciesDraft('');
+      setNewEvolutionFormDraft('0');
+      setNewEvolutionLevelDraft('');
+      setNewLearnsetMoveIdDraft('');
+      setNewLearnsetLevelDraft('');
+      setPokemonDraftDiscardEpoch((currentEpoch) => currentEpoch + 1);
     });
 
   return (
@@ -24060,6 +24352,31 @@ function SelectedPokemonPanel({
       aria-label="Selected Pokemon provenance"
       className={`item-inspector ${editorFamily}-pokemon-inspector`}
     >
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.pokemon"
+        issues={[
+          ...personalDraftSummary.invalidFields,
+          ...(!alphaMoveDraftState.isValid
+            ? [{
+                field: 'alphaMoveId',
+                label: 'Alpha-exclusive move',
+                message: alphaMoveDraftState.error ?? 'Choose a valid move.'
+              }]
+            : []),
+          ...(evolutionDraftReview.invalidCount > 0
+            ? [{
+                field: 'evolutions',
+                message: `${evolutionDraftReview.invalidCount} evolution draft row(s) contain invalid values.`
+              }]
+            : []),
+          ...(learnsetDraftReview.invalidCount > 0
+            ? [{
+                field: 'learnset',
+                message: `${learnsetDraftReview.invalidCount} learnset draft row(s) contain invalid values.`
+              }]
+            : [])
+        ]}
+      />
       <EditorSessionBar
         canEdit={canEditPokemon && pokemon !== null}
         isEditing={editSession !== null}
@@ -24112,11 +24429,9 @@ function SelectedPokemonPanel({
           <h3>Selected Pokemon</h3>
         </div>
 
-        <OrdinaryEditorDraftStatus
-          binding={pokemonDurableDraft}
-          currentPayload={pokemonDraftPayload}
-          isClean={isOrdinaryPokemonDraftClean}
-          rebase={rebasePokemonDraft}
+        <PublishedInlineEditorError
+          domain="workflow.pokemon"
+          message={pokemonSourceMutationError}
         />
 
         {pokemon ? (
@@ -24329,9 +24644,22 @@ function SelectedPokemonPanel({
             <ZaPokemonDexPlacementEditor
               canEditPokemon={canEditPokemon}
               dexEditor={dexEditor}
+              discardEpoch={pokemonDraftDiscardEpoch}
               editSessionActive={editSession !== null}
               isPokemonUpdating={isPokemonUpdating}
-              onStageSwap={onSwapPokemonDexPlacement}
+              onDirtyStateChange={setHasPokemonDexPlacementDrafts}
+              onStageSwap={
+                onSwapPokemonDexPlacement
+                  ? (sourceSpeciesId, targetSpeciesId, isSubmittedDraftCurrent) =>
+                      runSelectedPokemonSourceMutation(() =>
+                        onSwapPokemonDexPlacement(
+                          sourceSpeciesId,
+                          targetSpeciesId,
+                          isSubmittedDraftCurrent
+                        )
+                      )
+                  : undefined
+              }
               pokemon={pokemon}
             />
           ) : null}
@@ -24359,9 +24687,7 @@ function SelectedPokemonPanel({
                           currentValue={currentValue}
                           disabled={
                             !canEditPokemon ||
-                            !isPokemonDraftReady ||
                             editSession === null ||
-                            isPokemonUpdating ||
                             (field.field === formFieldName && pokemon.personal.formCount <= 1)
                           }
                           disabledReason={
@@ -24438,6 +24764,7 @@ function SelectedPokemonPanel({
                         key={move.slot}
                         onContextMenu={(event) => {
                           event.preventDefault();
+                          setSelectedLearnsetSlot(move.slot);
                           setLearnsetClipboardMenu({
                             left: event.clientX,
                             move,
@@ -24525,6 +24852,7 @@ function SelectedPokemonPanel({
                           }
                           event.preventDefault();
                           event.stopPropagation();
+                          setSelectedLearnsetSlot(move.slot);
                           const bounds = event.currentTarget.getBoundingClientRect();
                           setLearnsetClipboardMenu({
                             left: bounds.left + Math.min(32, bounds.width / 2),
@@ -24552,7 +24880,7 @@ function SelectedPokemonPanel({
                                 label={translateLiteral('Level')}
                               />
                               <input
-                                disabled={!canEditLearnset}
+                                disabled={!canEditLearnsetFields}
                                 id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
                                 max={learnsetMaximumLevel}
                                 min={0}
@@ -24579,7 +24907,7 @@ function SelectedPokemonPanel({
                               {learnsetMoveOptionsForDraft.length > 0 ? (
                                 <SearchableOptionInput
                                   ariaLabel={translateLiteral('Move')}
-                                  disabled={!canEditLearnset}
+                                  disabled={!canEditLearnsetFields}
                                   id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}
                                   onChange={(value) => {
                                     setLearnsetMoveIdDraft(value);
@@ -24590,7 +24918,7 @@ function SelectedPokemonPanel({
                                 />
                               ) : (
                                 <input
-                                  disabled={!canEditLearnset}
+                                  disabled={!canEditLearnsetFields}
                                   id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}
                                   max={pokemonMaximumUshortValue}
                                   min={0}
@@ -24609,12 +24937,16 @@ function SelectedPokemonPanel({
                                 className="secondary-button icon-button"
                                 disabled={!canModifyLearnsetStructure || move.slot === 0}
                                 onClick={async () => {
-                                  const didMove = await onUpdatePokemonLearnset(
-                                    pokemon.personalId,
-                                    'moveUp',
-                                    move.slot,
-                                    null,
-                                    null
+                                  const didMove = await runSelectedPokemonStructuralMutation(
+                                    'learnset',
+                                    () =>
+                                      onUpdatePokemonLearnset(
+                                        pokemon.personalId,
+                                        'moveUp',
+                                        move.slot,
+                                        null,
+                                        null
+                                      )
                                   );
                                   if (didMove) {
                                     setSelectedLearnsetSlot(move.slot - 1);
@@ -24633,12 +24965,16 @@ function SelectedPokemonPanel({
                                   move.slot >= pokemon.learnset.length - 1
                                 }
                                 onClick={async () => {
-                                  const didMove = await onUpdatePokemonLearnset(
-                                    pokemon.personalId,
-                                    'moveDown',
-                                    move.slot,
-                                    null,
-                                    null
+                                  const didMove = await runSelectedPokemonStructuralMutation(
+                                    'learnset',
+                                    () =>
+                                      onUpdatePokemonLearnset(
+                                        pokemon.personalId,
+                                        'moveDown',
+                                        move.slot,
+                                        null,
+                                        null
+                                      )
                                   );
                                   if (didMove) {
                                     setSelectedLearnsetSlot(move.slot + 1);
@@ -24654,12 +24990,16 @@ function SelectedPokemonPanel({
                                 className="secondary-button icon-button danger-icon-button"
                                 disabled={!canModifyLearnsetStructure}
                                 onClick={() => {
-                                  void onUpdatePokemonLearnset(
-                                    pokemon.personalId,
-                                    'remove',
-                                    move.slot,
-                                    null,
-                                    null
+                                  void runSelectedPokemonStructuralMutation(
+                                    'learnset',
+                                    () =>
+                                      onUpdatePokemonLearnset(
+                                        pokemon.personalId,
+                                        'remove',
+                                        move.slot,
+                                        null,
+                                        null
+                                      )
                                   );
                                 }}
                                 title="Remove learnset row"
@@ -24817,14 +25157,22 @@ function SelectedPokemonPanel({
                   className="secondary-button learnset-add-button"
                   disabled={!canAddLearnsetMove}
                   onClick={async () => {
-                    const didAdd = await onUpdatePokemonLearnset(
-                      pokemon.personalId,
-                      'add',
-                      null,
-                      parsedNewLearnsetMoveId,
-                      parsedNewLearnsetLevel
+                    const submittedDraftSignature =
+                      newLearnsetCreationDraftSignature;
+                    const didAdd = await runSelectedPokemonSourceMutation(() =>
+                      onUpdatePokemonLearnset(
+                        pokemon.personalId,
+                        'add',
+                        null,
+                        parsedNewLearnsetMoveId,
+                        parsedNewLearnsetLevel
+                      )
                     );
-                    if (didAdd) {
+                    if (
+                      didAdd &&
+                      newLearnsetCreationDraftSignatureRef.current ===
+                        submittedDraftSignature
+                    ) {
                       setNewLearnsetMoveIdDraft('');
                       setNewLearnsetLevelDraft('');
                     }
@@ -24883,13 +25231,15 @@ function SelectedPokemonPanel({
                           disabled={!canToggleCompatibility}
                           onChange={(event) => {
                             if (pokemon && selectedCompatibilityGroup) {
-                              onUpdatePokemonField(
-                                pokemon.personalId,
-                                createPokemonCompatibilityFieldName(
-                                  selectedCompatibilityGroup.groupId,
-                                  entry.slot
-                                ),
-                                event.target.checked ? '1' : '0'
+                              void runSelectedPokemonSourceMutation(() =>
+                                onUpdatePokemonField(
+                                  pokemon.personalId,
+                                  createPokemonCompatibilityFieldName(
+                                    selectedCompatibilityGroup.groupId,
+                                    entry.slot
+                                  ),
+                                  event.target.checked ? '1' : '0'
+                                )
                               );
                             }
                           }}
@@ -25005,7 +25355,7 @@ function SelectedPokemonPanel({
                     />
                     <SearchableOptionInput
                       ariaLabel={translateLiteral('Method')}
-                      disabled={!canEditEvolution}
+                      disabled={!canEditEvolutionFields}
                       id="pokemon-evolution-method"
                       onChange={(nextMethod) => {
                         const nextOption = findEvolutionMethodOption(
@@ -25042,7 +25392,7 @@ function SelectedPokemonPanel({
                         ariaLabel={translateLiteral(
                           selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
                         )}
-                        disabled={!canEditEvolution}
+                        disabled={!canEditEvolutionFields}
                         id="pokemon-evolution-argument"
                         onChange={(value) => {
                           setEvolutionArgumentDraft(value);
@@ -25054,7 +25404,7 @@ function SelectedPokemonPanel({
                     ) : (
                       <input
                         disabled={
-                          !canEditEvolution ||
+                          !canEditEvolutionFields ||
                           !usesEvolutionArgumentNumberInput(selectedEvolutionMethodOption)
                         }
                         id="pokemon-evolution-argument"
@@ -25078,7 +25428,7 @@ function SelectedPokemonPanel({
                     {pokemonSpeciesOptions.length > 0 ? (
                       <SearchableOptionInput
                         ariaLabel={translateLiteral('Species')}
-                        disabled={!canEditEvolution}
+                        disabled={!canEditEvolutionFields}
                         id="pokemon-evolution-species"
                         onChange={handleSelectedEvolutionSpeciesChange}
                         options={addCurrentPokemonFieldOption(
@@ -25091,7 +25441,7 @@ function SelectedPokemonPanel({
                       />
                     ) : (
                       <input
-                        disabled={!canEditEvolution}
+                        disabled={!canEditEvolutionFields}
                         id="pokemon-evolution-species"
                         max={65535}
                         min={0}
@@ -25111,7 +25461,7 @@ function SelectedPokemonPanel({
                     />
                     <SearchableOptionInput
                       ariaLabel={translateLiteral('Form')}
-                      disabled={!canEditEvolution}
+                      disabled={!canEditEvolutionFields}
                       id="pokemon-evolution-form"
                       onChange={(value) => {
                         setEvolutionFormDraft(value);
@@ -25136,7 +25486,7 @@ function SelectedPokemonPanel({
                       }
                     />
                     <input
-                      disabled={!canEditEvolution || !selectedEvolutionUsesLevel}
+                      disabled={!canEditEvolutionFields || !selectedEvolutionUsesLevel}
                       id="pokemon-evolution-level"
                       max={evolutionMaximumLevel}
                       min={0}
@@ -25189,15 +25539,19 @@ function SelectedPokemonPanel({
                           return;
                         }
 
-                        const didMove = await onUpdatePokemonEvolution(
-                          pokemon.personalId,
-                          'moveUp',
-                          selectedEvolution.slot,
-                          null,
-                          null,
-                          null,
-                          null,
-                          null
+                        const didMove = await runSelectedPokemonStructuralMutation(
+                          'evolution',
+                          () =>
+                            onUpdatePokemonEvolution(
+                              pokemon.personalId,
+                              'moveUp',
+                              selectedEvolution.slot,
+                              null,
+                              null,
+                              null,
+                              null,
+                              null
+                            )
                         );
                         if (didMove) {
                           onSelectPokemonEvolution(previousEvolutionSlot);
@@ -25219,15 +25573,19 @@ function SelectedPokemonPanel({
                           return;
                         }
 
-                        const didMove = await onUpdatePokemonEvolution(
-                          pokemon.personalId,
-                          'moveDown',
-                          selectedEvolution.slot,
-                          null,
-                          null,
-                          null,
-                          null,
-                          null
+                        const didMove = await runSelectedPokemonStructuralMutation(
+                          'evolution',
+                          () =>
+                            onUpdatePokemonEvolution(
+                              pokemon.personalId,
+                              'moveDown',
+                              selectedEvolution.slot,
+                              null,
+                              null,
+                              null,
+                              null,
+                              null
+                            )
                         );
                         if (didMove) {
                           onSelectPokemonEvolution(nextEvolutionSlot);
@@ -25243,15 +25601,19 @@ function SelectedPokemonPanel({
                       className="secondary-button icon-button danger-icon-button"
                       disabled={!canModifyEvolutionStructure}
                       onClick={() =>
-                        void onUpdatePokemonEvolution(
-                          pokemon.personalId,
-                          'remove',
-                          selectedEvolution.slot,
-                          null,
-                          null,
-                          null,
-                          null,
-                          null
+                        void runSelectedPokemonStructuralMutation(
+                          'evolution',
+                          () =>
+                            onUpdatePokemonEvolution(
+                              pokemon.personalId,
+                              'remove',
+                              selectedEvolution.slot,
+                              null,
+                              null,
+                              null,
+                              null,
+                              null
+                            )
                         )
                       }
                       title="Remove evolution row"
@@ -25407,17 +25769,25 @@ function SelectedPokemonPanel({
                   className="secondary-button learnset-add-button"
                   disabled={!canAddEvolution}
                   onClick={async () => {
-                    const didAdd = await onUpdatePokemonEvolution(
-                      pokemon.personalId,
-                      'add',
-                      null,
-                      parsedNewEvolutionMethod,
-                      parsedNewEvolutionArgument,
-                      parsedNewEvolutionSpecies,
-                      parsedNewEvolutionForm,
-                      parsedNewEvolutionLevel
+                    const submittedDraftSignature =
+                      newEvolutionCreationDraftSignature;
+                    const didAdd = await runSelectedPokemonSourceMutation(() =>
+                      onUpdatePokemonEvolution(
+                        pokemon.personalId,
+                        'add',
+                        null,
+                        parsedNewEvolutionMethod,
+                        parsedNewEvolutionArgument,
+                        parsedNewEvolutionSpecies,
+                        parsedNewEvolutionForm,
+                        parsedNewEvolutionLevel
+                      )
                     );
-                    if (didAdd) {
+                    if (
+                      didAdd &&
+                      newEvolutionCreationDraftSignatureRef.current ===
+                        submittedDraftSignature
+                    ) {
                       setNewEvolutionMethodDraft('');
                       setNewEvolutionArgumentDraft('0');
                       setNewEvolutionSpeciesDraft('');
@@ -26318,6 +26688,7 @@ function SelectedMovePanel({
   const [moveDraftsByMoveId, setMoveDraftsByMoveId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [moveSourceMutationError, setMoveSourceMutationError] = useState<string | null>(null);
   const [timingProfileByMoveVariant, setTimingProfileByMoveVariant] = useState<
     Record<string, number>
   >({});
@@ -26513,32 +26884,14 @@ function SelectedMovePanel({
     },
     [moveDraftStorageKey]
   );
-  const moveDurableDraft = useBoundOrdinaryEditorDraft({
-    adapter: ordinaryMoveDraftAdapter,
+  const moveDraftBinding = useSessionLocalEditorDraftBinding({
     applyHydratedPayload: applyHydratedMoveDraft,
-    emptyPayload: { fields: {} },
-    entityPreimage: move,
-    isClean: isOrdinaryFieldDraftClean,
+    bindingId: 'moves',
     payload: moveDraftPayload,
     project: ordinaryDraftProject,
     recordValue: move?.moveId ?? null,
     section: 'moves'
   });
-  const isMoveDraftReady = isOrdinaryEditorDraftBindingReady(moveDurableDraft);
-  const writableMoveFieldNames = useMemo(
-    () => new Set(allMoveFields.map((field) => field.field)),
-    [allMoveFields]
-  );
-  const rebaseMoveDraft = useCallback(
-    (stalePayload: OrdinaryFieldDraftPayload): OrdinaryFieldDraftPayload => ({
-      fields: Object.fromEntries(
-        Object.entries(stalePayload.fields)
-          .filter(([field]) => writableMoveFieldNames.has(field))
-          .map(([field, value]) => [field, value])
-      )
-    }),
-    [writableMoveFieldNames]
-  );
   const selectedRuntimeEffectCategory = selectedRuntimeView?.battleRow
     ? (() => {
         const field = `battle.${selectedRuntimeView.variant}.effectCategory`;
@@ -26614,9 +26967,6 @@ function SelectedMovePanel({
     [allMoveFields, baselineValues, move, moveDrafts]
   );
   useRegisterEditorDraftDirty('moves', countFieldDraftRecords(moveDraftsByMoveId) > 0);
-  const hasCurrentMoveDrafts = move
-    ? Object.prototype.hasOwnProperty.call(moveDraftsByMoveId, move.moveId.toString())
-    : false;
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const qualityField = moveFields.find((field) => field.field === 'quality');
   const mappedQualityLabel = move
@@ -26632,24 +26982,20 @@ function SelectedMovePanel({
     move !== null &&
     editSession !== null &&
     canEditMoves &&
-    isMoveDraftReady &&
     !isMoveUpdating &&
     moveDraftSummary.changedFields.length > 0 &&
     moveDraftSummary.invalidFields.length === 0 &&
     moveRelationalValidationIssues.length === 0 &&
     moveDecimalValidationIssues.length === 0;
-  const moveRevertMessage = hasCurrentMoveDrafts
-    ? 'Finish or discard the selected move drafts before reverting to vanilla.'
-    : move?.revertToVanillaBlockedReason ??
-      'Stages every verified base value for the selected move across all runtime variants and timing data. Other moves are preserved.';
+  const moveRevertMessage =
+    move?.revertToVanillaBlockedReason ??
+    'Stages every verified base value for the selected move across all runtime variants and timing data. Other moves are preserved.';
   const canRevertSelectedMove =
     move !== null &&
     onStageMoveVanilla !== undefined &&
     move.canRevertToVanilla &&
     canEditMoves &&
-    isMoveDraftReady &&
     editSession !== null &&
-    !hasCurrentMoveDrafts &&
     !isEditStarting &&
     !isMoveUpdating;
   const selectedRuntimeRowStatus = selectedRuntimeView
@@ -26658,6 +27004,21 @@ function SelectedMovePanel({
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.moves"
+        issues={
+          move
+            ? [
+                ...moveDraftSummary.invalidFields,
+                ...moveRelationalValidationIssues.map((issue) => ({
+                  field: issue.fields.join(','),
+                  message: issue.message
+                })),
+                ...moveDecimalValidationIssues
+              ]
+            : []
+        }
+      />
       {editSession && !move ? (
         <EmptySelectionEditorSessionActions
           isBusy={isMoveUpdating}
@@ -26670,11 +27031,9 @@ function SelectedMovePanel({
         <h3>Selected Move</h3>
       </div>
 
-      <OrdinaryEditorDraftStatus
-        binding={moveDurableDraft}
-        currentPayload={moveDraftPayload}
-        isClean={isOrdinaryFieldDraftClean}
-        rebase={rebaseMoveDraft}
+      <PublishedInlineEditorError
+        domain="workflow.moves"
+        message={moveSourceMutationError}
       />
 
       {move ? (
@@ -26812,7 +27171,6 @@ function SelectedMovePanel({
                     />
                     <select
                       className="km-select-control"
-                      disabled={isMoveUpdating}
                       id="move-runtime-variant"
                       onChange={(event) => onSelectRuntimeVariant(Number(event.target.value))}
                       value={selectedRuntimeVariant ?? ''}
@@ -26845,7 +27203,6 @@ function SelectedMovePanel({
                     />
                     <select
                       className="km-select-control"
-                      disabled={isMoveUpdating}
                       id="move-timing-profile"
                       onChange={(event) => {
                         if (!timingProfileStorageKey) {
@@ -26884,7 +27241,6 @@ function SelectedMovePanel({
                     />
                     <select
                       className="km-select-control"
-                      disabled={isMoveUpdating}
                       id="move-timing-occurrence"
                       onChange={(event) => {
                         if (!timingOccurrenceStorageKey) {
@@ -27055,9 +27411,7 @@ function SelectedMovePanel({
                             currentValue={currentValue}
                             disabled={
                               !canEditMoves ||
-                              !isMoveDraftReady ||
                               editSession === null ||
-                              isMoveUpdating ||
                               playerDamageDisabledReason !== undefined
                             }
                             disabledReason={playerDamageDisabledReason}
@@ -27135,37 +27489,38 @@ function SelectedMovePanel({
                   className="primary-button"
                   disabled={!canSaveMoveDrafts}
                   onClick={async () => {
-                    const stagedFields = moveDraftSummary.changedFields.map(
-                      (change) => change.field
-                    );
-                    const didSave = await onUpdateMoveFields(
-                      move.moveId,
-                      moveDraftSummary.changedFields.map((change) => ({
-                        field: change.field,
-                        value: change.value
-                      }))
-                    );
-                    if (didSave) {
-                      if (!(await moveDurableDraft.draft.clearDurable())) {
-                        return;
-                      }
-                      setMoveDraftsByMoveId((currentDrafts) => {
-                        const recordKey = move.moveId.toString();
-                        const nextSparseDrafts = {
-                          ...(currentDrafts[recordKey] ?? {})
-                        };
-                        for (const field of stagedFields) {
-                          delete nextSparseDrafts[field];
-                        }
-
-                        const nextRecords = { ...currentDrafts };
-                        if (Object.keys(nextSparseDrafts).length === 0) {
-                          delete nextRecords[recordKey];
-                        } else {
-                          nextRecords[recordKey] = nextSparseDrafts;
-                        }
-                        return nextRecords;
-                      });
+                    const fieldsBeforeStage = moveDraftPayload.fields;
+                    const sourceMutation = await runSessionLocalEditorSourceMutation({
+                      binding: moveDraftBinding,
+                      didMutate: (didSave) => didSave,
+                      mutation: () =>
+                        onUpdateMoveFields(
+                          move.moveId,
+                          moveDraftSummary.changedFields.map((change) => ({
+                            field: change.field,
+                            value: change.value
+                          }))
+                        ),
+                      reduceLatestPayload: (latestPayload) => ({
+                        fields: removeMatchingFieldDraftValues(
+                          latestPayload.fields,
+                          fieldsBeforeStage
+                        )
+                      })
+                    });
+                    if (sourceMutation.kind === 'reservation-unavailable') {
+                      setMoveSourceMutationError(sessionLocalDraftMutationBusyMessage);
+                      return;
+                    }
+                    setMoveSourceMutationError(null);
+                    if (sourceMutation.kind === 'source-mutated') {
+                      setMoveDraftsByMoveId((currentDrafts) =>
+                        updateSparseFieldDraftRecordAfterStage(
+                          currentDrafts,
+                          move.moveId,
+                          fieldsBeforeStage
+                        )
+                      );
                     }
                   }}
                   type="button"
@@ -27200,13 +27555,30 @@ function SelectedMovePanel({
                   className="danger-button"
                   disabled={!canRevertSelectedMove}
                   onClick={async () => {
-                    const didRestore = await onStageMoveVanilla(move.moveId);
-                    if (didRestore) {
-                      if (!(await moveDurableDraft.draft.discard())) {
-                        return;
-                      }
+                    const fieldsBeforeStage = moveDraftPayload.fields;
+                    const sourceMutation = await runSessionLocalEditorSourceMutation({
+                      binding: moveDraftBinding,
+                      didMutate: (didRestore) => didRestore,
+                      mutation: () => onStageMoveVanilla(move.moveId),
+                      reduceLatestPayload: (latestPayload) => ({
+                        fields: removeMatchingFieldDraftValues(
+                          latestPayload.fields,
+                          fieldsBeforeStage
+                        )
+                      })
+                    });
+                    if (sourceMutation.kind === 'reservation-unavailable') {
+                      setMoveSourceMutationError(sessionLocalDraftMutationBusyMessage);
+                      return;
+                    }
+                    setMoveSourceMutationError(null);
+                    if (sourceMutation.kind === 'source-mutated') {
                       setMoveDraftsByMoveId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, move.moveId)
+                        updateSparseFieldDraftRecordAfterStage(
+                          currentDrafts,
+                          move.moveId,
+                          fieldsBeforeStage
+                        )
                       );
                     }
                   }}
@@ -27220,13 +27592,7 @@ function SelectedMovePanel({
                     label={t('za.encounters.revertToVanilla')}
                   />
                 </button>
-                <small
-                  className={
-                    hasCurrentMoveDrafts
-                      ? 'editable-field-error'
-                      : 'editable-field-status'
-                  }
-                >
+                <small className="editable-field-status">
                   {moveRevertMessage}
                 </small>
               </div>
@@ -27605,15 +27971,6 @@ function TextSection({
       null,
     [filteredEntries, selectedTextKey]
   );
-  const selectedSourceEntry = useMemo(
-    () =>
-      selectedEntry === null
-        ? null
-        : workflow?.entries.find(
-            (entry) => entry.textKey === selectedEntry.textKey
-          ) ?? null,
-    [selectedEntry, workflow?.entries]
-  );
   const canEditText = workflow?.summary.availability === 'available';
   const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
   const categories = workflow?.categories ?? [];
@@ -27660,7 +28017,6 @@ function TextSection({
                 aria-label={t('text.language.ariaLabel')}
                 className="km-select-control"
                 data-localization-ignore="true"
-                disabled={isTextLoading || isTextUpdating}
                 id="text-game-language"
                 onChange={(event) => onLanguageChange(event.target.value)}
                 value={activeLanguage}
@@ -27677,7 +28033,7 @@ function TextSection({
             <Search aria-hidden="true" size={18} />
             <input
               aria-label={t('text.search.ariaLabel')}
-              disabled={!workflow || isTextLoading || isTextUpdating}
+              disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder={t('text.search.placeholder')}
               type="search"
@@ -27718,7 +28074,7 @@ function TextSection({
                   <button
                     aria-pressed={category.categoryId === activeCategoryId}
                     className={category.categoryId === activeCategoryId ? 'is-active' : ''}
-                    disabled={isTextLoading || isTextUpdating}
+                    disabled={isTextLoading}
                     key={category.categoryId}
                     onClick={() => onCategoryChange(category.categoryId)}
                     type="button"
@@ -27763,7 +28119,7 @@ function TextSection({
             <div>
               <button
                 className="secondary-button"
-                disabled={!page.hasPrevious || isTextLoading || isTextUpdating}
+                disabled={!page.hasPrevious || isTextLoading}
                 onClick={() => onPageChange(Math.max(0, page.offset - page.limit))}
                 type="button"
               >
@@ -27771,7 +28127,7 @@ function TextSection({
               </button>
               <button
                 className="secondary-button"
-                disabled={!page.hasNext || isTextLoading || isTextUpdating}
+                disabled={!page.hasNext || isTextLoading}
                 onClick={() => onPageChange(page.offset + page.limit)}
                 type="button"
               >
@@ -27855,7 +28211,6 @@ function TextSection({
               isTextUpdating={isTextUpdating}
               onUpdateTextEntry={onUpdateTextEntry}
               ordinaryDraftProject={ordinaryDraftProject}
-              sourceEntry={selectedSourceEntry}
             />
           </div>
         ) : (
@@ -27876,8 +28231,7 @@ function SelectedTextPanel({
   isTextQueryPending,
   isTextUpdating,
   onUpdateTextEntry,
-  ordinaryDraftProject,
-  sourceEntry
+  ordinaryDraftProject
 }: {
   canEditText: boolean;
   editSession: EditSession | null;
@@ -27887,10 +28241,10 @@ function SelectedTextPanel({
   isTextUpdating: boolean;
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
-  sourceEntry: TextEntryRecord | null;
 }) {
   const { t } = useLocalization();
   const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
+  const [textSourceMutationError, setTextSourceMutationError] = useState<string | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const textValueTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const textValueSelectionRef = useRef({
@@ -27908,16 +28262,10 @@ function SelectedTextPanel({
     !canEditText ||
     editSession === null ||
     isTextQueryPending ||
-    isTextUpdating ||
     !entry.canEdit;
   const textDraftPayload = useMemo<OrdinaryTextDraftPayload>(
     () => ({ value: draftValue }),
     [draftValue]
-  );
-  const isTextDraftPayloadClean = useCallback(
-    (payload: OrdinaryTextDraftPayload) =>
-      entry === null || payload.value === entry.value,
-    [entry]
   );
   const applyHydratedTextDraft = useCallback(
     (payload: OrdinaryTextDraftPayload | null) => {
@@ -27936,25 +28284,15 @@ function SelectedTextPanel({
     },
     [entry]
   );
-  const textDurableDraft = useBoundOrdinaryEditorDraft({
-    adapter: ordinaryTextDraftAdapter,
+  const textDraftBinding = useSessionLocalEditorDraftBinding({
     applyHydratedPayload: applyHydratedTextDraft,
-    emptyPayload: { value: entry?.value ?? '' },
-    entityPreimage: sourceEntry,
-    isClean: isTextDraftPayloadClean,
+    bindingId: 'text',
     payload: textDraftPayload,
     project: ordinaryDraftProject,
     recordValue: entry?.textKey ?? null,
     section: 'text'
   });
-  const isTextDraftReady = isOrdinaryEditorDraftBindingReady(textDurableDraft);
-  const isTextInputDisabled = isTextInputBaseDisabled || !isTextDraftReady;
-  const rebaseTextDraft = useCallback(
-    (stalePayload: OrdinaryTextDraftPayload): OrdinaryTextDraftPayload => ({
-      value: stalePayload.value
-    }),
-    []
-  );
+  const isTextInputDisabled = isTextInputBaseDisabled;
   useRegisterEditorDraftDirty(
     'text',
     Object.entries(draftsByTextKey).some(([textKey, value]) => {
@@ -28049,14 +28387,25 @@ function SelectedTextPanel({
   );
 
   const draftState = getTextDraftState(draftValue, entry, valueField);
-  const canSubmit =
-    editSession !== null && isTextDraftReady && !isTextQueryPending && draftState.canSubmit;
+  const canSubmit = editSession !== null && !isTextQueryPending && draftState.canSubmit;
   const textDraftCount = Object.keys(draftsByTextKey).length;
   const textLengthHelpId = 'selected-text-canonical-length';
   const maximumTextLength = valueField?.maximumLength ?? null;
 
   return (
     <aside aria-label="Selected text provenance" className="text-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.text"
+        issues={
+          entry === null || !isTextDraftDirty || draftState.inRange
+            ? []
+            : [{
+                field: valueField?.field ?? 'value',
+                label: valueField?.label ?? 'Text value',
+                message: 'The text draft is outside the supported length range.'
+              }]
+        }
+      />
       {editSession ? (
         <EditorSessionBarActions>
           <button
@@ -28068,13 +28417,26 @@ function SelectedTextPanel({
                 return;
               }
 
-              const didSave = await onUpdateTextEntry(entry.textKey, draftValue);
-              if (didSave) {
-                if (!(await textDurableDraft.draft.discard())) {
-                  return;
-                }
+              const draftValueBeforeStage = draftValue;
+              const sourceMutation = await runSessionLocalEditorSourceMutation({
+                binding: textDraftBinding,
+                didMutate: (didSave) => didSave,
+                mutation: () => onUpdateTextEntry(entry.textKey, draftValueBeforeStage),
+                reduceLatestPayload: (latestPayload) =>
+                  latestPayload.value === draftValueBeforeStage
+                    ? { value: draftValueBeforeStage }
+                    : latestPayload
+              });
+              if (sourceMutation.kind === 'reservation-unavailable') {
+                setTextSourceMutationError(sessionLocalDraftMutationBusyMessage);
+                return;
+              }
+              setTextSourceMutationError(null);
+              if (sourceMutation.kind === 'source-mutated') {
                 setDraftsByTextKey((currentDrafts) =>
-                  deleteFieldDraftRecord(currentDrafts, entry.textKey)
+                  currentDrafts[entry.textKey] === draftValueBeforeStage
+                    ? deleteFieldDraftRecord(currentDrafts, entry.textKey)
+                    : currentDrafts
                 );
               }
             }}
@@ -28107,11 +28469,9 @@ function SelectedTextPanel({
         <h3>Selected Text</h3>
       </div>
 
-      <OrdinaryEditorDraftStatus
-        binding={textDurableDraft}
-        currentPayload={textDraftPayload}
-        isClean={isTextDraftPayloadClean}
-        rebase={rebaseTextDraft}
+      <PublishedInlineEditorError
+        domain="workflow.text"
+        message={textSourceMutationError}
       />
 
       {entry ? (
@@ -28273,17 +28633,25 @@ type RowClipboardFeedbackKey =
   | 'rowClipboard.feedback.sourceStale'
   | 'rowClipboard.feedback.targetChanged';
 
+type RowClipboardActionFailure = Readonly<{
+  feedbackKey: RowClipboardFeedbackKey;
+  kind: 'failure';
+}>;
+
 type RowClipboardActionResult =
   | Readonly<{
       kind: 'success';
       operationCount: number;
     }>
-  | Readonly<{
-      feedbackKey: RowClipboardFeedbackKey;
-      kind: 'failure';
-    }>;
+  | RowClipboardActionFailure;
 
-type TrainerPartyClipboardActionResult = RowClipboardActionResult;
+type RowClipboardPasteActionResult =
+  | Readonly<{
+      kind: 'success';
+      operationCount: number;
+      rows: readonly RowClipboardLogicalRowV1[];
+    }>
+  | RowClipboardActionFailure;
 
 type TrainerPartyClipboardCopyInput = Readonly<{
   member: TrainerPokemonRecord;
@@ -28320,7 +28688,7 @@ type EncounterClipboardPasteInput = Readonly<{
 
 function rowClipboardActionFailure(
   feedbackKey: RowClipboardFeedbackKey
-): RowClipboardActionResult {
+): RowClipboardActionFailure {
   return { feedbackKey, kind: 'failure' };
 }
 
@@ -28367,203 +28735,18 @@ function getRowClipboardDiagnosticFeedbackKey(
   return fallback;
 }
 
-function applyPokemonLearnsetClipboardPreviewToWorkflow(
-  workflow: PokemonWorkflow,
-  personalId: number,
-  startSlot: number,
-  rows: readonly Readonly<{ after: readonly RowClipboardOwnedValue[] }>[]
-): PokemonWorkflow {
-  return {
-    ...workflow,
-    pokemon: workflow.pokemon.map((pokemon) =>
-      pokemon.personalId !== personalId
-        ? pokemon
-        : {
-            ...pokemon,
-            learnset: pokemon.learnset.map((move) => {
-              const row = rows[move.slot - startSlot];
-              if (!row) {
-                return move;
-              }
-              const updated = applyPokemonLearnsetClipboardOwnedValues(move, row.after);
-              return {
-                ...updated,
-                moveName:
-                  workflow.learnsetMoveOptions.find(
-                    (option) => option.value === updated.moveId
-                  )?.label ??
-                  (updated.moveId === move.moveId ? move.moveName : `Move ${updated.moveId}`)
-              };
-            })
-          }
-    )
-  };
-}
-
-function applyEncounterClipboardPreviewToWorkflow(
-  workflow: EncountersWorkflow,
-  tableId: string,
-  startSlot: number,
-  rows: readonly Readonly<{ after: readonly RowClipboardOwnedValue[] }>[]
-): EncountersWorkflow {
-  const speciesField = workflow.editableFields.find(
-    (field) => field.field === speciesIdFieldName
-  );
-  return {
-    ...workflow,
-    tables: workflow.tables.map((table) =>
-      table.tableId !== tableId
-        ? table
-        : {
-            ...table,
-            slots: table.slots.map((slot) => {
-              const row = rows[slot.slot - startSlot];
-              if (!row) {
-                return slot;
-              }
-              const updated = applyEncounterClipboardOwnedValues(slot, row.after);
-              return {
-                ...updated,
-                formOptions:
-                  speciesField?.options?.find(
-                    (option) => option.value === updated.speciesId
-                  )?.formOptions ??
-                  (updated.speciesId === slot.speciesId ? slot.formOptions : []),
-                species:
-                  speciesField?.options?.find(
-                    (option) => option.value === updated.speciesId
-                  )?.label ??
-                  (updated.speciesId === slot.speciesId
-                    ? slot.species
-                    : `Species ${updated.speciesId}`)
-              };
-            })
-          }
-    )
-  };
-}
-
-function applyTrainerPartyClipboardPreviewToWorkflow(
-  workflow: TrainersWorkflow,
-  trainerId: number,
-  startSlot: number,
-  rows: readonly Readonly<{ after: readonly RowClipboardOwnedValue[] }>[],
-  pokemonWorkflow: PokemonWorkflow | null
-): TrainersWorkflow {
-  const trainers = workflow.trainers.map((trainer) => {
-    if (trainer.trainerId !== trainerId) {
-      return trainer;
+function toRowClipboardClientDiagnostics(error: unknown): ApiDiagnostic[] | null {
+  if (!(error instanceof RowClipboardError)) {
+    return null;
+  }
+  return [
+    {
+      code: rowClipboardDiagnosticCodes.envelopeInvalid,
+      domain: 'rowClipboard',
+      message: 'The row clipboard data could not be validated safely.',
+      severity: 'error'
     }
-
-    return {
-      ...trainer,
-      team: trainer.team.map((member) => {
-        const row = rows[member.slot - startSlot];
-        if (!row) {
-          return member;
-        }
-        const updated = applyTrainerPartyClipboardOwnedValues(member, row.after);
-        return hydrateTrainerPartyClipboardPresentation(
-          updated,
-          member,
-          workflow.editableFields,
-          pokemonWorkflow
-        );
-      })
-    };
-  });
-
-  return {
-    ...workflow,
-    stats: {
-      ...workflow.stats,
-      totalPokemonCount: trainers.reduce(
-        (total, trainer) =>
-          total + trainer.team.filter((member) => member.speciesId > 0).length,
-        0
-      )
-    },
-    trainers
-  };
-}
-
-function hydrateTrainerPartyClipboardPresentation(
-  member: TrainerPokemonRecord,
-  previous: TrainerPokemonRecord,
-  fields: readonly TrainerEditableField[],
-  pokemonWorkflow: PokemonWorkflow | null
-): TrainerPokemonRecord {
-  const optionLabel = (fieldName: string, value: number | null) =>
-    value === null
-      ? null
-      : fields
-          .find((field) => field.field === fieldName)
-          ?.options.find((option) => option.value === value)?.label ?? null;
-  const referencePokemon =
-    pokemonWorkflow?.pokemon.find(
-      (candidate) =>
-        candidate.speciesId === member.speciesId && candidate.form === member.form
-    ) ??
-    pokemonWorkflow?.pokemon.find(
-      (candidate) => candidate.speciesId === member.speciesId && candidate.form === 0
-    ) ??
-    null;
-  const speciesOption = fields
-    .find((field) => field.field === speciesIdFieldName)
-    ?.options.find((option) => option.value === member.speciesId);
-  const usesPreviousIdentity =
-    member.speciesId === previous.speciesId && member.form === previous.form;
-  const abilityOptions = referencePokemon
-    ? createTrainerPokemonAbilityOptions(referencePokemon)
-    : usesPreviousIdentity
-      ? previous.abilityOptions
-      : [];
-  const moves = member.moveIds.map((moveId, index) =>
-    moveId === 0
-      ? 'None'
-      : optionLabel(moveFieldNames[index] ?? '', moveId) ??
-        (moveId === previous.moveIds[index] ? previous.moves[index] : null) ??
-        `Move ${moveId}`
-  );
-
-  return {
-    ...member,
-    abilityLabel:
-      abilityOptions.find((option) => option.value === member.ability)?.label ??
-      optionLabel(abilityFieldName, member.ability) ??
-      (member.ability === previous.ability ? previous.abilityLabel : member.ability.toString()),
-    abilityOptions,
-    baseStats:
-      referencePokemon?.baseStats ?? (usesPreviousIdentity ? previous.baseStats : null),
-    formOptions:
-      speciesOption?.formOptions ?? (usesPreviousIdentity ? previous.formOptions : []),
-    genderLabel:
-      optionLabel(genderFieldName, member.gender) ??
-      (member.gender === previous.gender ? previous.genderLabel : member.gender.toString()),
-    heldItem:
-      member.heldItemId === 0
-        ? null
-        : optionLabel(heldItemIdFieldName, member.heldItemId) ??
-          (member.heldItemId === previous.heldItemId ? previous.heldItem : null) ??
-          `Item ${member.heldItemId}`,
-    moves,
-    natureLabel:
-      optionLabel(natureFieldName, member.nature) ??
-      (member.nature === previous.nature ? previous.natureLabel : member.nature.toString()),
-    species:
-      referencePokemon?.name ??
-      (member.speciesId === previous.speciesId
-        ? previous.species
-        : `Pokemon ${member.speciesId}`),
-    spriteName:
-      referencePokemon?.spriteName ?? (usesPreviousIdentity ? previous.spriteName : null),
-    teraTypeLabel:
-      member.teraType === null
-        ? null
-        : optionLabel(trainerTeraTypeFieldName, member.teraType) ??
-          (member.teraType === previous.teraType ? previous.teraTypeLabel : null) ??
-          member.teraType.toString()
-  };
+  ];
 }
 
 type TrainerPartySlotContextMenuState = {
@@ -28579,6 +28762,7 @@ type ZaTrainerBulkAction = 'enableChangeAi' | 'enableCoreAi' | 'enableLastHand';
 type TrainersSectionProps = {
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
+  hasProtectedTrainerDrafts: boolean;
   isEditStarting: boolean;
   isTrainerUpdating: boolean;
   isScarletVioletProject: boolean;
@@ -28588,10 +28772,10 @@ type TrainersSectionProps = {
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   onCopyTrainerPartyClipboard: (
     input: TrainerPartyClipboardCopyInput
-  ) => Promise<TrainerPartyClipboardActionResult>;
+  ) => Promise<RowClipboardActionResult>;
   onPasteTrainerPartyClipboard: (
     input: TrainerPartyClipboardPasteInput
-  ) => Promise<TrainerPartyClipboardActionResult>;
+  ) => Promise<RowClipboardPasteActionResult>;
   onSearchChange: (searchText: string) => void;
   onSelectTrainer: (trainerId: number | null) => void;
   onSelectTrainerPartySlot: (slot: number | null) => void;
@@ -28630,6 +28814,7 @@ function ZaTrainersSection(props: TrainersSectionPublicProps) {
 function TrainersSection({
   editSession,
   editorFamily,
+  hasProtectedTrainerDrafts,
   isEditStarting,
   isTrainerUpdating,
   isScarletVioletProject,
@@ -28762,6 +28947,7 @@ function TrainersSection({
     editorFamily === 'za' &&
     editSession !== null &&
     canEditTrainers &&
+    !hasProtectedTrainerDrafts &&
     !isTrainerUpdating;
 
   const confirmZaTrainerBulkAction = async () => {
@@ -29177,10 +29363,10 @@ function SelectedTrainerPanel({
   ) => Promise<boolean>;
   onCopyTrainerPartyClipboard: (
     input: TrainerPartyClipboardCopyInput
-  ) => Promise<TrainerPartyClipboardActionResult>;
+  ) => Promise<RowClipboardActionResult>;
   onPasteTrainerPartyClipboard: (
     input: TrainerPartyClipboardPasteInput
-  ) => Promise<TrainerPartyClipboardActionResult>;
+  ) => Promise<RowClipboardPasteActionResult>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   onSelectSlot: (slot: number | null) => void;
   onUpdateTrainerField: (
@@ -29211,6 +29397,16 @@ function SelectedTrainerPanel({
     null
   );
   const [isPartySlotClipboardBusy, setIsPartySlotClipboardBusy] = useState(false);
+  const partySlotClipboardOperationRef = useRef<symbol | null>(null);
+  const [pendingPartySlotPasteTarget, setPendingPartySlotPasteTarget] = useState<{
+    slot: number;
+    trainerId: number;
+  } | null>(null);
+  const [hasTrainerIdentityDrafts, setHasTrainerIdentityDrafts] = useState(false);
+  const [trainerIdentityDiscardEpoch, setTrainerIdentityDiscardEpoch] = useState(0);
+  const [trainerSourceMutationError, setTrainerSourceMutationError] = useState<
+    string | null
+  >(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const trainerFields = useMemo(
     () =>
@@ -29296,6 +29492,12 @@ function SelectedTrainerPanel({
   }, [defaultContextualPokemonFields, pokemonDraftsByTrainerSlot, trainer]);
   const selectedPokemonDraftKey =
     trainer && selectedPokemon ? `${trainer.trainerId}:${selectedPokemon.slot}` : null;
+  const isSelectedPartySlotPasteTarget = Boolean(
+    trainer &&
+      selectedPokemon &&
+      pendingPartySlotPasteTarget?.trainerId === trainer.trainerId &&
+      selectedPokemon.slot >= pendingPartySlotPasteTarget.slot
+  );
   const trainerDrafts = trainer
     ? trainerDraftsByTrainerId[trainer.trainerId.toString()] ?? trainerDraftDefaults
     : {};
@@ -29503,77 +29705,35 @@ function SelectedTrainerPanel({
     },
     [defaultContextualPokemonFields, trainer, trainerDraftRecordKey, trainerPartyDraftPrefix]
   );
-  const trainerDurableDraft = useBoundOrdinaryEditorDraft({
-    adapter: ordinaryTrainerDraftAdapter,
+  const trainerDraftBinding = useSessionLocalEditorDraftBinding({
     applyHydratedPayload: applyHydratedTrainerDraft,
-    emptyPayload: { partyBySlot: {}, trainerFields: {} },
-    entityPreimage: trainer,
-    isClean: isOrdinaryTrainerDraftClean,
+    bindingId: 'trainers',
     payload: trainerDraftPayload,
     project: ordinaryDraftProject,
     recordValue: trainer?.trainerId ?? null,
     section: 'trainers'
   });
-  const isTrainerDraftReady =
-    isOrdinaryEditorDraftBindingReady(trainerDurableDraft);
-  const writableTrainerFieldNames = useMemo(
-    () => new Set(contextualTrainerFields.map((field) => field.field)),
-    [contextualTrainerFields]
-  );
-  const writableTrainerPokemonFieldNames = useMemo(
-    () => new Set(pokemonFields.map((field) => field.field)),
-    [pokemonFields]
-  );
-  const rebaseTrainerDraft = useCallback(
-    (stalePayload: OrdinaryTrainerDraftPayload): OrdinaryTrainerDraftPayload => {
-      const partyBySlot: OrdinaryTrainerDraftPayload['partyBySlot'] = {};
-      for (const pokemon of trainer?.team ?? []) {
-        const slot = pokemon.slot.toString();
-        const fields = stalePayload.partyBySlot[slot];
-        if (!fields) {
-          continue;
-        }
-
-        const defaults = createTrainerDrafts(defaultContextualPokemonFields, (field) =>
-          getEditablePokemonFieldValue(pokemon, field)
-        );
-        const writableFields = Object.fromEntries(
-          Object.entries(fields).filter(([field]) =>
-            writableTrainerPokemonFieldNames.has(field)
-          )
-        );
-        const canonicalDrafts = canonicalizeTrainerPartySlotDrafts(
-          { ...defaults, ...writableFields },
-          defaults,
-          pokemon.speciesId
-        );
-        if (!areFieldDraftsEqual(canonicalDrafts, defaults)) {
-          partyBySlot[slot] = canonicalDrafts;
-        }
+  const runSelectedTrainerSourceMutation = useCallback(
+    async (mutation: () => Promise<boolean>) => {
+      const sourceMutation = await runSessionLocalEditorSourceMutation({
+        binding: trainerDraftBinding,
+        didMutate: (didMutate) => didMutate,
+        mutation,
+        reduceLatestPayload: (latestPayload) => latestPayload
+      });
+      if (sourceMutation.kind === 'reservation-unavailable') {
+        setTrainerSourceMutationError(sessionLocalDraftMutationBusyMessage);
+        return false;
       }
-
-      return {
-        partyBySlot,
-        trainerFields: Object.fromEntries(
-          Object.entries(stalePayload.trainerFields).filter(([field]) =>
-            writableTrainerFieldNames.has(field)
-          )
-        )
-      };
+      setTrainerSourceMutationError(null);
+      return sourceMutation.kind === 'source-mutated';
     },
-    [
-      defaultContextualPokemonFields,
-      trainer,
-      writableTrainerFieldNames,
-      writableTrainerPokemonFieldNames
-    ]
+    [t, trainerDraftBinding]
   );
   const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const canToggleAiFlags =
-    isTrainerDraftReady &&
     canEditTrainers &&
     editSession !== null &&
-    !isTrainerUpdating &&
     aiFlagsField !== null;
   const aiFlagsMaskLabel = trainer
     ? `0x${trainer.aiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
@@ -29680,11 +29840,11 @@ function SelectedTrainerPanel({
       )
   );
   const contextMenuCommonDisabledReason =
-    !isTrainerDraftReady || !canEditTrainers || pokemonFields.length === 0
+    !canEditTrainers || pokemonFields.length === 0
       ? t('trainers.partyClipboard.unavailableReason')
       : editSession === null
         ? t('trainers.partyClipboard.startSessionReason')
-        : isTrainerUpdating || isPartySlotClipboardBusy
+        : isPartySlotClipboardBusy
           ? t('trainers.partyClipboard.busyReason')
           : contextMenuPokemon === null
             ? t('trainers.partyClipboard.unavailableReason')
@@ -29765,7 +29925,6 @@ function SelectedTrainerPanel({
     trainer !== null &&
     editSession !== null &&
     canEditTrainers &&
-    isTrainerDraftReady &&
     !isTrainerUpdating &&
     trainerDraftSummary.changedFields.length > 0 &&
     trainerDraftSummary.invalidFields.length === 0;
@@ -29774,7 +29933,6 @@ function SelectedTrainerPanel({
     selectedPokemon !== null &&
     editSession !== null &&
     canEditTrainers &&
-    isTrainerDraftReady &&
     !isTrainerUpdating &&
     pokemonDraftSummary.changedFields.length > 0 &&
     pokemonDraftSummary.invalidFields.length === 0 &&
@@ -29801,13 +29959,13 @@ function SelectedTrainerPanel({
     trainer !== null &&
     editSession !== null &&
     canEditTrainers &&
-    isTrainerDraftReady &&
     !isTrainerUpdating &&
     (trainerMaxIvUpdates.length > 0 || hasTrainerMaxIvDraftChanges);
   useRegisterEditorDraftDirty(
     'trainers',
     countFieldDraftRecords(trainerDraftsByTrainerId) > 0 ||
-      countFieldDraftRecords(canonicalPokemonDraftsByTrainerSlot) > 0
+      countFieldDraftRecords(canonicalPokemonDraftsByTrainerSlot) > 0 ||
+      hasTrainerIdentityDrafts
   );
 
   const closePartySlotContextMenu = useCallback(() => {
@@ -29875,21 +30033,42 @@ function SelectedTrainerPanel({
       return;
     }
 
-    const didSave = await onUpdateTrainerFields(
-      trainerDraftSummary.changedFields.map((change) => ({
-        field: change.field,
-        slot: null,
-        trainerId: trainer.trainerId,
-        value: change.value
-      }))
-    );
-    if (didSave) {
-      if (!(await trainerDurableDraft.draft.clearDurable())) {
-        return;
-      }
-      setTrainerDraftsByTrainerId((currentDrafts) =>
-        deleteFieldDraftRecord(currentDrafts, trainer.trainerId)
-      );
+    const trainerFieldsBeforeStage = trainerDraftPayload.trainerFields;
+    const sourceMutation = await runSessionLocalEditorSourceMutation({
+      binding: trainerDraftBinding,
+      didMutate: (didSave) => didSave,
+      mutation: () =>
+        onUpdateTrainerFields(
+          trainerDraftSummary.changedFields.map((change) => ({
+            field: change.field,
+            slot: null,
+            trainerId: trainer.trainerId,
+            value: change.value
+          }))
+        ),
+      reduceLatestPayload: (latestPayload) => ({
+        ...latestPayload,
+        trainerFields: areFieldDraftsEqual(
+          latestPayload.trainerFields,
+          trainerFieldsBeforeStage
+        )
+          ? {}
+          : latestPayload.trainerFields
+      })
+    });
+    if (sourceMutation.kind === 'reservation-unavailable') {
+      setTrainerSourceMutationError(sessionLocalDraftMutationBusyMessage);
+      return;
+    }
+    setTrainerSourceMutationError(null);
+    if (sourceMutation.kind === 'source-mutated') {
+      setTrainerDraftsByTrainerId((currentDrafts) => {
+        const latestFields = currentDrafts[trainer.trainerId.toString()];
+        return latestFields &&
+          areFieldDraftsEqual(latestFields, trainerFieldsBeforeStage)
+          ? deleteFieldDraftRecord(currentDrafts, trainer.trainerId)
+          : currentDrafts;
+      });
     }
   };
 
@@ -29898,41 +30077,128 @@ function SelectedTrainerPanel({
       return;
     }
 
-    const didSave = await onUpdateTrainerFields(
-      pokemonDraftSummary.changedFields.map((change) => ({
-        field: change.field,
-        slot: selectedPokemon.slot,
-        trainerId: trainer.trainerId,
-        value: change.value
-      }))
-    );
-    if (didSave && selectedPokemonDraftKey) {
-      if (!(await trainerDurableDraft.draft.clearDurable())) {
-        return;
+    const selectedSlot = selectedPokemon.slot.toString();
+    const pokemonDraftBeforeStage = trainerDraftPayload.partyBySlot[selectedSlot];
+    const sourceMutation = await runSessionLocalEditorSourceMutation({
+      binding: trainerDraftBinding,
+      didMutate: (didSave) => didSave,
+      mutation: () =>
+        onUpdateTrainerFields(
+          pokemonDraftSummary.changedFields.map((change) => ({
+            field: change.field,
+            slot: selectedPokemon.slot,
+            trainerId: trainer.trainerId,
+            value: change.value
+          }))
+        ),
+      reduceLatestPayload: (latestPayload) => {
+        const latestDraft = latestPayload.partyBySlot[selectedSlot];
+        if (
+          !latestDraft ||
+          !pokemonDraftBeforeStage ||
+          !areFieldDraftsEqual(latestDraft, pokemonDraftBeforeStage)
+        ) {
+          return latestPayload;
+        }
+        const nextPartyBySlot = { ...latestPayload.partyBySlot };
+        delete nextPartyBySlot[selectedSlot];
+        return { ...latestPayload, partyBySlot: nextPartyBySlot };
       }
-      setPokemonDraftsByTrainerSlot((currentDrafts) =>
-        deleteFieldDraftRecord(currentDrafts, selectedPokemonDraftKey)
-      );
+    });
+    if (sourceMutation.kind === 'reservation-unavailable') {
+      setTrainerSourceMutationError(sessionLocalDraftMutationBusyMessage);
+      return;
+    }
+    setTrainerSourceMutationError(null);
+    if (sourceMutation.kind === 'source-mutated' && selectedPokemonDraftKey) {
+      setPokemonDraftsByTrainerSlot((currentDrafts) => {
+        const latestDraft = currentDrafts[selectedPokemonDraftKey];
+        return latestDraft &&
+          pokemonDraftBeforeStage &&
+          areFieldDraftsEqual(latestDraft, pokemonDraftBeforeStage)
+          ? deleteFieldDraftRecord(currentDrafts, selectedPokemonDraftKey)
+          : currentDrafts;
+      });
     }
   };
 
   const stageTrainerMaxIvs = async () => {
-    if (!trainer) {
+    if (!trainer || trainerPartyDraftPrefix === null) {
       return;
     }
 
-    const didSave =
-      trainerMaxIvUpdates.length === 0 ||
-      (await onUpdateTrainerFields(trainerMaxIvUpdates));
-    if (didSave) {
-      if (!(await trainerDurableDraft.draft.clearDurable())) {
-        return;
-      }
+    if (trainerMaxIvUpdates.length === 0) {
       setPokemonDraftsByTrainerSlot((currentDrafts) =>
         reconcileTrainerMaxIvDrafts(
           currentDrafts,
           trainer,
           contextualPokemonFields
+        )
+      );
+      return;
+    }
+
+    const submittedDraftsByTrainerSlot = Object.fromEntries(
+      trainer.team.map((pokemon) => {
+        const recordKey = `${trainer.trainerId}:${pokemon.slot}`;
+        const defaults = createTrainerDrafts(contextualPokemonFields, (field) =>
+          getEditablePokemonFieldValue(pokemon, field)
+        );
+        return [
+          recordKey,
+          canonicalizeTrainerPartySlotDrafts(
+            {
+              ...defaults,
+              ...(canonicalPokemonDraftsByTrainerSlot[recordKey] ?? {})
+            },
+            defaults,
+            pokemon.speciesId
+          )
+        ];
+      })
+    );
+    const sourceMutation = await runSessionLocalEditorSourceMutation({
+      binding: trainerDraftBinding,
+      didMutate: (didSave) => didSave,
+      mutation: () => onUpdateTrainerFields(trainerMaxIvUpdates),
+      reduceLatestPayload: (latestPayload) => {
+        const latestGlobalDrafts = Object.fromEntries(
+          Object.entries(latestPayload.partyBySlot).map(([slot, fields]) => [
+            `${trainerPartyDraftPrefix}${slot}`,
+            { ...fields }
+          ])
+        );
+        const reconciledGlobalDrafts = reconcileTrainerMaxIvDrafts(
+          latestGlobalDrafts,
+          trainer,
+          contextualPokemonFields,
+          submittedDraftsByTrainerSlot
+        );
+        return {
+          ...latestPayload,
+          partyBySlot: Object.fromEntries(
+            Object.entries(reconciledGlobalDrafts)
+              .filter(([key]) => key.startsWith(trainerPartyDraftPrefix))
+              .map(([key, fields]) => [
+                key.slice(trainerPartyDraftPrefix.length),
+                { ...fields }
+              ])
+          )
+        };
+      }
+    });
+    if (sourceMutation.kind === 'reservation-unavailable') {
+      setTrainerSourceMutationError(sessionLocalDraftMutationBusyMessage);
+      return;
+    }
+    setTrainerSourceMutationError(null);
+    if (sourceMutation.kind === 'source-mutated') {
+      setPokemonDraftsByTrainerSlot((currentDrafts) =>
+        reconcileTrainerMaxIvDrafts(
+          currentDrafts,
+          trainer,
+          contextualPokemonFields,
+          submittedDraftsByTrainerSlot
         )
       );
     }
@@ -29963,7 +30229,8 @@ function SelectedTrainerPanel({
       contextMenuCopyDisabledReason !== undefined ||
       !trainer ||
       !contextMenuPokemon ||
-      !contextMenuPokemonValues
+      !contextMenuPokemonValues ||
+      partySlotClipboardOperationRef.current !== null
     ) {
       return;
     }
@@ -29972,6 +30239,8 @@ function SelectedTrainerPanel({
       contextMenuPokemon.slot,
       editorFamily
     ).toString();
+    const operationToken = Symbol('trainer-party-clipboard-copy');
+    partySlotClipboardOperationRef.current = operationToken;
     setIsPartySlotClipboardBusy(true);
     setPartySlotClipboardFeedback(null);
     try {
@@ -29981,9 +30250,12 @@ function SelectedTrainerPanel({
         values: contextMenuPokemonValues
       });
       if (result.kind === 'failure') {
-        setPartySlotClipboardFeedback(t(result.feedbackKey));
+        const message = t(result.feedbackKey);
+        setPartySlotClipboardFeedback(message);
+        setTrainerSourceMutationError(message);
         return;
       }
+      setTrainerSourceMutationError(null);
       setPartySlotCopiedSource({
         editorFamily,
         sourceSlot: contextMenuPokemon.slot,
@@ -29992,11 +30264,14 @@ function SelectedTrainerPanel({
         sourceTrainerName: trainer.name
       });
     } catch {
-      setPartySlotClipboardFeedback(
-        t('rowClipboard.feedback.backendUnavailable')
-      );
+      const message = t('rowClipboard.feedback.backendUnavailable');
+      setPartySlotClipboardFeedback(message);
+      setTrainerSourceMutationError(message);
     } finally {
-      setIsPartySlotClipboardBusy(false);
+      if (partySlotClipboardOperationRef.current === operationToken) {
+        partySlotClipboardOperationRef.current = null;
+        setIsPartySlotClipboardBusy(false);
+      }
     }
   };
 
@@ -30005,12 +30280,19 @@ function SelectedTrainerPanel({
       contextMenuPasteDisabledReason !== undefined ||
       !trainer ||
       !contextMenuPokemon ||
-      !contextMenuPokemonDraftKey
+      !contextMenuPokemonDraftKey ||
+      partySlotClipboardOperationRef.current !== null
     ) {
       return;
     }
 
+    const operationToken = Symbol('trainer-party-clipboard-paste');
+    partySlotClipboardOperationRef.current = operationToken;
     setIsPartySlotClipboardBusy(true);
+    setPendingPartySlotPasteTarget({
+      slot: contextMenuPokemon.slot,
+      trainerId: trainer.trainerId
+    });
     setPartySlotClipboardFeedback(null);
     try {
       const result = await onPasteTrainerPartyClipboard({
@@ -30018,37 +30300,75 @@ function SelectedTrainerPanel({
         targetTrainerId: trainer.trainerId
       });
       if (result.kind === 'failure') {
-        setPartySlotClipboardFeedback(t(result.feedbackKey));
+        const message = t(result.feedbackKey);
+        setPartySlotClipboardFeedback(message);
+        setTrainerSourceMutationError(message);
         return;
       }
-      if (!(await trainerDurableDraft.draft.clearDurable())) {
-        setPartySlotClipboardFeedback(t('ordinaryDraft.discard.error'));
-        return;
-      }
-      setPokemonDraftsByTrainerSlot((currentDrafts) => {
-        let nextDrafts = currentDrafts;
-        for (let offset = 0; offset < result.operationCount; offset += 1) {
-          nextDrafts = deleteFieldDraftRecord(
-            nextDrafts,
-            `${trainer.trainerId}:${contextMenuPokemon.slot + offset}`
-          );
-        }
-        return nextDrafts;
+
+      const destinationRows = result.rows.map((row, offset) => {
+        const destination = trainer.team.find(
+          (pokemon) => pokemon.slot === contextMenuPokemon.slot + offset
+        );
+        return destination ? { destination, row } : null;
       });
+      if (
+        destinationRows.length === 0 ||
+        destinationRows.some((destinationRow) => destinationRow === null)
+      ) {
+        const message = t('rowClipboard.feedback.pasteRejected');
+        setPartySlotClipboardFeedback(message);
+        setTrainerSourceMutationError(message);
+        return;
+      }
+
+      setTrainerSourceMutationError(null);
+      setPokemonDraftsByTrainerSlot((currentDrafts) =>
+        destinationRows.reduce((nextDrafts, destinationRow) => {
+          const { destination, row } = destinationRow!;
+          const destinationDefaults = createTrainerPokemonSlotClipboardValues(
+            destination,
+            pokemonFields
+          );
+          const pastedPokemon = applyTrainerPartyClipboardOwnedValues(
+            destination,
+            row.values
+          );
+          const pastedValues = createTrainerPokemonSlotClipboardValues(
+            pastedPokemon,
+            pokemonFields
+          );
+          const nextValues = Object.fromEntries(
+            pokemonFields.map((field) => [
+              field.field,
+              pastedValues[field.field] ?? destinationDefaults[field.field] ?? ''
+            ])
+          );
+          return setFieldDraftRecord(
+            nextDrafts,
+            `${trainer.trainerId}:${destination.slot}`,
+            nextValues,
+            destinationDefaults
+          );
+        }, currentDrafts)
+      );
       onSelectSlot(contextMenuPokemon.slot);
       setPartySlotClipboardFeedback(
-        t('trainers.partyClipboard.stagedFeedback', {
-          count: result.operationCount,
+        t('trainers.partyClipboard.pastedFeedback', {
           slot: formatTrainerSlotNumber(contextMenuPokemon.slot, editorFamily),
           trainer: trainer.name
         })
       );
     } catch {
-      setPartySlotClipboardFeedback(
-        t('rowClipboard.feedback.backendUnavailable')
-      );
+      const message = t('rowClipboard.feedback.backendUnavailable');
+      setPartySlotClipboardFeedback(message);
+      setTrainerSourceMutationError(message);
     } finally {
-      setIsPartySlotClipboardBusy(false);
+      if (partySlotClipboardOperationRef.current === operationToken) {
+        partySlotClipboardOperationRef.current = null;
+        setPendingPartySlotPasteTarget(null);
+        setIsPartySlotClipboardBusy(false);
+      }
     }
   };
 
@@ -30056,10 +30376,25 @@ function SelectedTrainerPanel({
     cancelActiveEditSession(() => {
       setTrainerDraftsByTrainerId({});
       setPokemonDraftsByTrainerSlot({});
+      setTrainerIdentityDiscardEpoch((currentEpoch) => currentEpoch + 1);
     });
 
   return (
     <aside aria-label="Selected trainer provenance" className="trainer-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.trainers"
+        issues={[
+          ...trainerDraftSummary.invalidFields,
+          ...pokemonDraftSummary.invalidFields,
+          ...(pokemonHasInvalidEvTotal
+            ? [{
+                field: 'evTotal',
+                label: 'Pokemon EV total',
+                message: 'The Pokemon EV total exceeds the supported maximum.'
+              }]
+            : [])
+        ]}
+      />
       {editSession ? (
         <EditorSessionBarActions>
           <button
@@ -30114,11 +30449,9 @@ function SelectedTrainerPanel({
         <h3>Selected Trainer</h3>
       </div>
 
-      <OrdinaryEditorDraftStatus
-        binding={trainerDurableDraft}
-        currentPayload={trainerDraftPayload}
-        isClean={isOrdinaryTrainerDraftClean}
-        rebase={rebaseTrainerDraft}
+      <PublishedInlineEditorError
+        domain="workflow.trainers"
+        message={trainerSourceMutationError}
       />
 
       {trainer ? (
@@ -30215,14 +30548,21 @@ function SelectedTrainerPanel({
 
           {editorFamily === 'za' && onNavigateZaTrainerTextTarget ? (
             <ZaTrainerIdentityActions
+              canEditChanges={
+                canEditTrainers && editSession !== null
+              }
               canStageChanges={
-                isTrainerDraftReady && canEditTrainers && editSession !== null
+                canEditTrainers && editSession !== null
               }
               classPairOptions={zaClassPairOptions}
+              discardEpoch={trainerIdentityDiscardEpoch}
               isUpdating={isTrainerUpdating}
+              onDirtyStateChange={setHasTrainerIdentityDrafts}
               onNavigateTextTarget={onNavigateZaTrainerTextTarget}
               onStageClassPair={(pairId) =>
-                onUpdateTrainerField(trainer.trainerId, null, 'classPair', pairId)
+                runSelectedTrainerSourceMutation(() =>
+                  onUpdateTrainerField(trainer.trainerId, null, 'classPair', pairId)
+                )
               }
               trainer={{
                 canReassignClass: trainer.zaCanReassignClass === true,
@@ -30232,6 +30572,7 @@ function SelectedTrainerPanel({
                 classTextTarget: trainer.zaClassTextTarget,
                 name: trainer.name,
                 nameTextTarget: trainer.zaNameTextTarget,
+                trainerId: trainer.trainerId,
                 trainerClass: trainer.trainerClass
               }}
             />
@@ -30276,11 +30617,13 @@ function SelectedTrainerPanel({
                             const nextValue = event.target.checked
                               ? trainer.aiFlags | flag.mask
                               : trainer.aiFlags & ~flag.mask;
-                            onUpdateTrainerField(
-                              trainer.trainerId,
-                              null,
-                              aiFlagsFieldName,
-                              nextValue.toString()
+                            void runSelectedTrainerSourceMutation(() =>
+                              onUpdateTrainerField(
+                                trainer.trainerId,
+                                null,
+                                aiFlagsFieldName,
+                                nextValue.toString()
+                              )
                             );
                           }}
                           type="checkbox"
@@ -30328,9 +30671,7 @@ function SelectedTrainerPanel({
                           disabled={
                             disabledReason !== undefined ||
                             !canEditTrainers ||
-                            !isTrainerDraftReady ||
-                            editSession === null ||
-                            isTrainerUpdating
+                            editSession === null
                           }
                           disabledReason={disabledReason}
                           draftState={draftState}
@@ -30616,9 +30957,8 @@ function SelectedTrainerPanel({
                               disabled={
                                 disabledReason !== undefined ||
                                 !canEditTrainers ||
-                                !isTrainerDraftReady ||
                                 editSession === null ||
-                                isTrainerUpdating
+                                isSelectedPartySlotPasteTarget
                               }
                               disabledReason={disabledReason}
                               draftState={draftState}
@@ -31428,7 +31768,8 @@ function createTrainerMaxIvUpdates(
 function reconcileTrainerMaxIvDrafts(
   records: Record<string, Record<string, string>>,
   trainer: TrainerRecord,
-  fields: TrainerEditableField[]
+  fields: TrainerEditableField[],
+  submittedDraftsByTrainerSlot?: Readonly<Record<string, Readonly<Record<string, string>>>>
 ) {
   const editableIvFields = getEditableTrainerIvFields(fields);
   let nextRecords = records;
@@ -31457,7 +31798,7 @@ function reconcileTrainerMaxIvDrafts(
       );
       continue;
     }
-    const { defaults: nextDefaults, drafts: nextDrafts } =
+    const { defaults: nextDefaults, drafts: reconciledDrafts } =
       reconcileTrainerSlotMaxIvDrafts(
         currentDrafts,
         currentDefaults,
@@ -31465,6 +31806,15 @@ function reconcileTrainerMaxIvDrafts(
         maximumPokemonIvValue,
         pokemon.speciesId > 0
       );
+    const nextDrafts = { ...reconciledDrafts };
+    const submittedDrafts = submittedDraftsByTrainerSlot?.[recordKey];
+    if (submittedDrafts) {
+      for (const field of editableIvFields) {
+        if (currentDrafts[field] !== submittedDrafts[field]) {
+          nextDrafts[field] = currentDrafts[field];
+        }
+      }
+    }
 
     nextRecords = setFieldDraftRecord(nextRecords, recordKey, nextDrafts, nextDefaults);
   }
@@ -31545,12 +31895,10 @@ function createTrainerPokemonSlotClipboardValues(
   fields: TrainerEditableField[],
   drafts?: Record<string, string>
 ) {
-  return Object.fromEntries(
-    fields.map((field) => [
-      field.field,
-      drafts?.[field.field] ??
-        (getEditablePokemonFieldValue(pokemon, field.field) ?? '').toString()
-    ])
+  return createTrainerPartyClipboardFieldValues(
+    fields,
+    (field) => getEditablePokemonFieldValue(pokemon, field),
+    drafts
   );
 }
 
@@ -33126,44 +33474,13 @@ function getPendingEditDisplayDetails(
   }
 }
 
-const ordinaryDraftMigratedSections = new Set<WorkbenchSection>([
-  'items',
-  'moves',
-  'pokemon',
-  'text',
-  'trainers'
-]);
-
-const ordinaryDraftAdapterIds = new Set([
-  ordinaryItemDraftAdapter.adapterId,
-  ordinaryMoveDraftAdapter.adapterId,
-  ordinaryPokemonDraftAdapter.adapterId,
-  ordinaryTextDraftAdapter.adapterId,
-  ordinaryTrainerDraftAdapter.adapterId
-]);
-
-const emptyOrdinaryDraftProtectionSnapshot: OrdinaryEditorDraftProtectionIndexSnapshot = {
-  dirtyEntityKeys: new Set(),
-  durableEntityKeys: new Set(),
-  errorCode: null,
-  protectedEntityKeys: new Set(),
-  revision: 0,
-  status: 'idle'
-};
-
 function getProtectedWorkspaceTabKeys(
   tabs: readonly WorkspaceShellTab[],
-  ordinaryProtection: OrdinaryEditorDraftProtectionIndexSnapshot,
-  legacyProtectedSections: ReadonlySet<WorkbenchSection>
+  protectedSections: ReadonlySet<WorkbenchSection>
 ) {
   return new Set(
     tabs
-      .filter(
-        (tab) =>
-          ordinaryProtection.protectedEntityKeys.has(tab.key) ||
-          (!ordinaryDraftMigratedSections.has(tab.location.section) &&
-            legacyProtectedSections.has(tab.location.section))
-      )
+      .filter((tab) => protectedSections.has(tab.location.section))
       .map((tab) => tab.key)
   );
 }
@@ -33171,314 +33488,171 @@ function getProtectedWorkspaceTabKeys(
 type OrdinaryDraftProjectContext = {
   game: ProjectGame;
   projectId: string;
-  projectSourceRevisionFingerprint: string | null;
-  refreshProjectSourceRevision: () => void;
-  sourceRevisionStatus: 'idle' | 'loading' | 'ready' | 'error';
 };
 
-type BoundOrdinaryEditorDraft<TDraft> = {
-  draft: UseOrdinaryEditorDraftResult<TDraft>;
-  entitySourceStatus: 'idle' | 'loading' | 'ready' | 'error';
-  projectSourceStatus: OrdinaryDraftProjectContext['sourceRevisionStatus'];
-  refreshProjectSourceRevision: () => void;
-};
+const sessionLocalEditorSections = new Set<WorkbenchSection>([
+  'items',
+  'moves',
+  'pokemon',
+  'text',
+  'trainers'
+]);
 
-function useBoundOrdinaryEditorDraft<TDraft>({
-  adapter,
+const sessionLocalDraftMutationBusyMessage =
+  'This record is already being staged. Wait for it to finish and try again.';
+
+type SessionLocalEditorMutationReservation = Readonly<{
+  adapterIdentity: string;
+  scopeBaseIdentity: string;
+}>;
+
+type SessionLocalEditorMutationBinding<TDraft> = Readonly<{
+  cancelDraftSourceMutation: (
+    reservation: SessionLocalEditorMutationReservation
+  ) => boolean;
+  commitDraftSourceMutation: (
+    reservation: SessionLocalEditorMutationReservation,
+    reduceLatestPayload: (latestPayload: TDraft) => TDraft
+  ) => boolean;
+  reserveDraftSourceMutation: () =>
+    SessionLocalEditorMutationReservation | null;
+}>;
+
+async function runSessionLocalEditorSourceMutation<TDraft, TResult>(options: {
+  binding: SessionLocalEditorMutationBinding<TDraft>;
+  didMutate: (result: TResult) => boolean;
+  mutation: () => Promise<TResult>;
+  reduceLatestPayload: (latestPayload: TDraft, result: TResult) => TDraft;
+}): Promise<
+  | Readonly<{ kind: 'not-mutated'; result: TResult }>
+  | Readonly<{ kind: 'reservation-unavailable' }>
+  | Readonly<{ kind: 'source-mutated'; result: TResult }>
+> {
+  const reservation = options.binding.reserveDraftSourceMutation();
+  if (!reservation) {
+    return { kind: 'reservation-unavailable' };
+  }
+
+  try {
+    const result = await options.mutation();
+    if (!options.didMutate(result)) {
+      options.binding.cancelDraftSourceMutation(reservation);
+      return { kind: 'not-mutated', result };
+    }
+    if (
+      !options.binding.commitDraftSourceMutation(
+        reservation,
+        (latestPayload) => options.reduceLatestPayload(latestPayload, result)
+      )
+    ) {
+      options.binding.cancelDraftSourceMutation(reservation);
+      return { kind: 'reservation-unavailable' };
+    }
+    return { kind: 'source-mutated', result };
+  } catch (error) {
+    options.binding.cancelDraftSourceMutation(reservation);
+    throw error;
+  }
+}
+
+function useSessionLocalEditorDraftBinding<TDraft>({
   applyHydratedPayload,
-  emptyPayload,
-  entityPreimage,
-  isClean,
+  bindingId,
   payload,
   project,
   recordKind,
   recordValue,
   section
 }: {
-  adapter: ProjectDraftAdapter<TDraft>;
   applyHydratedPayload: (payload: TDraft | null) => void;
-  emptyPayload: TDraft;
-  entityPreimage: unknown | null;
-  isClean: (payload: TDraft) => boolean;
+  bindingId: string;
   payload: TDraft;
   project: OrdinaryDraftProjectContext | null;
   recordKind?: string;
   recordValue: number | string | null;
   section: WorkbenchSection;
-}): BoundOrdinaryEditorDraft<TDraft> {
-  const entity = useMemo<SemanticRecordRef | null>(() => {
-    if (!project || recordValue === null) {
-      return null;
-    }
-    return createStableEntityLocation({
-      game: project.game,
-      projectId: project.projectId,
-      ...(recordKind ? { recordKind } : {}),
-      section,
-      value: recordValue
-    }).entity ?? null;
-  }, [project?.game, project?.projectId, recordKind, recordValue, section]);
-  const entitySource = useOrdinaryEditorEntitySourceRevision({
-    entityPreimage,
-    projectSourceRevisionFingerprint:
-      project?.projectSourceRevisionFingerprint ?? null
-  });
-  const scope = useMemo<OrdinaryEditorDraftScope | null>(
+}): SessionLocalEditorMutationBinding<TDraft> {
+  const latestPayloadRef = useRef(payload);
+  latestPayloadRef.current = payload;
+  const sourceTransitionAdapterIdentity = `session-local:${bindingId}`;
+  const mutationReservationRef = useRef<
+    SessionLocalEditorMutationReservation | null
+  >(null);
+  const isReady = project !== null && recordValue !== null;
+  const scopeBaseIdentity = useMemo(
     () =>
-      project && entity && entitySource.fingerprint
-        ? {
-            domain: entity.domain,
-            entity,
+      isReady
+        ? JSON.stringify({
             game: project.game,
             projectId: project.projectId,
-            section,
-            sourceRevisionFingerprint: entitySource.fingerprint
-          }
+            recordKind: recordKind ?? null,
+            recordValue,
+            section
+          })
         : null,
-    [entity, entitySource.fingerprint, project, section]
+    [isReady, project?.game, project?.projectId, recordKind, recordValue, section]
   );
-  const synchronizationScopeRef = useRef<string | null>(null);
-  const synchronizationGenerationRef = useRef(0);
-  const hydratedPayloadExpectationRef = useRef<string | null>(null);
-  const lastSynchronizedPayloadRef = useRef<string | null>(null);
-  const synchronizationReadyRef = useRef(false);
-  const scopeKey = scope
-    ? `${scope.projectId}:${scope.game}:${section}:${semanticRecordRefKey(scope.entity)}:${scope.sourceRevisionFingerprint}`
-    : null;
-  if (synchronizationScopeRef.current !== scopeKey) {
-    synchronizationScopeRef.current = scopeKey;
-    synchronizationGenerationRef.current += 1;
-    hydratedPayloadExpectationRef.current = null;
-    lastSynchronizedPayloadRef.current = null;
-    synchronizationReadyRef.current = false;
-  }
-  const synchronizationGeneration = synchronizationGenerationRef.current;
-  const serializePayload = useCallback(
-    (value: TDraft) => JSON.stringify(adapter.serializePayload(value)),
-    [adapter]
-  );
-  const draft = useOrdinaryEditorDraft({
-    adapter,
-    isClean,
-    onHydrate: (hydratedPayload) => {
-      if (synchronizationGenerationRef.current !== synchronizationGeneration) {
-        return;
+
+  const reserveDraftSourceMutation = useCallback(() => {
+    if (!scopeBaseIdentity || mutationReservationRef.current !== null) {
+      return null;
+    }
+    const reservation: SessionLocalEditorMutationReservation = Object.freeze({
+      adapterIdentity: sourceTransitionAdapterIdentity,
+      scopeBaseIdentity
+    });
+    mutationReservationRef.current = reservation;
+    return reservation;
+  }, [
+    scopeBaseIdentity,
+    sourceTransitionAdapterIdentity,
+  ]);
+
+  const commitDraftSourceMutation = useCallback(
+    (
+      reservation: SessionLocalEditorMutationReservation,
+      reduceLatestPayload: (latestPayload: TDraft) => TDraft
+    ) => {
+      let nextPayload: TDraft;
+      try {
+        if (
+          reservation.adapterIdentity !== sourceTransitionAdapterIdentity ||
+          reservation.scopeBaseIdentity !== scopeBaseIdentity ||
+          mutationReservationRef.current !== reservation
+        ) {
+          return false;
+        }
+        const latestPayload = latestPayloadRef.current;
+        nextPayload = reduceLatestPayload(latestPayload);
+      } catch {
+        return false;
       }
-      hydratedPayloadExpectationRef.current = serializePayload(
-        hydratedPayload ?? emptyPayload
-      );
-      applyHydratedPayload(hydratedPayload);
+      mutationReservationRef.current = null;
+      applyHydratedPayload(nextPayload);
+      return true;
     },
-    scope
-  });
-  const serializedPayload = useMemo(
-    () => serializePayload(payload),
-    [payload, serializePayload]
+    [applyHydratedPayload, scopeBaseIdentity, sourceTransitionAdapterIdentity]
   );
-  useEffect(() => {
-    if (
-      scope === null ||
-      draft.status === 'idle' ||
-      draft.status === 'loading' ||
-      draft.status === 'stale' ||
-      draft.status === 'error'
-    ) {
-      return;
-    }
-    const hydrationExpectation = hydratedPayloadExpectationRef.current;
-    if (!synchronizationReadyRef.current) {
+
+  const cancelDraftSourceMutation = useCallback(
+    (reservation: SessionLocalEditorMutationReservation) => {
       if (
-        hydrationExpectation === null ||
-        hydrationExpectation !== serializedPayload
+        reservation.adapterIdentity !== sourceTransitionAdapterIdentity ||
+        mutationReservationRef.current !== reservation
       ) {
-        return;
+        return false;
       }
-      hydratedPayloadExpectationRef.current = null;
-      lastSynchronizedPayloadRef.current = serializedPayload;
-      synchronizationReadyRef.current = true;
-      return;
-    }
-    if (lastSynchronizedPayloadRef.current === serializedPayload) {
-      return;
-    }
-    if (draft.update(payload)) {
-      lastSynchronizedPayloadRef.current = serializedPayload;
-    }
-  }, [draft, payload, scope, serializedPayload]);
+      mutationReservationRef.current = null;
+      return true;
+    },
+    [sourceTransitionAdapterIdentity]
+  );
 
   return {
-    draft,
-    entitySourceStatus: entitySource.status,
-    projectSourceStatus: project?.sourceRevisionStatus ?? 'idle',
-    refreshProjectSourceRevision:
-      project?.refreshProjectSourceRevision ?? (() => undefined)
+    cancelDraftSourceMutation,
+    commitDraftSourceMutation,
+    reserveDraftSourceMutation
   };
-}
-
-function OrdinaryEditorDraftStatus<TDraft>({
-  binding,
-  currentPayload,
-  isClean,
-  rebase
-}: {
-  binding: BoundOrdinaryEditorDraft<TDraft>;
-  currentPayload: TDraft;
-  isClean: (payload: TDraft) => boolean;
-  rebase?: (stalePayload: TDraft) => TDraft;
-}) {
-  const { t } = useLocalization();
-  const { draft } = binding;
-  const sourceFailed =
-    binding.projectSourceStatus === 'error' || binding.entitySourceStatus === 'error';
-  const sourceLoading =
-    binding.projectSourceStatus === 'loading' ||
-    binding.entitySourceStatus === 'loading';
-  const errorKey = draft.errorCode
-    ? draft.errorCode === 'storage-conflict'
-      ? 'ordinaryDraft.error.conflict'
-      : draft.errorCode === 'storage-unavailable'
-        ? 'ordinaryDraft.error.storage'
-        : draft.errorCode === 'storage-limit' || draft.errorCode === 'payload-too-large'
-          ? 'ordinaryDraft.error.limit'
-          : 'ordinaryDraft.error.generic'
-    : null;
-  if (
-    !sourceFailed &&
-    !sourceLoading &&
-    draft.status !== 'loading' &&
-    draft.status !== 'saving' &&
-    draft.status !== 'stale' &&
-    draft.status !== 'error' &&
-    !(draft.status === 'saved' && draft.hasDurableDraft)
-  ) {
-    return null;
-  }
-
-  const tone = sourceFailed || draft.status === 'error'
-    ? 'is-error'
-    : draft.status === 'stale'
-      ? 'is-warning'
-      : 'is-status';
-  return (
-    <div
-      aria-live={sourceFailed || draft.status === 'stale' || draft.status === 'error' ? 'assertive' : 'polite'}
-      className={`ordinary-draft-status ${tone}`}
-      role={sourceFailed || draft.status === 'stale' || draft.status === 'error' ? 'alert' : 'status'}
-    >
-      <div>
-        <strong>
-          {sourceFailed
-            ? t('ordinaryDraft.source.errorTitle')
-            : sourceLoading || draft.status === 'loading'
-              ? t('ordinaryDraft.status.loading')
-              : draft.status === 'saving'
-                ? t('ordinaryDraft.status.saving')
-                : draft.status === 'stale'
-                  ? t('ordinaryDraft.stale.title')
-                  : draft.status === 'error' && errorKey
-                    ? t(errorKey)
-                    : t('ordinaryDraft.status.saved')}
-        </strong>
-        {sourceFailed ? (
-          <p>{t('ordinaryDraft.source.errorHelp')}</p>
-        ) : draft.status === 'stale' ? (
-          <p>{t('ordinaryDraft.stale.help')}</p>
-        ) : draft.status === 'error' ? (
-          <p>{t('ordinaryDraft.error.help')}</p>
-        ) : null}
-      </div>
-      {sourceFailed ? (
-        <div className="ordinary-draft-actions">
-          <button
-            className="secondary-button"
-            onClick={binding.refreshProjectSourceRevision}
-            type="button"
-          >
-            {t('ordinaryDraft.action.retry')}
-          </button>
-        </div>
-      ) : draft.status === 'stale' ? (
-        <div className="ordinary-draft-actions">
-          <button className="secondary-button" onClick={() => void draft.discard()} type="button">
-            {t('ordinaryDraft.action.discard')}
-          </button>
-          {rebase ? (
-            <button
-              className="secondary-button"
-              onClick={() => void draft.reconcile({ kind: 'rebase', rebase })}
-              type="button"
-            >
-              {t('ordinaryDraft.action.rebase')}
-            </button>
-          ) : null}
-          {!isClean(currentPayload) ? (
-            <button
-              className="secondary-button"
-              onClick={() =>
-                void draft.reconcile({ kind: 'replace', payload: currentPayload })
-              }
-              type="button"
-            >
-              {t('ordinaryDraft.action.replace')}
-            </button>
-          ) : null}
-        </div>
-      ) : draft.status === 'error' ? (
-        <div className="ordinary-draft-actions">
-          <button className="secondary-button" onClick={() => void draft.reload()} type="button">
-            {t('ordinaryDraft.action.retry')}
-          </button>
-          {draft.hasDurableDraft ? (
-            <button className="secondary-button" onClick={() => void draft.discard()} type="button">
-              {t('ordinaryDraft.action.discard')}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function isOrdinaryEditorDraftBindingReady<TDraft>(
-  binding: BoundOrdinaryEditorDraft<TDraft>
-) {
-  return (
-    binding.projectSourceStatus === 'ready' &&
-    binding.entitySourceStatus === 'ready' &&
-    binding.draft.status === 'saved'
-  );
-}
-
-function OrdinaryDraftProtectionObserver({
-  onIndexChange,
-  onSnapshotChange,
-  refreshScope
-}: {
-  onIndexChange: (
-    index: ReturnType<typeof useOrdinaryEditorDraftProtectionIndex> | null
-  ) => void;
-  onSnapshotChange: (snapshot: OrdinaryEditorDraftProtectionIndexSnapshot) => void;
-  refreshScope: {
-    game: ProjectGame;
-    projectId: string;
-    sourceRevisionFingerprint: string;
-  } | null;
-}) {
-  const index = useOrdinaryEditorDraftProtectionIndex();
-  const snapshot = useOrdinaryEditorDraftProtectionSnapshot();
-  useEffect(() => {
-    onIndexChange(index);
-    return () => onIndexChange(null);
-  }, [index, onIndexChange]);
-  useEffect(() => onSnapshotChange(snapshot), [onSnapshotChange, snapshot]);
-  useEffect(() => {
-    if (refreshScope) {
-      void index.refresh(refreshScope);
-    } else {
-      index.clear();
-    }
-  }, [index, refreshScope]);
-  return null;
 }
 
 type FashionCatalogPendingPayload = {
@@ -35882,6 +36056,10 @@ function SelectedGiftPokemonPanel({
 
   return (
     <aside aria-label="Selected gift Pokemon provenance" className="trainer-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.giftPokemon"
+        issues={giftDraftSummary.invalidFields}
+      />
       {editSession && !gift ? (
         <EmptySelectionEditorSessionActions
           isBusy={isGiftPokemonUpdating}
@@ -36049,7 +36227,7 @@ function SelectedGiftPokemonPanel({
                       return (
                         <GiftPokemonDraftField
                           currentValue={currentValue}
-                          disabled={!canEditGifts || editSession === null || isGiftPokemonUpdating}
+                          disabled={!canEditGifts || editSession === null}
                           disabledReason={
                             getPokemonInstanceIvStatDisabledReason(
                               field.field,
@@ -36192,6 +36370,7 @@ function SelectedGiftPokemonPanel({
                   className="primary-button"
                   disabled={!canSaveGiftDrafts}
                   onClick={async () => {
+                    const submittedDraft = { ...giftDrafts };
                     const didSave = await onUpdateGiftPokemonFields(
                       gift.giftIndex,
                       giftDraftSummary.changedFields.map((change) => ({
@@ -36201,7 +36380,12 @@ function SelectedGiftPokemonPanel({
                     );
                     if (didSave) {
                       setGiftDraftsByIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, gift.giftIndex)
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          gift.giftIndex,
+                          submittedDraft,
+                          areFieldDraftsEqual
+                        )
                       );
                     }
                   }}
@@ -36234,11 +36418,7 @@ function SelectedGiftPokemonPanel({
                   disabled={!canRevertSelectedGift}
                   onClick={async () => {
                     const didRestore = await onStageGiftPokemonVanilla(gift.giftIndex);
-                    if (didRestore) {
-                      setGiftDraftsByIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, gift.giftIndex)
-                      );
-                    }
+                    if (!didRestore) return;
                   }}
                   title={giftRevertMessage}
                   type="button"
@@ -36693,6 +36873,10 @@ function SelectedTradePokemonPanel({
 
   return (
     <aside aria-label="Selected trade Pokemon provenance" className="trainer-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.tradePokemon"
+        issues={tradeDraftSummary.invalidFields}
+      />
       {editSession && !trade ? (
         <EmptySelectionEditorSessionActions
           isBusy={isTradePokemonUpdating}
@@ -36830,7 +37014,6 @@ function SelectedTradePokemonPanel({
                           disabled={
                             !canEditTrades ||
                             editSession === null ||
-                            isTradePokemonUpdating ||
                             disabledReason !== null
                           }
                           disabledReason={disabledReason ?? undefined}
@@ -36999,6 +37182,7 @@ function SelectedTradePokemonPanel({
                   className="primary-button"
                   disabled={!canSaveTradeDrafts}
                   onClick={async () => {
+                    const submittedDraft = { ...tradeDrafts };
                     const didSave = await onUpdateTradePokemonFields(
                       trade.tradeIndex,
                       tradeDraftSummary.changedFields.map((change) => ({
@@ -37008,7 +37192,12 @@ function SelectedTradePokemonPanel({
                     );
                     if (didSave) {
                       setTradeDraftsByIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, trade.tradeIndex)
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          trade.tradeIndex,
+                          submittedDraft,
+                          areFieldDraftsEqual
+                        )
                       );
                     }
                   }}
@@ -37350,6 +37539,10 @@ function SelectedRentalPokemonPanel({
 
   return (
     <aside aria-label="Selected rental Pokemon provenance" className="trainer-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.rentalPokemon"
+        issues={rentalDraftSummary.invalidFields}
+      />
       {editSession && !rental ? (
         <EmptySelectionEditorSessionActions
           isBusy={isRentalPokemonUpdating}
@@ -37453,9 +37646,7 @@ function SelectedRentalPokemonPanel({
                       return (
                         <GiftPokemonDraftField
                           currentValue={currentValue}
-                          disabled={
-                            !canEditRentals || editSession === null || isRentalPokemonUpdating
-                          }
+                          disabled={!canEditRentals || editSession === null}
                           disabledReason={
                             getPokemonInstanceIvStatDisabledReason(
                               field.field,
@@ -37575,6 +37766,7 @@ function SelectedRentalPokemonPanel({
                   className="primary-button"
                   disabled={!canSaveRentalDrafts}
                   onClick={async () => {
+                    const submittedDraft = { ...rentalDrafts };
                     const didSave = await onUpdateRentalPokemonFields(
                       rental.rentalIndex,
                       rentalDraftSummary.changedFields.map((change) => ({
@@ -37584,7 +37776,12 @@ function SelectedRentalPokemonPanel({
                     );
                     if (didSave) {
                       setRentalDraftsByIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, rental.rentalIndex)
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          rental.rentalIndex,
+                          submittedDraft,
+                          areFieldDraftsEqual
+                        )
                       );
                     }
                   }}
@@ -38393,6 +38590,10 @@ function SelectedDynamaxAdventurePanel({
 
   return (
     <>
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.dynamaxAdventures"
+        issues={adventureDraftSummary.invalidFields}
+      />
       <aside
         aria-label="Selected Dynamax Adventure provenance"
         className="trainer-inspector dynamax-adventure-summary"
@@ -38616,10 +38817,7 @@ function SelectedDynamaxAdventurePanel({
                       return (
                         <GiftPokemonDraftField
                           currentValue={currentValue}
-                          disabled={
-                            !canEditSelectedAdventure ||
-                            isDynamaxAdventureUpdating
-                          }
+                          disabled={!canEditSelectedAdventure}
                           disabledReason={disabledReason}
                           draftState={draftState}
                           draftValue={draftValue}
@@ -38647,6 +38845,8 @@ function SelectedDynamaxAdventurePanel({
                 className="primary-button"
                 disabled={!canSaveAdventureDrafts}
                 onClick={async () => {
+                  const submittedDraft = { ...drafts };
+                  const submittedFieldOptions = { ...adventureFieldOptions };
                   const didSave = await onUpdateDynamaxAdventureFields(
                     encounter.entryIndex,
                     adventureDraftSummary.changedFields.map((change) => ({
@@ -38656,10 +38856,20 @@ function SelectedDynamaxAdventurePanel({
                   );
                   if (didSave) {
                     setDraftsByEntryIndex((currentDrafts) =>
-                      deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                      clearSubmittedKeyedEditorDraft(
+                        currentDrafts,
+                        encounter.entryIndex,
+                        submittedDraft,
+                        areFieldDraftsEqual
+                      )
                     );
                     setDraftFieldOptionsByEntryIndex((currentOptions) =>
-                      deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+                      clearSubmittedKeyedEditorDraft(
+                        currentOptions,
+                        encounter.entryIndex,
+                        submittedFieldOptions,
+                        areJsonSerializableDraftsEqual
+                      )
                     );
                   }
                 }}
@@ -38696,15 +38906,27 @@ function SelectedDynamaxAdventurePanel({
                     return;
                   }
 
+                  const submittedDraft = { ...drafts };
+                  const submittedFieldOptions = { ...adventureFieldOptions };
                   const didSave = await onUpdateDynamaxAdventureEntryChanges([
                     { entryIndex: encounter.entryIndex, changes: vanillaRestoreChanges }
                   ]);
                   if (didSave) {
                     setDraftsByEntryIndex((currentDrafts) =>
-                      deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                      clearSubmittedKeyedEditorDraft(
+                        currentDrafts,
+                        encounter.entryIndex,
+                        submittedDraft,
+                        areFieldDraftsEqual
+                      )
                     );
                     setDraftFieldOptionsByEntryIndex((currentOptions) =>
-                      deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+                      clearSubmittedKeyedEditorDraft(
+                        currentOptions,
+                        encounter.entryIndex,
+                        submittedFieldOptions,
+                        areJsonSerializableDraftsEqual
+                      )
                     );
                   }
                 }}
@@ -39239,6 +39461,10 @@ function SelectedStaticEncounterPanel({
       aria-label={translateLiteral('Selected static encounter provenance')}
       className="trainer-inspector"
     >
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.staticEncounters"
+        issues={encounterDraftSummary.invalidFields}
+      />
       {editSession && !encounter ? (
         <EmptySelectionEditorSessionActions
           isBusy={isStaticEncounterUpdating}
@@ -39365,8 +39591,7 @@ function SelectedStaticEncounterPanel({
                           disabled={
                             field.isReadOnly ||
                             !canEditStaticEncounters ||
-                            editSession === null ||
-                            isStaticEncounterUpdating
+                            editSession === null
                           }
                           disabledReason={
                             readOnlyReason ??
@@ -39399,6 +39624,7 @@ function SelectedStaticEncounterPanel({
                   className="primary-button"
                   disabled={!canSaveEncounterDrafts}
                   onClick={async () => {
+                    const submittedDraft = { ...encounterDrafts };
                     const didSave = await onUpdateStaticEncounterFields(
                       encounter.encounterIndex,
                       encounter.encounterId,
@@ -39409,9 +39635,11 @@ function SelectedStaticEncounterPanel({
                     );
                     if (didSave) {
                       setEncounterDraftsByIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(
+                        clearSubmittedKeyedEditorDraft(
                           currentDrafts,
-                          getStaticEncounterDraftKey(encounter)
+                          getStaticEncounterDraftKey(encounter),
+                          submittedDraft,
+                          areFieldDraftsEqual
                         )
                       );
                     }
@@ -39913,8 +40141,6 @@ function SelectedShopPanel({
     shop !== null &&
     editSession !== null &&
     canEditShops &&
-    !isShopUpdating &&
-    !isItemUpdating &&
     itemIdField !== undefined &&
     (shop?.canEditInventoryOrder ?? false) &&
     newItemInRange;
@@ -39981,6 +40207,29 @@ function SelectedShopPanel({
 
   return (
     <aside aria-label={translateLiteral('Selected shop provenance')} className="shop-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.shops"
+        issues={[
+          ...(invalidShopItemDraftCount > 0
+            ? [{
+                field: 'inventoryItem',
+                message: `${invalidShopItemDraftCount} shop item draft(s) contain invalid values.`
+              }]
+            : []),
+          ...(invalidShopPriceDraftCount > 0
+            ? [{
+                field: 'price',
+                message: `${invalidShopPriceDraftCount} shop price draft(s) contain invalid values.`
+              }]
+            : []),
+          ...(invalidShopRowFieldDraftCount > 0
+            ? [{
+                field: 'inventoryField',
+                message: `${invalidShopRowFieldDraftCount} shop field draft(s) contain invalid values.`
+              }]
+            : [])
+        ]}
+      />
       {editSession && !shop ? (
         <EmptySelectionEditorSessionActions
           isBusy={isShopUpdating || isItemUpdating}
@@ -40046,6 +40295,8 @@ function SelectedShopPanel({
                   className="primary-button"
                   disabled={!canSaveShopDrafts}
                   onClick={async () => {
+                    const submittedDraft =
+                      inventoryDraftsByShopId[shop.shopId] ?? currentShopDraft;
                     const didSave = await onUpdateShopChanges(
                       shop.shopId,
                       shopDraftChanges,
@@ -40054,7 +40305,12 @@ function SelectedShopPanel({
                     );
                     if (didSave) {
                       setInventoryDraftsByShopId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, shop.shopId)
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          shop.shopId,
+                          submittedDraft,
+                          areJsonSerializableDraftsEqual
+                        )
                       );
                     }
                   }}
@@ -40121,8 +40377,6 @@ function SelectedShopPanel({
                   const isPriceDisabled =
                     !canEditShops ||
                     editSession === null ||
-                    isShopUpdating ||
-                    isItemUpdating ||
                     !item.isKnownItem ||
                     !item.canEditPrice ||
                     item.priceField !== null ||
@@ -40162,9 +40416,7 @@ function SelectedShopPanel({
                             disabled={
                               !canEditShops ||
                               !shop.canEditInventoryOrder ||
-                              editSession === null ||
-                              isShopUpdating ||
-                              isItemUpdating
+                              editSession === null
                             }
                             id={itemInputId}
                             onChange={(value) =>
@@ -40207,9 +40459,7 @@ function SelectedShopPanel({
                             disabled={
                               !canEditShops ||
                               !shop.canEditInventoryOrder ||
-                              editSession === null ||
-                              isShopUpdating ||
-                              isItemUpdating
+                              editSession === null
                             }
                             id={itemInputId}
                             max={itemIdField?.maximumValue ?? undefined}
@@ -40347,8 +40597,6 @@ function SelectedShopPanel({
                               disabled={
                                 !canEditShops ||
                                 !shop.canEditInventoryOrder ||
-                                isShopUpdating ||
-                                isItemUpdating ||
                                 index === 0
                               }
                               onClick={(event) => {
@@ -40370,8 +40618,6 @@ function SelectedShopPanel({
                               disabled={
                                 !canEditShops ||
                                 !shop.canEditInventoryOrder ||
-                                isShopUpdating ||
-                                isItemUpdating ||
                                 index >= shopInventoryRows.length - 1
                               }
                               onClick={(event) => {
@@ -40390,9 +40636,7 @@ function SelectedShopPanel({
                               className="secondary-button icon-button danger-icon-button"
                               disabled={
                                 !canEditShops ||
-                                !shop.canEditInventoryOrder ||
-                                isShopUpdating ||
-                                isItemUpdating
+                                !shop.canEditInventoryOrder
                               }
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -40460,9 +40704,7 @@ function SelectedShopPanel({
                           ariaInvalid={isInvalid ? true : undefined}
                           disabled={
                             !canEditShops ||
-                            editSession === null ||
-                            isShopUpdating ||
-                            isItemUpdating
+                            editSession === null
                           }
                           draftValue={draftValue}
                           field={rowField}
@@ -40502,7 +40744,7 @@ function SelectedShopPanel({
                   {hasItemIdOptions ? (
                     <SearchableOptionInput
                       ariaLabel={translateLiteral('New shop inventory item')}
-                      disabled={!canEditShops || isShopUpdating || isItemUpdating}
+                      disabled={!canEditShops}
                       id={`shop-new-item-${shop.shopId}`}
                       onChange={(value) =>
                         updateCurrentShopDraft((currentDraft) => ({
@@ -40520,7 +40762,7 @@ function SelectedShopPanel({
                   ) : (
                     <input
                       aria-label={translateLiteral('New shop inventory item')}
-                      disabled={!canEditShops || isShopUpdating || isItemUpdating}
+                      disabled={!canEditShops}
                       id={`shop-new-item-${shop.shopId}`}
                       max={itemIdField?.maximumValue ?? undefined}
                       min={itemIdField?.minimumValue ?? undefined}
@@ -41179,7 +41421,7 @@ type EncountersSectionProps = {
   ) => Promise<RowClipboardActionResult>;
   onPasteEncounterSlot: (
     input: EncounterClipboardPasteInput
-  ) => Promise<RowClipboardActionResult>;
+  ) => Promise<RowClipboardPasteActionResult>;
   onSearchChange: (searchText: string) => void;
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
@@ -41459,7 +41701,7 @@ function SelectedEncounterPanel({
   ) => Promise<RowClipboardActionResult>;
   onPasteEncounterSlot: (
     input: EncounterClipboardPasteInput
-  ) => Promise<RowClipboardActionResult>;
+  ) => Promise<RowClipboardPasteActionResult>;
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
@@ -41508,9 +41750,25 @@ function SelectedEncounterPanel({
     isError: boolean;
     message: string;
   } | null>(null);
+  const [pendingEncounterPasteTargetTableId, setPendingEncounterPasteTargetTableId] = useState<
+    string | null
+  >(null);
   const [isEncounterClipboardBusy, setIsEncounterClipboardBusy] = useState(false);
+  const encounterClipboardOperationRef = useRef<symbol | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const { formatLocale, t, translateLiteral } = useLocalization();
+  const encounterClipboardDiagnostics = useMemo<ApiDiagnostic[]>(
+    () => encounterClipboardFeedback?.isError
+      ? [{
+          domain: 'workflow.encounters',
+          field: 'clipboard',
+          message: encounterClipboardFeedback.message,
+          severity: 'error'
+        }]
+      : [],
+    [encounterClipboardFeedback]
+  );
+  usePublishCommonEditorDiagnostics(encounterClipboardDiagnostics);
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
   const scriptedMoveOwnership = isZaEncounterTable
@@ -42217,7 +42475,13 @@ function SelectedEncounterPanel({
       : areaTabs.find((areaTab) => areaTab.label === areaCopyTargetArea)?.table ?? null;
   const preparedAreaCopyRequest =
     table && areaCopyTargetArea
-      ? createEncounterAreaCopyRequest(table, tables, areaCopyTargetArea)
+      ? createEncounterAreaCopyRequest(
+          table,
+          tables,
+          areaCopyTargetArea,
+          draftsBySlotKey,
+          levelDraftsByScopeKey
+        )
       : null;
   const canPrepareEncounterAreaCopy =
     table !== null &&
@@ -42288,9 +42552,16 @@ function SelectedEncounterPanel({
   };
   const handleCopyEncounterClipboardSlot = async () => {
     const target = encounterClipboardMenu;
-    if (!table || !target || encounterClipboardDisabledReason(target.slot, 'copy')) {
+    if (
+      !table ||
+      !target ||
+      encounterClipboardOperationRef.current !== null ||
+      encounterClipboardDisabledReason(target.slot, 'copy')
+    ) {
       return;
     }
+    const operationToken = Symbol('encounter-clipboard-copy');
+    encounterClipboardOperationRef.current = operationToken;
     setIsEncounterClipboardBusy(true);
     setEncounterClipboardFeedback(null);
     try {
@@ -42313,59 +42584,147 @@ function SelectedEncounterPanel({
         message: t('rowClipboard.feedback.copySuccess', { target: targetLabel })
       });
     } finally {
-      setIsEncounterClipboardBusy(false);
+      if (encounterClipboardOperationRef.current === operationToken) {
+        encounterClipboardOperationRef.current = null;
+        setIsEncounterClipboardBusy(false);
+      }
     }
   };
   const handlePasteEncounterClipboardSlot = async () => {
     const target = encounterClipboardMenu;
-    if (!table || !target || encounterClipboardDisabledReason(target.slot, 'paste')) {
+    if (
+      !table ||
+      !target ||
+      encounterClipboardOperationRef.current !== null ||
+      encounterClipboardDisabledReason(target.slot, 'paste')
+    ) {
       return;
     }
+    const tableId = table.tableId;
+    const targetSlot = target.slot.slot;
+    const sharedKey =
+      editorFamily === 'za'
+        ? getZaEncounterGroupKey(tableId, target.slot)
+        : `${tableId}:${targetSlot}`;
+    const slotKey = `${tableId}:${targetSlot}`;
+    const levelKey =
+      editorFamily === 'swsh' ? tableId : editorFamily === 'za' ? sharedKey : null;
+    const operationToken = Symbol('encounter-clipboard-paste');
+    encounterClipboardOperationRef.current = operationToken;
     setIsEncounterClipboardBusy(true);
+    setPendingEncounterPasteTargetTableId(tableId);
     setEncounterClipboardFeedback(null);
     try {
-      const tableId = table.tableId;
-      const targetSlot = target.slot.slot;
       const result = await onPasteEncounterSlot({ tableId, targetSlot });
       if (result.kind === 'failure') {
         setEncounterClipboardFeedback({ isError: true, message: t(result.feedbackKey) });
         return;
       }
-      const sharedKey =
-        editorFamily === 'za'
-          ? getZaEncounterGroupKey(tableId, target.slot)
-          : `${tableId}:${targetSlot}`;
-      const slotKey = `${tableId}:${targetSlot}`;
-      const levelKey =
-        editorFamily === 'swsh' ? tableId : editorFamily === 'za' ? sharedKey : null;
+
+      const row = result.rows[0];
+      if (result.rows.length !== 1 || !row) {
+        setEncounterClipboardFeedback({
+          isError: true,
+          message: t('rowClipboard.feedback.pasteRejected')
+        });
+        return;
+      }
+
+      const pastedSlot = applyEncounterClipboardOwnedValues(target.slot, row.values);
+      const pastedDrafts = editorFamily === 'za'
+        ? createPokemonInstanceDrafts(defaultEncounterFields, (field) =>
+            getEditableEncounterFieldValue(pastedSlot, field)
+          )
+        : createTrainerDrafts(defaultEncounterFields, (field) =>
+            getEditableEncounterFieldValue(pastedSlot, field)
+          );
+      const ownedFields = new Set(row.values.map((value) => value.fieldKey));
+      const selectPastedDrafts = (
+        defaults: Record<string, string>,
+        current: Record<string, string>
+      ) =>
+        Object.fromEntries(
+          Object.keys(defaults).map((field) => [
+            field,
+            ownedFields.has(field)
+              ? pastedDrafts[field] ?? defaults[field] ?? ''
+              : current[field] ?? defaults[field] ?? ''
+          ])
+        );
+
       setDraftsBySlotKey((currentDrafts) =>
-        deleteFieldDraftRecord(currentDrafts, sharedKey)
+        setFieldDraftRecord(
+          currentDrafts,
+          sharedKey,
+          selectPastedDrafts(
+            encounterSlotDraftDefaults,
+            currentDrafts[sharedKey] ?? encounterSlotDraftDefaults
+          ),
+          encounterSlotDraftDefaults
+        )
       );
       if (levelKey) {
         setLevelDraftsByScopeKey((currentDrafts) =>
-          deleteFieldDraftRecord(currentDrafts, levelKey)
+          setFieldDraftRecord(
+            currentDrafts,
+            levelKey,
+            selectPastedDrafts(
+              encounterLevelDraftDefaults,
+              currentDrafts[levelKey] ?? encounterLevelDraftDefaults
+            ),
+            encounterLevelDraftDefaults
+          )
         );
       }
       if (editorFamily === 'za') {
         setZaSlotDraftsBySlotKey((currentDrafts) =>
-          deleteFieldDraftRecord(currentDrafts, slotKey)
+          setFieldDraftRecord(
+            currentDrafts,
+            slotKey,
+            selectPastedDrafts(
+              zaEncounterSlotDraftDefaults,
+              currentDrafts[slotKey] ?? zaEncounterSlotDraftDefaults
+            ),
+            zaEncounterSlotDraftDefaults
+          )
         );
         setZaAppearanceDraftsByTableId((currentDrafts) =>
-          deleteFieldDraftRecord(currentDrafts, tableId)
+          setFieldDraftRecord(
+            currentDrafts,
+            tableId,
+            selectPastedDrafts(
+              zaEncounterAppearanceDraftDefaults,
+              currentDrafts[tableId] ?? zaEncounterAppearanceDraftDefaults
+            ),
+            zaEncounterAppearanceDraftDefaults
+          )
         );
       }
       setEncounterClipboardFeedback({
         isError: false,
         message: t('rowClipboard.feedback.pasteSuccess', {
-          count: result.operationCount,
+          count: 1,
           target: t('rowClipboard.encounter.target', {
             slot: targetSlot + 1,
             table: table.tableLabel ?? table.location
           })
         })
       });
+    } catch (error) {
+      setEncounterClipboardFeedback({
+        isError: true,
+        message: t(
+          error instanceof RowClipboardError
+            ? 'rowClipboard.feedback.contentMalformed'
+            : 'rowClipboard.feedback.pasteRejected'
+        )
+      });
     } finally {
-      setIsEncounterClipboardBusy(false);
+      if (encounterClipboardOperationRef.current === operationToken) {
+        encounterClipboardOperationRef.current = null;
+        setPendingEncounterPasteTargetTableId(null);
+        setIsEncounterClipboardBusy(false);
+      }
     }
   };
 
@@ -42423,6 +42782,10 @@ function SelectedEncounterPanel({
 
   return (
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.encounters"
+        issues={combinedEncounterDraftSummary.invalidFields}
+      />
       {editSession && !encounterSlot ? (
         <EmptySelectionEditorSessionActions
           isBusy={isEncounterUpdating}
@@ -42672,6 +43035,7 @@ function SelectedEncounterPanel({
                         key={slot.slot}
                         onContextMenu={(event) => {
                           event.preventDefault();
+                          onSelectSlot(slot.slot);
                           setEncounterClipboardMenu({
                             left: event.clientX,
                             slot,
@@ -42685,6 +43049,7 @@ function SelectedEncounterPanel({
                           }
                           event.preventDefault();
                           event.stopPropagation();
+                          onSelectSlot(slot.slot);
                           const bounds = event.currentTarget.getBoundingClientRect();
                           setEncounterClipboardMenu({
                             left: bounds.left + Math.min(32, bounds.width / 2),
@@ -43007,8 +43372,7 @@ function SelectedEncounterPanel({
                                 disabled={
                                   !action.canEdit ||
                                   !canEditEncounters ||
-                                  editSession === null ||
-                                  isEncounterUpdating
+                                  editSession === null
                                 }
                                 disabledReason={
                                   !action.canEdit && action.lockReason
@@ -43111,7 +43475,7 @@ function SelectedEncounterPanel({
                               disabled={
                                 !canEditEncounters ||
                                 editSession === null ||
-                                isEncounterUpdating
+                                pendingEncounterPasteTargetTableId === table.tableId
                               }
                               disabledReason={
                                 field.field === zaEncounterAlphaChanceFieldName
@@ -43302,6 +43666,21 @@ function SelectedEncounterPanel({
                                 return;
                               }
 
+                              const submittedLevelDrafts = Object.fromEntries(
+                                [...encounterLevelScopeDraftKeys].flatMap((scopeKey) => {
+                                  const submittedDraft = levelDraftsByScopeKey[scopeKey];
+                                  return submittedDraft
+                                    ? [[scopeKey, { ...submittedDraft }] as const]
+                                    : [];
+                                })
+                              );
+                              const submittedSlotLevelFields = Object.fromEntries(
+                                encounterLevelFieldNames.flatMap((field) =>
+                                  Object.prototype.hasOwnProperty.call(slotDrafts, field)
+                                    ? [[field, slotDrafts[field]!] as const]
+                                    : []
+                                )
+                              );
                               const didSave =
                                 isSwShEncounterTable || isZaEncounterTable
                                   ? await onUpdateEncounterSlotUpdates(
@@ -43314,21 +43693,26 @@ function SelectedEncounterPanel({
                                     );
                               if (didSave) {
                                 if (encounterLevelDraftKey) {
-                                  setLevelDraftsByScopeKey((currentDrafts) =>
-                                    Object.fromEntries(
-                                      Object.entries(currentDrafts).filter(
-                                        ([scopeKey]) =>
-                                          !encounterLevelScopeDraftKeys.has(scopeKey)
-                                      )
-                                    )
-                                  );
+                                  setLevelDraftsByScopeKey((currentDrafts) => {
+                                    let nextDrafts = currentDrafts;
+                                    for (const [scopeKey, submittedDraft] of Object.entries(
+                                      submittedLevelDrafts
+                                    )) {
+                                      nextDrafts = clearSubmittedKeyedEditorDraft(
+                                        nextDrafts,
+                                        scopeKey,
+                                        submittedDraft,
+                                        areFieldDraftsEqual
+                                      );
+                                    }
+                                    return nextDrafts;
+                                  });
                                 } else {
                                   setDraftsBySlotKey((currentDrafts) =>
-                                    removeDraftFieldsFromRecord(
+                                    updateSparseFieldDraftRecordAfterStage(
                                       currentDrafts,
                                       encounterDraftKey,
-                                      encounterSlotDraftDefaults,
-                                      encounterLevelFieldNames
+                                      submittedSlotLevelFields
                                     )
                                   );
                                 }
@@ -43486,6 +43870,13 @@ function SelectedEncounterPanel({
                           return;
                         }
 
+                        const submittedClearFields = Object.fromEntries(
+                          encounterClearFieldNames.flatMap((field) =>
+                            Object.prototype.hasOwnProperty.call(slotDrafts, field)
+                              ? [[field, slotDrafts[field]!] as const]
+                              : []
+                          )
+                        );
                         const didSave = await onUpdateEncounterSlotFields(
                           table.tableId,
                           encounterSlot.slot,
@@ -43497,11 +43888,10 @@ function SelectedEncounterPanel({
                         );
                         if (didSave) {
                           setDraftsBySlotKey((currentDrafts) =>
-                            removeDraftFieldsFromRecord(
+                            updateSparseFieldDraftRecordAfterStage(
                               currentDrafts,
                               encounterDraftKey,
-                              encounterSlotDraftDefaults,
-                              encounterClearFieldNames
+                              submittedClearFields
                             )
                           );
                         }
@@ -43544,6 +43934,26 @@ function SelectedEncounterPanel({
                           return;
                         }
 
+                        const submittedSlotDraft = draftsBySlotKey[encounterDraftKey];
+                        const submittedZaSlotDraft = zaEncounterSlotDraftKey
+                          ? zaSlotDraftsBySlotKey[zaEncounterSlotDraftKey]
+                          : undefined;
+                        const submittedZaAppearanceDraft = zaEncounterAppearanceDraftKey
+                          ? zaAppearanceDraftsByTableId[zaEncounterAppearanceDraftKey]
+                          : undefined;
+                        const submittedLevelDraft = encounterLevelDraftKey
+                          ? levelDraftsByScopeKey[encounterLevelDraftKey]
+                          : undefined;
+                        const submittedScriptedBossDrafts = Object.fromEntries(
+                          scriptedBossActionEditorEntries.flatMap(({ action }) => {
+                            const selectorId = action.selectorActionId!.toString();
+                            const submittedDraft =
+                              scriptedBossDraftsBySelectorId[selectorId];
+                            return submittedDraft === undefined
+                              ? []
+                              : [[selectorId, submittedDraft] as const];
+                          })
+                        );
                         const didSave = await onUpdateEncounterSlotFields(
                           table.tableId,
                           encounterSlot.slot,
@@ -43553,42 +43963,59 @@ function SelectedEncounterPanel({
                           }))
                         );
                         if (didSave) {
-                          setDraftsBySlotKey((currentDrafts) =>
-                            deleteFieldDraftRecord(currentDrafts, encounterDraftKey)
-                          );
-                          if (zaEncounterSlotDraftKey) {
+                          if (submittedSlotDraft) {
+                            setDraftsBySlotKey((currentDrafts) =>
+                              clearSubmittedKeyedEditorDraft(
+                                currentDrafts,
+                                encounterDraftKey,
+                                submittedSlotDraft,
+                                areFieldDraftsEqual
+                              )
+                            );
+                          }
+                          if (zaEncounterSlotDraftKey && submittedZaSlotDraft) {
                             setZaSlotDraftsBySlotKey((currentDrafts) =>
-                              deleteFieldDraftRecord(
+                              clearSubmittedKeyedEditorDraft(
                                 currentDrafts,
-                                zaEncounterSlotDraftKey
+                                zaEncounterSlotDraftKey,
+                                submittedZaSlotDraft,
+                                areFieldDraftsEqual
                               )
                             );
                           }
-                          if (zaEncounterAppearanceDraftKey) {
+                          if (zaEncounterAppearanceDraftKey && submittedZaAppearanceDraft) {
                             setZaAppearanceDraftsByTableId((currentDrafts) =>
-                              deleteFieldDraftRecord(
+                              clearSubmittedKeyedEditorDraft(
                                 currentDrafts,
-                                zaEncounterAppearanceDraftKey
+                                zaEncounterAppearanceDraftKey,
+                                submittedZaAppearanceDraft,
+                                areFieldDraftsEqual
                               )
                             );
                           }
-                          if (encounterLevelDraftKey) {
+                          if (encounterLevelDraftKey && submittedLevelDraft) {
                             setLevelDraftsByScopeKey((currentDrafts) =>
-                              deleteFieldDraftRecord(currentDrafts, encounterLevelDraftKey)
+                              clearSubmittedKeyedEditorDraft(
+                                currentDrafts,
+                                encounterLevelDraftKey,
+                                submittedLevelDraft,
+                                areFieldDraftsEqual
+                              )
                             );
                           }
-                          const stagedSelectorIds = new Set(
-                            scriptedBossActionEditorEntries.map(({ action }) =>
-                              action.selectorActionId!.toString()
-                            )
-                          );
-                          setScriptedBossDraftsBySelectorId((currentDrafts) =>
-                            Object.fromEntries(
-                              Object.entries(currentDrafts).filter(
-                                ([selectorId]) => !stagedSelectorIds.has(selectorId)
-                              )
-                            )
-                          );
+                          setScriptedBossDraftsBySelectorId((currentDrafts) => {
+                            let nextDrafts = currentDrafts;
+                            for (const [selectorId, submittedDraft] of Object.entries(
+                              submittedScriptedBossDrafts
+                            )) {
+                              nextDrafts = clearSubmittedKeyedEditorDraft(
+                                nextDrafts,
+                                selectorId,
+                                submittedDraft
+                              );
+                            }
+                            return nextDrafts;
+                          });
                         }
                       }}
                       type="button"
@@ -43646,42 +44073,6 @@ function SelectedEncounterPanel({
                     if (!didSave) {
                       return;
                     }
-
-                    if (encounterDraftKey) {
-                      setDraftsBySlotKey((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, encounterDraftKey)
-                      );
-                    }
-                    if (zaEncounterSlotDraftKey) {
-                      setZaSlotDraftsBySlotKey((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, zaEncounterSlotDraftKey)
-                      );
-                    }
-                    if (zaEncounterAppearanceDraftKey) {
-                      setZaAppearanceDraftsByTableId((currentDrafts) =>
-                        deleteFieldDraftRecord(
-                          currentDrafts,
-                          zaEncounterAppearanceDraftKey
-                        )
-                      );
-                    }
-                    if (encounterLevelDraftKey) {
-                      setLevelDraftsByScopeKey((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, encounterLevelDraftKey)
-                      );
-                    }
-                    const restoredSelectorIds = new Set(
-                      scriptedBossActionEditorEntries.map(({ action }) =>
-                        action.selectorActionId!.toString()
-                      )
-                    );
-                    setScriptedBossDraftsBySelectorId((currentDrafts) =>
-                      Object.fromEntries(
-                        Object.entries(currentDrafts).filter(
-                          ([selectorId]) => !restoredSelectorIds.has(selectorId)
-                        )
-                      )
-                    );
                   }}
                   title={selectedEncounterRevertMessage}
                   type="button"
@@ -43710,39 +44101,71 @@ function SelectedEncounterPanel({
               isApplying={isEncounterUpdating}
               onCancel={() => setAreaCopyRequest(null)}
               onConfirm={async () => {
-                setAreaCopyRequest(null);
+                const copiedSlotKeys = new Set(
+                  areaCopyRequest.updates.map(
+                    (update) => `${update.tableId}:${update.slot}`
+                  )
+                );
+                const copiedLevelTableIds = new Set(
+                  areaCopyRequest.updates
+                    .filter((update) =>
+                      update.changes.some((change) =>
+                        encounterLevelFieldNames.includes(change.field)
+                      )
+                    )
+                    .map((update) => update.tableId)
+                );
+                const submittedSlotDrafts = Object.fromEntries(
+                  [...copiedSlotKeys].flatMap((recordKey) => {
+                    const submittedDraft = draftsBySlotKey[recordKey];
+                    return submittedDraft
+                      ? [[recordKey, { ...submittedDraft }] as const]
+                      : [];
+                  })
+                );
+                const submittedLevelDrafts = Object.fromEntries(
+                  [...copiedLevelTableIds].flatMap((tableId) => {
+                    const submittedDraft = levelDraftsByScopeKey[tableId];
+                    return submittedDraft
+                      ? [[tableId, { ...submittedDraft }] as const]
+                      : [];
+                  })
+                );
                 const didSave = await onUpdateEncounterSlotUpdates(areaCopyRequest.updates);
-                if (didSave) {
-                  const copiedSlotKeys = new Set(
-                    areaCopyRequest.updates.map(
-                      (update) => `${update.tableId}:${update.slot}`
-                    )
-                  );
-                  const copiedLevelTableIds = new Set(
-                    areaCopyRequest.updates
-                      .filter((update) =>
-                        update.changes.some((change) =>
-                          encounterLevelFieldNames.includes(change.field)
-                        )
-                      )
-                      .map((update) => update.tableId)
-                  );
-                  setDraftsBySlotKey((currentDrafts) =>
-                    Object.fromEntries(
-                      Object.entries(currentDrafts).filter(
-                        ([recordKey]) => !copiedSlotKeys.has(recordKey)
-                      )
-                    )
-                  );
-                  setLevelDraftsByScopeKey((currentDrafts) =>
-                    Object.fromEntries(
-                      Object.entries(currentDrafts).filter(
-                        ([tableId]) => !copiedLevelTableIds.has(tableId)
-                      )
-                    )
-                  );
-                  onSelectTable(areaCopyRequest.targetTableId);
+                if (!didSave) {
+                  return;
                 }
+
+                setDraftsBySlotKey((currentDrafts) => {
+                  let nextDrafts = currentDrafts;
+                  for (const [recordKey, submittedDraft] of Object.entries(
+                    submittedSlotDrafts
+                  )) {
+                    nextDrafts = clearSubmittedKeyedEditorDraft(
+                      nextDrafts,
+                      recordKey,
+                      submittedDraft,
+                      areFieldDraftsEqual
+                    );
+                  }
+                  return nextDrafts;
+                });
+                setLevelDraftsByScopeKey((currentDrafts) => {
+                  let nextDrafts = currentDrafts;
+                  for (const [tableId, submittedDraft] of Object.entries(
+                    submittedLevelDrafts
+                  )) {
+                    nextDrafts = clearSubmittedKeyedEditorDraft(
+                      nextDrafts,
+                      tableId,
+                      submittedDraft,
+                      areFieldDraftsEqual
+                    );
+                  }
+                  return nextDrafts;
+                });
+                onSelectTable(areaCopyRequest.targetTableId);
+                setAreaCopyRequest(null);
               }}
               request={areaCopyRequest}
             />
@@ -43892,6 +44315,10 @@ function ZaEncounterPlayerPartnerEditor({
       aria-labelledby="za-player-partner-heading"
       className="za-player-partner-editor"
     >
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.encounters"
+        issues={draftSummary.invalidFields}
+      />
       <div className="za-player-partner-heading">
         <div className="za-player-partner-title">
           <Dumbbell aria-hidden="true" size={20} />
@@ -43988,8 +44415,7 @@ function ZaEncounterPlayerPartnerEditor({
                     currentValue={currentValue}
                     disabled={
                       !canEditEncounters ||
-                      editSession === null ||
-                      isEncounterUpdating
+                      editSession === null
                     }
                     disabledReason={disabledReason}
                     draftState={draftState}
@@ -44084,6 +44510,7 @@ function ZaEncounterPlayerPartnerEditor({
             className="primary-button"
             disabled={!canStage}
             onClick={async () => {
+              const submittedDraft = { ...drafts };
               const didSave = await onUpdateFields(
                 tableId,
                 partner.slot,
@@ -44094,7 +44521,12 @@ function ZaEncounterPlayerPartnerEditor({
               );
               if (didSave) {
                 onDraftsByKeyChange((currentDrafts) =>
-                  deleteFieldDraftRecord(currentDrafts, draftKey)
+                  clearSubmittedKeyedEditorDraft(
+                    currentDrafts,
+                    draftKey,
+                    submittedDraft,
+                    areFieldDraftsEqual
+                  )
                 );
               }
             }}
@@ -44132,11 +44564,7 @@ function ZaEncounterPlayerPartnerEditor({
             disabled={!canRevert}
             onClick={async () => {
               const didSave = await onStageVanilla(tableId, partner.slot);
-              if (didSave) {
-                onDraftsByKeyChange((currentDrafts) =>
-                  deleteFieldDraftRecord(currentDrafts, draftKey)
-                );
-              }
+              if (!didSave) return;
             }}
             title={revertBlockedReason}
             type="button"
@@ -44732,6 +45160,14 @@ function EncounterAreaCopyConfirmationModal({
         {request.skippedConditionLabels.length > 0 ? (
           <p className="modal-copy modal-copy-muted">Skipped: {skippedLabel}.</p>
         ) : null}
+        {request.targetDraftCollisions.length > 0 ? (
+          <p className="modal-copy">
+            <strong>Unsaved target drafts will be replaced.</strong>{' '}
+            Applying will replace {request.targetDraftCollisions.length}{' '}
+            {request.targetDraftCollisions.length === 1 ? 'draft' : 'drafts'} in{' '}
+            {request.targetArea}. They will remain untouched if staging fails.
+          </p>
+        ) : null}
         <div className="modal-actions">
           <button className="secondary-button" disabled={isApplying} onClick={onCancel} type="button">
             <X aria-hidden="true" size={16} />
@@ -45097,7 +45533,6 @@ function TeraRaidsSection({
                     {editSession ? (
                       <TeraRaidDraftPanel
                         canEdit={canEditTeraRaids}
-                        disabled={isTeraRaidUpdating}
                         draftKey={selectedRaid.recordId}
                         draftsByRecordId={draftsByRecordId}
                         fields={raidFields}
@@ -45249,7 +45684,6 @@ function TeraRaidsSection({
                             {editSession ? (
                               <TeraRaidDraftPanel
                                 canEdit={canEditTeraRaids}
-                                disabled={isTeraRaidUpdating}
                                 draftKey={selectedReward.recordId}
                                 draftsByRecordId={draftsByRecordId}
                                 fields={activeRewardFields}
@@ -45316,7 +45750,6 @@ function TeraRaidsSection({
 
 function TeraRaidDraftPanel({
   canEdit,
-  disabled,
   draftKey,
   draftsByRecordId,
   fields,
@@ -45331,7 +45764,6 @@ function TeraRaidDraftPanel({
   saveLabel
 }: {
   canEdit: boolean;
-  disabled: boolean;
   draftKey: string;
   draftsByRecordId: Record<string, Record<string, string>>;
   fields: NumericEditableField[];
@@ -45371,7 +45803,7 @@ function TeraRaidDraftPanel({
   );
   const canSave =
     canEdit &&
-    !disabled &&
+    !isBusy &&
     draftSummary.changedFields.length > 0 &&
     draftSummary.invalidFields.length === 0;
 
@@ -45387,6 +45819,10 @@ function TeraRaidDraftPanel({
 
   return (
     <>
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.teraRaids"
+        issues={draftSummary.invalidFields}
+      />
       <div className="editable-field-groups">
         {fieldGroups.map((group) => (
           <fieldset className="editable-field-group" key={group.group}>
@@ -45404,7 +45840,7 @@ function TeraRaidDraftPanel({
                 return (
                   <TrainerDraftField
                     currentValue={currentValue}
-                    disabled={!canEdit || disabled}
+                    disabled={!canEdit}
                     draftState={draftState}
                     draftValue={draftValue}
                     field={field}
@@ -45490,6 +45926,7 @@ function TeraRaidDraftPanel({
           className="primary-button"
           disabled={!canSave}
           onClick={async () => {
+            const submittedDraft = { ...drafts };
             const changes = draftSummary.changedFields.map((change) => ({
               field: change.field,
               value: change.value
@@ -45502,7 +45939,12 @@ function TeraRaidDraftPanel({
 
             if (didSave) {
               onChangeDrafts((currentDrafts) =>
-                deleteFieldDraftRecord(currentDrafts, draftKey)
+                clearSubmittedKeyedEditorDraft(
+                  currentDrafts,
+                  draftKey,
+                  submittedDraft,
+                  areFieldDraftsEqual
+                )
               );
             }
           }}
@@ -45858,6 +46300,10 @@ function SelectedRaidBattlePanel({
 
   return (
     <aside aria-label="Selected raid battle provenance" className="encounter-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.raidBattles"
+        issues={raidBattleTableDraftSummary.invalidFields}
+      />
       {editSession && !battleSlot ? (
         <EmptySelectionEditorSessionActions
           isBusy={isRaidBattleUpdating}
@@ -46023,8 +46469,7 @@ function SelectedRaidBattlePanel({
                               currentValue={currentValue}
                               disabled={
                                 !canEditRaidBattles ||
-                                editSession === null ||
-                                isRaidBattleUpdating
+                                editSession === null
                               }
                               draftState={draftState}
                               draftValue={draftValue}
@@ -46126,14 +46571,30 @@ function SelectedRaidBattlePanel({
                           return;
                         }
 
+                        const submittedDraftsBySlot = Object.fromEntries(
+                          table.slots.flatMap((slotRecord) => {
+                            const key = `${table.tableId}:${slotRecord.slot}`;
+                            const submittedDraft = draftsBySlotKey[key];
+                            return submittedDraft
+                              ? [[key, { ...submittedDraft }] as const]
+                              : [];
+                          })
+                        );
                         const didSave = await onUpdateRaidBattleSlotFields(
                           raidBattleTableDraftSummary.updates
                         );
                         if (didSave) {
                           setDraftsBySlotKey((currentDrafts) => {
-                            const nextDrafts = { ...currentDrafts };
-                            for (const slotRecord of table.slots) {
-                              delete nextDrafts[`${table.tableId}:${slotRecord.slot}`];
+                            let nextDrafts = currentDrafts;
+                            for (const [key, submittedDraft] of Object.entries(
+                              submittedDraftsBySlot
+                            )) {
+                              nextDrafts = clearSubmittedKeyedEditorDraft(
+                                nextDrafts,
+                                key,
+                                submittedDraft,
+                                areFieldDraftsEqual
+                              );
                             }
                             return nextDrafts;
                           });
@@ -46479,6 +46940,10 @@ function SelectedRaidRewardPanel({
       aria-label={translateLiteral('Selected raid reward provenance')}
       className="encounter-inspector"
     >
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.raidRewards"
+        issues={raidRewardDraftSummary.invalidFields}
+      />
       {editSession && !reward ? (
         <EmptySelectionEditorSessionActions
           isBusy={isRaidRewardUpdating}
@@ -46603,8 +47068,7 @@ function SelectedRaidRewardPanel({
                               currentValue={currentValue}
                               disabled={
                                 !canEditRaidRewards ||
-                                editSession === null ||
-                                isRaidRewardUpdating
+                                editSession === null
                               }
                               draftState={draftState}
                               draftValue={draftValue}
@@ -46649,6 +47113,7 @@ function SelectedRaidRewardPanel({
                           return;
                         }
 
+                        const submittedDraft = { ...drafts };
                         const didSave = await onUpdateRaidRewardFields(
                           table.tableId,
                           reward.slot,
@@ -46659,7 +47124,12 @@ function SelectedRaidRewardPanel({
                         );
                         if (didSave) {
                           setDraftsBySlotKey((currentDrafts) =>
-                            deleteFieldDraftRecord(currentDrafts, raidRewardDraftKey)
+                            clearSubmittedKeyedEditorDraft(
+                              currentDrafts,
+                              raidRewardDraftKey,
+                              submittedDraft,
+                              areFieldDraftsEqual
+                            )
                           );
                         }
                       }}
@@ -47057,6 +47527,10 @@ function SelectedBehaviorPanel({
       aria-label={translateLiteral('Selected behavior entry provenance')}
       className="encounter-inspector"
     >
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.behavior"
+        issues={behaviorDraftSummary.invalidFields}
+      />
       {editSession && !entry ? (
         <EmptySelectionEditorSessionActions
           isBusy={isBehaviorUpdating}
@@ -47159,7 +47633,6 @@ function SelectedBehaviorPanel({
                       const isDisabled =
                         !canEditBehavior ||
                         editSession === null ||
-                        isBehaviorUpdating ||
                         field.isReadOnly;
                       const statusText = field.isReadOnly
                         ? field.description || 'Read-only'
@@ -47280,6 +47753,7 @@ function SelectedBehaviorPanel({
                       return;
                     }
 
+                    const submittedDraft = { ...drafts };
                     const didSave = await onUpdateBehaviorEntryFields(
                       entry.entryId,
                       behaviorDraftSummary.changedFields.map((change) => ({
@@ -47289,7 +47763,12 @@ function SelectedBehaviorPanel({
                     );
                     if (didSave) {
                       setDraftsByEntryId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, entry.entryId)
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          entry.entryId,
+                          submittedDraft,
+                          areFieldDraftsEqual
+                        )
                       );
                     }
                   }}
@@ -47461,8 +47940,7 @@ function PlacementSection({
   const canEditPlacement = workflow?.summary.availability === 'available';
   const isRemoteInteractionBlocked =
     (remotePaging?.isPageLoading ?? false) ||
-    (remotePaging?.isPageStale ?? false) ||
-    isPlacementUpdating;
+    (remotePaging?.isPageStale ?? false);
   const canInteractWithSelectedPlacement =
     !isRemoteInteractionBlocked && !(remotePaging?.isDetailLoading ?? false);
   const pendingPlacementObjectIds = getPendingPlacementObjectIds(editSession);
@@ -47510,7 +47988,7 @@ function PlacementSection({
             <Search aria-hidden="true" size={18} />
             <input
               aria-label="Search placement"
-              disabled={!workflow || isPlacementUpdating}
+              disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search placement"
               type="search"
@@ -47911,6 +48389,10 @@ function SelectedPlacementPanel({
 
   return (
     <aside aria-label="Selected placement object provenance" className="encounter-inspector">
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.placement"
+        issues={placementDraftSummary.invalidFields}
+      />
       {editSession && !placedObject ? (
         <EmptySelectionEditorSessionActions
           isBusy={isPlacementUpdating}
@@ -48084,7 +48566,6 @@ function SelectedPlacementPanel({
                               disabled={
                                 !canEditPlacement ||
                                 editSession === null ||
-                                isPlacementUpdating ||
                                 isFieldReadOnly
                               }
                               id={`placement-field-${field.field}`}
@@ -48105,7 +48586,6 @@ function SelectedPlacementPanel({
                                 disabled={
                                   !canEditPlacement ||
                                   editSession === null ||
-                                  isPlacementUpdating ||
                                   isFieldReadOnly
                                 }
                                 id={`placement-field-${field.field}`}
@@ -48147,6 +48627,7 @@ function SelectedPlacementPanel({
                       return;
                     }
 
+                    const submittedDraft = { ...drafts };
                     const didSave = await onUpdatePlacementObjectFields(
                       placedObject.objectId,
                       placementDraftSummary.changedFields.map((change) => ({
@@ -48156,7 +48637,12 @@ function SelectedPlacementPanel({
                     );
                     if (didSave) {
                       setDraftsByObjectId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, placedObject.objectId)
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          placedObject.objectId,
+                          submittedDraft,
+                          areFieldDraftsEqual
+                        )
                       );
                     }
                   }}
@@ -49201,6 +49687,7 @@ function HyperTrainingSection({
   const stagedMinimumLevel = getCanonicalHyperTrainingPendingMinimumLevel(editSession);
   const inputBaselineMinimumLevel = stagedMinimumLevel ?? currentMinimumLevel;
   const [levelInput, setLevelInput] = useState(inputBaselineMinimumLevel.toString());
+  const levelInputSourceRef = useRef(inputBaselineMinimumLevel.toString());
 
   const parsedMinimumLevel = parseHyperTrainingLevelInput(levelInput);
   const levelError =
@@ -49215,8 +49702,6 @@ function HyperTrainingSection({
     levelError !== null ||
     (normalizedMinimumLevel !== null &&
       normalizedMinimumLevel !== inputBaselineMinimumLevel);
-  const areCutoffInputsLocked =
-    isStaging || isChangePlanCreating || isChangePlanApplying;
   const installedCutoffsNeedVanillaRestore =
     workflow !== null &&
     (!workflow.levelRule.levelsMatch ||
@@ -49264,32 +49749,34 @@ function HyperTrainingSection({
     clampHyperTrainingLevel(inputBaselineMinimumLevel, minimumAllowed, maximumAllowed);
 
   useEffect(() => {
-    setLevelInput(inputBaselineMinimumLevel.toString());
-  }, [inputBaselineMinimumLevel]);
+    const nextSource = inputBaselineMinimumLevel.toString();
+    if (!workflow) {
+      levelInputSourceRef.current = nextSource;
+      setLevelInput(nextSource);
+      return;
+    }
+
+    const previousSource = levelInputSourceRef.current;
+    setLevelInput((current) =>
+      reconcileSourceBackedDraft(current, previousSource, nextSource, Object.is)
+    );
+    levelInputSourceRef.current = nextSource;
+  }, [inputBaselineMinimumLevel, workflow]);
 
   useEffect(() => {
     onDirtyChange(hasLocalDraft);
   }, [hasLocalDraft, onDirtyChange]);
 
-  const handleLevelInputChange = (value: string) => {
-    if (value.trim() === '') {
-      setLevelInput('');
-      return;
-    }
-
-    if (/^\d+$/.test(value.trim())) {
-      const parsed = Number.parseInt(value, 10);
-      setLevelInput(
-        clampHyperTrainingLevel(parsed, minimumAllowed, maximumAllowed).toString()
-      );
-      return;
-    }
-
-    setLevelInput(value);
-  };
-
   return (
     <>
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.hyperTraining"
+        issues={
+          levelError
+            ? [{ field: 'minimumLevel', label: 'Minimum level', message: levelError }]
+            : []
+        }
+      />
       <section aria-labelledby="hyper-training-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Dumbbell aria-hidden="true" size={18} />
@@ -49364,7 +49851,6 @@ function HyperTrainingSection({
                 <input
                   aria-label="Hyper Training minimum level"
                   className="hyper-training-slider"
-                  disabled={areCutoffInputsLocked}
                   max={maximumAllowed}
                   min={minimumAllowed}
                   onChange={(event) => setLevelInput(event.target.value)}
@@ -49381,18 +49867,13 @@ function HyperTrainingSection({
                     />
                     <input
                       aria-invalid={levelError ? 'true' : undefined}
-                      disabled={areCutoffInputsLocked}
                       id="hyper-training-cutoff"
+                      inputMode="numeric"
                       max={maximumAllowed}
                       min={minimumAllowed}
-                      onBlur={() => {
-                        if (normalizedMinimumLevel === null) {
-                          setLevelInput(inputBaselineMinimumLevel.toString());
-                        }
-                      }}
-                      onChange={(event) => handleLevelInputChange(event.target.value)}
+                      onChange={(event) => setLevelInput(event.target.value)}
                       step={1}
-                      type="number"
+                      type="text"
                       value={levelInput}
                     />
                   </div>
@@ -49640,6 +50121,7 @@ function CatchCapSection({
 }) {
   const { translateLiteral } = useLocalization();
   const [capInputs, setCapInputs] = useState<Record<number, string>>({});
+  const capInputSourcesRef = useRef<Record<number, string>>({});
   const capSignature =
     workflow?.caps.map((cap) => `${cap.badgeCount}:${cap.levelCap}`).join('|') ?? '';
   const ownedCatchCapEdit = getOwnedCatchCapPendingEdit(editSession);
@@ -49742,14 +50224,25 @@ function CatchCapSection({
     !isStaging;
 
   useEffect(() => {
-    setCapInputs(
-      Object.fromEntries(
-        (workflow?.caps ?? []).map((cap) => [
-          cap.badgeCount,
-          (stagedCatchCapCaps?.get(cap.badgeCount) ?? cap.levelCap).toString()
-        ])
+    if (!workflow) {
+      capInputSourcesRef.current = {};
+      setCapInputs({});
+      return;
+    }
+    const nextSources = Object.fromEntries(
+      workflow.caps.map((cap) => [
+        cap.badgeCount,
+        (stagedCatchCapCaps?.get(cap.badgeCount) ?? cap.levelCap).toString()
+      ])
+    );
+    setCapInputs((currentInputs) =>
+      reconcileKeyedSourceBackedEditorDrafts(
+        currentInputs,
+        capInputSourcesRef.current,
+        nextSources
       )
     );
+    capInputSourcesRef.current = nextSources;
   }, [capSignature, stagedCatchCapCaps, stagedCatchCapSignature, workflow?.caps]);
 
   useEffect(() => {
@@ -49764,6 +50257,18 @@ function CatchCapSection({
 
   return (
     <>
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.catchCap"
+        issues={parsedCaps.flatMap((cap) =>
+          cap.error
+            ? [{
+                field: `badge.${cap.badgeCount}.levelCap`,
+                label: `${cap.badgeCount} badge level cap`,
+                message: cap.error
+              }]
+            : []
+        )}
+      />
       <section aria-labelledby="catch-cap-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
@@ -50534,11 +51039,13 @@ function RoyalCandySection({
     ? `${storyLevelCapSignature}\u0000${stagedStoryLevelCapSignature}`
     : '';
   const initializedLevelCapInputSourceRef = useRef<string | null>(null);
+  const levelCapInputSourcesRef = useRef<Record<number, string>>({});
   const [levelCapInputs, setLevelCapInputs] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!storyLimitWorkflow) {
       initializedLevelCapInputSourceRef.current = null;
+      levelCapInputSourcesRef.current = {};
       setLevelCapInputs({});
       return;
     }
@@ -50548,14 +51055,20 @@ function RoyalCandySection({
     }
 
     initializedLevelCapInputSourceRef.current = levelCapInputSourceSignature;
-    setLevelCapInputs(
-      Object.fromEntries(
-        storyLimitWorkflow.levelCaps.map((levelCap) => [
-          levelCap.slot,
-          stagedStoryLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString()
-        ])
+    const nextSources = Object.fromEntries(
+      storyLimitWorkflow.levelCaps.map((levelCap) => [
+        levelCap.slot,
+        stagedStoryLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString()
+      ])
+    );
+    setLevelCapInputs((currentInputs) =>
+      reconcileKeyedSourceBackedEditorDrafts(
+        currentInputs,
+        levelCapInputSourcesRef.current,
+        nextSources
       )
     );
+    levelCapInputSourcesRef.current = nextSources;
   }, [levelCapInputSourceSignature, stagedStoryLevelCapInputs, storyLimitWorkflow]);
 
   const hasLevelCapLocalDrafts =
@@ -51013,6 +51526,23 @@ function SelectedRoyalCandyPanel({
       aria-label={translateLiteral('Selected Royal Candy workflow provenance')}
       className="encounter-inspector royal-candy-inspector"
     >
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.royalCandy"
+        issues={parsedLevelCaps.flatMap((levelCap, index) => {
+          const previousLevelCap =
+            index === 0
+              ? levelCap.minimumLevelCap
+              : parsedLevelCaps[index - 1]!.selectedLevelCap;
+          const message = getLevelCapError(levelCap, previousLevelCap);
+          return message
+            ? [{
+                field: `levelCap.${levelCap.slot}`,
+                label: `Story level cap ${levelCap.slot}`,
+                message
+              }]
+            : [];
+        })}
+      />
       <div className="panel-heading">
         <CheckCircle aria-hidden="true" size={18} />
         <h3>{translateLiteral('Selected Workflow')}</h3>
@@ -51283,6 +51813,9 @@ function StartingItemsSection({
   const [grantInputs, setGrantInputs] = useState<
     Record<number, { itemId: string; quantity: string }>
   >({});
+  const grantInputSourcesRef = useRef<
+    Record<number, { itemId: string; quantity: string }>
+  >({});
   const grantSignature =
     workflow?.grants
       .map((grant) => `${grant.slot}:${grant.itemId ?? ''}:${grant.quantity}`)
@@ -51354,9 +51887,10 @@ function StartingItemsSection({
     const currentItemId = stagedGrantInput?.itemId ?? grant.itemId?.toString() ?? '';
     const currentQuantity =
       stagedGrantInput?.quantity ?? (grant.itemId === null ? '1' : grant.quantity.toString());
-    const inputQuantity = grant.inputItemId.trim().length === 0
-      ? '1'
-      : grant.inputQuantity.trim();
+    const inputQuantity =
+      grant.inputItemId.trim().length === 0
+        ? currentQuantity
+        : grant.inputQuantity.trim();
     return grant.inputItemId.trim() !== currentItemId || inputQuantity !== currentQuantity;
   });
   const selectedGrants = parsedGrants
@@ -51404,23 +51938,35 @@ function StartingItemsSection({
     !isStaging;
 
   useEffect(() => {
-    setGrantInputs(
-      Object.fromEntries(
-        (workflow?.grants ?? []).map((grant) => {
-          const stagedGrantInput = stagedStartingItemsEdit
-            ? stagedStartingItemsGrantInputs.get(grant.slot) ?? { itemId: '', quantity: '1' }
-            : null;
+    if (!workflow) {
+      grantInputSourcesRef.current = {};
+      setGrantInputs({});
+      return;
+    }
+    const nextSources = Object.fromEntries(
+      workflow.grants.map((grant) => {
+        const stagedGrantInput = stagedStartingItemsEdit
+          ? stagedStartingItemsGrantInputs.get(grant.slot) ?? { itemId: '', quantity: '1' }
+          : null;
 
-          return [
-            grant.slot,
-            stagedGrantInput ?? {
-              itemId: grant.itemId?.toString() ?? '',
-              quantity: grant.quantity.toString()
-            }
-          ];
-        })
+        return [
+          grant.slot,
+          stagedGrantInput ?? {
+            itemId: grant.itemId?.toString() ?? '',
+            quantity: grant.quantity.toString()
+          }
+        ];
+      })
+    );
+    setGrantInputs((currentInputs) =>
+      reconcileKeyedSourceBackedEditorDrafts(
+        currentInputs,
+        grantInputSourcesRef.current,
+        nextSources,
+        areJsonSerializableDraftsEqual
       )
     );
+    grantInputSourcesRef.current = nextSources;
   }, [grantSignature, stagedStartingItemsEdit, stagedStartingItemsGrantInputs, stagedStartingItemsSignature, workflow?.grants]);
 
   useEffect(() => {
@@ -51435,6 +51981,25 @@ function StartingItemsSection({
 
   return (
     <>
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.startingItems"
+        issues={parsedGrants.flatMap((grant) => [
+          ...(grant.itemError
+            ? [{
+                field: `grant.${grant.slot}.itemId`,
+                label: `Starting item slot ${grant.slot}`,
+                message: grant.itemError
+              }]
+            : []),
+          ...(grant.quantityError
+            ? [{
+                field: `grant.${grant.slot}.quantity`,
+                label: `Starting item quantity ${grant.slot}`,
+                message: grant.quantityError
+              }]
+            : [])
+        ])}
+      />
       <section aria-labelledby="starting-items-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Package aria-hidden="true" size={18} />
@@ -51520,7 +52085,7 @@ function StartingItemsSection({
                               [grant.slot]: {
                                 itemId: nextValue,
                                 quantity:
-                                  nextValue.trim().length === 0 || nextItem?.isKeyItem
+                                  nextItem?.isKeyItem
                                     ? '1'
                                     : (current[grant.slot]?.quantity ?? '1')
                               }
@@ -51561,7 +52126,7 @@ function StartingItemsSection({
                           onFocus={() => onSelectSlot(grant.slot)}
                           step={1}
                           type="number"
-                          value={grant.inputItemId.trim().length === 0 ? '1' : grant.inputQuantity}
+                          value={grant.inputQuantity}
                         />
                         {grant.quantityError ? (
                           <small className="editable-field-error" id={quantityErrorId}>
@@ -51716,6 +52281,7 @@ function StartingItemsSection({
 
 function FpsPatchDiagnosticList({ diagnostics }: { diagnostics: readonly ApiDiagnostic[] }) {
   const { t, translateLiteral } = useLocalization();
+  usePublishCommonEditorDiagnostics(diagnostics);
 
   return (
     <ul>
@@ -52051,7 +52617,7 @@ function FpsPatchSection({
                         <span>{t('fpsPatch.animationTiming.desired')}</span>
                         <select
                           className="km-select-control"
-                          disabled={isBusy || status.status === 'unsupported'}
+                          disabled={status.status === 'unsupported'}
                           id={`fps-patch-${component.id}-desired`}
                           onChange={(event) =>
                             handleDesiredAnimationTimingChange(
@@ -52320,6 +52886,24 @@ function getEnabledFpsPatchAnimationTimingComponentIds(
   return status.animationTimingComponents
     .filter((component) => component.enabled)
     .map((component) => component.id);
+}
+
+function reconcileFpsPatchAnimationTimingSelection(
+  currentSelection: readonly FpsPatchAnimationTimingComponentId[],
+  previousSourceSelection: readonly FpsPatchAnimationTimingComponentId[],
+  nextSourceSelection: readonly FpsPatchAnimationTimingComponentId[]
+) {
+  const current = new Set(currentSelection);
+  const previousSource = new Set(previousSourceSelection);
+  const nextSource = new Set(nextSourceSelection);
+  const availableIds = new Set([
+    ...previousSourceSelection,
+    ...nextSourceSelection
+  ]);
+  return [...availableIds].filter((componentId) => {
+    const hasLocalChoice = current.has(componentId) !== previousSource.has(componentId);
+    return hasLocalChoice ? current.has(componentId) : nextSource.has(componentId);
+  });
 }
 
 function isFpsPatchAnimationTimingComponentPending(
@@ -52858,6 +53442,7 @@ function SvModMergerSection({
                         checked={source.isEnabled}
                         className="km-choice-control"
                         disabled={isLoading || isStaging || isApplying}
+                        id={`mod-merger-source-enabled-${index}`}
                         onChange={() => onToggleSource(index)}
                         type="checkbox"
                       />
@@ -53649,7 +54234,6 @@ function SpreadsheetImportSection({
                     <input
                       aria-label="CSV, TSV, or JSON source path"
                       data-localization-ignore="true"
-                      disabled={isPreviewing}
                       id="dump-import-source-path"
                       onChange={(event) => onSourcePathChange(event.target.value)}
                       placeholder={translateLiteral('items.csv, items.tsv, or items.json')}
@@ -53931,6 +54515,13 @@ function SettingsSection({
   svCacheStatus: TrinityCacheStatus | null;
 }) {
   const { formatLocale, interfaceLocale, t, translateLiteral } = useLocalization();
+  usePublishCommonEditorError({
+    domain: 'settings',
+    field: 'cache',
+    message: hasSvCacheRequestError
+      ? 'Cache status could not be read. Retry the status check before changing cache settings.'
+      : null
+  });
   const isBusy =
     status.kind === 'checking' ||
     status.kind === 'downloading' ||
@@ -54741,6 +55332,7 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
   return (
     <div className="modal-backdrop" role="presentation">
       <section
+        aria-busy="true"
         aria-labelledby="work-progress-heading"
         aria-modal="true"
         className="modal-panel work-progress-panel"
@@ -54748,50 +55340,45 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
         role="dialog"
         tabIndex={-1}
       >
-        <div className="panel-heading">
+        <div className="panel-heading work-progress-heading">
           <Activity aria-hidden="true" size={18} />
           <h2 id="work-progress-heading">{progress.label}</h2>
-        </div>
-        <div
-          aria-label={`${progress.label} progress`}
-          aria-valuemax={isDeterminate ? 100 : undefined}
-          aria-valuemin={isDeterminate ? 0 : undefined}
-          aria-valuenow={percent ?? undefined}
-          className={`work-progress-track${isDeterminate ? '' : ' work-progress-track-indeterminate'}`}
-          role="progressbar"
-        >
-          <div
-            className="work-progress-fill"
-            style={isDeterminate ? { width: `${percent}%` } : undefined}
-          />
-        </div>
-        <dl className="work-progress-detail">
-          {isDeterminate ? (
-            <div>
-              <dt>Progress</dt>
-              <dd>{percent}%</dd>
-            </div>
+          {progress.step !== undefined &&
+          progress.totalSteps !== undefined &&
+          progress.totalSteps > 1 ? (
+            <span className="status-pill status-pill-info">
+              Phase {progress.step} of {progress.totalSteps}
+            </span>
           ) : null}
+        </div>
+        <LoadingProgress
+          completed={percent ?? undefined}
+          label={progress.detail}
+          total={isDeterminate ? 100 : undefined}
+        />
+        <dl className="work-progress-detail">
           <div>
-            <dt>Current step</dt>
-            <dd>{progress.detail}</dd>
+            <dt>Status</dt>
+            <dd>{isDeterminate ? `${percent}% complete` : 'In progress'}</dd>
           </div>
           {progress.step !== undefined &&
           progress.totalSteps !== undefined &&
           progress.totalSteps > 1 ? (
             <div>
-              <dt>Phase</dt>
-              <dd>
-                {progress.step} of {progress.totalSteps}
-              </dd>
+              <dt>Current phase</dt>
+              <dd>{progress.steps?.[progress.step - 1]?.label ?? progress.detail}</dd>
             </div>
           ) : null}
         </dl>
         {progress.steps?.length ? (
-          <ol className="work-progress-step-list">
-            {progress.steps.map((step) => (
-              <li className={`work-progress-step work-progress-step-${step.state}`} key={step.label}>
-                <span aria-hidden="true" />
+          <ol aria-label={`${progress.label} phases`} className="changes-progress work-progress-phases">
+            {progress.steps.map((step, index) => (
+              <li
+                aria-current={step.state === 'active' ? 'step' : undefined}
+                className={step.state === 'complete' ? 'is-complete' : step.state === 'active' ? 'is-active' : ''}
+                key={step.label}
+              >
+                <span aria-hidden="true">{index + 1}</span>
                 <strong>{step.label}</strong>
               </li>
             ))}
@@ -55696,6 +56283,13 @@ function createPokemonLearnsetDraftFields(move: PokemonLearnsetMove): PokemonLea
     level: move.level.toString(),
     moveId: move.moveId.toString()
   };
+}
+
+function pokemonLearnsetDraftFieldsEqual(
+  left: PokemonLearnsetDraftFields,
+  right: PokemonLearnsetDraftFields
+) {
+  return left.level === right.level && left.moveId === right.moveId;
 }
 
 function isIntegerInRange(
@@ -58370,7 +58964,9 @@ function isZaEncounterGroupPending(
 function createEncounterAreaCopyRequest(
   selectedSourceTable: EncounterTableRecord,
   tables: EncounterTableRecord[],
-  targetArea: string
+  targetArea: string,
+  slotDraftsByKey: EncounterDraftRecords,
+  levelDraftsByTableId: EncounterDraftRecords
 ): EncounterAreaCopyRequest | null {
   const selectedZoneKey = getEncounterTableZoneKey(selectedSourceTable);
   const zoneTables = tables.filter(
@@ -58400,7 +58996,12 @@ function createEncounterAreaCopyRequest(
       continue;
     }
 
-    const slotUpdates = createEncounterTableCopyUpdates(sourceTable, targetTable);
+    const slotUpdates = createProjectedSwShEncounterTableCopyUpdates(
+      sourceTable,
+      targetTable,
+      slotDraftsByKey,
+      levelDraftsByTableId
+    );
     if (slotUpdates.length === 0) {
       skippedConditionLabels.push(sourceTable.encounterType);
       continue;
@@ -58418,51 +59019,22 @@ function createEncounterAreaCopyRequest(
     return null;
   }
 
+  const targetDraftCollisions = findSwShEncounterAreaCopyTargetDraftCollisions(
+    updates,
+    slotDraftsByKey,
+    levelDraftsByTableId
+  );
+
   return {
     conditionLabels,
     skippedConditionLabels,
     sourceArea: selectedSourceTable.area,
     sourceLocation: selectedSourceTable.location,
     targetArea,
+    targetDraftCollisions,
     targetTableId: selectedTargetTableId ?? updates[0]!.tableId,
     updates
   };
-}
-
-function createEncounterTableCopyUpdates(
-  sourceTable: EncounterTableRecord,
-  targetTable: EncounterTableRecord
-): EncounterSlotFieldUpdate[] {
-  const targetSlotNumbers = new Set(targetTable.slots.map((slot) => slot.slot));
-  const matchingSourceSlots = sourceTable.slots.filter((slot) =>
-    targetSlotNumbers.has(slot.slot)
-  );
-  const sourceLevelSlot = matchingSourceSlots[0];
-  const targetLevelSlot = targetTable.slots[0];
-  const copiedLevelChanges =
-    sourceLevelSlot && targetLevelSlot
-      ? getOrderedEncounterLevelChanges(targetLevelSlot, [
-          {
-            field: encounterLevelMinFieldName,
-            value: sourceLevelSlot.levelMin.toString()
-          },
-          {
-            field: encounterLevelMaxFieldName,
-            value: sourceLevelSlot.levelMax.toString()
-          }
-        ])
-      : [];
-
-  return matchingSourceSlots.map((slot, index) => ({
-    changes: [
-      { field: encounterSpeciesFieldName, value: slot.speciesId.toString() },
-      { field: encounterFormFieldName, value: slot.form.toString() },
-      { field: encounterProbabilityFieldName, value: slot.weight.toString() },
-      ...(index === 0 ? copiedLevelChanges : [])
-    ],
-    slot: slot.slot,
-    tableId: targetTable.tableId
-  }));
 }
 
 function createEncounterLevelConditionUpdates(
@@ -60588,6 +61160,7 @@ type EncounterAreaCopyRequest = {
   sourceArea: string;
   sourceLocation: string;
   targetArea: string;
+  targetDraftCollisions: SwShEncounterAreaCopyTargetDraftCollision[];
   targetTableId: string;
   updates: EncounterSlotFieldUpdate[];
 };
@@ -60715,7 +61288,7 @@ function SearchableOptionInput({
     [options, translateLiteral]
   );
   const formattedValue = useMemo(
-    () => formatOptionInputValue(value, localizedOptions, localizedEmptyOptionLabel),
+    () => formatSearchableOptionValue(value, localizedOptions, localizedEmptyOptionLabel),
     [localizedEmptyOptionLabel, localizedOptions, value]
   );
   const [query, setQuery] = useState(formattedValue);
@@ -60807,17 +61380,40 @@ function SearchableOptionInput({
   }, [isOpen]);
 
   const selectOption = (option: EditableFieldOption) => {
-    onChange(option.value.toString());
+    const selectedValue = option.value.toString();
+    if (selectedValue !== value.trim()) {
+      onChange(selectedValue);
+    }
     setQuery(option.label);
     setHasUserQuery(false);
     setIsOpen(false);
   };
 
   const selectEmptyOption = () => {
-    onChange('');
+    if (value.trim().length > 0) {
+      onChange('');
+    }
     setQuery(localizedEmptyOptionLabel ?? '');
     setHasUserQuery(false);
     setIsOpen(false);
+  };
+
+  const applyInteractionResult = (
+    result: ReturnType<typeof transitionSearchableOptionInteraction>
+  ) => {
+    setQuery(result.state.query);
+    setHasUserQuery(result.state.hasUserQuery);
+    setIsOpen(result.state.isOpen);
+  };
+
+  const restoreCommittedValue = () => {
+    applyInteractionResult(
+      transitionSearchableOptionInteraction(
+        { hasUserQuery, isOpen, query },
+        { formattedValue, type: 'restore' }
+      )
+    );
+    setActiveOptionIndex(-1);
   };
 
   const selectMenuItem = (index: number) => {
@@ -60834,33 +61430,31 @@ function SearchableOptionInput({
   };
 
   const commitTypedOption = () => {
-    const trimmedQuery = query.trim();
-    if (
-      localizedEmptyOptionLabel !== undefined &&
-      trimmedQuery.toLocaleLowerCase() === localizedEmptyOptionLabel.toLocaleLowerCase()
-    ) {
-      selectEmptyOption();
-      return;
+    const result = transitionSearchableOptionInteraction(
+      { hasUserQuery, isOpen, query },
+      {
+        committedValue: value,
+        emptyOptionLabel: localizedEmptyOptionLabel,
+        formattedValue,
+        options: localizedOptions,
+        type: 'commit'
+      }
+    );
+    if (result.sourceCommit !== null) {
+      onChange(result.sourceCommit.value);
     }
-
-    const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
-    const optionToCommit = exactOption ?? (filteredOptions.length === 1 ? filteredOptions[0] : null);
-    if (!hasUserQuery || !optionToCommit) {
-      setIsOpen(false);
-      return;
-    }
-
-    selectOption(optionToCommit);
+    applyInteractionResult(result);
+    setActiveOptionIndex(-1);
   };
 
   const handleInputChange = (nextValue: string) => {
-    setQuery(nextValue);
-    setHasUserQuery(true);
-    setIsOpen(true);
-    setActiveOptionIndex(-1);
-    onChange(
-      normalizeExactOptionInputValue(nextValue, localizedOptions, localizedEmptyOptionLabel)
+    applyInteractionResult(
+      transitionSearchableOptionInteraction(
+        { hasUserQuery, isOpen, query },
+        { query: nextValue, type: 'input' }
+      )
     );
+    setActiveOptionIndex(-1);
   };
 
   return (
@@ -60893,9 +61487,12 @@ function SearchableOptionInput({
           onBlur={commitTypedOption}
           onChange={(event) => handleInputChange(event.target.value)}
           onFocus={() => {
-            setQuery(formattedValue);
-            setHasUserQuery(false);
-            setIsOpen(true);
+            applyInteractionResult(
+              transitionSearchableOptionInteraction(
+                { hasUserQuery, isOpen, query },
+                { formattedValue, type: 'focus' }
+              )
+            );
             setActiveOptionIndex(-1);
             onFocus?.();
           }}
@@ -60903,8 +61500,7 @@ function SearchableOptionInput({
             if (event.key === 'Escape' && isOpen) {
               event.preventDefault();
               event.stopPropagation();
-              setIsOpen(false);
-              setActiveOptionIndex(-1);
+              restoreCommittedValue();
               return;
             }
 
@@ -60927,35 +61523,14 @@ function SearchableOptionInput({
               return;
             }
 
-            if (event.key === 'Enter' && menuItems.length > 0) {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
               event.preventDefault();
               if (hasMenu && activeOptionIndex >= 0) {
                 selectMenuItem(activeOptionIndex);
                 return;
               }
 
-              const trimmedQuery = query.trim();
-              if (
-                localizedEmptyOptionLabel !== undefined &&
-                trimmedQuery.toLocaleLowerCase() ===
-                  localizedEmptyOptionLabel.toLocaleLowerCase()
-              ) {
-                selectEmptyOption();
-                return;
-              }
-
-              const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
-              const isDigitLeadingQuery = /^\d/.test(trimmedQuery);
-              const optionToCommit =
-                exactOption ??
-                (filteredOptions.length === 1 || !isDigitLeadingQuery
-                  ? filteredOptions[0]
-                  : null);
-              if (optionToCommit) {
-                selectOption(optionToCommit);
-              } else {
-                setIsOpen(false);
-              }
+              commitTypedOption();
             }
           }}
           role="combobox"
@@ -61021,64 +61596,12 @@ function SearchableOptionInput({
   );
 }
 
-function normalizeExactOptionInputValue(
-  value: string,
-  options: EditableFieldOption[],
-  emptyOptionLabel?: string
-) {
-  const normalizedValue = value.trim().toLocaleLowerCase();
-  if (normalizedValue.length === 0) {
-    return value;
-  }
-
-  if (
-    emptyOptionLabel !== undefined &&
-    normalizedValue === emptyOptionLabel.toLocaleLowerCase()
-  ) {
-    return '';
-  }
-
-  const optionMatch = options.find(
-    (option) =>
-      option.label.toLocaleLowerCase() === normalizedValue ||
-    option.value.toString() === normalizedValue
-  );
-
-  if (optionMatch) {
-    return optionMatch.value.toString();
-  }
-
-  const smartMatches = getSmartOptionMatches(value, options);
-  return smartMatches.length === 1 ? smartMatches[0]!.value.toString() : value;
-}
-
-function findExactOptionMatch(value: string, options: EditableFieldOption[]) {
-  const normalizedValue = value.toLocaleLowerCase();
-  return options.find(
-    (option) =>
-      option.value.toString() === value || option.label.toLocaleLowerCase() === normalizedValue
-  );
-}
-
-function formatOptionInputValue(
-  value: string,
-  options: EditableFieldOption[],
-  emptyOptionLabel?: string
-) {
-  const trimmedValue = value.trim();
-  if (trimmedValue.length === 0) {
-    return emptyOptionLabel ?? value;
-  }
-
-  return (
-    options.find((option) => option.value.toString() === trimmedValue)?.label ??
-    options.find((option) => option.label === value)?.label ??
-    value
-  );
-}
-
 function areStringArraysEqual(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function areJsonSerializableDraftsEqual<T>(left: T, right: T) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function areFieldDraftsEqual(
@@ -61093,6 +61616,19 @@ function areFieldDraftsEqual(
   }
 
   return true;
+}
+
+function removeMatchingFieldDraftValues(
+  latestFields: Record<string, string>,
+  submittedFields: Record<string, string>
+) {
+  const nextFields = { ...latestFields };
+  for (const [field, submittedValue] of Object.entries(submittedFields)) {
+    if (latestFields[field] === submittedValue) {
+      delete nextFields[field];
+    }
+  }
+  return nextFields;
 }
 
 function setFieldDraftRecord(
@@ -61132,6 +61668,26 @@ function setSparseFieldDraftRecord(
     nextRecords[normalizedKey] = sparseDrafts;
   }
 
+  return nextRecords;
+}
+
+function updateSparseFieldDraftRecordAfterStage(
+  records: Record<string, Record<string, string>>,
+  recordKey: string | number,
+  submittedFields: Record<string, string>
+) {
+  const normalizedKey = recordKey.toString();
+  const currentFields = records[normalizedKey];
+  if (!currentFields) {
+    return records;
+  }
+  const nextFields = removeMatchingFieldDraftValues(currentFields, submittedFields);
+  const nextRecords = { ...records };
+  if (Object.keys(nextFields).length === 0) {
+    delete nextRecords[normalizedKey];
+  } else {
+    nextRecords[normalizedKey] = nextFields;
+  }
   return nextRecords;
 }
 
@@ -61180,26 +61736,6 @@ function deleteFieldDraftRecord<T>(records: Record<string, T>, recordKey: string
   return nextRecords;
 }
 
-function removeDraftFieldsFromRecord(
-  records: Record<string, Record<string, string>>,
-  recordKey: string | number,
-  defaultDrafts: Record<string, string>,
-  fields: readonly string[]
-) {
-  const normalizedKey = recordKey.toString();
-  const currentDrafts = records[normalizedKey];
-  if (!currentDrafts) {
-    return records;
-  }
-
-  const nextDrafts = { ...currentDrafts };
-  for (const field of fields) {
-    delete nextDrafts[field];
-  }
-
-  return setFieldDraftRecord(records, recordKey, nextDrafts, defaultDrafts);
-}
-
 function countFieldDraftRecords(records: Record<string, Record<string, string>>) {
   return Object.keys(records).length;
 }
@@ -61230,51 +61766,6 @@ function getIntegerDraftFieldError(
   }
 
   return getIntegerDraftError(value);
-}
-
-function getSmartOptionMatches(value: string, options: EditableFieldOption[]) {
-  const query = value.trim();
-  if (query.length === 0) {
-    return options;
-  }
-
-  const normalizedQuery = query.toLocaleLowerCase();
-  const numericPrefix = normalizedQuery.match(/^\d+/)?.[0] ?? null;
-  const letterPrefix = normalizedQuery.match(/^[a-z]+/)?.[0] ?? null;
-
-  if (numericPrefix) {
-    const normalizedNumericPrefix = numericPrefix.replace(/^0+/, '') || '0';
-
-    return options
-      .filter((option) => {
-        const rawValue = option.value.toString();
-        const normalizedValue = rawValue.replace(/^0+/, '') || '0';
-        const labelNumericPrefix =
-          option.label.match(/^\s*\$?\s*0*([\d,]+)/)?.[1]?.replace(/,/g, '') ?? null;
-
-        return (
-          rawValue.startsWith(numericPrefix) ||
-          normalizedValue.startsWith(normalizedNumericPrefix) ||
-          labelNumericPrefix?.startsWith(normalizedNumericPrefix)
-        );
-      })
-      .slice(0, 100);
-  }
-
-  if (letterPrefix) {
-    return options
-      .filter((option) =>
-        option.label
-          .toLocaleLowerCase()
-          .split(/[^a-z0-9]+/)
-          .some((token) => token.startsWith(letterPrefix))
-      )
-      .slice(0, 100);
-  }
-
-  return options
-    .filter((option) => option.label.toLocaleLowerCase().startsWith(normalizedQuery))
-    .slice(0, 100);
 }
 
 function useCancelActiveEditSession() {

@@ -48,7 +48,13 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import {
+  PublishCommonEditorError,
+  usePublishCommonEditorDiagnostics,
+  usePublishCommonEditorError
+} from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
@@ -311,14 +317,13 @@ export function GuidedDesignSection({
                   <p>{t('guidedDesign.inputs.description')}</p>
                 </div>
               </div>
-              <fieldset disabled={controller.isQuerying}>
+              <fieldset>
                 <legend>{t('guidedDesign.inputs.constraints')}</legend>
               <div className="km-guided-control-grid">
                 <label>
                   <span>{t('guidedDesign.inputs.kind')}</span>
                   <select
                     className="km-select-control"
-                    disabled={controller.isQuerying}
                     onChange={(event) => setKind(
                       event.currentTarget.value as GuidedDesignProposalKind
                     )}
@@ -342,7 +347,6 @@ export function GuidedDesignSection({
                   <span>{t('guidedDesign.inputs.fields')}</span>
                   <input
                     autoComplete="off"
-                    disabled={controller.isQuerying}
                     maxLength={1024}
                     onChange={(event) => setFieldKeys(event.currentTarget.value)}
                     placeholder={t('guidedDesign.inputs.fieldsPlaceholder')}
@@ -356,7 +360,6 @@ export function GuidedDesignSection({
                   <span>{t('guidedDesign.inputs.targetSearch')}</span>
                   <input
                     autoComplete="off"
-                    disabled={controller.isQuerying}
                     maxLength={guidedDesignMaximumTargetSearchLength}
                     onChange={(event) => setTargetSearchText(event.currentTarget.value)}
                     placeholder={t('guidedDesign.inputs.targetSearchPlaceholder')}
@@ -424,7 +427,6 @@ export function GuidedDesignSection({
                     <span>{t('guidedDesign.inputs.seed')}</span>
                     <input
                       autoComplete="off"
-                      disabled={controller.isQuerying}
                       maxLength={32}
                       onChange={(event) => setSeed(event.currentTarget.value)}
                       pattern="[0-9a-fA-F]{32}"
@@ -467,9 +469,16 @@ export function GuidedDesignSection({
               </dl>
               </fieldset>
               {!parsedInput.success ? (
-                <p className="km-guided-form-error" role="alert">
-                  {t('guidedDesign.inputs.invalid')}
-                </p>
+                <>
+                  <PublishCommonEditorError
+                    domain="analysis.guidedDesign"
+                    field="inputs"
+                    message={t('guidedDesign.inputs.invalid')}
+                  />
+                  <p className="km-guided-form-error" role="alert">
+                    {t('guidedDesign.inputs.invalid')}
+                  </p>
+                </>
               ) : null}
               {!isChangeSetWorkspaceReady || isChangeSetWorkspaceBusy ? (
                 <p className="km-guided-advisory">
@@ -659,6 +668,8 @@ function GuidedDesignTargetSelection({
   const selectedTargets = [...selectedDiscoveryTargets.values()];
   const exactTargets = selectedTargets.map((option) => option.record);
   const isBusy = controller.isQuerying || isChangeSetWorkspaceBusy;
+  const selectionMutationLocked =
+    controller.preview.status === 'loading' && !controller.preview.isAppending;
   const orderedTargets = useMemo(() => [...response.eligibleTargets].sort((left, right) => (
     targetOrder === 'record'
       ? formatSemanticRecord(left.record).localeCompare(formatSemanticRecord(right.record)) ||
@@ -723,7 +734,7 @@ function GuidedDesignTargetSelection({
           {selectedTargets.length > 0 ? (
             <button
               className="secondary-button compact-button"
-              disabled={isBusy}
+              disabled={selectionMutationLocked}
               onClick={() => onSelectedDiscoveryTargetsChange(new Map())}
               type="button"
             >
@@ -746,7 +757,7 @@ function GuidedDesignTargetSelection({
                     <button
                       aria-label={t('guidedDesign.selection.moveUpNamed', { name: accessibleName })}
                       className="secondary-button compact-button"
-                      disabled={isBusy || index === 0}
+                      disabled={selectionMutationLocked || index === 0}
                       onClick={() => moveSelectedTarget(key, -1)}
                       type="button"
                     >
@@ -755,7 +766,7 @@ function GuidedDesignTargetSelection({
                     <button
                       aria-label={t('guidedDesign.selection.moveDownNamed', { name: accessibleName })}
                       className="secondary-button compact-button"
-                      disabled={isBusy || index === selectedTargets.length - 1}
+                      disabled={selectionMutationLocked || index === selectedTargets.length - 1}
                       onClick={() => moveSelectedTarget(key, 1)}
                       type="button"
                     >
@@ -764,7 +775,7 @@ function GuidedDesignTargetSelection({
                     <button
                       aria-label={t('guidedDesign.selection.removeNamed', { name: accessibleName })}
                       className="secondary-button compact-button"
-                      disabled={isBusy}
+                      disabled={selectionMutationLocked}
                       onClick={() => {
                         const next = new Map(selectedDiscoveryTargets);
                         next.delete(key);
@@ -816,7 +827,7 @@ function GuidedDesignTargetSelection({
                         aria-label={`${t('guidedDesign.selection.add')}: ${option.recordLabel}, ${formatSemanticRecord(option.record)}`}
                         className="secondary-button compact-button"
                         disabled={
-                          isBusy ||
+                          selectionMutationLocked ||
                           selectedDiscoveryTargets.size >= guidedDesignMaximumTargets
                         }
                         onClick={() => {
@@ -1138,7 +1149,7 @@ function GuidedDesignProposalResults({
           <label>
             <span>{t('guidedDesign.import.name')}</span>
             <input
-              disabled={importState.status === 'busy' || importState.status === 'success'}
+              disabled={importState.status === 'success'}
               maxLength={guidedDesignMaximumChangeSetNameLength}
               onChange={(event) => setChangeSetName(event.currentTarget.value)}
               type="text"
@@ -1168,14 +1179,21 @@ function GuidedDesignProposalResults({
             <LoadingProgress className="is-compact" label={t('guidedDesign.import.loading')} />
           ) : null}
           {importState.error ? (
-            <p
-              className="km-guided-form-error"
-              ref={importErrorRef}
-              role="alert"
-              tabIndex={-1}
-            >
-              {t('guidedDesign.import.error')}
-            </p>
+            <>
+              <PublishCommonEditorError
+                domain="analysis.guidedDesign"
+                field="import"
+                message={t('guidedDesign.import.error')}
+              />
+              <p
+                className="km-guided-form-error"
+                ref={importErrorRef}
+                role="alert"
+                tabIndex={-1}
+              >
+                {t('guidedDesign.import.error')}
+              </p>
+            </>
           ) : null}
         </form>
       ) : null}
@@ -1279,10 +1297,29 @@ function ExistingPinConstraint({
 }) {
   const { t } = useLocalization();
   const [canonicalValue, setCanonicalValue] = useState(pin.canonicalValue);
-  useEffect(() => setCanonicalValue(pin.canonicalValue), [pin.canonicalValue]);
   const key = mutationPinKey(pin.record, pin.fieldKey);
+  const sourceValueRef = useRef({ key, value: pin.canonicalValue });
+  useEffect(() => {
+    const previous = sourceValueRef.current;
+    setCanonicalValue((current) =>
+      previous.key !== key
+        ? pin.canonicalValue
+        : reconcileSourceBackedDraft(
+            current,
+            previous.value,
+            pin.canonicalValue,
+            Object.is
+          )
+    );
+    sourceValueRef.current = { key, value: pin.canonicalValue };
+  }, [key, pin.canonicalValue]);
   const isBusy = controller.isQuerying || isChangeSetWorkspaceBusy;
   const isValid = isCanonicalInteger(canonicalValue);
+  usePublishCommonEditorError({
+    domain: 'analysis.guidedDesign',
+    field: `pins.${key}.canonicalValue`,
+    message: isValid ? null : t('guidedDesign.diff.pinValueInvalid')
+  });
   return (
     <div className="km-guided-existing-pin">
       <code data-localization-ignore="true">
@@ -1294,7 +1331,6 @@ function ExistingPinConstraint({
         </span>
         <input
           aria-invalid={!isValid}
-          disabled={isBusy}
           maxLength={20}
           onChange={(event) => setCanonicalValue(event.currentTarget.value)}
           pattern="-?(?:0|[1-9][0-9]*)"
@@ -1424,9 +1460,17 @@ function TargetConstraints({
   const [selectedRecords, setSelectedRecords] = useState<SemanticExploreRecordRef[]>(
     () => currentRecords
   );
+  const sourceRecordsRef = useRef(currentRecords);
   useEffect(() => {
-    setSelectedRecords(currentRecords);
-  }, [currentRecords, response.proposalId]);
+    const previousSourceRecords = sourceRecordsRef.current;
+    setSelectedRecords((current) => reconcileSourceBackedDraft(
+      current,
+      previousSourceRecords,
+      currentRecords,
+      sameSemanticRecordSelection
+    ));
+    sourceRecordsRef.current = currentRecords;
+  }, [currentRecords]);
   const selectionChanged = selectedRecords.length !== currentRecords.length ||
     selectedRecords.some((record, index) => (
       semanticRecordKey(record) !== semanticRecordKey(currentRecords[index]!)
@@ -1476,7 +1520,7 @@ function TargetConstraints({
                       name: accessibleName
                     })}
                     className="secondary-button compact-button"
-                    disabled={controller.isQuerying || isChangeSetWorkspaceBusy || index === 0}
+                    disabled={index === 0}
                     onClick={() => moveRecord(index, -1)}
                     type="button"
                   >
@@ -1488,8 +1532,6 @@ function TargetConstraints({
                     })}
                     className="secondary-button compact-button"
                     disabled={
-                      controller.isQuerying ||
-                      isChangeSetWorkspaceBusy ||
                       index === selectedRecords.length - 1
                     }
                     onClick={() => moveRecord(index, 1)}
@@ -1502,7 +1544,6 @@ function TargetConstraints({
                       name: accessibleName
                     })}
                     className="secondary-button compact-button"
-                    disabled={controller.isQuerying || isChangeSetWorkspaceBusy}
                     onClick={() => setSelectedRecords((current) => (
                       current.filter((candidate) => semanticRecordKey(candidate) !== key)
                     ))}
@@ -1841,15 +1882,42 @@ function MutationPinControl({
     : null;
   const suggestedValue = existingPin?.canonicalValue ?? mutation.after.canonicalValue ?? '';
   const [canonicalValue, setCanonicalValue] = useState(suggestedValue);
+  const sourceValueRef = useRef({
+    mutationId: mutation.mutationId,
+    value: suggestedValue
+  });
   useEffect(() => {
-    setCanonicalValue(suggestedValue);
+    const previous = sourceValueRef.current;
+    setCanonicalValue((current) =>
+      previous.mutationId !== mutation.mutationId
+        ? suggestedValue
+        : reconcileSourceBackedDraft(
+            current,
+            previous.value,
+            suggestedValue,
+            Object.is
+          )
+    );
+    sourceValueRef.current = {
+      mutationId: mutation.mutationId,
+      value: suggestedValue
+    };
   }, [mutation.mutationId, suggestedValue]);
+  const hasPinTarget = Boolean(mutation.pinRecord && mutation.pinFieldKey && input);
+  const isValid = isCanonicalInteger(canonicalValue);
+  const diagnosticPinKey = mutation.pinRecord && mutation.pinFieldKey
+    ? mutationPinKey(mutation.pinRecord, mutation.pinFieldKey)
+    : mutation.mutationId;
+  usePublishCommonEditorError({
+    domain: 'analysis.guidedDesign',
+    field: `pins.${diagnosticPinKey}.canonicalValue`,
+    message: hasPinTarget && !isValid ? t('guidedDesign.diff.pinValueInvalid') : null
+  });
   if (!mutation.pinRecord || !mutation.pinFieldKey || !input) {
     return <span className="km-guided-shared-effect">{t('guidedDesign.diff.sharedEffect')}</span>;
   }
   const pinKey = mutationPinKey(mutation.pinRecord, mutation.pinFieldKey);
   const accessibleMutationName = `${formatSemanticRecord(mutation.pinRecord)}, ${mutation.pinFieldKey}`;
-  const isValid = isCanonicalInteger(canonicalValue);
   const isBusy = controller.isQuerying || isChangeSetWorkspaceBusy;
   const pinLimitReached = !existingPin && input.pins.length >= guidedDesignMaximumPins;
   const writePin = () => {
@@ -1882,7 +1950,6 @@ function MutationPinControl({
         <input
           aria-label={`${t('guidedDesign.diff.pinValue')}: ${accessibleMutationName}`}
           aria-invalid={!isValid}
-          disabled={isBusy}
           maxLength={20}
           onChange={(event) => setCanonicalValue(event.currentTarget.value)}
           pattern="-?(?:0|[1-9][0-9]*)"
@@ -1925,6 +1992,14 @@ function CanonicalExports({
   const values = [exports.spoiler, exports.race].filter(
     (value): value is GuidedDesignCanonicalExport => value !== null
   );
+  const errorMessage = status === 'error'
+    ? t('guidedDesign.exports.status.error')
+    : null;
+  usePublishCommonEditorError({
+    domain: 'analysis.guidedDesign',
+    field: 'exports',
+    message: errorMessage
+  });
   if (values.length === 0) return null;
   const copy = async (value: GuidedDesignCanonicalExport) => {
     try {
@@ -1978,7 +2053,9 @@ function CanonicalExports({
         ))}
       </div>
       <p aria-live="polite" role={status === 'error' ? 'alert' : 'status'}>
-        {status === 'idle' ? '' : t(`guidedDesign.exports.status.${status}`)}
+        {status === 'idle'
+          ? ''
+          : errorMessage ?? t(`guidedDesign.exports.status.${status}`)}
       </p>
     </section>
   );
@@ -2021,6 +2098,7 @@ function DiagnosticList({
 }) {
   const { t, translateLiteral } = useLocalization();
   const diagnosticNavigation = useDiagnosticNavigation();
+  usePublishCommonEditorDiagnostics(diagnostics);
   if (diagnostics.length === 0) return null;
   const formatMessage = (diagnostic: ApiDiagnostic) => (
     safeDiagnosticMessage(diagnostic.message)
@@ -2224,6 +2302,8 @@ function StatusPanel({
   onRetry?: () => void;
 }) {
   const { t } = useLocalization();
+  const errorMessage = kind === 'error' ? t(queryErrorKey(error)) : null;
+  usePublishCommonEditorError({ domain: 'analysis.guidedDesign', message: errorMessage });
   if (kind === 'loading') {
     return (
       <div className="km-guided-status">
@@ -2233,7 +2313,7 @@ function StatusPanel({
   }
   return (
     <div aria-live="polite" className="km-guided-status" role="alert">
-      <p>{t(queryErrorKey(error))}</p>
+      <p>{errorMessage}</p>
       {onRetry ? <button onClick={onRetry} type="button">{t('guidedDesign.retry')}</button> : null}
     </div>
   );
@@ -2247,9 +2327,11 @@ function InlineError({
   onRetry: () => void;
 }) {
   const { t } = useLocalization();
+  const message = t(queryErrorKey(error));
+  usePublishCommonEditorError({ domain: 'analysis.guidedDesign', message });
   return (
     <div className="km-guided-inline-error" role="alert">
-      <span>{t(queryErrorKey(error))}</span>
+      <span>{message}</span>
       <button className="secondary-button compact-button" onClick={onRetry} type="button">
         {t('guidedDesign.retry')}
       </button>
@@ -2317,6 +2399,15 @@ function semanticRecordKey(record: SemanticExploreRecordRef) {
     record.recordId,
     record.subrecordId
   ]);
+}
+
+function sameSemanticRecordSelection(
+  left: readonly SemanticExploreRecordRef[],
+  right: readonly SemanticExploreRecordRef[]
+) {
+  return left.length === right.length && left.every(
+    (record, index) => semanticRecordKey(record) === semanticRecordKey(right[index]!)
+  );
 }
 
 function guidedDesignRecordLabel(

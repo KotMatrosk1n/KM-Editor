@@ -10,14 +10,18 @@ import {
 } from '../../bridge/outputSafetyContracts';
 import { type ProjectBridge } from '../../bridge/projectBridge';
 import { type DesktopServices } from '../../desktopServices';
-import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
-import { formatDiagnosticMessage } from '../../diagnostics';
+import { DiagnosticsSection } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 import { useModalDialog } from '../../components/useModalDialog';
 import { toDesktopErrorDiagnostics, toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
+import {
+  reconcileRelocationCandidatePaths,
+  type ProjectRelocationCandidatePathField,
+  type ProjectRelocationCandidatePaths
+} from './projectRelocationDraftState';
 
-type CandidatePaths = OutputSafetyScope['paths'];
-type CandidatePathField = Exclude<keyof CandidatePaths, 'gameTextLanguage' | 'selectedGame'>;
+type CandidatePaths = ProjectRelocationCandidatePaths;
+type CandidatePathField = ProjectRelocationCandidatePathField;
 
 const relocationFields: ReadonlyArray<{
   field: CandidatePathField;
@@ -63,7 +67,7 @@ export function ProjectRelocationPanel({
   ) => Promise<void> | void;
   source: OutputSafetyScope | null;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { t } = useLocalization();
   const [isExpanded, setIsExpanded] = useState(false);
   const [candidatePaths, setCandidatePaths] = useState<CandidatePaths | null>(source?.paths ?? null);
   const [preview, setPreview] = useState<PreviewProjectRelocationResponse | null>(null);
@@ -72,6 +76,7 @@ export function ProjectRelocationPanel({
   const [isBusy, setIsBusy] = useState(false);
   const busyRef = useRef(false);
   const actionGenerationRef = useRef(0);
+  const actionPhaseRef = useRef<'apply' | 'pick' | 'review' | null>(null);
   const applyGenerationRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
   const armCriticalWriteGuardRef = useRef(armCriticalWriteGuard);
@@ -81,10 +86,15 @@ export function ProjectRelocationPanel({
   const sourceSignature = useMemo(() => source ? JSON.stringify(source) : null, [source]);
   const sourceSignatureRef = useRef(sourceSignature);
   sourceSignatureRef.current = sourceSignature;
+  const previousSourceRef = useRef<OutputSafetyScope | null>(null);
   const candidateSignature = useMemo(
     () => candidatePaths ? JSON.stringify(candidatePaths) : null,
     [candidatePaths]
   );
+  const candidatePathsRef = useRef(candidatePaths);
+  const candidateSignatureRef = useRef(candidateSignature);
+  candidatePathsRef.current = candidatePaths;
+  candidateSignatureRef.current = candidateSignature;
 
   const beginApplyGuard = useCallback(async (generation: number) => {
     applyGenerationRef.current = generation;
@@ -108,6 +118,7 @@ export function ProjectRelocationPanel({
       isMountedRef.current = false;
       actionGenerationRef.current += 1;
       busyRef.current = false;
+      actionPhaseRef.current = null;
       endApplyGuard();
     };
   }, [endApplyGuard]);
@@ -115,19 +126,29 @@ export function ProjectRelocationPanel({
   useEffect(() => {
     actionGenerationRef.current += 1;
     busyRef.current = false;
+    actionPhaseRef.current = null;
     endApplyGuard();
-    setCandidatePaths(source?.paths ?? null);
+    const previousSource = previousSourceRef.current;
+    previousSourceRef.current = source;
+    setCandidatePaths((current) =>
+      reconcileRelocationCandidatePaths(
+        current,
+        previousSource,
+        source
+      )
+    );
     setPreview(null);
     setReviewedCandidateSignature(null);
     setDiagnostics([]);
     setIsBusy(false);
   }, [endApplyGuard, sourceSignature]);
 
-  const beginAction = () => {
+  const beginAction = (phase: 'apply' | 'pick' | 'review') => {
     if (busyRef.current) {
       return null;
     }
     busyRef.current = true;
+    actionPhaseRef.current = phase;
     setIsBusy(true);
     actionGenerationRef.current += 1;
     return actionGenerationRef.current;
@@ -141,6 +162,7 @@ export function ProjectRelocationPanel({
   const endAction = (generation: number, requestSourceSignature: string | null) => {
     if (isCurrentAction(generation, requestSourceSignature)) {
       busyRef.current = false;
+      actionPhaseRef.current = null;
       setIsBusy(false);
     }
   };
@@ -174,21 +196,29 @@ export function ProjectRelocationPanel({
     kind: 'directory' | 'file',
     label: string
   ) => {
-    const generation = beginAction();
+    const generation = beginAction('pick');
     if (generation === null) {
       return;
     }
     const requestSourceSignature = sourceSignature;
+    const requestedFieldValue = candidatePaths[field] ?? null;
     try {
       const selected = await (kind === 'file' ? desktopServices.pickFile : desktopServices.pickFolder)({
         defaultPath: candidatePaths[field] ?? undefined,
         title: t('outputSafety.relocation.pickTitle', { label })
       });
-      if (selected && isCurrentAction(generation, requestSourceSignature)) {
+      if (
+        selected &&
+        isCurrentAction(generation, requestSourceSignature) &&
+        (candidatePathsRef.current?.[field] ?? null) === requestedFieldValue
+      ) {
         updateCandidatePath(field, selected);
       }
     } catch (error) {
-      if (isCurrentAction(generation, requestSourceSignature)) {
+      if (
+        isCurrentAction(generation, requestSourceSignature) &&
+        (candidatePathsRef.current?.[field] ?? null) === requestedFieldValue
+      ) {
         setDiagnostics(toDesktopErrorDiagnostics(error, t('outputSafety.error.relocationPath')));
       }
     } finally {
@@ -200,11 +230,12 @@ export function ProjectRelocationPanel({
     if (!canRelocate || !candidateSignature) {
       return;
     }
-    const generation = beginAction();
+    const generation = beginAction('review');
     if (generation === null) {
       return;
     }
     const requestSourceSignature = sourceSignature;
+    const requestedCandidateSignature = candidateSignature;
     setDiagnostics([]);
     setPreview(null);
     try {
@@ -212,13 +243,19 @@ export function ProjectRelocationPanel({
         candidatePaths,
         source
       });
-      if (isCurrentAction(generation, requestSourceSignature)) {
+      if (
+        isCurrentAction(generation, requestSourceSignature) &&
+        candidateSignatureRef.current === requestedCandidateSignature
+      ) {
         setPreview(response);
         setReviewedCandidateSignature(candidateSignature);
         setDiagnostics(response.diagnostics);
       }
     } catch (error) {
-      if (isCurrentAction(generation, requestSourceSignature)) {
+      if (
+        isCurrentAction(generation, requestSourceSignature) &&
+        candidateSignatureRef.current === requestedCandidateSignature
+      ) {
         setDiagnostics(toProjectBridgeDiagnostics(error, t('outputSafety.error.relocationPreview')));
       }
     } finally {
@@ -230,7 +267,7 @@ export function ProjectRelocationPanel({
     if (!canRelocate || !preview || !canApplyPreview) {
       return;
     }
-    const generation = beginAction();
+    const generation = beginAction('apply');
     if (generation === null) {
       return;
     }
@@ -278,6 +315,9 @@ export function ProjectRelocationPanel({
     }
   };
 
+  const draftControlsLocked =
+    actionPhaseRef.current === 'apply';
+
   return (
     <>
       <button
@@ -310,7 +350,8 @@ export function ProjectRelocationPanel({
                   <span>{label}</span>
                   <span className="project-relocation-path-input">
                     <input
-                      disabled={isBusy || !canRelocate}
+                      disabled={draftControlsLocked}
+                      id={`project-relocation-${entry.field}`}
                       onChange={(event) => updateCandidatePath(
                         entry.field,
                         event.currentTarget.value.length > 0 ? event.currentTarget.value : null
@@ -321,7 +362,11 @@ export function ProjectRelocationPanel({
                     <button
                       aria-label={t('outputSafety.relocation.pickTitle', { label })}
                       className="secondary-button icon-button"
-                      disabled={!desktopServices.isAvailable || isBusy || !canRelocate}
+                      disabled={
+                        !desktopServices.isAvailable ||
+                        draftControlsLocked ||
+                        !canRelocate
+                      }
                       onClick={() => void pickCandidatePath(entry.field, entry.kind, label)}
                       type="button"
                     >
@@ -379,17 +424,7 @@ export function ProjectRelocationPanel({
             </div>
           ) : null}
 
-          {diagnostics.length > 0 ? (
-            <ul className="output-safety-diagnostics">
-              {diagnostics.map((diagnostic, index) => (
-                <li className={`diagnostic-${diagnostic.severity}`} key={`${diagnostic.code ?? 'diagnostic'}-${index}`}>
-                  <AlertCircle aria-hidden="true" size={15} />
-                  <span>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</span>
-                  <ReportableDiagnosticIssuesLink messages={[diagnostic.message]} />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <DiagnosticsSection diagnostics={diagnostics} />
         </ProjectRelocationDialog>
       ) : null}
     </>

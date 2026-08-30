@@ -16,6 +16,7 @@ import {
 import { type ProjectBridge } from '../../bridge/projectBridge';
 import type { DesktopServices } from '../../desktopServices';
 import { FieldLabel } from '../../components/FieldLabel';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
@@ -52,6 +53,19 @@ export const legacyGameDumpDestinationStorageKey =
   'km-editor.game-dump-destinations.v1';
 const allGameDumpLanguagesValue = '__all__';
 
+function createGameDumpScopeKey(paths: ProjectPaths) {
+  return JSON.stringify([
+    paths.selectedGame,
+    paths.baseExeFsPath,
+    paths.baseRomFsPath,
+    paths.outputRootPath,
+    paths.saveFilePath,
+    paths.gameTextLanguage ?? null,
+    paths.pokemonLegendsZASupportFolderPath ?? null,
+    paths.scarletVioletSupportFolderPath ?? null
+  ]);
+}
+
 export function GameDumpSection({
   appVersion,
   bridge,
@@ -83,10 +97,28 @@ export function GameDumpSection({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [actionDiagnostics, setActionDiagnostics] = useState<ApiDiagnostic[]>([]);
+  const [destinationPersistenceDiagnostics, setDestinationPersistenceDiagnostics] =
+    useState<ApiDiagnostic[]>([]);
   const [progress, setProgress] = useState<GameDumpProgress | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<GameDumpCategoryFilter>('all');
   const [categorySearch, setCategorySearch] = useState('');
   const loadWorkflowRunRef = useRef(0);
+  const generationRunRef = useRef(0);
+  const rememberDestinationRunRef = useRef(0);
+  const activeScopeKeyRef = useRef(createGameDumpScopeKey(paths));
+  const activeWorkflowEligibilityRef = useRef(
+    health?.canOpenReadOnlyWorkflows === true && paths.selectedGame !== null
+  );
+  const workflowScopeKeyRef = useRef<string | null>(null);
+  const destinationFolderRef = useRef(destinationFolder);
+  const previousDestinationSourceRef = useRef<{
+    destination: string;
+    game: NonNullable<ProjectPaths['selectedGame']>;
+  } | null>(null);
+  activeScopeKeyRef.current = createGameDumpScopeKey(paths);
+  activeWorkflowEligibilityRef.current =
+    health?.canOpenReadOnlyWorkflows === true && paths.selectedGame !== null;
+  destinationFolderRef.current = destinationFolder;
   const { t, translateLiteral } = useLocalization();
 
   const selectedCategories = useMemo(
@@ -119,6 +151,7 @@ export function GameDumpSection({
   }, [categoryFilter, categorySearch, selectionState, translateLiteral, workflowCategories]);
 
   const invalidateGeneratedState = useCallback(() => {
+    generationRunRef.current += 1;
     setIsConfirmOpen(false);
     setResult(null);
     setActionDiagnostics([]);
@@ -126,27 +159,92 @@ export function GameDumpSection({
   }, []);
 
   useEffect(() => {
+    rememberDestinationRunRef.current += 1;
+    setDestinationPersistenceDiagnostics([]);
     if (!paths.selectedGame) {
       setDestinationFolder('');
+      destinationFolderRef.current = '';
+      previousDestinationSourceRef.current = null;
       return;
     }
-    setDestinationFolder(rememberedDestination);
+
+    const previousSource = previousDestinationSourceRef.current;
+    const nextDestination =
+      previousSource === null || previousSource.game !== paths.selectedGame
+        ? rememberedDestination
+        : reconcileSourceBackedDraft(
+            destinationFolderRef.current,
+            previousSource.destination,
+            rememberedDestination,
+            Object.is
+          );
+    setDestinationFolder(nextDestination);
+    destinationFolderRef.current = nextDestination;
+    previousDestinationSourceRef.current = {
+      destination: rememberedDestination,
+      game: paths.selectedGame
+    };
   }, [paths.selectedGame, rememberedDestination]);
+
+  const rememberDestination = useCallback(
+    async (
+      game: NonNullable<ProjectPaths['selectedGame']>,
+      destination: string
+    ) => {
+      if (!onRememberDestination) {
+        return;
+      }
+      const runId = ++rememberDestinationRunRef.current;
+      const requestedScopeKey = activeScopeKeyRef.current;
+      try {
+        await onRememberDestination(game, destination);
+        if (
+          rememberDestinationRunRef.current === runId &&
+          activeScopeKeyRef.current === requestedScopeKey &&
+          destinationFolderRef.current === destination
+        ) {
+          setDestinationPersistenceDiagnostics([]);
+        }
+      } catch (error) {
+        if (
+          rememberDestinationRunRef.current === runId &&
+          activeScopeKeyRef.current === requestedScopeKey &&
+          destinationFolderRef.current === destination
+        ) {
+          setDestinationPersistenceDiagnostics(
+            toProjectBridgeDiagnostics(
+              error,
+              'Game Dump destination could not be remembered.'
+            )
+          );
+        }
+      }
+    },
+    [onRememberDestination]
+  );
 
   const updateDestinationFolder = useCallback(
     (destination: string, remember: boolean) => {
       setDestinationFolder(destination);
+      destinationFolderRef.current = destination;
+      rememberDestinationRunRef.current += 1;
+      setDestinationPersistenceDiagnostics([]);
       if (remember && paths.selectedGame) {
-        void onRememberDestination?.(paths.selectedGame, destination);
+        void rememberDestination(paths.selectedGame, destination);
       }
       invalidateGeneratedState();
     },
-    [invalidateGeneratedState, onRememberDestination, paths.selectedGame]
+    [invalidateGeneratedState, paths.selectedGame, rememberDestination]
   );
 
   const loadWorkflow = useCallback(async () => {
     const runId = ++loadWorkflowRunRef.current;
-    if (!health?.canOpenReadOnlyWorkflows || paths.selectedGame === null) {
+    const requestedScopeKey = createGameDumpScopeKey(paths);
+    const requestedEligibility =
+      health?.canOpenReadOnlyWorkflows === true && paths.selectedGame !== null;
+    if (!requestedEligibility) {
+      workflowScopeKeyRef.current = null;
+      generationRunRef.current += 1;
       setIsLoading(false);
       setWorkflowCategories([]);
       setWorkflowDiagnostics([]);
@@ -154,6 +252,14 @@ export function GameDumpSection({
       setResult(null);
       setProgress(null);
       return;
+    }
+
+    const preserveExistingSelection = workflowScopeKeyRef.current === requestedScopeKey;
+    if (!preserveExistingSelection) {
+      generationRunRef.current += 1;
+      setWorkflowCategories([]);
+      setWorkflowDiagnostics([]);
+      setSelectionState({});
     }
 
     setIsLoading(true);
@@ -167,10 +273,15 @@ export function GameDumpSection({
     });
     try {
       const response = await bridge.loadGameDumpWorkflow({ paths });
-      if (loadWorkflowRunRef.current !== runId) {
+      if (
+        loadWorkflowRunRef.current !== runId ||
+        activeScopeKeyRef.current !== requestedScopeKey ||
+        activeWorkflowEligibilityRef.current !== requestedEligibility
+      ) {
         return;
       }
 
+      workflowScopeKeyRef.current = requestedScopeKey;
       setWorkflowCategories(response.workflow.categories);
       setWorkflowDiagnostics(response.workflow.diagnostics);
       setSelectionState((current) =>
@@ -178,19 +289,29 @@ export function GameDumpSection({
           response.workflow.categories.map((category) => [
             category.id,
             {
-              format: current[category.id]?.format ?? category.defaultFormat,
+              format:
+                (preserveExistingSelection ? current[category.id]?.format : undefined) ??
+                category.defaultFormat,
               languageCodes: resolveLanguageSelection(
                 category,
-                current[category.id]?.languageCodes
+                preserveExistingSelection
+                  ? current[category.id]?.languageCodes
+                  : undefined
               ),
-              selected: current[category.id]?.selected ?? category.isAvailable
+              selected:
+                (preserveExistingSelection ? current[category.id]?.selected : undefined) ??
+                category.isAvailable
             }
           ])
         )
       );
       setProgress(null);
     } catch (error) {
-      if (loadWorkflowRunRef.current !== runId) {
+      if (
+        loadWorkflowRunRef.current !== runId ||
+        activeScopeKeyRef.current !== requestedScopeKey ||
+        activeWorkflowEligibilityRef.current !== requestedEligibility
+      ) {
         return;
       }
 
@@ -198,9 +319,12 @@ export function GameDumpSection({
         error,
         'Game Dump could not be loaded.'
       );
-      setWorkflowCategories([]);
-      setWorkflowDiagnostics([]);
-      setSelectionState({});
+      if (!preserveExistingSelection) {
+        setWorkflowCategories([]);
+        setWorkflowDiagnostics([]);
+        setSelectionState({});
+        workflowScopeKeyRef.current = null;
+      }
       if (failureDiagnostics.length === 0) {
         setProgress(null);
         return;
@@ -214,7 +338,11 @@ export function GameDumpSection({
         percent: 100
       });
     } finally {
-      if (loadWorkflowRunRef.current === runId) {
+      if (
+        loadWorkflowRunRef.current === runId &&
+        activeScopeKeyRef.current === requestedScopeKey &&
+        activeWorkflowEligibilityRef.current === requestedEligibility
+      ) {
         setIsLoading(false);
       }
     }
@@ -225,12 +353,13 @@ export function GameDumpSection({
   }, [loadWorkflow]);
 
   const handleBrowseDestination = async () => {
+    const requestedDestination = destinationFolderRef.current;
     try {
       const selectedFolder = await desktopServices.pickFolder({
-        defaultPath: destinationFolder || undefined,
+        defaultPath: requestedDestination || undefined,
         title: translateLiteral('Select Game Dump destination')
       });
-      if (selectedFolder) {
+      if (selectedFolder && destinationFolderRef.current === requestedDestination) {
         updateDestinationFolder(selectedFolder, true);
       }
     } catch (error) {
@@ -272,9 +401,11 @@ export function GameDumpSection({
       return;
     }
 
+    const runId = ++generationRunRef.current;
+    const requestedScopeKey = createGameDumpScopeKey(paths);
     setIsConfirmOpen(false);
     if (paths.selectedGame) {
-      void onRememberDestination?.(paths.selectedGame, destinationFolder);
+      void rememberDestination(paths.selectedGame, destinationFolder);
     }
     onWriteStateChange?.(true);
     setIsGenerating(true);
@@ -314,6 +445,12 @@ export function GameDumpSection({
         producerVersion: appVersion,
         selections
       });
+      if (
+        generationRunRef.current !== runId ||
+        activeScopeKeyRef.current !== requestedScopeKey
+      ) {
+        return;
+      }
       setResult(response.result);
       setActionDiagnostics(response.result.diagnostics);
       setProgress({
@@ -327,6 +464,12 @@ export function GameDumpSection({
         writtenFileCount: response.result.writtenFiles.length
       });
     } catch (error) {
+      if (
+        generationRunRef.current !== runId ||
+        activeScopeKeyRef.current !== requestedScopeKey
+      ) {
+        return;
+      }
       const failureDiagnostics = toProjectBridgeDiagnostics(
         error,
         'Game Dump generation failed.'
@@ -383,14 +526,10 @@ export function GameDumpSection({
                 <input
                   aria-label={translateLiteral('Destination folder')}
                   data-localization-ignore="true"
-                  disabled={isGenerating}
                   id="game-dump-destination-folder"
                   onBlur={() => {
                     if (paths.selectedGame) {
-                      void onRememberDestination?.(
-                        paths.selectedGame,
-                        destinationFolder
-                      );
+                      void rememberDestination(paths.selectedGame, destinationFolder);
                     }
                   }}
                   onChange={(event) => updateDestinationFolder(event.target.value, false)}
@@ -401,7 +540,7 @@ export function GameDumpSection({
                 <button
                   aria-label={translateLiteral('Browse for destination folder')}
                   className="secondary-button icon-button"
-                  disabled={!desktopServices.isAvailable || isGenerating}
+                  disabled={!desktopServices.isAvailable}
                   onClick={handleBrowseDestination}
                   title={translateLiteral('Browse for destination folder')}
                   type="button"
@@ -411,7 +550,7 @@ export function GameDumpSection({
                 <button
                   aria-label={translateLiteral('Open destination folder')}
                   className="secondary-button icon-button"
-                  disabled={!destinationFolder || isGenerating}
+                  disabled={!destinationFolder}
                   onClick={handleOpenDestination}
                   title={translateLiteral('Open destination folder')}
                   type="button"
@@ -479,7 +618,7 @@ export function GameDumpSection({
             <div className="game-dump-actions">
             <button
               className="secondary-button compact-button"
-              disabled={availableCount === 0 || isLoading || isGenerating}
+              disabled={availableCount === 0}
               onClick={() => {
                 invalidateGeneratedState();
                 setSelectionState((current) =>
@@ -504,7 +643,7 @@ export function GameDumpSection({
             </button>
             <button
               className="secondary-button compact-button"
-              disabled={workflowCategories.length === 0 || isLoading || isGenerating}
+              disabled={workflowCategories.length === 0}
               onClick={() => {
                 invalidateGeneratedState();
                 setSelectionState((current) =>
@@ -557,7 +696,7 @@ export function GameDumpSection({
                     <input
                       checked={state.selected && category.isAvailable}
                       className="km-choice-control"
-                      disabled={!category.isAvailable || isLoading || isGenerating}
+                      disabled={!category.isAvailable}
                       id={categoryInputId}
                       onChange={(event) => {
                         invalidateGeneratedState();
@@ -599,7 +738,7 @@ export function GameDumpSection({
                         aria-label={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
                         className="km-select-control"
                         disabled={
-                          !category.isAvailable || !state.selected || isLoading || isGenerating
+                          !category.isAvailable || !state.selected
                         }
                         id={formatInputId}
                         onChange={(event) => {
@@ -639,7 +778,7 @@ export function GameDumpSection({
                           className="km-select-control"
                           data-localization-ignore="true"
                           disabled={
-                            !category.isAvailable || !state.selected || isLoading || isGenerating
+                            !category.isAvailable || !state.selected
                           }
                           id={languageInputId}
                           onChange={(event) => {
@@ -732,7 +871,13 @@ export function GameDumpSection({
         </>
       )}
 
-      <DiagnosticsSection diagnostics={[...workflowDiagnostics, ...actionDiagnostics]} />
+      <DiagnosticsSection
+        diagnostics={[
+          ...workflowDiagnostics,
+          ...actionDiagnostics,
+          ...destinationPersistenceDiagnostics
+        ]}
+      />
 
       {isConfirmOpen ? (
         <GameDumpConfirmationModal

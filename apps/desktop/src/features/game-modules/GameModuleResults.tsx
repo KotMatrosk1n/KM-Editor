@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ExternalLink, ListTree } from 'lucide-react';
+import { useId } from 'react';
 import type {
   GameModuleConfidence,
   GameModuleFact,
@@ -10,6 +11,7 @@ import type {
 import { containsGameModuleLocalPathSignature } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import type { ApiDiagnostic } from '../../bridge/contracts';
+import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
@@ -356,6 +358,8 @@ export function GameModuleDiagnostics({
 }) {
   const { t, translateLiteral } = useLocalization();
   const diagnosticNavigation = useDiagnosticNavigation();
+  const headingId = useId();
+  usePublishCommonEditorDiagnostics(diagnostics);
   if (diagnostics.length === 0) return null;
   const formatMessage = (diagnostic: ApiDiagnostic) => (
     safeDiagnosticMessage(diagnostic.message)
@@ -381,9 +385,9 @@ export function GameModuleDiagnostics({
     .map((diagnostic) => diagnosticNavigation.resolveAction(diagnostic))
     .find((action) => action !== null);
   return (
-    <section aria-labelledby="game-module-diagnostics-title" className="km-game-module-diagnostics">
+    <section aria-labelledby={headingId} className="km-game-module-diagnostics">
       <div className="km-analysis-diagnostic-heading">
-        <h3 id="game-module-diagnostics-title">{t('gameModules.diagnostics.title')}</h3>
+        <h3 id={headingId}>{t('gameModules.diagnostics.title')}</h3>
         {primaryAction ? (
           <button
             className="secondary-button compact-button"

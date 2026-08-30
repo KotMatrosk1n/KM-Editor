@@ -11,6 +11,7 @@ import type {
   SemanticExploreRevision,
   SemanticExploreScope
 } from '../../bridge/semanticExploreContracts';
+import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import type {
@@ -97,14 +98,22 @@ export function GuidedDesignRuntime({
           </div>
         </header>
         {isError ? (
-          <div aria-live="polite" className="km-guided-status" role="alert">
-            <p>{t(capabilityError
-              ? `semanticExplore.query.error.${capabilityError}`
-              : 'guidedDesign.error.generic')}</p>
-            <button onClick={() => void onRefreshCapabilities()} type="button">
-              {t('guidedDesign.retry')}
-            </button>
-          </div>
+          <>
+            <PublishCommonEditorError
+              domain="analysis.guidedDesign"
+              message={t(capabilityError
+                ? `semanticExplore.query.error.${capabilityError}`
+                : 'guidedDesign.error.generic')}
+            />
+            <div aria-live="polite" className="km-guided-status" role="alert">
+              <p>{t(capabilityError
+                ? `semanticExplore.query.error.${capabilityError}`
+                : 'guidedDesign.error.generic')}</p>
+              <button onClick={() => void onRefreshCapabilities()} type="button">
+                {t('guidedDesign.retry')}
+              </button>
+            </div>
+          </>
         ) : (
           <div className="km-guided-status">
             <LoadingProgress label={t('guidedDesign.capabilities.loading')} />

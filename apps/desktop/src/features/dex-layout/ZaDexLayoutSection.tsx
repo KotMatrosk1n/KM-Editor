@@ -12,7 +12,7 @@ import {
   Search,
   X
 } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type ApiDiagnostic,
   type EditSession,
@@ -24,7 +24,9 @@ import {
   EditorSessionBarActions
 } from '../../components/EditorSessionBar';
 import { ContextHelp } from '../../components/ContextHelp';
+import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FieldLabel } from '../../components/FieldLabel';
+import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useModalDialog } from '../../components/useModalDialog';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -122,20 +124,55 @@ export function ZaDexLayoutSection({
   const [regularSizeDraft, setRegularSizeDraft] = useState('');
   const [hyperspaceSizeDraft, setHyperspaceSizeDraft] = useState('');
   const [resizeDraftBaseKey, setResizeDraftBaseKey] = useState('');
+  const resizeDraftRef = useRef(createDexSizeDraft('', ''));
+  const previousResizeSourceRef = useRef<ReturnType<typeof createDexSizeDraft> | null>(
+    null
+  );
+  const moveDraftRef = useRef(createDexMoveDraft('regular', ''));
+  const previousMoveSourceRef = useRef<{
+    speciesId: number;
+    draft: ReturnType<typeof createDexMoveDraft>;
+  } | null>(null);
+
+  resizeDraftRef.current = createDexSizeDraft(
+    regularSizeDraft,
+    hyperspaceSizeDraft
+  );
+  moveDraftRef.current = createDexMoveDraft(
+    destinationDexKind,
+    destinationNumberDraft
+  );
 
   useEffect(() => {
     if (!dexEditor) {
       setRegularSizeDraft('');
       setHyperspaceSizeDraft('');
       setResizeDraftBaseKey('');
+      previousResizeSourceRef.current = null;
       return;
     }
 
-    setRegularSizeDraft(dexEditor.regularCount.toString());
-    setHyperspaceSizeDraft(dexEditor.hyperspaceCount.toString());
+    const nextSource = createDexSizeDraft(
+      dexEditor.regularCount.toString(),
+      dexEditor.hyperspaceCount.toString()
+    );
+    const previousSource = previousResizeSourceRef.current;
+    const nextDraft =
+      previousSource === null
+        ? nextSource
+        : reconcileSourceBackedDraft(
+            resizeDraftRef.current,
+            previousSource,
+            nextSource,
+            areDexSizeDraftsEqual
+          );
+
+    setRegularSizeDraft(nextDraft.regular);
+    setHyperspaceSizeDraft(nextDraft.hyperspace);
     setResizeDraftBaseKey(
       createDexSizeKey(dexEditor.regularCount, dexEditor.hyperspaceCount)
     );
+    previousResizeSourceRef.current = nextSource;
   }, [dexEditor?.hyperspaceCount, dexEditor?.regularCount]);
 
   useEffect(() => {
@@ -157,12 +194,33 @@ export function ZaDexLayoutSection({
       setDestinationDexKind('regular');
       setDestinationNumberDraft('');
       setMoveDraftBaseKey('');
+      previousMoveSourceRef.current = null;
       return;
     }
 
-    setDestinationDexKind(selectedPlacement.dexKind);
-    setDestinationNumberDraft(selectedPlacement.displayedNumber.toString());
+    const nextSource = createDexMoveDraft(
+      selectedPlacement.dexKind,
+      selectedPlacement.displayedNumber.toString()
+    );
+    const previousSource = previousMoveSourceRef.current;
+    const nextDraft =
+      previousSource === null ||
+      previousSource.speciesId !== selectedPlacement.speciesId
+        ? nextSource
+        : reconcileSourceBackedDraft(
+            moveDraftRef.current,
+            previousSource.draft,
+            nextSource,
+            areDexMoveDraftsEqual
+          );
+
+    setDestinationDexKind(nextDraft.dexKind);
+    setDestinationNumberDraft(nextDraft.displayedNumber);
     setMoveDraftBaseKey(createDexMoveKey(selectedPlacement));
+    previousMoveSourceRef.current = {
+      speciesId: selectedPlacement.speciesId,
+      draft: nextSource
+    };
   }, [
     selectedPlacement?.dexKind,
     selectedPlacement?.displayedNumber,
@@ -309,6 +367,24 @@ export function ZaDexLayoutSection({
     !isWorkflowActionBusy;
   const canOpenChanges =
     hasStagedChange && !hasLocalDraft && !isWorkflowActionBusy;
+  usePublishCommonEditorError({
+    domain: 'workflow.pokemon.dexLayout',
+    field: 'sizes',
+    message:
+      resizeDraftIsDirty && resizePreview === null
+        ? translateLiteral(
+            'Enter a whole number from 1 to 363. The linked size is calculated automatically.'
+          )
+        : null
+  });
+  usePublishCommonEditorError({
+    domain: 'workflow.pokemon.dexLayout',
+    field: 'destination',
+    message:
+      moveDraftIsDirty && preview === null
+        ? translateLiteral('Choose a valid destination number.')
+        : null
+  });
 
   useEffect(() => {
     onDirtyChange(hasLocalDraft);
@@ -535,7 +611,6 @@ export function ZaDexLayoutSection({
                   disabled={
                     !hasActiveEditSession ||
                     !dexEditor.canEditAdvanced ||
-                    isWorkflowActionBusy ||
                     moveDraftIsDirty
                   }
                   isValid={proposedRegularCount !== null}
@@ -557,7 +632,6 @@ export function ZaDexLayoutSection({
                   disabled={
                     !hasActiveEditSession ||
                     !dexEditor.canEditAdvanced ||
-                    isWorkflowActionBusy ||
                     moveDraftIsDirty
                   }
                   isValid={proposedHyperspaceCount !== null}
@@ -681,7 +755,6 @@ export function ZaDexLayoutSection({
                         disabled={
                           !hasActiveEditSession ||
                           !dexEditor.canEdit ||
-                          isWorkflowActionBusy ||
                           resizeDraftIsDirty
                         }
                         id="za-dex-layout-destination-dex"
@@ -734,7 +807,6 @@ export function ZaDexLayoutSection({
                         disabled={
                           !hasActiveEditSession ||
                           !dexEditor.canEdit ||
-                          isWorkflowActionBusy ||
                           resizeDraftIsDirty
                         }
                         id="za-dex-layout-destination-number"
@@ -1319,8 +1391,33 @@ function createDexSizeKey(regularCount: number, hyperspaceCount: number) {
   return `${regularCount}|${hyperspaceCount}`;
 }
 
+function createDexSizeDraft(regular: string, hyperspace: string) {
+  return { hyperspace, regular };
+}
+
+function areDexSizeDraftsEqual(
+  left: ReturnType<typeof createDexSizeDraft>,
+  right: ReturnType<typeof createDexSizeDraft>
+) {
+  return left.regular === right.regular && left.hyperspace === right.hyperspace;
+}
+
 function createDexMoveKey(placement: PokemonDexPlacement) {
   return `${placement.speciesId}|${placement.dexKind}|${placement.displayedNumber}`;
+}
+
+function createDexMoveDraft(dexKind: DexKind, displayedNumber: string) {
+  return { dexKind, displayedNumber };
+}
+
+function areDexMoveDraftsEqual(
+  left: ReturnType<typeof createDexMoveDraft>,
+  right: ReturnType<typeof createDexMoveDraft>
+) {
+  return (
+    left.dexKind === right.dexKind &&
+    left.displayedNumber === right.displayedNumber
+  );
 }
 
 function compareDexKinds(left: DexKind, right: DexKind) {
