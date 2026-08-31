@@ -34,8 +34,9 @@ public sealed record DressUpItemRecordDto(
     uint ColorVariantCode,
     string PrimaryColorLabel,
     string SecondaryColorLabel,
-    uint DisplayOrder,
-    uint VariantOrder);
+    uint Price,
+    uint UiIndex,
+    string? FootwearSubtype);
 
 public sealed record DressUpGroupRecordDto(
     int PhysicalIndex,

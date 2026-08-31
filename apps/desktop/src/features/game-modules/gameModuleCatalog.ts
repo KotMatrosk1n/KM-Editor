@@ -35,7 +35,10 @@ export const gameModuleOwnerSections: Readonly<Record<GameModule, readonly Workb
   legendsZaDexLayoutPlanning: ['dexLayout'],
   legendsZaMoveVariantComparison: ['moves'],
   legendsZaTrainerPoolSwitching: ['trainerPools'],
-  legendsZaTypeEffectivenessState: ['typeChart']
+  legendsZaTypeEffectivenessState: ['typeChart'],
+  legendsZaStaticMapMarkers: [],
+  legendsZaNamedFlagCatalog: [],
+  legendsZaPokemonResourceCatalog: []
 };
 
 export function gameModuleTitleKey(module: GameModule) {

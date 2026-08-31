@@ -67,8 +67,8 @@ internal sealed class ZaDressUpCatalogDocument
                     index,
                     "secondary color label");
                 ZaFashionCatalogFlatBufferSupport.ValidateOptionalText(
-                    source.AlternateModelVariant,
-                    $"Z-A dress-up item row {index} alternate model variant");
+                    source.FootwearSubtype,
+                    $"Z-A dress-up item row {index} footwear subtype");
 
                 rows.Add(new ZaDressUpCatalogDataRow(
                     source.HasItemId,
@@ -89,12 +89,12 @@ internal sealed class ZaDressUpCatalogDocument
                     source.SecondaryColorLabel,
                     source.HasReservedFlagA,
                     source.ReservedFlagA,
-                    source.HasDisplayOrder,
-                    source.DisplayOrder,
-                    source.HasVariantOrder,
-                    source.VariantOrder,
-                    source.HasAlternateModelVariant,
-                    source.AlternateModelVariant,
+                    source.HasPrice,
+                    source.Price,
+                    source.HasUiIndex,
+                    source.UiIndex,
+                    source.HasFootwearSubtype,
+                    source.FootwearSubtype,
                     source.HasReservedFlagB,
                     source.ReservedFlagB));
             }
@@ -172,12 +172,12 @@ internal sealed record ZaDressUpCatalogDataRow(
     string? SecondaryColorLabel,
     bool HasReservedFlagA,
     bool ReservedFlagA,
-    bool HasDisplayOrder,
-    uint DisplayOrder,
-    bool HasVariantOrder,
-    uint VariantOrder,
-    bool HasAlternateModelVariant,
-    string? AlternateModelVariant,
+    bool HasPrice,
+    uint Price,
+    bool HasUiIndex,
+    uint UiIndex,
+    bool HasFootwearSubtype,
+    string? FootwearSubtype,
     bool HasReservedFlagB,
     bool ReservedFlagB)
 {
@@ -206,21 +206,21 @@ internal sealed record ZaDressUpCatalogDataRow(
             HasSecondaryColorLabel,
             SecondaryColorLabel,
             "dress-up secondary color label");
-        var alternateVariantOffset = ZaFashionCatalogFlatBufferSupport.CreatePresentString(
+        var footwearSubtypeOffset = ZaFashionCatalogFlatBufferSupport.CreatePresentString(
             builder,
-            HasAlternateModelVariant,
-            AlternateModelVariant,
-            "dress-up alternate model variant");
+            HasFootwearSubtype,
+            FootwearSubtype,
+            "dress-up footwear subtype");
 
         builder.StartTable(13);
         ZaFashionCatalogFlatBufferSupport.AddBool(builder, 12, ReservedFlagB, HasReservedFlagB);
-        if (HasAlternateModelVariant)
+        if (HasFootwearSubtype)
         {
-            builder.AddOffset(11, alternateVariantOffset.Value, 0);
+            builder.AddOffset(11, footwearSubtypeOffset.Value, 0);
         }
 
-        ZaFashionCatalogFlatBufferSupport.AddUInt(builder, 10, VariantOrder, HasVariantOrder);
-        ZaFashionCatalogFlatBufferSupport.AddUInt(builder, 9, DisplayOrder, HasDisplayOrder);
+        ZaFashionCatalogFlatBufferSupport.AddUInt(builder, 10, UiIndex, HasUiIndex);
+        ZaFashionCatalogFlatBufferSupport.AddUInt(builder, 9, Price, HasPrice);
         ZaFashionCatalogFlatBufferSupport.AddBool(builder, 8, ReservedFlagA, HasReservedFlagA);
         if (HasSecondaryColorLabel)
         {
@@ -268,9 +268,9 @@ internal sealed record ZaDressUpCatalogDataRow(
         Append(hash, HasPrimaryColorLabel, PrimaryColorLabel);
         Append(hash, HasSecondaryColorLabel, SecondaryColorLabel);
         Append(hash, HasReservedFlagA, ReservedFlagA);
-        Append(hash, HasDisplayOrder, DisplayOrder);
-        Append(hash, HasVariantOrder, VariantOrder);
-        Append(hash, HasAlternateModelVariant, AlternateModelVariant);
+        Append(hash, HasPrice, Price);
+        Append(hash, HasUiIndex, UiIndex);
+        Append(hash, HasFootwearSubtype, FootwearSubtype);
         Append(hash, HasReservedFlagB, ReservedFlagB);
     }
 

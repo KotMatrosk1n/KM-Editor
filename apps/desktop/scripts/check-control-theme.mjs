@@ -453,6 +453,21 @@ function checkRequiredGlobalRules(rules) {
   }
   requireRule(
     rules,
+    'interactive editor row overflow alignment',
+    ["button[role='row']"],
+    ['justify-content: start']
+  );
+  if (!rules.some((rule) => (
+    !isForcedColorsRule(rule)
+    && rule.selector === "button[role='row']"
+    && rule.body.includes('justify-content: start')
+  ))) {
+    throw new Error(
+      'KM control theme contract requires a specificity-bearing button[role=row] rule so ordinary editor row classes cannot restore centered overflow.'
+    );
+  }
+  requireRule(
+    rules,
     'text, select, and textarea baseline',
     ["input:not([type='button'])", 'select', 'textarea'],
     [

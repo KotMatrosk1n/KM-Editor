@@ -12,9 +12,9 @@ table ZaDressUpCatalogEntry {
     PrimaryColorLabel:string (required);
     SecondaryColorLabel:string (required);
     ReservedFlagA:bool;
-    DisplayOrder:uint;
-    VariantOrder:uint;
-    AlternateModelVariant:string;
+    Price:uint;
+    UiIndex:uint;
+    FootwearSubtype:string;
     ReservedFlagB:bool;
 }
 

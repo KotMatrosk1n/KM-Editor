@@ -51,6 +51,9 @@ public enum GameModuleDto
     LegendsZaMoveVariantComparison,
     LegendsZaTrainerPoolSwitching,
     LegendsZaTypeEffectivenessState,
+    LegendsZaStaticMapMarkers,
+    LegendsZaNamedFlagCatalog,
+    LegendsZaPokemonResourceCatalog,
 }
 
 public enum GameModuleMaturityDto

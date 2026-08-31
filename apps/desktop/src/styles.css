@@ -1072,6 +1072,17 @@ input[type='number']::-webkit-outer-spin-button {
   cursor: pointer;
 }
 
+/*
+ * Editor table rows replace the shared flex button layout with column grids.
+ * When those columns are wider than a Classic list pane, centered button
+ * content overflows through both edges and makes the leading cells unreachable.
+ * Keep every interactive row anchored to the logical start so its table owns
+ * one ordinary, fully scrollable overflow region in every editor and direction.
+ */
+button[role='row'] {
+  justify-content: start;
+}
+
 button > span {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -16722,8 +16733,167 @@ select.km-select-control:dir(rtl) {
   border-color: var(--color-border);
 }
 
+/*
+ * Older editor cards were authored with literal Classic navy surfaces. Keep
+ * Classic unchanged while giving every Renegade editor the same graphite card
+ * treatment with a restrained crimson cast.
+ */
 :root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
   :is(
+    .diagnostic-group,
+    .game-dump-review-bar,
+    .game-dump-progress-panel,
+    .game-dump-category:not(.is-selected),
+    .game-dump-result,
+    .swsh-pokemon-summary-card,
+    .sv-pokemon-summary-card,
+    .za-pokemon-summary-card,
+    .pokemon-sprite-placeholder,
+    .pokemon-stat-total:not(.is-over-limit),
+    .za-dex-layout-search,
+    .za-dex-layout-dex-heading > span,
+    .za-dex-layout-selection div,
+    .za-dex-layout-preview dl div,
+    .za-dex-layout-membership-preview ul,
+    .editable-field-group,
+    .move-player-damage-control,
+    .move-player-damage-invocation,
+    .move-player-damage-scope-flow,
+    .move-player-damage-launch-condition.is-when-reached,
+    .move-player-damage-timeline-group,
+    .move-player-damage-shoot-action,
+    .move-scripted-boss-ownership,
+    .move-scripted-boss-technical-grid > div,
+    .move-scripted-boss-owner-list li,
+    .move-scripted-boss-owner-phases
+      > span:not(.is-available, .is-unavailable, .is-context-only, .is-unverified),
+    .move-scripted-boss-owner-empty,
+    .move-player-damage-controller-availability,
+    .text-category-browser,
+    .text-page-bar,
+    .text-control-guide,
+    .text-control-guide dl > div,
+    .placement-category-tab small,
+    .trainer-category-tab small,
+    .placement-load-status,
+    .za-trainer-bulk-actions,
+    .npc-item-gift-tab,
+    .shiny-rate-preset:disabled,
+    .encounter-total-relative,
+    .za-encounter-ownership-summary > span,
+    .za-player-partner-editor,
+    .za-player-partner-summary,
+    .za-player-partner-guidance p,
+    .za-scripted-boss-actions-locked,
+    .za-scripted-boss-status-locked,
+    .za-scripted-boss-profile-summary,
+    .za-scripted-boss-phase-guide,
+    .za-scripted-boss-phase-stages > section,
+    .za-scripted-boss-phase-stages > section > div > span,
+    .za-scripted-boss-phase-model-status:not(.is-unverified):not(.is-verified-none),
+    .za-scripted-boss-selection-compatibility:not(.is-base-verified):not(.is-gameplay-tested):not(.is-experimental),
+    .za-encounter-advanced-data,
+    .za-encounter-advanced-heading > span,
+    .za-encounter-advanced-grid > div,
+    .changes-progress li:not(.is-active, .is-complete),
+    .pending-edit-group,
+    .workflow-loading-steps li,
+    .output-safety-group,
+    .output-recovery-targets ul,
+    .tm-machine-control-source > div
+  ) {
+  color: var(--color-text);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-muted)),
+    var(--color-control)
+  );
+  border-color: color-mix(in srgb, var(--color-accent) 24%, var(--color-border));
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .za-scripted-boss-action-list
+  li:not(.is-runtime-variant-normal):not(.is-runtime-variant-plus):not(.is-runtime-variant-boss) {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-muted)),
+    var(--color-control)
+  );
+}
+
+/* Fieldset legends already use Renegade red, so keep their frame equally clear. */
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .editable-field-group {
+  border-color: rgb(var(--color-accent-bright-rgb) / 38%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .move-player-damage-launch-condition.is-when-reached
+  .move-player-damage-launch-condition-badge {
+  color: var(--color-text-soft);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-strong));
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .move-player-damage-controller-availability-heading > svg {
+  color: var(--color-accent-bright);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .move-scripted-boss-owner-list svg {
+  color: var(--color-text-muted);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .sidebar-utility-nav,
+    .za-dex-layout-dex-heading,
+    .za-dex-layout-workflow-actions,
+    .settings-tabs,
+    .settings-subsection
+  ) {
+  border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .text-category-tabs button {
+  color: var(--color-text-soft);
+  background: var(--color-control-hover);
+  border-color: var(--color-control-border);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .text-category-tabs button small {
+  color: var(--color-text-muted);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .npc-item-gift-tab:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent) 13%, var(--color-surface-strong));
+  border-color: rgb(var(--color-accent-bright-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .npc-item-gift-tab.is-selected {
+  color: var(--color-text);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent-dark) 72%, var(--color-control)),
+    color-mix(in srgb, var(--color-accent) 28%, var(--color-surface-strong))
+  );
+  border-color: rgb(var(--color-accent-bright-rgb) / 62%);
+  box-shadow:
+    inset 3px 0 0 var(--color-accent-bright),
+    inset 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  :is(
+    .game-dump-category.is-selected,
+    .game-dump-category-filters [aria-pressed='true'],
+    .spreadsheet-preview-filters [aria-pressed='true'],
+    .changes-progress li.is-active,
     .trainer-party-card:hover,
     .trainer-party-card[aria-pressed='true'],
     .placement-object-picker-row[aria-selected='true'],
@@ -16738,14 +16908,26 @@ select.km-select-control:dir(rtl) {
 }
 
 :root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .za-player-partner-title > svg {
+  color: var(--color-accent-bright);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
   :is(
     .za-dex-layout-row:hover:not(:disabled),
     .text-category-tabs button:hover:not(:disabled),
+    .text-category-tabs button.is-active,
     .shiny-rate-preset:hover:not(:disabled),
     .shiny-rate-preset:focus-visible
   ) {
+  color: var(--color-text);
   background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-strong));
   border-color: rgb(var(--color-accent-bright-rgb) / 48%);
+}
+
+:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+  .text-category-tabs button.is-active {
+  box-shadow: inset 3px 0 0 var(--color-accent-bright);
 }
 
 :root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-pill-info {

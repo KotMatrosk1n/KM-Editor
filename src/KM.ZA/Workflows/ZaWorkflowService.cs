@@ -246,6 +246,15 @@ public sealed class ZaWorkflowService
             ZaDataPaths.PokemonSpawnerDataArray,
             ZaDataPaths.BossBattleDataGlobal,
             ZaDataPaths.PokemonDataArray,
+            ZaDataPaths.EventFlagCatalog,
+            ZaDataPaths.SystemFlagCatalog,
+            ZaDataPaths.TemporaryFlagCatalog,
+            ZaDataPaths.QuestWorkCatalog,
+            ZaDataPaths.SystemWorkCatalog,
+            ZaDataPaths.TemporaryWorkCatalog,
+            ZaDataPaths.MomijiWorkCatalog,
+            ZaDataPaths.PokemonResourceCatalog,
+            ZaDataPaths.StaticMapMarkerCatalog,
             ZaWorkflowFileSource.DescriptorVirtualPath,
         };
         foreach (var textPath in new[]
@@ -289,7 +298,7 @@ public sealed class ZaWorkflowService
         }
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        AppendSemanticSourceHash(hash, "za-semantic-source-v4");
+        AppendSemanticSourceHash(hash, "za-semantic-source-v5");
         AppendSemanticSourceHash(hash, SemanticProjectBuildIdentity.Capture(paths));
         AppendSemanticExecutableSourceHash(
             hash,
@@ -569,11 +578,14 @@ public sealed class ZaWorkflowService
         ZaEncounterCompatibilityWorkflow EncounterCompatibility,
         ZaPokemonWorkflow Pokemon,
         ZaTrainerPoolsWorkflow TrainerPools,
-        ZaTypeEffectivenessState TypeEffectivenessState)
+        ZaTypeEffectivenessState TypeEffectivenessState,
+        ZaStaticMapMarkerCatalog StaticMapMarkers,
+        ZaNamedFlagCatalog NamedFlagCatalog,
+        ZaPokemonResourceCatalog PokemonResourceCatalog)
         LoadGameModuleCapabilityBatch(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
-        const int groupCount = 4;
+        const int groupCount = 5;
         var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
         var effectiveParallelism = GameModuleCapabilityBatchParallelism;
         var readerCount = effectiveParallelism > 1 ? groupCount : 1;
@@ -585,6 +597,9 @@ public sealed class ZaWorkflowService
         CapturedSemanticWorkflow<ZaPokemonWorkflow>? pokemon = null;
         CapturedSemanticWorkflow<ZaTrainerPoolsWorkflow>? trainerPools = null;
         CapturedSemanticWorkflow<ZaTypeEffectivenessState>? typeEffectivenessState = null;
+        CapturedSemanticWorkflow<ZaStaticMapMarkerCatalog>? staticMapMarkers = null;
+        CapturedSemanticWorkflow<ZaNamedFlagCatalog>? namedFlagCatalog = null;
+        CapturedSemanticWorkflow<ZaPokemonResourceCatalog>? pokemonResourceCatalog = null;
 
         using (var readerPool = ZaWorkflowFileSource.CreateFreshSemanticReaderPool(
                    cacheManager,
@@ -634,6 +649,14 @@ public sealed class ZaWorkflowService
                         moves = CaptureSemanticWorkflow(
                             () => new ZaMovesWorkflowService(source).LoadGameModuleReadOnly(project));
                         break;
+                    case 4:
+                        staticMapMarkers = CaptureSemanticWorkflow(
+                            () => new ZaStaticMapMarkerCatalogService(source).Load(project));
+                        namedFlagCatalog = CaptureSemanticWorkflow(
+                            () => new ZaNamedFlagCatalogService(source).Load(project));
+                        pokemonResourceCatalog = CaptureSemanticWorkflow(
+                            () => new ZaPokemonResourceCatalogService(source).Load(project));
+                        break;
                 }
             }
 
@@ -658,6 +681,15 @@ public sealed class ZaWorkflowService
         var preparedTypeEffectivenessState = RequirePrepared(
             typeEffectivenessState,
             "type effectiveness").Get();
+        var preparedStaticMapMarkers = RequirePrepared(
+            staticMapMarkers,
+            "static map markers").Get();
+        var preparedNamedFlagCatalog = RequirePrepared(
+            namedFlagCatalog,
+            "named flag catalog").Get();
+        var preparedPokemonResourceCatalog = RequirePrepared(
+            pokemonResourceCatalog,
+            "Pokemon resource catalog").Get();
         return (
             preparedScriptedBossEncounters,
             preparedWildEncounters,
@@ -666,7 +698,10 @@ public sealed class ZaWorkflowService
             preparedEncounterCompatibility,
             preparedPokemon,
             preparedTrainerPools,
-            preparedTypeEffectivenessState);
+            preparedTypeEffectivenessState,
+            preparedStaticMapMarkers,
+            preparedNamedFlagCatalog,
+            preparedPokemonResourceCatalog);
     }
 
     public int GameModuleCapabilityBatchParallelism =>
@@ -732,6 +767,27 @@ public sealed class ZaWorkflowService
         var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
         var executableReader = new BoundedGameModuleExecutableReader(paths);
         return new ZaTypeEffectivenessStateService(executableReader.ReadAllBytes).Load(project);
+    }
+
+    public ZaStaticMapMarkerCatalog LoadGameModuleStaticMapMarkers(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaStaticMapMarkerCatalogService(CreateGameModuleFileSource()).Load(project);
+    }
+
+    public ZaNamedFlagCatalog LoadGameModuleNamedFlagCatalog(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaNamedFlagCatalogService(CreateGameModuleFileSource()).Load(project);
+    }
+
+    public ZaPokemonResourceCatalog LoadGameModulePokemonResourceCatalog(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var project = new ProjectWorkspaceService().Open(paths, DateTimeOffset.UtcNow);
+        return new ZaPokemonResourceCatalogService(CreateGameModuleFileSource()).Load(project);
     }
 
     private ZaWorkflowFileSource CreateGameModuleFileSource()

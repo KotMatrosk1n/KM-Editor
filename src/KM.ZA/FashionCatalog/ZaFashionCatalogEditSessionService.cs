@@ -15,6 +15,7 @@ namespace KM.ZA.FashionCatalog;
 internal sealed class ZaFashionCatalogEditSessionService
 {
     private const string PendingFieldPrefix = "catalogField:";
+    private const string LegacyDressUpVariantOrderField = "variantOrder";
 
     private static readonly JsonSerializerOptions PayloadOptions = new(JsonSerializerDefaults.Web)
     {
@@ -502,8 +503,16 @@ internal sealed class ZaFashionCatalogEditSessionService
             ZaFashionCatalogFields.ColorVariantCode => new(ColorVariantCode: ParseUInt(operation)),
             ZaFashionCatalogFields.PrimaryColorLabel => new(PrimaryColorLabel: RequireValue(operation)),
             ZaFashionCatalogFields.SecondaryColorLabel => new(SecondaryColorLabel: RequireValue(operation)),
-            ZaFashionCatalogFields.DisplayOrder => new(DisplayOrder: ParseUInt(operation)),
-            ZaFashionCatalogFields.VariantOrder => new(VariantOrder: ParseUInt(operation)),
+            ZaFashionCatalogFields.Price => new(Price: ParseUInt(operation)),
+            ZaFashionCatalogFields.FootwearSubtype => new(
+                FootwearSubtype: RequireValue(operation)),
+            ZaFashionCatalogFields.UiIndex => throw ReadOnlyUiIndex(operation),
+            ZaFashionCatalogFields.DisplayOrder => throw CorrectedLegacyDressUpField(
+                operation,
+                ZaFashionCatalogFields.Price),
+            LegacyDressUpVariantOrderField => throw CorrectedLegacyDressUpField(
+                operation,
+                ZaFashionCatalogFields.UiIndex),
             _ => throw UnsupportedField(operation),
         };
     }
@@ -672,6 +681,16 @@ internal sealed class ZaFashionCatalogEditSessionService
         new(
             $"Fashion Catalog field '{operation.Field}' is not supported for {FormatFile(operation.CatalogFile)}.");
 
+    private static InvalidDataException ReadOnlyUiIndex(ZaFashionCatalogFieldEdit operation) =>
+        new(
+            $"Fashion Catalog field '{operation.Field}' is read-only until a coordinated category reorder can preserve unique UI positions.");
+
+    private static InvalidDataException CorrectedLegacyDressUpField(
+        ZaFashionCatalogFieldEdit operation,
+        string correctedField) =>
+        new(
+            $"Fashion Catalog field '{operation.Field}' used an incorrect older label. Review and restage it as '{correctedField}'; it was not replayed automatically.");
+
     private static string CreatePendingField(ZaFashionCatalogFieldEdit operation) =>
         string.Create(
             CultureInfo.InvariantCulture,
@@ -682,8 +701,16 @@ internal sealed class ZaFashionCatalogEditSessionService
         var value = operation.Clear ? "clear" : operation.Value;
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"Set {FormatFile(operation.CatalogFile)} row {operation.Binding.PhysicalIndex + 1} {operation.Field} to '{value}'.");
+            $"Set {FormatFile(operation.CatalogFile)} row {operation.Binding.PhysicalIndex + 1} {FormatField(operation.Field)} to '{value}'.");
     }
+
+    private static string FormatField(string field) => field switch
+    {
+        ZaFashionCatalogFields.Price => "price",
+        ZaFashionCatalogFields.UiIndex => "position in category",
+        ZaFashionCatalogFields.FootwearSubtype => "footwear style",
+        _ => field,
+    };
 
     private static string GetVirtualPath(ZaFashionCatalogFile file) => file switch
     {

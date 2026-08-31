@@ -9,6 +9,7 @@ public static class ZaFashionLineupCapacityReasonCodes
     public const string ItemIdentityAllocationUnproven = "item-identity-allocation-unproven";
     public const string ExternalItemConsumerOwnershipUnproven = "external-item-consumer-ownership-unproven";
     public const string LineupReferenceAllocationUnproven = "lineup-reference-allocation-unproven";
+    public const string UiIndexAllocationUnproven = "ui-index-allocation-unproven";
     public const string DisplayOrderAllocationUnproven = "display-order-allocation-unproven";
     public const string RuntimeMenuCapacityUnverified = "runtime-menu-capacity-unverified";
     public const string RuntimeCursorCapacityUnverified = "runtime-cursor-capacity-unverified";
@@ -48,27 +49,14 @@ public sealed record ZaFashionLineupCapacityAssessment(
     bool ActivationConditionsPreserved,
     bool AllKnownLineupFieldsPreserved,
     bool AllKnownCatalogFieldsPreserved,
-    bool CatalogDisplayOrderIsOneThroughCount,
+    bool? DressUpUiIndexesArePositiveAndUniqueWithinCategory,
+    bool? HairAndMakeupDisplayOrdersAreOneThroughCount,
     bool CanChangeCapacity,
     ZaFashionLineupStructuralPlan StructuralPlan,
     IReadOnlyList<string> BlockingReasons);
 
 public sealed class ZaFashionLineupCapacityService
 {
-    private static readonly IReadOnlyList<string> CapacityBlockingReasons = Array.AsReadOnly(
-    new[]
-    {
-        ZaFashionLineupCapacityReasonCodes.ItemIdentityAllocationUnproven,
-        ZaFashionLineupCapacityReasonCodes.ExternalItemConsumerOwnershipUnproven,
-        ZaFashionLineupCapacityReasonCodes.LineupReferenceAllocationUnproven,
-        ZaFashionLineupCapacityReasonCodes.DisplayOrderAllocationUnproven,
-        ZaFashionLineupCapacityReasonCodes.RuntimeMenuCapacityUnverified,
-        ZaFashionLineupCapacityReasonCodes.RuntimeCursorCapacityUnverified,
-        ZaFashionLineupCapacityReasonCodes.RuntimePurchaseCapacityUnverified,
-        ZaFashionLineupCapacityReasonCodes.RuntimeReopenCapacityUnverified,
-        ZaFashionLineupCapacityReasonCodes.RuntimeSaveCapacityUnverified,
-    });
-
     private readonly ZaFashionCatalogService catalogService = new();
 
     public ZaFashionLineupCapacityAssessment AssessCurrentSource(
@@ -222,10 +210,11 @@ public sealed class ZaFashionLineupCapacityService
             ActivationConditionsPreserved: true,
             AllKnownLineupFieldsPreserved: true,
             AllKnownCatalogFieldsPreserved: true,
-            catalogProof.DisplayOrderIsOneThroughCount,
+            catalogProof.DressUpUiIndexesArePositiveAndUniqueWithinCategory,
+            catalogProof.HairAndMakeupDisplayOrdersAreOneThroughCount,
             CanChangeCapacity: false,
             plan,
-            CapacityBlockingReasons);
+            CreateCapacityBlockingReasons(isDressUp));
     }
 
     private static ZaFashionCatalogSourceSet CloneSources(ZaFashionCatalogSourceSet sources)
@@ -269,24 +258,21 @@ public sealed class ZaFashionLineupCapacityService
                 "The dress-up item catalog did not survive a complete rebuild and reparse; no capacity plan was returned.");
         }
 
-        var displayOrderIsOneThroughCount = IsOneThroughCount(
-            document.Rows,
-            static row => row.HasDisplayOrder,
-            static row => row.DisplayOrder);
-        if (displayOrderIsOneThroughCount != IsOneThroughCount(
-                rebuilt.Rows,
-                static row => row.HasDisplayOrder,
-                static row => row.DisplayOrder))
+        var uiIndexesArePositiveAndUniqueWithinCategory =
+            AreUiIndexesPositiveAndUniqueWithinCategory(document.Rows);
+        if (uiIndexesArePositiveAndUniqueWithinCategory
+            != AreUiIndexesPositiveAndUniqueWithinCategory(rebuilt.Rows))
         {
             throw new InvalidDataException(
-                "The dress-up item display-order structure changed during rebuild; no capacity plan was returned.");
+                "The dress-up item UI-index structure changed during rebuild; no capacity plan was returned.");
         }
 
         return new CatalogRebuildProof(
             rebuiltBytes,
             structureRevision,
             document.Rows.Count,
-            displayOrderIsOneThroughCount);
+            uiIndexesArePositiveAndUniqueWithinCategory,
+            HairAndMakeupDisplayOrdersAreOneThroughCount: null);
     }
 
     private static CatalogRebuildProof RebuildHairAndMakeupCatalog(byte[] sourceBytes)
@@ -330,7 +316,8 @@ public sealed class ZaFashionLineupCapacityService
             rebuiltBytes,
             structureRevision,
             document.Rows.Count,
-            displayOrderIsOneThroughCount);
+            DressUpUiIndexesArePositiveAndUniqueWithinCategory: null,
+            HairAndMakeupDisplayOrdersAreOneThroughCount: displayOrderIsOneThroughCount);
     }
 
     private static string CreateCatalogStructureRevision(
@@ -459,6 +446,33 @@ public sealed class ZaFashionLineupCapacityService
         return true;
     }
 
+    private static bool AreUiIndexesPositiveAndUniqueWithinCategory(
+        IReadOnlyList<ZaDressUpCatalogDataRow> rows)
+    {
+        return rows.Count > 0
+            && rows.All(row => row.HasUiIndex && row.UiIndex > 0)
+            && rows.GroupBy(row => row.CatalogGroupCode)
+                .All(group => group.Select(row => row.UiIndex).Distinct().Count() == group.Count());
+    }
+
+    private static IReadOnlyList<string> CreateCapacityBlockingReasons(bool isDressUp)
+    {
+        return Array.AsReadOnly(new[]
+        {
+            ZaFashionLineupCapacityReasonCodes.ItemIdentityAllocationUnproven,
+            ZaFashionLineupCapacityReasonCodes.ExternalItemConsumerOwnershipUnproven,
+            ZaFashionLineupCapacityReasonCodes.LineupReferenceAllocationUnproven,
+            isDressUp
+                ? ZaFashionLineupCapacityReasonCodes.UiIndexAllocationUnproven
+                : ZaFashionLineupCapacityReasonCodes.DisplayOrderAllocationUnproven,
+            ZaFashionLineupCapacityReasonCodes.RuntimeMenuCapacityUnverified,
+            ZaFashionLineupCapacityReasonCodes.RuntimeCursorCapacityUnverified,
+            ZaFashionLineupCapacityReasonCodes.RuntimePurchaseCapacityUnverified,
+            ZaFashionLineupCapacityReasonCodes.RuntimeReopenCapacityUnverified,
+            ZaFashionLineupCapacityReasonCodes.RuntimeSaveCapacityUnverified,
+        });
+    }
+
     private static string CreatePlanRevision(
         string sourceRevision,
         string catalogSourceRevision,
@@ -503,5 +517,6 @@ public sealed class ZaFashionLineupCapacityService
         byte[] RebuiltBytes,
         string StructureRevision,
         int RowCount,
-        bool DisplayOrderIsOneThroughCount);
+        bool? DressUpUiIndexesArePositiveAndUniqueWithinCategory,
+        bool? HairAndMakeupDisplayOrdersAreOneThroughCount);
 }

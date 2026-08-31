@@ -276,6 +276,69 @@ requireContrast('Renegade success state', '#68d9a0', '#141518');
 requireContrast('Renegade warning state', '#efc76b', '#141518');
 requireContrast('Renegade danger state', '#ff9388', '#141518');
 
+const renegadeTreatmentIndex = styles.indexOf('/* Renegade visual treatment');
+const royalTreatmentIndex = styles.indexOf('/* Royal visual treatment');
+assert.ok(
+  renegadeTreatmentIndex > colorSafePaletteIndex && royalTreatmentIndex > renegadeTreatmentIndex,
+  'Renegade and Royal presentation overrides must remain separately scoped.'
+);
+const renegadeTreatment = styles.slice(renegadeTreatmentIndex, royalTreatmentIndex);
+for (const selector of [
+  '.swsh-pokemon-summary-card',
+  '.sv-pokemon-summary-card',
+  '.za-pokemon-summary-card',
+  '.pokemon-stat-total:not(.is-over-limit)',
+  '.za-dex-layout-search',
+  '.editable-field-group',
+  '.move-player-damage-control',
+  '.move-player-damage-launch-condition.is-when-reached',
+  '.move-player-damage-launch-condition.is-when-reached\n  .move-player-damage-launch-condition-badge',
+  '.move-player-damage-controller-availability-heading > svg',
+  '.move-scripted-boss-owner-list li',
+  '.move-scripted-boss-owner-list svg',
+  '.text-category-tabs button.is-active',
+  '.za-trainer-bulk-actions',
+  '.npc-item-gift-tab.is-selected',
+  ".game-dump-category-filters [aria-pressed='true']",
+  ".spreadsheet-preview-filters [aria-pressed='true']",
+  '.za-player-partner-title > svg',
+  '.za-scripted-boss-status-locked',
+  '.za-scripted-boss-phase-model-status:not(.is-unverified):not(.is-verified-none)',
+  '.za-scripted-boss-phase-guide',
+  '.za-scripted-boss-phase-stages > section > div > span',
+  '.za-scripted-boss-action-list\n  li:not(.is-runtime-variant-normal):not(.is-runtime-variant-plus):not(.is-runtime-variant-boss)',
+  '.za-scripted-boss-selection-compatibility:not(.is-base-verified):not(.is-gameplay-tested):not(.is-experimental)',
+  '.za-encounter-advanced-data',
+  '.settings-tabs'
+]) {
+  assert.ok(
+    renegadeTreatment.includes(selector),
+    `Renegade must replace the legacy Classic-blue editor surface ${selector}.`
+  );
+}
+for (const protectedSemanticSelector of [
+  '.type-chart-cell-immune',
+  '.za-scripted-boss-actions,',
+  '.za-scripted-boss-action-list li,'
+]) {
+  assert.ok(
+    !renegadeTreatment
+      .slice(renegadeTreatment.indexOf('Older editor cards'), renegadeTreatment.indexOf('/* Fieldset legends'))
+      .includes(protectedSemanticSelector),
+    `Renegade neutral-surface normalization must not override ${protectedSemanticSelector}.`
+  );
+}
+for (const declaration of [
+  'color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-muted))',
+  'border-color: color-mix(in srgb, var(--color-accent) 24%, var(--color-border))',
+  'border-color: rgb(var(--color-accent-bright-rgb) / 38%)'
+]) {
+  assert.ok(
+    renegadeTreatment.includes(declaration),
+    `Renegade legacy editor surfaces lost ${declaration}.`
+  );
+}
+
 const royalPalette = styles.slice(royalPaletteIndex, highContrastPaletteIndex);
 for (const declaration of [
   'color-scheme: light',

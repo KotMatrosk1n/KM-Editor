@@ -82,6 +82,7 @@ type FashionCatalogPresentation = {
   colorLabelByValue: ReadonlyMap<string, string>;
   dressItemTitleById: ReadonlyMap<string, string>;
   dressVariantLabelByValue: ReadonlyMap<string, string>;
+  footwearSubtypeLabelByValue: ReadonlyMap<string, string>;
   groupLabelByModelPart: ReadonlyMap<string, string>;
   hairItemTitleById: ReadonlyMap<string, string>;
   hairModelLabelByValue: ReadonlyMap<string, string>;
@@ -150,8 +151,8 @@ export function FashionCatalogSection({
   const feedbackRef = useRef<HTMLDivElement | null>(null);
 
   const presentation = useMemo(
-    () => createFashionCatalogPresentation(workflow),
-    [workflow]
+    () => createFashionCatalogPresentation(workflow, t),
+    [t, workflow]
   );
 
   const rows = useMemo(() => getRows(workflow, catalogFile), [catalogFile, workflow]);
@@ -165,8 +166,8 @@ export function FashionCatalogSection({
   const visibleRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize);
   const selectedRow = visibleRows.find((row) => row.physicalRowId === selectedRowId) ?? null;
   const fields = useMemo(
-    () => getFieldDefinitions(catalogFile, t),
-    [catalogFile, t]
+    () => getFieldDefinitions(catalogFile, t, selectedRow),
+    [catalogFile, selectedRow, t]
   );
   const field = fields.find((candidate) => candidate.field === selectedField) ?? fields[0];
   const draftKey = selectedRow && field
@@ -702,7 +703,7 @@ function getSearchText(
     return `${row.itemId} ${resolveLineupItemLabel(row.itemId, presentation, file)} ${row.lineupId} ${row.shopIds.join(' ')}`;
   }
   if ('modelVariant' in row) {
-    return `${row.itemId} ${presentation.dressItemTitleById.get(String(row.itemId)) ?? ''} ${row.modelPart} ${row.modelVariant} ${row.primaryColorLabel} ${resolveTextLabel(row.primaryColorLabel, presentation)} ${row.secondaryColorLabel} ${resolveTextLabel(row.secondaryColorLabel, presentation)}`;
+    return `${row.itemId} ${presentation.dressItemTitleById.get(String(row.itemId)) ?? ''} ${row.modelPart} ${row.modelVariant} ${row.primaryColorLabel} ${resolveTextLabel(row.primaryColorLabel, presentation)} ${row.secondaryColorLabel} ${resolveTextLabel(row.secondaryColorLabel, presentation)} ${row.price} ${row.uiIndex} ${row.footwearSubtype ?? ''}`;
   }
   if ('displayLabel' in row) {
     return `${row.modelPart} ${row.displayLabel} ${resolveTextLabel(row.displayLabel, presentation)} ${row.displayOrder}`;
@@ -758,7 +759,8 @@ function getRowSubtitle(
 
 function getFieldDefinitions(
   file: FashionCatalogFile,
-  t: Translate
+  t: Translate,
+  selectedRow: CatalogRecord | null
 ): FieldDefinition[] {
   if (file === 'dressUpItems') {
     return [
@@ -770,13 +772,22 @@ function getFieldDefinitions(
       ['colorVariantCode', 'option'],
       ['primaryColorLabel', 'option'],
       ['secondaryColorLabel', 'option'],
-      ['displayOrder', 'number'],
-      ['variantOrder', 'number']
+      ['price', 'number'],
+      ['uiIndex', 'option'],
+      ['footwearSubtype', 'option']
     ].map(([field, valueKind]) => ({
       field,
       hintKey: getFieldHintKey(file, field),
       label: t(`fashionCatalog.fields.${field}`),
-      readOnly: field === 'categoryCode' || field === 'colorVariantCode',
+      readOnly:
+        field === 'catalogGroupCode'
+        || field === 'categoryCode'
+        || field === 'colorVariantCode'
+        || field === 'uiIndex'
+        || (field === 'footwearSubtype'
+          && (!selectedRow
+            || !('modelVariant' in selectedRow)
+            || selectedRow.catalogGroupCode !== 7)),
       valueKind: valueKind as FieldDefinition['valueKind']
     }));
   }
@@ -825,6 +836,18 @@ function getFieldHintKey(file: FashionCatalogFile, field: string): string {
   ) {
     return 'fieldHelp.catalog.raw.unverified';
   }
+  if (field === 'price') {
+    return 'fashionCatalog.fields.priceHelp';
+  }
+  if (field === 'catalogGroupCode') {
+    return 'fashionCatalog.fields.catalogGroupCodeHelp';
+  }
+  if (field === 'uiIndex') {
+    return 'fashionCatalog.fields.uiIndexHelp';
+  }
+  if (field === 'footwearSubtype') {
+    return 'fashionCatalog.fields.footwearSubtypeHelp';
+  }
   if (
     field === 'displayLabel'
     || field === 'primaryColorLabel'
@@ -846,7 +869,8 @@ function getFieldHintKey(file: FashionCatalogFile, field: string): string {
 }
 
 function createFashionCatalogPresentation(
-  workflow: FashionCatalogWorkflow | null
+  workflow: FashionCatalogWorkflow | null,
+  t: Translate
 ): FashionCatalogPresentation {
   const textLabelByKey = new Map(
     workflow?.textLabels.map((label) => [label.key, label.label] as const) ?? []
@@ -907,6 +931,11 @@ function createFashionCatalogPresentation(
     colorLabelByValue: createUniqueLabelMap(colorNames),
     dressItemTitleById: createUniqueLabelMap(dressItemTitlesById),
     dressVariantLabelByValue: createUniqueLabelMap(dressVariantNames),
+    footwearSubtypeLabelByValue: new Map([
+      ['Sneakers', t('fashionCatalog.footwearSubtype.sneakers')],
+      ['Boots', t('fashionCatalog.footwearSubtype.boots')],
+      ['Loafers', t('fashionCatalog.footwearSubtype.loafers')]
+    ]),
     groupLabelByModelPart,
     hairItemTitleById: createUniqueLabelMap(hairItemTitlesById),
     hairModelLabelByValue: createUniqueLabelMap(hairModelNames),
@@ -949,6 +978,10 @@ function getOptionLabel(
   }
   if (field === 'modelVariant') {
     return presentation.dressVariantLabelByValue.get(value)
+      ?? value;
+  }
+  if (field === 'footwearSubtype') {
+    return presentation.footwearSubtypeLabelByValue.get(value)
       ?? value;
   }
   if (
@@ -1065,7 +1098,13 @@ function getLoadedOptions(
     values = workflow.hairAndMakeup.map((row) => row.itemId);
   }
 
-  return Array.from(new Set(values.filter((value) => value !== null).map(String)))
+  return Array.from(
+    new Set(
+      values
+        .filter((value) => value !== null && String(value).trim().length > 0)
+        .map(String)
+    )
+  )
     .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
 }
 

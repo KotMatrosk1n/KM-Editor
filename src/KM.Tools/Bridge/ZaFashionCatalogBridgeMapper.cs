@@ -77,8 +77,9 @@ public static class ZaFashionCatalogBridgeMapper
                 row.ColorVariantCode,
                 row.PrimaryColorLabel,
                 row.SecondaryColorLabel,
-                row.DisplayOrder,
-                row.VariantOrder)).ToArray(),
+                row.Price,
+                row.UiIndex,
+                row.FootwearSubtype)).ToArray(),
             snapshot.DressUpGroups.Select(row => new DressUpGroupRecordDto(
                 row.PhysicalIndex,
                 row.PhysicalRowId,

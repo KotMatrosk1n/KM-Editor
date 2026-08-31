@@ -46,8 +46,10 @@ public static class ZaFashionCatalogFields
     public const string ColorVariantCode = "colorVariantCode";
     public const string PrimaryColorLabel = "primaryColorLabel";
     public const string SecondaryColorLabel = "secondaryColorLabel";
+    public const string Price = "price";
+    public const string UiIndex = "uiIndex";
+    public const string FootwearSubtype = "footwearSubtype";
     public const string DisplayOrder = "displayOrder";
-    public const string VariantOrder = "variantOrder";
     public const string DisplayLabel = "displayLabel";
     public const string ModelKey = "modelKey";
     public const string CatalogTypeCode = "catalogTypeCode";
@@ -80,8 +82,8 @@ public sealed record ZaDressUpItemPatch(
     uint? ColorVariantCode = null,
     string? PrimaryColorLabel = null,
     string? SecondaryColorLabel = null,
-    uint? DisplayOrder = null,
-    uint? VariantOrder = null);
+    uint? Price = null,
+    string? FootwearSubtype = null);
 
 public sealed record ZaDressUpGroupPatch(
     string? ModelPart = null,
@@ -112,8 +114,9 @@ public sealed record ZaDressUpItemRecord(
     uint ColorVariantCode,
     string PrimaryColorLabel,
     string SecondaryColorLabel,
-    uint DisplayOrder,
-    uint VariantOrder);
+    uint Price,
+    uint UiIndex,
+    string? FootwearSubtype);
 
 public sealed record ZaDressUpGroupRecord(
     int PhysicalIndex,

@@ -27,6 +27,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SV.Data;
 using KM.SV.GameModules;
+using KM.ZA.GameModules;
 
 namespace KM.Tools.Application;
 
@@ -188,6 +189,21 @@ internal static class GameModuleProviders
                     family,
                     GameModuleMaturityDto.ReadOnlyFirst,
                     "edit-proposals-and-runtime-effect-resolution-unavailable"),
+                Available(
+                    GameModuleDto.LegendsZaStaticMapMarkers,
+                    family,
+                    GameModuleMaturityDto.ReadOnlyFirst,
+                    "runtime-reachability-and-marker-semantics-unavailable"),
+                Available(
+                    GameModuleDto.LegendsZaNamedFlagCatalog,
+                    family,
+                    GameModuleMaturityDto.ReadOnlyFirst,
+                    "runtime-values-and-save-bindings-unavailable"),
+                Available(
+                    GameModuleDto.LegendsZaPokemonResourceCatalog,
+                    family,
+                    GameModuleMaturityDto.ReadOnlyFirst,
+                    "runtime-resource-use-and-swap-compatibility-unavailable"),
             ],
             _ => throw new SemanticExploreValidationException(
                 "The selected game-specific module family is unsupported.",
@@ -3406,6 +3422,208 @@ internal static class GameModuleProviders
         return Complete(module, Array.Empty<ApiDiagnostic>(), records);
     }
 
+    public static GameModuleData BuildStaticMapMarkers(
+        ZaStaticMapMarkerCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        var module = GameModuleDto.LegendsZaStaticMapMarkers;
+        EnsureProjectionCounts(
+            catalog.Markers.Count,
+            checked(catalog.Markers.Count * 8L));
+        var capability = Capability(module);
+        var providerId = capability.ProviderId;
+        var records = new BoundedRecordCollection();
+        foreach (var marker in catalog.Markers.OrderBy(marker => marker.PhysicalIndex))
+        {
+            var identity = marker.PhysicalIndex.ToString(CultureInfo.InvariantCulture);
+            var recordId = RecordId(providerId, "marker", identity);
+            var title = FirstPresent(marker.PointName, marker.PointType)
+                ?? $"Map marker {checked(marker.PhysicalIndex + 1).ToString(CultureInfo.InvariantCulture)}";
+            records.Add(CreateRecord(
+                recordId,
+                "staticMapMarker",
+                StableGroup("catalog", "static-map-markers"),
+                parentRecordId: null,
+                records.Count,
+                title,
+                "Static point stored by the layered map catalog. Names and point types are reported exactly; no category, visibility, or runtime reachability is inferred.",
+                target: null,
+                capability,
+                [
+                    NullableTextFact(providerId, recordId, "pointName", "Stored point name", marker.PointName),
+                    NullableTextFact(providerId, recordId, "pointType", "Stored point type", marker.PointType),
+                    DecimalFact(providerId, recordId, "x", "X", marker.X),
+                    DecimalFact(providerId, recordId, "y", "Y", marker.Y),
+                    DecimalFact(providerId, recordId, "z", "Z", marker.Z),
+                    SignedFact(providerId, recordId, "rawField2", "Unmapped point value 1", marker.RawField2),
+                    SignedFact(providerId, recordId, "rawField3", "Unmapped point value 2", marker.RawField3),
+                    SignedFact(providerId, recordId, "nestedRawField2", "Unmapped nested value", marker.NestedRawField2),
+                ]));
+        }
+
+        return Complete(module, Array.Empty<ApiDiagnostic>(), records);
+    }
+
+    public static GameModuleData BuildNamedFlagCatalog(
+        ZaNamedFlagCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        var module = GameModuleDto.LegendsZaNamedFlagCatalog;
+        EnsureProjectionCounts(
+            catalog.TotalEntryCount,
+            checked(catalog.TotalEntryCount * 4L));
+        var capability = Capability(module);
+        var providerId = capability.ProviderId;
+        var records = new BoundedRecordCollection();
+        foreach (var source in catalog.Sources)
+        {
+            var sourceDescriptor = NamedCatalogDescriptor(source.Source.VirtualPath);
+            foreach (var entry in source.Entries.OrderBy(entry => entry.PhysicalIndex))
+            {
+                var entryIdentity = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{sourceDescriptor.Identity}:{entry.PhysicalIndex}");
+                var recordId = RecordId(providerId, "entry", entryIdentity);
+                records.Add(CreateRecord(
+                    recordId,
+                    "namedFlagCatalogEntry",
+                    StableGroup("source", sourceDescriptor.Identity),
+                    parentRecordId: null,
+                    records.Count,
+                    entry.Name,
+                    "Named catalog entry only. No stored value, save binding, value type, activation state, or runtime behavior is inferred.",
+                    target: null,
+                    capability,
+                    [
+                        TextFact(providerId, recordId, "name", "Name", entry.Name),
+                        EnumFact(
+                            providerId,
+                            recordId,
+                            "catalogKind",
+                            "Catalog kind",
+                            entry.CatalogKind == ZaNamedCatalogKind.Flag
+                                ? "Flag names"
+                                : "Work variable names"),
+                        EnumFact(
+                            providerId,
+                            recordId,
+                            "sourceCatalog",
+                            "Source catalog",
+                            sourceDescriptor.Label),
+                        SignedFact(providerId, recordId, "physicalIndex", "Physical position", entry.PhysicalIndex),
+                    ]));
+            }
+        }
+
+        if (records.Count != catalog.TotalEntryCount)
+        {
+            throw new SemanticExploreValidationException(
+                "Named Flag Catalog returned an inconsistent physical entry count.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        return Complete(module, Array.Empty<ApiDiagnostic>(), records);
+    }
+
+    public static GameModuleData BuildPokemonResourceCatalog(
+        ZaPokemonResourceCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        var module = GameModuleDto.LegendsZaPokemonResourceCatalog;
+        var animationCount = catalog.Entries.Sum(entry => (long)entry.Animations.Count);
+        var locatorCount = catalog.Entries.Sum(entry => (long)entry.Locators.Count);
+        EnsureProjectionCounts(
+            checked(catalog.Entries.Count + animationCount + locatorCount),
+            checked(catalog.Entries.Count * 14L + animationCount * 2L + locatorCount * 3L));
+        var capability = Capability(module);
+        var providerId = capability.ProviderId;
+        var records = new BoundedRecordCollection();
+        foreach (var entry in catalog.Entries.OrderBy(entry => entry.PhysicalIndex))
+        {
+            var identity = PokemonResourceIdentity(entry.Species, entry.Form, entry.Gender);
+            var recordId = RecordId(providerId, "resource", identity);
+            var title = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Species {entry.Species}, form {entry.Form}, gender code {entry.Gender}");
+            records.Add(CreateRecord(
+                recordId,
+                "pokemonResource",
+                StableGroup("species", entry.Species.ToString(CultureInfo.InvariantCulture)),
+                parentRecordId: null,
+                records.Count,
+                title,
+                "Layered catalog references for one species, form, and gender identity. Presence does not establish runtime use, activation, or swap compatibility.",
+                target: null,
+                capability,
+                [
+                    SignedFact(providerId, recordId, "speciesId", "Species ID", entry.Species),
+                    SignedFact(providerId, recordId, "form", "Form", entry.Form),
+                    SignedFact(providerId, recordId, "genderCode", "Gender code", entry.Gender),
+                    SignedFact(providerId, recordId, "catalogVersion", "Catalog version", catalog.Version),
+                    NullableTextFact(providerId, recordId, "modelPath", "Catalog model path", PublishPokemonDataPath(entry.ModelPath)),
+                    DerivedNullableTextFact(providerId, recordId, "baseAnimationPath", "Derived base animation path", PublishVirtualPath(entry.DerivedBaseAnimationPath)),
+                    NullableTextFact(providerId, recordId, "materialTablePath", "Catalog material path", PublishPokemonDataPath(entry.MaterialTablePath)),
+                    NullableTextFact(providerId, recordId, "configurationPath", "Catalog configuration path", PublishPokemonDataPath(entry.ConfigurationPath)),
+                    NullableTextFact(providerId, recordId, "iconReference", "Logical icon reference", entry.IconPath),
+                    NullableTextFact(providerId, recordId, "defensePath", "Catalog defense path", PublishPokemonDataPath(entry.DefensePath)),
+                    DerivedSignedFact(providerId, recordId, "animationCount", "Animation reference count", entry.Animations.Count),
+                    DerivedSignedFact(providerId, recordId, "locatorCount", "Locator reference count", entry.Locators.Count),
+                    SignedFact(providerId, recordId, "rawField7", "Unmapped catalog value", entry.RawField7),
+                ]));
+
+            foreach (var animation in entry.Animations.OrderBy(animation => animation.PhysicalIndex))
+            {
+                var animationId = RecordId(
+                    providerId,
+                    "animation",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{identity}:{animation.PhysicalIndex}"));
+                records.Add(CreateRecord(
+                    animationId,
+                    "pokemonResourceAnimation",
+                    StableGroup("resource", identity),
+                    recordId,
+                    records.Count,
+                    $"Animation reference {checked(animation.PhysicalIndex + 1).ToString(CultureInfo.InvariantCulture)}",
+                    "Logical animation reference from the catalog. It is not treated as a resolved archive path or runtime-use claim.",
+                    target: null,
+                    capability,
+                    [
+                        SignedFact(providerId, animationId, "formNumber", "Stored form number", animation.FormNumber),
+                        NullableTextFact(providerId, animationId, "logicalReference", "Logical reference", animation.Path),
+                    ]));
+            }
+
+            foreach (var locator in entry.Locators.OrderBy(locator => locator.PhysicalIndex))
+            {
+                var locatorId = RecordId(
+                    providerId,
+                    "locator",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{identity}:{locator.PhysicalIndex}"));
+                records.Add(CreateRecord(
+                    locatorId,
+                    "pokemonResourceLocator",
+                    StableGroup("resource", identity),
+                    recordId,
+                    records.Count,
+                    $"Locator reference {checked(locator.PhysicalIndex + 1).ToString(CultureInfo.InvariantCulture)}",
+                    "Logical locator reference from the catalog. It is not treated as a resolved archive path or runtime-use claim.",
+                    target: null,
+                    capability,
+                    [
+                        SignedFact(providerId, locatorId, "formNumber", "Stored form number", locator.FormNumber),
+                        SignedFact(providerId, locatorId, "locatorIndex", "Locator index", locator.LocatorIndex),
+                        NullableTextFact(providerId, locatorId, "logicalReference", "Logical reference", locator.Path),
+                    ]));
+            }
+        }
+
+        return Complete(module, Array.Empty<ApiDiagnostic>(), records);
+    }
+
     public static GameModuleData BuildTrainerPoolSwitching(TrainerPoolsWorkflowDto workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -4610,6 +4828,9 @@ internal static class GameModuleProviders
             GameModuleDto.LegendsZaMoveVariantComparison => "za.game-modules.move-variant-comparison",
             GameModuleDto.LegendsZaTrainerPoolSwitching => "za.game-modules.trainer-pool-switching",
             GameModuleDto.LegendsZaTypeEffectivenessState => "za.game-modules.type-effectiveness-state",
+            GameModuleDto.LegendsZaStaticMapMarkers => "za.game-modules.static-map-markers",
+            GameModuleDto.LegendsZaNamedFlagCatalog => "za.game-modules.named-flag-catalog",
+            GameModuleDto.LegendsZaPokemonResourceCatalog => "za.game-modules.pokemon-resource-catalog",
             _ => throw new ArgumentOutOfRangeException(nameof(module), module, null),
         };
     }
@@ -4622,7 +4843,7 @@ internal static class GameModuleProviders
                 SemanticGameFamilyDto.SwordShield,
             >= GameModuleDto.ScarletVioletTeraRaidAnalysis and <= GameModuleDto.ScarletVioletStellarBehavior =>
                 SemanticGameFamilyDto.ScarletViolet,
-            >= GameModuleDto.LegendsZaScriptedBossTimeline and <= GameModuleDto.LegendsZaTypeEffectivenessState =>
+            >= GameModuleDto.LegendsZaScriptedBossTimeline and <= GameModuleDto.LegendsZaPokemonResourceCatalog =>
                 SemanticGameFamilyDto.LegendsZA,
             _ => throw new ArgumentOutOfRangeException(nameof(module), module, null),
         };
@@ -4702,6 +4923,37 @@ internal static class GameModuleProviders
             unit,
             evidence,
             SemanticConfidenceDto.Verified);
+
+    private static GameModuleFactDto DecimalFact(
+        string providerId,
+        string recordId,
+        string fieldKey,
+        string label,
+        float value,
+        string? unit = null,
+        SemanticRecordRefDto? evidence = null)
+    {
+        if (!float.IsFinite(value))
+        {
+            throw new SemanticExploreValidationException(
+                "A game-specific module provider returned a non-finite decimal value.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        var canonical = value.ToString("R", CultureInfo.InvariantCulture);
+        return Fact(
+            providerId,
+            recordId,
+            fieldKey,
+            label,
+            new SemanticScalarValueDto(
+                SemanticValueKindDto.Decimal,
+                canonical,
+                canonical),
+            unit,
+            evidence,
+            SemanticConfidenceDto.Verified);
+    }
 
     private static GameModuleFactDto DerivedSignedFact(
         string providerId,
@@ -5187,6 +5439,70 @@ internal static class GameModuleProviders
             2 => "Boss",
             _ => $"Variant {variant.ToString(CultureInfo.InvariantCulture)}",
         };
+    }
+
+    private static string? FirstPresent(params string?[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    }
+
+    private static (string Identity, string Label) NamedCatalogDescriptor(string virtualPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualPath);
+        return virtualPath switch
+        {
+            "ik_event/bin/flag/event_flag.bin" => ("event-flags", "Event flags"),
+            "ik_event/bin/flag/system_flag.bin" => ("system-flags", "System flags"),
+            "ik_event/bin/flag/temp_flag.bin" => ("temporary-flags", "Temporary flags"),
+            "ik_event/bin/flag/quest_work.bin" => ("quest-work", "Quest work variables"),
+            "ik_event/bin/flag/system_work.bin" => ("system-work", "System work variables"),
+            "ik_event/bin/flag/temp_work.bin" => ("temporary-work", "Temporary work variables"),
+            "ik_event/bin/flag/momiji_work.bin" => ("momiji-work", "Momiji work variables"),
+            _ => throw new SemanticExploreValidationException(
+                "Named Flag Catalog returned an unsupported source identity.",
+                SemanticExploreFailureKind.InvalidData),
+        };
+    }
+
+    private static string PokemonResourceIdentity(ushort species, ushort form, byte gender) =>
+        string.Create(CultureInfo.InvariantCulture, $"{species}:{form}:{gender}");
+
+    private static string? PublishPokemonDataPath(string? path)
+    {
+        if (path is null)
+        {
+            return null;
+        }
+
+        const string dataPrefix = "ik_pokemon/data/";
+        return PublishVirtualPath(path.StartsWith(dataPrefix, StringComparison.Ordinal)
+            ? path
+            : dataPrefix + path);
+    }
+
+    private static string? PublishVirtualPath(string? path)
+    {
+        if (path is null)
+        {
+            return null;
+        }
+
+        if (path.Length == 0
+            || path.Length > 500
+            || path[0] == '/'
+            || path[^1] == '/'
+            || path.Contains('\\')
+            || path.Contains("//", StringComparison.Ordinal)
+            || path.Contains(':')
+            || path.Any(IsUnsafeUnicode)
+            || path.Split('/').Any(segment => segment.Length == 0 || segment is "." or ".."))
+        {
+            throw new SemanticExploreValidationException(
+                "Pokémon Resource Catalog returned an unsafe virtual resource path.",
+                SemanticExploreFailureKind.InvalidData);
+        }
+
+        return "romfs/" + path;
     }
 
     private static string RecordId(string providerId, string kind, string sourceIdentity) =>

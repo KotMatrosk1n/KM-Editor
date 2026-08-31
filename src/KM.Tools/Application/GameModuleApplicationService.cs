@@ -16,6 +16,7 @@ using KM.Core.Indexing;
 using KM.Core.Projects;
 using KM.Core.Semantics;
 using KM.SV.GameModules;
+using KM.ZA.GameModules;
 
 namespace KM.Tools.Application;
 
@@ -47,7 +48,10 @@ public sealed class GameModuleApplicationService
             EncounterCompatibilityWorkflowDto EncounterCompatibility,
             PokemonWorkflowDto Pokemon,
             TrainerPoolsWorkflowDto TrainerPools,
-            LegendsZaTypeEffectivenessStateDto TypeEffectivenessState)>
+            LegendsZaTypeEffectivenessStateDto TypeEffectivenessState,
+            ZaStaticMapMarkerCatalog StaticMapMarkers,
+            ZaNamedFlagCatalog NamedFlagCatalog,
+            ZaPokemonResourceCatalog PokemonResourceCatalog)>
         loadZaCapabilityBatchFresh;
     private readonly Func<ProjectPathsDto, TrainersWorkflowDto> loadTrainersFresh;
     private readonly Func<ProjectPathsDto, EncountersWorkflowDto> loadEncountersFresh;
@@ -58,6 +62,12 @@ public sealed class GameModuleApplicationService
     private readonly Func<ProjectPathsDto, TrainerPoolsWorkflowDto> loadTrainerPoolsFresh;
     private readonly Func<ProjectPathsDto, LegendsZaTypeEffectivenessStateDto>
         loadTypeEffectivenessStateFresh;
+    private readonly Func<ProjectPathsDto, ZaStaticMapMarkerCatalog>
+        loadStaticMapMarkersFresh;
+    private readonly Func<ProjectPathsDto, ZaNamedFlagCatalog>
+        loadNamedFlagCatalogFresh;
+    private readonly Func<ProjectPathsDto, ZaPokemonResourceCatalog>
+        loadPokemonResourceCatalogFresh;
     private readonly BoundedDerivedIndexCache<GameModuleData> cache = new(
         new BoundedDerivedIndexCacheOptions
         {
@@ -90,7 +100,10 @@ public sealed class GameModuleApplicationService
                 EncounterCompatibilityWorkflowDto EncounterCompatibility,
                 PokemonWorkflowDto Pokemon,
                 TrainerPoolsWorkflowDto TrainerPools,
-                LegendsZaTypeEffectivenessStateDto TypeEffectivenessState)>
+                LegendsZaTypeEffectivenessStateDto TypeEffectivenessState,
+                ZaStaticMapMarkerCatalog StaticMapMarkers,
+                ZaNamedFlagCatalog NamedFlagCatalog,
+                ZaPokemonResourceCatalog PokemonResourceCatalog)>
             loadZaCapabilityBatchFresh,
         Func<ProjectPathsDto, TrainersWorkflowDto> loadTrainersFresh,
         Func<ProjectPathsDto, EncountersWorkflowDto> loadEncountersFresh,
@@ -99,7 +112,10 @@ public sealed class GameModuleApplicationService
         Func<ProjectPathsDto, PokemonWorkflowDto> loadPokemonFresh,
         Func<ProjectPathsDto, TrainerPoolsWorkflowDto> loadTrainerPoolsFresh,
         Func<ProjectPathsDto, LegendsZaTypeEffectivenessStateDto>
-            loadTypeEffectivenessStateFresh)
+            loadTypeEffectivenessStateFresh,
+        Func<ProjectPathsDto, ZaStaticMapMarkerCatalog> loadStaticMapMarkersFresh,
+        Func<ProjectPathsDto, ZaNamedFlagCatalog> loadNamedFlagCatalogFresh,
+        Func<ProjectPathsDto, ZaPokemonResourceCatalog> loadPokemonResourceCatalogFresh)
     {
         this.semanticExploreService = semanticExploreService
             ?? throw new ArgumentNullException(nameof(semanticExploreService));
@@ -134,6 +150,12 @@ public sealed class GameModuleApplicationService
             ?? throw new ArgumentNullException(nameof(loadTrainerPoolsFresh));
         this.loadTypeEffectivenessStateFresh = loadTypeEffectivenessStateFresh
             ?? throw new ArgumentNullException(nameof(loadTypeEffectivenessStateFresh));
+        this.loadStaticMapMarkersFresh = loadStaticMapMarkersFresh
+            ?? throw new ArgumentNullException(nameof(loadStaticMapMarkersFresh));
+        this.loadNamedFlagCatalogFresh = loadNamedFlagCatalogFresh
+            ?? throw new ArgumentNullException(nameof(loadNamedFlagCatalogFresh));
+        this.loadPokemonResourceCatalogFresh = loadPokemonResourceCatalogFresh
+            ?? throw new ArgumentNullException(nameof(loadPokemonResourceCatalogFresh));
     }
 
     public ReadGameModuleCapabilitiesResponse ReadCapabilities(
@@ -420,6 +442,15 @@ public sealed class GameModuleApplicationService
                 GameModuleDto.LegendsZaTypeEffectivenessState =>
                     GameModuleProviders.BuildTypeEffectivenessState(
                         loadTypeEffectivenessStateFresh(scope.Paths)),
+                GameModuleDto.LegendsZaStaticMapMarkers =>
+                    GameModuleProviders.BuildStaticMapMarkers(
+                        loadStaticMapMarkersFresh(scope.Paths)),
+                GameModuleDto.LegendsZaNamedFlagCatalog =>
+                    GameModuleProviders.BuildNamedFlagCatalog(
+                        loadNamedFlagCatalogFresh(scope.Paths)),
+                GameModuleDto.LegendsZaPokemonResourceCatalog =>
+                    GameModuleProviders.BuildPokemonResourceCatalog(
+                        loadPokemonResourceCatalogFresh(scope.Paths)),
                 GameModuleDto.SwordShieldRewardEcosystem =>
                     BuildSwordShieldModule(scope.Paths, module),
                 GameModuleDto.SwordShieldExeFsCompatibility =>
@@ -580,7 +611,10 @@ public sealed class GameModuleApplicationService
             EncounterCompatibilityWorkflowDto EncounterCompatibility,
             PokemonWorkflowDto Pokemon,
             TrainerPoolsWorkflowDto TrainerPools,
-            LegendsZaTypeEffectivenessStateDto TypeEffectivenessState) sources)
+            LegendsZaTypeEffectivenessStateDto TypeEffectivenessState,
+            ZaStaticMapMarkerCatalog StaticMapMarkers,
+            ZaNamedFlagCatalog NamedFlagCatalog,
+            ZaPokemonResourceCatalog PokemonResourceCatalog) sources)
     {
         var data = module switch
         {
@@ -607,6 +641,13 @@ public sealed class GameModuleApplicationService
             GameModuleDto.LegendsZaTypeEffectivenessState =>
                 GameModuleProviders.BuildTypeEffectivenessState(
                     sources.TypeEffectivenessState),
+            GameModuleDto.LegendsZaStaticMapMarkers =>
+                GameModuleProviders.BuildStaticMapMarkers(sources.StaticMapMarkers),
+            GameModuleDto.LegendsZaNamedFlagCatalog =>
+                GameModuleProviders.BuildNamedFlagCatalog(sources.NamedFlagCatalog),
+            GameModuleDto.LegendsZaPokemonResourceCatalog =>
+                GameModuleProviders.BuildPokemonResourceCatalog(
+                    sources.PokemonResourceCatalog),
             _ => throw new SemanticExploreValidationException(
                 "The requested Z-A game-specific module is unavailable.",
                 SemanticExploreFailureKind.Unsupported),

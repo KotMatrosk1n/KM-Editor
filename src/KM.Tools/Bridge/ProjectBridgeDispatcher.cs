@@ -112,6 +112,7 @@ using KM.SV.Text;
 using KM.ZA.Encounters;
 using KM.ZA.Gifts;
 using KM.ZA.GameDump;
+using KM.ZA.GameModules;
 using KM.ZA.ModMerger;
 using KM.ZA.Placement;
 using KM.ZA.StaticEncounters;
@@ -410,7 +411,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 LoadGameModuleEncounterCompatibilityFresh,
                 LoadGameModuleAlphaMovesFresh,
                 LoadGameModuleTrainerPoolsFresh,
-                LoadGameModuleTypeEffectivenessStateFresh);
+                LoadGameModuleTypeEffectivenessStateFresh,
+                LoadGameModuleStaticMapMarkersFresh,
+                LoadGameModuleNamedFlagCatalogFresh,
+                LoadGameModulePokemonResourceCatalogFresh);
         this.guidedDesignApplicationService = guidedDesignApplicationService
             ?? new GuidedDesignApplicationService(
                 this.semanticExploreApplicationService,
@@ -7201,13 +7205,16 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         EncounterCompatibilityWorkflowDto EncounterCompatibility,
         PokemonWorkflowDto Pokemon,
         TrainerPoolsWorkflowDto TrainerPools,
-        LegendsZaTypeEffectivenessStateDto TypeEffectivenessState)
+        LegendsZaTypeEffectivenessStateDto TypeEffectivenessState,
+        ZaStaticMapMarkerCatalog StaticMapMarkers,
+        ZaNamedFlagCatalog NamedFlagCatalog,
+        ZaPokemonResourceCatalog PokemonResourceCatalog)
         LoadGameModuleZaCapabilityBatchFresh(ProjectPathsDto pathsDto)
     {
         var paths = ProjectBridgeMapper.ToCore(pathsDto);
         if (IsPokemonLegendsZA(paths))
         {
-            const int outputCount = 8;
+            const int outputCount = 11;
             var sources = zaWorkflowService.LoadGameModuleCapabilityBatch(paths);
             PreparedSemanticWorkflowDto<EncountersWorkflowDto>? scriptedBossEncounters = null;
             PreparedSemanticWorkflowDto<EncountersWorkflowDto>? wildEncounters = null;
@@ -7219,6 +7226,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             PreparedSemanticWorkflowDto<TrainerPoolsWorkflowDto>? trainerPools = null;
             PreparedSemanticWorkflowDto<LegendsZaTypeEffectivenessStateDto>?
                 typeEffectivenessState = null;
+            PreparedSemanticWorkflowDto<ZaStaticMapMarkerCatalog>? staticMapMarkers = null;
+            PreparedSemanticWorkflowDto<ZaNamedFlagCatalog>? namedFlagCatalog = null;
+            PreparedSemanticWorkflowDto<ZaPokemonResourceCatalog>? pokemonResourceCatalog = null;
 
             void MapAt(int index)
             {
@@ -7256,6 +7266,18 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                         typeEffectivenessState = CaptureSemanticWorkflowDto(
                             () => ZaBridgeMapper.ToGameModuleDto(sources.TypeEffectivenessState));
                         break;
+                    case 8:
+                        staticMapMarkers = CaptureSemanticWorkflowDto(
+                            () => sources.StaticMapMarkers);
+                        break;
+                    case 9:
+                        namedFlagCatalog = CaptureSemanticWorkflowDto(
+                            () => sources.NamedFlagCatalog);
+                        break;
+                    case 10:
+                        pokemonResourceCatalog = CaptureSemanticWorkflowDto(
+                            () => sources.PokemonResourceCatalog);
+                        break;
                 }
             }
 
@@ -7288,7 +7310,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 (trainerPools ?? throw new InvalidOperationException(
                     "The Z-A trainer pool DTO was not prepared.")).Get(),
                 (typeEffectivenessState ?? throw new InvalidOperationException(
-                    "The Z-A type effectiveness DTO was not prepared.")).Get());
+                    "The Z-A type effectiveness DTO was not prepared.")).Get(),
+                (staticMapMarkers ?? throw new InvalidOperationException(
+                    "The Z-A static map marker projection was not prepared.")).Get(),
+                (namedFlagCatalog ?? throw new InvalidOperationException(
+                    "The Z-A named flag catalog projection was not prepared.")).Get(),
+                (pokemonResourceCatalog ?? throw new InvalidOperationException(
+                    "The Z-A Pokemon resource catalog projection was not prepared.")).Get());
         }
 
         throw new SemanticExploreValidationException(
@@ -7390,6 +7418,46 @@ public sealed class ProjectBridgeDispatcher : IDisposable
 
         throw new SemanticExploreValidationException(
             "The selected Type Effectiveness State game module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private ZaStaticMapMarkerCatalog LoadGameModuleStaticMapMarkersFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.LoadGameModuleStaticMapMarkers(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Static Map Markers game module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private ZaNamedFlagCatalog LoadGameModuleNamedFlagCatalogFresh(ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.LoadGameModuleNamedFlagCatalog(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Named Flag Catalog game module provider is unsupported.",
+            SemanticExploreFailureKind.Unsupported);
+    }
+
+    private ZaPokemonResourceCatalog LoadGameModulePokemonResourceCatalogFresh(
+        ProjectPathsDto pathsDto)
+    {
+        var paths = ProjectBridgeMapper.ToCore(pathsDto);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.LoadGameModulePokemonResourceCatalog(paths);
+        }
+
+        throw new SemanticExploreValidationException(
+            "The selected Pokemon Resource Catalog game module provider is unsupported.",
             SemanticExploreFailureKind.Unsupported);
     }
 
