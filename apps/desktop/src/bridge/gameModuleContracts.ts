@@ -144,7 +144,10 @@ export const gameModuleValues = [
   'legendsZaDexLayoutPlanning',
   'legendsZaMoveVariantComparison',
   'legendsZaTrainerPoolSwitching',
-  'legendsZaTypeEffectivenessState'
+  'legendsZaTypeEffectivenessState',
+  'legendsZaStaticMapMarkers',
+  'legendsZaNamedFlagCatalog',
+  'legendsZaPokemonResourceCatalog'
 ] as const;
 
 export const gameModuleSchema = z.enum(gameModuleValues);
@@ -192,6 +195,9 @@ export const gameModuleReasonCodeSchema = z.enum([
   'edit-proposals-and-runtime-effect-resolution-unavailable',
   'variant-consumer-coverage-unavailable',
   'verified-trainer-pool-provider-unavailable',
+  'runtime-reachability-and-marker-semantics-unavailable',
+  'runtime-values-and-save-bindings-unavailable',
+  'runtime-resource-use-and-swap-compatibility-unavailable',
   'workflow-disabled',
   'workflow-source-invalid',
   'workflow-source-unavailable',
@@ -234,7 +240,10 @@ const expectedCapabilityByModule = {
   legendsZaDexLayoutPlanning: ['product', 'za.game-modules.dex-layout-planning', 'movement-proposals-and-per-species-mega-membership-unavailable', true],
   legendsZaMoveVariantComparison: ['product', 'za.game-modules.move-variant-comparison', 'variant-consumer-coverage-unavailable', true],
   legendsZaTrainerPoolSwitching: ['product', 'za.game-modules.trainer-pool-switching', 'pool-resizing-and-runtime-selection-coverage-unavailable', true],
-  legendsZaTypeEffectivenessState: ['readOnlyFirst', 'za.game-modules.type-effectiveness-state', 'edit-proposals-and-runtime-effect-resolution-unavailable', true]
+  legendsZaTypeEffectivenessState: ['readOnlyFirst', 'za.game-modules.type-effectiveness-state', 'edit-proposals-and-runtime-effect-resolution-unavailable', true],
+  legendsZaStaticMapMarkers: ['readOnlyFirst', 'za.game-modules.static-map-markers', 'runtime-reachability-and-marker-semantics-unavailable', true],
+  legendsZaNamedFlagCatalog: ['readOnlyFirst', 'za.game-modules.named-flag-catalog', 'runtime-values-and-save-bindings-unavailable', true],
+  legendsZaPokemonResourceCatalog: ['readOnlyFirst', 'za.game-modules.pokemon-resource-catalog', 'runtime-resource-use-and-swap-compatibility-unavailable', true]
 } as const;
 
 export const gameModuleCapabilitySchema = z

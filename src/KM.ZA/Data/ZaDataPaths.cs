@@ -46,6 +46,16 @@ public static class ZaDataPaths
     public const string ShopHairMakeLineupArray = "world/exl/shop/shop_hair_make_lineup/shop_hair_make_lineup.bin";
     public const string DressUpDataArray = "world/exl/dress_up_data/dress_up_data/dress_up_data.bin";
     public const string HairMakeDataArray = "world/exl/hair_make_data/hair_make_data/hair_make_data.bin";
+    public const string EventFlagCatalog = "ik_event/bin/flag/event_flag.bin";
+    public const string SystemFlagCatalog = "ik_event/bin/flag/system_flag.bin";
+    public const string TemporaryFlagCatalog = "ik_event/bin/flag/temp_flag.bin";
+    public const string QuestWorkCatalog = "ik_event/bin/flag/quest_work.bin";
+    public const string SystemWorkCatalog = "ik_event/bin/flag/system_work.bin";
+    public const string TemporaryWorkCatalog = "ik_event/bin/flag/temp_work.bin";
+    public const string MomijiWorkCatalog = "ik_event/bin/flag/momiji_work.bin";
+    public const string PokemonResourceCatalog = "ik_pokemon/catalog/catalog/poke_resource_table.trpmcatalog";
+    public const string StaticMapMarkerCatalog =
+        "world/ik_scene/ui/map_icon_scene_point_/map_icon_scene_point_0.trscn";
 
     public static string ItemNames(string language) => CommonMessage(language, "itemname.dat");
 

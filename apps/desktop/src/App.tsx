@@ -29154,6 +29154,9 @@ function TrainersSection({
   workflow
 }: TrainersSectionProps) {
   const { t } = useLocalization();
+  // Category tabs are user-owned view state. Selecting a trainer through a
+  // record tab must not reset the current category or make a category click
+  // race the trainer selection it initiates.
   const [selectedTrainerCategoryId, setSelectedTrainerCategoryId] = useState('all');
   const trainers = workflow?.trainers ?? [];
   const searchFilteredTrainers = useMemo(
@@ -29300,16 +29303,6 @@ function TrainersSection({
       setSelectedTrainerCategoryId('all');
     }
   }, [selectedTrainerCategoryId, trainerCategories]);
-
-  useEffect(() => {
-    if (
-      selectedTrainerId !== null &&
-      trainers.some((trainer) => trainer.trainerId === selectedTrainerId) &&
-      !filteredTrainers.some((trainer) => trainer.trainerId === selectedTrainerId)
-    ) {
-      setSelectedTrainerCategoryId('all');
-    }
-  }, [filteredTrainers, selectedTrainerId, trainers]);
 
   return (
     <>
@@ -33963,6 +33956,7 @@ function useSessionLocalEditorDraftBinding<TDraft>({
 
 type FashionCatalogPendingPayload = {
   binding?: { physicalIndex?: number; physicalRowId?: string };
+  catalogFile?: number | string;
   clear?: boolean;
   field?: string;
   value?: string | null;
@@ -34010,6 +34004,8 @@ function getFashionCatalogPendingEditDisplayDetails(
   }
 
   const field = payload?.field;
+  const isDressUpItem = payload?.catalogFile === 0
+    || payload?.catalogFile === 'dressUpItems';
   const fieldLabels: Record<string, string> = {
     catalogGroupCode: 'Catalog group',
     catalogTypeCode: 'Catalog type',
@@ -34017,7 +34013,10 @@ function getFashionCatalogPendingEditDisplayDetails(
     colorValue: 'Color value',
     colorVariantCode: 'Color variant',
     displayLabel: 'Display label',
-    displayOrder: 'Display order',
+    displayOrder: isDressUpItem
+      ? 'Old Display order label - review required'
+      : 'Display order',
+    footwearSubtype: 'Footwear style',
     groupCode: 'Group',
     itemId: 'Item',
     labelKey: 'Label',
@@ -34025,9 +34024,13 @@ function getFashionCatalogPendingEditDisplayDetails(
     modelPart: 'Model part',
     modelVariant: 'Model variant',
     primaryColorLabel: 'Primary color label',
+    price: 'Price',
     secondaryColorLabel: 'Secondary color label',
+    uiIndex: 'Position in category',
     variantCode: 'Variant',
-    variantOrder: 'Variant order'
+    variantOrder: isDressUpItem
+      ? 'Old Variant order label - review required'
+      : 'Unsupported legacy field'
   };
   const fieldLabel = field
     ? (fieldLabels[field] ?? humanizePendingEditKey(field))

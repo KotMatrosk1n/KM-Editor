@@ -31,16 +31,17 @@ export const dressUpItemRecordSchema = z.strictObject({
   catalogGroupCode: uint32Schema,
   categoryCode: uint32Schema,
   colorVariantCode: uint32Schema,
-  displayOrder: uint32Schema,
+  footwearSubtype: z.string().nullable(),
   itemId: uint32Schema,
   modelPart: z.string(),
   modelVariant: z.string(),
   physicalIndex: z.number().int().nonnegative().max(49_999),
   physicalRowId: z.string().min(1),
+  price: uint32Schema,
   primaryColorLabel: z.string(),
   rowRevision: sha256Schema,
   secondaryColorLabel: z.string(),
-  variantOrder: uint32Schema
+  uiIndex: uint32Schema
 });
 
 export const dressUpGroupRecordSchema = z.strictObject({

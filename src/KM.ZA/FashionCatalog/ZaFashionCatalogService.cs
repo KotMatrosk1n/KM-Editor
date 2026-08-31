@@ -6,6 +6,7 @@ namespace KM.ZA.FashionCatalog;
 
 public sealed class ZaFashionCatalogService
 {
+    private const uint FootwearCatalogGroupCode = 7;
     private const string DressUpItemRowPrefix = "dress-up-item:";
     private const string DressUpGroupRowPrefix = "dress-up-group:";
     private const string HairAndMakeupRowPrefix = "hair-and-makeup:";
@@ -41,7 +42,7 @@ public sealed class ZaFashionCatalogService
             row.ItemId,
             patch.ItemId,
             "dress-up item");
-        ValidateDressUpItemReferences(state, patch);
+        ValidateDressUpItemReferences(state, row, patch);
 
         var updated = row with
         {
@@ -77,10 +78,14 @@ public sealed class ZaFashionCatalogService
                 : ZaFashionCatalogFlatBufferSupport.ValidateRequiredText(
                     patch.SecondaryColorLabel,
                     "Dress-up item secondary color label"),
-            HasDisplayOrder = patch.DisplayOrder is not null || row.HasDisplayOrder,
-            DisplayOrder = patch.DisplayOrder ?? row.DisplayOrder,
-            HasVariantOrder = patch.VariantOrder is not null || row.HasVariantOrder,
-            VariantOrder = patch.VariantOrder ?? row.VariantOrder,
+            HasPrice = patch.Price is not null || row.HasPrice,
+            Price = patch.Price ?? row.Price,
+            HasFootwearSubtype = patch.FootwearSubtype is not null || row.HasFootwearSubtype,
+            FootwearSubtype = patch.FootwearSubtype is null
+                ? row.FootwearSubtype
+                : ZaFashionCatalogFlatBufferSupport.ValidateRequiredText(
+                    patch.FootwearSubtype,
+                    "Dress-up item footwear subtype"),
         };
         EnsureChanged(row, updated, "dress-up item");
 
@@ -357,8 +362,9 @@ public sealed class ZaFashionCatalogService
                 row.ColorVariantCode,
                 row.PrimaryColorLabel!,
                 row.SecondaryColorLabel!,
-                row.DisplayOrder,
-                row.VariantOrder))
+                row.Price,
+                row.UiIndex,
+                row.FootwearSubtype))
             .ToArray();
         var dressUpGroups = state.DressUpGroups.Rows
             .Select((row, index) => new ZaDressUpGroupRecord(
@@ -500,8 +506,8 @@ public sealed class ZaFashionCatalogService
             && patch.ColorVariantCode is null
             && patch.PrimaryColorLabel is null
             && patch.SecondaryColorLabel is null
-            && patch.DisplayOrder is null
-            && patch.VariantOrder is null)
+            && patch.Price is null
+            && patch.FootwearSubtype is null)
         {
             throw new InvalidDataException("The dress-up item patch contains no changes.");
         }
@@ -509,8 +515,16 @@ public sealed class ZaFashionCatalogService
 
     private static void ValidateDressUpItemReferences(
         ParsedCatalogSources state,
+        ZaDressUpCatalogDataRow currentRow,
         ZaDressUpItemPatch patch)
     {
+        if (patch.CatalogGroupCode is { } catalogGroupCode
+            && catalogGroupCode != currentRow.CatalogGroupCode)
+        {
+            throw new InvalidDataException(
+                "A dress-up clothing category is read-only until a coordinated category and UI-position operation can preserve unique positions.");
+        }
+
         EnsureKnownTextOption(
             patch.ModelPart,
             state.DressUpGroups.Rows.Select(row => row.ModelPart),
@@ -541,6 +555,21 @@ public sealed class ZaFashionCatalogService
             patch.SecondaryColorLabel,
             colorLabels,
             "Dress-up item secondary color label");
+        EnsureKnownTextOption(
+            patch.FootwearSubtype,
+            state.DressUpItems.Rows
+                .Where(row => row.CatalogGroupCode == FootwearCatalogGroupCode)
+                .Select(row => row.FootwearSubtype),
+            "Dress-up item footwear subtype");
+
+        var effectiveCatalogGroupCode = patch.CatalogGroupCode ?? currentRow.CatalogGroupCode;
+        var effectiveHasFootwearSubtype = patch.FootwearSubtype is not null
+            || currentRow.HasFootwearSubtype;
+        if ((effectiveCatalogGroupCode == FootwearCatalogGroupCode) != effectiveHasFootwearSubtype)
+        {
+            throw new InvalidDataException(
+                "A dress-up footwear subtype is required exactly for clothing category 7.");
+        }
     }
 
     private static void ValidateDressUpGroupReferences(
@@ -739,11 +768,6 @@ public sealed class ZaFashionCatalogService
         var after = updated.Rows[changedIndex];
         if (before.HasReservedFlagA != after.HasReservedFlagA
             || before.ReservedFlagA != after.ReservedFlagA
-            || before.HasAlternateModelVariant != after.HasAlternateModelVariant
-            || !string.Equals(
-                before.AlternateModelVariant,
-                after.AlternateModelVariant,
-                StringComparison.Ordinal)
             || before.HasReservedFlagB != after.HasReservedFlagB
             || before.ReservedFlagB != after.ReservedFlagB)
         {
