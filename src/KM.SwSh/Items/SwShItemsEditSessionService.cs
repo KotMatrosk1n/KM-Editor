@@ -209,7 +209,9 @@ public sealed class SwShItemsEditSessionService
                 break;
             }
 
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, candidateSession.PendingEdits);
+            effectiveWorkflow = OverlayPendingEdit(
+                effectiveWorkflow,
+                candidateSession.PendingEdits.Last());
         }
 
         var rowCandidateSession = candidateSession with

@@ -118,12 +118,22 @@ public sealed class SwShGiftPokemonEditSessionService
                 break;
             }
 
-            workingSession = NormalizeIvEditsBeforeUpdate(workingSession, gift.GiftIndex, pendingEdit.Field!);
+            var normalizedSession = NormalizeIvEditsBeforeUpdate(
+                workingSession,
+                gift.GiftIndex,
+                pendingEdit.Field!);
+            var normalizedDependentIvs = !ReferenceEquals(normalizedSession, workingSession);
+            workingSession = normalizedSession;
             var sourceValue = GetGiftFieldValue(sourceGift, pendingEdit.Field!);
-            workingSession = sourceValue == int.Parse(pendingEdit.NewValue!, CultureInfo.InvariantCulture)
+            var restoresSourceValue = sourceValue == int.Parse(
+                pendingEdit.NewValue!,
+                CultureInfo.InvariantCulture);
+            workingSession = restoresSourceValue
                 ? RemovePendingGiftField(workingSession, gift.GiftIndex, pendingEdit.Field!)
                 : ReplacePendingGiftEdit(workingSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(workflow, workingSession.PendingEdits);
+            effectiveWorkflow = restoresSourceValue || normalizedDependentIvs
+                ? OverlayPendingEdits(workflow, workingSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

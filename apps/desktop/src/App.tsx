@@ -1284,6 +1284,17 @@ type PokemonLearnsetDraftFields = {
   moveId: string;
   level: string;
 };
+const emptyPokemonEvolutionCreationDraft: PokemonEvolutionDraftFields = {
+  argument: '0',
+  form: '0',
+  level: '',
+  method: '',
+  species: ''
+};
+const emptyPokemonLearnsetCreationDraft: PokemonLearnsetDraftFields = {
+  level: '',
+  moveId: ''
+};
 type PokemonLearnsetDragState = {
   learnsetSignature: string;
   moveId: number;
@@ -5076,7 +5087,15 @@ export function App({
         pending: workspaceNavigation,
         projectScopeGeneration: requestScopeGeneration
       };
-      const decision = navigationControllerRef.current.request(destination, requestOptions);
+      const effectiveRequestOptions =
+        requestOptions ??
+        (recordKeyedLocalDraftSections.has(destination.section)
+          ? { preserveSameSectionDraftScope: true }
+          : undefined);
+      const decision = navigationControllerRef.current.request(
+        destination,
+        effectiveRequestOptions
+      );
       if (decision.kind === 'commit') {
         pendingNavigationCommitActionRef.current = null;
         if (commitWorkbenchLocation(decision.location)) {
@@ -5201,7 +5220,6 @@ export function App({
             return null;
           }
           return () => {
-            setEncounterSearchText('');
             setSelectedEncounterTableId(value);
             if (slot !== null) {
               setSelectedEncounterSlot(slot);
@@ -7501,7 +7519,7 @@ export function App({
         clearLoadedWorkflowData();
       } else {
         if (
-          sessionLocalEditorSections.has(activeSection) &&
+          activeEditorHasLocalDrafts &&
           !(await discardLocalEditorDraftProtection())
         ) {
           return;
@@ -7559,6 +7577,7 @@ export function App({
       }
     }
   }, [
+    activeEditorHasLocalDrafts,
     activeSection,
     clearLoadedWorkflowData,
     completeEditSessionCancellation,
@@ -9949,13 +9968,17 @@ export function App({
 
   const commitSwShPlacementCatalog = useCallback(
     (catalog: SwShPlacementCatalog, activatePlacementSection = false) => {
+      const retainedCategoryId = catalog.categories.some(
+        (category) => category.id === swShPlacementCategoryId
+      )
+        ? swShPlacementCategoryId
+        : catalog.categories[0]?.id ?? null;
       swShPlacementCatalogRevisionRef.current = catalog.revision;
       swShPlacementQueryRunRef.current += 1;
       swShPlacementDetailRunRef.current += 1;
       setSwShPlacementCatalog(catalog);
       setSwShPlacementPage(null);
-      setSwShPlacementCategoryId(catalog.categories[0]?.id ?? null);
-      setSwShPlacementOffset(0);
+      setSwShPlacementCategoryId(retainedCategoryId);
       setIsSwShPlacementPageLoading(true);
       setIsSwShPlacementPageStale(true);
       setIsSwShPlacementDetailLoading(false);
@@ -9967,7 +9990,11 @@ export function App({
         setPlacementWorkflowPage(workflow);
       }
     },
-    [setPlacementWorkflow, setPlacementWorkflowPage]
+    [
+      setPlacementWorkflow,
+      setPlacementWorkflowPage,
+      swShPlacementCategoryId
+    ]
   );
 
   const recoverSwShPlacementCatalog = useCallback(
@@ -10083,7 +10110,6 @@ export function App({
     if (isSwordShieldProject) {
       swShPlacementRecoveryAttemptedRef.current = false;
       setSwShPlacementRequestDiagnostics([]);
-      setPlacementSearchText('');
       await runRetainedWorkflowLoad(
         'placement',
         setIsPlacementLoading,
@@ -10141,8 +10167,19 @@ export function App({
           setSwShPlacementRequestDiagnostics([]);
           setIsSwShPlacementPageStale(false);
           setSwShPlacementPage(response);
+          const currentState = useWorkbenchStore.getState();
+          const retainedSelectedObject = currentState.placementWorkflow?.objects.find(
+            (placedObject) => placedObject.objectId === currentState.selectedPlacementObjectId
+          );
+          const pageObjects =
+            retainedSelectedObject &&
+            !response.objects.some(
+              (placedObject) => placedObject.objectId === retainedSelectedObject.objectId
+            )
+              ? [retainedSelectedObject, ...response.objects]
+              : response.objects;
           setPlacementWorkflowPage(
-            createSwShPlacementPageWorkflow(swShPlacementCatalog, response.objects)
+            createSwShPlacementPageWorkflow(swShPlacementCatalog, pageObjects)
           );
         })
         .catch(async (error) => {
@@ -10221,8 +10258,10 @@ export function App({
     swShPlacementDetailRunRef.current += 1;
     setSwShPlacementCatalog(null);
     setSwShPlacementPage(null);
-    setSwShPlacementCategoryId(null);
-    setSwShPlacementOffset(0);
+    if (!isSwordShieldProject) {
+      setSwShPlacementCategoryId(null);
+      setSwShPlacementOffset(0);
+    }
     setIsSwShPlacementPageLoading(false);
     setIsSwShPlacementPageStale(false);
     setIsSwShPlacementDetailLoading(false);
@@ -10267,13 +10306,26 @@ export function App({
 
     try {
       await runEditSessionMutation(
-        (session) => bridge.stageBagHookInstall({
-          paths: createProjectPaths(draftPaths),
-          session
-        }),
+        async (session) => {
+          const response = await bridge.stageBagHookInstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : bagHookWorkflow
+          };
+        },
         (response) => {
-          setBagHookWorkflow(response.workflow);
-          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          if (response.didSucceed && response.workflow) {
+            setBagHookWorkflow(response.workflow);
+            setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          }
           setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
         }
       );
@@ -10290,13 +10342,26 @@ export function App({
 
     try {
       await runEditSessionMutation(
-        (session) => bridge.stageBagHookUninstall({
-          paths: createProjectPaths(draftPaths),
-          session
-        }),
+        async (session) => {
+          const response = await bridge.stageBagHookUninstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : bagHookWorkflow
+          };
+        },
         (response) => {
-          setBagHookWorkflow(response.workflow);
-          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          if (response.didSucceed && response.workflow) {
+            setBagHookWorkflow(response.workflow);
+            setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          }
           setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
         }
       );
@@ -11023,15 +11088,28 @@ export function App({
 
     try {
       await runEditSessionMutation(
-        (session) => bridge.stageHyperspaceBypassInstall({
-          paths: createProjectPaths(draftPaths),
-          session
-        }),
+        async (session) => {
+          const response = await bridge.stageHyperspaceBypassInstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : hyperspaceBypassWorkflow
+          };
+        },
         (response) => {
-          setHyperspaceBypassWorkflow(response.workflow);
-          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          if (response.didSucceed && response.workflow) {
+            setHyperspaceBypassWorkflow(response.workflow);
+            setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+            registerEditorDraftDirty('hyperspaceBypass', false);
+          }
           setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
-          registerEditorDraftDirty('hyperspaceBypass', false);
         }
       );
     } catch (error) {
@@ -11047,15 +11125,28 @@ export function App({
 
     try {
       await runEditSessionMutation(
-        (session) => bridge.stageHyperspaceBypassUninstall({
-          paths: createProjectPaths(draftPaths),
-          session
-        }),
+        async (session) => {
+          const response = await bridge.stageHyperspaceBypassUninstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : hyperspaceBypassWorkflow
+          };
+        },
         (response) => {
-          setHyperspaceBypassWorkflow(response.workflow);
-          setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+          if (response.didSucceed && response.workflow) {
+            setHyperspaceBypassWorkflow(response.workflow);
+            setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+            registerEditorDraftDirty('hyperspaceBypass', false);
+          }
           setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
-          registerEditorDraftDirty('hyperspaceBypass', false);
         }
       );
     } catch (error) {
@@ -11302,6 +11393,24 @@ export function App({
     setIsTextQueryPending(true);
     setBridgeDiagnostics([]);
     try {
+      let retainedWorkflow = textWorkflowRef.current;
+      if (!retainedWorkflow) {
+        const retainedResponse = await bridge.loadTextWorkflow({
+          paths: createProjectPaths(draftPathsRef.current),
+          query: createTextWorkflowQuery(
+            selectedGame,
+            textSearchText,
+            textCategoryId,
+            textResultOffset,
+            textLanguage
+          )
+        });
+        if (queryRevision !== textQueryRevisionRef.current) {
+          return false;
+        }
+        retainedWorkflow = retainedResponse.workflow;
+      }
+
       for (
         let pageIndex = 0;
         pageIndex < maximumTextStableLocationPageCount;
@@ -11325,9 +11434,27 @@ export function App({
           (entry) => entry.textKey === textKey
         );
         if (exactEntry) {
-          skipNormalizedTextQueryReloadRef.current = true;
-          setTextSearchText(target.sourceFile);
-          commitTextWorkflow(response.workflow, queryRevision);
+          const exactDialogueReferences = response.workflow.dialogueReferences.filter(
+            (reference) => reference.textId === exactEntry.textId
+          );
+          setIsTextQueryPending(false);
+          setTextWorkflow({
+            ...retainedWorkflow,
+            diagnostics: deduplicateDiagnostics([
+              ...retainedWorkflow.diagnostics,
+              ...response.workflow.diagnostics
+            ]),
+            dialogueReferences: [
+              ...exactDialogueReferences,
+              ...retainedWorkflow.dialogueReferences.filter(
+                (reference) => reference.textId !== exactEntry.textId
+              )
+            ],
+            entries: [
+              exactEntry,
+              ...retainedWorkflow.entries.filter((entry) => entry.textKey !== textKey)
+            ]
+          });
           return true;
         }
         if (!response.workflow.page?.hasNext) {
@@ -11364,12 +11491,12 @@ export function App({
       const session = getEditSessionForSection('placement');
       const catalogResponse = await bridge.openSwShPlacementCatalog({ paths });
       const pageResponse = await bridge.querySwShPlacementCatalog({
-        categoryId: null,
-        limit: 250,
-        offset: 0,
+        categoryId: swShPlacementCategoryId,
+        limit: swShPlacementPage?.limit ?? swShPlacementPageSize,
+        offset: swShPlacementOffset,
         paths,
         revision: catalogResponse.catalog.revision,
-        searchText: value,
+        searchText: placementSearchText,
         session
       });
       const detailResponse = await bridge.loadSwShPlacementObject({
@@ -11385,26 +11512,26 @@ export function App({
       ) {
         return null;
       }
-      const pageObjects = [
+      const workflowObjects = [
         detailResponse.object,
         ...pageResponse.objects.filter((placedObject) => placedObject.objectId !== value)
-      ].slice(0, pageResponse.limit);
-      const preparedPage = { ...pageResponse, objects: pageObjects };
+      ];
       const preparedWorkflow = {
-        ...createSwShPlacementPageWorkflow(catalogResponse.catalog, pageObjects),
+        ...createSwShPlacementPageWorkflow(catalogResponse.catalog, workflowObjects),
         diagnostics: deduplicateDiagnostics([
           ...catalogResponse.catalog.diagnostics,
           ...detailResponse.diagnostics
         ])
       };
       return () => {
-        commitSwShPlacementCatalog(catalogResponse.catalog, true);
-        setPlacementSearchText(value);
-        setSwShPlacementCategoryId(null);
-        setSwShPlacementOffset(preparedPage.offset);
-        setSwShPlacementPage(preparedPage);
+        swShPlacementCatalogRevisionRef.current = catalogResponse.catalog.revision;
+        swShPlacementQueryRunRef.current += 1;
+        swShPlacementDetailRunRef.current += 1;
+        setSwShPlacementCatalog(catalogResponse.catalog);
+        setSwShPlacementPage(pageResponse);
         setIsSwShPlacementPageLoading(false);
         setIsSwShPlacementPageStale(false);
+        setIsSwShPlacementDetailLoading(false);
         setSwShPlacementRequestDiagnostics([]);
         setPlacementWorkflowPage(preparedWorkflow);
         setSelectedPlacementObjectId(value);
@@ -14197,6 +14324,122 @@ export function App({
     }
   };
 
+  const handleStageZaItemDrafts = async (
+    itemId: number,
+    itemChanges: Array<{ field: string; value: string }>,
+    pokemonChanges: Array<{ field: string; personalId: number; value: string }>
+  ) => {
+    if (itemChanges.length === 0 && pokemonChanges.length === 0) {
+      return false;
+    }
+
+    setIsItemUpdating(true);
+    if (pokemonChanges.length > 0) {
+      setIsPokemonUpdating(true);
+    }
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const originalSession = session;
+          const originalItemsWorkflow = itemsWorkflow;
+          const originalPokemonWorkflow = pokemonWorkflow;
+          let nextSession = session;
+          let nextItemsWorkflow = originalItemsWorkflow;
+          let nextPokemonWorkflow = originalPokemonWorkflow;
+          const diagnostics: ApiDiagnostic[] = [];
+
+          if (itemChanges.length > 0) {
+            const itemResponse = await bridge.updateItemFields({
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              updates: itemChanges.map((change) => ({
+                field: change.field,
+                itemId,
+                value: change.value
+              }))
+            });
+            diagnostics.push(...itemResponse.diagnostics);
+            if (itemResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+              return {
+                diagnostics,
+                didSucceed: false,
+                itemsWorkflow: originalItemsWorkflow,
+                pokemonWorkflow: originalPokemonWorkflow,
+                session: originalSession
+              };
+            }
+            nextSession = itemResponse.session;
+            nextItemsWorkflow = itemResponse.workflow;
+          }
+
+          if (pokemonChanges.length > 0) {
+            if (originalPokemonWorkflow === null) {
+              throw new Error('Pokemon data must be loaded before staging TM compatibility.');
+            }
+            const pokemonResponse = await bridge.updatePokemonFields({
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              updates: pokemonChanges
+            });
+            diagnostics.push(...pokemonResponse.diagnostics);
+            if (
+              pokemonResponse.diagnostics.some(
+                (diagnostic) => diagnostic.severity === 'error'
+              )
+            ) {
+              return {
+                diagnostics,
+                didSucceed: false,
+                itemsWorkflow: originalItemsWorkflow,
+                pokemonWorkflow: originalPokemonWorkflow,
+                session: originalSession
+              };
+            }
+            nextSession = pokemonResponse.session;
+            nextPokemonWorkflow = pokemonResponse.workflow;
+          }
+
+          return {
+            diagnostics,
+            didSucceed: true,
+            itemsWorkflow: nextItemsWorkflow,
+            pokemonWorkflow: nextPokemonWorkflow,
+            session: nextSession
+          };
+        },
+        (stageResponse) => {
+          if (stageResponse.didSucceed) {
+            if (stageResponse.itemsWorkflow) {
+              setItemsWorkflow(stageResponse.itemsWorkflow);
+              if (shopsWorkflow) {
+                setShopsWorkflow(
+                  overlayShopWorkflowItems(shopsWorkflow, stageResponse.itemsWorkflow)
+                );
+              }
+            }
+            if (stageResponse.pokemonWorkflow) {
+              setPokemonWorkflow(stageResponse.pokemonWorkflow);
+            }
+          }
+          setEditValidationDiagnostics(stageResponse.diagnostics);
+        },
+        getEditSessionForSection('items')
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsItemUpdating(false);
+      if (pokemonChanges.length > 0) {
+        setIsPokemonUpdating(false);
+      }
+    }
+  };
+
   const handleStageItemVanilla = async (itemId: number) => {
     setIsItemUpdating(true);
     setBridgeDiagnostics([]);
@@ -14321,80 +14564,33 @@ export function App({
 
           const originalSession = session;
           const originalWorkflow = pokemonWorkflow;
-          let nextSession = originalSession;
-          let nextWorkflow = originalWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          const createResult = (didSucceed: boolean) => ({
-            diagnostics: nextDiagnostics,
-            didSucceed,
-            session: didSucceed ? nextSession : originalSession,
-            workflow: didSucceed ? nextWorkflow : originalWorkflow
+          const updateResponse = await bridge.updatePokemonComposite({
+            evolutionUpdates: evolutionChanges.map((change) => ({
+              ...change,
+              personalId
+            })),
+            fieldUpdates: changes.map((change) => ({
+              field: change.field,
+              personalId,
+              value: change.value
+            })),
+            learnsetUpdates: learnsetChanges.map((change) => ({
+              ...change,
+              personalId
+            })),
+            paths: createProjectPaths(draftPaths),
+            session: originalSession
           });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
-          const retainDiagnostics = (diagnostics: ApiDiagnostic[]) => {
-            nextDiagnostics = [...nextDiagnostics, ...diagnostics];
-            return diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : originalSession,
+            workflow: didSucceed ? updateResponse.workflow : originalWorkflow
           };
-
-          if (changes.length > 0) {
-            const updateResponse = await bridge.updatePokemonFields({
-              paths: createProjectPaths(draftPaths),
-              session: originalSession,
-              updates: changes.map((change) => ({
-                field: change.field,
-                personalId,
-                value: change.value
-              }))
-            });
-            if (retainDiagnostics(updateResponse.diagnostics)) {
-              return createResult(false);
-            }
-
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-          }
-
-          for (const evolutionChange of evolutionChanges) {
-            const updateResponse = await bridge.updatePokemonEvolution({
-              action: evolutionChange.action,
-              argument: evolutionChange.argument,
-              form: evolutionChange.form,
-              level: evolutionChange.level,
-              method: evolutionChange.method,
-              paths: createProjectPaths(draftPaths),
-              personalId,
-              session: nextSession,
-              slot: evolutionChange.slot,
-              species: evolutionChange.species
-            });
-            if (retainDiagnostics(updateResponse.diagnostics)) {
-              return createResult(false);
-            }
-
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-          }
-
-          for (const learnsetChange of learnsetChanges) {
-            const updateResponse = await bridge.updatePokemonLearnset({
-              action: learnsetChange.action,
-              level: learnsetChange.level,
-              moveId: learnsetChange.moveId,
-              paths: createProjectPaths(draftPaths),
-              personalId,
-              session: nextSession,
-              slot: learnsetChange.slot
-            });
-            if (retainDiagnostics(updateResponse.diagnostics)) {
-              return createResult(false);
-            }
-
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-          }
-
-          return createResult(true);
         },
         (updateResponse) => {
           if (updateResponse.didSucceed && updateResponse.workflow) {
@@ -14424,23 +14620,34 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.swapPokemonDexPlacement({
+        async (session) => {
+          const updateResponse = await bridge.swapPokemonDexPlacement({
             paths: createProjectPaths(draftPaths),
             session,
             sourceSpeciesId,
             targetSpeciesId
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
         (updateResponse) => {
-          setPokemonWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setPokemonWorkflow(updateResponse.workflow);
+          }
           if (isSubmittedDraftCurrent()) {
             setEditValidationDiagnostics(updateResponse.diagnostics);
           }
         },
         getEditSessionForSection('pokemon')
       );
-      return response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+      return response?.didSucceed === true;
     } catch (error) {
       if (isSubmittedDraftCurrent()) {
         setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -15049,50 +15256,22 @@ export function App({
           let nextDiagnostics: ApiDiagnostic[] = [];
           let didSucceed = true;
 
-          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-            const updateResponse = await bridge.updateTrainerFields({
-              paths: createProjectPaths(draftPaths),
-              session,
-              updates: orderedUpdates
-            });
-            nextDiagnostics = updateResponse.diagnostics;
-            didSucceed = !updateResponse.diagnostics.some(
-              (diagnostic) => diagnostic.severity === 'error'
+          const updateResponse = await bridge.updateTrainerFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: orderedUpdates
+          });
+          nextDiagnostics = updateResponse.diagnostics;
+          didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          if (didSucceed) {
+            nextSession = updateResponse.session;
+            nextWorkflow = applyTrainerWorkflowDelta(
+              nextWorkflow,
+              updateResponse.workflowDelta,
+              orderedUpdates.map((update) => update.trainerId)
             );
-            if (didSucceed) {
-              nextSession = updateResponse.session;
-              nextWorkflow = applyTrainerWorkflowDelta(
-                nextWorkflow,
-                updateResponse.workflowDelta,
-                orderedUpdates.map((update) => update.trainerId)
-              );
-            }
-          } else {
-            for (const update of orderedUpdates) {
-              const updateResponse = await bridge.updateTrainerField({
-                field: update.field,
-                paths: createProjectPaths(draftPaths),
-                session: nextSession,
-                slot: update.slot,
-                trainerId: update.trainerId,
-                value: update.value
-              });
-              nextDiagnostics = [...nextDiagnostics, ...updateResponse.diagnostics];
-              if (
-                updateResponse.diagnostics.some(
-                  (diagnostic) => diagnostic.severity === 'error'
-                )
-              ) {
-                didSucceed = false;
-                break;
-              }
-              nextSession = updateResponse.session;
-              nextWorkflow = applyTrainerWorkflowDelta(
-                nextWorkflow,
-                updateResponse.workflowDelta,
-                [update.trainerId]
-              );
-            }
           }
 
           return {
@@ -15939,66 +16118,30 @@ export function App({
       const response = await runEditSessionMutation(
         async (session) => {
           const paths = createProjectPaths(draftPaths);
-
-          if (
-            staticEncountersWorkflow?.editorFamily === 'swsh' ||
-            staticEncountersWorkflow?.editorFamily === 'za'
-          ) {
-            return bridge.updateStaticEncounterFields({ paths, session, updates });
-          }
-
-          let nextSession = session;
-          let nextWorkflow = staticEncountersWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-          let hasErrors = false;
-
-          for (const update of updates) {
-            try {
-              const updateResponse = await bridge.updateStaticEncounterField({
-                encounterId: update.encounterId,
-                encounterIndex: update.encounterIndex,
-                field: update.field,
-                paths,
-                session: nextSession,
-                value: update.value
-              });
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = [...nextDiagnostics, ...updateResponse.diagnostics];
-
-              if (
-                updateResponse.diagnostics.some(
-                  (diagnostic) => diagnostic.severity === 'error'
-                )
-              ) {
-                hasErrors = true;
-                break;
-              }
-            } catch (error) {
-              nextDiagnostics = [...nextDiagnostics, ...toBridgeDiagnostics(error)];
-              hasErrors = true;
-              break;
-            }
-          }
-
+          const updateResponse = await bridge.updateStaticEncounterFields({
+            paths,
+            session,
+            updates
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
           return {
-            diagnostics: nextDiagnostics,
-            session: hasErrors ? session! : nextSession!,
-            workflow: hasErrors ? staticEncountersWorkflow : nextWorkflow
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : staticEncountersWorkflow
           };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setStaticEncountersWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('staticEncounters')
       );
-      return (
-        response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
-      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -16158,43 +16301,26 @@ export function App({
         async (session) => {
           const originalSession = session;
           const originalWorkflow = dynamaxAdventuresWorkflow;
-          let nextSession = session;
-          let nextWorkflow = originalWorkflow;
-          const nextDiagnostics: ApiDiagnostic[] = [];
-          let didSucceed = true;
-
-          for (const group of activeGroups) {
-            for (const change of group.changes) {
-              const updateResponse = await bridge.updateDynamaxAdventureField({
+          const updateResponse = await bridge.updateDynamaxAdventureFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: activeGroups.flatMap((group) =>
+              group.changes.map((change) => ({
                 entryIndex: group.entryIndex,
                 field: change.field,
-                paths: createProjectPaths(draftPaths),
-                session: nextSession,
                 value: change.value
-              });
-              nextDiagnostics.push(...updateResponse.diagnostics);
-              if (
-                updateResponse.diagnostics.some(
-                  (diagnostic) => diagnostic.severity === 'error'
-                )
-              ) {
-                didSucceed = false;
-                break;
-              }
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-            }
-
-            if (!didSucceed) {
-              break;
-            }
-          }
+              }))
+            )
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
           return {
-            diagnostics: nextDiagnostics,
+            diagnostics: updateResponse.diagnostics,
             didSucceed,
-            session: didSucceed ? nextSession : originalSession,
-            workflow: didSucceed ? nextWorkflow : originalWorkflow
+            session: didSucceed ? updateResponse.session : originalSession,
+            workflow: didSucceed ? updateResponse.workflow : originalWorkflow
           };
         },
         (updateResponse) => {
@@ -16597,45 +16723,24 @@ export function App({
           const nextDiagnostics: ApiDiagnostic[] = [];
           let didSucceed = true;
 
-          for (const change of inventoryChanges) {
-            const updateResponse = await bridge.updateShopInventoryItem({
-              field: change.field,
+          const shopUpdates = [...inventoryChanges, ...rowFieldChanges].map((change) => ({
+            field: change.field,
+            rowId: change.rowId,
+            shopId,
+            slot: change.slot,
+            value: change.value
+          }));
+          if (shopUpdates.length > 0) {
+            const updateResponse = await bridge.updateShopInventoryItems({
               paths: createProjectPaths(draftPaths),
-              rowId: change.rowId,
               session: nextSession,
-              shopId,
-              slot: change.slot,
-              value: change.value
+              updates: shopUpdates
             });
             nextDiagnostics.push(...updateResponse.diagnostics);
-            if (updateResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
-              didSucceed = false;
-              break;
-            }
-            nextSession = updateResponse.session;
-            nextShopsWorkflow = updateResponse.workflow;
-          }
-
-          if (didSucceed) {
-            for (const change of rowFieldChanges) {
-              const updateResponse = await bridge.updateShopInventoryItem({
-                field: change.field,
-                paths: createProjectPaths(draftPaths),
-                rowId: change.rowId,
-                session: nextSession,
-                shopId,
-                slot: change.slot,
-                value: change.value
-              });
-              nextDiagnostics.push(...updateResponse.diagnostics);
-              if (
-                updateResponse.diagnostics.some(
-                  (diagnostic) => diagnostic.severity === 'error'
-                )
-              ) {
-                didSucceed = false;
-                break;
-              }
+            didSucceed = !updateResponse.diagnostics.some(
+              (diagnostic) => diagnostic.severity === 'error'
+            );
+            if (didSucceed) {
               nextSession = updateResponse.session;
               nextShopsWorkflow = updateResponse.workflow;
             }
@@ -16664,7 +16769,7 @@ export function App({
             diagnostics: nextDiagnostics,
             didSucceed,
             itemsWorkflow: didSucceed ? nextItemsWorkflow : originalItemsWorkflow,
-            session: didSucceed ? nextSession! : (originalSession ?? nextSession!),
+            session: didSucceed ? nextSession! : originalSession,
             shopsWorkflow: didSucceed ? nextShopsWorkflow : originalShopsWorkflow
           };
         },
@@ -16720,8 +16825,8 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateEncounterSlotFields({
+        async (session) => {
+          const updateResponse = await bridge.updateEncounterSlotFields({
             paths: createProjectPaths(draftPaths),
             session,
             updates: changes.map((change) => ({
@@ -16730,17 +16835,26 @@ export function App({
               tableId,
               value: change.value
             }))
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : encountersWorkflow
+          };
+        },
         (updateResponse) => {
-          setEncountersWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setEncountersWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('encounters')
       );
-      return (
-        response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
-      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -16844,8 +16958,8 @@ export function App({
       ));
 
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateEncounterSlotFields({
+        async (session) => {
+          const updateResponse = await bridge.updateEncounterSlotFields({
             paths: createProjectPaths(draftPaths),
             session,
             updates: nonEmptyUpdates.flatMap((update) =>
@@ -16856,24 +16970,33 @@ export function App({
                 value: change.value
               }))
             )
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : encountersWorkflow
+          };
+        },
         (updateResponse) => {
-          setWorkProgress(createDeterminateWorkProgress(
-            'Applying Encounter Updates',
-            'Refreshing encounter tables',
-            encounterBatchUpdateProgressSteps,
-            2,
-            100
-          ));
-          setEncountersWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setWorkProgress(createDeterminateWorkProgress(
+              'Applying Encounter Updates',
+              'Refreshing encounter tables',
+              encounterBatchUpdateProgressSteps,
+              2,
+              100
+            ));
+            setEncountersWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('encounters')
       );
-      return (
-        response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
-      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -16898,8 +17021,8 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateRaidRewardFields({
+        async (session) => {
+          const updateResponse = await bridge.updateRaidRewardFields({
             paths: createProjectPaths(draftPaths),
             session,
             updates: changes.map((change) => ({
@@ -16908,17 +17031,26 @@ export function App({
               tableId,
               value: change.value
             }))
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : raidRewardsWorkflow
+          };
+        },
         (updateResponse) => {
-          setRaidRewardsWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setRaidRewardsWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('raidRewards')
       );
-      return (
-        response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
-      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -16942,8 +17074,8 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateRaidBonusRewardFields({
+        async (session) => {
+          const updateResponse = await bridge.updateRaidBonusRewardFields({
             paths: createProjectPaths(draftPaths),
             session,
             updates: changes.map((change) => ({
@@ -16952,17 +17084,26 @@ export function App({
               tableId,
               value: change.value
             }))
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : raidBonusRewardsWorkflow
+          };
+        },
         (updateResponse) => {
-          setRaidBonusRewardsWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setRaidBonusRewardsWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('raidBonusRewards')
       );
-      return (
-        response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
-      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -16984,22 +17125,31 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateRaidBattleSlotFields({
+        async (session) => {
+          const updateResponse = await bridge.updateRaidBattleSlotFields({
             paths: createProjectPaths(draftPaths),
             session,
             updates
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : raidBattlesWorkflow
+          };
+        },
         (updateResponse) => {
-          setRaidBattlesWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setRaidBattlesWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('raidBattles')
       );
-      return (
-        response !== null &&
-        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
-      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -17019,21 +17169,33 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateTeraRaidField({
+        async (session) => {
+          const updateResponse = await bridge.updateTeraRaidField({
             field,
             paths: createProjectPaths(draftPaths),
             recordId,
             session,
             value
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : teraRaidsWorkflow
+          };
+        },
         (updateResponse) => {
-          setTeraRaidsWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setTeraRaidsWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('teraRaids')
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -17056,8 +17218,8 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateTeraRaidFields({
+        async (session) => {
+          const updateResponse = await bridge.updateTeraRaidFields({
             paths: createProjectPaths(draftPaths),
             session,
             updates: changes.map((change) => ({
@@ -17065,14 +17227,26 @@ export function App({
               recordId,
               value: change.value
             }))
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : session,
+            workflow: didSucceed ? updateResponse.workflow : teraRaidsWorkflow
+          };
+        },
         (updateResponse) => {
-          setTeraRaidsWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setTeraRaidsWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('teraRaids')
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -19099,7 +19273,8 @@ export function App({
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
                 isPokemonLoading={isPokemonLoading}
-                onUpdatePokemonField={handleUpdatePokemonField}
+                isPokemonUpdating={isPokemonUpdating}
+                onStageItemDrafts={handleStageZaItemDrafts}
                 pokemonWorkflow={pokemonWorkflow}
                 workflow={itemsWorkflow}
               />
@@ -21493,6 +21668,7 @@ type ItemsSectionProps = {
   isEditStarting: boolean;
   isItemUpdating: boolean;
   isPokemonLoading?: boolean;
+  isPokemonUpdating?: boolean;
   onSearchChange: (searchText: string) => void;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   onSelectItem: (itemId: number | null) => void;
@@ -21502,7 +21678,11 @@ type ItemsSectionProps = {
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
-  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<boolean>;
+  onStageItemDrafts?: (
+    itemId: number,
+    itemChanges: Array<{ field: string; value: string }>,
+    pokemonChanges: Array<{ field: string; personalId: number; value: string }>
+  ) => Promise<boolean>;
   pokemonWorkflow?: PokemonWorkflow | null;
   searchText: string;
   selectedItemId: number | null;
@@ -21531,12 +21711,13 @@ function ItemsSection({
   isEditStarting,
   isItemUpdating,
   isPokemonLoading = false,
+  isPokemonUpdating = false,
   onSearchChange,
   onSelectItem,
   onStartEditSession,
   onStageItemVanilla,
+  onStageItemDrafts,
   onUpdateItemFields,
-  onUpdatePokemonField,
   ordinaryDraftProject,
   pokemonWorkflow = null,
   searchText,
@@ -21764,12 +21945,13 @@ function ItemsSection({
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               isPokemonLoading={isPokemonLoading}
+              isPokemonUpdating={isPokemonUpdating}
               hasProtectedPokemonDrafts={hasProtectedPokemonDrafts}
               item={selectedItem}
               editableFields={workflow.editableFields}
               onStageItemVanilla={onStageItemVanilla}
+              onStageItemDrafts={onStageItemDrafts}
               onUpdateItemFields={onUpdateItemFields}
-              onUpdatePokemonField={onUpdatePokemonField}
               ordinaryDraftProject={ordinaryDraftProject}
               pokemonWorkflow={pokemonWorkflow}
             />
@@ -21795,6 +21977,10 @@ function getItemSecondaryPriceLabels(editorFamily: EditorUiFamily) {
   }
 }
 
+type ItemEditorDraftPayload = OrdinaryFieldDraftPayload & {
+  technicalMachineCompatibility: Record<string, string>;
+};
+
 function SelectedItemPanel({
   canEditItems,
   editSession,
@@ -21804,10 +21990,11 @@ function SelectedItemPanel({
   isEditStarting,
   isItemUpdating,
   isPokemonLoading,
+  isPokemonUpdating,
   item,
+  onStageItemDrafts,
   onStageItemVanilla,
   onUpdateItemFields,
-  onUpdatePokemonField,
   ordinaryDraftProject,
   pokemonWorkflow
 }: {
@@ -21819,18 +22006,26 @@ function SelectedItemPanel({
   isEditStarting: boolean;
   isItemUpdating: boolean;
   isPokemonLoading: boolean;
+  isPokemonUpdating: boolean;
   item: ItemRecord | null;
+  onStageItemDrafts?: (
+    itemId: number,
+    itemChanges: Array<{ field: string; value: string }>,
+    pokemonChanges: Array<{ field: string; personalId: number; value: string }>
+  ) => Promise<boolean>;
   onStageItemVanilla?: (itemId: number) => Promise<boolean>;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
-  onUpdatePokemonField?: (personalId: number, field: string, value: string) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   pokemonWorkflow: PokemonWorkflow | null;
 }) {
   const { t } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [compatibilityDraftsByItemId, setCompatibilityDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
   const [itemSourceMutationError, setItemSourceMutationError] = useState<string | null>(null);
@@ -21858,9 +22053,70 @@ function SelectedItemPanel({
     [contextualEditableFields, item]
   );
   const itemDraftKey = item ? getItemStorageDraftKey(item) : null;
+  const technicalMachineCompatibilityRows = useMemo(
+    () => getZaTechnicalMachinePokemonCompatibilityRows(item, pokemonWorkflow),
+    [item, pokemonWorkflow]
+  );
+  const technicalMachineCompatibilityDraftDefaults = useMemo(
+    () =>
+      Object.fromEntries(
+        technicalMachineCompatibilityRows.map(({ entry, pokemon }) => [
+          pokemon.personalId.toString(),
+          entry.canLearn ? '1' : '0'
+        ])
+      ),
+    [technicalMachineCompatibilityRows]
+  );
   const sparseFieldDrafts =
     itemDraftKey === null ? {} : (fieldDraftsByItemId[itemDraftKey] ?? {});
+  const sparseTechnicalMachineCompatibilityDrafts =
+    itemDraftKey === null ? {} : (compatibilityDraftsByItemId[itemDraftKey] ?? {});
   const fieldDrafts = item ? { ...itemDraftDefaults, ...sparseFieldDrafts } : {};
+  const technicalMachineCompatibilityDrafts = item
+    ? {
+        ...technicalMachineCompatibilityDraftDefaults,
+        ...sparseTechnicalMachineCompatibilityDrafts
+      }
+    : {};
+  const technicalMachineCompatibilityRowsByPersonalId = useMemo(
+    () =>
+      new Map(
+        technicalMachineCompatibilityRows.map((row) => [row.pokemon.personalId, row])
+      ),
+    [technicalMachineCompatibilityRows]
+  );
+  const stagedTechnicalMachineCompatibilityChanges = useMemo(
+    () =>
+      Object.entries(sparseTechnicalMachineCompatibilityDrafts).flatMap(
+        ([personalIdText, value]) => {
+          const personalId = Number.parseInt(personalIdText, 10);
+          const row = technicalMachineCompatibilityRowsByPersonalId.get(personalId);
+          return row
+            ? [
+                {
+                  field: createPokemonCompatibilityFieldName('tm', row.entry.slot),
+                  personalId,
+                  value
+                }
+              ]
+            : [];
+        }
+      ),
+    [
+      sparseTechnicalMachineCompatibilityDrafts,
+      technicalMachineCompatibilityRowsByPersonalId
+    ]
+  );
+  const submittedTechnicalMachineCompatibilityDrafts = useMemo(
+    () =>
+      Object.fromEntries(
+        stagedTechnicalMachineCompatibilityChanges.map(({ personalId, value }) => [
+          personalId.toString(),
+          value
+        ])
+      ),
+    [stagedTechnicalMachineCompatibilityChanges]
+  );
   const writableItemFields = useMemo(
     () =>
       new Set(
@@ -21870,12 +22126,17 @@ function SelectedItemPanel({
       ),
     [contextualEditableFields, editorFamily, item]
   );
-  const itemDraftPayload = useMemo<OrdinaryFieldDraftPayload>(
-    () => ({ fields: { ...sparseFieldDrafts } }),
-    [sparseFieldDrafts]
+  const itemDraftPayload = useMemo<ItemEditorDraftPayload>(
+    () => ({
+      fields: { ...sparseFieldDrafts },
+      technicalMachineCompatibility: {
+        ...sparseTechnicalMachineCompatibilityDrafts
+      }
+    }),
+    [sparseFieldDrafts, sparseTechnicalMachineCompatibilityDrafts]
   );
   const applyHydratedItemDraft = useCallback(
-    (payload: OrdinaryFieldDraftPayload | null) => {
+    (payload: ItemEditorDraftPayload | null) => {
       if (itemDraftKey === null) {
         return;
       }
@@ -21885,6 +22146,17 @@ function SelectedItemPanel({
           delete nextDrafts[itemDraftKey];
         } else {
           nextDrafts[itemDraftKey] = { ...payload.fields };
+        }
+        return nextDrafts;
+      });
+      setCompatibilityDraftsByItemId((currentDrafts) => {
+        const nextDrafts = { ...currentDrafts };
+        if (!payload || Object.keys(payload.technicalMachineCompatibility).length === 0) {
+          delete nextDrafts[itemDraftKey];
+        } else {
+          nextDrafts[itemDraftKey] = {
+            ...payload.technicalMachineCompatibility
+          };
         }
         return nextDrafts;
       });
@@ -21912,25 +22184,32 @@ function SelectedItemPanel({
     () => normalizeLinkedItemPriceChanges(itemDraftSummary.changedFields),
     [itemDraftSummary.changedFields]
   );
-  useRegisterEditorDraftDirty('items', countFieldDraftRecords(fieldDraftsByItemId) > 0);
-  const canSaveItemDrafts =
-    item !== null &&
-    editSession !== null &&
-    canEditItems &&
-    !isItemUpdating &&
-    itemDraftSummary.changedFields.length > 0 &&
-    itemDraftSummary.invalidFields.length === 0;
+  const localTechnicalMachineCompatibilityDraftCount = Object.keys(
+    sparseTechnicalMachineCompatibilityDrafts
+  ).length;
+  const hasUnavailableTechnicalMachineCompatibilityDrafts =
+    localTechnicalMachineCompatibilityDraftCount > 0 &&
+    stagedTechnicalMachineCompatibilityChanges.length !==
+      localTechnicalMachineCompatibilityDraftCount;
+  const stagedItemDraftCount =
+    stagedItemChanges.length + localTechnicalMachineCompatibilityDraftCount;
+  useRegisterEditorDraftDirty(
+    'items',
+    countFieldDraftRecords(fieldDraftsByItemId) > 0 ||
+      countFieldDraftRecords(compatibilityDraftsByItemId) > 0
+  );
   const itemRevertMessage =
     item?.revertToVanillaBlockedReason ??
     'Stages every verified base value for the selected item. Other items are preserved.';
-  const canRevertSelectedItem =
+  const canRevertSelectedItemBase =
     item !== null &&
     onStageItemVanilla !== undefined &&
     item.canRevertToVanilla &&
     canEditItems &&
     editSession !== null &&
     !isEditStarting &&
-    !isItemUpdating;
+    !isItemUpdating &&
+    !isPokemonUpdating;
   const hasPendingTechnicalMachineMoveChange =
     item !== null &&
     (editSession?.pendingEdits.some(
@@ -21951,24 +22230,70 @@ function SelectedItemPanel({
   const hasLocalTechnicalMachineMoveDraft = itemDraftSummary.changedFields.some(
     (change) => change.field === itemMachineMoveIdFieldName
   );
+  const selectedTechnicalMachineCompatibilityFields = useMemo(
+    () =>
+      new Set(
+        technicalMachineCompatibilityRows.map(({ entry }) =>
+          createPokemonCompatibilityFieldName('tm', entry.slot)
+        )
+      ),
+    [technicalMachineCompatibilityRows]
+  );
   const hasPendingSelectedMachineCompatibilityChange =
-    item?.metadata.machineMoveId !== null &&
-    item?.metadata.machineMoveId !== undefined &&
     (editSession?.pendingEdits.some(
       (edit) =>
         edit.domain === 'workflow.pokemon' &&
-        edit.field ===
-          createPokemonCompatibilityFieldName('tm', item.metadata.machineMoveId!)
+        edit.field !== null &&
+        edit.field !== undefined &&
+        (selectedTechnicalMachineCompatibilityFields.has(edit.field) ||
+          (selectedTechnicalMachineCompatibilityFields.size === 0 &&
+            item?.metadata.machineMoveId !== null &&
+            item?.metadata.machineMoveId !== undefined &&
+            (isPokemonLoading ||
+              !pokemonWorkflow ||
+              pokemonWorkflow.summary.availability !== 'available') &&
+            edit.field.startsWith('compatibility:tm:')))
     ) ??
       false);
+  const technicalMachineMoveDraftBlockedReason =
+    localTechnicalMachineCompatibilityDraftCount > 0
+      ? t('za.items.compatibility.localDraftBlocksMove')
+      : hasPendingSelectedMachineCompatibilityChange
+        ? t('za.items.compatibility.stagedDraftBlocksMove')
+        : null;
+  const hasConflictingTechnicalMachineDrafts =
+    hasLocalTechnicalMachineMoveDraft &&
+    technicalMachineMoveDraftBlockedReason !== null;
+  const itemDraftActionSummary =
+    itemDraftSummary.invalidFields.length > 0
+      ? formatDraftSummary(itemDraftSummary)
+      : hasUnavailableTechnicalMachineCompatibilityDrafts
+        ? t(
+            isPokemonLoading
+              ? 'za.items.compatibility.loading'
+              : 'za.items.compatibility.loadUnavailable'
+          )
+        : hasConflictingTechnicalMachineDrafts
+          ? technicalMachineMoveDraftBlockedReason
+          : `${stagedItemDraftCount} changed`;
+  const canRevertSelectedItem =
+    canRevertSelectedItemBase && technicalMachineMoveDraftBlockedReason === null;
+  const selectedItemRevertMessage =
+    technicalMachineMoveDraftBlockedReason ?? itemRevertMessage;
+  const canSaveItemDrafts =
+    item !== null &&
+    editSession !== null &&
+    canEditItems &&
+    !isItemUpdating &&
+    !isPokemonUpdating &&
+    !hasConflictingTechnicalMachineDrafts &&
+    !hasUnavailableTechnicalMachineCompatibilityDrafts &&
+    stagedItemDraftCount > 0 &&
+    itemDraftSummary.invalidFields.length === 0;
   const technicalMachineCompatibilityRequiresReload =
     item?.metadata.technicalMachineCompatibilityRequiresReload === true ||
     hasPendingTechnicalMachineMoveChange ||
     hasLocalTechnicalMachineMoveDraft;
-  const technicalMachineCompatibilityRows = useMemo(
-    () => getZaTechnicalMachinePokemonCompatibilityRows(item, pokemonWorkflow),
-    [item, pokemonWorkflow]
-  );
   const visibleTechnicalMachineCompatibilityRows = useMemo(
     () =>
       showAllTechnicalMachinePokemon
@@ -21984,9 +22309,11 @@ function SelectedItemPanel({
       ),
     [compatibilitySearchText, visibleTechnicalMachineCompatibilityRows]
   );
-  const enabledTechnicalMachineCompatibilityCount = visibleTechnicalMachineCompatibilityRows.filter(
-    (row) => row.entry.canLearn
-  ).length;
+  const enabledTechnicalMachineCompatibilityCount =
+    visibleTechnicalMachineCompatibilityRows.filter(
+      ({ pokemon }) =>
+        technicalMachineCompatibilityDrafts[pokemon.personalId.toString()] === '1'
+    ).length;
   const showTechnicalMachineCompatibility =
     editorFamily === 'za' &&
     item !== null &&
@@ -21998,11 +22325,13 @@ function SelectedItemPanel({
     !technicalMachineCompatibilityRequiresReload &&
     technicalMachineCompatibilityRows.length > 0 &&
     pokemonWorkflow?.summary.availability === 'available' &&
-    onUpdatePokemonField !== undefined &&
+    onStageItemDrafts !== undefined &&
     editSession !== null &&
     canEditItems &&
     !hasProtectedPokemonDrafts &&
-    !isEditStarting;
+    !isEditStarting &&
+    !isItemUpdating &&
+    !isPokemonUpdating;
 
   useEffect(() => {
     if (!item) {
@@ -22020,8 +22349,29 @@ function SelectedItemPanel({
   }, [item, itemDraftDefaults, writableItemFields]);
 
   useEffect(() => {
-    setCompatibilitySearchText('');
-  }, [item?.itemId]);
+    if (
+      !item ||
+      isPokemonLoading ||
+      !pokemonWorkflow ||
+      pokemonWorkflow.summary.availability !== 'available'
+    ) {
+      return;
+    }
+
+    setCompatibilityDraftsByItemId((currentDrafts) =>
+      pruneSparseFieldDraftRecord(
+        currentDrafts,
+        getItemStorageDraftKey(item),
+        technicalMachineCompatibilityDraftDefaults,
+        new Set(Object.keys(technicalMachineCompatibilityDraftDefaults))
+      )
+    );
+  }, [
+    isPokemonLoading,
+    item,
+    pokemonWorkflow,
+    technicalMachineCompatibilityDraftDefaults
+  ]);
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -22032,7 +22382,12 @@ function SelectedItemPanel({
       {editSession && !item ? (
         <EmptySelectionEditorSessionActions
           isBusy={isItemUpdating}
-          onCancel={() => cancelActiveEditSession(() => setFieldDraftsByItemId({}))}
+          onCancel={() =>
+            cancelActiveEditSession(() => {
+              setFieldDraftsByItemId({});
+              setCompatibilityDraftsByItemId({});
+            })
+          }
           summary="No item selected."
         />
       ) : null}
@@ -22123,26 +22478,41 @@ function SelectedItemPanel({
             {editSession ? (
               <EditorSessionBarActions>
                 <button
-                  aria-busy={isItemUpdating || undefined}
+                  aria-busy={isItemUpdating || isPokemonUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveItemDrafts}
                   onClick={async () => {
                     const fieldsBeforeStage = itemDraftPayload.fields;
+                    const compatibilityBeforeStage =
+                      submittedTechnicalMachineCompatibilityDrafts;
                     const sourceMutation = await runSessionLocalEditorSourceMutation({
                       binding: itemDraftBinding,
                       didMutate: (didSave) => didSave,
                       mutation: () =>
-                        onUpdateItemFields(
-                          item.itemId,
-                          stagedItemChanges.map((change) => ({
-                            field: change.field,
-                            value: change.value
-                          }))
-                        ),
+                        onStageItemDrafts
+                          ? onStageItemDrafts(
+                              item.itemId,
+                              stagedItemChanges.map((change) => ({
+                                field: change.field,
+                                value: change.value
+                              })),
+                              stagedTechnicalMachineCompatibilityChanges
+                            )
+                          : onUpdateItemFields(
+                              item.itemId,
+                              stagedItemChanges.map((change) => ({
+                                field: change.field,
+                                value: change.value
+                              }))
+                            ),
                       reduceLatestPayload: (latestPayload) => ({
                         fields: removeMatchingFieldDraftValues(
                           latestPayload.fields,
                           fieldsBeforeStage
+                        ),
+                        technicalMachineCompatibility: removeMatchingFieldDraftValues(
+                          latestPayload.technicalMachineCompatibility,
+                          compatibilityBeforeStage
                         )
                       })
                     });
@@ -22151,39 +22521,31 @@ function SelectedItemPanel({
                       return;
                     }
                     setItemSourceMutationError(null);
-                    if (sourceMutation.kind === 'source-mutated') {
-                      setFieldDraftsByItemId((currentDrafts) =>
-                        updateSparseFieldDraftRecordAfterStage(
-                          currentDrafts,
-                          getItemStorageDraftKey(item),
-                          fieldsBeforeStage
-                        )
-                      );
-                    }
                   }}
                   type="button"
                 >
                   <BusyActionContent
                     busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isItemUpdating}
+                    isBusy={isItemUpdating || isPokemonUpdating}
                     label="Stage"
                   />
                 </button>
                 <button
                   className="danger-button"
-                  disabled={isItemUpdating}
+                  disabled={isItemUpdating || isPokemonUpdating}
                   onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setFieldDraftsByItemId({})
-                    )
+                    cancelActiveEditSession(() => {
+                      setFieldDraftsByItemId({});
+                      setCompatibilityDraftsByItemId({});
+                    })
                   }
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
                   <span>Cancel</span>
                 </button>
-                <span className="draft-action-summary">{formatDraftSummary(itemDraftSummary)}</span>
+                <span className="draft-action-summary">{itemDraftActionSummary}</span>
               </EditorSessionBarActions>
             ) : null}
 
@@ -22211,7 +22573,12 @@ function SelectedItemPanel({
                         currentValue,
                         field
                       );
-                      const disabledReason = getItemFieldDisabledReason(field, editorFamily, item);
+                      const disabledReason =
+                        getItemFieldDisabledReason(field, editorFamily, item) ??
+                        (field.field === itemMachineMoveIdFieldName &&
+                          !hasLocalTechnicalMachineMoveDraft
+                          ? technicalMachineMoveDraftBlockedReason
+                          : null);
 
                       return (
                         <GiftPokemonDraftField
@@ -22272,7 +22639,9 @@ function SelectedItemPanel({
                         fields: removeMatchingFieldDraftValues(
                           latestPayload.fields,
                           fieldsBeforeStage
-                        )
+                        ),
+                        technicalMachineCompatibility:
+                          latestPayload.technicalMachineCompatibility
                       })
                     });
                     if (sourceMutation.kind === 'reservation-unavailable') {
@@ -22290,7 +22659,7 @@ function SelectedItemPanel({
                       );
                     }
                   }}
-                  title={itemRevertMessage}
+                  title={selectedItemRevertMessage}
                   type="button"
                 >
                   <BusyActionContent
@@ -22301,7 +22670,7 @@ function SelectedItemPanel({
                   />
                 </button>
                 <small className="editable-field-status">
-                  {itemRevertMessage}
+                  {selectedItemRevertMessage}
                 </small>
               </div>
             ) : null}
@@ -22389,22 +22758,34 @@ function SelectedItemPanel({
                     </label>
                   </div>
                   <ul className="compatibility-list za-tm-compatibility-list">
-                    {filteredTechnicalMachineCompatibilityRows.map(({ entry, pokemon }) => (
+                    {filteredTechnicalMachineCompatibilityRows.map(({ pokemon }) => (
                       <li key={pokemon.personalId}>
                         <label className="compatibility-toggle za-tm-compatibility-toggle">
                           <input
-                            checked={entry.canLearn}
+                            checked={
+                              technicalMachineCompatibilityDrafts[
+                                pokemon.personalId.toString()
+                              ] === '1'
+                            }
                             className="km-choice-control"
                             disabled={!canEditTechnicalMachineCompatibility}
                             id={`item-tm-compatibility-${pokemon.personalId}`}
                             onChange={(event) => {
-                              if (onUpdatePokemonField) {
-                                void onUpdatePokemonField(
-                                  pokemon.personalId,
-                                  createPokemonCompatibilityFieldName('tm', entry.slot),
-                                  event.target.checked ? '1' : '0'
+                              const nextValue = event.target.checked ? '1' : '0';
+                              setCompatibilityDraftsByItemId((currentDrafts) => {
+                                const recordKey = getItemStorageDraftKey(item);
+                                const nextDrafts = {
+                                  ...technicalMachineCompatibilityDraftDefaults,
+                                  ...(currentDrafts[recordKey] ?? {}),
+                                  [pokemon.personalId.toString()]: nextValue
+                                };
+                                return setSparseFieldDraftRecord(
+                                  currentDrafts,
+                                  recordKey,
+                                  nextDrafts,
+                                  technicalMachineCompatibilityDraftDefaults
                                 );
-                              }
+                              });
                             }}
                             type="checkbox"
                           />
@@ -22756,7 +23137,6 @@ function PokemonSection({
                   />
                 </div>
               }
-              onUpdatePokemonField={onUpdatePokemonField}
               onUpdatePokemonFields={onUpdatePokemonFields}
               onUpdatePokemonEvolution={onUpdatePokemonEvolution}
               onUpdatePokemonLearnset={onUpdatePokemonLearnset}
@@ -23234,7 +23614,6 @@ function SelectedPokemonPanel({
   onSelectPokemonEvolution,
   onStartEditSession,
   pokemonTable,
-  onUpdatePokemonField,
   onUpdatePokemonFields,
   onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
@@ -23262,7 +23641,6 @@ function SelectedPokemonPanel({
   onSelectPokemonEvolution: (slot: number | null) => void;
   onStartEditSession: () => void;
   pokemonTable: ReactNode;
-  onUpdatePokemonField: (personalId: number, field: string, value: string) => Promise<boolean>;
   onUpdatePokemonFields: (
     personalId: number,
     changes: Array<{ field: string; value: string }>,
@@ -23334,7 +23712,17 @@ function SelectedPokemonPanel({
   >(null);
   const pokemonStructureMutationOperationRef = useRef<symbol | null>(null);
   const personalDraftDefaults = useMemo(
-    () => createPokemonPersonalDrafts(pokemon, editableFields),
+    () => ({
+      ...createPokemonPersonalDrafts(pokemon, editableFields),
+      ...Object.fromEntries(
+        (pokemon?.compatibility ?? []).flatMap((group) =>
+          group.entries.map((entry) => [
+            createPokemonCompatibilityFieldName(group.groupId, entry.slot),
+            entry.canLearn ? '1' : '0'
+          ])
+        )
+      )
+    }),
     [editableFields, pokemon]
   );
   const [personalDraftsByPokemonId, setPersonalDraftsByPokemonId] = useState<
@@ -23364,13 +23752,20 @@ function SelectedPokemonPanel({
     () =>
       new Set(
         pokemon
-          ? contextualPersonalFields
-              .filter(
-                (field) =>
-                  getEditablePersonalFieldValue(pokemon, field.field) !== null &&
-                  !(field.field === formFieldName && pokemon.personal.formCount <= 1)
+          ? [
+              ...contextualPersonalFields
+                .filter(
+                  (field) =>
+                    getEditablePersonalFieldValue(pokemon, field.field) !== null &&
+                    !(field.field === formFieldName && pokemon.personal.formCount <= 1)
+                )
+                .map((field) => field.field),
+              ...pokemon.compatibility.flatMap((group) =>
+                group.entries.map((entry) =>
+                  createPokemonCompatibilityFieldName(group.groupId, entry.slot)
+                )
               )
-              .map((field) => field.field)
+            ]
           : []
       ),
     [contextualPersonalFields, pokemon]
@@ -23600,11 +23995,55 @@ function SelectedPokemonPanel({
   const [evolutionLevelDraft, setEvolutionLevelDraft] = useState(
     selectedEvolution?.level.toString() ?? ''
   );
-  const [newEvolutionMethodDraft, setNewEvolutionMethodDraft] = useState('');
-  const [newEvolutionArgumentDraft, setNewEvolutionArgumentDraft] = useState('0');
-  const [newEvolutionSpeciesDraft, setNewEvolutionSpeciesDraft] = useState('');
-  const [newEvolutionFormDraft, setNewEvolutionFormDraft] = useState('0');
-  const [newEvolutionLevelDraft, setNewEvolutionLevelDraft] = useState('');
+  const [newEvolutionDraftsByPokemonId, setNewEvolutionDraftsByPokemonId] = useState<
+    Record<string, PokemonEvolutionDraftFields>
+  >({});
+  const newEvolutionCreationDraft = pokemonDraftRecordKey === null
+    ? emptyPokemonEvolutionCreationDraft
+    : (newEvolutionDraftsByPokemonId[pokemonDraftRecordKey] ??
+      emptyPokemonEvolutionCreationDraft);
+  const updateNewEvolutionCreationDraft = useCallback(
+    (field: keyof PokemonEvolutionDraftFields, value: string) => {
+      if (pokemonDraftRecordKey === null) {
+        return;
+      }
+      setNewEvolutionDraftsByPokemonId((currentDrafts) => {
+        const nextDraft = {
+          ...(currentDrafts[pokemonDraftRecordKey] ??
+            emptyPokemonEvolutionCreationDraft),
+          [field]: value
+        };
+        const nextDrafts = { ...currentDrafts };
+        if (
+          pokemonEvolutionDraftFieldsEqual(
+            nextDraft,
+            emptyPokemonEvolutionCreationDraft
+          )
+        ) {
+          delete nextDrafts[pokemonDraftRecordKey];
+        } else {
+          nextDrafts[pokemonDraftRecordKey] = nextDraft;
+        }
+        return nextDrafts;
+      });
+    },
+    [pokemonDraftRecordKey]
+  );
+  const newEvolutionMethodDraft = newEvolutionCreationDraft.method;
+  const newEvolutionArgumentDraft = newEvolutionCreationDraft.argument;
+  const newEvolutionSpeciesDraft = newEvolutionCreationDraft.species;
+  const newEvolutionFormDraft = newEvolutionCreationDraft.form;
+  const newEvolutionLevelDraft = newEvolutionCreationDraft.level;
+  const setNewEvolutionMethodDraft = (value: string) =>
+    updateNewEvolutionCreationDraft('method', value);
+  const setNewEvolutionArgumentDraft = (value: string) =>
+    updateNewEvolutionCreationDraft('argument', value);
+  const setNewEvolutionSpeciesDraft = (value: string) =>
+    updateNewEvolutionCreationDraft('species', value);
+  const setNewEvolutionFormDraft = (value: string) =>
+    updateNewEvolutionCreationDraft('form', value);
+  const setNewEvolutionLevelDraft = (value: string) =>
+    updateNewEvolutionCreationDraft('level', value);
   const selectedEvolutionMethodOptions = useMemo(
     () => addCurrentEvolutionMethodOption(evolutionMethodOptions, evolutionMethodDraft),
     [evolutionMethodOptions, evolutionMethodDraft]
@@ -23660,8 +24099,46 @@ function SelectedPokemonPanel({
   const [learnsetLevelDraft, setLearnsetLevelDraft] = useState(
     selectedLearnsetMove?.level.toString() ?? ''
   );
-  const [newLearnsetMoveIdDraft, setNewLearnsetMoveIdDraft] = useState('');
-  const [newLearnsetLevelDraft, setNewLearnsetLevelDraft] = useState('');
+  const [newLearnsetDraftsByPokemonId, setNewLearnsetDraftsByPokemonId] = useState<
+    Record<string, PokemonLearnsetDraftFields>
+  >({});
+  const newLearnsetCreationDraft = pokemonDraftRecordKey === null
+    ? emptyPokemonLearnsetCreationDraft
+    : (newLearnsetDraftsByPokemonId[pokemonDraftRecordKey] ??
+      emptyPokemonLearnsetCreationDraft);
+  const updateNewLearnsetCreationDraft = useCallback(
+    (field: keyof PokemonLearnsetDraftFields, value: string) => {
+      if (pokemonDraftRecordKey === null) {
+        return;
+      }
+      setNewLearnsetDraftsByPokemonId((currentDrafts) => {
+        const nextDraft = {
+          ...(currentDrafts[pokemonDraftRecordKey] ??
+            emptyPokemonLearnsetCreationDraft),
+          [field]: value
+        };
+        const nextDrafts = { ...currentDrafts };
+        if (
+          pokemonLearnsetDraftFieldsEqual(
+            nextDraft,
+            emptyPokemonLearnsetCreationDraft
+          )
+        ) {
+          delete nextDrafts[pokemonDraftRecordKey];
+        } else {
+          nextDrafts[pokemonDraftRecordKey] = nextDraft;
+        }
+        return nextDrafts;
+      });
+    },
+    [pokemonDraftRecordKey]
+  );
+  const newLearnsetMoveIdDraft = newLearnsetCreationDraft.moveId;
+  const newLearnsetLevelDraft = newLearnsetCreationDraft.level;
+  const setNewLearnsetMoveIdDraft = (value: string) =>
+    updateNewLearnsetCreationDraft('moveId', value);
+  const setNewLearnsetLevelDraft = (value: string) =>
+    updateNewLearnsetCreationDraft('level', value);
   const newLearnsetCreationDraftSignature = JSON.stringify([
     pokemon?.personalId ?? null,
     newLearnsetMoveIdDraft,
@@ -23684,13 +24161,8 @@ function SelectedPokemonPanel({
   );
   newEvolutionCreationDraftSignatureRef.current = newEvolutionCreationDraftSignature;
   const hasPokemonCreationDrafts =
-    newEvolutionMethodDraft !== '' ||
-    newEvolutionArgumentDraft !== '0' ||
-    newEvolutionSpeciesDraft !== '' ||
-    newEvolutionFormDraft !== '0' ||
-    newEvolutionLevelDraft !== '' ||
-    newLearnsetMoveIdDraft !== '' ||
-    newLearnsetLevelDraft !== '';
+    Object.keys(newEvolutionDraftsByPokemonId).length > 0 ||
+    Object.keys(newLearnsetDraftsByPokemonId).length > 0;
   const [learnsetDragState, setLearnsetDragState] = useState<PokemonLearnsetDragState | null>(
     null
   );
@@ -23972,10 +24444,48 @@ function SelectedPokemonPanel({
   const filteredCompatibilityEntries = useMemo(
     () =>
       selectedCompatibilityGroup
-        ? filterPokemonCompatibilityEntries(selectedCompatibilityGroup, compatibilitySearchText)
+        ? filterPokemonCompatibilityEntries(
+            {
+              ...selectedCompatibilityGroup,
+              entries: selectedCompatibilityGroup.entries.map((entry) => ({
+                ...entry,
+                canLearn:
+                  personalDrafts[
+                    createPokemonCompatibilityFieldName(
+                      selectedCompatibilityGroup.groupId,
+                      entry.slot
+                    )
+                  ] === '1'
+              }))
+            },
+            compatibilitySearchText
+          )
         : [],
-    [compatibilitySearchText, selectedCompatibilityGroup]
+    [compatibilitySearchText, personalDrafts, selectedCompatibilityGroup]
   );
+  const compatibilityDraftReview = useMemo(() => {
+    const changes: Array<{ field: string; value: string }> = [];
+    let invalidCount = 0;
+
+    for (const group of pokemon?.compatibility ?? []) {
+      for (const entry of group.entries) {
+        const field = createPokemonCompatibilityFieldName(group.groupId, entry.slot);
+        const value = sparsePersonalDrafts[field];
+        if (value === undefined) {
+          continue;
+        }
+        if (value !== '0' && value !== '1') {
+          invalidCount += 1;
+          continue;
+        }
+        if (value !== (entry.canLearn ? '1' : '0')) {
+          changes.push({ field, value });
+        }
+      }
+    }
+
+    return { changes, invalidCount };
+  }, [pokemon, sparsePersonalDrafts]);
   const alphaMoveDataDisabledReason = getPokemonAlphaMoveDisabledReason(alphaMove);
   const alphaMoveDisabledReason =
     alphaMoveDataDisabledReason ??
@@ -24015,9 +24525,13 @@ function SelectedPokemonPanel({
   const hasEvolutionDrafts = Object.keys(evolutionDraftsBySlot).length > 0;
   const hasLearnsetDrafts = Object.keys(learnsetDraftsBySlot).length > 0;
   const canModifyEvolutionStructure =
-    canEditEvolution && !hasEvolutionDrafts && pokemonStructureMutationPending === null;
+    canEditEvolution &&
+    !isPokemonUpdating &&
+    !hasEvolutionDrafts &&
+    pokemonStructureMutationPending === null;
   const canModifyLearnsetStructure =
     canEditLearnset &&
+    !isPokemonUpdating &&
     !hasLearnsetDrafts &&
     pokemonStructureMutationPending === null &&
     !isLearnsetPasteApplying;
@@ -24329,7 +24843,11 @@ function SelectedPokemonPanel({
       : selectedEvolutionDraftChange === null
         ? 'Invalid'
         : 'Changed';
-  const canSaveSelectedEvolution = canEditEvolution && selectedEvolutionDraftChange !== null;
+  const canSaveSelectedEvolution =
+    canEditEvolution &&
+    !isPokemonUpdating &&
+    pokemonStructureMutationPending === null &&
+    selectedEvolutionDraftChange !== null;
   const learnsetDraftReview = useMemo(
     () =>
       reviewPokemonLearnsetDrafts(
@@ -24343,12 +24861,14 @@ function SelectedPokemonPanel({
   const pokemonDraftInvalidCount =
     personalDraftSummary.invalidFields.length +
     (alphaMoveDraftState.isValid ? 0 : 1) +
+    compatibilityDraftReview.invalidCount +
     (editSession !== null
       ? evolutionDraftReview.invalidCount + learnsetDraftReview.invalidCount
       : 0);
   const pokemonDraftChangedCount =
     personalDraftSummary.changedFields.length +
     (alphaMoveDraftState.isChanged ? 1 : 0) +
+    compatibilityDraftReview.changes.length +
     evolutionDraftReview.changes.length +
     learnsetDraftReview.changes.length;
   const canSavePokemonDrafts =
@@ -24522,6 +25042,7 @@ function SelectedPokemonPanel({
               field: change.field,
               value: change.value
             })),
+            ...compatibilityDraftReview.changes,
             ...(alphaMoveDraftState.isChanged && alphaMoveDraftState.normalizedValue !== null
               ? [
                   {
@@ -24656,13 +25177,8 @@ function SelectedPokemonPanel({
       setAlphaMoveDraftsByPokemonKey({});
       setEvolutionDraftsByPokemonId({});
       setLearnsetDraftsByPokemonId({});
-      setNewEvolutionMethodDraft('');
-      setNewEvolutionArgumentDraft('0');
-      setNewEvolutionSpeciesDraft('');
-      setNewEvolutionFormDraft('0');
-      setNewEvolutionLevelDraft('');
-      setNewLearnsetMoveIdDraft('');
-      setNewLearnsetLevelDraft('');
+      setNewEvolutionDraftsByPokemonId({});
+      setNewLearnsetDraftsByPokemonId({});
       setPokemonDraftDiscardEpoch((currentEpoch) => currentEpoch + 1);
     });
 
@@ -24692,6 +25208,12 @@ function SelectedPokemonPanel({
             ? [{
                 field: 'learnset',
                 message: `${learnsetDraftReview.invalidCount} learnset draft row(s) contain invalid values.`
+              }]
+            : []),
+          ...(compatibilityDraftReview.invalidCount > 0
+            ? [{
+                field: 'compatibility',
+                message: `${compatibilityDraftReview.invalidCount} compatibility draft value(s) are invalid.`
               }]
             : [])
         ]}
@@ -25524,7 +26046,17 @@ function SelectedPokemonPanel({
                     >
                       {pokemon.compatibility.map((group) => (
                         <option key={group.groupId} value={group.groupId}>
-                          {group.label} ({group.enabledCount}/{group.entries.length})
+                          {group.label} ({
+                            group.entries.filter(
+                              (entry) =>
+                                personalDrafts[
+                                  createPokemonCompatibilityFieldName(
+                                    group.groupId,
+                                    entry.slot
+                                  )
+                                ] === '1'
+                            ).length
+                          }/{group.entries.length})
                         </option>
                       ))}
                     </select>
@@ -25550,14 +26082,20 @@ function SelectedPokemonPanel({
                           disabled={!canToggleCompatibility}
                           onChange={(event) => {
                             if (pokemon && selectedCompatibilityGroup) {
-                              void runSelectedPokemonSourceMutation(() =>
-                                onUpdatePokemonField(
+                              const field = createPokemonCompatibilityFieldName(
+                                selectedCompatibilityGroup.groupId,
+                                entry.slot
+                              );
+                              const value = event.target.checked ? '1' : '0';
+                              setPersonalDraftsByPokemonId((currentDrafts) =>
+                                setSparseFieldDraftRecord(
+                                  currentDrafts,
                                   pokemon.personalId,
-                                  createPokemonCompatibilityFieldName(
-                                    selectedCompatibilityGroup.groupId,
-                                    entry.slot
-                                  ),
-                                  event.target.checked ? '1' : '0'
+                                  {
+                                    ...personalDrafts,
+                                    [field]: value
+                                  },
+                                  personalDraftDefaults
                                 )
                               );
                             }
@@ -29164,8 +29702,8 @@ function TrainersSection({
     [searchText, trainers]
   );
   const trainerCategories = useMemo(
-    () => (editorFamily === 'za' ? buildZaTrainerCategories(searchFilteredTrainers) : []),
-    [editorFamily, searchFilteredTrainers]
+    () => (editorFamily === 'za' ? buildZaTrainerCategories(trainers) : []),
+    [editorFamily, trainers]
   );
   const supportsTrainerCategories = trainerCategories.length > 1;
   const activeTrainerCategoryId =
@@ -29431,13 +29969,6 @@ function TrainersSection({
                     key={category.id}
                     onClick={() => {
                       setSelectedTrainerCategoryId(category.id);
-                      const nextTrainer =
-                        category.id === 'all'
-                          ? searchFilteredTrainers[0]
-                          : searchFilteredTrainers.find(
-                              (trainer) => getZaTrainerCategoryId(trainer) === category.id
-                            );
-                      onSelectTrainer(nextTrainer?.trainerId ?? null);
                     }}
                     role="tab"
                     title={category.description}
@@ -29721,6 +30252,7 @@ function SelectedTrainerPanel({
       ),
     [editableFields]
   );
+  const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const defaultContextualPokemonFields = useMemo(
     () =>
       pokemonFields.map((field) => {
@@ -29744,11 +30276,16 @@ function SelectedTrainerPanel({
   const trainerDraftDefaults = useMemo(
     () =>
       trainer
-        ? createTrainerDrafts(trainerFields, (field) =>
-            getEditableTrainerFieldValue(trainer, field)
-          )
+        ? {
+            ...createTrainerDrafts(trainerFields, (field) =>
+              getEditableTrainerFieldValue(trainer, field)
+            ),
+            ...(aiFlagsField
+              ? { [aiFlagsFieldName]: trainer.aiFlags.toString() }
+              : {})
+          }
         : {},
-    [trainer, trainerFields]
+    [aiFlagsField, trainer, trainerFields]
   );
   const pokemonDraftDefaults = useMemo(
     () =>
@@ -30029,13 +30566,24 @@ function SelectedTrainerPanel({
     },
     [t, trainerDraftBinding]
   );
-  const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const canToggleAiFlags =
     canEditTrainers &&
     editSession !== null &&
     aiFlagsField !== null;
+  const aiFlagsDraftState =
+    trainer && aiFlagsField
+      ? getTrainerFieldDraftState(
+          trainerDrafts[aiFlagsFieldName] ?? trainer.aiFlags.toString(),
+          trainer.aiFlags,
+          aiFlagsField
+        )
+      : null;
+  const projectedAiFlags =
+    aiFlagsDraftState?.isValid === true && aiFlagsDraftState.normalizedValue !== null
+      ? Number.parseInt(aiFlagsDraftState.normalizedValue, 10)
+      : (trainer?.aiFlags ?? 0);
   const aiFlagsMaskLabel = trainer
-    ? `0x${trainer.aiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
+    ? `0x${projectedAiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
     : '0x0000';
   const showTerastallizationDetails =
     isScarletVioletProject &&
@@ -30194,11 +30742,14 @@ function SelectedTrainerPanel({
   const trainerDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
-        contextualTrainerFields,
+        [
+          ...contextualTrainerFields,
+          ...(aiFlagsField ? [aiFlagsField] : [])
+        ],
         trainerDrafts,
         trainer ? (field) => getEditableTrainerFieldValue(trainer, field) : null
       ),
-    [contextualTrainerFields, trainer, trainerDrafts]
+    [aiFlagsField, contextualTrainerFields, trainer, trainerDrafts]
   );
   const pokemonDraftSummary = useMemo(
     () =>
@@ -30908,20 +31459,23 @@ function SelectedTrainerPanel({
                         key={flag.bit}
                       >
                         <input
-                          checked={flag.enabled}
+                          checked={(projectedAiFlags & flag.mask) !== 0}
                           className="km-choice-control"
                           disabled={!canToggleAiFlags || isReserved}
                           id={flagInputId}
                           onChange={(event) => {
                             const nextValue = event.target.checked
-                              ? trainer.aiFlags | flag.mask
-                              : trainer.aiFlags & ~flag.mask;
-                            void runSelectedTrainerSourceMutation(() =>
-                              onUpdateTrainerField(
+                              ? projectedAiFlags | flag.mask
+                              : projectedAiFlags & ~flag.mask;
+                            setTrainerDraftsByTrainerId((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
                                 trainer.trainerId,
-                                null,
-                                aiFlagsFieldName,
-                                nextValue.toString()
+                                {
+                                  ...trainerDrafts,
+                                  [aiFlagsFieldName]: nextValue.toString()
+                                },
+                                trainerDraftDefaults
                               )
                             );
                           }}
@@ -33797,6 +34351,24 @@ const sessionLocalEditorSections = new Set<WorkbenchSection>([
   'trainers'
 ]);
 
+const recordKeyedLocalDraftSections = new Set<WorkbenchSection>([
+  ...sessionLocalEditorSections,
+  'behavior',
+  'dynamaxAdventures',
+  'encounters',
+  'giftPokemon',
+  'placement',
+  'raidBattles',
+  'raidBonusRewards',
+  'raidRewards',
+  'rentalPokemon',
+  'shops',
+  'startingItems',
+  'staticEncounters',
+  'teraRaids',
+  'tradePokemon'
+]);
+
 const sessionLocalDraftMutationBusyMessage =
   'This record is already being staged. Wait for it to finish and try again.';
 
@@ -35959,10 +36531,10 @@ function GiftPokemonSection({
   );
   const selectedGift = useMemo(
     () =>
-      filteredGifts.find((gift) => gift.giftIndex === selectedGiftIndex) ??
+      gifts.find((gift) => gift.giftIndex === selectedGiftIndex) ??
       filteredGifts[0] ??
       null,
-    [filteredGifts, selectedGiftIndex]
+    [filteredGifts, gifts, selectedGiftIndex]
   );
   const canEditGifts = workflow?.summary.availability === 'available';
   const editorFamily: EditorUiFamily =
@@ -36804,10 +37376,10 @@ function TradePokemonSection({
   );
   const selectedTrade = useMemo(
     () =>
-      filteredTrades.find((trade) => trade.tradeIndex === selectedTradeIndex) ??
+      trades.find((trade) => trade.tradeIndex === selectedTradeIndex) ??
       filteredTrades[0] ??
       null,
-    [filteredTrades, selectedTradeIndex]
+    [filteredTrades, selectedTradeIndex, trades]
   );
   const canEditTrades = workflow?.summary.availability === 'available';
   const pendingTradeIndexes = useMemo(
@@ -37576,10 +38148,10 @@ function RentalPokemonSection({
   );
   const selectedRental = useMemo(
     () =>
-      filteredRentals.find((rental) => rental.rentalIndex === selectedRentalIndex) ??
+      rentals.find((rental) => rental.rentalIndex === selectedRentalIndex) ??
       filteredRentals[0] ??
       null,
-    [filteredRentals, selectedRentalIndex]
+    [filteredRentals, rentals, selectedRentalIndex]
   );
   const canEditRentals = workflow?.summary.availability === 'available';
   const pendingRentalIndexes = useMemo(
@@ -39331,12 +39903,12 @@ function StaticEncountersSection({
   );
   const selectedEncounter = useMemo(
     () =>
-      filteredEncounters.find(
+      encounters.find(
         (encounter) => encounter.encounterIndex === selectedEncounterIndex
       ) ??
       filteredEncounters[0] ??
       null,
-    [filteredEncounters, selectedEncounterIndex]
+    [encounters, filteredEncounters, selectedEncounterIndex]
   );
   const canEditStaticEncounters = workflow?.summary.availability === 'available';
   const pendingEncounterIndexes = useMemo(
@@ -40036,7 +40608,7 @@ function ShopsSection({
     [filteredShops, isFlatShopList]
   );
   const selectedShop =
-    filteredShops.find((shop) => shop.shopId === selectedShopId) ??
+    workflow?.shops.find((shop) => shop.shopId === selectedShopId) ??
     (isFlatShopList ? filteredShops[0] : badgeShops[0] ?? miscellaneousShops[0]) ??
     null;
   const canEditShops = workflow?.summary.availability === 'available';
@@ -41989,7 +42561,7 @@ function EncountersSection({
     [allTables, scriptedBosses, searchText, t]
   );
   const selectedTableFromId =
-    filteredTables.find((table) => table.tableId === selectedTableId) ?? null;
+    allTables.find((table) => table.tableId === selectedTableId) ?? null;
   const selectedTable = selectedTableFromId ?? getDefaultEncounterTable(filteredTables);
   const tableRows = useMemo(
     () => buildEncounterTableRows(filteredTables, selectedTable),
@@ -46535,7 +47107,7 @@ function RaidBattlesSection({
         .includes(normalizedSearch);
     }) ?? [];
   const selectedTable =
-    filteredTables.find((table) => table.tableId === selectedTableId) ??
+    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
     filteredTables[0] ??
     null;
   const selectedBattleSlot =
@@ -47211,7 +47783,7 @@ function RaidRewardsSection({
     );
   }, [searchText, translateLiteral, workflow?.tables]);
   const selectedTable =
-    filteredTables.find((table) => table.tableId === selectedTableId) ??
+    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
     filteredTables[0] ??
     null;
   const selectedReward =
@@ -47806,20 +48378,12 @@ function BehaviorSection({
         .includes(normalizedSearch);
     }) ?? [];
   const selectedEntry =
-    filteredEntries.find((entry) => entry.entryId === selectedEntryId) ??
-    filteredEntries[0] ??
-    null;
+    workflow?.entries.find((entry) => entry.entryId === selectedEntryId) ?? null;
   const canEditBehavior = workflow?.summary.availability === 'available';
   const pendingBehaviorEntryIds = getPendingBehaviorEntryIds(editSession);
   const pendingBehaviorEditCount = (editSession?.pendingEdits ?? []).filter(
     (edit) => edit.domain === 'workflow.behavior'
   ).length;
-
-  useEffect(() => {
-    if (selectedEntry && selectedEntry.entryId !== selectedEntryId) {
-      onSelectEntry(selectedEntry.entryId);
-    }
-  }, [onSelectEntry, selectedEntry?.entryId, selectedEntryId]);
 
   return (
     <>
@@ -48437,9 +49001,7 @@ function PlacementSection({
     [editorFamily, filteredObjects]
   );
   const selectedObject =
-    filteredObjects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
-    groupedObjects[0]?.objects[0] ??
-    null;
+    workflow?.objects.find((placedObject) => placedObject.objectId === selectedObjectId) ?? null;
   const selectedGroup =
     groupedObjects.find((group) =>
       selectedObject ? group.objects.some((placedObject) => placedObject.objectId === selectedObject.objectId) : false
@@ -48453,17 +49015,6 @@ function PlacementSection({
   const canInteractWithSelectedPlacement =
     !isRemoteInteractionBlocked && !(remotePaging?.isDetailLoading ?? false);
   const pendingPlacementObjectIds = getPendingPlacementObjectIds(editSession);
-
-  useEffect(() => {
-    if (selectedObject && selectedObject.objectId !== selectedObjectId) {
-      onSelectObject(selectedObject.objectId);
-      return;
-    }
-
-    if (!selectedObject && selectedObjectId !== null) {
-      onSelectObject(null);
-    }
-  }, [onSelectObject, selectedObject?.objectId, selectedObjectId]);
 
   useEffect(() => {
     if (!supportsPlacementCategories) {
@@ -48553,14 +49104,6 @@ function PlacementSection({
                     remotePaging.onCategoryChange(category.id);
                   } else {
                     setSelectedCategoryId(category.id);
-                    const categoryObjects = workflow?.objects.filter(
-                      (placedObject) => getPlacementCategoryId(placedObject) === category.id
-                    ) ?? [];
-                    const firstGroup = buildPlacementObjectGroups(categoryObjects, {
-                      groupItemBallSpawners: editorFamily === 'za',
-                      groupPokemonSpawners: editorFamily === 'za'
-                    })[0];
-                    onSelectObject(firstGroup?.objects[0]?.objectId ?? null);
                   }
                 }}
                 role="tab"
@@ -51614,9 +52157,7 @@ function RoyalCandySection({
     ]
   );
   const selectedWorkflow =
-    filteredWorkflows.find((candidate) => candidate.workflowId === selectedWorkflowId) ??
-    filteredWorkflows[0] ??
-    null;
+    workflow?.workflows.find((candidate) => candidate.workflowId === selectedWorkflowId) ?? null;
   const visibleChecks = filteredChecks.filter(
     (check) =>
       !selectedWorkflow ||
@@ -51624,9 +52165,7 @@ function RoyalCandySection({
       check.workflowId === 'royal-candy-preflight'
   );
   const selectedCheck =
-    visibleChecks.find((check) => check.checkId === selectedCheckId) ??
-    visibleChecks[0] ??
-    null;
+    workflow?.checks.find((check) => check.checkId === selectedCheckId) ?? null;
   const visibleOutputs = selectedWorkflow
     ? filteredOutputs.filter((output) => output.workflowId === selectedWorkflow.workflowId)
     : filteredOutputs;
@@ -51639,20 +52178,6 @@ function RoyalCandySection({
       : (workflow?.diagnostics ?? []);
   const hasMatchingRecords =
     filteredWorkflows.length > 0 || filteredChecks.length > 0 || filteredOutputs.length > 0;
-
-  useEffect(() => {
-    const nextWorkflowId = selectedWorkflow?.workflowId ?? null;
-    if (nextWorkflowId !== selectedWorkflowId) {
-      onSelectWorkflow(nextWorkflowId);
-    }
-  }, [onSelectWorkflow, selectedWorkflow?.workflowId, selectedWorkflowId]);
-
-  useEffect(() => {
-    const nextCheckId = selectedCheck?.checkId ?? null;
-    if (nextCheckId !== selectedCheckId) {
-      onSelectCheck(nextCheckId);
-    }
-  }, [onSelectCheck, selectedCheck?.checkId, selectedCheckId]);
 
   return (
     <>

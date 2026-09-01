@@ -24,6 +24,16 @@ public sealed record UpdateDynamaxAdventureFieldRequest(
     string Field,
     string Value);
 
+public sealed record DynamaxAdventureFieldUpdateDto(
+    int EntryIndex,
+    string Field,
+    string Value);
+
+public sealed record UpdateDynamaxAdventureFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<DynamaxAdventureFieldUpdateDto?>? Updates);
+
 public sealed record PreviewDynamaxAdventureDefaultsRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
@@ -259,6 +269,11 @@ public sealed record PreviewDynamaxAdventureDefaultsResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateDynamaxAdventureFieldResponse(
+    DynamaxAdventuresWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateDynamaxAdventureFieldsResponse(
     DynamaxAdventuresWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

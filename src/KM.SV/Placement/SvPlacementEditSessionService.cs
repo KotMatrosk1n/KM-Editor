@@ -142,8 +142,16 @@ internal sealed class SvPlacementEditSessionService
                 continue;
             }
 
-            updatedSession = ReplacePendingPlacementEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+            var previousSession = updatedSession;
+            updatedSession = ReplacePendingPlacementEdit(previousSession, pendingEdit);
+            var removedDependentSweet = IsFixedSpeciesEditAwayFromAlcremie(pendingEdit)
+                && previousSession.PendingEdits.Any(edit => IsSamePlacementField(
+                    edit,
+                    pendingEdit.RecordId,
+                    SvPlacementWorkflowService.FixedAlcremieSweetField));
+            effectiveWorkflow = removedDependentSweet
+                ? OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         return new SvPlacementEditResult(

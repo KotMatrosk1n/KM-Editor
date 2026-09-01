@@ -161,6 +161,8 @@ import {
   type UpdateRentalPokemonFieldResponse,
   type UpdateDynamaxAdventureFieldRequest,
   type UpdateDynamaxAdventureFieldResponse,
+  type UpdateDynamaxAdventureFieldsRequest,
+  type UpdateDynamaxAdventureFieldsResponse,
   type UpdateMoveFieldRequest,
   type UpdateMoveFieldResponse,
   type UpdateBehaviorEntryFieldRequest,
@@ -185,6 +187,8 @@ import {
   type UpdateRaidBonusRewardFieldsResponse,
   type UpdateShopInventoryItemRequest,
   type UpdateShopInventoryItemResponse,
+  type UpdateShopInventoryItemsRequest,
+  type UpdateShopInventoryItemsResponse,
   type UpdateTextEntryRequest,
   type UpdateTextEntryResponse,
   type UpdateTrainerFieldRequest,
@@ -273,6 +277,8 @@ import {
   updateRentalPokemonFieldResponseSchema,
   updateDynamaxAdventureFieldRequestSchema,
   updateDynamaxAdventureFieldResponseSchema,
+  updateDynamaxAdventureFieldsRequestSchema,
+  updateDynamaxAdventureFieldsResponseSchema,
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionResponseSchema,
@@ -293,6 +299,7 @@ import {
   updateRaidBonusRewardFieldResponseSchema,
   updateRaidBonusRewardFieldsResponseSchema,
   updateShopInventoryItemResponseSchema,
+  updateShopInventoryItemsResponseSchema,
   updateTextEntryResponseSchema,
   updateTrainerFieldResponseSchema,
   validateEditSessionResponseSchema,
@@ -868,6 +875,9 @@ export type ProjectBridge = {
   updateDynamaxAdventureField: (
     request: UpdateDynamaxAdventureFieldRequest,
   ) => Promise<UpdateDynamaxAdventureFieldResponse>;
+  updateDynamaxAdventureFields: (
+    request: UpdateDynamaxAdventureFieldsRequest,
+  ) => Promise<UpdateDynamaxAdventureFieldsResponse>;
   updateMoveField: (
     request: UpdateMoveFieldRequest,
   ) => Promise<UpdateMoveFieldResponse>;
@@ -904,6 +914,9 @@ export type ProjectBridge = {
   updateShopInventoryItem: (
     request: UpdateShopInventoryItemRequest,
   ) => Promise<UpdateShopInventoryItemResponse>;
+  updateShopInventoryItems: (
+    request: UpdateShopInventoryItemsRequest,
+  ) => Promise<UpdateShopInventoryItemsResponse>;
   updateTextEntry: (
     request: UpdateTextEntryRequest,
   ) => Promise<UpdateTextEntryResponse>;
@@ -1782,6 +1795,20 @@ export function createProjectBridge(
         response,
       );
     },
+    updateDynamaxAdventureFields: async (request) => {
+      const validatedRequest =
+        updateDynamaxAdventureFieldsRequestSchema.parse(request);
+      const response = await sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateDynamaxAdventureFields,
+        validatedRequest,
+        updateDynamaxAdventureFieldsResponseSchema,
+      );
+      return validateDynamaxAdventureResponseGame(
+        validatedRequest.paths.selectedGame,
+        response,
+      );
+    },
     updateMoveField: (request) =>
       sendProjectBridgeRequest(
         transport,
@@ -1921,6 +1948,13 @@ export function createProjectBridge(
         kmCommandNames.updateShopInventoryItem,
         request,
         updateShopInventoryItemResponseSchema,
+      ),
+    updateShopInventoryItems: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateShopInventoryItems,
+        request,
+        updateShopInventoryItemsResponseSchema,
       ),
     updateTextEntry: (request) =>
       sendProjectBridgeRequest(

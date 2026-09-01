@@ -154,6 +154,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdatePokemonCompositeResponse ToPokemonCompositeDto(SwShPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonCompositeResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdatePokemonLearnsetResponse ToDtoLearnsetUpdate(SwShPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -784,11 +794,34 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(
+        SwShTrainersEditResult result,
+        IEnumerable<SwShTrainerFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        return new UpdateTrainerFieldsResponse(
+            ToTrainersWorkflowDeltaDto(result.Workflow, updates),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateShopInventoryItemResponse ToDto(SwShShopsEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdateShopInventoryItemResponse(
+            ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateShopInventoryItemsResponse ToShopInventoryItemsDto(SwShShopsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateShopInventoryItemsResponse(
             ToShopsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -869,6 +902,17 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdateDynamaxAdventureFieldResponse(
+            ToDynamaxAdventuresWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateDynamaxAdventureFieldsResponse ToDynamaxAdventureFieldsDto(
+        SwShDynamaxAdventuresEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateDynamaxAdventureFieldsResponse(
             ToDynamaxAdventuresWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -1677,6 +1721,43 @@ public static class SwShBridgeMapper
                 .Select(trainer => trainer.TrainerId)
                 .ToHashSet()
             : new HashSet<int> { changedTrainerId };
+
+        return new TrainersWorkflowDeltaDto(
+            workflow.Trainers
+                .Where(trainer => changedTrainerIds.Contains(trainer.TrainerId))
+                .Select(ToDto)
+                .ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TrainersWorkflowDeltaDto ToTrainersWorkflowDeltaDto(
+        SwShTrainersWorkflow workflow,
+        IEnumerable<SwShTrainerFieldUpdate> updates)
+    {
+        var materializedUpdates = updates.ToArray();
+        var changedTrainerIds = materializedUpdates
+            .Select(update => update.TrainerId)
+            .ToHashSet();
+        var changedClassIds = materializedUpdates
+            .Where(update => string.Equals(
+                update.Field.Trim(),
+                SwShTrainersWorkflowService.ClassBallIdField,
+                StringComparison.Ordinal))
+            .Select(update => workflow.Trainers.FirstOrDefault(
+                trainer => trainer.TrainerId == update.TrainerId)?.TrainerClassId)
+            .Where(classId => classId is not null)
+            .Select(classId => classId!.Value)
+            .ToHashSet();
+        if (changedClassIds.Count > 0)
+        {
+            changedTrainerIds.UnionWith(workflow.Trainers
+                .Where(trainer => changedClassIds.Contains(trainer.TrainerClassId))
+                .Select(trainer => trainer.TrainerId));
+        }
 
         return new TrainersWorkflowDeltaDto(
             workflow.Trainers

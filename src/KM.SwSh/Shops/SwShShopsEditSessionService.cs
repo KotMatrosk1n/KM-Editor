@@ -57,6 +57,17 @@ public sealed class SwShShopsEditSessionService
         string field,
         string value)
     {
+        return UpdateInventoryItems(
+            paths,
+            session,
+            [new SwShShopInventoryItemUpdate(shopId, slot, field, value)]);
+    }
+
+    public SwShShopsEditResult UpdateInventoryItems(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShShopInventoryItemUpdate?>? updates)
+    {
         ArgumentNullException.ThrowIfNull(paths);
 
         projectWorkspaceService.ClearMemoryCache();
@@ -71,96 +82,142 @@ public sealed class SwShShopsEditSessionService
             return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        if (shopId is null || field is null || value is null)
+        if (updates is null || updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Shop ID, field, and value are required.",
-                field: shopId is null ? "shopId" : field is null ? "field" : "value",
-                expected: "Non-null canonical Shops update input"));
+                "Update at least one Sword/Shield Shop inventory field.",
+                field: "updates",
+                expected: "One or more complete Sword/Shield Shop inventory updates"));
             return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        if (!string.Equals(field, field.Trim(), StringComparison.Ordinal))
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        var seenUpdates = new HashSet<(string ShopId, int Slot, string Field)>();
+        foreach (var update in OrderInventoryUpdates(updates))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Shop field must use canonical text without surrounding whitespace.",
-                field: "field",
-                expected: field.Trim()));
-            return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
+            if (update is null
+                || string.IsNullOrWhiteSpace(update.ShopId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Sword/Shield Shop inventory batch update is missing a shop, field, or value.",
+                    field: "updates",
+                    expected: "Complete Sword/Shield Shop inventory update"));
+                break;
+            }
+
+            var normalizedShopId = update.ShopId.Trim();
+            var normalizedField = update.Field.Trim();
+            if (!string.Equals(update.ShopId, normalizedShopId, StringComparison.Ordinal)
+                || !string.Equals(update.Field, normalizedField, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Sword/Shield Shop inventory batch identifiers and fields must use canonical text without surrounding whitespace.",
+                    field: "updates",
+                    expected: "Canonical Sword/Shield Shop inventory update text"));
+                break;
+            }
+
+            if (!seenUpdates.Add((normalizedShopId, update.Slot, normalizedField)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Sword/Shield Shop inventory batch contains the same slot field more than once.",
+                    field: normalizedField,
+                    expected: "One value per Sword/Shield Shop inventory slot field"));
+                break;
+            }
+
+            var sourceShop = ResolveShop(loadedWorkflow, normalizedShopId, diagnostics, normalizedField);
+            var effectiveShop = ResolveShop(effectiveWorkflow, normalizedShopId, diagnostics, normalizedField);
+            if (sourceShop is null || effectiveShop is null)
+            {
+                break;
+            }
+
+            var isAdd = string.Equals(
+                normalizedField,
+                SwShShopsWorkflowService.AddItemField,
+                StringComparison.Ordinal);
+            var isSetInventory = string.Equals(
+                normalizedField,
+                SwShShopsWorkflowService.SetInventoryField,
+                StringComparison.Ordinal);
+            var inventoryItem = effectiveShop.Inventory.FirstOrDefault(item => item.Slot == update.Slot);
+            if (isAdd && (update.Slot < 1 || update.Slot > effectiveShop.Inventory.Count + 1))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Shop '{effectiveShop.Name}' can add inventory at slots 1 through {effectiveShop.Inventory.Count + 1}.",
+                    field: "slot",
+                    expected: "Safe shop insert slot"));
+                break;
+            }
+
+            if (!isAdd && !isSetInventory && inventoryItem is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Shop '{effectiveShop.Name}' does not have inventory slot {update.Slot}.",
+                    field: "slot",
+                    expected: "Existing shop inventory slot"));
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                loadedWorkflow,
+                sourceShop,
+                effectiveShop,
+                update.Slot,
+                inventoryItem,
+                normalizedField,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            workingSession = ReplacePendingShopEdit(
+                workingSession,
+                pendingEdit,
+                loadedWorkflow,
+                sourceShop);
+            effectiveWorkflow = string.Equals(
+                    pendingEdit.Field,
+                    SwShShopsWorkflowService.SetInventoryField,
+                    StringComparison.Ordinal)
+                ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            var updatedShop = ResolveEquivalentShop(effectiveWorkflow, sourceShop);
+            if (updatedShop is not null
+                && updatedShop.Inventory.Select(item => item.ItemId)
+                    .SequenceEqual(sourceShop.Inventory.Select(item => item.ItemId)))
+            {
+                workingSession = RemovePendingShopEdits(workingSession, loadedWorkflow, sourceShop);
+                effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits);
+            }
         }
 
-        var sourceShop = ResolveShop(loadedWorkflow, shopId, diagnostics, field);
-        var effectiveShop = ResolveShop(originalWorkflow, shopId, diagnostics, field);
-        if (sourceShop is null || effectiveShop is null)
-        {
-            return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
-        }
-
-        var isAdd = string.Equals(field, SwShShopsWorkflowService.AddItemField, StringComparison.Ordinal);
-        var isSetInventory = string.Equals(field, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal);
-        var inventoryItem = effectiveShop.Inventory.FirstOrDefault(item => item.Slot == slot);
-        if (isAdd && (slot < 1 || slot > effectiveShop.Inventory.Count + 1))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Shop '{effectiveShop.Name}' can add inventory at slots 1 through {effectiveShop.Inventory.Count + 1}.",
-                field: "slot",
-                expected: "Safe shop insert slot"));
-            return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
-        }
-
-        if (!isAdd && !isSetInventory && inventoryItem is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Shop '{effectiveShop.Name}' does not have inventory slot {slot}.",
-                field: "slot",
-                expected: "Existing shop inventory slot"));
-            return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
-        }
-
-        var pendingEdit = CreatePendingEdit(
-            loadedWorkflow,
-            sourceShop,
-            effectiveShop,
-            slot,
-            inventoryItem,
-            field,
-            value,
-            diagnostics);
-        if (pendingEdit is null)
-        {
-            return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
-        }
-
-        var updatedSession = ReplacePendingShopEdit(originalSession, pendingEdit, loadedWorkflow, sourceShop);
-        var updatedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
-        var updatedShop = ResolveEquivalentShop(updatedWorkflow, sourceShop);
-        if (updatedShop is not null
-            && updatedShop.Inventory.Select(item => item.ItemId)
-                .SequenceEqual(sourceShop.Inventory.Select(item => item.ItemId)))
-        {
-            updatedSession = RemovePendingShopEdits(updatedSession, loadedWorkflow, sourceShop);
-            updatedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
-        }
-
-        ValidateLoadedSession(
-            project,
-            loadedWorkflow,
-            updatedSession,
-            diagnostics,
-            addSuccessDiagnostic: false);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        return new SwShShopsEditResult(
-            updatedWorkflow,
-            updatedSession,
-            diagnostics);
+        var canonicalWorkflow = ValidateLoadedSession(
+            project,
+            loadedWorkflow,
+            workingSession,
+            diagnostics,
+            addSuccessDiagnostic: false);
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? new SwShShopsEditResult(originalWorkflow, originalSession, diagnostics)
+            : new SwShShopsEditResult(canonicalWorkflow, workingSession, diagnostics);
     }
 
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -423,7 +480,7 @@ public sealed class SwShShopsEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static void ValidateLoadedSession(
+    private static SwShShopsWorkflow ValidateLoadedSession(
         OpenedProject project,
         SwShShopsWorkflow workflow,
         EditSession session,
@@ -508,6 +565,8 @@ public sealed class SwShShopsEditSessionService
                 DiagnosticSeverity.Info,
                 "Pending shop change is valid."));
         }
+
+        return effectiveWorkflow;
     }
 
     private static SwShShopRecord? ValidatePendingEdit(
@@ -1151,6 +1210,20 @@ public sealed class SwShShopsEditSessionService
     private static IEnumerable<PendingEdit> GetShopEdits(EditSession session)
     {
         return session.PendingEdits.Where(IsShopEdit);
+    }
+
+    private static IReadOnlyList<SwShShopInventoryItemUpdate?> OrderInventoryUpdates(
+        IEnumerable<SwShShopInventoryItemUpdate?> updates)
+    {
+        return updates
+            .Select((update, index) => new { Update = update, Index = index })
+            .OrderBy(entry => string.Equals(
+                entry.Update?.Field?.Trim(),
+                SwShShopsWorkflowService.SetInventoryField,
+                StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(entry => entry.Index)
+            .Select(entry => entry.Update)
+            .ToArray();
     }
 
     private static bool IsShopEdit(PendingEdit edit)

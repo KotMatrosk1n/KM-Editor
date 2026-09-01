@@ -2425,6 +2425,8 @@
     "za.items.compatibility.projectedStagedHelp": "Eine Änderung, die diesen eigenen TM-Platz materialisiert, ist vorbereitet. Wende die geprüften Änderungen an und lade Items neu, bevor du hier die Kompatibilität bearbeitest.",
     "za.items.compatibility.draftMoveHelp": "Bereite den TM-Attackenentwurf zuerst vor oder verwirf ihn. Wende ihn nach dem Vorbereiten an und lade Items neu, bevor du die Kompatibilität der neuen Attacke bearbeitest.",
     "za.items.compatibility.stagedMoveHelp": "Für diese TM-Attackenzuweisung sind Änderungen vorbereitet. Wende die geprüften Änderungen an und lade Items neu, bevor du die Kompatibilität der neuen Attacke bearbeitest.",
+    "za.items.compatibility.localDraftBlocksMove": "Bereite die Kompatibilitätsentwürfe vor oder verwirf sie, bevor du die Attacke dieser TM änderst.",
+    "za.items.compatibility.stagedDraftBlocksMove": "Wende die vorbereiteten Kompatibilitätsänderungen an oder brich sie ab, bevor du die Attacke dieser TM änderst.",
     "za.items.compatibility.chooseMove": "Wähle eine TM-Attacke, bevor du die Pokemon-Kompatibilität bearbeitest.",
     "za.items.compatibility.loading": "Pokemon-Kompatibilität wird geladen...",
     "za.items.compatibility.loadUnavailable": "Die Pokemon-Kompatibilität konnte für diese Items-Ansicht nicht geladen werden. Öffne Items erneut und versuche es noch einmal.",

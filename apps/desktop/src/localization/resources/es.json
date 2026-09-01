@@ -2425,6 +2425,8 @@
     "za.items.compatibility.projectedStagedHelp": "Se ha preparado un cambio que materializará este espacio de MT propio. Aplica los Cambios revisados y vuelve a cargar Objetos antes de editar aquí la compatibilidad.",
     "za.items.compatibility.draftMoveHelp": "Termina de preparar o descarta primero el borrador del movimiento de MT. Después de prepararlo, aplica los Cambios revisados y vuelve a cargar Objetos antes de editar la compatibilidad del nuevo movimiento.",
     "za.items.compatibility.stagedMoveHelp": "La asignación de movimiento de esta MT tiene cambios preparados. Aplica los Cambios revisados y vuelve a cargar Objetos antes de editar la compatibilidad del nuevo movimiento.",
+    "za.items.compatibility.localDraftBlocksMove": "Prepara o descarta los borradores de compatibilidad antes de cambiar el movimiento de esta MT.",
+    "za.items.compatibility.stagedDraftBlocksMove": "Aplica o cancela los cambios de compatibilidad preparados antes de cambiar el movimiento de esta MT.",
     "za.items.compatibility.chooseMove": "Elige un movimiento de MT antes de editar la compatibilidad de Pokemon.",
     "za.items.compatibility.loading": "Cargando compatibilidad de Pokemon...",
     "za.items.compatibility.loadUnavailable": "No se pudo cargar la compatibilidad de Pokemon para esta vista de Objetos. Vuelve a abrir Objetos para intentarlo de nuevo.",

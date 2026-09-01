@@ -218,7 +218,7 @@ public sealed class SwShPokemonEditSessionService
             }
 
             updatedSession = ReplacePendingPokemonEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits);
+            effectiveWorkflow = OverlayPendingEdits(project, effectiveWorkflow, [pendingEdit]);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -226,7 +226,302 @@ public sealed class SwShPokemonEditSessionService
             return new SwShPokemonEditResult(originalWorkflow, currentSession, diagnostics);
         }
 
-        return new SwShPokemonEditResult(effectiveWorkflow, updatedSession, diagnostics);
+        return new SwShPokemonEditResult(
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
+    public SwShPokemonEditResult UpdateComposite(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShPokemonFieldUpdate> fieldUpdates,
+        IReadOnlyList<SwShPokemonEvolutionUpdate> evolutionUpdates,
+        IReadOnlyList<SwShPokemonLearnsetUpdate> learnsetUpdates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(fieldUpdates);
+        ArgumentNullException.ThrowIfNull(evolutionUpdates);
+        ArgumentNullException.ThrowIfNull(learnsetUpdates);
+
+        ClearMemoryCaches();
+        var originalSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var originalWorkflow = OverlayPendingEdits(project, loadedWorkflow, originalSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        SwShPokemonEditResult RollBack()
+        {
+            return new SwShPokemonEditResult(originalWorkflow, originalSession, diagnostics);
+        }
+
+        if (!CanEditPokemon(project, originalWorkflow, diagnostics))
+        {
+            return RollBack();
+        }
+
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        foreach (var update in fieldUpdates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon Data batch update is missing a field or value.",
+                    field: "fieldUpdates",
+                    expected: "Complete Pokemon Data field update"));
+                continue;
+            }
+
+            PendingEdit? pendingEdit;
+            if (IsGlobalEvYieldField(update.Field))
+            {
+                pendingEdit = CreateGlobalEvYieldPendingEdit(project, update.Field, update.Value, diagnostics);
+            }
+            else if (IsGlobalExpYieldField(update.Field))
+            {
+                pendingEdit = CreateGlobalExpYieldPendingEdit(project, update.Field, update.Value, diagnostics);
+            }
+            else
+            {
+                var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                    candidate.PersonalId == update.PersonalId);
+                if (pokemon is null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                        field: "personalId",
+                        expected: "Existing Pokemon personal record"));
+                    continue;
+                }
+
+                pendingEdit = CreatePendingEdit(
+                    project,
+                    effectiveWorkflow,
+                    pokemon,
+                    update.Field,
+                    update.Value,
+                    diagnostics);
+            }
+
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(project, effectiveWorkflow, [pendingEdit]);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return RollBack();
+        }
+
+        var evolutionSources = new Dictionary<int, SwShPokemonWorkflowService.WorkflowFileSource>();
+        foreach (var update in evolutionUpdates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Action))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution batch update is missing an action.",
+                    field: "evolutionUpdates",
+                    expected: "Complete Pokemon evolution operation"));
+                break;
+            }
+
+            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                candidate.PersonalId == update.PersonalId);
+            if (pokemon is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                    field: "personalId",
+                    expected: "Existing Pokemon personal record"));
+                break;
+            }
+
+            if (!evolutionSources.TryGetValue(update.PersonalId, out var source))
+            {
+                source = SwShPokemonWorkflowService.ResolveEvolutionDataSource(project, update.PersonalId);
+                if (source is null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Pokemon evolution edit sessions require a supported evolution data file.",
+                        file: SwShPokemonWorkflowService.CreateEvolutionDataPath(update.PersonalId),
+                        expected: "Loaded Sword/Shield evo_###.bin"));
+                    break;
+                }
+
+                evolutionSources.Add(update.PersonalId, source);
+            }
+
+            var pendingEdit = CreateEvolutionPendingEdit(
+                project,
+                effectiveWorkflow,
+                pokemon,
+                source,
+                update.Action,
+                update.Slot,
+                update.Method,
+                update.Argument,
+                update.Species,
+                update.Form,
+                update.Level,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(project, effectiveWorkflow, [pendingEdit]);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return RollBack();
+        }
+
+        SwShPokemonWorkflowService.WorkflowFileSource? learnsetSource = null;
+        var learnsetDataValidated = false;
+        if (learnsetUpdates.Count > 0)
+        {
+            learnsetDataValidated = CanEditLearnsetData(project, diagnostics);
+            learnsetSource = SwShPokemonWorkflowService.ResolveLearnsetDataSource(project);
+            if (!learnsetDataValidated || learnsetSource is null)
+            {
+                if (learnsetSource is null
+                    && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Pokemon learnset data source could not be resolved for editing.",
+                        file: SwShPokemonWorkflowService.LearnsetDataPath,
+                        expected: "Loaded Sword/Shield wazaoboe_total.bin"));
+                }
+
+                return RollBack();
+            }
+        }
+
+        foreach (var update in learnsetUpdates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Action))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon learnset batch update is missing an action.",
+                    field: "learnsetUpdates",
+                    expected: "Complete Pokemon learnset operation"));
+                break;
+            }
+
+            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                candidate.PersonalId == update.PersonalId);
+            if (pokemon is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                    field: "personalId",
+                    expected: "Existing Pokemon personal record"));
+                break;
+            }
+
+            var pendingEdit = CreateLearnsetPendingEdit(
+                effectiveWorkflow,
+                pokemon,
+                learnsetSource!,
+                update.Action,
+                update.Slot,
+                update.MoveId,
+                update.Level,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(project, effectiveWorkflow, [pendingEdit]);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return RollBack();
+        }
+
+        var pokemonEdits = workingSession.PendingEdits.Where(IsPokemonDomainEdit).ToArray();
+        if (pokemonEdits.Any(IsLearnsetEdit)
+            && !learnsetDataValidated
+            && !CanEditLearnsetData(project, diagnostics))
+        {
+            return RollBack();
+        }
+
+        if (pokemonEdits.Any(IsGlobalEvYieldRestoreEdit))
+        {
+            ValidateRestorePersonalDataIdentity(project, GlobalEvYieldField, diagnostics);
+        }
+
+        if (pokemonEdits.Any(IsGlobalExpYieldRestoreEdit))
+        {
+            ValidateRestorePersonalDataIdentity(project, GlobalExpYieldField, diagnostics);
+        }
+
+        foreach (var personalId in pokemonEdits
+                     .Where(IsEvolutionEdit)
+                     .Select(edit => int.TryParse(
+                         edit.RecordId,
+                         NumberStyles.None,
+                         CultureInfo.InvariantCulture,
+                         out var parsedPersonalId)
+                         ? parsedPersonalId
+                         : -1)
+                     .Where(personalId => personalId >= 0)
+                     .Distinct())
+        {
+            if (!evolutionSources.ContainsKey(personalId)
+                && SwShPokemonWorkflowService.ResolveEvolutionDataSource(project, personalId) is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution edit sessions require a supported evolution data file.",
+                    file: SwShPokemonWorkflowService.CreateEvolutionDataPath(personalId),
+                    expected: "Loaded Sword/Shield evo_###.bin"));
+            }
+        }
+
+        var validationWorkflow = loadedWorkflow;
+        foreach (var edit in pokemonEdits)
+        {
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(validationWorkflow, edit, diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+            {
+                validationWorkflow = OverlayPendingEdits(project, validationWorkflow, [edit]);
+            }
+        }
+
+        var editedFormOwnerIds = pokemonEdits
+            .Where(edit => edit.Field is SwShPokemonWorkflowService.FormStatsIndexField or SwShPokemonWorkflowService.FormCountField)
+            .Select(edit => int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
+                ? personalId
+                : -1)
+            .Where(personalId => personalId >= 0)
+            .ToHashSet();
+        ValidateEditedFormOwnership(loadedWorkflow, validationWorkflow, editedFormOwnerIds, diagnostics);
+
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? RollBack()
+            : new SwShPokemonEditResult(validationWorkflow, workingSession, diagnostics);
     }
 
     public SwShPokemonEditResult UpdateLearnset(

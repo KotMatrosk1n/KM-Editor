@@ -240,11 +240,15 @@ public sealed class SwShTrainersEditSessionService
 
             pendingEdit = AddSemanticValidationSource(project, pendingEdit);
             var sourceTrainer = workflow.Trainers.First(candidate => candidate.TrainerId == update.TrainerId);
-            if (GetTrainerFieldValue(sourceTrainer, update.Slot, pendingEdit.Field) is { } sourceValue
+            var restoresSourceValue = GetTrainerFieldValue(
+                    sourceTrainer,
+                    update.Slot,
+                    pendingEdit.Field) is { } sourceValue
                 && string.Equals(
                     pendingEdit.NewValue,
                     sourceValue.ToString(CultureInfo.InvariantCulture),
-                    StringComparison.Ordinal))
+                    StringComparison.Ordinal);
+            if (restoresSourceValue)
             {
                 updatedSession = RemovePendingTrainerEdit(updatedSession, pendingEdit);
             }
@@ -253,7 +257,12 @@ public sealed class SwShTrainersEditSessionService
                 updatedSession = ReplacePendingTrainerEdit(updatedSession, pendingEdit);
             }
 
-            effectiveWorkflow = OverlayPendingEdits(workflow, updatedSession.PendingEdits, abilityResolver);
+            var requiresIdentityReplay = pendingEdit.Field is
+                SwShTrainersWorkflowService.SpeciesIdField
+                or SwShTrainersWorkflowService.FormField;
+            effectiveWorkflow = restoresSourceValue || requiresIdentityReplay
+                ? OverlayPendingEdits(workflow, updatedSession.PendingEdits, abilityResolver)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit, abilityResolver);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

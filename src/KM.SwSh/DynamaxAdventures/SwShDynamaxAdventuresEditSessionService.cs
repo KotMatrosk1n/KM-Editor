@@ -49,82 +49,152 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(value);
 
-        var currentSession = session ?? StartSession();
+        return UpdateFields(
+            paths,
+            session,
+            [new SwShDynamaxAdventureFieldUpdate(entryIndex, field, value)]);
+    }
+
+    public SwShDynamaxAdventuresEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShDynamaxAdventureFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var workflow = dynamaxAdventuresWorkflowService.Load(project);
+        IReadOnlyList<PendingEdit> originalPendingEdits = originalSession.PendingEdits is null
+            ? []
+            : originalSession.PendingEdits.Where(edit => edit is not null).ToArray();
+        var originalWorkflow = OverlayPendingEdits(workflow, originalPendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (!ValidatePendingSessionStructure(workflow, currentSession, diagnostics))
+        if (!ValidatePendingSessionStructure(workflow, originalSession, diagnostics))
         {
             return new SwShDynamaxAdventuresEditResult(
-                workflow,
-                currentSession with { PendingEdits = [] },
+                originalWorkflow,
+                originalSession,
                 diagnostics);
         }
 
         if (!CanEditDynamaxAdventures(project, workflow, diagnostics))
         {
-            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+            return new SwShDynamaxAdventuresEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var existingRecordIds = currentSession.PendingEdits
-            .Where(edit => string.Equals(
-                edit.Domain,
-                SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
-                StringComparison.Ordinal))
-            .Select(edit => edit.RecordId)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        var requestedRecordId = SwShDynamaxAdventuresWorkflowService.CreateEncounterRecordId(entryIndex);
-        if (existingRecordIds.Any(recordId => !string.Equals(recordId, requestedRecordId, StringComparison.Ordinal)))
+        if (updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "A Dynamax Adventures edit session can contain changes for only one Pokemon row. Apply or discard the current row before editing another row.",
-                field: "entryIndex",
-                expected: "The row already selected by this edit session"));
-            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+                "Update at least one Dynamax Adventures field.",
+                field: "updates",
+                expected: "One or more Dynamax Adventures field updates"));
+            return new SwShDynamaxAdventuresEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var effectiveWorkflow = RefreshDynamicEncounterOptions(
-            project,
-            OverlayPendingEdits(workflow, currentSession.PendingEdits));
-        var encounter = effectiveWorkflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
-        if (encounter is null)
+        if (updates.Any(update => update is null
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Dynamax Adventure entry index {entryIndex} is not present in the loaded workflow.",
-                field: "entryIndex",
-                expected: "Existing Dynamax Adventure record"));
-            return new SwShDynamaxAdventuresEditResult(effectiveWorkflow, currentSession, diagnostics);
+                "Dynamax Adventures batch update is missing a field or value.",
+                field: "updates",
+                expected: "Complete Dynamax Adventures field updates"));
+            return new SwShDynamaxAdventuresEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(
-            encounter,
-            field,
-            value,
-            effectiveWorkflow.Encounters,
-            effectiveWorkflow.SafeNormalSpeciesOptions,
+        var optionContext = CreateDynamicEncounterOptionContext(project);
+        var workingSession = originalSession;
+        var effectiveWorkflow = RefreshDynamicEncounterOptions(originalWorkflow, optionContext);
+        foreach (var update in OrderFieldUpdates(updates))
+        {
+            var encounter = effectiveWorkflow.Encounters.FirstOrDefault(
+                candidate => candidate.EntryIndex == update.EntryIndex);
+            if (encounter is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Dynamax Adventure entry index {update.EntryIndex} is not present in the loaded workflow.",
+                    field: "entryIndex",
+                    expected: "Existing Dynamax Adventure record"));
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                encounter,
+                update.Field,
+                update.Value,
+                effectiveWorkflow.Encounters,
+                effectiveWorkflow.SafeNormalSpeciesOptions,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            var sessionForUpdate = RemoveAutoDependentEditsForVanillaSpeciesRestore(
+                workingSession,
+                encounter,
+                pendingEdit);
+            var removedAutoDependentEdit = sessionForUpdate.PendingEdits.Count != workingSession.PendingEdits!.Count;
+            var relatedEdits = CreateRelatedPendingEdits(encounter, pendingEdit);
+            workingSession = ReplacePendingEncounterEdits(sessionForUpdate, relatedEdits);
+            if (removedAutoDependentEdit)
+            {
+                effectiveWorkflow = OverlayPendingEdits(workflow, workingSession.PendingEdits);
+            }
+            else
+            {
+                foreach (var relatedEdit in relatedEdits)
+                {
+                    effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, relatedEdit);
+                }
+            }
+
+            effectiveWorkflow = RefreshDynamicEncounterOptions(effectiveWorkflow, optionContext);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShDynamaxAdventuresEditResult(
+                RefreshDynamicEncounterOptions(originalWorkflow, optionContext),
+                originalSession,
+                diagnostics);
+        }
+
+        if (!ValidatePendingSessionStructure(effectiveWorkflow, workingSession, diagnostics))
+        {
+            return new SwShDynamaxAdventuresEditResult(
+                RefreshDynamicEncounterOptions(originalWorkflow, optionContext),
+                originalSession,
+                diagnostics);
+        }
+
+        foreach (var edit in workingSession.PendingEdits!)
+        {
+            ValidateDynamicPendingOption(effectiveWorkflow, edit, diagnostics);
+        }
+        ValidateDynamaxAdventureCompatibility(
+            effectiveWorkflow,
+            optionContext.UsableMoveIds,
+            optionContext.PersonalRecords,
+            optionContext.LearnsetRecords,
             diagnostics);
-        if (pendingEdit is null)
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return new SwShDynamaxAdventuresEditResult(effectiveWorkflow, currentSession, diagnostics);
+            return new SwShDynamaxAdventuresEditResult(
+                RefreshDynamicEncounterOptions(originalWorkflow, optionContext),
+                originalSession,
+                diagnostics);
         }
-
-        var sessionForUpdate = RemoveAutoDependentEditsForVanillaSpeciesRestore(
-            currentSession,
-            encounter,
-            pendingEdit);
-        var updatedSession = ReplacePendingEncounterEdits(
-            sessionForUpdate,
-            CreateRelatedPendingEdits(encounter, pendingEdit));
 
         return new SwShDynamaxAdventuresEditResult(
-            RefreshDynamicEncounterOptions(
-                project,
-                OverlayPendingEdits(workflow, updatedSession.PendingEdits)),
-            updatedSession,
+            effectiveWorkflow,
+            workingSession,
             diagnostics);
     }
 
@@ -1378,15 +1448,6 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return false;
         }
 
-        var distinctRecordIds = session.PendingEdits
-            .Where(edit => edit is not null && string.Equals(
-                edit.Domain,
-                SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
-                StringComparison.Ordinal))
-            .Select(edit => edit.RecordId)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
         if (session.PendingEdits.Count(edit => edit is not null
                 && edit.Summary is RepairExecutableProjectionSummary or RestoreVanillaTableSummary) is > 0
             && session.PendingEdits.Count != 1)
@@ -1396,15 +1457,6 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 "Dynamax Adventures recovery actions cannot be combined with Pokemon row edits.",
                 expected: "One canonical repair or vanilla-table restore action"));
         }
-        if (distinctRecordIds.Length > 1)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "A Dynamax Adventures change plan can target only one Pokemon row at a time.",
-                field: "entryIndex",
-                expected: "Multiple fields on one Dynamax Adventures row"));
-        }
-
         foreach (var duplicate in session.PendingEdits
             .Where(edit => edit is not null)
             .GroupBy(edit => (edit.Domain, edit.RecordId, edit.Field))
@@ -2311,6 +2363,30 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         return session with { PendingEdits = updatedPendingEdits };
     }
 
+    private static IReadOnlyList<SwShDynamaxAdventureFieldUpdate> OrderFieldUpdates(
+        IReadOnlyList<SwShDynamaxAdventureFieldUpdate> updates)
+    {
+        return updates
+            .Select((update, index) => new
+            {
+                Update = update,
+                Index = index,
+                Priority = update.Field.Trim() switch
+                {
+                    SwShDynamaxAdventuresWorkflowService.SpeciesField => 0,
+                    SwShDynamaxAdventuresWorkflowService.FormField => 1,
+                    SwShDynamaxAdventuresWorkflowService.LevelField => 2,
+                    _ => 3,
+                },
+            })
+            .GroupBy(candidate => candidate.Update.EntryIndex)
+            .SelectMany(group => group
+                .OrderBy(candidate => candidate.Priority)
+                .ThenBy(candidate => candidate.Index))
+            .Select(candidate => candidate.Update)
+            .ToArray();
+    }
+
     private static bool IsSameEncounterEdit(PendingEdit candidate, PendingEdit pendingEdit)
     {
         return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
@@ -2344,10 +2420,24 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         OpenedProject project,
         SwShDynamaxAdventuresWorkflow workflow)
     {
-        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
-        var personalRecords = LoadPersonalRecords(project);
-        var learnsetRecords = LoadLearnsetRecords(project);
+        return RefreshDynamicEncounterOptions(
+            workflow,
+            CreateDynamicEncounterOptionContext(project));
+    }
+
+    private static DynamicEncounterOptionContext CreateDynamicEncounterOptionContext(OpenedProject project)
+    {
+        return new DynamicEncounterOptionContext(
+            SwShPokemonAbilityOptionResolver.Load(project),
+            SwShMoveAvailability.LoadUsableMoveIds(project),
+            LoadPersonalRecords(project),
+            LoadLearnsetRecords(project));
+    }
+
+    private static SwShDynamaxAdventuresWorkflow RefreshDynamicEncounterOptions(
+        SwShDynamaxAdventuresWorkflow workflow,
+        DynamicEncounterOptionContext context)
+    {
 
         return workflow with
         {
@@ -2355,13 +2445,19 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 .Select(encounter => RefreshEncounterOptions(
                     workflow,
                     encounter,
-                    abilityResolver,
-                    usableMoveIds,
-                    personalRecords,
-                    learnsetRecords))
+                    context.AbilityResolver,
+                    context.UsableMoveIds,
+                    context.PersonalRecords,
+                    context.LearnsetRecords))
                 .ToArray(),
         };
     }
+
+    private sealed record DynamicEncounterOptionContext(
+        SwShPokemonAbilityOptionResolver AbilityResolver,
+        IReadOnlySet<int> UsableMoveIds,
+        IReadOnlyList<SwShPersonalRecord> PersonalRecords,
+        IReadOnlyList<SwShPokemonLearnsetRecord> LearnsetRecords);
 
     private static SwShDynamaxAdventureEntry RefreshEncounterOptions(
         SwShDynamaxAdventuresWorkflow workflow,

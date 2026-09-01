@@ -9,3 +9,10 @@ public sealed record SwShShopsEditResult(
     SwShShopsWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SwShShopInventoryItemUpdate(
+    string ShopId,
+    int Slot,
+    string Field,
+    string Value,
+    string? RowId = null);

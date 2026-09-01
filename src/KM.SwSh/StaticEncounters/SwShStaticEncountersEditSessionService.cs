@@ -128,8 +128,13 @@ public sealed class SwShStaticEncountersEditSessionService
             }
 
             pendingEdit = AddIdentityValidationSource(project, pendingEdit);
+            var removesConflictingIvMode = workingSession.PendingEdits.Any(edit =>
+                IsConflictingStaticEncounterEdit(edit, pendingEdit)
+                && !string.Equals(edit.Field, pendingEdit.Field, StringComparison.Ordinal));
             workingSession = ReplacePendingStaticEncounterEdit(workingSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(workflow, workingSession.PendingEdits);
+            effectiveWorkflow = removesConflictingIvMode
+                ? OverlayPendingEdits(workflow, workingSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

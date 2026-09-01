@@ -27,6 +27,30 @@ public sealed record UpdatePokemonFieldsRequest(
     EditSessionDto? Session,
     IReadOnlyList<PokemonFieldUpdateDto> Updates);
 
+public sealed record PokemonEvolutionUpdateDto(
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? Method,
+    int? Argument,
+    int? Species,
+    int? Form,
+    int? Level);
+
+public sealed record PokemonLearnsetUpdateDto(
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? MoveId,
+    int? Level);
+
+public sealed record UpdatePokemonCompositeRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<PokemonFieldUpdateDto> FieldUpdates,
+    IReadOnlyList<PokemonEvolutionUpdateDto> EvolutionUpdates,
+    IReadOnlyList<PokemonLearnsetUpdateDto> LearnsetUpdates);
+
 public sealed record UpdatePokemonLearnsetRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
@@ -280,6 +304,11 @@ public sealed record UpdatePokemonFieldResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdatePokemonFieldsResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdatePokemonCompositeResponse(
     PokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

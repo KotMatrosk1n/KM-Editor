@@ -132,6 +132,7 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "changeSets.read",
     "dynamaxAdventures.defaults.preview",
     "dynamaxAdventures.field.update",
+    "dynamaxAdventures.fields.update",
     "dynamaxAdventures.load",
     "dynamaxAdventures.repair.stage",
     "dynamaxAdventures.restore.stage",
@@ -217,6 +218,7 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "placement.object.load",
     "placement.object.update",
     "placement.objects.update",
+    "pokemon.composite.update",
     "pokemon.dex.megas.sync.stage",
     "pokemon.dex.move",
     "pokemon.dex.resize",
@@ -284,6 +286,7 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "semanticMerge.source.open",
     "shinyRate.load",
     "shinyRate.stage",
+    "shops.inventory.items.update",
     "shops.inventory.update",
     "shops.load",
     "spreadsheetImport.load",
@@ -2465,6 +2468,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "changePlan.create"
             | "dynamaxAdventures.defaults.preview"
             | "dynamaxAdventures.field.update"
+            | "dynamaxAdventures.fields.update"
             | "dynamaxAdventures.repair.stage"
             | "dynamaxAdventures.restore.stage"
             | "editSession.start"
@@ -2497,6 +2501,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "npcItemGift.stage"
             | "placement.object.update"
             | "placement.objects.update"
+            | "pokemon.composite.update"
             | "pokemon.dex.megas.sync.stage"
             | "pokemon.dex.move"
             | "pokemon.dex.resize"
@@ -2516,6 +2521,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "rentalPokemon.fields.update"
             | "royalCandy.workflow.stage"
             | "shinyRate.stage"
+            | "shops.inventory.items.update"
             | "shops.inventory.update"
             | "spreadsheetImport.preview"
             | "startingItems.stage"

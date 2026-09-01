@@ -1483,6 +1483,21 @@ public sealed class ZaWorkflowService
         return pokemonEditSessionService.UpdateFields(paths, session, updates);
     }
 
+    public ZaPokemonEditResult UpdatePokemonComposite(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaPokemonFieldUpdate> fieldUpdates,
+        IReadOnlyList<ZaPokemonEvolutionOperation> evolutionUpdates,
+        IReadOnlyList<ZaPokemonLearnsetUpdate> learnsetUpdates)
+    {
+        return pokemonEditSessionService.UpdateComposite(
+            paths,
+            session,
+            fieldUpdates,
+            evolutionUpdates,
+            learnsetUpdates);
+    }
+
     public ZaPokemonEditResult UpdatePokemonLearnset(
         ProjectPaths paths,
         EditSession? session,
@@ -1613,6 +1628,14 @@ public sealed class ZaWorkflowService
         string? rowId = null)
     {
         return shopsEditSessionService.UpdateInventoryItem(paths, session, shopId, slot, field, value, rowId);
+    }
+
+    public ZaShopsEditResult UpdateShopInventoryItems(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaShopInventoryItemUpdate?>? updates)
+    {
+        return shopsEditSessionService.UpdateInventoryItems(paths, session, updates);
     }
 
     public ZaTrainersEditResult UpdateTrainerField(
@@ -1794,6 +1817,10 @@ public sealed class ZaWorkflowService
 
     public ZaEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope(paths);
+
         if (IsMixedAlphaMoveSession(session))
         {
             return CreateAlphaMoveMixedValidation(session);
@@ -1815,7 +1842,7 @@ public sealed class ZaWorkflowService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
         using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
-        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope();
+        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope(paths);
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
 
@@ -1840,7 +1867,7 @@ public sealed class ZaWorkflowService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
-        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope();
+        using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope(paths);
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
 

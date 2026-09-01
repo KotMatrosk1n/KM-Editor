@@ -13,6 +13,7 @@ export const kmCommandNameValues = [
   "pokemon.load",
   "pokemon.field.update",
   "pokemon.fields.update",
+  "pokemon.composite.update",
   "pokemon.learnset.update",
   "pokemon.evolution.update",
   "pokemon.dex.swap",
@@ -48,6 +49,7 @@ export const kmCommandNameValues = [
   "rentalPokemon.fields.update",
   "dynamaxAdventures.load",
   "dynamaxAdventures.field.update",
+  "dynamaxAdventures.fields.update",
   "dynamaxAdventures.defaults.preview",
   "dynamaxAdventures.repair.stage",
   "dynamaxAdventures.restore.stage",
@@ -56,6 +58,7 @@ export const kmCommandNameValues = [
   "dynamaxAdventures.seed.save.set",
   "shops.load",
   "shops.inventory.update",
+  "shops.inventory.items.update",
   "tmMachineControls.load",
   "tmMachineControls.recipeAvailability.stage",
   "tmMachineControls.materialVisibility.stage",
@@ -289,6 +292,7 @@ export const kmCommandNames = {
   loadPokemonWorkflow: "pokemon.load",
   updatePokemonField: "pokemon.field.update",
   updatePokemonFields: "pokemon.fields.update",
+  updatePokemonComposite: "pokemon.composite.update",
   updatePokemonLearnset: "pokemon.learnset.update",
   updatePokemonEvolution: "pokemon.evolution.update",
   swapPokemonDexPlacement: "pokemon.dex.swap",
@@ -324,6 +328,7 @@ export const kmCommandNames = {
   updateRentalPokemonFields: "rentalPokemon.fields.update",
   loadDynamaxAdventuresWorkflow: "dynamaxAdventures.load",
   updateDynamaxAdventureField: "dynamaxAdventures.field.update",
+  updateDynamaxAdventureFields: "dynamaxAdventures.fields.update",
   previewDynamaxAdventureDefaults: "dynamaxAdventures.defaults.preview",
   stageDynamaxAdventureRepair: "dynamaxAdventures.repair.stage",
   stageDynamaxAdventureRestore: "dynamaxAdventures.restore.stage",
@@ -332,6 +337,7 @@ export const kmCommandNames = {
   setDynamaxAdventureSaveSeed: "dynamaxAdventures.seed.save.set",
   loadShopsWorkflow: "shops.load",
   updateShopInventoryItem: "shops.inventory.update",
+  updateShopInventoryItems: "shops.inventory.items.update",
   loadTmMachineControls: "tmMachineControls.load",
   stageTmRecipeAvailability: "tmMachineControls.recipeAvailability.stage",
   stageTmMaterialVisibility: "tmMachineControls.materialVisibility.stage",
@@ -6204,6 +6210,26 @@ export const updateDynamaxAdventureFieldRequestSchema = z
   .superRefine(validateDynamaxAdventureRequestGame)
   .superRefine(validateDynamaxAdventureUpdateRequest);
 
+export const dynamaxAdventureFieldUpdateSchema = z
+  .strictObject({
+    entryIndex: z
+      .number()
+      .int()
+      .min(0)
+      .max(dynamaxAdventureNormalEncounterCount - 1),
+    field: dynamaxAdventureEditableFieldNameSchema,
+    value: z.string().regex(/^-?\d+$/),
+  })
+  .superRefine(validateDynamaxAdventureUpdateRequest);
+
+export const updateDynamaxAdventureFieldsRequestSchema = z
+  .strictObject({
+    paths: projectPathsSchema,
+    session: editSessionSchema.nullable(),
+    updates: z.array(dynamaxAdventureFieldUpdateSchema).min(1),
+  })
+  .superRefine(validateDynamaxAdventureRequestGame);
+
 const dynamaxAdventureFieldResponseShapeSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
@@ -6211,6 +6237,11 @@ const dynamaxAdventureFieldResponseShapeSchema = z.strictObject({
 });
 
 export const updateDynamaxAdventureFieldResponseSchema =
+  dynamaxAdventureFieldResponseShapeSchema.superRefine(
+    validateDynamaxAdventureUpdateResponse,
+  );
+
+export const updateDynamaxAdventureFieldsResponseSchema =
   dynamaxAdventureFieldResponseShapeSchema.superRefine(
     validateDynamaxAdventureUpdateResponse,
   );
@@ -6374,7 +6405,6 @@ function validateDynamaxAdventureUpdateResponse(
     );
   }
 
-  const ownerIndexes = new Set<number>();
   pendingEdits.forEach((edit, editIndex) => {
     if (edit.summary === "Restore the vanilla Dynamax Adventures table.") {
       addDynamaxAdventureContractIssue(
@@ -6408,7 +6438,6 @@ function validateDynamaxAdventureUpdateResponse(
         "Dynamax Adventures pending edits require one canonical normal-row owner.",
       );
     } else {
-      ownerIndexes.add(ownerIndex);
       const owner = response.workflow.encounters[ownerIndex];
       if (owner?.isEditable !== true) {
         addDynamaxAdventureContractIssue(
@@ -6447,13 +6476,6 @@ function validateDynamaxAdventureUpdateResponse(
     }
   });
 
-  if (ownerIndexes.size > 1) {
-    addDynamaxAdventureContractIssue(
-      context,
-      ["session", "pendingEdits"],
-      "Dynamax Adventures pending edits must belong to one normal row.",
-    );
-  }
 }
 
 function isValidDynamaxAdventureFieldValue(
@@ -6479,14 +6501,24 @@ function isValidDynamaxAdventureFieldValue(
   );
 }
 
-export const updateShopInventoryItemRequestSchema = z.strictObject({
+export const shopInventoryItemUpdateSchema = z.strictObject({
   field: z.string(),
-  paths: projectPathsSchema,
   rowId: z.string().optional(),
-  session: editSessionSchema.nullable(),
   shopId: z.string(),
   slot: z.number().int().positive(),
   value: z.string(),
+});
+
+export const updateShopInventoryItemRequestSchema = z.strictObject({
+  ...shopInventoryItemUpdateSchema.shape,
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+});
+
+export const updateShopInventoryItemsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(shopInventoryItemUpdateSchema).min(1),
 });
 
 export const updateShopInventoryItemResponseSchema = z.strictObject({
@@ -6494,6 +6526,9 @@ export const updateShopInventoryItemResponseSchema = z.strictObject({
   session: editSessionSchema,
   workflow: shopsWorkflowSchema,
 });
+
+export const updateShopInventoryItemsResponseSchema =
+  updateShopInventoryItemResponseSchema;
 
 export const updateRaidBattleSlotFieldRequestSchema = z.strictObject({
   field: z.string(),
@@ -7578,11 +7613,29 @@ export type UpdateDynamaxAdventureFieldRequest = z.infer<
 export type UpdateDynamaxAdventureFieldResponse = z.infer<
   typeof updateDynamaxAdventureFieldResponseSchema
 >;
+export type DynamaxAdventureFieldUpdate = z.infer<
+  typeof dynamaxAdventureFieldUpdateSchema
+>;
+export type UpdateDynamaxAdventureFieldsRequest = z.infer<
+  typeof updateDynamaxAdventureFieldsRequestSchema
+>;
+export type UpdateDynamaxAdventureFieldsResponse = z.infer<
+  typeof updateDynamaxAdventureFieldsResponseSchema
+>;
 export type UpdateShopInventoryItemRequest = z.infer<
   typeof updateShopInventoryItemRequestSchema
 >;
 export type UpdateShopInventoryItemResponse = z.infer<
   typeof updateShopInventoryItemResponseSchema
+>;
+export type ShopInventoryItemUpdate = z.infer<
+  typeof shopInventoryItemUpdateSchema
+>;
+export type UpdateShopInventoryItemsRequest = z.infer<
+  typeof updateShopInventoryItemsRequestSchema
+>;
+export type UpdateShopInventoryItemsResponse = z.infer<
+  typeof updateShopInventoryItemsResponseSchema
 >;
 export type ValidateEditSessionRequest = z.infer<
   typeof validateEditSessionRequestSchema

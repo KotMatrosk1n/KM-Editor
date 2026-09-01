@@ -41,97 +41,193 @@ internal sealed class ZaShopsEditSessionService
         string value,
         string? rowId = null)
     {
-        ArgumentNullException.ThrowIfNull(paths);
-        ArgumentException.ThrowIfNullOrWhiteSpace(shopId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
-        ArgumentNullException.ThrowIfNull(value);
+        return UpdateInventoryItems(
+            paths,
+            session,
+            [new ZaShopInventoryItemUpdate(shopId, slot, field, value, rowId)]);
+    }
 
-        var currentSession = session ?? EditSession.Start();
+    public ZaShopsEditResult UpdateInventoryItems(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaShopInventoryItemUpdate?>? updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var originalSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = shopsWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
-                workflow.Summary,
-                workflow.Diagnostics,
+                originalWorkflow.Summary,
+                originalWorkflow.Diagnostics,
                 ZaEditSessionSupport.ShopsDomain,
                 diagnostics))
         {
-            return new ZaShopsEditResult(workflow, currentSession, diagnostics);
+            return new ZaShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var selectedShop = workflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId);
-        var loadedShop = loadedWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId);
-        if (selectedShop is null)
+        if (updates is null || updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Shop '{shopId}' is not present in the loaded Pokemon Legends Z-A Shops workflow.",
-                field: "shopId",
-                expected: "Existing Z-A shop record"));
-            return new ZaShopsEditResult(workflow, currentSession, diagnostics);
+                "Update at least one Pokemon Legends Z-A Shop inventory field.",
+                field: "updates",
+                expected: "One or more complete Pokemon Legends Z-A Shop inventory updates"));
+            return new ZaShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var normalizedField = field.Trim();
-        var isIncomingStructuredInventory =
-            string.Equals(normalizedField, ZaShopsWorkflowService.SetInventoryField, StringComparison.Ordinal)
-            && ParseInventoryUpdate(value.Trim()) is { IsStructured: true };
-        if (IsStructuralInventoryField(normalizedField)
-            && !isIncomingStructuredInventory
-            && HasPendingStructuredInventoryForShop(currentSession.PendingEdits, shopId))
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        var seenUpdates = new HashSet<(string ShopId, int Slot, string? RowId, string Field)>();
+        foreach (var update in OrderInventoryUpdates(updates))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "A structured inventory update already owns this shop's additions, removals, item IDs, and order. Restage the complete row-aware inventory instead of adding a positional structural edit.",
-                field: normalizedField,
-                expected: "Version 1 row inventory with unique stable row identities"));
-            return new ZaShopsEditResult(workflow, currentSession, diagnostics);
+            if (update is null
+                || string.IsNullOrWhiteSpace(update.ShopId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon Legends Z-A Shop inventory batch update is missing a shop, field, or value.",
+                    field: "updates",
+                    expected: "Complete Pokemon Legends Z-A Shop inventory update"));
+                break;
+            }
+
+            var normalizedShopId = update.ShopId.Trim();
+            var normalizedField = update.Field.Trim();
+            var normalizedRowId = string.IsNullOrWhiteSpace(update.RowId) ? null : update.RowId.Trim();
+            if (!string.Equals(update.ShopId, normalizedShopId, StringComparison.Ordinal)
+                || !string.Equals(update.Field, normalizedField, StringComparison.Ordinal)
+                || (update.RowId is not null
+                    && !string.Equals(update.RowId, normalizedRowId, StringComparison.Ordinal)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon Legends Z-A Shop inventory batch identifiers and fields must use canonical text without surrounding whitespace.",
+                    field: "updates",
+                    expected: "Canonical Pokemon Legends Z-A Shop inventory update text"));
+                break;
+            }
+
+            if (!seenUpdates.Add((normalizedShopId, update.Slot, normalizedRowId, normalizedField)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon Legends Z-A Shop inventory batch contains the same row field more than once.",
+                    field: normalizedField,
+                    expected: "One value per Pokemon Legends Z-A Shop inventory row field"));
+                break;
+            }
+
+            var selectedShop = effectiveWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == normalizedShopId);
+            var loadedShop = loadedWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == normalizedShopId);
+            if (selectedShop is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Shop '{normalizedShopId}' is not present in the loaded Pokemon Legends Z-A Shops workflow.",
+                    field: "shopId",
+                    expected: "Existing Z-A shop record"));
+                break;
+            }
+
+            var isIncomingStructuredInventory =
+                string.Equals(normalizedField, ZaShopsWorkflowService.SetInventoryField, StringComparison.Ordinal)
+                && ParseInventoryUpdate(update.Value.Trim()) is { IsStructured: true };
+            if (IsStructuralInventoryField(normalizedField)
+                && !isIncomingStructuredInventory
+                && HasPendingStructuredInventoryForShop(workingSession.PendingEdits, normalizedShopId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "A structured inventory update already owns this shop's additions, removals, item IDs, and order. Restage the complete row-aware inventory instead of adding a positional structural edit.",
+                    field: normalizedField,
+                    expected: "Version 1 row inventory with unique stable row identities"));
+                break;
+            }
+
+            if (normalizedRowId is null
+                && !IsStructuralInventoryField(normalizedField)
+                && HasPendingStructuralEditForShop(workingSession.PendingEdits, normalizedShopId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "This positional shop field edit is ambiguous after an inventory reorder, addition, or removal. Reload or send the stable row identity before editing the field.",
+                    field: "rowId",
+                    expected: "Stable Z-A shop row identity"));
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                selectedShop,
+                loadedShop,
+                update.Slot,
+                normalizedRowId,
+                normalizedField,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            if (IsStructuredInventoryEdit(pendingEdit)
+                && HasUnsafeLegacyPositionalMix(workingSession.PendingEdits, pendingEdit))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "This inventory reorder cannot be combined with an older positional shop field edit. Cancel or restage the shop changes so every row has a stable identity.",
+                    field: ZaShopsWorkflowService.SetInventoryField,
+                    expected: "Stable row identities for every non-structural shop edit"));
+                break;
+            }
+
+            var previousPendingEditCount = workingSession.PendingEdits.Count;
+            workingSession = ReplacePendingShopEdit(workingSession, pendingEdit);
+            var structuralEditPrunedPendingState = IsStructuralInventoryField(pendingEdit.Field)
+                && workingSession.PendingEdits.Count != previousPendingEditCount + 1;
+            effectiveWorkflow = string.Equals(
+                    pendingEdit.Field,
+                    ZaShopsWorkflowService.SetInventoryField,
+                    StringComparison.Ordinal)
+                || structuralEditPrunedPendingState
+                    ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
+                    : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
-        if (rowId is null
-            && !IsStructuralInventoryField(normalizedField)
-            && HasPendingStructuralEditForShop(currentSession.PendingEdits, shopId))
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "This positional shop field edit is ambiguous after an inventory reorder, addition, or removal. Reload or send the stable row identity before editing the field.",
-                field: "rowId",
-                expected: "Stable Z-A shop row identity"));
-            return new ZaShopsEditResult(workflow, currentSession, diagnostics);
+            return new ZaShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(
-            workflow,
-            selectedShop,
-            loadedShop,
-            slot,
-            rowId,
-            field,
-            value,
-            diagnostics);
-        if (pendingEdit is null)
+        ValidateLegacyPositionalMix(workingSession.PendingEdits, diagnostics);
+        var canonicalWorkflow = loadedWorkflow;
+        foreach (var edit in OrderPendingEdits(workingSession.PendingEdits))
         {
-            return new ZaShopsEditResult(workflow, currentSession, diagnostics);
-        }
+            if (!IsShopEdit(edit))
+            {
+                canonicalWorkflow = OverlayPendingEdit(canonicalWorkflow, edit);
+                continue;
+            }
 
-        if (IsStructuredInventoryEdit(pendingEdit)
-            && HasUnsafeLegacyPositionalMix(currentSession.PendingEdits, pendingEdit))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "This inventory reorder cannot be combined with an older positional shop field edit. Cancel or restage the shop changes so every row has a stable identity.",
-                field: ZaShopsWorkflowService.SetInventoryField,
-                expected: "Stable row identities for every non-structural shop edit"));
-            return new ZaShopsEditResult(workflow, currentSession, diagnostics);
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(canonicalWorkflow, edit, diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+            {
+                canonicalWorkflow = OverlayPendingEdit(canonicalWorkflow, edit);
+            }
         }
+        ValidateTouchedShopDisplayOrder(canonicalWorkflow, workingSession.PendingEdits, diagnostics);
 
-        var updatedSession = ReplacePendingShopEdit(currentSession, pendingEdit);
-        return new ZaShopsEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
-            updatedSession,
-            diagnostics);
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? new ZaShopsEditResult(originalWorkflow, originalSession, diagnostics)
+            : new ZaShopsEditResult(canonicalWorkflow, workingSession, diagnostics);
     }
 
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -1500,6 +1596,23 @@ internal sealed class ZaShopsEditSessionService
             .OrderBy(entry => IsStructuredInventoryEdit(entry.Edit) ? 0 : 1)
             .ThenBy(entry => entry.Index)
             .Select(entry => entry.Edit)
+            .ToArray();
+    }
+
+    private static bool IsShopEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, ZaEditSessionSupport.ShopsDomain, StringComparison.Ordinal);
+
+    private static IReadOnlyList<ZaShopInventoryItemUpdate?> OrderInventoryUpdates(
+        IEnumerable<ZaShopInventoryItemUpdate?> updates)
+    {
+        return updates
+            .Select((update, index) => new { Update = update, Index = index })
+            .OrderBy(entry => string.Equals(
+                entry.Update?.Field?.Trim(),
+                ZaShopsWorkflowService.SetInventoryField,
+                StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(entry => entry.Index)
+            .Select(entry => entry.Update)
             .ToArray();
     }
 

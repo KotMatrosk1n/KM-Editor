@@ -202,6 +202,16 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdatePokemonCompositeResponse ToPokemonCompositeDto(SvPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonCompositeResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdatePokemonLearnsetResponse ToDtoLearnsetUpdate(SvPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -328,6 +338,16 @@ public static class SvBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdateShopInventoryItemResponse(
+            ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateShopInventoryItemsResponse ToShopInventoryItemsDto(SvShopsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateShopInventoryItemsResponse(
             ToShopsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());

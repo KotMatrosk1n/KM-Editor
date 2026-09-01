@@ -2425,6 +2425,8 @@
     "za.items.compatibility.projectedStagedHelp": "A change that will materialize this owned TM slot is staged. Apply the reviewed Changes, then reload Items before editing compatibility here.",
     "za.items.compatibility.draftMoveHelp": "Finish staging or discard the TM move draft first. After staging it, apply the reviewed Changes and reload Items before editing compatibility for the new move.",
     "za.items.compatibility.stagedMoveHelp": "This TM move assignment has staged changes. Apply the reviewed Changes, then reload Items before editing compatibility for the new move.",
+    "za.items.compatibility.localDraftBlocksMove": "Stage or discard the compatibility drafts before changing this TM's move.",
+    "za.items.compatibility.stagedDraftBlocksMove": "Apply or cancel the staged compatibility changes before changing this TM's move.",
     "za.items.compatibility.chooseMove": "Choose a TM move before editing Pokemon compatibility.",
     "za.items.compatibility.loading": "Loading Pokemon compatibility...",
     "za.items.compatibility.loadUnavailable": "Pokemon compatibility could not be loaded for this Items view. Reopen Items to try again.",

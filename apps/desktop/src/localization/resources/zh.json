@@ -2425,6 +2425,8 @@
     "za.items.compatibility.projectedStagedHelp": "已暂存一项会实体化此自有招式学习器槽位的更改。应用已审核的更改，然后重新加载道具，再在此处编辑兼容性。",
     "za.items.compatibility.draftMoveHelp": "请先完成暂存或放弃招式学习器招式草稿。暂存后应用已审核的更改并重新加载道具，再编辑新招式的兼容性。",
     "za.items.compatibility.stagedMoveHelp": "此招式学习器的招式分配有已暂存的更改。应用已审核的更改，然后重新加载道具，再编辑新招式的兼容性。",
+    "za.items.compatibility.localDraftBlocksMove": "在更改此招式学习器的招式前，请先暂存或放弃兼容性草稿。",
+    "za.items.compatibility.stagedDraftBlocksMove": "在更改此招式学习器的招式前，请先应用或取消已暂存的兼容性更改。",
     "za.items.compatibility.chooseMove": "请先选择招式学习器招式，再编辑宝可梦兼容性。",
     "za.items.compatibility.loading": "正在加载宝可梦兼容性...",
     "za.items.compatibility.loadUnavailable": "无法为此道具视图加载宝可梦兼容性。请重新打开道具后重试。",

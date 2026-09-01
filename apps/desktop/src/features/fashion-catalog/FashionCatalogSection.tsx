@@ -164,7 +164,7 @@ export function FashionCatalogSection({
   }, [catalogFile, presentation, rows, search]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const visibleRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize);
-  const selectedRow = visibleRows.find((row) => row.physicalRowId === selectedRowId) ?? null;
+  const selectedRow = rows.find((row) => row.physicalRowId === selectedRowId) ?? null;
   const fields = useMemo(
     () => getFieldDefinitions(catalogFile, t, selectedRow),
     [catalogFile, selectedRow, t]
@@ -239,12 +239,12 @@ export function FashionCatalogSection({
   }, [page, pageCount]);
 
   useEffect(() => {
-    if (selectedRowId && visibleRows.some((row) => row.physicalRowId === selectedRowId)) {
+    if (selectedRowId && rows.some((row) => row.physicalRowId === selectedRowId)) {
       return;
     }
 
     setSelectedRowId(visibleRows[0]?.physicalRowId ?? null);
-  }, [selectedRowId, visibleRows]);
+  }, [rows, selectedRowId, visibleRows]);
 
   useEffect(() => {
     if (!fields.some((candidate) => candidate.field === selectedField)) {

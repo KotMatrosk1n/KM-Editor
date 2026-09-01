@@ -38,58 +38,153 @@ internal sealed class SvShopsEditSessionService
         string value,
         string? rowId = null)
     {
-        ArgumentNullException.ThrowIfNull(paths);
-        ArgumentException.ThrowIfNullOrWhiteSpace(shopId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
-        ArgumentNullException.ThrowIfNull(value);
+        return UpdateInventoryItems(
+            paths,
+            session,
+            [new SvShopInventoryItemUpdate(shopId, slot, field, value, rowId)]);
+    }
 
-        var currentSession = session ?? EditSession.Start();
+    public SvShopsEditResult UpdateInventoryItems(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvShopInventoryItemUpdate?>? updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var originalSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = shopsWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!SvEditSessionSupport.CanEdit(
                 project,
-                workflow.Summary,
-                workflow.Diagnostics,
+                originalWorkflow.Summary,
+                originalWorkflow.Diagnostics,
                 SvEditSessionSupport.ShopsDomain,
                 diagnostics))
         {
-            return new SvShopsEditResult(workflow, currentSession, diagnostics);
+            return new SvShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var selectedShop = workflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId);
-        var loadedShop = loadedWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId);
-        if (selectedShop is null)
+        if (updates is null || updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Shop '{shopId}' is not present in the loaded S/V Shops workflow.",
-                field: "shopId",
-                expected: "Existing S/V shop record"));
-            return new SvShopsEditResult(workflow, currentSession, diagnostics);
+                "Update at least one S/V Shop inventory field.",
+                field: "updates",
+                expected: "One or more complete S/V Shop inventory updates"));
+            return new SvShopsEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(
-            workflow,
-            selectedShop,
-            loadedShop,
-            slot,
-            rowId,
-            field,
-            value,
-            diagnostics);
-        if (pendingEdit is null)
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        var seenUpdates = new HashSet<(string ShopId, int Slot, string? RowId, string Field)>();
+        foreach (var update in OrderInventoryUpdates(updates))
         {
-            return new SvShopsEditResult(workflow, currentSession, diagnostics);
+            if (update is null
+                || string.IsNullOrWhiteSpace(update.ShopId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "S/V Shop inventory batch update is missing a shop, field, or value.",
+                    field: "updates",
+                    expected: "Complete S/V Shop inventory update"));
+                break;
+            }
+
+            var normalizedShopId = update.ShopId.Trim();
+            var normalizedField = update.Field.Trim();
+            var normalizedRowId = string.IsNullOrWhiteSpace(update.RowId) ? null : update.RowId.Trim();
+            if (!string.Equals(update.ShopId, normalizedShopId, StringComparison.Ordinal)
+                || !string.Equals(update.Field, normalizedField, StringComparison.Ordinal)
+                || (update.RowId is not null
+                    && !string.Equals(update.RowId, normalizedRowId, StringComparison.Ordinal)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "S/V Shop inventory batch identifiers and fields must use canonical text without surrounding whitespace.",
+                    field: "updates",
+                    expected: "Canonical S/V Shop inventory update text"));
+                break;
+            }
+
+            if (!seenUpdates.Add((normalizedShopId, update.Slot, normalizedRowId, normalizedField)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "S/V Shop inventory batch contains the same row field more than once.",
+                    field: normalizedField,
+                    expected: "One value per S/V Shop inventory row field"));
+                break;
+            }
+
+            var selectedShop = effectiveWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == normalizedShopId);
+            var loadedShop = loadedWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == normalizedShopId);
+            if (selectedShop is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Shop '{normalizedShopId}' is not present in the loaded S/V Shops workflow.",
+                    field: "shopId",
+                    expected: "Existing S/V shop record"));
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                selectedShop,
+                loadedShop,
+                update.Slot,
+                normalizedRowId,
+                normalizedField,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            var previousPendingEditCount = workingSession.PendingEdits.Count;
+            workingSession = ReplacePendingShopEdit(workingSession, pendingEdit);
+            var structuralEditPrunedPendingState = IsStructuralInventoryField(pendingEdit.Field)
+                && workingSession.PendingEdits.Count != previousPendingEditCount + 1;
+            effectiveWorkflow = string.Equals(
+                    pendingEdit.Field,
+                    SvShopsWorkflowService.SetInventoryField,
+                    StringComparison.Ordinal)
+                || structuralEditPrunedPendingState
+                    ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
+                    : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
-        var updatedSession = ReplacePendingShopEdit(currentSession, pendingEdit);
-        return new SvShopsEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
-            updatedSession,
-            diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SvShopsEditResult(originalWorkflow, originalSession, diagnostics);
+        }
+
+        var canonicalWorkflow = loadedWorkflow;
+        foreach (var edit in OrderPendingEdits(workingSession.PendingEdits))
+        {
+            if (!IsShopEdit(edit))
+            {
+                canonicalWorkflow = OverlayPendingEdit(canonicalWorkflow, edit);
+                continue;
+            }
+
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(canonicalWorkflow, edit, diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+            {
+                canonicalWorkflow = OverlayPendingEdit(canonicalWorkflow, edit);
+            }
+        }
+
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? new SvShopsEditResult(originalWorkflow, originalSession, diagnostics)
+            : new SvShopsEditResult(canonicalWorkflow, workingSession, diagnostics);
     }
 
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -1410,6 +1505,28 @@ internal sealed class SvShopsEditSessionService
             .OrderBy(entry => IsStructuredInventoryEdit(entry.Edit) ? 0 : 1)
             .ThenBy(entry => entry.Index)
             .Select(entry => entry.Edit)
+            .ToArray();
+    }
+
+    private static bool IsShopEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, SvEditSessionSupport.ShopsDomain, StringComparison.Ordinal);
+
+    private static bool IsStructuralInventoryField(string? field) =>
+        string.Equals(field, SvShopsWorkflowService.SetInventoryField, StringComparison.Ordinal)
+        || string.Equals(field, SvShopsWorkflowService.AddItemField, StringComparison.Ordinal)
+        || string.Equals(field, SvShopsWorkflowService.RemoveItemField, StringComparison.Ordinal);
+
+    private static IReadOnlyList<SvShopInventoryItemUpdate?> OrderInventoryUpdates(
+        IEnumerable<SvShopInventoryItemUpdate?> updates)
+    {
+        return updates
+            .Select((update, index) => new { Update = update, Index = index })
+            .OrderBy(entry => string.Equals(
+                entry.Update?.Field?.Trim(),
+                SvShopsWorkflowService.SetInventoryField,
+                StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(entry => entry.Index)
+            .Select(entry => entry.Update)
             .ToArray();
     }
 

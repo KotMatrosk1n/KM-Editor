@@ -28,6 +28,8 @@ internal sealed class SvWorkflowFileSource
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     [ThreadStatic]
     private static DeferredOutputBatch? activeDeferredOutputBatch;
+    [ThreadStatic]
+    private static FreshReadContext? activeFreshReadContext;
 
     internal static bool HasActiveDeferredOutputBatch => activeDeferredOutputBatch is not null;
 
@@ -348,7 +350,7 @@ internal sealed class SvWorkflowFileSource
 
             try
             {
-                var archiveBytes = bypassReusableBaseCache
+                var archiveBytes = bypassReusableBaseCache || activeFreshReadContext is not null
                     ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
                     : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new SvWorkflowFile(
@@ -429,7 +431,7 @@ internal sealed class SvWorkflowFileSource
 
             try
             {
-                var archiveBytes = bypassReusableBaseCache
+                var archiveBytes = bypassReusableBaseCache || activeFreshReadContext is not null
                     ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
                     : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new SvWorkflowFile(
@@ -580,10 +582,10 @@ internal sealed class SvWorkflowFileSource
 
         try
         {
-            if (freshBaseArchiveSource is not null)
+            if (ResolveFreshBaseArchiveSource(paths) is { } freshArchiveSource)
             {
-                freshBaseArchiveSource.Failure?.Throw();
-                var retainedArchive = freshBaseArchiveSource.Archive
+                freshArchiveSource.Failure?.Throw();
+                var retainedArchive = freshArchiveSource.Archive
                     ?? throw new FileNotFoundException();
                 return maximumReadBytes is { } retainedLimit
                     ? retainedArchive.ReadFile(normalizedVirtualPath, retainedLimit)
@@ -650,6 +652,12 @@ internal sealed class SvWorkflowFileSource
 
         try
         {
+            if (ResolveFreshBaseArchiveSource(project.Paths) is { } freshArchiveSource)
+            {
+                freshArchiveSource.Failure?.Throw();
+                return freshArchiveSource.Archive?.ContainsFile(normalizedVirtualPath) == true;
+            }
+
             if (bypassReusableBaseCache)
             {
                 using var archive = OpenArchive(
@@ -681,6 +689,17 @@ internal sealed class SvWorkflowFileSource
 
         try
         {
+            if (ResolveFreshBaseArchiveSource(project.Paths) is { } freshArchiveSource)
+            {
+                freshArchiveSource.Failure?.Throw();
+                return freshArchiveSource.Index?.Files
+                    .Select(file => file.PackName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+                    ?? [];
+            }
+
             if (bypassReusableBaseCache)
             {
                 return SvTrinityArchive.BuildIndex(project.Paths.BaseRomFsPath!)
@@ -704,14 +723,35 @@ internal sealed class SvWorkflowFileSource
         ArgumentNullException.ThrowIfNull(project);
 
         var outputRootPath = project.Paths.OutputRootPath;
-        if (string.IsNullOrWhiteSpace(outputRootPath) || !HasTrinityArchive(outputRootPath))
+        if (string.IsNullOrWhiteSpace(outputRootPath))
         {
             return null;
         }
 
         try
         {
-            var index = SvTrinityArchive.BuildIndex(outputRootPath);
+            var freshArchiveSource = ResolveFreshOutputArchiveSource(project.Paths);
+            SvTrinityArchiveIndex index;
+            if (freshArchiveSource is not null)
+            {
+                freshArchiveSource.Failure?.Throw();
+                if (freshArchiveSource.Index is not { } retainedIndex)
+                {
+                    return null;
+                }
+
+                index = retainedIndex;
+            }
+            else
+            {
+                if (!HasTrinityArchive(outputRootPath))
+                {
+                    return null;
+                }
+
+                index = SvTrinityArchive.BuildIndex(outputRootPath);
+            }
+
             return new SvWorkflowArchiveInventory(
                 index.Files
                     .Select(file => file.PackName)
@@ -766,6 +806,38 @@ internal sealed class SvWorkflowFileSource
         }
 
         return targetPath;
+    }
+
+    internal static IDisposable BeginFreshReadScope(ProjectPaths paths)
+    {
+        return BeginFreshReadScope(paths, requireIndependentSnapshot: false);
+    }
+
+    internal static IDisposable BeginIndependentFreshReadScope(ProjectPaths paths)
+    {
+        return BeginFreshReadScope(paths, requireIndependentSnapshot: true);
+    }
+
+    private static IDisposable BeginFreshReadScope(
+        ProjectPaths paths,
+        bool requireIndependentSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        // A single review/apply phase may cross several editor-domain guards.
+        // Share one immutable archive/index snapshot across compatible nested
+        // work, but let the output-boundary check explicitly request a fresh
+        // snapshot before any mutation is promoted.
+        if (!requireIndependentSnapshot
+            && activeFreshReadContext?.Matches(paths) == true)
+        {
+            activeFreshReadContext.Retain();
+            return new FreshReadScope(activeFreshReadContext);
+        }
+
+        var context = FreshReadContext.Create(paths, activeFreshReadContext);
+        activeFreshReadContext = context;
+        return new FreshReadScope(context);
     }
 
     public static PlannedWriteInfo CreatePlannedWrite(
@@ -1054,7 +1126,8 @@ internal sealed class SvWorkflowFileSource
             return null;
         }
 
-        if (revalidateReviewedState is not null && !RevalidateReviewedState(revalidateReviewedState))
+        if (revalidateReviewedState is not null
+            && !RevalidateReviewedState(paths, revalidateReviewedState))
         {
             throw new OutputReviewStateConflictException();
         }
@@ -1121,10 +1194,13 @@ internal sealed class SvWorkflowFileSource
                 : [standaloneRomFsMembership.ToDependency()]);
     }
 
-    private static bool RevalidateReviewedState(Func<bool> revalidateReviewedState)
+    private static bool RevalidateReviewedState(
+        ProjectPaths paths,
+        Func<bool> revalidateReviewedState)
     {
         try
         {
+            using var freshReads = BeginIndependentFreshReadScope(paths);
             return revalidateReviewedState();
         }
         catch (OutputCoordinatorException)
@@ -1902,10 +1978,10 @@ internal sealed class SvWorkflowFileSource
                 return false;
             }
 
-            if (freshOutputArchiveSource is not null)
+            if (ResolveFreshOutputArchiveSource(paths) is { } freshArchiveSource)
             {
-                freshOutputArchiveSource.Failure?.Throw();
-                if (freshOutputArchiveSource.Archive is not { } retainedArchive)
+                freshArchiveSource.Failure?.Throw();
+                if (freshArchiveSource.Archive is not { } retainedArchive)
                 {
                     return false;
                 }
@@ -1949,7 +2025,18 @@ internal sealed class SvWorkflowFileSource
         try
         {
             var outputRootPath = paths.OutputRootPath;
-            if (string.IsNullOrWhiteSpace(outputRootPath) || !HasTrinityArchive(outputRootPath))
+            if (string.IsNullOrWhiteSpace(outputRootPath))
+            {
+                return false;
+            }
+
+            if (ResolveFreshOutputArchiveSource(paths) is { } freshArchiveSource)
+            {
+                freshArchiveSource.Failure?.Throw();
+                return freshArchiveSource.Archive?.ContainsFile(virtualPath) == true;
+            }
+
+            if (!HasTrinityArchive(outputRootPath))
             {
                 return false;
             }
@@ -2022,9 +2109,22 @@ internal sealed class SvWorkflowFileSource
                 maximumPackBytes: MaximumBoundedArchivePackBytes);
     }
 
+    private FreshArchiveSource? ResolveFreshBaseArchiveSource(ProjectPaths paths)
+    {
+        return freshBaseArchiveSource
+            ?? activeFreshReadContext?.GetBaseSource(paths);
+    }
+
+    private FreshArchiveSource? ResolveFreshOutputArchiveSource(ProjectPaths paths)
+    {
+        return freshOutputArchiveSource
+            ?? activeFreshReadContext?.GetOutputSource(paths);
+    }
+
     private static FreshArchiveSnapshot CaptureFreshArchiveSnapshot(
         string? rootPath,
-        IDictionary<string, FreshArchiveSnapshot> archiveSnapshots)
+        IDictionary<string, FreshArchiveSnapshot> archiveSnapshots,
+        int? maximumIndexBytes = MaximumBoundedArchiveIndexBytes)
     {
         if (string.IsNullOrWhiteSpace(rootPath))
         {
@@ -2049,7 +2149,9 @@ internal sealed class SvWorkflowFileSource
             indexBuildAttempted = true;
             var snapshot = new FreshArchiveSnapshot(
                 archiveRootPath,
-                SvTrinityArchive.BuildIndex(archiveRootPath, MaximumBoundedArchiveIndexBytes),
+                maximumIndexBytes is { } indexLimit
+                    ? SvTrinityArchive.BuildIndex(archiveRootPath, indexLimit)
+                    : SvTrinityArchive.BuildIndex(archiveRootPath),
                 Failure: null,
                 IndexBuildCount: 1);
             archiveSnapshots.Add(archiveRootPath, snapshot);
@@ -2088,12 +2190,14 @@ internal sealed class SvWorkflowFileSource
     private static FreshArchiveSource[] OpenFreshArchiveSources(
         FreshArchiveSnapshot snapshot,
         string? supportFolderPath,
-        int readerCount)
+        int readerCount,
+        int? maximumIndexBytes = MaximumBoundedArchiveIndexBytes,
+        long? maximumPackBytes = MaximumBoundedArchivePackBytes)
     {
         if (snapshot.Failure is not null)
         {
             return Enumerable.Repeat(
-                    new FreshArchiveSource(Archive: null, snapshot.Failure),
+                    new FreshArchiveSource(Archive: null, Index: null, Failure: snapshot.Failure),
                     readerCount)
                 .ToArray();
         }
@@ -2112,13 +2216,14 @@ internal sealed class SvWorkflowFileSource
                     snapshot.RootPath,
                     supportFolderPath,
                     index: snapshot.Index,
-                    maximumIndexBytes: MaximumBoundedArchiveIndexBytes,
-                    maximumPackBytes: MaximumBoundedArchivePackBytes);
+                    maximumIndexBytes: maximumIndexBytes,
+                    maximumPackBytes: maximumPackBytes);
             }
 
             return archives
-                .Select(static archive => new FreshArchiveSource(
+                .Select(archive => new FreshArchiveSource(
                     archive ?? throw new InvalidOperationException("A retained Trinity reader was not opened."),
+                    snapshot.Index,
                     Failure: null))
                 .ToArray();
         }
@@ -2131,7 +2236,7 @@ internal sealed class SvWorkflowFileSource
 
             var failure = ExceptionDispatchInfo.Capture(exception);
             return Enumerable.Repeat(
-                    new FreshArchiveSource(Archive: null, failure),
+                    new FreshArchiveSource(Archive: null, Index: null, Failure: failure),
                     readerCount)
                 .ToArray();
         }
@@ -2224,11 +2329,194 @@ internal sealed class SvWorkflowFileSource
 
     internal sealed record FreshArchiveSource(
         SvTrinityArchive? Archive,
+        SvTrinityArchiveIndex? Index,
         ExceptionDispatchInfo? Failure)
     {
         public static FreshArchiveSource Missing { get; } = new(
             Archive: null,
+            Index: null,
             Failure: null);
+    }
+
+    private sealed class FreshReadContext : IDisposable
+    {
+        private readonly ProjectPaths paths;
+        private FreshArchiveSource? baseSource;
+        private FreshArchiveSource? outputSource;
+        private int leaseCount = 1;
+        private bool disposed;
+
+        private FreshReadContext(ProjectPaths paths, FreshReadContext? parent)
+        {
+            this.paths = paths;
+            Parent = parent;
+        }
+
+        internal FreshReadContext? Parent { get; }
+
+        internal static FreshReadContext Create(ProjectPaths paths, FreshReadContext? parent)
+        {
+            return new FreshReadContext(paths, parent);
+        }
+
+        internal FreshArchiveSource GetBaseSource(ProjectPaths candidatePaths)
+        {
+            ThrowIfUnavailable(candidatePaths);
+            EnsureInitialized();
+            return baseSource!;
+        }
+
+        internal FreshArchiveSource GetOutputSource(ProjectPaths candidatePaths)
+        {
+            ThrowIfUnavailable(candidatePaths);
+            EnsureInitialized();
+            return outputSource!;
+        }
+
+        internal bool Matches(ProjectPaths candidatePaths)
+        {
+            return !disposed && Equals(paths, candidatePaths);
+        }
+
+        internal void Retain()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            leaseCount = checked(leaseCount + 1);
+        }
+
+        internal bool Release()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (leaseCount <= 0)
+            {
+                throw new InvalidOperationException(
+                    "The Scarlet/Violet fresh-read scope lease is unbalanced.");
+            }
+
+            leaseCount--;
+            return leaseCount == 0;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            ExceptionDispatchInfo? firstFailure = null;
+            try
+            {
+                baseSource?.Archive?.Dispose();
+            }
+            catch (Exception exception)
+            {
+                firstFailure = ExceptionDispatchInfo.Capture(exception);
+            }
+
+            if (!ReferenceEquals(outputSource?.Archive, baseSource?.Archive))
+            {
+                try
+                {
+                    outputSource?.Archive?.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    firstFailure ??= ExceptionDispatchInfo.Capture(exception);
+                }
+            }
+
+            disposed = true;
+            leaseCount = 0;
+            firstFailure?.Throw();
+        }
+
+        private void EnsureInitialized()
+        {
+            if (baseSource is not null && outputSource is not null)
+            {
+                return;
+            }
+
+            var archiveSnapshots = new Dictionary<string, FreshArchiveSnapshot>(
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal);
+            var capturedBaseSnapshot = CaptureFreshArchiveSnapshot(
+                paths.BaseRomFsPath,
+                archiveSnapshots,
+                maximumIndexBytes: null);
+            var capturedOutputSnapshot = CaptureFreshArchiveSnapshot(
+                paths.OutputRootPath,
+                archiveSnapshots,
+                maximumIndexBytes: null);
+            var openedBaseSource = OpenFreshArchiveSources(
+                capturedBaseSnapshot,
+                paths.ScarletVioletSupportFolderPath,
+                readerCount: 1,
+                maximumIndexBytes: null,
+                maximumPackBytes: null)[0];
+            FreshArchiveSource? openedOutputSource = null;
+            try
+            {
+                openedOutputSource = OpenFreshArchiveSources(
+                    capturedOutputSnapshot,
+                    paths.ScarletVioletSupportFolderPath,
+                    readerCount: 1,
+                    maximumIndexBytes: null,
+                    maximumPackBytes: null)[0];
+                baseSource = openedBaseSource;
+                outputSource = openedOutputSource;
+            }
+            catch
+            {
+                openedBaseSource.Archive?.Dispose();
+                openedOutputSource?.Archive?.Dispose();
+                throw;
+            }
+        }
+
+        private void ThrowIfUnavailable(ProjectPaths candidatePaths)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (!Equals(paths, candidatePaths))
+            {
+                throw new InvalidOperationException(
+                    "A Scarlet/Violet fresh-read scope cannot cross project source roots.");
+            }
+        }
+    }
+
+    private sealed class FreshReadScope : IDisposable
+    {
+        private readonly FreshReadContext context;
+        private bool disposed;
+
+        internal FreshReadScope(FreshReadContext context)
+        {
+            this.context = context;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            if (!ReferenceEquals(activeFreshReadContext, context))
+            {
+                throw new InvalidOperationException(
+                    "The Scarlet/Violet fresh-read scope is unbalanced.");
+            }
+
+            if (context.Release())
+            {
+                activeFreshReadContext = context.Parent;
+                context.Dispose();
+            }
+        }
     }
 
     internal sealed class FreshSemanticReaderPool : IDisposable
@@ -2382,7 +2670,7 @@ internal sealed class SvWorkflowFileSource
 
             if (revalidateReviewedState is not null)
             {
-                if (!RevalidateReviewedState(revalidateReviewedState))
+                if (!RevalidateReviewedState(paths, revalidateReviewedState))
                 {
                     throw new OutputReviewStateConflictException();
                 }
@@ -2413,7 +2701,7 @@ internal sealed class SvWorkflowFileSource
             try
             {
                 if (revalidateReviewedState is not null
-                    && !RevalidateReviewedState(revalidateReviewedState))
+                    && !RevalidateReviewedState(paths, revalidateReviewedState))
                 {
                     throw new OutputReviewStateConflictException();
                 }
