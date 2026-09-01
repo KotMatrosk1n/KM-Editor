@@ -262,7 +262,9 @@
   display: flex;
   gap: 6px;
   min-width: 0;
+  margin: 0;
   padding: 7px 12px;
+  list-style: none;
   overflow-x: auto;
   background: var(--color-surface-muted);
   border-bottom: 1px solid var(--color-border);
@@ -302,7 +304,7 @@
   white-space: nowrap;
 }
 
-.km-record-tab[aria-selected="true"] {
+.km-record-tab[aria-current="page"] {
   color: var(--color-text);
   background: var(--color-accent-dark);
   border-color: var(--color-accent-bright);
@@ -1202,7 +1204,7 @@
   }
 
   .km-command-option[aria-selected="true"],
-  .km-record-tab[aria-selected="true"],
+  .km-record-tab[aria-current="page"],
   .km-inspector-tabs button[aria-selected="true"],
   .workspace-header-toggle[aria-pressed="true"] {
     color: HighlightText;

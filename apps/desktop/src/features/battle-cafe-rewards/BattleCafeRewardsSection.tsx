@@ -533,7 +533,7 @@ function BattleCafeItemPicker({
         <input
           aria-activedescendant={isOpen && suggestions[activeIndex] ? `${listId}-${suggestions[activeIndex].itemId}` : undefined}
           aria-autocomplete="list"
-          aria-controls={listId}
+          aria-controls={isOpen && !disabled ? listId : undefined}
            aria-expanded={isOpen && !disabled}
           aria-label={t('battleCafeRewards.row.itemSearch', { row: rowIndex })}
           disabled={disabled}

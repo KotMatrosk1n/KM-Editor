@@ -271,7 +271,7 @@ export function FairyGymBoostsSection({
                 const isSelected = selectedTrainer?.trainerId === trainer.trainerId;
                 return (
                   <button
-                    aria-controls="fairy-gym-boost-panel"
+                    aria-controls={isSelected ? 'fairy-gym-boost-panel' : undefined}
                     aria-selected={isSelected}
                     className={
                       isSelected

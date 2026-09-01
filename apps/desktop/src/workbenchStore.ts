@@ -54,6 +54,14 @@ import { type TrainerPoolsWorkflow } from './bridge/trainerPoolsContracts';
 import { createLoadedWorkflowEvictionState } from './workflowRetention';
 import type { WorkbenchSection } from './workbench/workbenchSections';
 export type { WorkbenchSection } from './workbench/workbenchSections';
+export type TrainerCategoryId =
+  | 'all'
+  | 'named'
+  | 'hyperspace'
+  | 'infinite'
+  | 'main-missions'
+  | 'side-missions'
+  | 'generated';
 export type ProjectPathDraft = {
   baseExeFsPath: string;
   baseRomFsPath: string;
@@ -172,6 +180,7 @@ type WorkbenchState = {
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   textSearchText: string;
   textWorkflow: TextWorkflow | null;
+  selectedTrainerCategoryId: TrainerCategoryId;
   trainerSearchText: string;
   trainerPoolsWorkflow: TrainerPoolsWorkflow | null;
   trainersWorkflow: TrainersWorkflow | null;
@@ -290,6 +299,7 @@ type WorkbenchState = {
   setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow) => void;
   setTextSearchText: (textSearchText: string) => void;
   setTextWorkflow: (textWorkflow: TextWorkflow) => void;
+  setSelectedTrainerCategoryId: (selectedTrainerCategoryId: TrainerCategoryId) => void;
   setTrainerSearchText: (trainerSearchText: string) => void;
   setTrainersWorkflow: (trainersWorkflow: TrainersWorkflow) => void;
   setTrainerPoolsWorkflow: (trainerPoolsWorkflow: TrainerPoolsWorkflow) => void;
@@ -492,6 +502,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     openProject: null,
     projectHealth: null,
     projectStatus: 'idle',
+    selectedTrainerCategoryId: 'all',
     workflows: []
   };
 }
@@ -596,6 +607,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   habitatCoordinatesWorkflow: null,
   textSearchText: '',
   textWorkflow: null,
+  selectedTrainerCategoryId: 'all',
   trainerSearchText: '',
   trainerPoolsWorkflow: null,
   trainersWorkflow: null,
@@ -786,6 +798,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setMovesSearchText: (movesSearchText) => set({ movesSearchText }),
   setShopSearchText: (shopSearchText) => set({ shopSearchText }),
   setTextSearchText: (textSearchText) => set({ textSearchText }),
+  setSelectedTrainerCategoryId: (selectedTrainerCategoryId) =>
+    set({ selectedTrainerCategoryId }),
   setTrainerSearchText: (trainerSearchText) => set({ trainerSearchText }),
   setOpenProject: (openProject) =>
     set({

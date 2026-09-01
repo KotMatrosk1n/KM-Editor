@@ -92,10 +92,11 @@ export function EditorSessionBar({
   const readOnlyExplanation =
     state === 'readOnly' ? readOnlyReason?.trim() || 'Editing is unavailable.' : null;
   return (
-    <section
+    <div
       aria-labelledby={labelId}
       className="editor-session-bar"
       data-state={state}
+      role="group"
     >
       <div className="editor-session-bar-summary">
         <span
@@ -141,6 +142,6 @@ export function EditorSessionBar({
           </button>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

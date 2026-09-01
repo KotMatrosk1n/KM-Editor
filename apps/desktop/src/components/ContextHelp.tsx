@@ -15,6 +15,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useLocalization } from '../localization/LocalizationProvider';
 import { useTooltipIconVisibility } from './TooltipIconVisibility';
+import { getEditorPortalHost } from './editorPortal';
 import './ContextHelp.css';
 import './Tooltip.css';
 
@@ -207,11 +208,12 @@ function VisibleContextHelp({ children, className, label }: ContextHelpProps) {
       tooltipRef.current.scrollTo({ top: tooltipRef.current.scrollHeight });
     }
   };
+  const portalHost = getEditorPortalHost();
 
   return (
     <>
       <button
-        aria-controls={`${tooltipId}-popover`}
+        aria-controls={isOpen ? `${tooltipId}-popover` : undefined}
         aria-describedby={`${tooltipId}-description`}
         aria-expanded={isOpen}
         aria-label={t('contextHelp.ariaLabel', { label: localizedLabel })}
@@ -232,15 +234,14 @@ function VisibleContextHelp({ children, className, label }: ContextHelpProps) {
       >
         <CircleHelp aria-hidden="true" size={15} strokeWidth={2.2} />
       </button>
-      {typeof document === 'undefined'
-        ? null
-        : createPortal(
-            <span className="context-help-screen-reader-text" id={`${tooltipId}-description`}>
-              {localizedLabel}: {localizedDescription}
-            </span>,
-            document.body
-          )}
-      {isOpen
+      <span
+        className="context-help-screen-reader-text"
+        hidden
+        id={`${tooltipId}-description`}
+      >
+        {localizedLabel}: {localizedDescription}
+      </span>
+      {isOpen && portalHost
         ? createPortal(
             <div
               className="tooltip-surface tooltip-surface-rich context-help-popover"
@@ -261,7 +262,7 @@ function VisibleContextHelp({ children, className, label }: ContextHelpProps) {
               <strong className="context-help-title">{localizedLabel}</strong>
               <div className="context-help-body">{children}</div>
             </div>,
-            document.body
+            portalHost
           )
         : null}
     </>

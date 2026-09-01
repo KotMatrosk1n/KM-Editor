@@ -27,7 +27,7 @@ export function RecordTabRail({
   tabs
 }: RecordTabRailProps) {
   const { t } = useLocalization();
-  const railRef = useRef<HTMLDivElement | null>(null);
+  const railRef = useRef<HTMLOListElement | null>(null);
   const firstTabKey = tabs[0]?.key ?? null;
 
   useLayoutEffect(() => {
@@ -41,18 +41,17 @@ export function RecordTabRail({
   }
 
   return (
-    <div
+    <ol
       aria-label={t('workbench.tabs.label')}
       className="km-record-tab-rail"
       ref={railRef}
-      role="tablist"
     >
       {tabs.map((tab, index) => {
         const isActive = activeTabKey === tab.key;
         return (
-          <div className="km-record-tab-item" key={tab.key}>
+          <li className="km-record-tab-item" key={tab.key}>
             <button
-              aria-selected={isActive}
+              aria-current={isActive ? 'page' : undefined}
               className="km-record-tab"
               data-localization-ignore={tab.labelIsRawData ? 'true' : undefined}
               onClick={() => onActivate(tab.location)}
@@ -69,13 +68,11 @@ export function RecordTabRail({
                 if (nextTab) {
                   onActivate(nextTab.location);
                   const tabButtons = event.currentTarget
-                    .closest('[role="tablist"]')
-                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+                    .closest('.km-record-tab-rail')
+                    ?.querySelectorAll<HTMLButtonElement>('.km-record-tab');
                   tabButtons?.[nextIndex]?.focus({ preventScroll: true });
                 }
               }}
-              role="tab"
-              tabIndex={isActive || (activeTabKey === null && index === 0) ? 0 : -1}
               title={tab.label}
               type="button"
             >
@@ -99,10 +96,10 @@ export function RecordTabRail({
                 <X aria-hidden="true" size={14} />
               </button>
             ) : null}
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 

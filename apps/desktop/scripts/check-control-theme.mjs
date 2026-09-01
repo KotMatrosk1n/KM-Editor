@@ -454,16 +454,16 @@ function checkRequiredGlobalRules(rules) {
   requireRule(
     rules,
     'interactive editor row overflow alignment',
-    ["button[role='row']"],
+    ['.interactive-table-row'],
     ['justify-content: start']
   );
   if (!rules.some((rule) => (
     !isForcedColorsRule(rule)
-    && rule.selector === "button[role='row']"
+    && rule.selector === '.interactive-table-row'
     && rule.body.includes('justify-content: start')
   ))) {
     throw new Error(
-      'KM control theme contract requires a specificity-bearing button[role=row] rule so ordinary editor row classes cannot restore centered overflow.'
+      'KM control theme contract requires a shared interactive-table-row rule so ordinary editor row classes cannot restore centered overflow.'
     );
   }
   requireRule(
