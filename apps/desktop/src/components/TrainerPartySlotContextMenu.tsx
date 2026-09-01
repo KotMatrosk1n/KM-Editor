@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocalization } from '../localization/LocalizationProvider';
+import { getEditorPortalHost } from './editorPortal';
 
 type MenuPosition = {
   left: number;
@@ -161,7 +162,8 @@ export function TrainerPartySlotContextMenu({
     menuItems[nextIndex]?.focus();
   };
 
-  if (typeof document === 'undefined') {
+  const portalHost = getEditorPortalHost();
+  if (!portalHost) {
     return null;
   }
 
@@ -228,7 +230,7 @@ export function TrainerPartySlotContextMenu({
         </span>
       </button>
     </div>,
-    document.body
+    portalHost
   );
 }
 

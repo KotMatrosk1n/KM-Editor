@@ -96,7 +96,7 @@ export function WorkspaceOverflowMenu({
   return (
     <div className="km-overflow-menu" ref={rootRef}>
       <button
-        aria-controls={menuId}
+        aria-controls={isOpen ? menuId : undefined}
         aria-expanded={isOpen}
         aria-haspopup="menu"
         aria-label={t('workbench.overflow.label')}

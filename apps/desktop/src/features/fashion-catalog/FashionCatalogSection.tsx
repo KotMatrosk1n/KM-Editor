@@ -417,7 +417,9 @@ export function FashionCatalogSection({
         <div aria-label={t('fashionCatalog.tabs.label')} className="fashion-catalog-tabs" role="tablist">
           {catalogFiles.map((file) => (
             <button
-              aria-controls={`fashion-catalog-panel-${file}`}
+              aria-controls={
+                catalogFile === file ? `fashion-catalog-panel-${file}` : undefined
+              }
               aria-selected={catalogFile === file}
               className={catalogFile === file ? 'active' : ''}
               id={`fashion-catalog-tab-${file}`}

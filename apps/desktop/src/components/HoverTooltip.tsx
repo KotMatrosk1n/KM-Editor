@@ -16,6 +16,7 @@ import {
   useState
 } from 'react';
 import { createPortal } from 'react-dom';
+import { getEditorPortalHost } from './editorPortal';
 import './Tooltip.css';
 
 type HoverTooltipAnchorProps = {
@@ -292,19 +293,21 @@ export function HoverTooltip({
       title: undefined
     })
   );
+  const portalHost = getEditorPortalHost();
 
   return (
     <>
       {anchor}
-      {describe && typeof document !== 'undefined'
-        ? createPortal(
-            <span className="tooltip-screen-reader-text" id={`${tooltipId}-description`}>
-              {contentText}
-            </span>,
-            document.body
-          )
-        : null}
-      {isOpen && typeof document !== 'undefined'
+      {describe ? (
+        <span
+          className="tooltip-screen-reader-text"
+          hidden
+          id={`${tooltipId}-description`}
+        >
+          {contentText}
+        </span>
+      ) : null}
+      {isOpen && portalHost
         ? createPortal(
             <div
               className={`tooltip-surface tooltip-surface-${detail}`}
@@ -324,7 +327,7 @@ export function HoverTooltip({
             >
               {content}
             </div>,
-            document.body
+            portalHost
           )
         : null}
     </>

@@ -7,7 +7,9 @@ import './check-analysis-preparation-contract.mjs';
 import './check-project-async-policy.mjs';
 import './check-performance-diagnostics-contract.mjs';
 import './check-focused-editor-contracts.mjs';
+import './check-record-tab-interaction-contract.mjs';
 import './check-semantic-inspector-contract.mjs';
+import './check-trainer-navigation-contract.mjs';
 import './check-trainer-naming-contract.mjs';
 import './check-visual-theme-contract.mjs';
 

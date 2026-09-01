@@ -32,6 +32,18 @@ function requireContrast(name, foreground, background, minimum = 4.5) {
   );
 }
 
+function mixSrgbHex(first, firstPercentage, second) {
+  const firstWeight = firstPercentage / 100;
+  const secondWeight = 1 - firstWeight;
+  const channels = [1, 3, 5].map((offset) =>
+    Math.round(
+      Number.parseInt(first.slice(offset, offset + 2), 16) * firstWeight +
+        Number.parseInt(second.slice(offset, offset + 2), 16) * secondWeight
+    )
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
 const appearance = read('../src/features/settings/AppearancePreferencesProvider.tsx');
 const themePanel = read('../src/features/settings/PersonalizationSettingsPanel.tsx');
 const app = read('../src/App.tsx');
@@ -283,6 +295,27 @@ assert.ok(
   'Renegade and Royal presentation overrides must remain separately scoped.'
 );
 const renegadeTreatment = styles.slice(renegadeTreatmentIndex, royalTreatmentIndex);
+const renegadePrimaryHoverMatch = renegadeTreatment.match(
+  /:is\(\.primary-button, \.purple-button\):hover[^}]*?color-mix\(in srgb, var\(--color-accent-bright\) (\d+)%, var\(--color-accent\)\)/u
+);
+assert.ok(
+  renegadePrimaryHoverMatch,
+  'Renegade primary actions must retain the audited accent hover mix.'
+);
+const renegadePrimaryHoverBrightPercentage = Number.parseInt(
+  renegadePrimaryHoverMatch[1],
+  10
+);
+assert.equal(
+  renegadePrimaryHoverBrightPercentage,
+  55,
+  'Renegade primary hover must retain the reviewed 55% bright-accent mix.'
+);
+requireContrast(
+  'Renegade primary hover text',
+  '#ffffff',
+  mixSrgbHex('#ff4d63', renegadePrimaryHoverBrightPercentage, '#a4162d')
+);
 for (const selector of [
   '.swsh-pokemon-summary-card',
   '.sv-pokemon-summary-card',

@@ -84,6 +84,7 @@ import {
 } from './features/trainers/trainerBatchUpdates';
 import {
   type Dispatch,
+  type HTMLAttributes,
   type ReactNode,
   type SetStateAction,
   Component,
@@ -312,6 +313,7 @@ import {
   readLegacyProjectPathState,
   type ProjectPathFieldName,
   type ProjectPathDraft,
+  type TrainerCategoryId,
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
@@ -393,6 +395,7 @@ import {
 import { FieldLabel } from './components/FieldLabel';
 import { ContextHelp } from './components/ContextHelp';
 import { HoverTooltip } from './components/HoverTooltip';
+import { editorPortalHostId } from './components/editorPortal';
 import {
   formatSearchableOptionValue,
   getSmartOptionMatches,
@@ -2553,6 +2556,9 @@ export function App({
   );
   const textSearchText = useWorkbenchStore((state) => state.textSearchText);
   const textWorkflow = useWorkbenchStore((state) => state.textWorkflow);
+  const selectedTrainerCategoryId = useWorkbenchStore(
+    (state) => state.selectedTrainerCategoryId
+  );
   const trainerSearchText = useWorkbenchStore((state) => state.trainerSearchText);
   const trainersWorkflow = useWorkbenchStore((state) => state.trainersWorkflow);
   const trainerPoolsWorkflow = useWorkbenchStore((state) => state.trainerPoolsWorkflow);
@@ -2790,6 +2796,9 @@ export function App({
   );
   const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
   const setTextWorkflow = useWorkbenchStore((state) => state.setTextWorkflow);
+  const setSelectedTrainerCategoryId = useWorkbenchStore(
+    (state) => state.setSelectedTrainerCategoryId
+  );
   const setTrainerSearchText = useWorkbenchStore((state) => state.setTrainerSearchText);
   const setTrainersWorkflow = useWorkbenchStore((state) => state.setTrainersWorkflow);
   const setTrainerPoolsWorkflow = useWorkbenchStore((state) => state.setTrainerPoolsWorkflow);
@@ -19480,12 +19489,14 @@ export function App({
                 onCopyTrainerPartyClipboard={handleCopyTrainerPartyClipboard}
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
+                onTrainerCategoryChange={setSelectedTrainerCategoryId}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
+                selectedTrainerCategoryId={selectedTrainerCategoryId}
                 selectedTrainerId={selectedTrainerId}
                 selectedTrainerPartySlot={selectedTrainerPartySlot}
                 pokemonWorkflow={pokemonWorkflow}
@@ -19501,12 +19512,14 @@ export function App({
                 onCopyTrainerPartyClipboard={handleCopyTrainerPartyClipboard}
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
+                onTrainerCategoryChange={setSelectedTrainerCategoryId}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
+                selectedTrainerCategoryId={selectedTrainerCategoryId}
                 selectedTrainerId={selectedTrainerId}
                 selectedTrainerPartySlot={selectedTrainerPartySlot}
                 pokemonWorkflow={pokemonWorkflow}
@@ -19522,12 +19535,14 @@ export function App({
                 onCopyTrainerPartyClipboard={handleCopyTrainerPartyClipboard}
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
+                onTrainerCategoryChange={setSelectedTrainerCategoryId}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
+                selectedTrainerCategoryId={selectedTrainerCategoryId}
                 selectedTrainerId={selectedTrainerId}
                 selectedTrainerPartySlot={selectedTrainerPartySlot}
                 pokemonWorkflow={pokemonWorkflow}
@@ -20824,6 +20839,7 @@ export function App({
           onOpenBagHook={handleOpenBagHookFromDependencyWarning}
         />
       ) : null}
+      <div className="editor-portal-host" id={editorPortalHostId} />
     </main>
     </TooltipIconVisibilityProvider>
     </EditorDraftDirtyContext.Provider>
@@ -21082,6 +21098,47 @@ function WorkflowLoadingPanel({ label }: { label: string }) {
         </ol>
       </div>
     </section>
+  );
+}
+
+type InteractiveTableRowProps = HTMLAttributes<HTMLDivElement> & {
+  disabled?: boolean;
+};
+
+function InteractiveTableRow({
+  'aria-disabled': ariaDisabled,
+  className,
+  disabled = false,
+  onClick,
+  onKeyDown,
+  tabIndex,
+  ...rowProps
+}: InteractiveTableRowProps) {
+  const isDisabled = disabled || ariaDisabled === true || ariaDisabled === 'true';
+
+  return (
+    <div
+      {...rowProps}
+      aria-disabled={isDisabled || undefined}
+      className={`${className ?? ''} interactive-table-row`.trim()}
+      onClick={isDisabled ? undefined : onClick}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (
+          isDisabled ||
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          (event.key !== 'Enter' && event.key !== ' ')
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        event.currentTarget.click();
+      }}
+      role="row"
+      tabIndex={isDisabled ? -1 : (tabIndex ?? 0)}
+    />
   );
 }
 
@@ -21917,13 +21974,12 @@ function ItemsSection({
                 getKey={(item) => item.itemId}
                 items={filteredItems}
                 renderRow={(item) => (
-                  <button
+                  <InteractiveTableRow
                     className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''} ${
                       pendingItemIds.has(item.itemId) ? 'items-row-pending' : ''
                     }`}
                     onClick={() => onSelectItem(item.itemId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{item.itemId}</span>
                     <span role="cell">{item.name}</span>
@@ -21933,7 +21989,7 @@ function ItemsSection({
                     <span role="cell">{item.wattsPrice}</span>
                     <span role="cell">{item.alternatePrice}</span>
                     <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 )}
               />
             </div>
@@ -22757,7 +22813,7 @@ function SelectedItemPanel({
                       <span>{t('za.items.compatibility.showAllPokemon')}</span>
                     </label>
                   </div>
-                  <ul className="compatibility-list za-tm-compatibility-list">
+                  <ul className="compatibility-list za-tm-compatibility-list" tabIndex={0}>
                     {filteredTechnicalMachineCompatibilityRows.map(({ pokemon }) => (
                       <li key={pokemon.personalId}>
                         <label className="compatibility-toggle za-tm-compatibility-toggle">
@@ -23114,7 +23170,7 @@ function PokemonSection({
                     items={filteredPokemon}
                     renderRow={(record) => {
                       return (
-                        <button
+                        <InteractiveTableRow
                           className={`items-row ${
                             selectedPokemon?.personalId === record.personalId
                               ? 'items-row-selected'
@@ -23122,7 +23178,6 @@ function PokemonSection({
                           } ${pendingPokemonIds.has(record.personalId) ? 'moves-row-pending' : ''}`}
                           onClick={() => onSelectPokemon(record.personalId)}
                           role="row"
-                          type="button"
                         >
                           <span role="cell">{record.personalId}</span>
                           <span data-localization-ignore="true" role="cell">
@@ -23131,7 +23186,7 @@ function PokemonSection({
                           <span data-localization-ignore="true" role="cell">
                             {formatPokemonTypes(record)}
                           </span>
-                        </button>
+                        </InteractiveTableRow>
                       );
                     }}
                   />
@@ -25595,7 +25650,11 @@ function SelectedPokemonPanel({
 
                     return (
                       <li
-                        aria-controls={pokemonLearnsetRowContextMenuId}
+                        aria-controls={
+                          learnsetClipboardMenu?.move.slot === move.slot
+                            ? pokemonLearnsetRowContextMenuId
+                            : undefined
+                        }
                         aria-haspopup="menu"
                         className={`learnset-list-item ${
                           learnsetDragState?.sourceSlot === move.slot ? 'learnset-dragging' : ''
@@ -26072,7 +26131,7 @@ function SelectedPokemonPanel({
                     />
                   </label>
                 </div>
-                <ul className="compatibility-list">
+                <ul className="compatibility-list" tabIndex={0}>
                   {filteredCompatibilityEntries.map((entry) => (
                     <li key={`${selectedCompatibilityGroup?.groupId}-${entry.slot}`}>
                       <label className="compatibility-toggle">
@@ -26810,13 +26869,12 @@ function MovesSection({
                     : 0;
 
                   return (
-                    <button
+                    <InteractiveTableRow
                       className={`moves-row ${isSelected ? 'moves-row-selected' : ''} ${
                         pendingMoveIds.has(move.moveId) ? 'moves-row-pending' : ''
                       }`}
                       onClick={() => onSelectMove(move.moveId)}
                       role="row"
-                      type="button"
                     >
                       <span role="cell">{move.moveId}</span>
                       <span role="cell">{move.name}</span>
@@ -26866,7 +26924,7 @@ function MovesSection({
                             )
                           : formatMoveActiveFlags(move)}
                       </span>
-                    </button>
+                    </InteractiveTableRow>
                   );
                 }}
               />
@@ -29029,14 +29087,13 @@ function TextSection({
                 items={filteredEntries}
                 resetKey={`${activeLanguage}:${activeCategoryId}:${page?.offset ?? 0}:${searchText}`}
                 renderRow={(entry) => (
-                  <button
+                  <InteractiveTableRow
                     aria-selected={selectedEntry?.textKey === entry.textKey}
                     className={`text-row ${selectedEntry?.textKey === entry.textKey ? 'text-row-selected' : ''} ${
                       pendingTextKeys.has(entry.textKey) ? 'text-row-pending' : ''
                     }`}
                     onClick={() => onSelectTextEntry(entry.textKey)}
                     role="row"
-                    type="button"
                   >
                     <span data-localization-ignore="true" role="cell">
                       {entry.messageKey ?? entry.label}
@@ -29054,7 +29111,7 @@ function TextSection({
                       {formatCanonicalTextSummary(entry.value)}
                     </span>
                     <span role="cell">{formatSourceLayer(entry.provenance.sourceLayer)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 )}
               />
             </div>
@@ -29634,6 +29691,7 @@ type TrainersSectionProps = {
     input: TrainerPartyClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
   onSearchChange: (searchText: string) => void;
+  onTrainerCategoryChange: (categoryId: TrainerCategoryId) => void;
   onSelectTrainer: (trainerId: number | null) => void;
   onSelectTrainerPartySlot: (slot: number | null) => void;
   onStartEditSession: () => void;
@@ -29646,6 +29704,7 @@ type TrainersSectionProps = {
   onUpdateTrainerFields: (updates: TrainerFieldUpdate[]) => Promise<boolean>;
   pokemonWorkflow: PokemonWorkflow | null;
   searchText: string;
+  selectedTrainerCategoryId: TrainerCategoryId;
   selectedTrainerId: number | null;
   selectedTrainerPartySlot: number | null;
   workflow: TrainersWorkflow | null;
@@ -29680,6 +29739,7 @@ function TrainersSection({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
+  onTrainerCategoryChange,
   onSelectTrainer,
   onSelectTrainerPartySlot,
   onStartEditSession,
@@ -29687,15 +29747,15 @@ function TrainersSection({
   onUpdateTrainerFields,
   pokemonWorkflow,
   searchText,
+  selectedTrainerCategoryId,
   selectedTrainerId,
   selectedTrainerPartySlot,
   workflow
 }: TrainersSectionProps) {
   const { t } = useLocalization();
-  // Category tabs are user-owned view state. Selecting a trainer through a
-  // record tab must not reset the current category or make a category click
-  // race the trainer selection it initiates.
-  const [selectedTrainerCategoryId, setSelectedTrainerCategoryId] = useState('all');
+  // Category tabs are session-owned view state. Keeping them above this
+  // conditionally mounted editor prevents quick-link navigation from resetting
+  // the user's current Trainer view.
   const trainers = workflow?.trainers ?? [];
   const searchFilteredTrainers = useMemo(
     () => filterTrainers(trainers, searchText),
@@ -29835,12 +29895,20 @@ function TrainersSection({
 
   useEffect(() => {
     if (
+      editorFamily === 'za' &&
+      workflow !== null &&
       selectedTrainerCategoryId !== 'all' &&
       !trainerCategories.some((category) => category.id === selectedTrainerCategoryId)
     ) {
-      setSelectedTrainerCategoryId('all');
+      onTrainerCategoryChange('all');
     }
-  }, [selectedTrainerCategoryId, trainerCategories]);
+  }, [
+    editorFamily,
+    onTrainerCategoryChange,
+    selectedTrainerCategoryId,
+    trainerCategories,
+    workflow
+  ]);
 
   return (
     <>
@@ -29968,7 +30036,7 @@ function TrainersSection({
                     className="condition-tab-button trainer-category-tab"
                     key={category.id}
                     onClick={() => {
-                      setSelectedTrainerCategoryId(category.id);
+                      onTrainerCategoryChange(category.id);
                     }}
                     role="tab"
                     title={category.description}
@@ -30001,7 +30069,7 @@ function TrainersSection({
                   getKey={(trainer) => trainer.trainerId}
                   items={filteredTrainers}
                   renderRow={(trainer) => (
-                    <button
+                    <InteractiveTableRow
                       className={`trainers-row ${
                         selectedTrainer?.trainerId === trainer.trainerId
                           ? 'trainers-row-selected'
@@ -30009,7 +30077,6 @@ function TrainersSection({
                       } ${pendingTrainerIds.has(trainer.trainerId) ? 'trainers-row-pending' : ''}`}
                       onClick={() => onSelectTrainer(trainer.trainerId)}
                       role="row"
-                      type="button"
                     >
                       <span role="cell">{trainer.trainerId}</span>
                       <span data-localization-ignore="true" role="cell">
@@ -30023,7 +30090,7 @@ function TrainersSection({
                       </span>
                       <span role="cell">{getOccupiedTrainerPokemonCount(trainer)}</span>
                       <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
-                    </button>
+                    </InteractiveTableRow>
                   )}
                 />
               </div>
@@ -36634,13 +36701,12 @@ function GiftPokemonSection({
                 getKey={(gift) => gift.giftIndex}
                 items={filteredGifts}
                 renderRow={(gift) => (
-                  <button
+                  <InteractiveTableRow
                     className={`trainers-row gift-pokemon-row ${
                       selectedGift?.giftIndex === gift.giftIndex ? 'trainers-row-selected' : ''
                     } ${pendingGiftIndexes.has(gift.giftIndex) ? 'trainers-row-pending' : ''}`}
                     onClick={() => onSelectGift(gift.giftIndex)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">#{gift.giftIndex + 1}</span>
                     <span role="cell">
@@ -36649,7 +36715,7 @@ function GiftPokemonSection({
                     <span role="cell">{formatGiftPokemonLevel(gift, editorFamily)}</span>
                     <span role="cell">{gift.ivSummary}</span>
                     <span role="cell">{formatSourceLayer(gift.provenance.sourceLayer)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 )}
               />
             </div>
@@ -37482,7 +37548,7 @@ function TradePokemonSection({
                 getKey={(trade) => trade.tradeIndex}
                 items={filteredTrades}
                 renderRow={(trade) => (
-                  <button
+                  <InteractiveTableRow
                     className={`trainers-row trade-pokemon-row ${
                       selectedTrade?.tradeIndex === trade.tradeIndex
                         ? 'trainers-row-selected'
@@ -37492,7 +37558,6 @@ function TradePokemonSection({
                     }`}
                     onClick={() => onSelectTrade(trade.tradeIndex)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{trade.tradeIndex + 1}</span>
                     <span role="cell">
@@ -37505,7 +37570,7 @@ function TradePokemonSection({
                     <span role="cell">{trade.ivSummary}</span>
                     <span role="cell">{formatTradePokemonRelearnMoves(trade)}</span>
                     <span role="cell">{formatSourceLayer(trade.provenance.sourceLayer)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 )}
               />
             </div>
@@ -38225,7 +38290,7 @@ function RentalPokemonSection({
                 getKey={(rental) => rental.rentalIndex}
                 items={filteredRentals}
                 renderRow={(rental) => (
-                  <button
+                  <InteractiveTableRow
                     className={`trainers-row rental-pokemon-row ${
                       selectedRental?.rentalIndex === rental.rentalIndex
                         ? 'trainers-row-selected'
@@ -38235,7 +38300,6 @@ function RentalPokemonSection({
                     }`}
                     onClick={() => onSelectRental(rental.rentalIndex)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{rental.rentalIndex + 1}</span>
                     <span role="cell">
@@ -38246,7 +38310,7 @@ function RentalPokemonSection({
                     <span role="cell">{formatRentalPokemonStats(rental.evs)}</span>
                     <span role="cell">{formatRentalPokemonMoves(rental)}</span>
                     <span role="cell">{formatSourceLayer(rental.provenance.sourceLayer)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 )}
               />
             </div>
@@ -38995,7 +39059,7 @@ function DynamaxAdventuresSection({
                 getKey={(encounter) => encounter.entryIndex}
                 items={filteredEncounters}
                 renderRow={(encounter) => (
-                  <button
+                  <InteractiveTableRow
                     className={`trainers-row dynamax-adventures-row ${
                       selectedEncounter?.entryIndex === encounter.entryIndex
                         ? 'trainers-row-selected'
@@ -39009,7 +39073,6 @@ function DynamaxAdventuresSection({
                     }`}
                     onClick={() => onSelectAdventure(encounter.entryIndex)}
                     role="row"
-                    type="button"
                   >
                     <span data-localization-ignore="true" role="cell">
                       {encounter.entryIndex}
@@ -39029,7 +39092,7 @@ function DynamaxAdventuresSection({
                     <span role="cell">
                       {formatSourceLayer(encounter.provenance.sourceLayer)}
                     </span>
-                  </button>
+                  </InteractiveTableRow>
                 )}
               />
             </div>
@@ -40065,7 +40128,7 @@ function StaticEncountersSection({
                     : encounter.encounterScenarioLabel;
 
                   return (
-                    <button
+                    <InteractiveTableRow
                       className={`trainers-row static-encounters-row ${
                         selectedEncounter?.encounterIndex === encounter.encounterIndex
                           ? 'trainers-row-selected'
@@ -40077,7 +40140,6 @@ function StaticEncountersSection({
                       }`}
                       onClick={() => onSelectEncounter(encounter.encounterIndex)}
                       role="row"
-                      type="button"
                     >
                       <span role="cell">{getStaticEncounterDisplayIndex(encounter)}</span>
                       <span role="cell" title={speciesLabel}>
@@ -40097,7 +40159,7 @@ function StaticEncountersSection({
                           </span>
                         </>
                       )}
-                    </button>
+                    </InteractiveTableRow>
                   );
                 }}
               />
@@ -40642,7 +40704,7 @@ function ShopsSection({
             <span role="columnheader">{translateLiteral('Summary')}</span>
           </div>
           {shops.map((shop) => (
-            <button
+            <InteractiveTableRow
               className={`shops-row ${
                 selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
               } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
@@ -40650,7 +40712,6 @@ function ShopsSection({
               key={shop.shopId}
               onClick={() => onSelectShop(shop.shopId)}
               role="row"
-              type="button"
             >
               <span role="cell">{translateLiteral(shop.kind)}</span>
               <span role="cell">{translateLiteral(shop.name)}</span>
@@ -40658,7 +40719,7 @@ function ShopsSection({
               <span role="cell">{translateLiteral(shop.location)}</span>
               <span role="cell">{shop.inventory.length}</span>
               <span role="cell">{translateLiteral(shop.inventorySummary)}</span>
-            </button>
+            </InteractiveTableRow>
           ))}
           {shops.length === 0 ? (
             <p className="empty-copy shop-table-empty">{translateLiteral('No matching shops.')}</p>
@@ -42684,7 +42745,7 @@ function EncountersSection({
                         <span role="cell" />
                       </div>
                     ) : null}
-                    <button
+                    <InteractiveTableRow
                       className={`encounters-row ${
                         selectedZoneKey === tableRow.zoneKey ? 'encounters-row-selected' : ''
                       } ${
@@ -42694,7 +42755,6 @@ function EncountersSection({
                       }`}
                       onClick={() => onSelectTable(tableRow.table.tableId)}
                       role="row"
-                      type="button"
                     >
                       <span role="cell">{tableRow.location}</span>
                       <span role="cell">
@@ -42703,7 +42763,7 @@ function EncountersSection({
                           : tableRow.gameVersion}
                       </span>
                       <span role="cell">{tableRow.areaLabel}</span>
-                    </button>
+                    </InteractiveTableRow>
                   </Fragment>
                 );
               })}
@@ -44109,7 +44169,11 @@ function SelectedEncounterPanel({
 
                     return (
                       <button
-                        aria-controls={encounterSlotContextMenuId}
+                        aria-controls={
+                          encounterClipboardMenu?.slot.slot === slot.slot
+                            ? encounterSlotContextMenuId
+                            : undefined
+                        }
                         aria-haspopup="menu"
                         aria-pressed={slot.slot === selectedSlot}
                         className="slot-tab-button"
@@ -45710,9 +45774,9 @@ function SvEncounterConditionBrowser({
         </div>
         {conditionRows.map((row) => (
           <HoverTooltip content={row.label} describe={false} detail="full" key={row.tableId}>
-            <button
+            <InteractiveTableRow
               aria-label={row.label}
-              aria-pressed={row.tableId === table.tableId}
+              aria-selected={row.tableId === table.tableId}
               className={`sv-encounter-condition-row ${
                 row.tableId === table.tableId ? 'sv-encounter-condition-row-selected' : ''
               }`}
@@ -45722,7 +45786,6 @@ function SvEncounterConditionBrowser({
                 }
               }}
               role="row"
-              type="button"
             >
               <span role="cell">{row.area}</span>
               <span role="cell">{row.gameVersion}</span>
@@ -45732,7 +45795,7 @@ function SvEncounterConditionBrowser({
               <span role="cell">{row.flag}</span>
               <span role="cell">{row.slotCount}</span>
               <span role="cell">{row.totalWeight}</span>
-            </button>
+            </InteractiveTableRow>
           </HoverTooltip>
         ))}
       </div>
@@ -46009,11 +46072,11 @@ function ZaEncounterGroupBrowser({
               ? ''
               : t(getZaWildZoneCompletionStatusKey(completionState));
           return (
-            <button
+            <InteractiveTableRow
               aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}${
                 completionLabel ? `, ${t('za.wildZoneCompletion.column')} ${completionLabel}` : ''
               }`}
-              aria-pressed={isSelected}
+              aria-selected={isSelected}
               className={`za-encounter-group-row ${
                 isSelected ? 'za-encounter-group-row-selected' : ''
               } ${isPending ? 'za-encounter-group-row-pending' : ''} ${
@@ -46022,7 +46085,6 @@ function ZaEncounterGroupBrowser({
               key={group.key}
               onClick={() => selectGroup(group)}
               role="row"
-              type="button"
             >
               <span role="cell">{groupLabel}</span>
               <span role="cell">
@@ -46044,7 +46106,7 @@ function ZaEncounterGroupBrowser({
                   {completionLabel}
                 </span>
               ) : null}
-            </button>
+            </InteractiveTableRow>
           );
         })}
       </div>
@@ -46102,9 +46164,9 @@ function ZaEncounterGroupBrowser({
                 detail="full"
                 key={`${placement.table.tableId}:${placement.slot.slot}`}
               >
-                <button
+                <InteractiveTableRow
                   aria-label={placementSummary}
-                  aria-pressed={isSelected}
+                  aria-selected={isSelected}
                   className={`za-encounter-placement-row ${
                     isSelected ? 'za-encounter-placement-row-selected' : ''
                   } ${placementLayoutClass}`}
@@ -46112,7 +46174,6 @@ function ZaEncounterGroupBrowser({
                     onSelectReference(placement.table.tableId, placement.slot.slot)
                   }
                   role="row"
-                  type="button"
                 >
                   <span role="cell">{placementLabel}</span>
                   <span role="cell">{placement.slot.slot + 1}</span>
@@ -46133,7 +46194,7 @@ function ZaEncounterGroupBrowser({
                       {placementCompletionLabel}
                     </span>
                   ) : null}
-                </button>
+                </InteractiveTableRow>
               </HoverTooltip>
             );
           })}
@@ -46483,7 +46544,7 @@ function TeraRaidsSection({
                 const raidLabel = formatSpeciesFormLabel(raid.species, raid.form, raid.speciesId);
 
                 return (
-                  <button
+                  <InteractiveTableRow
                     className={`raid-rewards-row ${
                       selectedRaid?.recordId === raid.recordId ? 'raid-rewards-row-selected' : ''
                     } ${
@@ -46492,13 +46553,12 @@ function TeraRaidsSection({
                     key={raid.recordId}
                     onClick={() => onSelectRaid(raid.recordId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{raid.region}</span>
                     <span role="cell">{raid.starLabel}</span>
                     <span role="cell">{raid.versionLabel}</span>
                     <span role="cell">{raidLabel}</span>
-                  </button>
+                  </InteractiveTableRow>
                 );
               })}
             </div>
@@ -47191,7 +47251,7 @@ function RaidBattlesSection({
                 <span role="columnheader">{translateLiteral('G-Max')}</span>
               </div>
               {filteredTables.map((table) => (
-                <button
+                <InteractiveTableRow
                   className={`raid-rewards-row ${
                     selectedTable?.tableId === table.tableId ? 'raid-rewards-row-selected' : ''
                   } ${
@@ -47201,13 +47261,12 @@ function RaidBattlesSection({
                   key={table.tableId}
                   onClick={() => onSelectTable(table.tableId)}
                   role="row"
-                  type="button"
                 >
                   <span role="cell">{translateLiteral(table.displayName)}</span>
                   <span role="cell">{translateLiteral(table.gameVersion)}</span>
                   <span role="cell">{table.slots.length}</span>
                   <span role="cell">{table.slots.filter((slot) => slot.isGigantamax).length}</span>
-                </button>
+                </InteractiveTableRow>
               ))}
               {filteredTables.length === 0 ? (
                 <p className="empty-copy raid-rewards-table-empty" role="status">
@@ -47863,7 +47922,7 @@ function RaidRewardsSection({
                 <span role="columnheader">{translateLiteral('Member')}</span>
               </div>
               {filteredTables.map((table) => (
-                <button
+                <InteractiveTableRow
                   className={`raid-rewards-row ${
                     selectedTable?.tableId === table.tableId ? 'raid-rewards-row-selected' : ''
                   } ${
@@ -47873,13 +47932,12 @@ function RaidRewardsSection({
                   key={table.tableId}
                   onClick={() => onSelectTable(table.tableId)}
                   role="row"
-                  type="button"
                 >
                   <span role="cell">{translateLiteral(table.displayName)}</span>
                   <span role="cell">{table.sourceTableHash}</span>
                   <span role="cell">{table.rewards.length}</span>
                   <span role="cell">{translateLiteral(table.archiveMember)}</span>
-                </button>
+                </InteractiveTableRow>
               ))}
               {filteredTables.length === 0 ? (
                 <p className="empty-copy raid-rewards-table-empty" role="status">
@@ -48439,7 +48497,7 @@ function BehaviorSection({
                 <span role="columnheader">{translateLiteral('Range')}</span>
               </div>
               {filteredEntries.map((entry) => (
-                <button
+                <InteractiveTableRow
                   aria-selected={selectedEntry?.entryId === entry.entryId}
                   className={`raid-rewards-row ${
                     selectedEntry?.entryId === entry.entryId
@@ -48451,7 +48509,6 @@ function BehaviorSection({
                   key={entry.entryId}
                   onClick={() => onSelectEntry(entry.entryId)}
                   role="row"
-                  type="button"
                 >
                   <span data-localization-ignore="true" role="cell">
                     {formatBehaviorSpecies(entry)}
@@ -48465,7 +48522,7 @@ function BehaviorSection({
                     {translateLiteral('Grass shake radius')}{' '}
                     {formatBehaviorNumber(entry.grassShakeRadius)}
                   </span>
-                </button>
+                </InteractiveTableRow>
               ))}
               {filteredEntries.length === 0 ? (
                 <div className="empty-copy" role="status">
@@ -49175,7 +49232,7 @@ function PlacementSection({
                       ? selectedObject?.objectId ?? objectGroup.objects[0]?.objectId ?? null
                       : objectGroup.objects[0]?.objectId ?? null;
                     return (
-                      <button
+                      <InteractiveTableRow
                         aria-rowindex={rowIndex + 2 + (remotePaging?.offset ?? 0)}
                         className={`raid-rewards-row placement-object-row ${
                           isSelected ? 'raid-rewards-row-selected' : ''
@@ -49183,7 +49240,6 @@ function PlacementSection({
                         disabled={isRemoteInteractionBlocked}
                         onClick={() => onSelectObject(nextObjectId)}
                         role="row"
-                        type="button"
                       >
                         <span className="placement-object-name" role="cell">
                           <strong>{objectGroup.label}</strong>
@@ -49193,7 +49249,7 @@ function PlacementSection({
                           {objectGroup.preview}
                         </span>
                         <span role="cell">{objectGroup.position}</span>
-                      </button>
+                      </InteractiveTableRow>
                     );
                   }}
                 />
@@ -49947,21 +50003,20 @@ function FlagworkSaveSection({
                   <span role="columnheader">Save key</span>
                 </div>
                 {filteredFlags.map((flag) => (
-                  <button
+                  <InteractiveTableRow
                     className={`flagwork-row ${
                       selectedFlag?.flagId === flag.flagId ? 'flagwork-row-selected' : ''
                     }`}
                     key={flag.flagId}
                     onClick={() => onSelectFlag(flag.flagId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{flag.table}</span>
                     <span role="cell">{flag.index}</span>
                     <span role="cell">{flag.kind}</span>
                     <span role="cell">{flag.name}</span>
                     <span role="cell">{flag.low32Key}</span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
               </div>
 
@@ -49974,7 +50029,7 @@ function FlagworkSaveSection({
                   <span role="columnheader">Hash</span>
                 </div>
                 {filteredSaveBlocks.map((saveBlock) => (
-                  <button
+                  <InteractiveTableRow
                     className={`flagwork-row ${
                       selectedSaveBlock?.blockId === saveBlock.blockId
                         ? 'flagwork-row-selected'
@@ -49983,14 +50038,13 @@ function FlagworkSaveSection({
                     key={saveBlock.blockId}
                     onClick={() => onSelectSaveBlock(saveBlock.blockId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{saveBlock.key}</span>
                     <span role="cell">{saveBlock.kind}</span>
                     <span role="cell">{saveBlock.valueKind}</span>
                     <span role="cell">{saveBlock.name}</span>
                     <span role="cell">{saveBlock.hash}</span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
               </div>
             </div>
@@ -50251,14 +50305,13 @@ function BagHookSection({
                   <span role="columnheader">Owner</span>
                 </div>
                 {workflow.slots.map((slot) => (
-                  <button
+                  <InteractiveTableRow
                     className={`exefs-row bag-hook-row ${
                       selectedRecord?.slot === slot.slot ? 'exefs-row-selected' : ''
                     }`}
                     key={slot.slot}
                     onClick={() => onSelectSlot(slot.slot)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">#{slot.slot}</span>
                     <span role="cell">
@@ -50277,7 +50330,7 @@ function BagHookSection({
                         ? ''
                         : slot.owner}
                     </span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
               </div>
             </div>
@@ -51749,7 +51802,7 @@ function ExeFsPatchSection({
                   <span role="columnheader">{translateLiteral('Details')}</span>
                 </div>
                 {filteredPatches.map((patch) => (
-                  <button
+                  <InteractiveTableRow
                     aria-selected={selectedPatch?.patchId === patch.patchId}
                     className={`exefs-row ${
                       selectedPatch?.patchId === patch.patchId ? 'exefs-row-selected' : ''
@@ -51757,7 +51810,6 @@ function ExeFsPatchSection({
                     key={patch.patchId}
                     onClick={() => onSelectPatch(patch.patchId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{translateLiteral(patch.name)}</span>
                     <span role="cell">
@@ -51770,7 +51822,7 @@ function ExeFsPatchSection({
                     <span role="cell">
                       {translateLiteral(patch.details[0] ?? patch.description)}
                     </span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
               </div>
 
@@ -51787,7 +51839,7 @@ function ExeFsPatchSection({
                   <span role="columnheader">{translateLiteral('Actual')}</span>
                 </div>
                 {checksForSelectedPatch.map((check) => (
-                  <button
+                  <InteractiveTableRow
                     aria-selected={selectedCheck?.checkId === check.checkId}
                     className={`exefs-row exefs-check-row ${
                       selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
@@ -51795,7 +51847,6 @@ function ExeFsPatchSection({
                     key={check.checkId}
                     onClick={() => onSelectCheck(check.checkId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{translateLiteral(check.name)}</span>
                     <span role="cell">
@@ -51806,7 +51857,7 @@ function ExeFsPatchSection({
                     <span role="cell">{translateLiteral(check.area)}</span>
                     <span role="cell">{check.offset || 'n/a'}</span>
                     <span role="cell">{translateLiteral(check.actual)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
               </div>
             </div>
@@ -52248,7 +52299,7 @@ function RoyalCandySection({
                   <span role="columnheader">{translateLiteral('Target')}</span>
                 </div>
                 {filteredWorkflows.map((candidate) => (
-                  <button
+                  <InteractiveTableRow
                     aria-selected={selectedWorkflow?.workflowId === candidate.workflowId}
                     className={`exefs-row royal-candy-workflow-row ${
                       selectedWorkflow?.workflowId === candidate.workflowId
@@ -52258,7 +52309,6 @@ function RoyalCandySection({
                     key={candidate.workflowId}
                     onClick={() => onSelectWorkflow(candidate.workflowId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">
                       {royalCandyWorkflowNameKeys[candidate.workflowId]
@@ -52278,7 +52328,7 @@ function RoyalCandySection({
                       })}
                     </span>
                     <span role="cell">{translateLiteral(candidate.target)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
               </div>
 
@@ -52322,7 +52372,7 @@ function RoyalCandySection({
                   <span role="cell">{translateLiteral('Preflight Checks')}</span>
                 </div>
                 {visibleChecks.map((check) => (
-                  <button
+                  <InteractiveTableRow
                     aria-selected={selectedCheck?.checkId === check.checkId}
                     className={`exefs-row royal-candy-target-row ${
                       selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
@@ -52330,7 +52380,6 @@ function RoyalCandySection({
                     key={check.checkId}
                     onClick={() => onSelectCheck(check.checkId)}
                     role="row"
-                    type="button"
                   >
                     <span role="cell">{check.checkId.split(':').pop()}</span>
                     <span role="cell">
@@ -52341,7 +52390,7 @@ function RoyalCandySection({
                     <span role="cell">{translateLiteral(check.area)}</span>
                     <span role="cell">{translateLiteral(check.target)}</span>
                     <span role="cell">{translateLiteral(check.message)}</span>
-                  </button>
+                  </InteractiveTableRow>
                 ))}
                 <div className="royal-candy-target-section" role="row">
                   <span role="cell">{translateLiteral('Planned Outputs')}</span>
@@ -55653,7 +55702,7 @@ function SettingsSection({
           const isSelected = effectiveActiveSettingsTab === tab.id;
           return (
             <button
-              aria-controls={`settings-tabpanel-${tab.id}`}
+              aria-controls={isSelected ? `settings-tabpanel-${tab.id}` : undefined}
               aria-selected={isSelected}
               className={`settings-tab${isSelected ? ' is-selected' : ''}`}
               id={`settings-tab-${tab.id}`}
@@ -58204,13 +58253,13 @@ function matchesSearchPrefix(value: string, normalizedSearch: string) {
 type TrainerCategory = {
   count: number;
   description: string;
-  id: string;
+  id: TrainerCategoryId;
   label: string;
   rank: number;
 };
 
 const zaTrainerCategoryDetails: Record<
-  string,
+  Exclude<TrainerCategoryId, 'all'>,
   Omit<TrainerCategory, 'count' | 'id'>
 > = {
   named: {
@@ -58282,7 +58331,9 @@ function buildZaTrainerCategories(trainers: TrainerRecord[]): TrainerCategory[] 
   ];
 }
 
-function getZaTrainerCategoryId(trainer: TrainerRecord) {
+function getZaTrainerCategoryId(
+  trainer: TrainerRecord
+): Exclude<TrainerCategoryId, 'all'> {
   const location = trainer.location.toLocaleLowerCase();
   const name = trainer.name.toLocaleLowerCase();
   const trainerClass = trainer.trainerClass.toLocaleLowerCase();
@@ -62641,7 +62692,7 @@ function SearchableOptionInput({
               : undefined
           }
           aria-autocomplete="list"
-          aria-controls={listboxId}
+          aria-controls={hasMenu ? listboxId : undefined}
           aria-describedby={ariaDescribedBy}
           aria-expanded={hasMenu}
           aria-label={localizedAriaLabel}
