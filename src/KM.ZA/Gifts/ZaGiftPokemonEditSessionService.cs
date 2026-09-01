@@ -116,12 +116,15 @@ internal sealed class ZaGiftPokemonEditSessionService
             }
 
             updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
-            updatedSession = RemoveSourceEquivalentPendingEdits(loadedWorkflow, updatedSession);
-            projectedWorkflow = OverlayPendingEdits(
-                project,
-                loadedWorkflow,
-                updatedSession.PendingEdits,
-                diagnostics);
+            var stagedSession = updatedSession;
+            updatedSession = RemoveSourceEquivalentPendingEdits(loadedWorkflow, stagedSession);
+            projectedWorkflow = ReferenceEquals(stagedSession, updatedSession)
+                ? OverlayPendingEdit(projectedWorkflow, pendingEdit)
+                : OverlayPendingEdits(
+                    project,
+                    loadedWorkflow,
+                    updatedSession.PendingEdits,
+                    diagnostics);
         }
 
         projectedWorkflow = OverlayPendingEdits(

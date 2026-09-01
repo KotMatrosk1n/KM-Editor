@@ -106,6 +106,7 @@ public sealed class SwShMovesEditSessionService
         }
 
         var candidateSession = currentSession;
+        var effectiveWorkflow = workflow;
         foreach (var update in updates)
         {
             if (update is null
@@ -120,7 +121,6 @@ public sealed class SwShMovesEditSessionService
                 continue;
             }
 
-            var effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, candidateSession.PendingEdits);
             var selectedMove = effectiveWorkflow.Moves.FirstOrDefault(move => move.MoveId == update.MoveId);
             var baselineMove = loadedWorkflow.Moves.FirstOrDefault(move => move.MoveId == update.MoveId);
             if (selectedMove is null || baselineMove is null)
@@ -143,6 +143,15 @@ public sealed class SwShMovesEditSessionService
             if (pendingEdit is not null)
             {
                 candidateSession = SetPendingMoveEdit(candidateSession, pendingEdit, baselineMove);
+                var stagesPendingEdit = int.TryParse(
+                        pendingEdit.NewValue,
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out var value)
+                    && GetMoveFieldValue(baselineMove, pendingEdit.Field!) != value;
+                effectiveWorkflow = stagesPendingEdit
+                    ? OverlayPendingEdit(effectiveWorkflow, pendingEdit)
+                    : OverlayPendingEdits(loadedWorkflow, candidateSession.PendingEdits);
             }
         }
 

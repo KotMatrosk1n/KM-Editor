@@ -20,6 +20,8 @@ import {
   type UpdateMoveFieldsResponse,
   type UpdatePlacementObjectFieldsRequest,
   type UpdatePlacementObjectFieldsResponse,
+  type UpdatePokemonCompositeRequest,
+  type UpdatePokemonCompositeResponse,
   type UpdatePokemonFieldsRequest,
   type UpdatePokemonFieldsResponse,
   type UpdateRentalPokemonFieldsRequest,
@@ -37,6 +39,7 @@ import {
   updateItemFieldsResponseSchema,
   updateMoveFieldsResponseSchema,
   updatePlacementObjectFieldsResponseSchema,
+  updatePokemonCompositeResponseSchema,
   updatePokemonFieldsResponseSchema,
   updateRentalPokemonFieldsResponseSchema,
   updateTradePokemonFieldsResponseSchema,
@@ -70,6 +73,9 @@ export type SvBatchFieldProjectBridgeApi = {
   updatePokemonFields: (
     request: UpdatePokemonFieldsRequest
   ) => Promise<UpdatePokemonFieldsResponse>;
+  updatePokemonComposite: (
+    request: UpdatePokemonCompositeRequest
+  ) => Promise<UpdatePokemonCompositeResponse>;
   updateRentalPokemonFields: (
     request: UpdateRentalPokemonFieldsRequest
   ) => Promise<UpdateRentalPokemonFieldsResponse>;
@@ -154,6 +160,13 @@ export function createSvBatchFieldProjectBridgeApi(
         kmCommandNames.updatePokemonFields,
         request,
         updatePokemonFieldsResponseSchema
+      ),
+    updatePokemonComposite: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updatePokemonComposite,
+        request,
+        updatePokemonCompositeResponseSchema
       ),
     updateRentalPokemonFields: (request) =>
       sendProjectBridgeRequest(

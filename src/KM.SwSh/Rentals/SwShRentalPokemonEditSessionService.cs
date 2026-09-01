@@ -135,7 +135,7 @@ public sealed class SwShRentalPokemonEditSessionService
                 break;
             }
 
-            workingSession = NormalizeIvEditsBeforeUpdate(
+            var normalizedSession = NormalizeIvEditsBeforeUpdate(
                 project,
                 workflow,
                 workingSession,
@@ -143,16 +143,21 @@ public sealed class SwShRentalPokemonEditSessionService
                 effectiveRental,
                 pendingEdit.Field!,
                 diagnostics);
+            var normalizedDependentIvs = !ReferenceEquals(normalizedSession, workingSession);
+            workingSession = normalizedSession;
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 break;
             }
             var sourceValue = GetRentalFieldValue(sourceRental, pendingEdit.Field!);
             var parsedValue = long.Parse(pendingEdit.NewValue!, CultureInfo.InvariantCulture);
-            workingSession = sourceValue == parsedValue
+            var restoresSourceValue = sourceValue == parsedValue;
+            workingSession = restoresSourceValue
                 ? RemovePendingRentalField(workingSession, effectiveRental.RentalIndex, pendingEdit.Field!)
                 : ReplacePendingRentalEdit(workingSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(workflow, workingSession.PendingEdits);
+            effectiveWorkflow = restoresSourceValue || normalizedDependentIvs
+                ? OverlayPendingEdits(workflow, workingSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

@@ -18,6 +18,7 @@ public static class KmCommandNames
     public const string LoadPokemonWorkflow = "pokemon.load";
     public const string UpdatePokemonField = "pokemon.field.update";
     public const string UpdatePokemonFields = "pokemon.fields.update";
+    public const string UpdatePokemonComposite = "pokemon.composite.update";
     public const string UpdatePokemonLearnset = "pokemon.learnset.update";
     public const string UpdatePokemonEvolution = "pokemon.evolution.update";
     public const string SwapPokemonDexPlacement = "pokemon.dex.swap";
@@ -53,6 +54,7 @@ public static class KmCommandNames
     public const string UpdateRentalPokemonFields = "rentalPokemon.fields.update";
     public const string LoadDynamaxAdventuresWorkflow = "dynamaxAdventures.load";
     public const string UpdateDynamaxAdventureField = "dynamaxAdventures.field.update";
+    public const string UpdateDynamaxAdventureFields = "dynamaxAdventures.fields.update";
     public const string StageDynamaxAdventureRepair = "dynamaxAdventures.repair.stage";
     public const string StageDynamaxAdventureRestore = "dynamaxAdventures.restore.stage";
     public const string PreviewDynamaxAdventureDefaults = "dynamaxAdventures.defaults.preview";
@@ -61,6 +63,7 @@ public static class KmCommandNames
     public const string SetDynamaxAdventureSaveSeed = "dynamaxAdventures.seed.save.set";
     public const string LoadShopsWorkflow = "shops.load";
     public const string UpdateShopInventoryItem = "shops.inventory.update";
+    public const string UpdateShopInventoryItems = "shops.inventory.items.update";
     public const string LoadTmMachineControls = "tmMachineControls.load";
     public const string StageTmRecipeAvailability = "tmMachineControls.recipeAvailability.stage";
     public const string StageTmMaterialVisibility = "tmMachineControls.materialVisibility.stage";

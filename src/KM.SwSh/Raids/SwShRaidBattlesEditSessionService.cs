@@ -173,12 +173,15 @@ public sealed class SwShRaidBattlesEditSessionService
 
             pendingEdit = AddSemanticValidationSources(project, pendingEdit);
             workingSession = ReplacePendingRaidBattleEdit(workingSession, pendingEdit);
-            if (GetSlotFieldValue(sourceSlot, pendingEdit.Field) == pendingEdit.NewValue)
+            var restoresSourceValue = GetSlotFieldValue(sourceSlot, pendingEdit.Field) == pendingEdit.NewValue;
+            if (restoresSourceValue)
             {
                 workingSession = RemovePendingRaidBattleEdit(workingSession, pendingEdit);
             }
 
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits);
+            effectiveWorkflow = restoresSourceValue
+                ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

@@ -69,7 +69,7 @@ internal static class ZaChangePlanSourceGuard
         try
         {
             using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
-            using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope();
+            using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope(paths);
             var effectiveSession = WithoutPendingEditAssociations(
                 normalizeSession?.Invoke(session) ?? session);
             plan = createPlan(effectiveSession);
@@ -197,7 +197,7 @@ internal static class ZaChangePlanSourceGuard
         try
         {
             using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
-            using var freshReads = ZaWorkflowFileSource.BeginFreshReadScope();
+            using var freshReads = ZaWorkflowFileSource.BeginIndependentFreshReadScope(paths);
             var fileSource = new ZaWorkflowFileSource(bypassReusableBaseCache: true);
             var descriptorPreview = CreateDescriptorPreviewIfNeeded(
                 paths,

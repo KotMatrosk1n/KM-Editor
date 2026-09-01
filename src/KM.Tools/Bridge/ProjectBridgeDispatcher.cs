@@ -108,6 +108,7 @@ using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
 using KM.SV.GameModules;
+using KM.SV.Shops;
 using KM.SV.Text;
 using KM.ZA.Encounters;
 using KM.ZA.Gifts;
@@ -115,6 +116,7 @@ using KM.ZA.GameDump;
 using KM.ZA.GameModules;
 using KM.ZA.ModMerger;
 using KM.ZA.Placement;
+using KM.ZA.Shops;
 using KM.ZA.StaticEncounters;
 using KM.ZA.Text;
 using KM.ZA.Trades;
@@ -570,6 +572,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadPokemonWorkflow => DispatchLoadPokemonWorkflow(requestJson),
                 KmCommandNames.UpdatePokemonField => DispatchUpdatePokemonField(requestJson),
                 KmCommandNames.UpdatePokemonFields => DispatchUpdatePokemonFields(requestJson),
+                KmCommandNames.UpdatePokemonComposite => DispatchUpdatePokemonComposite(requestJson),
                 KmCommandNames.UpdatePokemonLearnset => DispatchUpdatePokemonLearnset(requestJson),
                 KmCommandNames.UpdatePokemonEvolution => DispatchUpdatePokemonEvolution(requestJson),
                 KmCommandNames.SwapPokemonDexPlacement => DispatchSwapPokemonDexPlacement(requestJson),
@@ -605,6 +608,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.UpdateRentalPokemonFields => DispatchUpdateRentalPokemonFields(requestJson),
                 KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
                 KmCommandNames.UpdateDynamaxAdventureField => DispatchUpdateDynamaxAdventureField(requestJson),
+                KmCommandNames.UpdateDynamaxAdventureFields => DispatchUpdateDynamaxAdventureFields(requestJson),
                 KmCommandNames.StageDynamaxAdventureRepair => DispatchStageDynamaxAdventureRepair(requestJson),
                 KmCommandNames.StageDynamaxAdventureRestore => DispatchStageDynamaxAdventureRestore(requestJson),
                 KmCommandNames.PreviewDynamaxAdventureDefaults => DispatchPreviewDynamaxAdventureDefaults(requestJson),
@@ -613,6 +617,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.SetDynamaxAdventureSaveSeed => DispatchSetDynamaxAdventureSaveSeed(requestJson),
                 KmCommandNames.LoadShopsWorkflow => DispatchLoadShopsWorkflow(requestJson),
                 KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
+                KmCommandNames.UpdateShopInventoryItems => DispatchUpdateShopInventoryItems(requestJson),
                 KmCommandNames.LoadTmMachineControls => DispatchLoadTmMachineControls(requestJson),
                 KmCommandNames.StageTmRecipeAvailability => DispatchStageTmRecipeAvailability(requestJson),
                 KmCommandNames.StageTmMaterialVisibility => DispatchStageTmMaterialVisibility(requestJson),
@@ -2092,6 +2097,117 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdatePokemonComposite(string requestJson)
+    {
+        var request = DeserializeRequest<UpdatePokemonCompositeRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+
+        if (IsPokemonLegendsZA(paths))
+        {
+            var response = ZaBridgeMapper.ToPokemonCompositeDto(
+                zaWorkflowService.UpdatePokemonComposite(
+                    paths,
+                    session,
+                    request.Payload.FieldUpdates
+                        .Select(update => new KM.ZA.Pokemon.ZaPokemonFieldUpdate(
+                            update.PersonalId,
+                            update.Field,
+                            update.Value))
+                        .ToArray(),
+                    request.Payload.EvolutionUpdates
+                        .Select(update => new KM.ZA.Pokemon.ZaPokemonEvolutionOperation(
+                            update.PersonalId,
+                            update.Action,
+                            update.Slot,
+                            update.Method,
+                            update.Argument,
+                            update.Species,
+                            update.Form,
+                            update.Level))
+                        .ToArray(),
+                    request.Payload.LearnsetUpdates
+                        .Select(update => new KM.ZA.Pokemon.ZaPokemonLearnsetUpdate(
+                            update.PersonalId,
+                            update.Action,
+                            update.Slot,
+                            update.MoveId,
+                            update.Level))
+                        .ToArray()));
+
+            return SerializeSuccess(response, request.RequestId);
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            var response = SvBridgeMapper.ToPokemonCompositeDto(
+                svWorkflowService.UpdatePokemonComposite(
+                    paths,
+                    session,
+                    request.Payload.FieldUpdates
+                        .Select(update => new SvPokemonFieldUpdate(
+                            update.PersonalId,
+                            update.Field,
+                            update.Value))
+                        .ToArray(),
+                    request.Payload.EvolutionUpdates
+                        .Select(update => new KM.SV.Pokemon.SvPokemonEvolutionUpdate(
+                            update.PersonalId,
+                            update.Action,
+                            update.Slot,
+                            update.Method,
+                            update.Argument,
+                            update.Species,
+                            update.Form,
+                            update.Level))
+                        .ToArray(),
+                    request.Payload.LearnsetUpdates
+                        .Select(update => new KM.SV.Pokemon.SvPokemonLearnsetUpdate(
+                            update.PersonalId,
+                            update.Action,
+                            update.Slot,
+                            update.MoveId,
+                            update.Level))
+                        .ToArray()));
+
+            return SerializeSuccess(response, request.RequestId);
+        }
+
+        var swShResponse = SwShBridgeMapper.ToPokemonCompositeDto(
+            pokemonEditSessionService.UpdateComposite(
+                paths,
+                session,
+                request.Payload.FieldUpdates
+                    .Select(update => new SwShPokemonFieldUpdate(
+                        update.PersonalId,
+                        update.Field,
+                        update.Value))
+                    .ToArray(),
+                request.Payload.EvolutionUpdates
+                    .Select(update => new SwShPokemonEvolutionUpdate(
+                        update.PersonalId,
+                        update.Action,
+                        update.Slot,
+                        update.Method,
+                        update.Argument,
+                        update.Species,
+                        update.Form,
+                        update.Level))
+                    .ToArray(),
+                request.Payload.LearnsetUpdates
+                    .Select(update => new SwShPokemonLearnsetUpdate(
+                        update.PersonalId,
+                        update.Action,
+                        update.Slot,
+                        update.MoveId,
+                        update.Level))
+                    .ToArray()));
+
+        return SerializeSuccess(swShResponse, request.RequestId);
+    }
+
     private string DispatchUpdatePokemonLearnset(string requestJson)
     {
         var request = DeserializeRequest<UpdatePokemonLearnsetRequest>(requestJson);
@@ -2510,10 +2626,18 @@ public sealed class ProjectBridgeDispatcher : IDisposable
 
         if (!IsScarletViolet(paths))
         {
-            return SerializeFailure(
-                BridgeErrorCodes.GameMismatch,
-                "Bridge command 'trainers.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
-                request.RequestId);
+            var swShUpdates = request.Payload.Updates
+                .Select(update => new SwShTrainerFieldUpdate(
+                    update.TrainerId,
+                    update.Slot,
+                    update.Field,
+                    update.Value))
+                .ToArray();
+            var swShResponse = SwShBridgeMapper.ToTrainerFieldsDto(
+                trainersEditSessionService.UpdateFields(paths, session, swShUpdates),
+                swShUpdates);
+
+            return SerializeSuccess(swShResponse, request.RequestId);
         }
 
         var updates = request.Payload.Updates
@@ -2758,7 +2882,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 session,
                 request.Payload.EncounterIndex,
                 request.Payload.Field,
-                request.Payload.Value))
+                request.Payload.Value,
+                request.Payload.EncounterId))
                 : SwShBridgeMapper.ToDto(staticEncountersEditSessionService.UpdateFields(
                     paths,
                     session,
@@ -2789,6 +2914,18 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 .ToArray();
             response = ZaBridgeMapper.ToDto(
                 zaWorkflowService.UpdateStaticEncounterFields(paths, session, updates));
+        }
+        else if (IsScarletViolet(paths))
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new KM.SV.StaticEncounters.SvStaticEncounterFieldUpdate(
+                    update.EncounterIndex,
+                    update.Field,
+                    update.Value,
+                    update.EncounterId))
+                .ToArray();
+            response = SvBridgeMapper.ToDto(
+                svWorkflowService.UpdateStaticEncounterFields(paths, session, updates));
         }
         else
         {
@@ -2877,6 +3014,29 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateDynamaxAdventureFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateDynamaxAdventureFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCoreAllowingMalformedPendingEdits(request.Payload.Session);
+        var updates = request.Payload.Updates?
+            .Select(update => update is null
+                ? null!
+                : new SwShDynamaxAdventureFieldUpdate(
+                    update.EntryIndex,
+                    update.Field,
+                    update.Value))
+            .ToArray() ?? [];
+        var result = dynamaxAdventuresEditSessionService.UpdateFields(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            updates);
+        var response = SwShBridgeMapper.ToDynamaxAdventureFieldsDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3037,6 +3197,63 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 request.Payload.Slot,
                 request.Payload.Field,
                 request.Payload.Value));
+        }
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateShopInventoryItems(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateShopInventoryItemsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        UpdateShopInventoryItemsResponse response;
+        if (IsPokemonLegendsZA(paths))
+        {
+            var updates = request.Payload.Updates?
+                .Select(update => update is null
+                    ? null
+                    : new ZaShopInventoryItemUpdate(
+                        update.ShopId,
+                        update.Slot,
+                        update.Field,
+                        update.Value,
+                        update.RowId))
+                .ToArray();
+            response = ZaBridgeMapper.ToShopInventoryItemsDto(
+                zaWorkflowService.UpdateShopInventoryItems(paths, session, updates));
+        }
+        else if (IsScarletViolet(paths))
+        {
+            var updates = request.Payload.Updates?
+                .Select(update => update is null
+                    ? null
+                    : new SvShopInventoryItemUpdate(
+                        update.ShopId,
+                        update.Slot,
+                        update.Field,
+                        update.Value,
+                        update.RowId))
+                .ToArray();
+            response = SvBridgeMapper.ToShopInventoryItemsDto(
+                svWorkflowService.UpdateShopInventoryItems(paths, session, updates));
+        }
+        else
+        {
+            var updates = request.Payload.Updates?
+                .Select(update => update is null
+                    ? null
+                    : new SwShShopInventoryItemUpdate(
+                        update.ShopId,
+                        update.Slot,
+                        update.Field,
+                        update.Value,
+                        update.RowId))
+                .ToArray();
+            response = SwShBridgeMapper.ToShopInventoryItemsDto(
+                shopsEditSessionService.UpdateInventoryItems(paths, session, updates));
         }
 
         return SerializeSuccess(response, request.RequestId);
@@ -6171,9 +6388,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         }
 
         if (IsSwordShieldOnlyCommand(command)
-            && !IsSwordShield(selectedGame.Value)
-            && !(command is KmCommandNames.UpdateStaticEncounterFields
-                && IsPokemonLegendsZA(selectedGame.Value)))
+            && !IsSwordShield(selectedGame.Value))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -7582,12 +7797,12 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.UpdateSwShCacheSettings or
             KmCommandNames.ClearSwShCache or
             KmCommandNames.WarmupSwShCacheStep or
-            KmCommandNames.UpdateStaticEncounterFields or
             KmCommandNames.LoadRentalPokemonWorkflow or
             KmCommandNames.UpdateRentalPokemonField or
             KmCommandNames.UpdateRentalPokemonFields or
             KmCommandNames.LoadDynamaxAdventuresWorkflow or
             KmCommandNames.UpdateDynamaxAdventureField or
+            KmCommandNames.UpdateDynamaxAdventureFields or
             KmCommandNames.StageDynamaxAdventureRepair or
             KmCommandNames.StageDynamaxAdventureRestore or
             KmCommandNames.PreviewDynamaxAdventureDefaults or
@@ -7652,7 +7867,6 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static bool IsScarletVioletOnlyCommand(string command)
     {
         return command is
-            KmCommandNames.UpdateTrainerFields or
             KmCommandNames.LoadTeraRaidsWorkflow or
             KmCommandNames.UpdateTeraRaidField or
             KmCommandNames.UpdateTeraRaidFields or
@@ -7717,6 +7931,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadPokemonWorkflow or
             KmCommandNames.UpdatePokemonField or
             KmCommandNames.UpdatePokemonFields or
+            KmCommandNames.UpdatePokemonComposite or
             KmCommandNames.UpdatePokemonLearnset or
             KmCommandNames.UpdatePokemonEvolution or
             KmCommandNames.SwapPokemonDexPlacement or
@@ -7760,6 +7975,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.UpdateTextEntry or
             KmCommandNames.LoadShopsWorkflow or
             KmCommandNames.UpdateShopInventoryItem or
+            KmCommandNames.UpdateShopInventoryItems or
             KmCommandNames.LoadTypeChartWorkflow or
             KmCommandNames.StageTypeChart or
             KmCommandNames.StageTypeChartUninstall or

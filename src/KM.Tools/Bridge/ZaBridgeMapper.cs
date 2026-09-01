@@ -586,6 +586,26 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateShopInventoryItemsResponse ToShopInventoryItemsDto(ZaShopsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateShopInventoryItemsResponse(
+            ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonCompositeResponse ToPokemonCompositeDto(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonCompositeResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdatePokemonLearnsetResponse ToDtoLearnsetUpdate(ZaPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

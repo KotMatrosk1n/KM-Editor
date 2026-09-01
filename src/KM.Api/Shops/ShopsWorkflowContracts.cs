@@ -116,7 +116,26 @@ public sealed record UpdateShopInventoryItemRequest(
     public string? RowId { get; init; }
 }
 
+public sealed record ShopInventoryItemUpdateDto(
+    string ShopId,
+    int Slot,
+    string Field,
+    string Value)
+{
+    public string? RowId { get; init; }
+}
+
+public sealed record UpdateShopInventoryItemsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<ShopInventoryItemUpdateDto?>? Updates);
+
 public sealed record UpdateShopInventoryItemResponse(
+    ShopsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateShopInventoryItemsResponse(
     ShopsWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

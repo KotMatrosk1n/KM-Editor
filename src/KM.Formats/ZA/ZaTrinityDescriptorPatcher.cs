@@ -12,6 +12,7 @@ public static class ZaTrinityDescriptorPatcher
     private const int MaximumDescriptorBytes = 64 * 1024 * 1024;
     private const int MaximumDescriptorEntries = 1_000_000;
     private const int MaximumLayeredEntries = 100_000;
+    private const int MaximumCombinedLayeredEntries = MaximumLayeredEntries * 2;
     private const int MaximumTraversalDepth = 128;
     private const int MaximumVirtualPathLength = 4_096;
     private const int MaximumPackNameLength = 4_096;
@@ -30,16 +31,29 @@ public static class ZaTrinityDescriptorPatcher
         string outputRoot,
         IEnumerable<string> excludedLayeredVirtualPaths)
     {
+        return CreateLayeredDescriptorIncludingVirtualPaths(
+            baseRomFsRoot,
+            outputRoot,
+            additionalLayeredVirtualPaths: [],
+            excludedLayeredVirtualPaths: excludedLayeredVirtualPaths);
+    }
+
+    public static byte[] CreateLayeredDescriptorIncludingVirtualPaths(
+        string baseRomFsRoot,
+        string outputRoot,
+        IEnumerable<string> additionalLayeredVirtualPaths,
+        IEnumerable<string> excludedLayeredVirtualPaths)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
+        ArgumentNullException.ThrowIfNull(additionalLayeredVirtualPaths);
         ArgumentNullException.ThrowIfNull(excludedLayeredVirtualPaths);
 
-        var excludedPaths = MaterializeVirtualPaths(excludedLayeredVirtualPaths)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return CreateLayeredDescriptorFromVirtualPaths(
             baseRomFsRoot,
             EnumerateLayeredVirtualPaths(outputRoot),
-            excludedPaths);
+            additionalLayeredVirtualPaths,
+            excludedLayeredVirtualPaths);
     }
 
     public static byte[] CreateLayeredDescriptorFromVirtualPaths(
@@ -47,8 +61,22 @@ public static class ZaTrinityDescriptorPatcher
         IEnumerable<string> layeredVirtualPaths,
         IEnumerable<string> excludedLayeredVirtualPaths)
     {
+        return CreateLayeredDescriptorFromVirtualPaths(
+            baseRomFsRoot,
+            layeredVirtualPaths,
+            additionalLayeredVirtualPaths: [],
+            excludedLayeredVirtualPaths);
+    }
+
+    public static byte[] CreateLayeredDescriptorFromVirtualPaths(
+        string baseRomFsRoot,
+        IEnumerable<string> layeredVirtualPaths,
+        IEnumerable<string> additionalLayeredVirtualPaths,
+        IEnumerable<string> excludedLayeredVirtualPaths)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
         ArgumentNullException.ThrowIfNull(layeredVirtualPaths);
+        ArgumentNullException.ThrowIfNull(additionalLayeredVirtualPaths);
         ArgumentNullException.ThrowIfNull(excludedLayeredVirtualPaths);
 
         var excludedPaths = MaterializeVirtualPaths(excludedLayeredVirtualPaths)
@@ -58,11 +86,17 @@ public static class ZaTrinityDescriptorPatcher
             .Where(path => !excludedPaths.Contains(path))
             .Select(ZaTrinityPathHasher.HashPath)
             .ToHashSet();
+        var additionalFileHashes = MaterializeDistinctVirtualPathHashes(
+            additionalLayeredVirtualPaths);
+        layeredFileHashes.UnionWith(additionalFileHashes);
 
         var descriptorBytes = ReadBaseDescriptor(baseRomFsRoot);
         return layeredFileHashes.Count == 0
             ? descriptorBytes
-            : RemoveFileHashes(descriptorBytes, layeredFileHashes);
+            : RemoveFileHashesCore(
+                descriptorBytes,
+                layeredFileHashes,
+                MaximumCombinedLayeredEntries);
     }
 
     public static byte[] ReadBaseDescriptor(string baseRomFsRoot)
@@ -108,10 +142,21 @@ public static class ZaTrinityDescriptorPatcher
 
     public static byte[] RemoveFileHashes(byte[] descriptorBytes, IReadOnlySet<ulong> removedHashes)
     {
+        return RemoveFileHashesCore(
+            descriptorBytes,
+            removedHashes,
+            MaximumLayeredEntries);
+    }
+
+    private static byte[] RemoveFileHashesCore(
+        byte[] descriptorBytes,
+        IReadOnlySet<ulong> removedHashes,
+        int maximumRemovedHashes)
+    {
         ArgumentNullException.ThrowIfNull(descriptorBytes);
         ArgumentNullException.ThrowIfNull(removedHashes);
         if (descriptorBytes.Length > MaximumDescriptorBytes
-            || removedHashes.Count > MaximumLayeredEntries)
+            || removedHashes.Count > maximumRemovedHashes)
         {
             throw new InvalidDataException("The Trinity descriptor request exceeds its bounded limit.");
         }
@@ -357,6 +402,29 @@ public static class ZaTrinityDescriptorPatcher
         }
 
         return result.ToArray();
+    }
+
+    private static HashSet<ulong> MaterializeDistinctVirtualPathHashes(
+        IEnumerable<string> paths)
+    {
+        var result = new HashSet<ulong>();
+        foreach (var path in paths)
+        {
+            var normalized = NormalizeVirtualPath(path);
+            if (string.Equals(normalized, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            result.Add(ZaTrinityPathHasher.HashPath(normalized));
+            if (result.Count > MaximumLayeredEntries)
+            {
+                throw new InvalidDataException(
+                    "The additional layered virtual path list exceeds its bounded distinct-entry limit.");
+            }
+        }
+
+        return result;
     }
 
     private static byte[] ReadBoundedFile(string path)

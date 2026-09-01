@@ -162,11 +162,7 @@ export function evaluateWorkbenchNavigation(
     };
   }
 
-  if (
-    destinationSection !== 'changes' &&
-    state.activeSectionIsEditor &&
-    state.activeEditorHasLocalDrafts
-  ) {
+  if (state.activeSectionIsEditor && state.activeEditorHasLocalDrafts) {
     return {
       kind: 'prompt',
       prompt: {

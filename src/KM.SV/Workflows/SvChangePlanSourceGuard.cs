@@ -46,6 +46,7 @@ internal static class SvChangePlanSourceGuard
 
         using (SvWorkflowFileSource.AcquireOutputLock(paths))
         {
+            using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
             var diagnostics = plan.Diagnostics.ToList();
             try
             {

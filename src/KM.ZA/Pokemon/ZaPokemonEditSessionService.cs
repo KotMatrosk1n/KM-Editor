@@ -183,7 +183,7 @@ internal sealed class ZaPokemonEditSessionService
             return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ReplaceOrRemoveAlphaNoOp(
+        var updatedSession = ReplaceOrRemoveFieldNoOp(
             loadedWorkflow,
             currentSession,
             pendingEdit);
@@ -275,10 +275,17 @@ internal sealed class ZaPokemonEditSessionService
                 continue;
             }
 
+            var previousSession = updatedSession;
             updatedSession = IsGlobalYieldEdit(pendingEdit)
-                ? ReplacePendingPokemonEdit(updatedSession, pendingEdit)
-                : ReplaceOrRemoveAlphaNoOp(loadedWorkflow, updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+                ? ReplacePendingPokemonEdit(previousSession, pendingEdit)
+                : ReplaceOrRemoveFieldNoOp(loadedWorkflow, previousSession, pendingEdit);
+            var removesBroaderGlobalYield = !IsGlobalYieldEdit(pendingEdit)
+                && previousSession.PendingEdits.Any(candidate =>
+                    IsGlobalYieldEdit(candidate)
+                    && ShouldReplacePendingEdit(candidate, pendingEdit));
+            effectiveWorkflow = removesBroaderGlobalYield
+                ? OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         var interactionDiagnostics = new List<ValidationDiagnostic>();
@@ -297,6 +304,272 @@ internal sealed class ZaPokemonEditSessionService
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
+    }
+
+    public ZaPokemonEditResult UpdateComposite(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaPokemonFieldUpdate> fieldUpdates,
+        IReadOnlyList<ZaPokemonEvolutionOperation> evolutionUpdates,
+        IReadOnlyList<ZaPokemonLearnsetUpdate> learnsetUpdates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(fieldUpdates);
+        ArgumentNullException.ThrowIfNull(evolutionUpdates);
+        ArgumentNullException.ThrowIfNull(learnsetUpdates);
+
+        var originalSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        ZaPokemonEditResult RollBack()
+        {
+            return new ZaPokemonEditResult(originalWorkflow, originalSession, diagnostics);
+        }
+
+        if (!ZaEditSessionSupport.CanEdit(
+                project,
+                originalWorkflow.Summary,
+                originalWorkflow.Diagnostics,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return RollBack();
+        }
+
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        foreach (var update in fieldUpdates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon Data batch update is missing a field or value.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "fieldUpdates",
+                    expected: "Complete Pokemon Data field update"));
+                continue;
+            }
+
+            PendingEdit? pendingEdit;
+            if (IsGlobalYieldField(update.Field))
+            {
+                pendingEdit = CreateGlobalYieldPendingEdit(
+                    effectiveWorkflow,
+                    update.Field,
+                    update.Value,
+                    diagnostics);
+            }
+            else
+            {
+                var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                    candidate.PersonalId == update.PersonalId);
+                if (pokemon is null)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                        ZaEditSessionSupport.PokemonDomain,
+                        field: "personalId",
+                        expected: "Existing Pokemon personal record"));
+                    continue;
+                }
+
+                pendingEdit = CreateFieldPendingEdit(
+                    effectiveWorkflow,
+                    pokemon,
+                    update.Field,
+                    update.Value,
+                    diagnostics);
+            }
+
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            var previousSession = workingSession;
+            workingSession = IsGlobalYieldEdit(pendingEdit)
+                ? ReplacePendingPokemonEdit(previousSession, pendingEdit)
+                : ReplaceOrRemoveFieldNoOp(loadedWorkflow, previousSession, pendingEdit);
+            var removesBroaderGlobalYield = !IsGlobalYieldEdit(pendingEdit)
+                && previousSession.PendingEdits.Any(candidate =>
+                    IsGlobalYieldEdit(candidate)
+                    && ShouldReplacePendingEdit(candidate, pendingEdit));
+            effectiveWorkflow = removesBroaderGlobalYield
+                ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return RollBack();
+        }
+
+        foreach (var update in evolutionUpdates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Action))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution batch update is missing an action.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "evolutionUpdates",
+                    expected: "Complete Pokemon evolution operation"));
+                break;
+            }
+
+            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                candidate.PersonalId == update.PersonalId);
+            if (pokemon is null)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "personalId",
+                    expected: "Existing Pokemon personal record"));
+                break;
+            }
+
+            var operation = CreateEvolutionOperation(
+                pokemon,
+                update.Action,
+                update.Slot,
+                update.Method,
+                update.Argument,
+                update.Species,
+                update.Form,
+                update.Level,
+                diagnostics);
+            if (operation is null)
+            {
+                break;
+            }
+
+            var pendingEdit = ZaEditSessionSupport.CreatePendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                CreateEvolutionSummary(pokemon, operation),
+                new ProjectFileReference(pokemon.Provenance.SourceLayer, pokemon.Provenance.SourceFile),
+                pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
+                CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
+                FormatEvolutionValue(operation));
+            workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return RollBack();
+        }
+
+        foreach (var update in learnsetUpdates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Action))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon learnset batch update is missing an action.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "learnsetUpdates",
+                    expected: "Complete Pokemon learnset operation"));
+                break;
+            }
+
+            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
+                candidate.PersonalId == update.PersonalId);
+            if (pokemon is null)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "personalId",
+                    expected: "Existing Pokemon personal record"));
+                break;
+            }
+
+            var operation = CreateLearnsetOperation(
+                pokemon,
+                update.Action,
+                update.Slot,
+                update.MoveId,
+                update.Level,
+                diagnostics);
+            if (operation is null)
+            {
+                break;
+            }
+
+            var pendingEdit = ZaEditSessionSupport.CreatePendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                CreateLearnsetSummary(pokemon, operation),
+                new ProjectFileReference(pokemon.Provenance.SourceLayer, pokemon.Provenance.SourceFile),
+                pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
+                CreateOperationField(LearnsetFieldPrefix, operation.Action, operation.Slot),
+                FormatOperationValue(operation.MoveId, operation.RawLevel));
+            workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return RollBack();
+        }
+
+        var dexPlacementEditCount = workingSession.PendingEdits.Count(IsDexPlacementEdit);
+        if (dexPlacementEditCount > 1)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "An edit session can contain only one complete Pokédex placement state.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "One canonical Pokédex placement edit"));
+        }
+
+        if (workingSession.PendingEdits.Any(IsScopedDexLayoutEdit)
+            && workingSession.PendingEdits.Any(edit => !IsDexPlacementEdit(edit)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dex Layout pending changes cannot share an edit session with ordinary Pokemon Data changes.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "A Dex Layout-only edit session"));
+        }
+
+        var validationWorkflow = loadedWorkflow;
+        foreach (var edit in OrderPersonalEditsForApply(workingSession.PendingEdits))
+        {
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(project, validationWorkflow, edit, diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+            {
+                validationWorkflow = OverlayPendingEdit(validationWorkflow, edit);
+            }
+        }
+
+        if (workingSession.PendingEdits.Any(IsDexPlacementEdit)
+            && workingSession.PendingEdits.Any(IsDexPresenceEdit))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement swaps and Present In Game changes must be applied separately.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Apply or discard Present In Game changes before staging a Pokédex placement swap"));
+        }
+
+        ValidateAlphaSessionInteractions(loadedWorkflow, workingSession, diagnostics);
+        ValidateGlobalYieldSessionInteractions(workingSession, diagnostics);
+
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? RollBack()
+            : new ZaPokemonEditResult(validationWorkflow, workingSession, diagnostics);
     }
 
     public ZaPokemonEditResult SwapDexPlacement(
@@ -1199,7 +1472,7 @@ internal sealed class ZaPokemonEditSessionService
                 CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
                 FormatEvolutionValue(operation));
             updatedSession = ReplacePendingPokemonEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -3967,35 +4240,56 @@ internal sealed class ZaPokemonEditSessionService
             && TryParseAlphaMoveRecordId(edit.RecordId, out _, out _);
     }
 
-    private static EditSession ReplaceOrRemoveAlphaNoOp(
+    private static EditSession ReplaceOrRemoveFieldNoOp(
         ZaPokemonWorkflow loadedWorkflow,
         EditSession session,
         PendingEdit pendingEdit)
     {
-        if (!IsAlphaMoveEdit(pendingEdit)
-            || !session.PendingEdits.Any(edit =>
-                string.Equals(edit.Domain, pendingEdit.Domain, StringComparison.Ordinal)
-                && string.Equals(edit.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
-                && string.Equals(edit.Field, pendingEdit.Field, StringComparison.Ordinal))
-            || !TryParseAlphaMoveRecordId(
+        var matchesLoadedSource = false;
+        if (IsAlphaMoveEdit(pendingEdit)
+            && TryParseAlphaMoveRecordId(
                 pendingEdit.RecordId,
                 out var speciesId,
                 out var formId)
-            || !int.TryParse(
+            && int.TryParse(
                 pendingEdit.NewValue,
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out var moveId))
         {
-            return ReplacePendingPokemonEdit(session, pendingEdit);
+            var sourceMoveId = loadedWorkflow.Pokemon
+                .FirstOrDefault(pokemon =>
+                    pokemon.SpeciesId == speciesId && pokemon.Form == formId)
+                ?.AlphaMove
+                ?.MoveId;
+            matchesLoadedSource = sourceMoveId == moveId;
+        }
+        else if (TryParseCompatibilityField(pendingEdit.Field, out var groupId, out var slot)
+            && int.TryParse(
+                pendingEdit.RecordId,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var personalId)
+            && int.TryParse(
+                pendingEdit.NewValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var compatibilityEnabled))
+        {
+            var sourceEntry = loadedWorkflow.Pokemon
+                .FirstOrDefault(pokemon => pokemon.PersonalId == personalId)
+                ?.Compatibility
+                .FirstOrDefault(group => string.Equals(
+                    group.GroupId,
+                    groupId,
+                    StringComparison.Ordinal))
+                ?.Entries
+                .FirstOrDefault(entry => entry.Slot == slot);
+            matchesLoadedSource = sourceEntry is not null
+                && sourceEntry.CanLearn == (compatibilityEnabled != 0);
         }
 
-        var sourceMoveId = loadedWorkflow.Pokemon
-            .FirstOrDefault(pokemon =>
-                pokemon.SpeciesId == speciesId && pokemon.Form == formId)
-            ?.AlphaMove
-            ?.MoveId;
-        if (sourceMoveId != moveId)
+        if (!matchesLoadedSource)
         {
             return ReplacePendingPokemonEdit(session, pendingEdit);
         }

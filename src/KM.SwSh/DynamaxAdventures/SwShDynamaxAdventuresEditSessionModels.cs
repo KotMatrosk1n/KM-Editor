@@ -10,6 +10,11 @@ public sealed record SwShDynamaxAdventuresEditResult(
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
+public sealed record SwShDynamaxAdventureFieldUpdate(
+    int EntryIndex,
+    string Field,
+    string Value);
+
 public sealed record SwShDynamaxAdventureDefaultField(
     string Field,
     string Value);

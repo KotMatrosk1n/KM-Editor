@@ -41,49 +41,133 @@ internal sealed class SvStaticEncountersEditSessionService
         EditSession? session,
         int encounterIndex,
         string field,
-        string value)
+        string value,
+        string? expectedEncounterId = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
         ArgumentNullException.ThrowIfNull(value);
 
-        var currentSession = session ?? EditSession.Start();
+        return UpdateFields(
+            paths,
+            session,
+            [new SvStaticEncounterFieldUpdate(encounterIndex, field, value, expectedEncounterId)]);
+    }
+
+    public SvStaticEncountersEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvStaticEncounterFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var originalSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = staticEncountersWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!SvEditSessionSupport.CanEdit(
                 project,
-                workflow.Summary,
-                workflow.Diagnostics,
+                originalWorkflow.Summary,
+                originalWorkflow.Diagnostics,
                 SvEditSessionSupport.StaticEncountersDomain,
                 diagnostics))
         {
-            return new SvStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SvStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EncounterIndex == encounterIndex);
-        if (encounter is null)
+        if (updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Static Encounter index {encounterIndex} is not present in the loaded workflow.",
-                field: "encounterIndex",
-                expected: "Existing Static Encounter record"));
-            return new SvStaticEncountersEditResult(workflow, currentSession, diagnostics);
+                "Update at least one Static Encounter field.",
+                field: "updates",
+                expected: "One or more Scarlet/Violet Static Encounter field updates"));
+            return new SvStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(workflow, encounter, field, value, diagnostics);
-        if (pendingEdit is null)
+        if (updates.Any(update => update is null
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null))
         {
-            return new SvStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Static Encounter batch update is missing a field or value.",
+                field: "updates",
+                expected: "Complete Scarlet/Violet Static Encounter field update"));
+            return new SvStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        foreach (var update in TrainerFieldUpdateOrdering.IdentityFirst(
+                     updates,
+                     static update => update.Field,
+                     SvStaticEncountersWorkflowService.SpeciesField,
+                     SvStaticEncountersWorkflowService.FormField))
+        {
+            var encounter = effectiveWorkflow.Encounters.FirstOrDefault(
+                candidate => candidate.EncounterIndex == update.EncounterIndex);
+            if (encounter is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Static Encounter index {update.EncounterIndex} is not present in the loaded workflow.",
+                    field: "encounterIndex",
+                    expected: "Existing Static Encounter record"));
+                break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(update.ExpectedEncounterId)
+                && !string.Equals(
+                    encounter.EncounterId,
+                    update.ExpectedEncounterId.Trim(),
+                    StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Static Encounter index {update.EncounterIndex} no longer identifies the expected encounter.",
+                    field: "encounterId",
+                    expected: update.ExpectedEncounterId.Trim()));
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                encounter,
+                update.Field,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            workingSession = SvEditSessionSupport.ReplacePendingEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SvStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
+        }
+
+        effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits);
+        foreach (var edit in workingSession.PendingEdits)
+        {
+            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SvStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
+        }
+
         return new SvStaticEncountersEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
-            updatedSession,
+            effectiveWorkflow,
+            workingSession,
             diagnostics);
     }
 

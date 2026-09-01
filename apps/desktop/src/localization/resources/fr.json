@@ -2425,6 +2425,8 @@
     "za.items.compatibility.projectedStagedHelp": "Une modification qui matérialisera cet emplacement de CT détenu est préparée. Appliquez les Modifications vérifiées, puis rechargez Objets avant de modifier ici la compatibilité.",
     "za.items.compatibility.draftMoveHelp": "Terminez de préparer ou annulez d'abord le brouillon de capacité de CT. Après sa préparation, appliquez les Modifications vérifiées et rechargez Objets avant de modifier la compatibilité de la nouvelle capacité.",
     "za.items.compatibility.stagedMoveHelp": "L'attribution de capacité de cette CT comporte des modifications préparées. Appliquez les Modifications vérifiées, puis rechargez Objets avant de modifier la compatibilité de la nouvelle capacité.",
+    "za.items.compatibility.localDraftBlocksMove": "Préparez ou annulez les brouillons de compatibilité avant de changer la capacité de cette CT.",
+    "za.items.compatibility.stagedDraftBlocksMove": "Appliquez ou annulez les modifications de compatibilité préparées avant de changer la capacité de cette CT.",
     "za.items.compatibility.chooseMove": "Choisissez une capacité de CT avant de modifier la compatibilité des Pokemon.",
     "za.items.compatibility.loading": "Chargement de la compatibilité des Pokemon...",
     "za.items.compatibility.loadUnavailable": "La compatibilité des Pokemon n'a pas pu être chargée dans cette vue Objets. Rouvrez Objets pour réessayer.",

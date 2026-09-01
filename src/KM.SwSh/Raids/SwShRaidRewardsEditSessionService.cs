@@ -237,12 +237,15 @@ public sealed class SwShRaidRewardsEditSessionService
 
             pendingEdit = AddItemValidationSources(project, pendingEdit);
             workingSession = ReplacePendingRaidRewardEdit(workingSession, pendingEdit);
-            if (GetRewardFieldValue(sourceReward, pendingEdit.Field) == pendingEdit.NewValue)
+            var restoresSourceValue = GetRewardFieldValue(sourceReward, pendingEdit.Field) == pendingEdit.NewValue;
+            if (restoresSourceValue)
             {
                 workingSession = RemovePendingRaidRewardEdit(workingSession, pendingEdit);
             }
 
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits, editDomain);
+            effectiveWorkflow = restoresSourceValue
+                ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits, editDomain)
+                : OverlayPendingEdit(effectiveWorkflow, pendingEdit, editDomain);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

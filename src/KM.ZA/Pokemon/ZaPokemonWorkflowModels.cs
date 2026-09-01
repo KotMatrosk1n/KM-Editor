@@ -232,6 +232,23 @@ public sealed record ZaPokemonEditResult(
 
 public sealed record ZaPokemonFieldUpdate(int PersonalId, string Field, string Value);
 
+public sealed record ZaPokemonLearnsetUpdate(
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? MoveId,
+    int? Level);
+
+public sealed record ZaPokemonEvolutionOperation(
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? Method,
+    int? Argument,
+    int? Species,
+    int? Form,
+    int? Level);
+
 public sealed record ZaPokemonEvolutionUpdate(
     int PersonalId,
     int Slot,

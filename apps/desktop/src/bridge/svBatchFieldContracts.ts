@@ -35,6 +35,39 @@ export const updatePokemonFieldsResponseSchema = z.strictObject({
   workflow: pokemonWorkflowSchema
 });
 
+export const pokemonEvolutionUpdateSchema = z.strictObject({
+  action: z.string(),
+  argument: z.number().int().nonnegative().nullable(),
+  form: z.number().int().nonnegative().nullable(),
+  level: z.number().int().nonnegative().nullable(),
+  method: z.number().int().nonnegative().nullable(),
+  personalId: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative().nullable(),
+  species: z.number().int().nonnegative().nullable()
+});
+
+export const pokemonLearnsetUpdateSchema = z.strictObject({
+  action: z.string(),
+  level: z.number().int().nonnegative().nullable(),
+  moveId: z.number().int().nonnegative().nullable(),
+  personalId: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative().nullable()
+});
+
+export const updatePokemonCompositeRequestSchema = z.strictObject({
+  evolutionUpdates: z.array(pokemonEvolutionUpdateSchema),
+  fieldUpdates: z.array(pokemonFieldUpdateSchema),
+  learnsetUpdates: z.array(pokemonLearnsetUpdateSchema),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const updatePokemonCompositeResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
 export const itemFieldUpdateSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -234,6 +267,14 @@ export const updatePlacementObjectFieldsResponseSchema = z.strictObject({
 export type PokemonFieldUpdate = z.infer<typeof pokemonFieldUpdateSchema>;
 export type UpdatePokemonFieldsRequest = z.infer<typeof updatePokemonFieldsRequestSchema>;
 export type UpdatePokemonFieldsResponse = z.infer<typeof updatePokemonFieldsResponseSchema>;
+export type PokemonEvolutionUpdate = z.infer<typeof pokemonEvolutionUpdateSchema>;
+export type PokemonLearnsetUpdate = z.infer<typeof pokemonLearnsetUpdateSchema>;
+export type UpdatePokemonCompositeRequest = z.infer<
+  typeof updatePokemonCompositeRequestSchema
+>;
+export type UpdatePokemonCompositeResponse = z.infer<
+  typeof updatePokemonCompositeResponseSchema
+>;
 export type MoveFieldUpdate = z.infer<typeof moveFieldUpdateSchema>;
 export type UpdateMoveFieldsRequest = z.infer<typeof updateMoveFieldsRequestSchema>;
 export type UpdateMoveFieldsResponse = z.infer<typeof updateMoveFieldsResponseSchema>;

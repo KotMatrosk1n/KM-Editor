@@ -164,6 +164,7 @@ public sealed class SwShBehaviorEditSessionService
                     workingSession,
                     sourceEntry.EntryId,
                     update.Field);
+                effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits);
             }
             else
             {
@@ -175,9 +176,8 @@ public sealed class SwShBehaviorEditSessionService
                     update.Field,
                     normalizedValue);
                 workingSession = ReplacePendingBehaviorEdit(workingSession, pendingEdit);
+                effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
             }
-
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

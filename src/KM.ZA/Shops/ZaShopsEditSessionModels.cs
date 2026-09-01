@@ -9,3 +9,10 @@ public sealed record ZaShopsEditResult(
     ZaShopsWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record ZaShopInventoryItemUpdate(
+    string ShopId,
+    int Slot,
+    string Field,
+    string Value,
+    string? RowId = null);

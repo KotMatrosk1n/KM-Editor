@@ -187,8 +187,15 @@ internal sealed class ZaItemsEditSessionService
                 continue;
             }
 
-            updatedSession = RemoveSourceEquivalentPendingEdits(loadedWorkflow, updatedSession);
-            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+            var stagedSession = updatedSession;
+            updatedSession = RemoveSourceEquivalentPendingEdits(loadedWorkflow, stagedSession);
+            if (!ReferenceEquals(stagedSession, updatedSession))
+            {
+                // A source-equivalent value removes an earlier pending edit. Rebuild only
+                // for that uncommon undo path; ordinary batches can keep their incremental
+                // projection instead of replaying every pending item edit after every field.
+                effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+            }
         }
 
         ValidateTechnicalMachineMoveAssignments(project, loadedWorkflow, updatedSession, diagnostics);

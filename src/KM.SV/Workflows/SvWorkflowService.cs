@@ -1264,6 +1264,21 @@ public sealed class SvWorkflowService
         return pokemonEditSessionService.UpdateFields(paths, session, updates);
     }
 
+    public SvPokemonEditResult UpdatePokemonComposite(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvPokemonFieldUpdate> fieldUpdates,
+        IReadOnlyList<SvPokemonEvolutionUpdate> evolutionUpdates,
+        IReadOnlyList<SvPokemonLearnsetUpdate> learnsetUpdates)
+    {
+        return pokemonEditSessionService.UpdateComposite(
+            paths,
+            session,
+            fieldUpdates,
+            evolutionUpdates,
+            learnsetUpdates);
+    }
+
     public SvPokemonEditResult UpdatePokemonLearnset(
         ProjectPaths paths,
         EditSession? session,
@@ -1362,9 +1377,24 @@ public sealed class SvWorkflowService
         EditSession? session,
         int encounterIndex,
         string field,
-        string value)
+        string value,
+        string? expectedEncounterId = null)
     {
-        return staticEncountersEditSessionService.UpdateField(paths, session, encounterIndex, field, value);
+        return staticEncountersEditSessionService.UpdateField(
+            paths,
+            session,
+            encounterIndex,
+            field,
+            value,
+            expectedEncounterId);
+    }
+
+    public SvStaticEncountersEditResult UpdateStaticEncounterFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvStaticEncounterFieldUpdate> updates)
+    {
+        return staticEncountersEditSessionService.UpdateFields(paths, session, updates);
     }
 
     public SvGiftPokemonEditResult UpdateGiftPokemonField(
@@ -1413,6 +1443,14 @@ public sealed class SvWorkflowService
         string? rowId = null)
     {
         return shopsEditSessionService.UpdateInventoryItem(paths, session, shopId, slot, field, value, rowId);
+    }
+
+    public SvShopsEditResult UpdateShopInventoryItems(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvShopInventoryItemUpdate?>? updates)
+    {
+        return shopsEditSessionService.UpdateInventoryItems(paths, session, updates);
     }
 
     public SvTmMachineControlsEditResult StageTmRecipeAvailability(
@@ -1511,6 +1549,10 @@ public sealed class SvWorkflowService
 
     public SvEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
+
         var domain = GetDomain(session);
         return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
             ? ValidateNormalDomains(paths, session, domains)
@@ -1523,6 +1565,7 @@ public sealed class SvWorkflowService
         SvOutputMode outputMode = SvOutputMode.Standalone)
     {
         using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         projectWorkspaceService.ClearMemoryCache();
         var domain = GetDomain(session);
         return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
@@ -1539,6 +1582,7 @@ public sealed class SvWorkflowService
         try
         {
             using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+            using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
             projectWorkspaceService.ClearMemoryCache();
             var domain = GetDomain(session);
             return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)

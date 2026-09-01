@@ -92,3 +92,9 @@ public sealed record SvStaticEncountersEditResult(
     SvStaticEncountersWorkflow Workflow,
     KM.Core.Editing.EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SvStaticEncounterFieldUpdate(
+    int EncounterIndex,
+    string Field,
+    string Value,
+    string? ExpectedEncounterId = null);

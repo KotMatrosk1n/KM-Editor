@@ -9,3 +9,20 @@ public sealed record SvPokemonEditResult(
     SvPokemonWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SvPokemonLearnsetUpdate(
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? MoveId,
+    int? Level);
+
+public sealed record SvPokemonEvolutionUpdate(
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? Method,
+    int? Argument,
+    int? Species,
+    int? Form,
+    int? Level);

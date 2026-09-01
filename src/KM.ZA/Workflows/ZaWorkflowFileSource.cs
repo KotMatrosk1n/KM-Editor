@@ -34,7 +34,7 @@ internal sealed class ZaWorkflowFileSource
     [ThreadStatic]
     private static DeferredOutputBatch? activeDeferredOutputBatch;
     [ThreadStatic]
-    private static int freshReadScopeDepth;
+    private static FreshReadContext? activeFreshReadContext;
 
     internal static bool HasActiveDeferredOutputBatch => activeDeferredOutputBatch is not null;
     // All top-level RomFS roots emitted by current Z-A workflows, plus the Trinity descriptor root.
@@ -408,7 +408,7 @@ internal sealed class ZaWorkflowFileSource
 
             try
             {
-                var archiveBytes = bypassReusableBaseCache || freshReadScopeDepth > 0
+                var archiveBytes = bypassReusableBaseCache || activeFreshReadContext is not null
                     ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
                     : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new ZaWorkflowFile(
@@ -541,7 +541,7 @@ internal sealed class ZaWorkflowFileSource
 
             try
             {
-                var archiveBytes = bypassReusableBaseCache || freshReadScopeDepth > 0
+                var archiveBytes = bypassReusableBaseCache || activeFreshReadContext is not null
                     ? ReadBaseBytesFresh(project.Paths, normalizedVirtualPath)
                     : cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new ZaWorkflowFile(
@@ -699,10 +699,10 @@ internal sealed class ZaWorkflowFileSource
 
         try
         {
-            if (freshBaseArchiveSource is not null)
+            if (ResolveFreshBaseArchiveSource(paths) is { } freshArchiveSource)
             {
-                freshBaseArchiveSource.Failure?.Throw();
-                var retainedArchive = freshBaseArchiveSource.Archive
+                freshArchiveSource.Failure?.Throw();
+                var retainedArchive = freshArchiveSource.Archive
                     ?? throw new FileNotFoundException();
                 return maximumReadBytes is { } retainedLimit
                     ? retainedArchive.ReadFile(normalizedVirtualPath, retainedLimit)
@@ -776,7 +776,13 @@ internal sealed class ZaWorkflowFileSource
 
         try
         {
-            if (bypassReusableBaseCache || freshReadScopeDepth > 0)
+            if (ResolveFreshBaseArchiveSource(project.Paths) is { } freshArchiveSource)
+            {
+                freshArchiveSource.Failure?.Throw();
+                return freshArchiveSource.Archive?.ContainsFile(normalizedVirtualPath) == true;
+            }
+
+            if (bypassReusableBaseCache)
             {
                 using var archive = OpenArchive(
                     project.Paths.BaseRomFsPath,
@@ -807,7 +813,18 @@ internal sealed class ZaWorkflowFileSource
 
         try
         {
-            if (bypassReusableBaseCache || freshReadScopeDepth > 0)
+            if (ResolveFreshBaseArchiveSource(project.Paths) is { } freshArchiveSource)
+            {
+                freshArchiveSource.Failure?.Throw();
+                return freshArchiveSource.Index?.Files
+                    .Select(file => file.PackName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+                    ?? [];
+            }
+
+            if (bypassReusableBaseCache)
             {
                 return ZaTrinityArchive.BuildIndex(project.Paths.BaseRomFsPath!)
                     .Files
@@ -917,13 +934,38 @@ internal sealed class ZaWorkflowFileSource
         return targetPath;
     }
 
-    internal static IDisposable BeginFreshReadScope()
+    internal static IDisposable BeginFreshReadScope(ProjectPaths paths)
     {
-        // Safety-critical plan/apply paths must consume the same current archive
-        // bytes that their source-binding guard records, even when cache stamps
-        // (length and last-write time) are unchanged.
-        freshReadScopeDepth = checked(freshReadScopeDepth + 1);
-        return new FreshReadScope();
+        return BeginFreshReadScope(paths, requireIndependentSnapshot: false);
+    }
+
+    internal static IDisposable BeginIndependentFreshReadScope(ProjectPaths paths)
+    {
+        return BeginFreshReadScope(paths, requireIndependentSnapshot: true);
+    }
+
+    private static IDisposable BeginFreshReadScope(
+        ProjectPaths paths,
+        bool requireIndependentSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        // Safety-critical plan/apply phases must bypass reusable caches even when
+        // source stamps (length and last-write time) are unchanged. Compatible
+        // nested operations are one logical phase and retain the same lazy
+        // archive/index snapshot. Final source revalidation explicitly requests
+        // an independent snapshot so it cannot replay bytes retained by plan
+        // capture.
+        if (!requireIndependentSnapshot
+            && activeFreshReadContext?.Matches(paths) == true)
+        {
+            activeFreshReadContext.Retain();
+            return new FreshReadScope(activeFreshReadContext);
+        }
+
+        var context = FreshReadContext.Create(paths, activeFreshReadContext);
+        activeFreshReadContext = context;
+        return new FreshReadScope(context);
     }
 
     internal static string ResolveReviewedOutputPath(
@@ -1033,6 +1075,17 @@ internal sealed class ZaWorkflowFileSource
                     .SequenceEqual(vanillaBytes))
             {
                 return false;
+            }
+
+            if (activeFreshReadContext?.Matches(paths) == true)
+            {
+                var outputSource = activeFreshReadContext.GetOutputSource(paths);
+                outputSource.Failure?.Throw();
+                return outputSource.Archive is null
+                    || !outputSource.Archive.TryReadFile(
+                        effectiveFile.VirtualPath,
+                        out var scopedArchiveBytes)
+                    || scopedArchiveBytes.AsSpan().SequenceEqual(vanillaBytes);
             }
 
             if (!HasTrinityArchive(paths.OutputRootPath))
@@ -1829,22 +1882,17 @@ internal sealed class ZaWorkflowFileSource
             throw new InvalidOperationException("Pokemon Legends Z-A descriptor patching requires an output root.");
         }
 
-        var descriptorBytes = layeredVirtualPaths is null
-            ? ZaTrinityDescriptorPatcher.CreateLayeredDescriptor(
+        return layeredVirtualPaths is null
+            ? ZaTrinityDescriptorPatcher.CreateLayeredDescriptorIncludingVirtualPaths(
                 paths.BaseRomFsPath,
                 paths.OutputRootPath,
+                plannedWriteVirtualPaths,
                 plannedDeleteVirtualPaths)
             : ZaTrinityDescriptorPatcher.CreateLayeredDescriptorFromVirtualPaths(
                 paths.BaseRomFsPath,
                 layeredVirtualPaths,
+                plannedWriteVirtualPaths,
                 plannedDeleteVirtualPaths);
-        var plannedHashes = plannedWriteVirtualPaths
-            .Select(NormalizeVirtualPath)
-            .Select(ZaTrinityPathHasher.HashPath)
-            .ToHashSet();
-        return plannedHashes.Count == 0
-            ? descriptorBytes
-            : ZaTrinityDescriptorPatcher.RemoveFileHashes(descriptorBytes, plannedHashes);
     }
 
     private static OutputApplyResult? PromotePreparedMutations(
@@ -1899,6 +1947,7 @@ internal sealed class ZaWorkflowFileSource
         {
             try
             {
+                using var freshReads = BeginIndependentFreshReadScope(paths);
                 reviewStateIsCurrent = revalidateReviewedState();
             }
             catch (OutputCoordinatorException)
@@ -2603,10 +2652,10 @@ internal sealed class ZaWorkflowFileSource
                 return false;
             }
 
-            if (freshOutputArchiveSource is not null)
+            if (ResolveFreshOutputArchiveSource(paths) is { } freshArchiveSource)
             {
-                freshOutputArchiveSource.Failure?.Throw();
-                if (freshOutputArchiveSource.Archive is not { } retainedArchive)
+                freshArchiveSource.Failure?.Throw();
+                if (freshArchiveSource.Archive is not { } retainedArchive)
                 {
                     return false;
                 }
@@ -2650,7 +2699,18 @@ internal sealed class ZaWorkflowFileSource
         try
         {
             var outputRootPath = paths.OutputRootPath;
-            if (string.IsNullOrWhiteSpace(outputRootPath) || !HasTrinityArchive(outputRootPath))
+            if (string.IsNullOrWhiteSpace(outputRootPath))
+            {
+                return false;
+            }
+
+            if (ResolveFreshOutputArchiveSource(paths) is { } freshArchiveSource)
+            {
+                freshArchiveSource.Failure?.Throw();
+                return freshArchiveSource.Archive?.ContainsFile(virtualPath) == true;
+            }
+
+            if (!HasTrinityArchive(outputRootPath))
             {
                 return false;
             }
@@ -2723,9 +2783,22 @@ internal sealed class ZaWorkflowFileSource
                 maximumPackBytes: MaximumBoundedArchivePackBytes);
     }
 
+    private FreshArchiveSource? ResolveFreshBaseArchiveSource(ProjectPaths paths)
+    {
+        return freshBaseArchiveSource
+            ?? activeFreshReadContext?.GetBaseSource(paths);
+    }
+
+    private FreshArchiveSource? ResolveFreshOutputArchiveSource(ProjectPaths paths)
+    {
+        return freshOutputArchiveSource
+            ?? activeFreshReadContext?.GetOutputSource(paths);
+    }
+
     private static FreshArchiveSnapshot CaptureFreshArchiveSnapshot(
         string? rootPath,
-        IDictionary<string, FreshArchiveSnapshot> archiveSnapshots)
+        IDictionary<string, FreshArchiveSnapshot> archiveSnapshots,
+        int? maximumIndexBytes = MaximumBoundedArchiveIndexBytes)
     {
         if (string.IsNullOrWhiteSpace(rootPath))
         {
@@ -2750,7 +2823,9 @@ internal sealed class ZaWorkflowFileSource
             indexBuildAttempted = true;
             var snapshot = new FreshArchiveSnapshot(
                 archiveRootPath,
-                ZaTrinityArchive.BuildIndex(archiveRootPath, MaximumBoundedArchiveIndexBytes),
+                maximumIndexBytes is { } indexLimit
+                    ? ZaTrinityArchive.BuildIndex(archiveRootPath, indexLimit)
+                    : ZaTrinityArchive.BuildIndex(archiveRootPath),
                 Failure: null,
                 IndexBuildCount: 1);
             archiveSnapshots.Add(archiveRootPath, snapshot);
@@ -2789,12 +2864,14 @@ internal sealed class ZaWorkflowFileSource
     private static FreshArchiveSource[] OpenFreshArchiveSources(
         FreshArchiveSnapshot snapshot,
         string? supportFolderPath,
-        int readerCount)
+        int readerCount,
+        int? maximumIndexBytes = MaximumBoundedArchiveIndexBytes,
+        long? maximumPackBytes = MaximumBoundedArchivePackBytes)
     {
         if (snapshot.Failure is not null)
         {
             return Enumerable.Repeat(
-                    new FreshArchiveSource(Archive: null, snapshot.Failure),
+                    new FreshArchiveSource(Archive: null, Index: null, Failure: snapshot.Failure),
                     readerCount)
                 .ToArray();
         }
@@ -2813,13 +2890,14 @@ internal sealed class ZaWorkflowFileSource
                     snapshot.RootPath,
                     supportFolderPath,
                     index: snapshot.Index,
-                    maximumIndexBytes: MaximumBoundedArchiveIndexBytes,
-                    maximumPackBytes: MaximumBoundedArchivePackBytes);
+                    maximumIndexBytes: maximumIndexBytes,
+                    maximumPackBytes: maximumPackBytes);
             }
 
             return archives
-                .Select(static archive => new FreshArchiveSource(
+                .Select(archive => new FreshArchiveSource(
                     archive ?? throw new InvalidOperationException("A retained Trinity reader was not opened."),
+                    snapshot.Index,
                     Failure: null))
                 .ToArray();
         }
@@ -2832,7 +2910,7 @@ internal sealed class ZaWorkflowFileSource
 
             var failure = ExceptionDispatchInfo.Capture(exception);
             return Enumerable.Repeat(
-                    new FreshArchiveSource(Archive: null, failure),
+                    new FreshArchiveSource(Archive: null, Index: null, Failure: failure),
                     readerCount)
                 .ToArray();
         }
@@ -2925,10 +3003,12 @@ internal sealed class ZaWorkflowFileSource
 
     internal sealed record FreshArchiveSource(
         ZaTrinityArchive? Archive,
+        ZaTrinityArchiveIndex? Index,
         ExceptionDispatchInfo? Failure)
     {
         public static FreshArchiveSource Missing { get; } = new(
             Archive: null,
+            Index: null,
             Failure: null);
     }
 
@@ -3268,9 +3348,163 @@ internal sealed class ZaWorkflowFileSource
             ZaOutputApplyContext? ApplyContext);
     }
 
+    private sealed class FreshReadContext : IDisposable
+    {
+        private readonly ProjectPaths paths;
+        private FreshArchiveSource? baseSource;
+        private FreshArchiveSource? outputSource;
+        private int leaseCount = 1;
+        private bool disposed;
+
+        private FreshReadContext(ProjectPaths paths, FreshReadContext? parent)
+        {
+            this.paths = paths;
+            Parent = parent;
+        }
+
+        internal FreshReadContext? Parent { get; }
+
+        internal static FreshReadContext Create(ProjectPaths paths, FreshReadContext? parent)
+        {
+            return new FreshReadContext(paths, parent);
+        }
+
+        internal FreshArchiveSource GetBaseSource(ProjectPaths candidatePaths)
+        {
+            ThrowIfUnavailable(candidatePaths);
+            EnsureInitialized();
+            return baseSource!;
+        }
+
+        internal FreshArchiveSource GetOutputSource(ProjectPaths candidatePaths)
+        {
+            ThrowIfUnavailable(candidatePaths);
+            EnsureInitialized();
+            return outputSource!;
+        }
+
+        internal bool Matches(ProjectPaths candidatePaths)
+        {
+            return !disposed && Equals(paths, candidatePaths);
+        }
+
+        internal void Retain()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            leaseCount = checked(leaseCount + 1);
+        }
+
+        internal bool Release()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (leaseCount <= 0)
+            {
+                throw new InvalidOperationException("The Z-A fresh-read scope lease is unbalanced.");
+            }
+
+            leaseCount--;
+            return leaseCount == 0;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            ExceptionDispatchInfo? firstFailure = null;
+            try
+            {
+                baseSource?.Archive?.Dispose();
+            }
+            catch (Exception exception)
+            {
+                firstFailure = ExceptionDispatchInfo.Capture(exception);
+            }
+
+            if (!ReferenceEquals(outputSource?.Archive, baseSource?.Archive))
+            {
+                try
+                {
+                    outputSource?.Archive?.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    firstFailure ??= ExceptionDispatchInfo.Capture(exception);
+                }
+            }
+
+            disposed = true;
+            leaseCount = 0;
+            firstFailure?.Throw();
+        }
+
+        private void EnsureInitialized()
+        {
+            if (baseSource is not null && outputSource is not null)
+            {
+                return;
+            }
+
+            var archiveSnapshots = new Dictionary<string, FreshArchiveSnapshot>(
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal);
+            var capturedBaseSnapshot = CaptureFreshArchiveSnapshot(
+                paths.BaseRomFsPath,
+                archiveSnapshots,
+                maximumIndexBytes: null);
+            var capturedOutputSnapshot = CaptureFreshArchiveSnapshot(
+                paths.OutputRootPath,
+                archiveSnapshots,
+                maximumIndexBytes: null);
+            var openedBaseSource = OpenFreshArchiveSources(
+                capturedBaseSnapshot,
+                paths.PokemonLegendsZASupportFolderPath,
+                readerCount: 1,
+                maximumIndexBytes: null,
+                maximumPackBytes: null)[0];
+            FreshArchiveSource? openedOutputSource = null;
+            try
+            {
+                openedOutputSource = OpenFreshArchiveSources(
+                    capturedOutputSnapshot,
+                    paths.PokemonLegendsZASupportFolderPath,
+                    readerCount: 1,
+                    maximumIndexBytes: null,
+                    maximumPackBytes: null)[0];
+                baseSource = openedBaseSource;
+                outputSource = openedOutputSource;
+            }
+            catch
+            {
+                openedBaseSource.Archive?.Dispose();
+                openedOutputSource?.Archive?.Dispose();
+                throw;
+            }
+        }
+
+        private void ThrowIfUnavailable(ProjectPaths candidatePaths)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (!Equals(paths, candidatePaths))
+            {
+                throw new InvalidOperationException(
+                    "A Z-A fresh-read scope cannot cross project source roots.");
+            }
+        }
+    }
+
     private sealed class FreshReadScope : IDisposable
     {
+        private readonly FreshReadContext context;
         private bool disposed;
+
+        internal FreshReadScope(FreshReadContext context)
+        {
+            this.context = context;
+        }
 
         public void Dispose()
         {
@@ -3280,12 +3514,16 @@ internal sealed class ZaWorkflowFileSource
             }
 
             disposed = true;
-            if (freshReadScopeDepth <= 0)
+            if (!ReferenceEquals(activeFreshReadContext, context))
             {
                 throw new InvalidOperationException("The Z-A fresh-read scope is unbalanced.");
             }
 
-            freshReadScopeDepth--;
+            if (context.Release())
+            {
+                activeFreshReadContext = context.Parent;
+                context.Dispose();
+            }
         }
     }
 
