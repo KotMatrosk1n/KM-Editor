@@ -21,6 +21,7 @@ import type {
   QueryGameModuleResponse
 } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
   humanizeIdentifier,
@@ -73,7 +74,7 @@ export function GameModuleComparison({
   const { formatLocale, t, translateLiteral } = useLocalization();
   const [fieldIdentities, setFieldIdentities] = useState<string[]>([]);
   const [measureIdentity, setMeasureIdentity] = useState<string>('');
-  const [recordSearch, setRecordSearch] = useState('');
+  const [recordSearch, setRecordSearch] = useCoalescedTextInputState();
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const initializedFieldsForQuery = useRef<string | null>(null);
   const recordSearchInputRef = useRef<HTMLInputElement | null>(null);

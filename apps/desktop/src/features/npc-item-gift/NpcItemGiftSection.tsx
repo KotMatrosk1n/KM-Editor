@@ -11,6 +11,7 @@ import {
   type NpcItemGiftWorkflow
 } from '../../bridge/npcItemGiftContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -773,7 +774,7 @@ function NpcItemGiftItemPicker({
     () => translateLiteral(formatItemPickerValue(value, options)),
     [options, translateLiteral, value]
   );
-  const [query, setQuery] = useState(formattedValue);
+  const [query, setQuery] = useCoalescedTextInputState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
   const filteredOptions = useMemo(
     () => getSmartItemMatches(hasUserQuery ? query : '', options),

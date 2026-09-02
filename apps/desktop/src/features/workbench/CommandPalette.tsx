@@ -11,6 +11,7 @@ import {
   useState
 } from 'react';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 import {
@@ -58,7 +59,7 @@ function OpenCommandPalette({
   onExecute
 }: Omit<CommandPaletteProps, 'isOpen'>) {
   const { t } = useLocalization();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useCoalescedTextInputState();
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [entityCommands, setEntityCommands] = useState<readonly WorkspaceCommand[]>([]);
   const [entitySearchState, setEntitySearchState] = useState<'idle' | 'loading' | 'error'>('idle');

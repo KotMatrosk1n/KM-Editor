@@ -44,6 +44,7 @@ import {
   type GuidedDesignTargetOption,
   type GuidedDesignTrainerArchetype
 } from '../../bridge/guidedDesignContracts';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import type { ApiDiagnostic } from '../../bridge/contracts';
 import type {
   SemanticExploreRecordRef,
@@ -132,7 +133,7 @@ export function GuidedDesignSection({
   const [rounding, setRounding] = useState<GuidedDesignRounding>('nearest');
   const [archetype, setArchetype] = useState<GuidedDesignTrainerArchetype>('balanced');
   const [seed, setSeed] = useState('');
-  const [targetSearchText, setTargetSearchText] = useState('');
+  const [targetSearchText, setTargetSearchText] = useCoalescedTextInputState();
   const [targetSelection, setTargetSelection] = useState<{
     inputIdentity: string | null;
     targets: Map<string, GuidedDesignTargetOption>;

@@ -29,6 +29,7 @@ import {
   usePublishCommonEditorError
 } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey } from '../../workbench/semanticContracts';
 import { TechnicalDetails } from '../workbench/AnalysisPresentation';
@@ -217,7 +218,7 @@ function ExploreModulePanel({
   onNavigateEntity
 }: Pick<SemanticExploreSectionProps, 'controller' | 'onNavigateEntity'>) {
   const { t } = useLocalization();
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useCoalescedTextInputState();
   const [layer, setLayer] = useState<QueryableLayer>(() => preferredLayer(controller));
   const layers = availableQueryableLayers(controller);
   const initializedRevisionRef = useRef<string | null>(null);
@@ -627,7 +628,7 @@ function RecordSearchPicker({
   }[];
 }) {
   const { t, translateLiteral } = useLocalization();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useCoalescedTextInputState();
   const [submittedQuery, setSubmittedQuery] = useState('');
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const selected = recordOptions.find((option) => option.key === recordKey) ?? null;
@@ -750,7 +751,7 @@ function DifferenceList({
   onNavigateEntity: (record: SemanticExploreRecordRef) => void;
 }) {
   const { t } = useLocalization();
-  const [resultFilter, setResultFilter] = useState('');
+  const [resultFilter, setResultFilter] = useCoalescedTextInputState();
   const [fieldFilter, setFieldFilter] = useState('all');
   const [recordFilter, setRecordFilter] = useState('all');
   const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'kind'>('record');
@@ -1042,7 +1043,7 @@ function ChangesModulePanel({
   const [from, setFrom] = useState<'base' | 'layered'>('base');
   const [to, setTo] = useState<'layered' | 'pending'>('pending');
   const [format, setFormat] = useState<'structured' | 'canonicalText'>('structured');
-  const [resultFilter, setResultFilter] = useState('');
+  const [resultFilter, setResultFilter] = useCoalescedTextInputState();
   const [fieldFilter, setFieldFilter] = useState('all');
   const [resultOrder, setResultOrder] = useState<'path' | 'field' | 'kind'>('path');
   const layers = availableQueryableLayers(controller);

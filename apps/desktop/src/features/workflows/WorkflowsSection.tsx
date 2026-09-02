@@ -4,6 +4,7 @@ import { ClipboardCheck, ListChecks, ListFilter, Search, X } from 'lucide-react'
 import { useState } from 'react';
 import { type ProjectHealth, type WorkflowSummary } from '../../bridge/contracts';
 import { ContextHelp } from '../../components/ContextHelp';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import { readOnlyViewerSectionIds } from '../../workflowGameSupport';
 import { workflowDefinitions } from './workflowDefinitions';
@@ -199,7 +200,7 @@ export function WorkflowsSection({
   workflows: WorkflowSummary[];
 }) {
   const { t, translateLiteral } = useLocalization();
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useCoalescedTextInputState();
   const [availabilityFilter, setAvailabilityFilter] =
     useState<WorkflowAvailabilityFilter>('all');
   const [loadedOnly, setLoadedOnly] = useState(false);

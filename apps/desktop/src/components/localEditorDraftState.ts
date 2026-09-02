@@ -5,6 +5,36 @@ export type DraftEquality<T> = (left: T, right: T) => boolean;
 export type KeyedEditorDrafts<T> = Record<string, T>;
 
 /**
+ * Select another outstanding draft without changing or clearing any draft state.
+ * Object-key insertion order is deliberate: it follows the order in which the
+ * user created drafts instead of re-sorting record identities into an arbitrary
+ * lexical order.
+ */
+export function getNextOutstandingEditorDraftKey(
+  draftKeys: Iterable<string>,
+  currentKey: string | null | undefined
+) {
+  const keys = [...new Set(draftKeys)];
+  if (keys.length === 0) {
+    return null;
+  }
+
+  const currentIndex = currentKey ? keys.indexOf(currentKey) : -1;
+  if (currentIndex < 0) {
+    return keys[0] ?? null;
+  }
+
+  for (let offset = 1; offset < keys.length; offset += 1) {
+    const nextKey = keys[(currentIndex + offset) % keys.length];
+    if (nextKey !== undefined && nextKey !== currentKey) {
+      return nextKey;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Accept a refreshed source value only when the user is still displaying the
  * source value that preceded it. A locally edited value always wins until the
  * user explicitly stages, discards, or changes editor scope.

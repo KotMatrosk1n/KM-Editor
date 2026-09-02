@@ -27,6 +27,7 @@ import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FieldLabel } from '../../components/FieldLabel';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useModalDialog } from '../../components/useModalDialog';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -115,7 +116,7 @@ export function ZaDexLayoutSection({
     0,
     (dexEditor?.regularCount ?? 0) - excludedRegularPlacements.length
   );
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useCoalescedTextInputState();
   const [isMegaSyncConfirmationOpen, setIsMegaSyncConfirmationOpen] = useState(false);
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<number | null>(null);
   const [destinationDexKind, setDestinationDexKind] = useState<DexKind>('regular');

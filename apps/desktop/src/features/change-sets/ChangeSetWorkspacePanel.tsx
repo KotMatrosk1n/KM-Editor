@@ -36,6 +36,7 @@ import {
 } from '../../bridge/changeSetContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   areStringSetsEqual,
   reconcileEligibleDraftSelection,
@@ -1269,7 +1270,7 @@ function ChangeSetComparison({
   onLoad: () => void;
 }) {
   const { t } = useLocalization();
-  const [resultFilter, setResultFilter] = useState('');
+  const [resultFilter, setResultFilter] = useCoalescedTextInputState();
   const [kindFilter, setKindFilter] = useState('all');
   const [resultOrder, setResultOrder] = useState<'target' | 'kind' | 'owner'>('target');
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);

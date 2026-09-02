@@ -17,6 +17,7 @@ import { type ProjectBridge } from '../../bridge/projectBridge';
 import type { DesktopServices } from '../../desktopServices';
 import { FieldLabel } from '../../components/FieldLabel';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
@@ -101,7 +102,7 @@ export function GameDumpSection({
     useState<ApiDiagnostic[]>([]);
   const [progress, setProgress] = useState<GameDumpProgress | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<GameDumpCategoryFilter>('all');
-  const [categorySearch, setCategorySearch] = useState('');
+  const [categorySearch, setCategorySearch] = useCoalescedTextInputState();
   const loadWorkflowRunRef = useRef(0);
   const loadWorkflowOperationRef = useRef<object | null>(null);
   const generationRunRef = useRef(0);

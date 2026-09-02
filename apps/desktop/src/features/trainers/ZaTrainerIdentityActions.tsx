@@ -40,7 +40,7 @@ export function ZaTrainerIdentityActions({
   classPairOptions,
   discardEpoch,
   isUpdating,
-  onDirtyStateChange,
+  onDraftKeysChange,
   onNavigateTextTarget,
   onStageClassPair,
   trainer
@@ -50,7 +50,7 @@ export function ZaTrainerIdentityActions({
   classPairOptions: readonly ZaTrainerClassPairOptionViewModel[];
   discardEpoch: number;
   isUpdating: boolean;
-  onDirtyStateChange?: (isDirty: boolean) => void;
+  onDraftKeysChange?: (draftKeys: string[]) => void;
   onNavigateTextTarget: (target: ZaTrainerTextTargetViewModel) => Promise<boolean>;
   onStageClassPair: (pairId: string) => Promise<boolean>;
   trainer: ZaTrainerIdentityViewModel;
@@ -105,10 +105,10 @@ export function ZaTrainerIdentityActions({
   }, [effectiveDraftIdentityKey, sourcePairId]);
 
   useEffect(() => {
-    onDirtyStateChange?.(Object.keys(selectedPairIds).length > 0);
-  }, [onDirtyStateChange, selectedPairIds]);
+    onDraftKeysChange?.(Object.keys(selectedPairIds));
+  }, [onDraftKeysChange, selectedPairIds]);
 
-  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
+  useEffect(() => () => onDraftKeysChange?.([]), [onDraftKeysChange]);
 
   const selectedOption = classPairOptions.find((option) => option.pairId === selectedPairId);
   const canStage =

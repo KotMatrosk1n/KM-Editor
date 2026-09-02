@@ -100,11 +100,12 @@ export function evaluateWorkbenchNavigation(
     return { clearPendingState: true, kind: 'commit', location: destination };
   }
 
-  const isMovingStagedDexLayoutToChanges =
-    activeSection === 'dexLayout' &&
+  const isMovingCleanStagedSessionToChanges =
     destinationSection === 'changes' &&
     state.pendingEditCount > 0 &&
     !state.activeEditorHasLocalDrafts;
+  const isMovingStagedDexLayoutToChanges =
+    activeSection === 'dexLayout' && isMovingCleanStagedSessionToChanges;
   const hasDexLayoutBoundaryEdits =
     state.pendingEditCount > 0 ||
     (activeSection === 'dexLayout' && state.activeEditorHasLocalDrafts);
@@ -144,7 +145,7 @@ export function evaluateWorkbenchNavigation(
   const isLeavingAdvancedEditorForChanges =
     destinationSection === 'changes' &&
     state.activeSectionOwnsAdvancedEditSession &&
-    !isMovingStagedDexLayoutToChanges;
+    !isMovingCleanStagedSessionToChanges;
 
   if (isLeavingActiveEditSession || isLeavingAdvancedEditorForChanges) {
     return {

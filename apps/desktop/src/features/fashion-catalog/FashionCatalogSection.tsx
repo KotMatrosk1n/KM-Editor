@@ -12,6 +12,8 @@ import type {
   HairAndMakeupRecord
 } from '../../bridge/fashionCatalogContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { getNextOutstandingEditorDraftKey } from '../../components/localEditorDraftState';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -134,12 +136,12 @@ export function FashionCatalogSection({
 }: FashionCatalogSectionProps) {
   const { t, translateLiteral } = useLocalization();
   const [catalogFile, setCatalogFile] = useState<FashionCatalogFile>('dressUpItems');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useCoalescedTextInputState();
   const [page, setPage] = useState(0);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState('itemId');
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
-  const [optionSearch, setOptionSearch] = useState('');
+  const [optionSearch, setOptionSearch] = useCoalescedTextInputState();
   const [feedback, setFeedback] = useState<
     { kind: 'error' | 'success'; message: string } | null
   >(null);
@@ -149,6 +151,7 @@ export function FashionCatalogSection({
     message: feedback?.kind === 'error' ? feedback.message : null
   });
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const reviewFocusPendingRef = useRef(false);
 
   const presentation = useMemo(
     () => createFashionCatalogPresentation(workflow, t),
@@ -224,13 +227,57 @@ export function FashionCatalogSection({
     };
   }, [catalogFile, draftValue, field?.field, optionSearch, options, presentation]);
   const filteredOptions = optionWindow.options;
+  const outstandingDraftKeys = Object.keys(draftValues);
+  const outstandingDraftCount = outstandingDraftKeys.length;
+  const draftTargetsByKey = useMemo(() => {
+    const targets = new Map<
+      string,
+      {
+        catalogFile: FashionCatalogFile;
+        field: FieldDefinition;
+        row: CatalogRecord;
+      }
+    >();
+    for (const key of Object.keys(draftValues)) {
+      const parsed = parseFashionCatalogDraftKey(key);
+      if (!parsed) {
+        continue;
+      }
+      const targetRow = getRows(workflow, parsed.catalogFile).find(
+        (row) => row.physicalRowId === parsed.physicalRowId
+      );
+      const targetField = targetRow
+        ? getFieldDefinitions(parsed.catalogFile, t, targetRow).find(
+            (candidate) => candidate.field === parsed.field
+          )
+        : undefined;
+      if (targetRow && targetField) {
+        targets.set(key, {
+          catalogFile: parsed.catalogFile,
+          field: targetField,
+          row: targetRow
+        });
+      }
+    }
+    return targets;
+  }, [draftValues, t, workflow]);
+  const reviewableDraftKeys = outstandingDraftKeys.filter((key) =>
+    draftTargetsByKey.has(key)
+  );
+  const unavailableDraftKeys = outstandingDraftKeys.filter(
+    (key) => !draftTargetsByKey.has(key)
+  );
+  const nextDraftKey = getNextOutstandingEditorDraftKey(
+    reviewableDraftKeys,
+    draftKey
+  );
   const pendingCount = editSession?.pendingEdits.filter(
     (edit) => edit.domain === 'workflow.fashionCatalog'
   ).length ?? 0;
 
   useEffect(() => {
     setPage(0);
-  }, [catalogFile, search]);
+  }, [search]);
 
   useEffect(() => {
     if (page >= pageCount) {
@@ -253,8 +300,20 @@ export function FashionCatalogSection({
   }, [fields, selectedField]);
 
   useEffect(() => {
-    setOptionSearch('');
+    const isReviewNavigation = reviewFocusPendingRef.current;
+    if (!isReviewNavigation) {
+      setOptionSearch('');
+    }
     setFeedback(null);
+    if (!isReviewNavigation) {
+      return;
+    }
+
+    reviewFocusPendingRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById('fashion-catalog-value')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [draftKey]);
 
   useEffect(() => {
@@ -297,6 +356,7 @@ export function FashionCatalogSection({
       : isValidNumericDraft(field.field, draftValue));
 
   const selectCatalogFile = (file: FashionCatalogFile) => {
+    setPage(0);
     setCatalogFile(file);
     setFeedback(null);
   };
@@ -379,6 +439,59 @@ export function FashionCatalogSection({
     setFeedback(null);
     setDraftValues((currentDrafts) =>
       setFashionCatalogDraftValue(currentDrafts, draftKey, value, sourceValue)
+    );
+  };
+
+  const reviewNextDraft = () => {
+    if (!nextDraftKey) {
+      return;
+    }
+
+    const target = draftTargetsByKey.get(nextDraftKey);
+    if (!target) {
+      return;
+    }
+
+    const targetRows = getRows(workflow, target.catalogFile);
+    const normalizedSearch = search.trim().toLocaleLowerCase();
+    const targetFilteredRows = normalizedSearch.length === 0
+      ? targetRows
+      : targetRows.filter((row) =>
+          getSearchText(row, presentation, target.catalogFile)
+            .toLocaleLowerCase()
+            .includes(normalizedSearch)
+        );
+    const targetVisibleIndex = targetFilteredRows.findIndex(
+      (row) => row.physicalRowId === target.row.physicalRowId
+    );
+
+    reviewFocusPendingRef.current = true;
+    setCatalogFile(target.catalogFile);
+    if (targetVisibleIndex >= 0) {
+      setPage(Math.floor(targetVisibleIndex / pageSize));
+    }
+    setSelectedRowId(target.row.physicalRowId);
+    setSelectedField(target.field.field);
+    setFeedback(null);
+  };
+
+  const discardUnavailableDrafts = () => {
+    if (
+      unavailableDraftKeys.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.fashionCatalog', {
+          count: unavailableDraftKeys.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const unavailableKeys = new Set(unavailableDraftKeys);
+    setDraftValues((currentDrafts) =>
+      Object.fromEntries(
+        Object.entries(currentDrafts).filter(([key]) => !unavailableKeys.has(key))
+      )
     );
   };
 
@@ -613,6 +726,14 @@ export function FashionCatalogSection({
                   </>
                 )}
 
+                <p aria-live="polite" className="field-hint">
+                  {t('fashionCatalog.editor.draftSummary', {
+                    count: outstandingDraftCount
+                  })}{'; '}
+                  {t('editorDrafts.summary.unavailable', {
+                    count: unavailableDraftKeys.length
+                  })}
+                </p>
                 <div className="button-row fashion-catalog-actions">
                   <button
                     className="primary-button"
@@ -641,6 +762,26 @@ export function FashionCatalogSection({
                       {t('fashionCatalog.editor.clear')}
                     </button>
                   ) : null}
+                  {nextDraftKey ? (
+                    <button
+                      className="secondary-button"
+                      disabled={isStaging}
+                      onClick={reviewNextDraft}
+                      type="button"
+                    >
+                      {t('fashionCatalog.editor.reviewNextDraft')}
+                    </button>
+                  ) : null}
+                  {unavailableDraftKeys.length > 0 ? (
+                    <button
+                      className="danger-button"
+                      disabled={isStaging}
+                      onClick={discardUnavailableDrafts}
+                      type="button"
+                    >
+                      {t('editorDrafts.discardUnavailable')}
+                    </button>
+                  ) : null}
                   {pendingCount > 0 ? (
                     <button onClick={onOpenChanges} type="button">
                       {t('fashionCatalog.editor.review', { count: pendingCount })}
@@ -649,7 +790,41 @@ export function FashionCatalogSection({
                 </div>
               </>
             ) : (
-              <p className="empty-copy">{t('fashionCatalog.editor.noSelection')}</p>
+              <>
+                <p className="empty-copy">{t('fashionCatalog.editor.noSelection')}</p>
+                <p aria-live="polite" className="field-hint">
+                  {t('fashionCatalog.editor.draftSummary', {
+                    count: outstandingDraftCount
+                  })}{'; '}
+                  {t('editorDrafts.summary.unavailable', {
+                    count: unavailableDraftKeys.length
+                  })}
+                </p>
+                {nextDraftKey || unavailableDraftKeys.length > 0 ? (
+                  <div className="button-row fashion-catalog-actions">
+                    {nextDraftKey ? (
+                      <button
+                        className="secondary-button"
+                        disabled={isStaging}
+                        onClick={reviewNextDraft}
+                        type="button"
+                      >
+                        {t('fashionCatalog.editor.reviewNextDraft')}
+                      </button>
+                    ) : null}
+                    {unavailableDraftKeys.length > 0 ? (
+                      <button
+                        className="danger-button"
+                        disabled={isStaging}
+                        onClick={discardUnavailableDrafts}
+                        type="button"
+                      >
+                        {t('editorDrafts.discardUnavailable')}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         </div>
@@ -672,6 +847,34 @@ export function FashionCatalogSection({
       />
     </FocusedEditorWorkspace>
   );
+}
+
+function parseFashionCatalogDraftKey(key: string): {
+  catalogFile: FashionCatalogFile;
+  field: string;
+  physicalRowId: string;
+} | null {
+  try {
+    const parsed: unknown = JSON.parse(key);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== 3 ||
+      typeof parsed[0] !== 'string' ||
+      !catalogFiles.some((file) => file === parsed[0]) ||
+      typeof parsed[1] !== 'string' ||
+      typeof parsed[2] !== 'string'
+    ) {
+      return null;
+    }
+
+    return {
+      catalogFile: parsed[0] as FashionCatalogFile,
+      field: parsed[2],
+      physicalRowId: parsed[1]
+    };
+  } catch {
+    return null;
+  }
 }
 
 function getRows(

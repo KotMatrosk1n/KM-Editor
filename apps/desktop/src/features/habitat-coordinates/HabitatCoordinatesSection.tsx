@@ -24,7 +24,11 @@ import type {
   HabitatRowBinding
 } from '../../bridge/habitatCoordinatesContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
-import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
+import {
+  getNextOutstandingEditorDraftKey,
+  reconcileSourceBackedDraft
+} from '../../components/localEditorDraftState';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -34,6 +38,7 @@ import { useLocalization } from '../../localization';
 import {
   clearStagedHabitatCoordinateDraftValue,
   createHabitatCoordinateDraftKey,
+  createHabitatCoordinatesQueryKey,
   reconcileHabitatSearchDraftAfterAcceptedQuery,
   setHabitatCoordinateDraftValue
 } from './habitatCoordinateDraftState';
@@ -64,6 +69,12 @@ type HabitatCoordinatesSectionProps = {
   workflow: HabitatCoordinatesWorkflow | null;
 };
 
+type HabitatCoordinateDraftReviewTarget = {
+  query: HabitatCoordinatesQuery;
+  rowKey: string;
+  value: string;
+};
+
 export function HabitatCoordinatesSection({
   editSession,
   isLoading,
@@ -78,14 +89,35 @@ export function HabitatCoordinatesSection({
   const { t } = useLocalization();
   const page = workflow?.page ?? null;
   const initialSearchSource = page?.search ?? '';
-  const [searchDraft, setSearchDraft] = useState(initialSearchSource);
+  const [searchDraft, setSearchDraft] = useCoalescedTextInputState(initialSearchSource);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [coordinateDrafts, setCoordinateDrafts] = useState<Record<string, string>>({});
+  const [draftReviewTargets, setDraftReviewTargets] = useState<
+    Record<string, HabitatCoordinateDraftReviewTarget>
+  >({});
+  const [confirmedUnavailableDraftKeys, setConfirmedUnavailableDraftKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [feedback, setFeedback] = useState<'success' | 'error' | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const pendingReviewTargetRef = useRef<{
+    draftKey: string;
+    queryKey: string;
+    rowKey: string;
+  } | null>(null);
+  const preservedReviewSearchRef = useRef<{
+    queryKey: string;
+    value: string;
+  } | null>(null);
+  const reviewLoadPendingRef = useRef(false);
+  const reviewFocusPendingRef = useRef(false);
   const searchDraftRef = useRef(searchDraft);
   const searchSourceRef = useRef(initialSearchSource);
+  const coordinateDraftsRef = useRef(coordinateDrafts);
+  const draftReviewTargetsRef = useRef(draftReviewTargets);
   searchDraftRef.current = searchDraft;
+  coordinateDraftsRef.current = coordinateDrafts;
+  draftReviewTargetsRef.current = draftReviewTargets;
   const regionTabRefs = useRef<Record<HabitatRegion, HTMLButtonElement | null>>({
     blueberry: null,
     kitakami: null,
@@ -111,6 +143,21 @@ export function HabitatCoordinatesSection({
   const coordinateDraft = coordinateDraftKey
     ? coordinateDrafts[coordinateDraftKey] ?? sourceCoordinateValue
     : '';
+  const outstandingDraftKeys = Object.keys(coordinateDrafts);
+  const outstandingDraftCount = outstandingDraftKeys.length;
+  const unavailableDraftKeys = outstandingDraftKeys.filter(
+    (draftKey) =>
+      !draftReviewTargets[draftKey] || confirmedUnavailableDraftKeys.has(draftKey)
+  );
+  const unavailableDraftKeySet = new Set(unavailableDraftKeys);
+  const reviewableDraftKeys = outstandingDraftKeys.filter(
+    (draftKey) => !unavailableDraftKeySet.has(draftKey)
+  );
+  const nextDraftKey = getNextOutstandingEditorDraftKey(
+    reviewableDraftKeys,
+    coordinateDraftKey
+  );
+  const nextDraftTarget = nextDraftKey ? draftReviewTargets[nextDraftKey] ?? null : null;
   const coordinateDraftContextRef = useRef({
     key: coordinateDraftKey,
     value: coordinateDraft
@@ -142,35 +189,112 @@ export function HabitatCoordinatesSection({
 
   useEffect(() => {
     if (page) {
+      const pageQueryKey = createHabitatCoordinatesQueryKey(queryFromPage(page, {}));
+      const preservedReviewSearch = preservedReviewSearchRef.current;
+      if (preservedReviewSearch?.queryKey === pageQueryKey) {
+        preservedReviewSearchRef.current = null;
+        searchSourceRef.current = page.search;
+        searchDraftRef.current = preservedReviewSearch.value;
+        setSearchDraft(preservedReviewSearch.value);
+        return;
+      }
+
       const previousSource = searchSourceRef.current;
       searchSourceRef.current = page.search;
-      setSearchDraft((currentDraft) => {
-        const nextDraft = reconcileSourceBackedDraft(
-          currentDraft,
-          previousSource,
-          page.search,
-          Object.is
-        );
-        searchDraftRef.current = nextDraft;
-        return nextDraft;
-      });
+      const nextDraft = reconcileSourceBackedDraft(
+        searchDraftRef.current,
+        previousSource,
+        page.search,
+        Object.is
+      );
+      searchDraftRef.current = nextDraft;
+      setSearchDraft(nextDraft);
     }
   }, [page?.region, page?.search]);
 
   useEffect(() => {
+    const pendingTarget = pendingReviewTargetRef.current;
+    if (
+      pendingTarget &&
+      page &&
+      createHabitatCoordinatesQueryKey(queryFromPage(page, {})) === pendingTarget.queryKey
+    ) {
+      pendingReviewTargetRef.current = null;
+      const matchingRecordExists = page.records.some(
+        (record) => rowKey(record) === pendingTarget.rowKey
+      );
+      const currentTarget = draftReviewTargetsRef.current[pendingTarget.draftKey];
+      const isPendingDraftCurrent =
+        Object.hasOwn(coordinateDraftsRef.current, pendingTarget.draftKey) &&
+        currentTarget !== undefined &&
+        createHabitatCoordinatesQueryKey(currentTarget.query) === pendingTarget.queryKey &&
+        currentTarget.rowKey === pendingTarget.rowKey;
+      if (matchingRecordExists && isPendingDraftCurrent) {
+        setConfirmedUnavailableDraftKeys((currentKeys) =>
+          removeSetValue(currentKeys, pendingTarget.draftKey)
+        );
+        reviewFocusPendingRef.current = true;
+        setSelectedKey(pendingTarget.rowKey);
+        return;
+      }
+      if (isPendingDraftCurrent) {
+        setConfirmedUnavailableDraftKeys((currentKeys) =>
+          addSetValue(currentKeys, pendingTarget.draftKey)
+        );
+      }
+    }
+
     if (selectedKey && page?.records.some((record) => rowKey(record) === selectedKey)) {
       return;
     }
     setSelectedKey(page?.records[0] ? rowKey(page.records[0]) : null);
-  }, [page?.records, selectedKey]);
+  }, [page?.limit, page?.offset, page?.records, page?.region, page?.search, selectedKey]);
 
   useEffect(() => {
     setFeedback(null);
+    if (!reviewFocusPendingRef.current) {
+      return;
+    }
+
+    reviewFocusPendingRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById('habitat-coordinate-value')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [coordinateDraftKey]);
 
   useEffect(() => {
     onDirtyStateChange?.(Object.keys(coordinateDrafts).length > 0);
   }, [coordinateDrafts, onDirtyStateChange]);
+
+  useEffect(() => {
+    setConfirmedUnavailableDraftKeys((currentKeys) => {
+      const nextKeys = new Set(
+        [...currentKeys].filter((draftKey) => Object.hasOwn(coordinateDrafts, draftKey))
+      );
+      return setsEqual(currentKeys, nextKeys) ? currentKeys : nextKeys;
+    });
+  }, [coordinateDrafts]);
+
+  useEffect(() => {
+    if (!page) {
+      return;
+    }
+    const visibleRowKeys = new Set(page.records.map(rowKey));
+    setConfirmedUnavailableDraftKeys((currentKeys) => {
+      const nextKeys = new Set(
+        [...currentKeys].filter((draftKey) => {
+          const target = draftReviewTargetsRef.current[draftKey];
+          return !(
+            target &&
+            target.query.region === page.region &&
+            visibleRowKeys.has(target.rowKey)
+          );
+        })
+      );
+      return setsEqual(currentKeys, nextKeys) ? currentKeys : nextKeys;
+    });
+  }, [page?.records, page?.region]);
 
   useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
@@ -180,27 +304,48 @@ export function HabitatCoordinatesSection({
     }
   }, [feedback]);
 
-  const loadQuery = async (query: HabitatCoordinatesQuery) => {
+  const loadQuery = async (
+    query: HabitatCoordinatesQuery,
+    options: { preserveSearchDraft?: boolean } = {}
+  ) => {
     setFeedback(null);
     const submittedSearch = {
       draft: searchDraftRef.current,
       source: searchSourceRef.current
     };
+    const queryKey = createHabitatCoordinatesQueryKey(query);
+    const shouldPreserveSearchAcrossLoad =
+      options.preserveSearchDraft === true &&
+      (
+        !page ||
+        page.region !== query.region ||
+        page.search !== query.search
+      );
+    if (shouldPreserveSearchAcrossLoad) {
+      preservedReviewSearchRef.current = {
+        queryKey,
+        value: submittedSearch.draft
+      };
+    }
     const didLoad = await onLoadQuery(query);
     if (!didLoad) {
-      return;
+      if (preservedReviewSearchRef.current?.queryKey === queryKey) {
+        preservedReviewSearchRef.current = null;
+      }
+      return false;
     }
 
     searchSourceRef.current = query.search;
-    setSearchDraft((currentDraft) => {
+    if (!options.preserveSearchDraft) {
       const nextDraft = reconcileHabitatSearchDraftAfterAcceptedQuery(
-        currentDraft,
+        searchDraftRef.current,
         submittedSearch,
         query.search
       );
       searchDraftRef.current = nextDraft;
-      return nextDraft;
-    });
+      setSearchDraft(nextDraft);
+    }
+    return true;
   };
 
   const loadRegion = (region: HabitatRegion) => {
@@ -256,7 +401,7 @@ export function HabitatCoordinatesSection({
     }
     void loadQuery(queryFromPage(page, {
       offset: 0,
-      search: searchDraft.trim().slice(0, 80)
+      search: searchDraftRef.current.trim().slice(0, 80)
     }));
   };
 
@@ -289,11 +434,19 @@ export function HabitatCoordinatesSection({
           stagedDraftValue
         )
       );
+      setDraftReviewTargets((currentTargets) =>
+        currentTargets[stagedDraftKey]?.value === stagedDraftValue
+          ? removeDraftReviewTarget(currentTargets, stagedDraftKey)
+          : currentTargets
+      );
+      setConfirmedUnavailableDraftKeys((currentKeys) =>
+        removeSetValue(currentKeys, stagedDraftKey)
+      );
     }
   };
 
   const updateCoordinateDraft = (value: string) => {
-    if (!coordinateDraftKey) {
+    if (!coordinateDraftKey || !page || !selectedRecord) {
       return;
     }
     setFeedback(null);
@@ -304,6 +457,97 @@ export function HabitatCoordinatesSection({
         value,
         sourceCoordinateValue
       )
+    );
+    setDraftReviewTargets((currentTargets) =>
+      value === sourceCoordinateValue
+        ? removeDraftReviewTarget(currentTargets, coordinateDraftKey)
+        : {
+            ...currentTargets,
+            [coordinateDraftKey]: {
+              query: queryFromPage(page, {}),
+              rowKey: rowKey(selectedRecord),
+              value
+            }
+          }
+    );
+    setConfirmedUnavailableDraftKeys((currentKeys) =>
+      removeSetValue(currentKeys, coordinateDraftKey)
+    );
+  };
+
+  const reviewNextDraft = async () => {
+    if (
+      !nextDraftKey ||
+      !nextDraftTarget ||
+      isLoading ||
+      isStaging ||
+      reviewLoadPendingRef.current
+    ) {
+      return;
+    }
+
+    const targetQueryKey = createHabitatCoordinatesQueryKey(nextDraftTarget.query);
+    const currentQueryKey = page
+      ? createHabitatCoordinatesQueryKey(queryFromPage(page, {}))
+      : null;
+    if (
+      currentQueryKey === targetQueryKey &&
+      page?.records.some((record) => rowKey(record) === nextDraftTarget.rowKey)
+    ) {
+      reviewFocusPendingRef.current = true;
+      setSelectedKey(nextDraftTarget.rowKey);
+      return;
+    }
+
+    reviewLoadPendingRef.current = true;
+    try {
+      pendingReviewTargetRef.current = {
+        draftKey: nextDraftKey,
+        queryKey: targetQueryKey,
+        rowKey: nextDraftTarget.rowKey
+      };
+      const didLoad = await loadQuery(nextDraftTarget.query, {
+        preserveSearchDraft: true
+      });
+      if (
+        !didLoad &&
+        pendingReviewTargetRef.current?.draftKey === nextDraftKey
+      ) {
+        pendingReviewTargetRef.current = null;
+      }
+    } finally {
+      reviewLoadPendingRef.current = false;
+    }
+  };
+
+  const discardUnavailableDrafts = () => {
+    const capturedUnavailableDraftKeys = [...unavailableDraftKeys];
+    if (
+      capturedUnavailableDraftKeys.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.habitatCoordinates', {
+          count: capturedUnavailableDraftKeys.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const capturedUnavailableDraftKeySet = new Set(capturedUnavailableDraftKeys);
+    if (
+      pendingReviewTargetRef.current &&
+      capturedUnavailableDraftKeySet.has(pendingReviewTargetRef.current.draftKey)
+    ) {
+      pendingReviewTargetRef.current = null;
+    }
+    setCoordinateDrafts((currentDrafts) =>
+      removeRecordKeys(currentDrafts, capturedUnavailableDraftKeySet)
+    );
+    setDraftReviewTargets((currentTargets) =>
+      removeRecordKeys(currentTargets, capturedUnavailableDraftKeySet)
+    );
+    setConfirmedUnavailableDraftKeys((currentKeys) =>
+      removeSetValues(currentKeys, capturedUnavailableDraftKeySet)
     );
   };
 
@@ -621,6 +865,14 @@ export function HabitatCoordinatesSection({
                   {t('habitatCoordinates.editor.observedOnly', { count: coordinateOptions.length })}
                 </p>
 
+                <p aria-live="polite" className="field-hint">
+                  {t('habitatCoordinates.editor.draftSummary', {
+                    count: outstandingDraftCount
+                  })}{'; '}
+                  {t('editorDrafts.summary.unavailable', {
+                    count: unavailableDraftKeys.length
+                  })}
+                </p>
                 <div className="button-row habitat-coordinate-actions">
                   <button
                     className="primary-button"
@@ -633,6 +885,26 @@ export function HabitatCoordinatesSection({
                       ? t('habitatCoordinates.editor.staging')
                       : t('habitatCoordinates.editor.stage')}
                   </button>
+                  {nextDraftTarget ? (
+                    <button
+                      className="secondary-button"
+                      disabled={isLoading || isStaging}
+                      onClick={() => void reviewNextDraft()}
+                      type="button"
+                    >
+                      {t('habitatCoordinates.editor.reviewNextDraft')}
+                    </button>
+                  ) : null}
+                  {unavailableDraftKeys.length > 0 ? (
+                    <button
+                      className="danger-button"
+                      disabled={isLoading || isStaging}
+                      onClick={discardUnavailableDrafts}
+                      type="button"
+                    >
+                      {t('editorDrafts.discardUnavailable')}
+                    </button>
+                  ) : null}
                   {pendingCount > 0 ? (
                     <button className="secondary-button" onClick={onOpenChanges} type="button">
                       {t('habitatCoordinates.editor.review', { count: pendingCount })}
@@ -641,7 +913,41 @@ export function HabitatCoordinatesSection({
                 </div>
               </div>
             ) : (
-              <p className="empty-copy">{t('habitatCoordinates.editor.noSelection')}</p>
+              <>
+                <p className="empty-copy">{t('habitatCoordinates.editor.noSelection')}</p>
+                <p aria-live="polite" className="field-hint">
+                  {t('habitatCoordinates.editor.draftSummary', {
+                    count: outstandingDraftCount
+                  })}{'; '}
+                  {t('editorDrafts.summary.unavailable', {
+                    count: unavailableDraftKeys.length
+                  })}
+                </p>
+                {nextDraftTarget || unavailableDraftKeys.length > 0 ? (
+                  <div className="button-row habitat-coordinate-actions">
+                    {nextDraftTarget ? (
+                      <button
+                        className="secondary-button"
+                        disabled={isLoading || isStaging}
+                        onClick={() => void reviewNextDraft()}
+                        type="button"
+                      >
+                        {t('habitatCoordinates.editor.reviewNextDraft')}
+                      </button>
+                    ) : null}
+                    {unavailableDraftKeys.length > 0 ? (
+                      <button
+                        className="danger-button"
+                        disabled={isLoading || isStaging}
+                        onClick={discardUnavailableDrafts}
+                        type="button"
+                      >
+                        {t('editorDrafts.discardUnavailable')}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
             )}
           </section>
         </div>
@@ -678,6 +984,55 @@ function parseCoordinate(value: string): HabitatCoordinateChoice | null {
   const x = Number(match[1]);
   const y = Number(match[2]);
   return Number.isSafeInteger(x) && Number.isSafeInteger(y) ? { x, y } : null;
+}
+
+function removeDraftReviewTarget(
+  targets: Record<string, HabitatCoordinateDraftReviewTarget>,
+  key: string
+) {
+  if (!(key in targets)) {
+    return targets;
+  }
+
+  const nextTargets = { ...targets };
+  delete nextTargets[key];
+  return nextTargets;
+}
+
+function removeRecordKeys<T>(records: Record<string, T>, keys: ReadonlySet<string>) {
+  const nextRecords = Object.fromEntries(
+    Object.entries(records).filter(([key]) => !keys.has(key))
+  ) as Record<string, T>;
+  return Object.keys(nextRecords).length === Object.keys(records).length
+    ? records
+    : nextRecords;
+}
+
+function addSetValue(values: ReadonlySet<string>, value: string) {
+  if (values.has(value)) {
+    return values;
+  }
+  const nextValues = new Set(values);
+  nextValues.add(value);
+  return nextValues;
+}
+
+function removeSetValue(values: ReadonlySet<string>, value: string) {
+  if (!values.has(value)) {
+    return values;
+  }
+  const nextValues = new Set(values);
+  nextValues.delete(value);
+  return nextValues;
+}
+
+function removeSetValues(values: ReadonlySet<string>, removedValues: ReadonlySet<string>) {
+  const nextValues = new Set([...values].filter((value) => !removedValues.has(value)));
+  return setsEqual(values, nextValues) ? values : nextValues;
+}
+
+function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
 function rowKey(record: HabitatCoordinateRecord): string {

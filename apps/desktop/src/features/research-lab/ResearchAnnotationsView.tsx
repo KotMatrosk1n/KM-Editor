@@ -21,6 +21,7 @@ import {
   usePublishCommonEditorError
 } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { getNextOutstandingEditorDraftKey } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import {
   researchErrorKey,
@@ -59,7 +60,9 @@ export function ResearchAnnotationsView({
   const [editorDrafts, setEditorDrafts] = useState<
     Record<string, ResearchAnnotationEditorDraft>
   >({});
+  const [reviewedDraftKey, setReviewedDraftKey] = useState<string | null>(null);
   const editorDraftsRef = useRef(editorDrafts);
+  const reviewFocusPendingRef = useRef(false);
   const annotations = controller.annotations.data?.document?.annotations ?? [];
   const editing = useMemo(() => (
     editingId ? annotations.find((annotation) => annotation.annotationId === editingId) ?? null : null
@@ -67,9 +70,9 @@ export function ResearchAnnotationsView({
   const incomingTargetDraftKey = draftTarget ? targetDraftKey(draftTarget) : null;
   const draftKey = editingId
     ? annotationDraftKey(editingId)
-    : incomingTargetDraftKey;
+    : reviewedDraftKey ?? incomingTargetDraftKey;
   const editorDraft = draftKey ? editorDrafts[draftKey] : undefined;
-  const target = editorDraft?.target ?? editing?.target ?? draftTarget;
+  const target = editorDraft?.target ?? editing?.target ?? (reviewedDraftKey ? null : draftTarget);
   const sourceTags = editing?.tags.join(', ') ?? '';
   const sourceText = editing?.text ?? '';
   const tags = editorDraft?.tags ?? sourceTags;
@@ -79,8 +82,21 @@ export function ResearchAnnotationsView({
   useEffect(() => {
     if (incomingTargetDraftKey) {
       setEditingId(null);
+      setReviewedDraftKey(null);
     }
   }, [incomingTargetDraftKey]);
+
+  useEffect(() => {
+    if (!reviewFocusPendingRef.current) {
+      return;
+    }
+
+    reviewFocusPendingRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById('research-annotation-text')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [draftKey]);
 
   useEffect(() => {
     onDirtyStateChange?.(Object.keys(editorDrafts).length > 0);
@@ -97,6 +113,7 @@ export function ResearchAnnotationsView({
 
   const beginEdit = (annotation: ResearchAnnotation) => {
     setEditingId(annotation.annotationId);
+    setReviewedDraftKey(null);
     onClearDraftTarget();
   };
   const cancelEdit = () => {
@@ -110,6 +127,7 @@ export function ResearchAnnotationsView({
       setEditorDrafts(nextDrafts);
     }
     setEditingId(null);
+    setReviewedDraftKey(null);
     onClearDraftTarget();
   };
   const updateEditorDraft = (patch: Partial<Pick<ResearchAnnotationEditorDraft, 'tags' | 'text'>>) => {
@@ -169,25 +187,66 @@ export function ResearchAnnotationsView({
       return;
     }
     setEditingId(null);
+    setReviewedDraftKey(null);
     onClearDraftTarget();
   };
   const deleteAnnotation = async (annotationId: string) => {
     if (controller.annotations.isSaving) return;
+    const deletedDraftKey = annotationDraftKey(annotationId);
+    const submittedEditorDraft = editorDraftsRef.current[deletedDraftKey];
     const didDelete = await controller.deleteAnnotation(annotationId);
     if (!didDelete) {
       return;
     }
-    const deletedDraftKey = annotationDraftKey(annotationId);
-    const nextDrafts = discardResearchAnnotationEditorDraft(
-      editorDraftsRef.current,
-      deletedDraftKey
-    );
+    const latestDrafts = editorDraftsRef.current;
+    const resolvedDrafts = submittedEditorDraft
+      ? clearSavedResearchAnnotationEditorDraft(
+          latestDrafts,
+          deletedDraftKey,
+          submittedEditorDraft
+        )
+      : latestDrafts;
+    const newerDraft = resolvedDrafts === latestDrafts
+      ? latestDrafts[deletedDraftKey]
+      : undefined;
+    const nextDrafts = newerDraft
+      ? {
+          ...resolvedDrafts,
+          [deletedDraftKey]: {
+            ...newerDraft,
+            annotationId: null
+          }
+        }
+      : resolvedDrafts;
     editorDraftsRef.current = nextDrafts;
     setEditorDrafts(nextDrafts);
     if (editingId === annotationId) {
       setEditingId(null);
+      setReviewedDraftKey(newerDraft ? deletedDraftKey : null);
       onClearDraftTarget();
     }
+  };
+  const outstandingDraftKeys = Object.keys(editorDrafts);
+  const nextDraftKey = getNextOutstandingEditorDraftKey(outstandingDraftKeys, draftKey);
+  const reviewNextDraft = () => {
+    if (!nextDraftKey || controller.annotations.isSaving) {
+      return;
+    }
+
+    const nextDraft = editorDraftsRef.current[nextDraftKey];
+    if (!nextDraft) {
+      return;
+    }
+
+    reviewFocusPendingRef.current = true;
+    if (nextDraft.annotationId) {
+      setEditingId(nextDraft.annotationId);
+      setReviewedDraftKey(null);
+    } else {
+      setEditingId(null);
+      setReviewedDraftKey(nextDraftKey);
+    }
+    onClearDraftTarget();
   };
 
   return (
@@ -226,12 +285,31 @@ export function ResearchAnnotationsView({
         <Status error messageKey={researchErrorKey(controller.annotations.error)} />
       ) : null}
 
+      <div className="km-research-lab-annotation-actions">
+        <span aria-live="polite" className="km-research-lab-help">
+          {t('researchLab.annotations.draftSummary', {
+            count: outstandingDraftKeys.length
+          })}
+        </span>
+        {nextDraftKey ? (
+          <button
+            className="secondary-button compact-button"
+            disabled={controller.annotations.isSaving}
+            onClick={reviewNextDraft}
+            type="button"
+          >
+            {t('researchLab.annotations.reviewNextDraft')}
+          </button>
+        ) : null}
+      </div>
+
       {target ? (
         <form className="km-research-lab-annotation-form" onSubmit={submit}>
           <TargetSummary target={target} />
           <label>
             <span>{t('researchLab.annotations.text')}</span>
             <textarea
+              id="research-annotation-text"
               maxLength={researchLabMaximumAnnotationTextLength}
               onChange={(event) => updateEditorDraft({ text: event.target.value })}
               placeholder={t('researchLab.annotations.textPlaceholder')}

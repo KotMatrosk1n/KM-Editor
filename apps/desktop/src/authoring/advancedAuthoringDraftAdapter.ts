@@ -2,9 +2,11 @@
 
 import { z } from 'zod';
 import { projectGameSchema, type ProjectGame } from '../bridge/contracts';
-import type {
-  ProjectDraftAdapter,
-  ProjectDraftKey
+import {
+  projectDraftKey,
+  type ProjectDraft,
+  type ProjectDraftAdapter,
+  type ProjectDraftKey
 } from '../workbench/draftRegistry';
 import {
   projectGameToFamily,
@@ -151,6 +153,23 @@ export const advancedAuthoringProjectDraftAdapter: ProjectDraftAdapter<AdvancedA
   serializePayload: (draft) =>
     advancedAuthoringDraftSnapshotSchema.parse(draft) as JsonValue
 };
+
+export function advancedAuthoringProjectDraftMatchesCapture(
+  current: ProjectDraft<AdvancedAuthoringDraftSnapshot>,
+  captured: ProjectDraft<AdvancedAuthoringDraftSnapshot>
+) {
+  return (
+    projectDraftKey(current.key) === projectDraftKey(captured.key) &&
+    current.adapterId === captured.adapterId &&
+    current.adapterSchemaVersion === captured.adapterSchemaVersion &&
+    current.storedAdapterSchemaVersion === captured.storedAdapterSchemaVersion &&
+    current.projectSourceRevisionFingerprint ===
+      captured.projectSourceRevisionFingerprint &&
+    current.updatedAtUtc === captured.updatedAtUtc &&
+    JSON.stringify(advancedAuthoringProjectDraftAdapter.serializePayload(current.payload)) ===
+      JSON.stringify(advancedAuthoringProjectDraftAdapter.serializePayload(captured.payload))
+  );
+}
 
 export type CreateAdvancedAuthoringProjectDraftKeyOptions = {
   activeChangeSetId: string;

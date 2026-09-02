@@ -10,6 +10,7 @@ import {
   type BattleCafeRewardsWorkflow
 } from '../../bridge/battleCafeRewardsContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
@@ -464,7 +465,7 @@ function BattleCafeItemPicker({
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const selected = itemOptions.find((option) => option.itemId === value) ?? null;
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useCoalescedTextInputState();
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const suggestions = useMemo(

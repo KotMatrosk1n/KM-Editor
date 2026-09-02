@@ -3,6 +3,7 @@
 import { Check, Keyboard, Pencil, RotateCcw, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 import {
@@ -44,7 +45,7 @@ function OpenShortcutOverlay({
   shortcuts
 }: Omit<ShortcutOverlayProps, 'isOpen'>) {
   const { t } = useLocalization();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useCoalescedTextInputState();
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
   const [draftChord, setDraftChord] = useState('');
   const [feedback, setFeedback] = useState<{ id: string; key: string } | null>(null);

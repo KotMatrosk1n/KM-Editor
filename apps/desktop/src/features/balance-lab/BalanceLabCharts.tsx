@@ -7,6 +7,7 @@ import {
   type BalanceLabPoint,
   type BalanceLabStudy
 } from '../../bridge/balanceLabContracts';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
   humanizeIdentifier,
@@ -39,7 +40,7 @@ export function BalanceLabChart({
   const initialMetrics = balanceComparisonMetrics(points);
   const initialMetricIdentity = defaultBalanceComparisonMetric(initialMetrics, study);
   const [metricIdentity, setMetricIdentity] = useState(initialMetricIdentity);
-  const [recordSearch, setRecordSearch] = useState('');
+  const [recordSearch, setRecordSearch] = useCoalescedTextInputState();
 
   const metrics = useMemo(() => balanceComparisonMetrics(points), [points]);
   const activeMetricIdentity = metrics.some((metric) => metric.identity === metricIdentity)
