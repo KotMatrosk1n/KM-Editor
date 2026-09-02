@@ -68,7 +68,9 @@ export function InGameSettingsPackagePanel({
   const [installationTarget, setInstallationTarget] =
     useState<InGameSettingsInstallationTarget>('atmosphere');
   const requestGenerationRef = useRef(0);
+  const requestOperationRef = useRef<object | null>(null);
   const applyGenerationRef = useRef(0);
+  const applyInFlightGenerationRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
   const applyBusyReportedRef = useRef(false);
   const reviewRegionRef = useRef<HTMLDivElement | null>(null);
@@ -96,7 +98,9 @@ export function InGameSettingsPackagePanel({
     return () => {
       isMountedRef.current = false;
       requestGenerationRef.current += 1;
+      requestOperationRef.current = null;
       applyGenerationRef.current += 1;
+      applyInFlightGenerationRef.current = null;
       reportApplyBusy(false);
     };
   }, [reportApplyBusy]);
@@ -120,7 +124,12 @@ export function InGameSettingsPackagePanel({
 
   const selectInstallationTarget = useCallback(
     (target: InGameSettingsInstallationTarget) => {
-      if (target === installationTarget || busy === 'apply') return;
+      if (
+        target === installationTarget ||
+        busy === 'apply' ||
+        requestOperationRef.current !== null ||
+        applyInFlightGenerationRef.current !== null
+      ) return;
       requestGenerationRef.current += 1;
       setInstallationTarget(target);
       setSnapshot(null);
@@ -135,6 +144,14 @@ export function InGameSettingsPackagePanel({
 
   const inspect = useCallback(
     async (showBusy = true): Promise<InGameSettingsPackageSnapshot | null> => {
+      if (
+        requestOperationRef.current !== null ||
+        (showBusy && applyInFlightGenerationRef.current !== null)
+      ) {
+        return null;
+      }
+      const operation = {};
+      requestOperationRef.current = operation;
       const generation = ++requestGenerationRef.current;
       const requestedContextKey = requestContextKey;
       if (showBusy) {
@@ -170,6 +187,9 @@ export function InGameSettingsPackagePanel({
         await reportError(error, 'load');
         return null;
       } finally {
+        if (requestOperationRef.current === operation) {
+          requestOperationRef.current = null;
+        }
         if (
           showBusy &&
           isMountedRef.current &&
@@ -182,10 +202,17 @@ export function InGameSettingsPackagePanel({
     },
     [bridge, installationTarget, reportError, requestContextKey, scope]
   );
+  const inspectRef = useRef(inspect);
+  inspectRef.current = inspect;
 
   useEffect(() => {
+    if (applyInFlightGenerationRef.current !== null) {
+      return;
+    }
     requestGenerationRef.current += 1;
+    requestOperationRef.current = null;
     applyGenerationRef.current += 1;
+    applyInFlightGenerationRef.current = null;
     reportApplyBusy(false);
     setSnapshot(null);
     setPreview(null);
@@ -231,6 +258,8 @@ export function InGameSettingsPackagePanel({
       if (
         !snapshot ||
         busy !== null ||
+        requestOperationRef.current !== null ||
+        applyInFlightGenerationRef.current !== null ||
         !canApply ||
         recoveryRequired ||
         !canReviewOperation(snapshot, operation)
@@ -238,6 +267,8 @@ export function InGameSettingsPackagePanel({
         return;
       }
 
+      const requestOperation = {};
+      requestOperationRef.current = requestOperation;
       const generation = ++requestGenerationRef.current;
       const requestedContextKey = requestContextKey;
       setBusy('preview');
@@ -269,6 +300,9 @@ export function InGameSettingsPackagePanel({
         }
         await reportError(error, 'preview');
       } finally {
+        if (requestOperationRef.current === requestOperation) {
+          requestOperationRef.current = null;
+        }
         if (
           isMountedRef.current &&
           requestGenerationRef.current === generation &&
@@ -296,6 +330,7 @@ export function InGameSettingsPackagePanel({
       !preview ||
       !reviewAcknowledged ||
       busy !== null ||
+      applyInFlightGenerationRef.current !== null ||
       !canApply ||
       recoveryRequired ||
       isPackageReviewExpired(preview)
@@ -304,6 +339,7 @@ export function InGameSettingsPackagePanel({
     }
 
     const generation = ++applyGenerationRef.current;
+    applyInFlightGenerationRef.current = generation;
     const requestedContextKey = requestContextKey;
     setBusy('apply');
     setMessageKey(null);
@@ -412,13 +448,26 @@ export function InGameSettingsPackagePanel({
       setReviewAcknowledged(false);
       await reportError(error, 'apply');
     } finally {
-      reportApplyBusy(false);
+      if (applyInFlightGenerationRef.current === generation) {
+        applyInFlightGenerationRef.current = null;
+        reportApplyBusy(false);
+      }
+      const contextChanged = requestContextKeyRef.current !== requestedContextKey;
       if (
         isMountedRef.current &&
         applyGenerationRef.current === generation &&
-        requestContextKeyRef.current === requestedContextKey
+        !contextChanged
       ) {
         setBusy(null);
+      } else if (isMountedRef.current && contextChanged) {
+        requestGenerationRef.current += 1;
+        setBusy(null);
+        setSnapshot(null);
+        setPreview(null);
+        setReviewAcknowledged(false);
+        setRecoveryRequired(false);
+        setMessageKey(null);
+        void inspectRef.current();
       }
     }
   }, [

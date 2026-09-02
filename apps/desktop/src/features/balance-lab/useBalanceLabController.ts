@@ -145,6 +145,7 @@ class BalanceLabControllerStore {
   }
 
   public async query(options: BalanceLabQueryOptions) {
+    if (this.snapshot.isQuerying) return;
     if (
       this.snapshot.result.status === 'loading' &&
       balanceLabQueriesEqual(this.snapshot.activeQuery, options)
@@ -167,12 +168,14 @@ class BalanceLabControllerStore {
   }
 
   public async refresh() {
+    if (this.snapshot.isQuerying) return;
     const options = this.snapshot.activeQuery;
     if (!options) return;
     await this.runQuery(options, false);
   }
 
   public async loadMore() {
+    if (this.snapshot.isQuerying) return;
     const options = this.snapshot.activeQuery;
     if (!options) return;
     await this.runQuery(options, true);

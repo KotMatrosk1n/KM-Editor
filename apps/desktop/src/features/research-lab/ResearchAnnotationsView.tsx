@@ -100,6 +100,7 @@ export function ResearchAnnotationsView({
     onClearDraftTarget();
   };
   const cancelEdit = () => {
+    if (controller.annotations.isSaving) return;
     if (draftKey) {
       const nextDrafts = discardResearchAnnotationEditorDraft(
         editorDraftsRef.current,
@@ -131,7 +132,13 @@ export function ResearchAnnotationsView({
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!draftKey || !target || !targetIsCurrent || controller.annotations.status !== 'ready') return;
+    if (
+      !draftKey ||
+      !target ||
+      !targetIsCurrent ||
+      controller.annotations.isSaving ||
+      controller.annotations.status !== 'ready'
+    ) return;
     const stagedEditorDraft: ResearchAnnotationEditorDraft = {
       annotationId: editingId,
       tags,
@@ -165,6 +172,7 @@ export function ResearchAnnotationsView({
     onClearDraftTarget();
   };
   const deleteAnnotation = async (annotationId: string) => {
+    if (controller.annotations.isSaving) return;
     const didDelete = await controller.deleteAnnotation(annotationId);
     if (!didDelete) {
       return;

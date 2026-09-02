@@ -49,6 +49,8 @@ export function GameModulesSection({
   const [selectedModule, setSelectedModule] = useState<GameModule | null>(null);
   const detailBackRef = useRef<HTMLButtonElement | null>(null);
   const launcherRefs = useRef<Partial<Record<GameModule, HTMLButtonElement | null>>>({});
+  const catalogOperationRef = useRef<object | null>(null);
+  const [isCatalogOperationBusy, setIsCatalogOperationBusy] = useState(false);
   const previousModuleRef = useRef<GameModule | null>(null);
   const capabilityData = controller.capabilities.data;
 
@@ -77,6 +79,46 @@ export function GameModulesSection({
     }
   }, [capabilityData, selectedModule]);
 
+  useEffect(() => () => {
+    catalogOperationRef.current = null;
+  }, []);
+
+  const refreshCatalog = async () => {
+    if (catalogOperationRef.current !== null) return;
+    const operation = {};
+    catalogOperationRef.current = operation;
+    setIsCatalogOperationBusy(true);
+    try {
+      await controller.refreshCapabilities();
+    } finally {
+      if (catalogOperationRef.current === operation) {
+        catalogOperationRef.current = null;
+        setIsCatalogOperationBusy(false);
+      }
+    }
+  };
+
+  const openModule = async (capability: GameModuleCapability) => {
+    const layer = capability.supportedLayers[0];
+    if (
+      catalogOperationRef.current !== null ||
+      !capability.canQuery ||
+      !layer
+    ) return;
+    const operation = {};
+    catalogOperationRef.current = operation;
+    setIsCatalogOperationBusy(true);
+    setSelectedModule(capability.module);
+    try {
+      await controller.query({ layer, module: capability.module });
+    } finally {
+      if (catalogOperationRef.current === operation) {
+        catalogOperationRef.current = null;
+        setIsCatalogOperationBusy(false);
+      }
+    }
+  };
+
   const selectedCapability = selectedModule
     ? capabilityData?.capabilities.find((capability) => capability.module === selectedModule) ?? null
     : null;
@@ -89,6 +131,8 @@ export function GameModulesSection({
         capability={selectedCapability}
         controller={controller}
         onBack={() => {
+          catalogOperationRef.current = null;
+          setIsCatalogOperationBusy(false);
           controller.cancel();
           setSelectedModule(null);
         }}
@@ -112,8 +156,8 @@ export function GameModulesSection({
         <button
           aria-busy={controller.isBusy || undefined}
           className="secondary-button compact-button"
-          disabled={controller.isBusy}
-          onClick={() => void controller.refreshCapabilities()}
+          disabled={controller.isBusy || isCatalogOperationBusy}
+          onClick={() => void refreshCatalog()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={15} />
@@ -140,12 +184,8 @@ export function GameModulesSection({
               <CapabilityCard
                 canOpenSection={canOpenSection}
                 capability={capability}
-                onOpen={() => {
-                  const layer = capability.supportedLayers[0];
-                  if (!capability.canQuery || !layer) return;
-                  setSelectedModule(capability.module);
-                  void controller.query({ layer, module: capability.module });
-                }}
+                isBusy={controller.isBusy || isCatalogOperationBusy}
+                onOpen={() => void openModule(capability)}
                 onOpenSection={onOpenSection}
                 registerLauncher={(node) => {
                   launcherRefs.current[capability.module] = node;
@@ -162,12 +202,14 @@ export function GameModulesSection({
 function CapabilityCard({
   canOpenSection,
   capability,
+  isBusy,
   onOpen,
   onOpenSection,
   registerLauncher
 }: {
   canOpenSection: (section: WorkbenchSection) => boolean;
   capability: GameModuleCapability;
+  isBusy: boolean;
   onOpen: () => void;
   onOpenSection: (section: WorkbenchSection) => void;
   registerLauncher: (node: HTMLButtonElement | null) => void;
@@ -200,6 +242,7 @@ function CapabilityCard({
           <button
             ref={registerLauncher}
             className="primary-button compact-button"
+            disabled={isBusy}
             onClick={onOpen}
             type="button"
           >
@@ -313,7 +356,7 @@ function GameModuleDetail({
                 <button
                   aria-busy={controller.result.isAppending || undefined}
                   className="secondary-button km-game-module-load-more"
-                  disabled={controller.result.isAppending}
+                  disabled={controller.isBusy}
                   onClick={() => void controller.loadMore()}
                   type="button"
                 >

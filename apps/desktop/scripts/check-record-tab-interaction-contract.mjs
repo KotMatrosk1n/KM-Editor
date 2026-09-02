@@ -183,8 +183,13 @@ assert.deepEqual(
 
 const workspaceContentOpening = between(
   app,
-  '<div className="workspace-content">',
+  'className="workspace-content"',
   '{activeSection === \'health\''
+);
+assert.match(
+  workspaceContentOpening,
+  /inert=\{isProjectScopeTransitioning \? true : undefined\}/u,
+  'The retained editor surface must reject interaction while project scope is changing.'
 );
 assert.match(
   workspaceContentOpening,

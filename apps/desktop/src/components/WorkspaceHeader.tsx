@@ -30,6 +30,7 @@ export type WorkspaceHeaderProps = {
   isEditSessionOperationBusy: boolean;
   isCurrentViewSaved?: boolean;
   isInspectorOpen?: boolean;
+  isPinMutationBusy?: boolean;
   isSavedViewMutationBusy?: boolean;
   onBack?: () => void;
   onCloseEditor: () => void;
@@ -56,6 +57,7 @@ export function WorkspaceHeader({
   isEditSessionOperationBusy,
   isCurrentViewSaved = false,
   isInspectorOpen = false,
+  isPinMutationBusy = false,
   isSavedViewMutationBusy = false,
   onBack,
   onCloseEditor,
@@ -136,9 +138,11 @@ export function WorkspaceHeader({
 
         {onTogglePin && inspectorAvailable ? (
           <button
+            aria-busy={isPinMutationBusy}
             aria-label={t(activeTargetIsPinned ? 'workbench.header.unpin' : 'workbench.header.pin')}
             aria-pressed={activeTargetIsPinned}
             className="secondary-button icon-button"
+            disabled={isPinMutationBusy}
             onClick={onTogglePin}
             title={t(activeTargetIsPinned ? 'workbench.header.unpin' : 'workbench.header.pin')}
             type="button"

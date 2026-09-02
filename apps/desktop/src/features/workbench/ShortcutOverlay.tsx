@@ -54,11 +54,15 @@ function OpenShortcutOverlay({
     message: feedback ? t(feedback.key) : null
   });
   const [isMutationBusy, setIsMutationBusy] = useState(false);
+  const mutationOperationRef = useRef<object | null>(null);
   const draftChordRef = useRef(draftChord);
   draftChordRef.current = draftChord;
+  const requestClose = () => {
+    if (mutationOperationRef.current === null) onClose();
+  };
   const dialogRef = useModalDialog<HTMLDivElement>({
     canClose: !isMutationBusy,
-    onClose
+    onClose: requestClose
   });
   const visibleShortcuts = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -73,7 +77,11 @@ function OpenShortcutOverlay({
   }, [query, shortcuts, t]);
 
   const beginEdit = (shortcut: WorkspaceShortcutViewModel) => {
-    if (!onSetShortcut || !isSafeWorkspaceShortcutId(shortcut.id)) {
+    if (
+      mutationOperationRef.current !== null ||
+      !onSetShortcut ||
+      !isSafeWorkspaceShortcutId(shortcut.id)
+    ) {
       return;
     }
     setEditingShortcutId(shortcut.id);
@@ -81,7 +89,12 @@ function OpenShortcutOverlay({
     setFeedback(null);
   };
   const saveShortcut = async (shortcut: WorkspaceShortcutViewModel) => {
-    if (isMutationBusy || !onSetShortcut || !isSafeWorkspaceShortcutId(shortcut.id)) {
+    if (
+      isMutationBusy ||
+      mutationOperationRef.current !== null ||
+      !onSetShortcut ||
+      !isSafeWorkspaceShortcutId(shortcut.id)
+    ) {
       return;
     }
     const submittedDraftChord = draftChord;
@@ -101,6 +114,8 @@ function OpenShortcutOverlay({
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.conflict' });
       return;
     }
+    const mutationOperation = {};
+    mutationOperationRef.current = mutationOperation;
     setIsMutationBusy(true);
     try {
       await onSetShortcut(shortcut.id, normalizedChord);
@@ -113,11 +128,19 @@ function OpenShortcutOverlay({
     } catch {
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.saveError' });
     } finally {
-      setIsMutationBusy(false);
+      if (mutationOperationRef.current === mutationOperation) {
+        mutationOperationRef.current = null;
+        setIsMutationBusy(false);
+      }
     }
   };
   const resetShortcut = async (shortcut: WorkspaceShortcutViewModel) => {
-    if (isMutationBusy || !onResetShortcut || !isSafeWorkspaceShortcutId(shortcut.id)) {
+    if (
+      isMutationBusy ||
+      mutationOperationRef.current !== null ||
+      !onResetShortcut ||
+      !isSafeWorkspaceShortcutId(shortcut.id)
+    ) {
       return;
     }
     const defaultShortcut = defaultWorkspaceShortcutDefinitions.find(
@@ -138,6 +161,8 @@ function OpenShortcutOverlay({
       return;
     }
     const submittedDraftChord = draftChordRef.current;
+    const mutationOperation = {};
+    mutationOperationRef.current = mutationOperation;
     setIsMutationBusy(true);
     try {
       await onResetShortcut(shortcut.id);
@@ -150,7 +175,10 @@ function OpenShortcutOverlay({
     } catch {
       setFeedback({ id: shortcut.id, key: 'workbench.shortcuts.resetError' });
     } finally {
-      setIsMutationBusy(false);
+      if (mutationOperationRef.current === mutationOperation) {
+        mutationOperationRef.current = null;
+        setIsMutationBusy(false);
+      }
     }
   };
 
@@ -158,8 +186,12 @@ function OpenShortcutOverlay({
     <div
       className="km-workbench-overlay"
       onMouseDown={(event) => {
-        if (!isMutationBusy && event.target === event.currentTarget) {
-          onClose();
+        if (
+          mutationOperationRef.current === null &&
+          !isMutationBusy &&
+          event.target === event.currentTarget
+        ) {
+          requestClose();
         }
       }}
     >
@@ -180,7 +212,7 @@ function OpenShortcutOverlay({
           <button
             className="secondary-button"
             disabled={isMutationBusy}
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
           >
             {t('workbench.shortcuts.close')}

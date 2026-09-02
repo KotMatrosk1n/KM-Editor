@@ -84,7 +84,7 @@ export function GameDumpSection({
     game: NonNullable<ProjectPaths['selectedGame']>,
     destination: string
   ) => void | Promise<void>;
-  onWriteStateChange?: (isWriting: boolean) => void;
+  onWriteStateChange?: (isWriting: boolean) => boolean | void;
   paths: ProjectPaths;
   rememberedDestination?: string;
 }) {
@@ -103,9 +103,14 @@ export function GameDumpSection({
   const [categoryFilter, setCategoryFilter] = useState<GameDumpCategoryFilter>('all');
   const [categorySearch, setCategorySearch] = useState('');
   const loadWorkflowRunRef = useRef(0);
+  const loadWorkflowOperationRef = useRef<object | null>(null);
   const generationRunRef = useRef(0);
+  const activeGenerationRef = useRef<object | null>(null);
   const rememberDestinationRunRef = useRef(0);
-  const activeScopeKeyRef = useRef(createGameDumpScopeKey(paths));
+  const currentScopeKey = createGameDumpScopeKey(paths);
+  const activeScopeKeyRef = useRef(currentScopeKey);
+  const destinationPickerGenerationRef = useRef(0);
+  const destinationPickerOperationRef = useRef<object | null>(null);
   const activeWorkflowEligibilityRef = useRef(
     health?.canOpenReadOnlyWorkflows === true && paths.selectedGame !== null
   );
@@ -115,11 +120,12 @@ export function GameDumpSection({
     destination: string;
     game: NonNullable<ProjectPaths['selectedGame']>;
   } | null>(null);
-  activeScopeKeyRef.current = createGameDumpScopeKey(paths);
+  activeScopeKeyRef.current = currentScopeKey;
   activeWorkflowEligibilityRef.current =
     health?.canOpenReadOnlyWorkflows === true && paths.selectedGame !== null;
   destinationFolderRef.current = destinationFolder;
   const { t, translateLiteral } = useLocalization();
+  const isWriteLocked = isGenerating || activeGenerationRef.current !== null;
 
   const selectedCategories = useMemo(
     () =>
@@ -157,6 +163,19 @@ export function GameDumpSection({
     setActionDiagnostics([]);
     setProgress(null);
   }, []);
+
+  useEffect(() => {
+    loadWorkflowRunRef.current += 1;
+    loadWorkflowOperationRef.current = null;
+    destinationPickerGenerationRef.current += 1;
+    destinationPickerOperationRef.current = null;
+    return () => {
+      loadWorkflowRunRef.current += 1;
+      loadWorkflowOperationRef.current = null;
+      destinationPickerGenerationRef.current += 1;
+      destinationPickerOperationRef.current = null;
+    };
+  }, [currentScopeKey]);
 
   useEffect(() => {
     rememberDestinationRunRef.current += 1;
@@ -225,6 +244,9 @@ export function GameDumpSection({
 
   const updateDestinationFolder = useCallback(
     (destination: string, remember: boolean) => {
+      if (activeGenerationRef.current !== null) {
+        return;
+      }
       setDestinationFolder(destination);
       destinationFolderRef.current = destination;
       rememberDestinationRunRef.current += 1;
@@ -238,6 +260,12 @@ export function GameDumpSection({
   );
 
   const loadWorkflow = useCallback(async () => {
+    if (
+      activeGenerationRef.current !== null ||
+      loadWorkflowOperationRef.current !== null
+    ) {
+      return;
+    }
     const runId = ++loadWorkflowRunRef.current;
     const requestedScopeKey = createGameDumpScopeKey(paths);
     const requestedEligibility =
@@ -253,6 +281,8 @@ export function GameDumpSection({
       setProgress(null);
       return;
     }
+    const operation = {};
+    loadWorkflowOperationRef.current = operation;
 
     const preserveExistingSelection = workflowScopeKeyRef.current === requestedScopeKey;
     if (!preserveExistingSelection) {
@@ -338,6 +368,9 @@ export function GameDumpSection({
         percent: 100
       });
     } finally {
+      if (loadWorkflowOperationRef.current === operation) {
+        loadWorkflowOperationRef.current = null;
+      }
       if (
         loadWorkflowRunRef.current === runId &&
         activeScopeKeyRef.current === requestedScopeKey &&
@@ -353,16 +386,38 @@ export function GameDumpSection({
   }, [loadWorkflow]);
 
   const handleBrowseDestination = async () => {
+    if (
+      activeGenerationRef.current !== null ||
+      destinationPickerOperationRef.current !== null
+    ) {
+      return;
+    }
+    const pickerOperation = {};
+    destinationPickerOperationRef.current = pickerOperation;
+    const pickerGeneration = ++destinationPickerGenerationRef.current;
+    const requestedScopeKey = activeScopeKeyRef.current;
     const requestedDestination = destinationFolderRef.current;
     try {
       const selectedFolder = await desktopServices.pickFolder({
         defaultPath: requestedDestination || undefined,
         title: translateLiteral('Select Game Dump destination')
       });
-      if (selectedFolder && destinationFolderRef.current === requestedDestination) {
+      if (
+        selectedFolder &&
+        destinationPickerOperationRef.current === pickerOperation &&
+        destinationPickerGenerationRef.current === pickerGeneration &&
+        activeScopeKeyRef.current === requestedScopeKey &&
+        activeGenerationRef.current === null &&
+        destinationFolderRef.current === requestedDestination
+      ) {
         updateDestinationFolder(selectedFolder, true);
       }
     } catch (error) {
+      if (
+        destinationPickerOperationRef.current !== pickerOperation ||
+        destinationPickerGenerationRef.current !== pickerGeneration ||
+        activeScopeKeyRef.current !== requestedScopeKey
+      ) return;
       setActionDiagnostics(
         toDesktopErrorDiagnostics(
           error,
@@ -370,6 +425,10 @@ export function GameDumpSection({
           desktopErrorCodes.folderPickerFailed
         )
       );
+    } finally {
+      if (destinationPickerOperationRef.current === pickerOperation) {
+        destinationPickerOperationRef.current = null;
+      }
     }
   };
 
@@ -394,20 +453,29 @@ export function GameDumpSection({
   const handleGenerate = async () => {
     if (
       isLoading ||
-      isGenerating ||
+      activeGenerationRef.current !== null ||
       selectedCategories.length === 0 ||
       destinationFolder.trim().length === 0
     ) {
       return;
     }
+    if (onWriteStateChange?.(true) === false) {
+      return;
+    }
 
+    const operation = {};
+    activeGenerationRef.current = operation;
     const runId = ++generationRunRef.current;
     const requestedScopeKey = createGameDumpScopeKey(paths);
+    const requestedDestinationFolder = destinationFolder;
+    const isCurrentResult = () =>
+      activeGenerationRef.current === operation &&
+      generationRunRef.current === runId &&
+      activeScopeKeyRef.current === requestedScopeKey;
     setIsConfirmOpen(false);
     if (paths.selectedGame) {
-      void rememberDestination(paths.selectedGame, destinationFolder);
+      void rememberDestination(paths.selectedGame, requestedDestinationFolder);
     }
-    onWriteStateChange?.(true);
     setIsGenerating(true);
     setResult(null);
     setActionDiagnostics([]);
@@ -440,15 +508,12 @@ export function GameDumpSection({
         selectedCategoryCount: selections.length
       });
       const response = await bridge.runGameDump({
-        destinationFolder,
+        destinationFolder: requestedDestinationFolder,
         paths,
         producerVersion: appVersion,
         selections
       });
-      if (
-        generationRunRef.current !== runId ||
-        activeScopeKeyRef.current !== requestedScopeKey
-      ) {
+      if (!isCurrentResult()) {
         return;
       }
       setResult(response.result);
@@ -464,10 +529,7 @@ export function GameDumpSection({
         writtenFileCount: response.result.writtenFiles.length
       });
     } catch (error) {
-      if (
-        generationRunRef.current !== runId ||
-        activeScopeKeyRef.current !== requestedScopeKey
-      ) {
+      if (!isCurrentResult()) {
         return;
       }
       const failureDiagnostics = toProjectBridgeDiagnostics(
@@ -486,8 +548,11 @@ export function GameDumpSection({
         percent: 100
       });
     } finally {
-      setIsGenerating(false);
-      onWriteStateChange?.(false);
+      if (activeGenerationRef.current === operation) {
+        activeGenerationRef.current = null;
+        setIsGenerating(false);
+        onWriteStateChange?.(false);
+      }
     }
   };
 
@@ -495,7 +560,7 @@ export function GameDumpSection({
     selectedCount > 0 &&
     destinationFolder.trim().length > 0 &&
     !isLoading &&
-    !isGenerating;
+    !isWriteLocked;
   const availableCount = workflowCategories.filter((category) => category.isAvailable).length;
 
   return (
@@ -526,6 +591,7 @@ export function GameDumpSection({
                 <input
                   aria-label={translateLiteral('Destination folder')}
                   data-localization-ignore="true"
+                  disabled={isWriteLocked}
                   id="game-dump-destination-folder"
                   onBlur={() => {
                     if (paths.selectedGame) {
@@ -540,7 +606,7 @@ export function GameDumpSection({
                 <button
                   aria-label={translateLiteral('Browse for destination folder')}
                   className="secondary-button icon-button"
-                  disabled={!desktopServices.isAvailable}
+                  disabled={!desktopServices.isAvailable || isWriteLocked}
                   onClick={handleBrowseDestination}
                   title={translateLiteral('Browse for destination folder')}
                   type="button"
@@ -560,7 +626,7 @@ export function GameDumpSection({
                 <button
                   aria-label={translateLiteral('Refresh dump categories')}
                   className="secondary-button icon-button"
-                  disabled={isLoading || isGenerating}
+                  disabled={isLoading || isWriteLocked}
                   onClick={() => void loadWorkflow()}
                   title={translateLiteral('Refresh dump categories')}
                   type="button"
@@ -618,8 +684,9 @@ export function GameDumpSection({
             <div className="game-dump-actions">
             <button
               className="secondary-button compact-button"
-              disabled={availableCount === 0}
+              disabled={availableCount === 0 || isWriteLocked}
               onClick={() => {
+                if (activeGenerationRef.current !== null) return;
                 invalidateGeneratedState();
                 setSelectionState((current) =>
                   Object.fromEntries(
@@ -643,8 +710,9 @@ export function GameDumpSection({
             </button>
             <button
               className="secondary-button compact-button"
-              disabled={workflowCategories.length === 0}
+              disabled={workflowCategories.length === 0 || isWriteLocked}
               onClick={() => {
+                if (activeGenerationRef.current !== null) return;
                 invalidateGeneratedState();
                 setSelectionState((current) =>
                   Object.fromEntries(
@@ -696,9 +764,10 @@ export function GameDumpSection({
                     <input
                       checked={state.selected && category.isAvailable}
                       className="km-choice-control"
-                      disabled={!category.isAvailable}
+                      disabled={!category.isAvailable || isWriteLocked}
                       id={categoryInputId}
                       onChange={(event) => {
+                        if (activeGenerationRef.current !== null) return;
                         invalidateGeneratedState();
                         setSelectionState((current) => ({
                           ...current,
@@ -738,10 +807,11 @@ export function GameDumpSection({
                         aria-label={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
                         className="km-select-control"
                         disabled={
-                          !category.isAvailable || !state.selected
+                          isWriteLocked || !category.isAvailable || !state.selected
                         }
                         id={formatInputId}
                         onChange={(event) => {
+                          if (activeGenerationRef.current !== null) return;
                           invalidateGeneratedState();
                           setSelectionState((current) => ({
                             ...current,
@@ -778,10 +848,11 @@ export function GameDumpSection({
                           className="km-select-control"
                           data-localization-ignore="true"
                           disabled={
-                            !category.isAvailable || !state.selected
+                            isWriteLocked || !category.isAvailable || !state.selected
                           }
                           id={languageInputId}
                           onChange={(event) => {
+                            if (activeGenerationRef.current !== null) return;
                             invalidateGeneratedState();
                             const languageCodes =
                               event.target.value === allGameDumpLanguagesValue
@@ -944,7 +1015,12 @@ function GameDumpConfirmationModal({
           </div>
         </dl>
         <div className="modal-actions">
-          <button className="secondary-button" onClick={onCancel} type="button">
+          <button
+            className="secondary-button"
+            disabled={isGenerating}
+            onClick={onCancel}
+            type="button"
+          >
             {translateLiteral('Cancel')}
           </button>
           <button className="primary-button" disabled={isGenerating} onClick={onConfirm} type="button">

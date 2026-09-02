@@ -60,16 +60,21 @@ import './changeSets.css';
 export type ChangeSetWorkspacePanelProps = {
   advancedAuthoring?: AdvancedAuthoringPanelProps | null;
   controller: ChangeSetWorkspaceController;
+  getScopeGeneration: () => number;
+  scopeGeneration: number;
 };
 
 export function ChangeSetWorkspacePanel({
   advancedAuthoring,
-  controller
+  controller,
+  getScopeGeneration,
+  scopeGeneration
 }: ChangeSetWorkspacePanelProps) {
   const { formatLocale, t } = useLocalization();
   const [showArchived, setShowArchived] = useState(false);
   const [newName, setNewName] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [isImportReading, setIsImportReading] = useState(false);
   const [isAdvancedAuthoringBusy, setIsAdvancedAuthoringBusy] = useState(false);
   usePublishCommonEditorError({
     domain: 'workflow.changeSets',
@@ -77,6 +82,11 @@ export function ChangeSetWorkspacePanel({
     message: importError
   });
   const importInputRef = useRef<HTMLInputElement>(null);
+  const importReadGenerationRef = useRef(0);
+  const createInFlightRef = useRef(false);
+  const controllerRef = useRef(controller);
+  controllerRef.current = controller;
+  const previousScopeGenerationRef = useRef(scopeGeneration);
   const selectedChangeSet = useMemo(
     () => controller.changeSets.find((changeSet) => (
       changeSet.id === controller.selectedChangeSetId
@@ -90,8 +100,22 @@ export function ChangeSetWorkspacePanel({
   const isBusy =
     controller.busyAction !== null ||
     controller.externalBusy ||
+    isImportReading ||
     isAdvancedAuthoringBusy;
   const isReady = controller.readiness === 'ready';
+
+  useEffect(() => () => {
+    importReadGenerationRef.current += 1;
+  }, []);
+
+  useEffect(() => {
+    if (previousScopeGenerationRef.current === scopeGeneration) return;
+    previousScopeGenerationRef.current = scopeGeneration;
+    importReadGenerationRef.current += 1;
+    setImportError(null);
+    setIsImportReading(false);
+    if (importInputRef.current) importInputRef.current.value = '';
+  }, [scopeGeneration]);
 
   useEffect(() => {
     if (
@@ -106,12 +130,17 @@ export function ChangeSetWorkspacePanel({
     event.preventDefault();
     const submittedName = newName;
     const name = submittedName.trim();
-    if (!name || !isReady || isBusy) return;
-    const created = await controller.onCreate(name);
-    if (created) {
-      setNewName((current) =>
-        resolveSubmittedEditorDraft(current, submittedName, '')
-      );
+    if (!name || !isReady || isBusy || createInFlightRef.current) return;
+    createInFlightRef.current = true;
+    try {
+      const created = await controller.onCreate(name);
+      if (created) {
+        setNewName((current) =>
+          resolveSubmittedEditorDraft(current, submittedName, '')
+        );
+      }
+    } finally {
+      createInFlightRef.current = false;
     }
   };
 
@@ -140,17 +169,43 @@ export function ChangeSetWorkspacePanel({
                 const input = event.currentTarget;
                 const file = input.files?.[0];
                 if (!file) return;
+                const readGeneration = importReadGenerationRef.current + 1;
+                importReadGenerationRef.current = readGeneration;
+                const requestedScopeGeneration = getScopeGeneration();
                 if (file.size > changeSetMaximumPortablePackageBytes) {
                   setImportError(t('changeSets.importTooLarge'));
+                  setIsImportReading(false);
                   input.value = '';
                   return;
                 }
                 setImportError(null);
+                setIsImportReading(true);
                 void file.text().then(
-                  (packageJson) => controller.onImport(packageJson, false),
-                  () => setImportError(t('changeSets.importReadError'))
+                  (packageJson) => {
+                    const currentController = controllerRef.current;
+                    if (
+                      importReadGenerationRef.current !== readGeneration ||
+                      getScopeGeneration() !== requestedScopeGeneration ||
+                      currentController.readiness !== 'ready' ||
+                      currentController.externalBusy ||
+                      currentController.busyAction !== null
+                    ) {
+                      return;
+                    }
+                    currentController.onImport(packageJson, false);
+                  },
+                  () => {
+                    if (
+                      importReadGenerationRef.current === readGeneration &&
+                      getScopeGeneration() === requestedScopeGeneration
+                    ) {
+                      setImportError(t('changeSets.importReadError'));
+                    }
+                  }
                 ).finally(() => {
+                  if (importReadGenerationRef.current !== readGeneration) return;
                   input.value = '';
+                  setIsImportReading(false);
                 });
               }}
               ref={importInputRef}
@@ -158,6 +213,7 @@ export function ChangeSetWorkspacePanel({
               type="file"
             />
             <button
+              aria-busy={isImportReading || undefined}
               className="secondary-button compact-button"
               disabled={!isReady || isBusy}
               onClick={() => importInputRef.current?.click()}
@@ -890,6 +946,7 @@ function BuildVariants({
   const [selectedVariantSetIds, setSelectedVariantSetIds] = useState<Set<string>>(
     enabledChangeSetIds
   );
+  const createInFlightRef = useRef(false);
   const previousEnabledChangeSetIdsRef = useRef(enabledChangeSetIds);
   useEffect(() => {
     if (!outputMode && controller.availableOutputModes[0]) {
@@ -918,20 +975,25 @@ function BuildVariants({
     event.preventDefault();
     const submittedName = name;
     const nextName = submittedName.trim();
-    if (!nextName || isBusy) return;
+    if (!nextName || isBusy || createInFlightRef.current) return;
     const enabledChangeSetIds = enabledChangeSets
       .filter((candidate) => selectedVariantSetIds.has(candidate.id))
       .map((candidate) => candidate.id);
-    const created = await controller.onCreateBuildVariant(
-      nextName,
-      enabledChangeSetIds,
-      outputMode || null,
-      outputProfileId || null
-    );
-    if (created) {
-      setName((current) =>
-        resolveSubmittedEditorDraft(current, submittedName, '')
+    createInFlightRef.current = true;
+    try {
+      const created = await controller.onCreateBuildVariant(
+        nextName,
+        enabledChangeSetIds,
+        outputMode || null,
+        outputProfileId || null
       );
+      if (created) {
+        setName((current) =>
+          resolveSubmittedEditorDraft(current, submittedName, '')
+        );
+      }
+    } finally {
+      createInFlightRef.current = false;
     }
   };
 

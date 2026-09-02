@@ -968,8 +968,16 @@ function GuidedDesignProposalResults({
     proposalId: string | null;
     status: 'idle' | 'busy' | 'success' | 'error';
   }>({ error: false, importedChangeSetId: null, proposalId: null, status: 'idle' });
+  const importOperationRef = useRef<object | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+    importOperationRef.current = null;
+  }, []);
 
   useEffect(() => {
+    importOperationRef.current = null;
     headingRef.current?.focus({ preventScroll: true });
     setImportState({
       error: false,
@@ -994,7 +1002,9 @@ function GuidedDesignProposalResults({
   );
   const handleImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!importAllowed || !revision) return;
+    if (!importAllowed || !revision || importOperationRef.current !== null) return;
+    const importOperation = {};
+    importOperationRef.current = importOperation;
     setImportState((state) => ({ ...state, error: false, status: 'busy' }));
     try {
       const imported = await onImportProposal({
@@ -1006,6 +1016,7 @@ function GuidedDesignProposalResults({
         proposalId: response.proposalId,
         scope
       });
+      if (!isMountedRef.current || importOperationRef.current !== importOperation) return;
       if (
         imported.proposalId !== response.proposalId ||
         imported.proposalFingerprint !== response.proposalFingerprint ||
@@ -1024,12 +1035,18 @@ function GuidedDesignProposalResults({
         importedChangeSetId: imported.importedChangeSetId
       });
     } catch {
-      setImportState({
-        error: true,
-        importedChangeSetId: null,
-        proposalId: response.proposalId,
-        status: 'error'
-      });
+      if (isMountedRef.current && importOperationRef.current === importOperation) {
+        setImportState({
+          error: true,
+          importedChangeSetId: null,
+          proposalId: response.proposalId,
+          status: 'error'
+        });
+      }
+    } finally {
+      if (importOperationRef.current === importOperation) {
+        importOperationRef.current = null;
+      }
     }
   };
 

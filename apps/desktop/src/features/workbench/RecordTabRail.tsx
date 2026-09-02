@@ -15,6 +15,7 @@ export type WorkspaceRecordTabViewModel = {
 
 export type RecordTabRailProps = {
   activeTabKey: string | null;
+  disabled?: boolean;
   onActivate: (location: WorkbenchLocation) => void;
   onClose?: (tabKey: string) => void;
   tabs: readonly WorkspaceRecordTabViewModel[];
@@ -22,6 +23,7 @@ export type RecordTabRailProps = {
 
 export function RecordTabRail({
   activeTabKey,
+  disabled = false,
   onActivate,
   onClose,
   tabs
@@ -42,8 +44,10 @@ export function RecordTabRail({
 
   return (
     <ol
+      aria-busy={disabled || undefined}
       aria-label={t('workbench.tabs.label')}
       className="km-record-tab-rail"
+      inert={disabled ? true : undefined}
       ref={railRef}
     >
       {tabs.map((tab, index) => {
@@ -54,6 +58,7 @@ export function RecordTabRail({
               aria-current={isActive ? 'page' : undefined}
               className="km-record-tab"
               data-localization-ignore={tab.labelIsRawData ? 'true' : undefined}
+              disabled={disabled}
               onClick={() => onActivate(tab.location)}
               onKeyDown={(event) => {
                 if (event.nativeEvent.isComposing) {
@@ -88,7 +93,7 @@ export function RecordTabRail({
               <button
                 aria-label={t('workbench.tabs.close', { label: tab.label })}
                 className="km-record-tab-close"
-                disabled={tab.hasProtectedDraft}
+                disabled={disabled || tab.hasProtectedDraft}
                 onClick={() => onClose(tab.key)}
                 title={tab.hasProtectedDraft ? t('workbench.tabs.closeBlocked') : undefined}
                 type="button"

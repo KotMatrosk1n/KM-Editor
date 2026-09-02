@@ -65,12 +65,15 @@ export function BalanceLabSection({
 
   useEffect(() => {
     if (
-      controller.activeQuery?.study !== study ||
-      controller.activeQuery.layer !== layer
+      !controller.isQuerying &&
+      (
+        controller.activeQuery?.study !== study ||
+        controller.activeQuery.layer !== layer
+      )
     ) {
       void controller.query({ layer, study });
     }
-  }, [controller.activeQuery, controller.query, layer, study]);
+  }, [controller.activeQuery, controller.isQuerying, controller.query, layer, study]);
 
   return (
     <section
@@ -162,7 +165,7 @@ export function BalanceLabSection({
                     <button
                       aria-busy={controller.result.isAppending || undefined}
                       className="secondary-button km-balance-load-more"
-                      disabled={controller.result.isAppending}
+                      disabled={controller.isQuerying}
                       onClick={() => void controller.loadMore()}
                       type="button"
                     >

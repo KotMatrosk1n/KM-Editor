@@ -46,14 +46,20 @@ export function TrainerPoolsSection({
   const [actionFeedback, setActionFeedback] = useState<
     { kind: 'error' | 'success'; message: string } | null
   >(null);
+  const [isStagePending, setIsStagePending] = useState(false);
   usePublishCommonEditorError({
     domain: 'workflow.trainerPools',
     field: 'identitySwap',
     message: actionFeedback?.kind === 'error' ? actionFeedback.message : null
   });
   const actionFeedbackRef = useRef<HTMLDivElement | null>(null);
+  const stageOperationRef = useRef<symbol | null>(null);
   const selectionRef = useRef({ destination, source });
   selectionRef.current = { destination, source };
+
+  useEffect(() => () => {
+    stageOperationRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!workflow) {
@@ -76,6 +82,7 @@ export function TrainerPoolsSection({
   const hasPendingSwap = editSession?.pendingEdits.some(
     (edit) => edit.domain === 'workflow.trainerPools'
   ) === true;
+  const isStageLocked = isStaging || isStagePending;
   useEffect(() => {
     if (
       sourcePool &&
@@ -92,7 +99,45 @@ export function TrainerPoolsSection({
     (source.logicalPoolId !== destination.logicalPoolId ||
       source.rawTrainerId !== destination.rawTrainerId) &&
     !hasPendingSwap &&
-    !isStaging;
+    !isStaging &&
+    !isStagePending;
+
+  const handleStageSwap = async () => {
+    if (!source || !destination || stageOperationRef.current !== null) return;
+    const operationToken = Symbol('trainer-pool-stage');
+    stageOperationRef.current = operationToken;
+    const requestedSource = source;
+    const requestedDestination = destination;
+    setActionFeedback(null);
+    setIsStagePending(true);
+    let didSucceed = false;
+    try {
+      didSucceed = await onStageSwap({
+        destinationLogicalPoolId: destination.logicalPoolId,
+        destinationRawTrainerId: destination.rawTrainerId,
+        sourceLogicalPoolId: source.logicalPoolId,
+        sourceRawTrainerId: source.rawTrainerId
+      });
+    } catch {
+      didSucceed = false;
+    }
+    if (stageOperationRef.current !== operationToken) return;
+    stageOperationRef.current = null;
+    setIsStagePending(false);
+    if (
+      !sameSelection(selectionRef.current.source, requestedSource) ||
+      !sameSelection(selectionRef.current.destination, requestedDestination)
+    ) {
+      return;
+    }
+    setActionFeedback({
+      kind: didSucceed ? 'success' : 'error',
+      message: didSucceed
+        ? t('trainerPools.swap.success')
+        : t('trainerPools.swap.failure')
+    });
+    window.requestAnimationFrame(() => actionFeedbackRef.current?.focus());
+  };
 
   const poolGroups = useMemo(() => {
     const pools = workflow?.pools ?? [];
@@ -145,9 +190,12 @@ export function TrainerPoolsSection({
         <div className="trainer-pools-selection-grid">
           <PoolSelection
             destination="source"
+            disabled={isStageLocked}
             groups={poolGroups}
             label={t('trainerPools.swap.source')}
-            onChange={setSource}
+            onChange={(nextSource) => {
+              if (stageOperationRef.current === null) setSource(nextSource);
+            }}
             selection={source}
           />
           <div aria-hidden="true" className="trainer-pools-swap-icon">
@@ -156,9 +204,12 @@ export function TrainerPoolsSection({
           <PoolSelection
             compatibleWith={sourcePool?.compatibilityGroup ?? null}
             destination="destination"
+            disabled={isStageLocked}
             groups={poolGroups}
             label={t('trainerPools.swap.destination')}
-            onChange={setDestination}
+            onChange={(nextDestination) => {
+              if (stageOperationRef.current === null) setDestination(nextDestination);
+            }}
             selection={destination}
           />
         </div>
@@ -194,44 +245,23 @@ export function TrainerPoolsSection({
         ) : null}
         <div className="button-row">
           <button
+            aria-busy={isStageLocked || undefined}
             className="primary-button"
             disabled={!canStage}
-            onClick={async () => {
-              if (!source || !destination) return;
-              const requestedSource = source;
-              const requestedDestination = destination;
-              setActionFeedback(null);
-              let didSucceed = false;
-              try {
-                didSucceed = await onStageSwap({
-                  destinationLogicalPoolId: destination.logicalPoolId,
-                  destinationRawTrainerId: destination.rawTrainerId,
-                  sourceLogicalPoolId: source.logicalPoolId,
-                  sourceRawTrainerId: source.rawTrainerId
-                });
-              } catch {
-                didSucceed = false;
-              }
-              if (
-                !sameSelection(selectionRef.current.source, requestedSource) ||
-                !sameSelection(selectionRef.current.destination, requestedDestination)
-              ) {
-                return;
-              }
-              setActionFeedback({
-                kind: didSucceed ? 'success' : 'error',
-                message: didSucceed
-                  ? t('trainerPools.swap.success')
-                  : t('trainerPools.swap.failure')
-              });
-              window.requestAnimationFrame(() => actionFeedbackRef.current?.focus());
-            }}
+            onClick={handleStageSwap}
             type="button"
           >
-            {isStaging ? t('trainerPools.swap.staging') : t('trainerPools.swap.stage')}
+            {isStaging || isStagePending
+              ? t('trainerPools.swap.staging')
+              : t('trainerPools.swap.stage')}
           </button>
           {editSession && editSession.pendingEdits.length > 0 ? (
-            <button className="secondary-button" onClick={onOpenChanges} type="button">
+            <button
+              className="secondary-button"
+              disabled={isStageLocked}
+              onClick={onOpenChanges}
+              type="button"
+            >
               {t('trainerPools.openChanges', { count: editSession.pendingEdits.length })}
             </button>
           ) : null}
@@ -246,6 +276,7 @@ export function TrainerPoolsSection({
 function PoolSelection({
   compatibleWith,
   destination,
+  disabled,
   groups,
   label,
   onChange,
@@ -253,6 +284,7 @@ function PoolSelection({
 }: {
   compatibleWith?: string | null;
   destination: string;
+  disabled: boolean;
   groups: { infinity: TrainerPoolRecord[]; story: TrainerPoolRecord[] };
   label: string;
   onChange: (selection: PoolMemberSelection | null) => void;
@@ -265,7 +297,7 @@ function PoolSelection({
   const memberSelectId = `trainer-pools-${destination}-member`;
 
   return (
-    <fieldset className="trainer-pools-selection-card">
+    <fieldset className="trainer-pools-selection-card" disabled={disabled}>
       <legend>{label}</legend>
       <label htmlFor={poolSelectId}>{t('trainerPools.swap.pool')}</label>
       <select

@@ -385,10 +385,13 @@ function MergeSurface({
   >(new Map());
   const [changeSetName, setChangeSetName] = useState(t('semanticMerge.merge.defaultName'));
   const [isImporting, setIsImporting] = useState(false);
+  const [isPickingSource, setIsPickingSource] = useState(false);
   const [importError, setImportError] = useState(false);
+  const importOperationRef = useRef<object | null>(null);
   const importStatusRef = useRef<HTMLDivElement | null>(null);
   const resultsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const isMountedRef = useRef(true);
+  const pickerOperationRef = useRef<object | null>(null);
   const pickerGenerationRef = useRef({ a: 0, b: 0 });
   const pickerContextIdentity = JSON.stringify([
     scope.projectId,
@@ -404,6 +407,7 @@ function MergeSurface({
   const isBlocked = !isAvailable ||
     !isChangeSetWorkspaceReady ||
     isChangeSetWorkspaceBusy ||
+    isPickingSource ||
     controller.isQuerying;
   const sourceIdentity = `${controller.sourceA.data?.instanceId ?? ''}:${controller.sourceB.data?.instanceId ?? ''}`;
   const previousResolutionSourceRef = useRef<{
@@ -422,6 +426,8 @@ function MergeSurface({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      importOperationRef.current = null;
+      pickerOperationRef.current = null;
       pickerGenerationRef.current.a += 1;
       pickerGenerationRef.current.b += 1;
     };
@@ -498,20 +504,40 @@ function MergeSurface({
   );
 
   const pickSource = async (slot: 'a' | 'b') => {
+    if (
+      pickerOperationRef.current !== null ||
+      importOperationRef.current !== null ||
+      controller.isQuerying
+    ) return;
+    const pickerOperation = {};
+    pickerOperationRef.current = pickerOperation;
+    setIsPickingSource(true);
     const generation = ++pickerGenerationRef.current[slot];
     const requestedContextIdentity = pickerContextIdentityRef.current;
-    const selectedPath = await onPickSource(slot);
-    if (
-      selectedPath === null ||
-      !isMountedRef.current ||
-      pickerGenerationRef.current[slot] !== generation ||
-      pickerContextIdentityRef.current !== requestedContextIdentity
-    ) return;
-    await controller.openSource(slot, selectedPath);
+    try {
+      const selectedPath = await onPickSource(slot);
+      if (
+        selectedPath === null ||
+        !isMountedRef.current ||
+        pickerOperationRef.current !== pickerOperation ||
+        pickerGenerationRef.current[slot] !== generation ||
+        pickerContextIdentityRef.current !== requestedContextIdentity
+      ) return;
+      await controller.openSource(slot, selectedPath);
+    } finally {
+      if (pickerOperationRef.current === pickerOperation) {
+        pickerOperationRef.current = null;
+        if (isMountedRef.current) setIsPickingSource(false);
+      }
+    }
   };
   const discover = async (event: FormEvent) => {
     event.preventDefault();
-    if (normalizedSearch === null) return;
+    if (
+      normalizedSearch === null ||
+      pickerOperationRef.current !== null ||
+      importOperationRef.current !== null
+    ) return;
     await controller.previewMerge([], [], normalizedSearch);
   };
   const toggleTarget = (row: SemanticMergeRow, checked: boolean) => {
@@ -531,15 +557,25 @@ function MergeSurface({
     });
   };
   const generate = async () => {
-    if (selectedTargets.length === 0) return;
+    if (
+      selectedTargets.length === 0 ||
+      pickerOperationRef.current !== null ||
+      importOperationRef.current !== null
+    ) return;
     await controller.previewMerge(selectedTargets, [], null);
   };
   const updateChoices = async () => {
-    if (!preview || preview.selectionRequired || !selectionMatchesProposal) return;
+    if (
+      !preview ||
+      preview.selectionRequired ||
+      !selectionMatchesProposal ||
+      pickerOperationRef.current !== null ||
+      importOperationRef.current !== null
+    ) return;
     await controller.previewMerge(preview.normalizedTargets, draftResolutions, null);
   };
   const importProposal = async () => {
-    if (!canImport || !preview) return;
+    if (!canImport || !preview || importOperationRef.current !== null) return;
     const expectedEdits = preview.rows.flatMap((row): ExpectedImportedScalarEdit[] => {
       if (
         row.state !== 'autoMerged' ||
@@ -559,6 +595,9 @@ function MergeSurface({
       }];
     });
     if (expectedEdits.length !== preview.totalMutationCount) return;
+    const importOperation = {};
+    importOperationRef.current = importOperation;
+    const requestedContextIdentity = pickerContextIdentityRef.current;
     setIsImporting(true);
     setImportError(false);
     try {
@@ -575,15 +614,27 @@ function MergeSurface({
         targets: preview.normalizedTargets
       }, expectedEdits);
       if (
+        importOperationRef.current !== importOperation ||
+        pickerContextIdentityRef.current !== requestedContextIdentity
+      ) return;
+      if (
         response.proposalId !== preview.proposalId ||
         response.proposalFingerprint !== preview.proposalFingerprint ||
         !sameRevision(response.revision, revision)
       ) throw new Error('Stale semantic merge import response.');
       onImported();
     } catch {
-      setImportError(true);
+      if (
+        importOperationRef.current === importOperation &&
+        pickerContextIdentityRef.current === requestedContextIdentity
+      ) {
+        setImportError(true);
+      }
     } finally {
-      setIsImporting(false);
+      if (importOperationRef.current === importOperation) {
+        importOperationRef.current = null;
+        setIsImporting(false);
+      }
     }
   };
 
@@ -1314,6 +1365,7 @@ function RecipeSurface({
   const [recipeChangeSetName, setRecipeChangeSetName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState(false);
+  const importOperationRef = useRef<object | null>(null);
   const [compatibilityFilter, setCompatibilityFilter] = useState('all');
   const [compatibilitySearch, setCompatibilitySearch] = useState('');
   const [compatibilityOrder, setCompatibilityOrder] = useState<
@@ -1356,6 +1408,7 @@ function RecipeSurface({
     return () => {
       isMountedRef.current = false;
       fileReadGenerationRef.current += 1;
+      importOperationRef.current = null;
     };
   }, []);
   useEffect(() => {
@@ -1458,11 +1511,22 @@ function RecipeSurface({
       }
       await controller.validateRecipe(content);
     } catch {
-      setFileError(true);
+      if (
+        isMountedRef.current &&
+        fileReadGenerationRef.current === generation &&
+        fileReadContextIdentityRef.current === requestedContextIdentity
+      ) {
+        setFileError(true);
+      }
     }
   };
   const importRecipe = async () => {
-    if (!canImport || !preview || !validation) return;
+    if (
+      !canImport ||
+      !preview ||
+      !validation ||
+      importOperationRef.current !== null
+    ) return;
     const expectedEdits = preview.compatibility.flatMap(
       (row): ExpectedImportedScalarEdit[] => row.state !== 'compatible'
         ? []
@@ -1474,6 +1538,9 @@ function RecipeSurface({
           }]
     );
     if (expectedEdits.length !== preview.totalMutationCount) return;
+    const importOperation = {};
+    importOperationRef.current = importOperation;
+    const requestedContextIdentity = fileReadContextIdentityRef.current;
     setIsImporting(true);
     setImportError(false);
     try {
@@ -1488,6 +1555,10 @@ function RecipeSurface({
         scope
       }, expectedEdits);
       if (
+        importOperationRef.current !== importOperation ||
+        fileReadContextIdentityRef.current !== requestedContextIdentity
+      ) return;
+      if (
         response.recipeInstanceId !== validation.recipeInstanceId ||
         response.recipeFingerprint !== validation.recipeFingerprint ||
         response.proposalId !== preview.proposalId ||
@@ -1496,9 +1567,17 @@ function RecipeSurface({
       ) throw new Error('Stale recipe import response.');
       onImported();
     } catch {
-      setImportError(true);
+      if (
+        importOperationRef.current === importOperation &&
+        fileReadContextIdentityRef.current === requestedContextIdentity
+      ) {
+        setImportError(true);
+      }
     } finally {
-      setIsImporting(false);
+      if (importOperationRef.current === importOperation) {
+        importOperationRef.current = null;
+        setIsImporting(false);
+      }
     }
   };
 

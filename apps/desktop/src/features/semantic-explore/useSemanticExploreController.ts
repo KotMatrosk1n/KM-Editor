@@ -196,6 +196,7 @@ function emptySnapshot(): SemanticExploreControllerSnapshot {
 class SemanticExploreControllerStore {
   private activeRequests = new Set<number>();
   private bridge: SemanticExploreProjectBridgeApi;
+  private capabilitiesRequest: Promise<void> | null = null;
   private changesSpec: ChangesSpec | null = null;
   private compareSpec: CompareSpec | null = null;
   private detachedRequestIds = new Set<number>();
@@ -265,7 +266,20 @@ class SemanticExploreControllerStore {
     return this.readCapabilities();
   }
 
-  private async readCapabilities() {
+  private readCapabilities() {
+    if (this.capabilitiesRequest) return this.capabilitiesRequest;
+    const request = this.performCapabilitiesRead();
+    this.capabilitiesRequest = request;
+    const release = () => {
+      if (this.capabilitiesRequest === request) {
+        this.capabilitiesRequest = null;
+      }
+    };
+    void request.then(release, release);
+    return request;
+  }
+
+  private async performCapabilitiesRead() {
     const scope = this.scope;
     if (!scope) {
       return;
@@ -305,11 +319,13 @@ class SemanticExploreControllerStore {
   }
 
   public async searchEntities(options: SemanticSearchOptions) {
+    if (this.snapshot.search.status === 'loading') return;
     this.searchSpec = normalizeSearchOptions(options);
     await this.runSearch(false);
   }
 
   public async loadMoreSearch() {
+    if (this.snapshot.search.status === 'loading') return;
     await this.runSearch(true);
   }
 
@@ -423,6 +439,7 @@ class SemanticExploreControllerStore {
   }
 
   public async compare(options: SemanticCompareOptions) {
+    if (this.snapshot.comparison.status === 'loading') return;
     this.externalSpec = null;
     this.externalComparedModInstanceId = null;
     this.clearSlot('externalComparison');
@@ -435,28 +452,34 @@ class SemanticExploreControllerStore {
   }
 
   public async loadMoreComparison() {
+    if (this.snapshot.comparison.status === 'loading') return;
     await this.runComparison(true);
   }
 
   public async getReferences(options: SemanticReferencesOptions) {
+    if (this.snapshot.references.status === 'loading') return;
     this.referencesSpec = options;
     await this.runReferences(false);
   }
 
   public async loadMoreReferences() {
+    if (this.snapshot.references.status === 'loading') return;
     await this.runReferences(true);
   }
 
   public async getImpact(record: SemanticExploreRecordRef, layer: QueryableLayer) {
+    if (this.snapshot.impact.status === 'loading') return;
     this.impactSpec = { layer, record };
     await this.runImpact(false);
   }
 
   public async loadMoreImpact() {
+    if (this.snapshot.impact.status === 'loading') return;
     await this.runImpact(true);
   }
 
   public async getOwnership(record?: SemanticExploreRecordRef) {
+    if (this.snapshot.ownership.status === 'loading') return;
     this.ownershipSpec = { ...(record ? { record } : {}) };
     this.snapshot = {
       ...this.snapshot,
@@ -466,10 +489,12 @@ class SemanticExploreControllerStore {
   }
 
   public async loadMoreOwnership() {
+    if (this.snapshot.ownership.status === 'loading') return;
     await this.runOwnership(true);
   }
 
   public compareExternal(options: SemanticExternalCompareOptions) {
+    if (this.snapshot.externalComparison.status === 'loading') return Promise.resolve();
     this.compareSpec = null;
     this.clearSlot('comparison');
     this.externalSpec = { left: options.left, ...(options.record ? { record: options.record } : {}) };
@@ -486,16 +511,19 @@ class SemanticExploreControllerStore {
   }
 
   public async loadMoreExternalComparison() {
+    if (this.snapshot.externalComparison.status === 'loading') return;
     await this.runExternalComparison(true);
   }
 
   public async getSemanticChanges(options: SemanticChangesOptions) {
+    if (this.snapshot.changes.status === 'loading') return;
     this.changesSpec = options;
     this.snapshot = { ...this.snapshot, submittedChangesSpec: options };
     await this.runChanges(false);
   }
 
   public async loadMoreChanges() {
+    if (this.snapshot.changes.status === 'loading') return;
     await this.runChanges(true);
   }
 
@@ -1119,6 +1147,7 @@ class SemanticExploreControllerStore {
   private reset(clearScope: boolean) {
     this.freshness.invalidateAll();
     this.activeRequests.clear();
+    this.capabilitiesRequest = null;
     this.detachedRequestIds.clear();
     this.entityTargetKey = null;
     this.searchSpec = null;

@@ -321,8 +321,18 @@ assert.match(
 );
 assert.match(
   app,
-  /const recycleProjectBridgeBeforeScopeChange = useCallback\(async \(\) => \{[\s\S]*?projectBridgeScopeRecycleInFlightRef\.current[\s\S]*?desktopServices\.recycleProjectBridge\(\)[\s\S]*?return false;[\s\S]*?const scheduleProjectBridgeRecycleAfterDraftChange = useCallback/,
-  'Project-scope recycling must be deduplicated and surface failure before a scope transition proceeds.'
+  /const beginProjectScopeTransition = useCallback\([\s\S]*?criticalWriteOperationRef\.current !== null[\s\S]*?projectScopeTransitionRef\.current = transition;[\s\S]*?projectScopeGenerationRef\.current \+= 1;[\s\S]*?return transition;/,
+  'Project-scope transitions must claim synchronous admission and invalidate stale project work.'
+);
+assert.match(
+  app,
+  /const finishProjectScopeTransition = useCallback\(\(transition: object\) => \{[\s\S]*?projectScopeTransitionRef\.current === transition[\s\S]*?projectScopeTransitionRef\.current = null;/,
+  'Only the project-scope transition owner may release project admission.'
+);
+assert.match(
+  app,
+  /const recycleProjectBridgeBeforeScopeChange = useCallback\(async \([\s\S]*?transition: object[\s\S]*?projectScopeTransitionRef\.current !== transition[\s\S]*?projectBridgeScopeRecycleInFlightRef\.current[\s\S]*?desktopServices\.recycleProjectBridge\(\)[\s\S]*?return false;[\s\S]*?const scheduleProjectBridgeRecycleAfterDraftChange = useCallback[\s\S]*?beginProjectScopeTransition\(\)[\s\S]*?recycleProjectBridgeBeforeScopeChange\(transition\)[\s\S]*?finishProjectScopeTransition\(transition\)/,
+  'Project-scope recycling must require its owner, deduplicate bridge work, and release deferred draft transitions.'
 );
 assert.match(
   app,
