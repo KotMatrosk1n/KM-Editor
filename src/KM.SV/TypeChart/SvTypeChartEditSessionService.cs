@@ -271,6 +271,7 @@ public sealed class SvTypeChartEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -295,8 +296,15 @@ public sealed class SvTypeChartEditSessionService
                 currentPlan,
                 outputMode,
                 writtenFiles,
-                diagnostics);
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+                diagnostics,
+                ref outputTransaction);
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                diagnostics,
+                outputTransaction);
         }
 
         var values = DecodeValues(pendingEdit.NewValue, diagnostics);
@@ -313,8 +321,15 @@ public sealed class SvTypeChartEditSessionService
             outputMode,
             values,
             writtenFiles,
-            diagnostics);
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            diagnostics,
+            ref outputTransaction);
+        return CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles,
+            diagnostics,
+            outputTransaction);
     }
 
     private void ApplyMain(
@@ -325,7 +340,8 @@ public sealed class SvTypeChartEditSessionService
         SvOutputMode outputMode,
         IReadOnlyList<int> values,
         ICollection<ProjectFileReference> writtenFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        ref OutputApplyResult? outputTransaction)
     {
         var project = projectWorkspaceService.Open(paths);
         var source = SvTypeChartWorkflowService.ResolveWorkflowFile(project, SvTypeChartWorkflowService.ExeFsMainPath);
@@ -347,7 +363,7 @@ public sealed class SvTypeChartEditSessionService
                 File.ReadAllBytes(source.AbsolutePath),
                 gameOrderValues,
                 paths.SelectedGame);
-            ApplyMainMutation(
+            outputTransaction = ApplyMainMutation(
                 paths,
                 session,
                 reviewedPlan,
@@ -366,6 +382,15 @@ public sealed class SvTypeChartEditSessionService
                 $"Type Chart could not be patched: {exception.Message}",
                 file: SvTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Supported Scarlet/Violet exefs/main with one legal 18x18 type chart table"));
+        }
+        catch (SvOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Type Chart output could not be committed: {exception.Message}",
+                file: SvTypeChartWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
         }
         catch (IOException exception)
         {
@@ -400,7 +425,8 @@ public sealed class SvTypeChartEditSessionService
         ChangePlan currentPlan,
         SvOutputMode outputMode,
         ICollection<ProjectFileReference> writtenFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        ref OutputApplyResult? outputTransaction)
     {
         var targetPath = ResolveOutputPath(paths, diagnostics);
         var basePath = ResolveBaseSourcePath(paths, SvTypeChartWorkflowService.ExeFsMainPath);
@@ -431,7 +457,7 @@ public sealed class SvTypeChartEditSessionService
                 File.ReadAllBytes(targetPath),
                 baseBytes,
                 paths.SelectedGame);
-            ApplyMainMutation(
+            outputTransaction = ApplyMainMutation(
                 paths,
                 session,
                 reviewedPlan,
@@ -452,6 +478,15 @@ public sealed class SvTypeChartEditSessionService
                 $"Type Chart uninstall could not restore exefs/main: {exception.Message}",
                 file: SvTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Supported Scarlet/Violet exefs/main NSO"));
+        }
+        catch (SvOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Type Chart uninstall could not update output: {exception.Message}",
+                file: SvTypeChartWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
         }
         catch (IOException exception)
         {
@@ -479,7 +514,7 @@ public sealed class SvTypeChartEditSessionService
         }
     }
 
-    private void ApplyMainMutation(
+    private OutputApplyResult? ApplyMainMutation(
         ProjectPaths paths,
         EditSession session,
         ChangePlan reviewedPlan,
@@ -492,7 +527,7 @@ public sealed class SvTypeChartEditSessionService
             OutputReviewFingerprint.FromChangePlan(currentPlan),
             new OwnershipOwnerId("workflow.sv.type-chart"),
             [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, TypeChartEditDomain)]);
-        SvWorkflowFileSource.ApplyStandaloneOutputBatch(
+        return SvWorkflowFileSource.ApplyStandaloneOutputBatch(
             paths,
             [new SvStandaloneOutputMutation(
                 SvTypeChartWorkflowService.ExeFsMainPath,
@@ -762,14 +797,16 @@ public sealed class SvTypeChartEditSessionService
         DateTimeOffset appliedAt,
         ChangePlan currentPlan,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        OutputApplyResult? outputTransaction = null)
     {
         return new ApplyResult(
             applyId,
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

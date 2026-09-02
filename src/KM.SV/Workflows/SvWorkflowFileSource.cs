@@ -2630,6 +2630,8 @@ internal sealed class SvWorkflowFileSource
 
         internal bool IsCommitting { get; private set; }
 
+        internal bool HasPendingMutations => writes.Count > 0 || deletes.Count > 0;
+
         internal bool Matches(ProjectPaths candidate)
         {
             return candidate == paths;

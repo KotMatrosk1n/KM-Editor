@@ -10,6 +10,12 @@ export type TrainerFieldUpdateLike = {
   field: string;
 };
 
+export type TrainerPartySlotOccupancy = {
+  projectedSpeciesId: number | null;
+  slot: number;
+  sourceSpeciesId: number;
+};
+
 export function applyTrainerWorkflowDelta(
   workflow: TrainersWorkflow,
   delta: TrainersWorkflowDelta,
@@ -165,6 +171,34 @@ export function isTrainerSlotOccupiedForMaxIvs(
   projectedSpeciesId: number | null
 ) {
   return (projectedSpeciesId ?? sourceSpeciesId) > 0;
+}
+
+export function isTrainerPartySlotBlockedByEarlierEmptySlot(
+  slots: readonly TrainerPartySlotOccupancy[],
+  targetSlot: number
+) {
+  const target = slots.find((slot) => slot.slot === targetSlot);
+  if (!target || target.sourceSpeciesId > 0) {
+    return false;
+  }
+
+  return slots.some(
+    (slot) =>
+      slot.slot < targetSlot &&
+      !isTrainerSlotOccupiedForMaxIvs(slot.sourceSpeciesId, slot.projectedSpeciesId)
+  );
+}
+
+export function isTrainerPartySlotStageBlockedByEarlierUnstagedSlot(
+  slots: readonly TrainerPartySlotOccupancy[],
+  targetSlot: number
+) {
+  const target = slots.find((slot) => slot.slot === targetSlot);
+  if (!target || target.sourceSpeciesId > 0) {
+    return false;
+  }
+
+  return slots.some((slot) => slot.slot < targetSlot && slot.sourceSpeciesId <= 0);
 }
 
 export function trainerSlotHasNonMaxIvDrafts(

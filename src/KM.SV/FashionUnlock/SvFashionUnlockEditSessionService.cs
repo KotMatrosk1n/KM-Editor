@@ -268,6 +268,7 @@ public sealed class SvFashionUnlockEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -292,8 +293,15 @@ public sealed class SvFashionUnlockEditSessionService
                 currentPlan,
                 outputMode,
                 writtenFiles,
-                diagnostics);
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+                diagnostics,
+                ref outputTransaction);
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                diagnostics,
+                outputTransaction);
         }
 
         var project = projectWorkspaceService.Open(paths);
@@ -314,7 +322,7 @@ public sealed class SvFashionUnlockEditSessionService
             var output = SvFashionUnlockMainPatcher.Apply(
                 File.ReadAllBytes(source.AbsolutePath),
                 paths.SelectedGame);
-            ApplyMainMutation(
+            outputTransaction = ApplyMainMutation(
                 paths,
                 session,
                 reviewedPlan,
@@ -333,6 +341,15 @@ public sealed class SvFashionUnlockEditSessionService
                 $"Fashion Unlock source file could not be patched: {exception.Message}",
                 file: SvFashionUnlockWorkflowService.ExeFsMainPath,
                 expected: "Supported Scarlet/Violet exefs/main NSO"));
+        }
+        catch (SvOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Fashion Unlock output file could not be committed: {exception.Message}",
+                file: SvFashionUnlockWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
         }
         catch (IOException exception)
         {
@@ -359,7 +376,13 @@ public sealed class SvFashionUnlockEditSessionService
                 expected: "Current reviewed output target"));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles,
+            diagnostics,
+            outputTransaction);
     }
 
     private void ApplyUninstall(
@@ -369,7 +392,8 @@ public sealed class SvFashionUnlockEditSessionService
         ChangePlan currentPlan,
         SvOutputMode outputMode,
         ICollection<ProjectFileReference> writtenFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        ref OutputApplyResult? outputTransaction)
     {
         var targetPath = ResolveOutputPath(paths, diagnostics);
         var basePath = ResolveBaseSourcePath(paths, SvFashionUnlockWorkflowService.ExeFsMainPath);
@@ -400,7 +424,7 @@ public sealed class SvFashionUnlockEditSessionService
                 File.ReadAllBytes(targetPath),
                 baseBytes,
                 paths.SelectedGame);
-            ApplyMainMutation(
+            outputTransaction = ApplyMainMutation(
                 paths,
                 session,
                 reviewedPlan,
@@ -421,6 +445,15 @@ public sealed class SvFashionUnlockEditSessionService
                 $"Fashion Unlock uninstall could not restore exefs/main: {exception.Message}",
                 file: SvFashionUnlockWorkflowService.ExeFsMainPath,
                 expected: "Supported Scarlet/Violet exefs/main NSO"));
+        }
+        catch (SvOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Fashion Unlock uninstall could not update output: {exception.Message}",
+                file: SvFashionUnlockWorkflowService.ExeFsMainPath,
+                expected: "Current reviewed output target"));
         }
         catch (IOException exception)
         {
@@ -448,7 +481,7 @@ public sealed class SvFashionUnlockEditSessionService
         }
     }
 
-    private void ApplyMainMutation(
+    private OutputApplyResult? ApplyMainMutation(
         ProjectPaths paths,
         EditSession session,
         ChangePlan reviewedPlan,
@@ -461,7 +494,7 @@ public sealed class SvFashionUnlockEditSessionService
             OutputReviewFingerprint.FromChangePlan(currentPlan),
             new OwnershipOwnerId("workflow.sv.fashion-unlock"),
             [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, FashionUnlockEditDomain)]);
-        SvWorkflowFileSource.ApplyStandaloneOutputBatch(
+        return SvWorkflowFileSource.ApplyStandaloneOutputBatch(
             paths,
             [new SvStandaloneOutputMutation(
                 SvFashionUnlockWorkflowService.ExeFsMainPath,
@@ -677,14 +710,16 @@ public sealed class SvFashionUnlockEditSessionService
         DateTimeOffset appliedAt,
         ChangePlan currentPlan,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        OutputApplyResult? outputTransaction = null)
     {
         return new ApplyResult(
             applyId,
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

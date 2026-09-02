@@ -4932,9 +4932,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchApplyModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplyModMergeRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => modMergerWorkflowService.ApplyReviewed(
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            modMergerWorkflowService.ApplyReviewed(
                 ProjectBridgeMapper.ToCore(request.Payload.Paths),
                 request.Payload.ModDirectory1,
                 request.Payload.ModDirectory2,
@@ -4975,11 +4974,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchApplySvModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplySvModMergeRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => svWorkflowService.ApplyModMerge(
-                ProjectBridgeMapper.ToCore(request.Payload.Paths),
-                request.Payload.ModSources.Select(ToCore).ToArray()));
+        var result = svWorkflowService.ApplyModMerge(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
         var response = SvBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -5010,11 +5007,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchApplyZaModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplyZaModMergeRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => zaWorkflowService.ApplyModMerge(
-                ProjectBridgeMapper.ToCore(request.Payload.Paths),
-                request.Payload.ModSources.Select(ToCore).ToArray()));
+        var result = zaWorkflowService.ApplyModMerge(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
         var response = ZaBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -5170,9 +5165,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchApplyFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<ApplyFpsPatchRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => fpsPatchService.Apply(
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            fpsPatchService.Apply(
                 ProjectBridgeMapper.ToCore(request.Payload.Paths),
                 request.Payload.EnabledAnimationTimingComponentIds));
         var response = new ApplyFpsPatchResponse(
@@ -5186,9 +5180,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchRestoreFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<RestoreFpsPatchRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => fpsPatchService.Restore(
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            fpsPatchService.Restore(
                 ProjectBridgeMapper.ToCore(request.Payload.Paths),
                 request.Payload.AnimationTimingComponentIds));
         var response = new RestoreFpsPatchResponse(
@@ -5211,9 +5204,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchApplyProfanityFilter(string requestJson)
     {
         var request = DeserializeRequest<ApplyProfanityFilterRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => profanityFilterService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            profanityFilterService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new ApplyProfanityFilterResponse(
             ToDto(result.Status),
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -5224,9 +5216,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchRestoreProfanityFilter(string requestJson)
     {
         var request = DeserializeRequest<RestoreProfanityFilterRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => profanityFilterService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            profanityFilterService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new RestoreProfanityFilterResponse(
             ToDto(result.Status),
             EditSessionBridgeMapper.ToDto(result.ApplyResult));
@@ -5249,9 +5240,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchApplyRandomizer(string requestJson)
     {
         var request = DeserializeRequest<ApplyRandomizerRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => randomizerService.Apply(
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            randomizerService.Apply(
                 ProjectBridgeMapper.ToCore(request.Payload.Paths),
                 ToCore(request.Payload.Config)));
         var response = new ApplyRandomizerResponse(
@@ -5264,9 +5254,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchRestoreRandomizer(string requestJson)
     {
         var request = DeserializeRequest<RestoreRandomizerRequest>(requestJson);
-        var result = ExecuteExclusiveOutputOperation(
-            request.Payload.Paths,
-            () => randomizerService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
+        var result = ExecuteSerializedSwShOutputOperation(() =>
+            randomizerService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths)));
         var response = new RestoreRandomizerResponse(EditSessionBridgeMapper.ToDto(result));
 
         return SerializeSuccess(response, request.RequestId);
@@ -5644,15 +5633,13 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                         session,
                         changePlan,
                         ZaBridgeMapper.ToCore(request.Payload.OutputMode))
-                    : ExecuteExclusiveOutputOperation(
-                        request.Payload.Paths,
-                        () => isScarletViolet
-                            ? svWorkflowService.ApplyChangePlan(
-                                paths,
-                                session,
-                                changePlan,
-                                SvBridgeMapper.ToCore(request.Payload.OutputMode))
-                            : ApplyVerifiedSwShChangePlan(paths, session, changePlan)))
+                    : isScarletViolet
+                        ? svWorkflowService.ApplyChangePlan(
+                            paths,
+                            session,
+                            changePlan,
+                            SvBridgeMapper.ToCore(request.Payload.OutputMode))
+                        : ApplyVerifiedSwShChangePlan(paths, session, changePlan))
             .GetAwaiter()
             .GetResult();
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
@@ -5686,6 +5673,15 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 operation)
             .GetAwaiter()
             .GetResult();
+    }
+
+    private static TResult ExecuteSerializedSwShOutputOperation<TResult>(Func<TResult> operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        lock (SwShApplySyncRoot)
+        {
+            return operation();
+        }
     }
 
     private ApplyResult ApplyVerifiedSwShChangePlan(

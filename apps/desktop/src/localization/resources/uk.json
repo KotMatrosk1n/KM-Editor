@@ -1914,6 +1914,7 @@
     "trainers.partyClipboard.incompatibleReason": "Скопійована комірка належить редактору іншої гри.",
     "trainers.partyClipboard.sameSlotReason": "Виберіть іншу цільову комірку.",
     "trainers.partyClipboard.blockedTargetReason": "Заповніть попередню порожню комірку команди перед вставленням сюди.",
+    "trainers.partyClipboard.stagePreviousSlotReason": "Спочатку підготуйте попередню нову комірку команди, а потім цього покемона.",
     "trainers.partyClipboard.sourceSummary": "Скопійоване джерело: {trainer}, комірка {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}, комірка {slot}",
     "trainers.partyClipboard.unavailableTarget": "Комірка команди недоступна",

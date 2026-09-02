@@ -1914,6 +1914,7 @@
     "trainers.partyClipboard.incompatibleReason": "复制的栏位属于另一个游戏编辑器。",
     "trainers.partyClipboard.sameSlotReason": "请选择其他目标栏位。",
     "trainers.partyClipboard.blockedTargetReason": "请先填充前面的空队伍栏位，再粘贴到这里。",
+    "trainers.partyClipboard.stagePreviousSlotReason": "请先暂存前面新增的队伍栏位，再暂存这只宝可梦。",
     "trainers.partyClipboard.sourceSummary": "复制来源：{trainer}，栏位 {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}，栏位 {slot}",
     "trainers.partyClipboard.unavailableTarget": "队伍栏位不可用",

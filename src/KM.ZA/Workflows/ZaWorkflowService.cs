@@ -1882,8 +1882,13 @@ public sealed class ZaWorkflowService
         }
 
         var domain = GetDomain(session);
-        return domain == ZaEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
-            ? ApplyNormalDomainChangePlan(paths, session, reviewedPlan, domains, outputMode)
+        if (domain == ZaEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains))
+        {
+            return ApplyNormalDomainChangePlan(paths, session, reviewedPlan, domains, outputMode);
+        }
+
+        return CanUseDeferredSingleDomainOutput(domain, reviewedPlan, outputMode)
+            ? ApplyDeferredSingleDomainChangePlan(paths, session, reviewedPlan, domain, outputMode)
             : ApplySingleDomainChangePlan(paths, session, reviewedPlan, domain, outputMode);
     }
 
@@ -1969,6 +1974,95 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
         };
+    }
+
+    private ApplyResult ApplyDeferredSingleDomainChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ZaEditSessionDomain domain,
+        ZaOutputMode outputMode)
+    {
+        try
+        {
+            using var outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
+            using var deferredOutput = ZaWorkflowFileSource.BeginDeferredOutputBatch(
+                paths,
+                outputMode,
+                reviewedPlan,
+                new ZaOutputApplyContext(
+                    OutputReviewFingerprint.FromChangePlan(reviewedPlan),
+                    new OwnershipOwnerId(domain == ZaEditSessionDomain.Items
+                        ? "workflow.za.items"
+                        : "workflow.za.output"),
+                    [new OutputApplyOrigin(
+                        OutputApplyOriginKind.Workflow,
+                        GetDomainName(domain))]));
+            var result = ApplySingleDomainChangePlan(
+                paths,
+                session,
+                reviewedPlan,
+                domain,
+                outputMode);
+            if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return result with
+                {
+                    WrittenFiles = Array.Empty<ProjectFileReference>(),
+                    OutputTransaction = null,
+                };
+            }
+
+            if (!deferredOutput.HasPendingMutations)
+            {
+                return result with
+                {
+                    WrittenFiles = Array.Empty<ProjectFileReference>(),
+                    OutputTransaction = null,
+                };
+            }
+
+            try
+            {
+                var outputTransaction = deferredOutput.Commit();
+                return result with
+                {
+                    WrittenFiles = outputTransaction is null
+                        ? Array.Empty<ProjectFileReference>()
+                        : result.WrittenFiles,
+                    OutputTransaction = outputTransaction,
+                };
+            }
+            catch (Exception exception) when (exception is IOException
+                or UnauthorizedAccessException
+                or SecurityException
+                or InvalidDataException
+                or InvalidOperationException
+                or ArgumentException
+                or NotSupportedException
+                or OutputCoordinatorException)
+            {
+                var diagnostics = result.Diagnostics
+                    .Append(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Pokemon Legends Z-A change plan could not be applied atomically: {exception.Message}",
+                        GetDomainName(domain),
+                        expected: "Readable sources and writable output targets"))
+                    .ToArray();
+                return result with
+                {
+                    WrittenFiles = Array.Empty<ProjectFileReference>(),
+                    Diagnostics = diagnostics,
+                    OutputTransaction = exception is ZaOutputApplyNotCommittedException notCommitted
+                        ? notCommitted.Result
+                        : null,
+                };
+            }
+        }
+        finally
+        {
+            ClearMemoryCaches(clearReusableDataCaches: false);
+        }
     }
 
     private ZaEditSessionValidation ValidateNormalDomains(
@@ -2187,6 +2281,10 @@ public sealed class ZaWorkflowService
             if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
             {
                 outputTransaction = deferredOutput.Commit();
+                if (outputTransaction is null)
+                {
+                    writtenFiles.Clear();
+                }
             }
         }
         catch (Exception exception) when (exception is IOException
@@ -2309,6 +2407,19 @@ public sealed class ZaWorkflowService
             or ZaEditSessionDomain.StaticEncounters
             or ZaEditSessionDomain.GiftPokemon
             or ZaEditSessionDomain.TradePokemon;
+    }
+
+    private static bool CanUseDeferredSingleDomainOutput(
+        ZaEditSessionDomain domain,
+        ChangePlan reviewedPlan,
+        ZaOutputMode outputMode)
+    {
+        return domain is not ZaEditSessionDomain.None and not ZaEditSessionDomain.Mixed
+            && (domain != ZaEditSessionDomain.TypeChart || outputMode == ZaOutputMode.Standalone)
+            && (domain != ZaEditSessionDomain.Pokemon || reviewedPlan.Writes.All(write => !string.Equals(
+                write.TargetRelativePath,
+                ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                StringComparison.OrdinalIgnoreCase)));
     }
 
     private static EditSession SliceSession(EditSession session, ZaEditSessionDomain domain)

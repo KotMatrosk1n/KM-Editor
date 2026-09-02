@@ -1914,6 +1914,7 @@
     "trainers.partyClipboard.incompatibleReason": "Der kopierte Platz gehört zu einem anderen Spieleditor.",
     "trainers.partyClipboard.sameSlotReason": "Wähle einen anderen Zielplatz.",
     "trainers.partyClipboard.blockedTargetReason": "Fülle den vorherigen leeren Teamplatz, bevor du hier einfügst.",
+    "trainers.partyClipboard.stagePreviousSlotReason": "Stelle den früheren neuen Teamplatz bereit, bevor du dieses Pokémon bereitstellst.",
     "trainers.partyClipboard.sourceSummary": "Kopierte Quelle: {trainer}, Platz {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}, Platz {slot}",
     "trainers.partyClipboard.unavailableTarget": "Teamplatz nicht verfügbar",

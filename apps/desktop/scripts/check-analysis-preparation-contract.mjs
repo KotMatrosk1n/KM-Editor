@@ -364,8 +364,8 @@ assert.match(
 );
 assert.equal(
   [...app.matchAll(/\bstartSvCacheWarmup\(/g)].length,
-  4,
-  'Project activation paths must not duplicate the one automatic cache startup owner or its three user-triggered restarts.'
+  5,
+  'Project activation paths must not duplicate the automatic startup, Apply recovery, or three user-triggered cache restarts.'
 );
 
 assert.match(

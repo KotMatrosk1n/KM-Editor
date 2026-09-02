@@ -3122,6 +3122,11 @@ internal sealed class ZaWorkflowFileSource
 
         internal bool IsCommitting { get; private set; }
 
+        internal bool HasPendingMutations =>
+            romFsMutations.Count > 0
+            || standaloneOutputMutations.Count > 0
+            || deleteStandaloneDescriptorRequested;
+
         internal bool Matches(ProjectPaths candidate)
         {
             return candidate == paths;

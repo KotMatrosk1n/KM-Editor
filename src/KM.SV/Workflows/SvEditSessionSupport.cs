@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -214,14 +215,16 @@ internal static class SvEditSessionSupport
         DateTimeOffset appliedAt,
         ChangePlan currentPlan,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        OutputApplyResult? outputTransaction = null)
     {
         return new ApplyResult(
             applyId,
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     public static ProjectFileReference GeneratedReference(

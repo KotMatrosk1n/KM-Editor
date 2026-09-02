@@ -76,6 +76,8 @@ import {
   applyTrainerWorkflowDelta,
   canonicalizeTrainerPartySlotDrafts,
   createTrainerPartySourceSpeciesIndex,
+  isTrainerPartySlotBlockedByEarlierEmptySlot,
+  isTrainerPartySlotStageBlockedByEarlierUnstagedSlot,
   isTrainerSlotOccupiedForMaxIvs,
   orderTrainerFieldUpdates,
   reconcileTrainerSlotMaxIvDrafts,
@@ -770,6 +772,10 @@ type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effective
 export type EditorUiFamily = 'swsh' | 'sv' | 'za';
 type TrinityCacheMode = SvCacheMode | ZaCacheMode | SwShCacheMode;
 type TrinityCacheStatus = SvCacheStatus | ZaCacheStatus | SwShCacheStatus;
+type ProjectCacheApplyPause = Readonly<{
+  runId: number;
+  scopeKey: string;
+}>;
 
 const textControlInserts = [
   {
@@ -8749,6 +8755,48 @@ export function App({
       }
     },
     [bridge]
+  );
+
+  const pauseProjectCacheWarmupForApply = useCallback(
+    (paths: ReturnType<typeof toProjectPaths>): ProjectCacheApplyPause | null => {
+      if (!isProjectCacheGame(paths.selectedGame)) {
+        return null;
+      }
+
+      const scopeKey = svCacheScopeKeyRef.current;
+      if (scopeKey === null) {
+        return null;
+      }
+
+      const runId = svCacheWarmupRunRef.current + 1;
+      svCacheWarmupRunRef.current = runId;
+      setIsSvCacheWarming(false);
+      return { runId, scopeKey };
+    },
+    []
+  );
+
+  const resumeProjectCacheWarmupAfterApply = useCallback(
+    (
+      pause: ProjectCacheApplyPause | null,
+      paths: ReturnType<typeof toProjectPaths>,
+      canResume: () => boolean
+    ) => {
+      if (
+        pause === null ||
+        !canResume() ||
+        svCacheWarmupRunRef.current !== pause.runId ||
+        svCacheScopeKeyRef.current !== pause.scopeKey ||
+        !health ||
+        !isProjectCacheGame(paths.selectedGame) ||
+        !hasValidProjectCacheSource(paths.selectedGame, health)
+      ) {
+        return;
+      }
+
+      void startSvCacheWarmup(paths, health, pause.scopeKey);
+    },
+    [health, startSvCacheWarmup]
   );
 
   useEffect(() => {
@@ -18041,6 +18089,7 @@ export function App({
       JSON.stringify(reviewedPlan)
     );
     const paths = createProjectPaths(draftPathsRef.current);
+    const cacheWarmupPause = pauseProjectCacheWarmupForApply(paths);
     const pathsSignature = JSON.stringify(paths);
     const projectScopeGeneration = projectScopeGenerationRef.current;
     const isCurrentProjectOperation = () =>
@@ -18163,6 +18212,11 @@ export function App({
         setWorkProgress(null);
       }
       finishCriticalWriteOperation(criticalWriteToken);
+      resumeProjectCacheWarmupAfterApply(
+        cacheWarmupPause,
+        paths,
+        isCurrentProjectOperation
+      );
     }
   };
 
@@ -19073,6 +19127,7 @@ export function App({
       JSON.stringify(visibleChangePlan)
     );
     const paths = createProjectPaths(draftPathsRef.current);
+    const cacheWarmupPause = pauseProjectCacheWarmupForApply(paths);
     const pathsSignature = JSON.stringify(paths);
     const projectScopeGeneration = projectScopeGenerationRef.current;
     const isCurrentProjectOperation = () =>
@@ -19237,6 +19292,11 @@ export function App({
         setWorkProgress(null);
       }
       finishCriticalWriteOperation(criticalWriteToken);
+      resumeProjectCacheWarmupAfterApply(
+        cacheWarmupPause,
+        paths,
+        isCurrentProjectOperation
+      );
     }
   };
 
@@ -19988,6 +20048,7 @@ export function App({
       JSON.stringify(reviewedPlan)
     );
     const paths = createProjectPaths(draftPathsRef.current);
+    const cacheWarmupPause = pauseProjectCacheWarmupForApply(paths);
     const pathsSignature = JSON.stringify(paths);
     const projectScopeGeneration = projectScopeGenerationRef.current;
     const isCurrentProjectOperation = () =>
@@ -20156,6 +20217,11 @@ export function App({
         setWorkProgress(null);
       }
       finishCriticalWriteOperation(criticalWriteToken);
+      resumeProjectCacheWarmupAfterApply(
+        cacheWarmupPause,
+        paths,
+        isCurrentProjectOperation
+      );
     }
   };
 
@@ -32541,15 +32607,42 @@ function SelectedTrainerPanel({
 
     return draftState.normalizedValue === '1';
   }, [contextualPokemonFields, pokemonDrafts, selectedPokemon]);
+  const projectedTrainerPartySlotOccupancy = useMemo(
+    () =>
+      trainer?.team.map((pokemon) => ({
+        projectedSpeciesId: getProjectedTrainerPokemonFieldValue(
+          pokemon,
+          pokemonFields,
+          canonicalPokemonDraftsByTrainerSlot[
+            `${trainer.trainerId}:${pokemon.slot}`
+          ] ?? {},
+          speciesIdFieldName
+        ),
+        slot: pokemon.slot,
+        sourceSpeciesId: pokemon.speciesId
+      })) ?? [],
+    [canonicalPokemonDraftsByTrainerSlot, pokemonFields, trainer]
+  );
   const selectedPokemonBlockedByPreviousSlot = useMemo(() => {
-    if (!trainer || !selectedPokemon) {
+    if (!selectedPokemon) {
       return false;
     }
 
-    return selectedPokemon.speciesId <= 0 && trainer.team.some(
-      (pokemon) => pokemon.slot < selectedPokemon.slot && pokemon.speciesId === 0
+    return isTrainerPartySlotBlockedByEarlierEmptySlot(
+      projectedTrainerPartySlotOccupancy,
+      selectedPokemon.slot
     );
-  }, [selectedPokemon, trainer]);
+  }, [projectedTrainerPartySlotOccupancy, selectedPokemon]);
+  const selectedPokemonStageBlockedByPreviousSlot = useMemo(() => {
+    if (!selectedPokemon) {
+      return false;
+    }
+
+    return isTrainerPartySlotStageBlockedByEarlierUnstagedSlot(
+      projectedTrainerPartySlotOccupancy,
+      selectedPokemon.slot
+    );
+  }, [projectedTrainerPartySlotOccupancy, selectedPokemon]);
   const contextMenuPokemon =
     partySlotContextMenu && trainer?.trainerId === partySlotContextMenu.trainerId
       ? trainer.team.find((pokemon) => pokemon.slot === partySlotContextMenu.slot) ?? null
@@ -32569,11 +32662,10 @@ function SelectedTrainerPanel({
           contextMenuPokemonDrafts
         );
   const contextMenuTargetBlockedByPreviousSlot = Boolean(
-    trainer &&
-      contextMenuPokemon &&
-      contextMenuPokemon.speciesId <= 0 &&
-      trainer.team.some(
-        (pokemon) => pokemon.slot < contextMenuPokemon.slot && pokemon.speciesId === 0
+    contextMenuPokemon &&
+      isTrainerPartySlotBlockedByEarlierEmptySlot(
+        projectedTrainerPartySlotOccupancy,
+        contextMenuPokemon.slot
       )
   );
   const contextMenuCommonDisabledReason =
@@ -32674,6 +32766,12 @@ function SelectedTrainerPanel({
     editSession !== null &&
     canEditTrainers &&
     !isTrainerUpdating &&
+    pokemonDraftSummary.changedFields.length > 0 &&
+    pokemonDraftSummary.invalidFields.length === 0 &&
+    !pokemonHasInvalidEvTotal &&
+    !selectedPokemonStageBlockedByPreviousSlot;
+  const showSelectedPokemonStageOrderReason =
+    selectedPokemonStageBlockedByPreviousSlot &&
     pokemonDraftSummary.changedFields.length > 0 &&
     pokemonDraftSummary.invalidFields.length === 0 &&
     !pokemonHasInvalidEvTotal;
@@ -33265,6 +33363,11 @@ function SelectedTrainerPanel({
               className="primary-button"
               disabled={!canSavePokemonDrafts}
               onClick={stagePokemonDrafts}
+              title={
+                showSelectedPokemonStageOrderReason
+                  ? t('trainers.partyClipboard.stagePreviousSlotReason')
+                  : undefined
+              }
               type="button"
             >
               <BusyActionContent
@@ -33274,6 +33377,11 @@ function SelectedTrainerPanel({
                 label={t('editorDrafts.stageSelectedPokemon')}
               />
             </button>
+          ) : null}
+          {showSelectedPokemonStageOrderReason ? (
+            <span className="draft-action-summary">
+              {t('trainers.partyClipboard.stagePreviousSlotReason')}
+            </span>
           ) : null}
           {nextTrainerDraftTarget ? (
             <button

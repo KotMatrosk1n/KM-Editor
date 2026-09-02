@@ -1914,6 +1914,7 @@
     "trainers.partyClipboard.incompatibleReason": "La ranura copiada pertenece a otro editor de juego.",
     "trainers.partyClipboard.sameSlotReason": "Elige otra ranura de destino.",
     "trainers.partyClipboard.blockedTargetReason": "Rellena la ranura vacía anterior antes de pegar aquí.",
+    "trainers.partyClipboard.stagePreviousSlotReason": "Prepara la nueva ranura anterior antes de preparar este Pokémon.",
     "trainers.partyClipboard.sourceSummary": "Origen copiado: {trainer}, ranura {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}, ranura {slot}",
     "trainers.partyClipboard.unavailableTarget": "Ranura del equipo no disponible",
