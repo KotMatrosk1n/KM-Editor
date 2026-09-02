@@ -617,14 +617,17 @@ function WorkspaceCreateControl({
   const { t } = useLocalization();
   const [name, setName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const createInFlightRef = useRef<object | null>(null);
   const scopeKeyRef = useRef(scopeKey);
   scopeKeyRef.current = scopeKey;
   const normalizedName = name.trim();
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!normalizedName || isCreating) {
+    if (!normalizedName || isCreating || createInFlightRef.current !== null) {
       return;
     }
+    const createOperation = {};
+    createInFlightRef.current = createOperation;
     const submittedName = name;
     const submittedScopeKey = scopeKeyRef.current;
     setIsCreating(true);
@@ -638,7 +641,10 @@ function WorkspaceCreateControl({
     } catch {
       // The owner reports the failed create; retain the user's exact draft.
     } finally {
-      setIsCreating(false);
+      if (createInFlightRef.current === createOperation) {
+        createInFlightRef.current = null;
+        setIsCreating(false);
+      }
     }
   };
   return (

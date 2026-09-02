@@ -48,6 +48,7 @@ export type UseChangeSetWorkspaceControllerOptions = {
   })[];
   availableOutputProfiles?: readonly ChangeSetOutputProfileViewModel[];
   bridge: ChangeSetProjectBridgeApi;
+  canStartOperation?: () => boolean;
   currentSession: EditSession | null;
   enabled?: boolean;
   externalBusy?: boolean;
@@ -58,6 +59,7 @@ export type UseChangeSetWorkspaceControllerOptions = {
     effective: ChangeSetMaterialization,
     snapshot: ChangeSetWorkspaceSnapshot
   ) => void;
+  onScopeBlockingOperationBusyChange?: (isBusy: boolean) => void;
   onRequestOutputProfileSwitch?: (outputProfileId: string) => void;
   scope: ChangeSetWorkspaceScope | null;
 };
@@ -94,6 +96,7 @@ export type ChangeSetWorkspaceControllerResult = {
     request: SemanticMergeImportRequest,
     expectedEdits: readonly ExpectedImportedScalarEdit[]
   ) => Promise<SemanticMergeImportResponse>;
+  isScopeBlockingOperationInFlight: () => boolean;
   mutateHistory: (
     direction: 'redo' | 'undo',
     expectedETag?: string
@@ -113,6 +116,7 @@ export function useChangeSetWorkspaceController({
   availableOutputModes = [],
   availableOutputProfiles = [],
   bridge,
+  canStartOperation = () => true,
   currentSession,
   enabled = true,
   externalBusy = false,
@@ -121,6 +125,7 @@ export function useChangeSetWorkspaceController({
   onActiveStagingTargetChange,
   onEffectiveState,
   onRequestOutputProfileSwitch,
+  onScopeBlockingOperationBusyChange,
   scope
 }: UseChangeSetWorkspaceControllerOptions): ChangeSetWorkspaceControllerResult {
   const { t } = useLocalization();
@@ -141,17 +146,23 @@ export function useChangeSetWorkspaceController({
   const currentSessionRef = useRef(currentSession);
   const activeChangeSetIdRef = useRef(activeChangeSetId);
   const externalBusyRef = useRef(externalBusy);
+  const operationAdmissionRef = useRef(canStartOperation);
   const snapshotRef = useRef(snapshot);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const controllerActionRef = useRef<object | null>(null);
+  const queuedOperationTokensRef = useRef(new Set<object>());
   const effectiveCallbackRef = useRef(onEffectiveState);
   const activeCallbackRef = useRef(onActiveStagingTargetChange);
+  const scopeBlockingBusyCallbackRef = useRef(onScopeBlockingOperationBusyChange);
   scopeRef.current = activeScope;
   scopeKeyRef.current = scopeKey;
   currentSessionRef.current = currentSession;
   activeChangeSetIdRef.current = activeChangeSetId;
   externalBusyRef.current = externalBusy;
+  operationAdmissionRef.current = canStartOperation;
   effectiveCallbackRef.current = onEffectiveState;
   activeCallbackRef.current = onActiveStagingTargetChange;
+  scopeBlockingBusyCallbackRef.current = onScopeBlockingOperationBusyChange;
 
   const acceptSnapshot = useCallback((
     nextSnapshot: ChangeSetWorkspaceSnapshot,
@@ -180,21 +191,42 @@ export function useChangeSetWorkspaceController({
 
   const enqueue = useCallback(<T,>(
     action: ChangeSetWorkspaceBusyAction,
-    operation: (requestedScopeKey: string) => Promise<T>
+    operation: (requestedScopeKey: string) => Promise<T>,
+    blocksScopeTransition = false
   ) => {
+    if (blocksScopeTransition && !operationAdmissionRef.current()) {
+      return Promise.reject(new Error(
+        'The change-set action cannot start during another project operation.'
+      ));
+    }
     const requestedScopeKey = scopeKeyRef.current;
+    const operationToken = blocksScopeTransition ? {} : null;
+    if (operationToken) {
+      const wasIdle = queuedOperationTokensRef.current.size === 0;
+      queuedOperationTokensRef.current.add(operationToken);
+      if (wasIdle) scopeBlockingBusyCallbackRef.current?.(true);
+    }
     const task = queueRef.current.then(async () => {
-      if (requestedScopeKey === null || requestedScopeKey !== scopeKeyRef.current) {
-        throw new Error('The change-set workspace scope changed before the action started.');
-      }
-      setBusyAction(action);
       try {
-        return await operation(requestedScopeKey);
-      } catch (error) {
-        if (requestedScopeKey === scopeKeyRef.current) reportError(error);
-        throw error;
+        if (requestedScopeKey === null || requestedScopeKey !== scopeKeyRef.current) {
+          throw new Error('The change-set workspace scope changed before the action started.');
+        }
+        setBusyAction(action);
+        try {
+          return await operation(requestedScopeKey);
+        } catch (error) {
+          if (requestedScopeKey === scopeKeyRef.current) reportError(error);
+          throw error;
+        } finally {
+          if (requestedScopeKey === scopeKeyRef.current) setBusyAction(null);
+        }
       } finally {
-        if (requestedScopeKey === scopeKeyRef.current) setBusyAction(null);
+        if (operationToken) {
+          queuedOperationTokensRef.current.delete(operationToken);
+          if (queuedOperationTokensRef.current.size === 0) {
+            scopeBlockingBusyCallbackRef.current?.(false);
+          }
+        }
       }
     });
     queueRef.current = task.then(() => undefined, () => undefined);
@@ -258,7 +290,7 @@ export function useChangeSetWorkspaceController({
     });
     acceptSnapshot(nextSnapshot, requestedScopeKey);
     return nextSnapshot;
-  }), [acceptSnapshot, bridge, enqueue]);
+  }, true), [acceptSnapshot, bridge, enqueue]);
 
   const captureStagedSession = useCallback((
     previousSession: EditSession | null,
@@ -289,7 +321,7 @@ export function useChangeSetWorkspaceController({
     });
     acceptSnapshot(response.snapshot, requestedScopeKey);
     return response;
-  }), [acceptSnapshot, bridge, enqueue]);
+  }, true), [acceptSnapshot, bridge, enqueue]);
 
   const materialize = useCallback((buildVariantId: string | null = null) => (
     enqueue('variant', async (requestedScopeKey) => {
@@ -385,7 +417,7 @@ export function useChangeSetWorkspaceController({
     }
     setSelectedChangeSetId(response.importedChangeSetId);
     return response;
-  }), [acceptSnapshot, enqueue, guidedDesignBridge]);
+  }, true), [acceptSnapshot, enqueue, guidedDesignBridge]);
 
   const importSemanticMerge = useCallback((
     request: SemanticMergeImportRequest,
@@ -430,7 +462,7 @@ export function useChangeSetWorkspaceController({
       workflowName: 'semantic merge'
     });
     return response;
-  }), [acceptSnapshot, enqueue, semanticMergeBridge]);
+  }, true), [acceptSnapshot, enqueue, semanticMergeBridge]);
 
   const importKmRecipe = useCallback((
     request: KmRecipeImportRequest,
@@ -477,7 +509,7 @@ export function useChangeSetWorkspaceController({
       workflowName: 'recipe'
     });
     return response;
-  }), [acceptSnapshot, enqueue, semanticMergeBridge]);
+  }, true), [acceptSnapshot, enqueue, semanticMergeBridge]);
 
   const mapped = useMemo(() => mapChangeSetWorkspaceState(
     snapshot,
@@ -496,12 +528,25 @@ export function useChangeSetWorkspaceController({
   ]);
 
   const runControllerAction = useCallback(async (operation: () => Promise<unknown>) => {
+    if (
+      controllerActionRef.current !== null ||
+      externalBusyRef.current ||
+      !operationAdmissionRef.current()
+    ) {
+      return false;
+    }
+    const action = {};
+    controllerActionRef.current = action;
     try {
       await operation();
       return true;
     } catch (error) {
       reportError(error);
       return false;
+    } finally {
+      if (controllerActionRef.current === action) {
+        controllerActionRef.current = null;
+      }
     }
   }, [reportError]);
   const updateSet = useCallback((
@@ -547,10 +592,14 @@ export function useChangeSetWorkspaceController({
       (set) => ({ ...toMetadata(set), archived: true })
     )),
     onCreate: (name) => runControllerAction(async () => {
+      const requestedScopeKey = scopeKeyRef.current;
       const priorIds = new Set(
         snapshotRef.current?.document.changeSets.map((set) => set.changeSetId) ?? []
       );
       const next = await mutate('create', { kind: 'createSet', name });
+      if (requestedScopeKey === null || requestedScopeKey !== scopeKeyRef.current) {
+        return;
+      }
       const created = next.document.changeSets.find((set) => !priorIds.has(set.changeSetId));
       if (!created) {
         throw new Error('The change-set create response did not contain the new change set.');
@@ -598,7 +647,7 @@ export function useChangeSetWorkspaceController({
     }),
     onExport: (changeSetId) => runControllerAction(() => enqueue(
       'operations',
-      async () => {
+       async (requestedScopeKey) => {
         const currentScope = scopeRef.current;
         const currentSnapshot = snapshotRef.current;
         if (!currentScope || !currentSnapshot?.etag) {
@@ -609,6 +658,7 @@ export function useChangeSetWorkspaceController({
           expectedETag: currentSnapshot.etag,
           scope: currentScope
         });
+        if (requestedScopeKey !== scopeKeyRef.current) return response;
         setActionDiagnostics(response.diagnostics);
         if (response.available && response.packageJson) {
           const name = currentSnapshot.document.changeSets.find(
@@ -623,6 +673,9 @@ export function useChangeSetWorkspaceController({
       'operations',
       async (requestedScopeKey) => {
         const currentScope = scopeRef.current;
+        if (externalBusyRef.current) {
+          throw new Error('Change sets cannot be imported during another project write.');
+        }
         if (!currentScope) throw new Error('A project is required before importing.');
         const response = await bridge.importChangeSets({
           enableImported,
@@ -633,7 +686,8 @@ export function useChangeSetWorkspaceController({
         });
         acceptSnapshot(response.snapshot, requestedScopeKey);
         return response;
-      }
+      },
+      true
     )),
     onLoadComparison: setComparisonChangeSetId,
     onMove: (changeSetId, direction) => runControllerAction(() => {
@@ -751,6 +805,7 @@ export function useChangeSetWorkspaceController({
     importGuidedDesignProposal,
     importKmRecipe,
     importSemanticMerge,
+    isScopeBlockingOperationInFlight: () => queuedOperationTokensRef.current.size > 0,
     materialize,
     mutateHistory,
     removeOperation,

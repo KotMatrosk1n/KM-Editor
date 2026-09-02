@@ -269,6 +269,7 @@ class SemanticMergeControllerStore {
   };
 
   public openSource = async (slot: 'a' | 'b', externalRootPath: string) => {
+    if (this.activeRequests.size > 0) return;
     const flow = slot === 'a' ? 'sourceA' : 'sourceB';
     this.supersede(flow);
     this.invalidateMerge();
@@ -336,6 +337,7 @@ class SemanticMergeControllerStore {
   };
 
   public validateRecipe = async (content: string) => {
+    if (this.activeRequests.size > 0) return;
     this.supersede('recipeValidation');
     this.supersede('recipePreview');
     const token = this.begin('recipeValidation', false);
@@ -378,6 +380,7 @@ class SemanticMergeControllerStore {
     KmRecipeExportRequest,
     'expectedChangeSetETag' | 'expectedRevision' | 'scope'
   >) => {
+    if (this.activeRequests.size > 0) return;
     this.supersede('export');
     const token = this.begin('export', false);
     this.snapshot = {
@@ -419,6 +422,7 @@ class SemanticMergeControllerStore {
     targetSearchText: string | null,
     append: boolean
   ) {
+    if (this.activeRequests.size > 0) return;
     const previous = append ? this.snapshot.mergePreview.data : null;
     if (append && !previous?.nextCursor) return;
     this.supersede('merge');
@@ -495,6 +499,7 @@ class SemanticMergeControllerStore {
   }
 
   private async runRecipePreview(append: boolean) {
+    if (this.activeRequests.size > 0) return;
     const previous = append ? this.snapshot.recipePreview.data : null;
     if (append && !previous?.nextCursor) return;
     this.supersede('recipePreview');

@@ -90,6 +90,7 @@ export function DynamaxAdventureSeedPlanner({
     seed
   };
   const operationRevisionRef = useRef(0);
+  const activeOperationRevisionRef = useRef<number | null>(null);
   const saveGuardRevisionRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
   const armCriticalWriteGuardRef = useRef(armCriticalWriteGuard);
@@ -165,19 +166,25 @@ export function DynamaxAdventureSeedPlanner({
     return () => {
       isMountedRef.current = false;
       operationRevisionRef.current += 1;
+      activeOperationRevisionRef.current = null;
       endSaveGuard();
     };
   }, [endSaveGuard]);
 
   const beginOperation = (operation: 'plan' | 'search' | 'save') => {
+    if (activeOperationRevisionRef.current !== null) return null;
     const revision = operationRevisionRef.current + 1;
     operationRevisionRef.current = revision;
+    activeOperationRevisionRef.current = revision;
     setBusyOperation(operation);
     setDiagnostics([]);
     return revision;
   };
 
   const finishOperation = (revision: number) => {
+    if (activeOperationRevisionRef.current === revision) {
+      activeOperationRevisionRef.current = null;
+    }
     if (operationRevisionRef.current === revision) {
       setBusyOperation(null);
     }
@@ -192,6 +199,7 @@ export function DynamaxAdventureSeedPlanner({
       seed: nextSeed
     };
     const revision = beginOperation('plan');
+    if (revision === null) return;
     try {
       const nextPlan = await onPlanSeed({
         npcCount,
@@ -206,7 +214,10 @@ export function DynamaxAdventureSeedPlanner({
       setPlan(nextPlan);
       setDiagnostics(nextPlan.diagnostics);
     } catch (error) {
-      if (operationRevisionRef.current !== revision) return;
+      if (
+        operationRevisionRef.current !== revision ||
+        !samePlanInputs(draftInputsRef.current, submittedInputs)
+      ) return;
       setPlan(null);
       setDiagnostics(toProjectBridgeDiagnostics(error, t('routePlanner.error.preview')));
     } finally {
@@ -225,6 +236,7 @@ export function DynamaxAdventureSeedPlanner({
       seed
     };
     const revision = beginOperation('search');
+    if (revision === null) return;
     try {
       const nextSearch = await onSearchSeeds({
         limit: searchLimit.trim(),
@@ -240,7 +252,10 @@ export function DynamaxAdventureSeedPlanner({
       setSearchResult(nextSearch);
       setDiagnostics(nextSearch.diagnostics);
     } catch (error) {
-      if (operationRevisionRef.current !== revision) return;
+      if (
+        operationRevisionRef.current !== revision ||
+        !sameSearchInputs(draftInputsRef.current, submittedInputs)
+      ) return;
       setSearchResult(null);
       setDiagnostics(toProjectBridgeDiagnostics(error, t('routePlanner.error.search')));
     } finally {
@@ -250,8 +265,13 @@ export function DynamaxAdventureSeedPlanner({
 
   const handleWriteSaveSeed = async () => {
     const seedToWrite = saveSeedToConfirm;
-    if (!seedToWrite || validateSeed(seedToWrite, t)) return;
+    if (
+      !seedToWrite ||
+      validateSeed(seedToWrite, t) ||
+      saveGuardRevisionRef.current !== null
+    ) return;
     const revision = beginOperation('save');
+    if (revision === null) return;
     try {
       const didArmCriticalWriteGuard = await beginSaveGuard(revision);
       if (

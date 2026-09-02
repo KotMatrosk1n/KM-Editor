@@ -386,6 +386,7 @@ export function RandomizerSection({
   });
   const copySeedStatusTimerRef = useRef<number | null>(null);
   const draftRevisionRef = useRef(0);
+  const activeOperationRef = useRef<object | null>(null);
   const selectedOptionCount = useMemo(
     () => Object.entries(options).filter(([key, value]) => key.startsWith('randomize') && value).length,
     [options]
@@ -399,7 +400,8 @@ export function RandomizerSection({
     [options]
   );
   const battleMechanicOptionCount = options.randomizeTypeChart ? 1 : 0;
-  const isConfigurationLocked = isApplying || isImporting || isRestoring;
+  const isConfigurationLocked =
+    activeOperationRef.current !== null || isApplying || isImporting || isRestoring;
   const canRandomize = canApply && selectedOptionCount > 0 && !isConfigurationLocked;
   const canApplySharedSeed =
     canApply && !isConfigurationLocked && Boolean(importSeedText.trim());
@@ -448,6 +450,7 @@ export function RandomizerSection({
 
   useEffect(
     () => () => {
+      activeOperationRef.current = null;
       if (copySeedStatusTimerRef.current !== null) {
         window.clearTimeout(copySeedStatusTimerRef.current);
       }
@@ -484,12 +487,18 @@ export function RandomizerSection({
   };
 
   const handleUserSeedChange = (value: string) => {
+    if (activeOperationRef.current !== null) {
+      return;
+    }
     draftRevisionRef.current += 1;
     setUserSeed(value.slice(0, 20));
     clearImportedReplay();
   };
 
   const handleToggleCategory = (categoryId: string) => {
+    if (activeOperationRef.current !== null) {
+      return;
+    }
     setExpandedCategoryIds((current) => {
       const next = new Set(current);
       if (next.has(categoryId)) {
@@ -503,6 +512,9 @@ export function RandomizerSection({
   };
 
   const handleToggleOption = (key: RandomizerOptionKey) => {
+    if (activeOperationRef.current !== null) {
+      return;
+    }
     draftRevisionRef.current += 1;
     setOptions((current) => {
       const next = {
@@ -524,6 +536,9 @@ export function RandomizerSection({
   };
 
   const handleResetOptions = () => {
+    if (activeOperationRef.current !== null) {
+      return;
+    }
     draftRevisionRef.current += 1;
     setOptions(defaultRandomizerOptions);
     setExpandedCategoryIds(new Set(['stats']));
@@ -555,17 +570,22 @@ export function RandomizerSection({
 
   const handleConfirmImportSeed = async () => {
     const seed = importSeedText.trim();
-    if (!seed) {
+    if (!seed || activeOperationRef.current !== null) {
       return;
     }
+    const operation = {};
+    activeOperationRef.current = operation;
     const submittedDraftRevision = draftRevisionRef.current;
+    const isCurrentOperation = () =>
+      activeOperationRef.current === operation &&
+      draftRevisionRef.current === submittedDraftRevision;
 
     setIsSeedConfirmOpen(false);
     beginOperation();
     setIsImporting(true);
     try {
       const importResponse = await onImportSeed(seed);
-      if (draftRevisionRef.current !== submittedDraftRevision) {
+      if (!isCurrentOperation()) {
         return;
       }
       const importDiagnostics = importResponse.config
@@ -589,6 +609,9 @@ export function RandomizerSection({
         }
 
         const applyResponse = await onApplyRandomizer(replayConfig, 'applySeed');
+        if (!isCurrentOperation()) {
+          return;
+        }
         const hasErrors = applyResponse.applyResult.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
         );
@@ -603,40 +626,73 @@ export function RandomizerSection({
         }
       }
     } catch (error) {
-      handleOperationFailure('applySeed', error);
+      if (isCurrentOperation()) {
+        handleOperationFailure('applySeed', error);
+      }
     } finally {
-      setIsImporting(false);
+      if (activeOperationRef.current === operation) {
+        activeOperationRef.current = null;
+        setIsImporting(false);
+      }
     }
   };
 
   const handleConfirmRestoreVanillaValues = async () => {
+    if (activeOperationRef.current !== null) {
+      return;
+    }
+    const operation = {};
+    activeOperationRef.current = operation;
+
     setIsRestoreConfirmOpen(false);
     beginOperation();
     setIsRestoring(true);
     try {
       const response = await onRestoreRandomizer();
+      if (activeOperationRef.current !== operation) {
+        return;
+      }
       setApplyResult(response.applyResult);
       setDiagnostics(response.applyResult.diagnostics);
       setLastOperation('restore');
       setRollSeed(null);
       setOutputHash(null);
     } catch (error) {
-      handleOperationFailure('restore', error);
+      if (activeOperationRef.current === operation) {
+        handleOperationFailure('restore', error);
+      }
     } finally {
-      setIsRestoring(false);
+      if (activeOperationRef.current === operation) {
+        activeOperationRef.current = null;
+        setIsRestoring(false);
+      }
     }
   };
 
   const handleConfirmRandomize = async () => {
+    if (activeOperationRef.current !== null) {
+      return;
+    }
+    const operation = {};
+    activeOperationRef.current = operation;
+    const submittedDraftRevision = draftRevisionRef.current;
+    const isCurrentOperation = () =>
+      activeOperationRef.current === operation &&
+      draftRevisionRef.current === submittedDraftRevision;
+    const submittedConfig: RandomizerConfig = {
+      options: createEffectiveRandomizerOptions(options),
+      outputHash,
+      rollSeed,
+      userSeed
+    };
+
     setIsConfirmOpen(false);
     beginOperation();
     try {
-      const response = await onApplyRandomizer({
-        options: createEffectiveRandomizerOptions(options),
-        outputHash,
-        rollSeed,
-        userSeed
-      });
+      const response = await onApplyRandomizer(submittedConfig);
+      if (!isCurrentOperation()) {
+        return;
+      }
       const hasErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
@@ -650,7 +706,13 @@ export function RandomizerSection({
         setOutputHash(null);
       }
     } catch (error) {
-      handleOperationFailure('randomize', error);
+      if (isCurrentOperation()) {
+        handleOperationFailure('randomize', error);
+      }
+    } finally {
+      if (activeOperationRef.current === operation) {
+        activeOperationRef.current = null;
+      }
     }
   };
 
@@ -676,6 +738,7 @@ export function RandomizerSection({
             <HoverTooltip content={t('randomizer.seed.baseHelp')}>
               <input
                 aria-label="Base Seed"
+                disabled={isConfigurationLocked}
                 id="randomizer-base-seed"
                 maxLength={20}
                 onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
@@ -707,6 +770,7 @@ export function RandomizerSection({
                 className={`randomizer-category-button ${
                   isExpanded ? 'randomizer-category-expanded' : ''
                 } ${isEnabled ? 'randomizer-category-enabled' : ''}`}
+                disabled={isConfigurationLocked}
                 key={category.id}
                 onClick={() => handleToggleCategory(category.id)}
                 title={category.help}
@@ -744,6 +808,7 @@ export function RandomizerSection({
                     <input
                       checked={categoryEnabled}
                       className="km-choice-control"
+                      disabled={isConfigurationLocked}
                       id={`randomizer-${category.id}-enabled`}
                       onChange={() => handleToggleOption(category.enabledKey)}
                       type="checkbox"
@@ -765,7 +830,7 @@ export function RandomizerSection({
                         <input
                           checked={isFieldChecked}
                           className="km-choice-control"
-                          disabled={!categoryEnabled}
+                          disabled={isConfigurationLocked || !categoryEnabled}
                           id={inputId}
                           onChange={() => handleToggleOption(field.key)}
                           type="checkbox"
@@ -794,6 +859,7 @@ export function RandomizerSection({
                   <input
                     checked={options[option.key]}
                     className="km-choice-control"
+                    disabled={isConfigurationLocked}
                     id={inputId}
                     onChange={() => handleToggleOption(option.key)}
                     type="checkbox"
@@ -817,6 +883,7 @@ export function RandomizerSection({
               <input
                 checked={options.randomizeTypeChart}
                 className="km-choice-control"
+                disabled={isConfigurationLocked}
                 id="randomizer-type-chart-enabled"
                 onChange={() => handleToggleOption('randomizeTypeChart')}
                 type="checkbox"
@@ -838,7 +905,7 @@ export function RandomizerSection({
                   <input
                     checked={isChecked}
                     className="km-choice-control"
-                    disabled={!options.randomizeTypeChart}
+                    disabled={isConfigurationLocked || !options.randomizeTypeChart}
                     id={inputId}
                     onChange={() => handleToggleOption(option.key)}
                     type="checkbox"
@@ -863,6 +930,7 @@ export function RandomizerSection({
         <div className="randomizer-action-row">
           <button
             className="secondary-button"
+            disabled={isConfigurationLocked}
             onClick={handleResetOptions}
             title={t('randomizer.reset.help')}
             type="button"
@@ -933,8 +1001,12 @@ export function RandomizerSection({
             <HoverTooltip content={t('randomizer.seed.sharedHelp')}>
               <textarea
                 aria-label="Shared Randomization Seed"
+                disabled={isConfigurationLocked}
                 id="randomizer-shared-seed"
                 onChange={(event) => {
+                  if (activeOperationRef.current !== null) {
+                    return;
+                  }
                   draftRevisionRef.current += 1;
                   setImportSeedText(event.currentTarget.value);
                 }}

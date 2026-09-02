@@ -51,6 +51,8 @@ export function ResearchComparisonView({
   >('all');
   const [resultOrder, setResultOrder] = useState<'path' | 'difference' | 'largest'>('path');
   const pickerGenerationRef = useRef<[number, number]>([0, 0]);
+  const pickerOperationRef = useRef<object | null>(null);
+  const [isPickingSource, setIsPickingSource] = useState(false);
   const isMountedRef = useRef(true);
   const sourceIdentity = [
     researchRevisionIdentity(revision),
@@ -63,6 +65,7 @@ export function ResearchComparisonView({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      pickerOperationRef.current = null;
       pickerGenerationRef.current[0] += 1;
       pickerGenerationRef.current[1] += 1;
     };
@@ -70,19 +73,33 @@ export function ResearchComparisonView({
   useEffect(() => {
     setSelectedPaths([]);
     controller.clearByteWindow();
+    pickerOperationRef.current = null;
+    setIsPickingSource(false);
     pickerGenerationRef.current[0] += 1;
     pickerGenerationRef.current[1] += 1;
   }, [sourceIdentity]);
 
   const pickSource = async (slot: 0 | 1) => {
+    if (pickerOperationRef.current !== null || controller.isBusy) return;
+    const operation = {};
+    pickerOperationRef.current = operation;
+    setIsPickingSource(true);
     const generation = ++pickerGenerationRef.current[slot];
-    const rootPath = await onPickSource(slot);
-    if (
-      rootPath === null ||
-      !isMountedRef.current ||
-      pickerGenerationRef.current[slot] !== generation
-    ) return;
-    await controller.openSource(slot, rootPath);
+    try {
+      const rootPath = await onPickSource(slot);
+      if (
+        rootPath === null ||
+        !isMountedRef.current ||
+        pickerOperationRef.current !== operation ||
+        pickerGenerationRef.current[slot] !== generation
+      ) return;
+      await controller.openSource(slot, rootPath);
+    } finally {
+      if (pickerOperationRef.current === operation) {
+        pickerOperationRef.current = null;
+        if (isMountedRef.current) setIsPickingSource(false);
+      }
+    }
   };
   const data = controller.comparison.data;
   const committedPaths = controller.comparison.selectedRelativePaths;
@@ -178,6 +195,7 @@ export function ResearchComparisonView({
           <SourceCard
             key={slot}
             controller={controller}
+            isPickingSource={isPickingSource || controller.isBusy}
             onPick={() => void pickSource(slot)}
             slot={slot}
           />
@@ -187,7 +205,7 @@ export function ResearchComparisonView({
       <div className="km-research-lab-toolbar">
         <button
           className="primary-button compact-button"
-          disabled={!canCompare || controller.isBusy}
+          disabled={!canCompare || controller.isBusy || isPickingSource}
           onClick={() => void controller.compare([...selectedPaths])}
           type="button"
         >
@@ -401,10 +419,12 @@ function samePathSelection(
 
 function SourceCard({
   controller,
+  isPickingSource,
   onPick,
   slot
 }: {
   controller: ResearchLabController;
+  isPickingSource: boolean;
   onPick: () => void;
   slot: 0 | 1;
 }) {
@@ -433,7 +453,7 @@ function SourceCard({
       <div className="km-research-lab-source-actions">
         <button
           className="secondary-button compact-button"
-          disabled={source.status === 'loading'}
+          disabled={isPickingSource || source.status === 'loading'}
           onClick={onPick}
           type="button"
         >
@@ -443,7 +463,7 @@ function SourceCard({
         {source.data ? (
           <button
             className="secondary-button compact-button"
-            disabled={source.status === 'loading'}
+            disabled={isPickingSource || source.status === 'loading'}
             onClick={() => void controller.clearSource(slot)}
             type="button"
           >

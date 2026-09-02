@@ -193,6 +193,7 @@ class GameModuleControllerStore {
   }
 
   public async refreshCapabilities() {
+    if (this.snapshot.isBusy) return;
     this.supersedeRequests();
     this.cache.clear();
     this.snapshot = {
@@ -206,6 +207,7 @@ class GameModuleControllerStore {
   }
 
   public async query(options: GameModuleQueryOptions) {
+    if (this.snapshot.isBusy) return;
     this.supersedeRequests();
     const capability = this.requireQueryableCapability(options);
     this.snapshot = { ...this.snapshot, activeQuery: options };
@@ -225,11 +227,13 @@ class GameModuleControllerStore {
   }
 
   public async refresh() {
+    if (this.snapshot.isBusy) return;
     if (!this.snapshot.activeQuery) return;
     await this.runQuery(this.snapshot.activeQuery, false);
   }
 
   public async loadMore() {
+    if (this.snapshot.isBusy) return;
     if (!this.snapshot.activeQuery) return;
     await this.runQuery(this.snapshot.activeQuery, true);
   }

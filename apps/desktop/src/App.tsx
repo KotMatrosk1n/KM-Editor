@@ -1663,6 +1663,11 @@ type SupportSearchProgressPayload = {
   searchedFiles: number;
 };
 
+type StableLocationPreparationResult =
+  | { kind: 'aborted' }
+  | { kind: 'ready'; onCommit: () => void }
+  | { kind: 'unavailable' };
+
 function createSupportSearchWorkProgress(
   progress: SupportSearchProgressPayload | null,
   formatLocale: string
@@ -2209,7 +2214,9 @@ export function App({
   const [noteStatusKey, setNoteStatusKey] = useState<string | null>(null);
   const [bookmarkStatusKey, setBookmarkStatusKey] = useState<string | null>(null);
   const [isPersonalWorkspaceMutationBusy, setIsPersonalWorkspaceMutationBusy] = useState(false);
+  const personalWorkspaceMutationOperationRef = useRef<object | null>(null);
   const [isSavedViewMutationBusy, setIsSavedViewMutationBusy] = useState(false);
+  const savedViewMutationOperationRef = useRef<object | null>(null);
   const [pendingOutputProfileId, setPendingOutputProfileId] = useState<string | null>(null);
   const [activeChangeSetId, setActiveChangeSetId] = useState<string | null>(null);
   const [textCategoryId, setTextCategoryId] = useState<string | null>(null);
@@ -2236,6 +2243,10 @@ export function App({
   const draftPathsRef = useRef(draftPaths);
   const languageRef = useRef(language);
   const projectScopeGenerationRef = useRef(0);
+  const getProjectScopeGeneration = useCallback(
+    () => projectScopeGenerationRef.current,
+    []
+  );
   const projectScopeLanguageRef = useRef(language);
   if (projectScopeLanguageRef.current !== language) {
     projectScopeLanguageRef.current = language;
@@ -2841,6 +2852,7 @@ export function App({
   svCacheScopeKeyRef.current = svCacheScopeKey;
   const svCacheOperationGenerationRef = useRef(0);
   const svCacheRefreshOperationRef = useRef(0);
+  const svCacheRefreshInFlightRef = useRef<object | null>(null);
   const svCacheSettingsOperationRef = useRef<object | null>(null);
   const isCurrentSvCacheScope =
     svCacheScopeKey !== null && svCacheStatusScopeKey === svCacheScopeKey;
@@ -3143,6 +3155,8 @@ export function App({
       scopeKey: null,
       sections: new Set()
     });
+  const [isAdvancedAuthoringDraftSaving, setIsAdvancedAuthoringDraftSaving] = useState(false);
+  const advancedAuthoringDraftSaveTokenRef = useRef<object | null>(null);
   const previousActiveWorkflowSectionRef = useRef<WorkbenchSection>(activeSection);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
@@ -3158,9 +3172,14 @@ export function App({
   const activeSectionLabel = t(getWorkbenchSectionLabelKey(activeSection));
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const activeWikiUrl = getSectionWikiUrl(activeSection, selectedGame);
-  const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
+  const [isProjectScopeTransitioning, setIsProjectScopeTransitioning] = useState(false);
+  const isBusy =
+    projectStatus === 'opening' ||
+    projectStatus === 'validating' ||
+    isProjectScopeTransitioning;
   const [bridgeDiagnostics, setBridgeDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [isEditStarting, setIsEditStarting] = useState(false);
+  const editSessionStartOperationRef = useRef<object | null>(null);
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
   const [isPokemonLoading, setIsPokemonLoading] = useState(false);
@@ -3258,6 +3277,7 @@ export function App({
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const spreadsheetImportPreviewRunRef = useRef(0);
+  const spreadsheetImportBrowseOperationRef = useRef<object | null>(null);
   const spreadsheetImportSourcePathRef = useRef(spreadsheetImportSourcePath);
   spreadsheetImportSourcePathRef.current = spreadsheetImportSourcePath;
   const [modMergerDirectory1, setModMergerDirectory1] = useState('');
@@ -3303,10 +3323,12 @@ export function App({
   const [fpsPatchDesiredAnimationTimingComponentIds, setFpsPatchDesiredAnimationTimingComponentIds] =
     useState<FpsPatchAnimationTimingComponentId[]>([]);
   const [isFpsPatchLoading, setIsFpsPatchLoading] = useState(false);
+  const fpsPatchLoadOperationRef = useRef<object | null>(null);
   const [isFpsPatchApplying, setIsFpsPatchApplying] = useState(false);
   const [profanityFilterStatus, setProfanityFilterStatus] =
     useState<ProfanityFilterStatus | null>(null);
   const [isProfanityFilterLoading, setIsProfanityFilterLoading] = useState(false);
+  const profanityFilterLoadOperationRef = useRef<object | null>(null);
   const [isProfanityFilterApplying, setIsProfanityFilterApplying] = useState(false);
   const [isRandomizerApplying, setIsRandomizerApplying] = useState(false);
   const [isGameDumpWriting, setIsGameDumpWriting] = useState(false);
@@ -3420,12 +3442,15 @@ export function App({
     return true;
   }, []);
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
+  const [isWindowExitInFlight, setIsWindowExitInFlight] = useState(false);
+  const [isChangeSetWorkspaceWriteActive, setIsChangeSetWorkspaceWriteActive] = useState(false);
+  const changeSetWorkspaceOperationCheckRef = useRef<() => boolean>(() => false);
   const isNativeUpdateApplying =
     updateCheckStatus.kind === 'preparing' ||
     updateCheckStatus.kind === 'downloading' ||
     updateCheckStatus.kind === 'installing' ||
     updateCheckStatus.kind === 'restarting';
-  const hasExternalCriticalWriteOperation =
+  const hasExternalCriticalWriteOperationWithoutChangeSetWorkspace =
     isChangePlanApplying ||
     isModMergerApplying ||
     isFpsPatchApplying ||
@@ -3435,20 +3460,62 @@ export function App({
     isProjectRelocationApplying ||
     isOutputProfileSwitchApplying ||
     isGameplaySettingsApplying ||
+    isAdvancedAuthoringDraftSaving ||
+    isEditStarting ||
+    isSupportSearchRunning ||
     isDynamaxAdventureSaveSeedWriting ||
     isNativeUpdateApplying ||
+    isWindowExitInFlight ||
     isSvCacheSettingsUpdating ||
     isSvCacheClearing;
+  const hasExternalCriticalWriteOperation =
+    hasExternalCriticalWriteOperationWithoutChangeSetWorkspace ||
+    isChangeSetWorkspaceWriteActive;
   const hasCriticalWriteOperation =
-    hasExternalCriticalWriteOperation || isOutputSafetyMutationBusy;
-  const criticalWriteOperationRef = useRef(hasCriticalWriteOperation);
-  criticalWriteOperationRef.current = hasCriticalWriteOperation;
-  const armCriticalWriteGuard = useCallback(async () => {
-    criticalWriteOperationRef.current = true;
+    hasExternalCriticalWriteOperation ||
+    isOutputSafetyMutationBusy ||
+    isProjectScopeTransitioning;
+  const projectScopeTransitionRef = useRef<object | null>(null);
+  const criticalWriteOperationRef = useRef<object | null>(
+    hasCriticalWriteOperation ? {} : null
+  );
+  const beginCriticalWriteOperation = useCallback(() => {
+    if (
+      projectScopeTransitionRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      editSessionApplyInFlightRef.current ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
+      pendingEditSessionMutationTokensRef.current.size > 0 ||
+      changeSetWorkspaceOperationCheckRef.current()
+    ) {
+      return null;
+    }
+    const token = {};
+    criticalWriteOperationRef.current = token;
+    return token;
+  }, []);
+  const finishCriticalWriteOperation = useCallback((token: object) => {
+    if (criticalWriteOperationRef.current === token) {
+      criticalWriteOperationRef.current = null;
+    }
+  }, []);
+  const armCriticalWriteGuardFor = useCallback(async (
+    ownerRef: { current: object | null }
+  ) => {
+    if (ownerRef.current !== null) {
+      return true;
+    }
+    const token = beginCriticalWriteOperation();
+    if (!token) {
+      return false;
+    }
+    ownerRef.current = token;
     if (!desktopServices.isAvailable) return true;
     try {
       await desktopServices.setCloseGuardEnabled(true);
-      return true;
+      return ownerRef.current === token;
     } catch (error) {
       if (isAppMountedRef.current) {
         setBridgeDiagnostics(
@@ -3459,44 +3526,120 @@ export function App({
           )
         );
       }
+      if (ownerRef.current === token) {
+        ownerRef.current = null;
+        finishCriticalWriteOperation(token);
+      }
       return false;
     }
   }, [
+    beginCriticalWriteOperation,
     desktopServices.isAvailable,
     desktopServices.setCloseGuardEnabled,
+    finishCriticalWriteOperation,
     setBridgeDiagnostics
   ]);
+  const releaseCriticalWriteGuardFor = useCallback((
+    ownerRef: { current: object | null }
+  ) => {
+    const token = ownerRef.current;
+    if (!token) return;
+    ownerRef.current = null;
+    finishCriticalWriteOperation(token);
+  }, [finishCriticalWriteOperation]);
+  const outputSafetyCriticalWriteTokenRef = useRef<object | null>(null);
+  const projectRelocationCriticalWriteTokenRef = useRef<object | null>(null);
+  const outputProfileCriticalWriteTokenRef = useRef<object | null>(null);
+  const gameplaySettingsCriticalWriteTokenRef = useRef<object | null>(null);
+  const dynamaxAdventureCriticalWriteTokenRef = useRef<object | null>(null);
+  const gameDumpCriticalWriteTokenRef = useRef<object | null>(null);
+  const nativeUpdateCriticalWriteTokenRef = useRef<object | null>(null);
+  const nativeUpdateInstallInFlightRef = useRef(false);
+  const nativeUpdateRestartInFlightRef = useRef(false);
+  const windowExitCriticalWriteTokenRef = useRef<object | null>(null);
+  const armOutputSafetyCriticalWriteGuard = useCallback(
+    () => armCriticalWriteGuardFor(outputSafetyCriticalWriteTokenRef),
+    [armCriticalWriteGuardFor]
+  );
+  const armProjectRelocationCriticalWriteGuard = useCallback(
+    () => armCriticalWriteGuardFor(projectRelocationCriticalWriteTokenRef),
+    [armCriticalWriteGuardFor]
+  );
+  const armOutputProfileCriticalWriteGuard = useCallback(
+    () => armCriticalWriteGuardFor(outputProfileCriticalWriteTokenRef),
+    [armCriticalWriteGuardFor]
+  );
+  const armGameplaySettingsCriticalWriteGuard = useCallback(
+    () => armCriticalWriteGuardFor(gameplaySettingsCriticalWriteTokenRef),
+    [armCriticalWriteGuardFor]
+  );
+  const armDynamaxAdventureCriticalWriteGuard = useCallback(
+    () => armCriticalWriteGuardFor(dynamaxAdventureCriticalWriteTokenRef),
+    [armCriticalWriteGuardFor]
+  );
+  const armNativeUpdateCriticalWriteGuard = useCallback(
+    () => armCriticalWriteGuardFor(nativeUpdateCriticalWriteTokenRef),
+    [armCriticalWriteGuardFor]
+  );
+  const releaseNativeUpdateCriticalWriteGuard = useCallback(
+    () => releaseCriticalWriteGuardFor(nativeUpdateCriticalWriteTokenRef),
+    [releaseCriticalWriteGuardFor]
+  );
   const handleProjectRelocationApplyingChange = useCallback((isApplying: boolean) => {
     if (!isAppMountedRef.current) return;
-    if (isApplying) criticalWriteOperationRef.current = true;
+    if (!isApplying) {
+      releaseCriticalWriteGuardFor(projectRelocationCriticalWriteTokenRef);
+    }
     setIsProjectRelocationApplying(isApplying);
-  }, []);
+  }, [releaseCriticalWriteGuardFor]);
   const handleOutputProfileSwitchApplyingChange = useCallback((isApplying: boolean) => {
     if (!isAppMountedRef.current) return;
-    if (isApplying) criticalWriteOperationRef.current = true;
+    if (!isApplying) {
+      releaseCriticalWriteGuardFor(outputProfileCriticalWriteTokenRef);
+    }
     setIsOutputProfileSwitchApplying(isApplying);
-  }, []);
+  }, [releaseCriticalWriteGuardFor]);
   const handleOutputSafetyMutationBusyChange = useCallback((isBusy: boolean) => {
     if (!isAppMountedRef.current) return;
-    if (isBusy) criticalWriteOperationRef.current = true;
+    if (!isBusy) {
+      releaseCriticalWriteGuardFor(outputSafetyCriticalWriteTokenRef);
+    }
     setIsOutputSafetyMutationBusy(isBusy);
-  }, []);
+  }, [releaseCriticalWriteGuardFor]);
   const handleGameplaySettingsApplyingChange = useCallback((isApplying: boolean) => {
     if (!isAppMountedRef.current) return;
-    if (isApplying) criticalWriteOperationRef.current = true;
+    if (!isApplying) {
+      releaseCriticalWriteGuardFor(gameplaySettingsCriticalWriteTokenRef);
+    }
     setIsGameplaySettingsApplying(isApplying);
-  }, []);
+  }, [releaseCriticalWriteGuardFor]);
   const handleDynamaxAdventureSaveSeedWritingChange = useCallback((isWriting: boolean) => {
     if (!isAppMountedRef.current) return;
-    if (isWriting) criticalWriteOperationRef.current = true;
+    if (!isWriting) {
+      releaseCriticalWriteGuardFor(dynamaxAdventureCriticalWriteTokenRef);
+    }
     setIsDynamaxAdventureSaveSeedWriting(isWriting);
-  }, []);
+  }, [releaseCriticalWriteGuardFor]);
+  const handleGameDumpWriteStateChange = useCallback((isWriting: boolean) => {
+    if (isWriting) {
+      if (gameDumpCriticalWriteTokenRef.current !== null) return false;
+      const token = beginCriticalWriteOperation();
+      if (!token) return false;
+      gameDumpCriticalWriteTokenRef.current = token;
+      setIsGameDumpWriting(true);
+      return true;
+    }
+    setIsGameDumpWriting(false);
+    releaseCriticalWriteGuardFor(gameDumpCriticalWriteTokenRef);
+    return true;
+  }, [beginCriticalWriteOperation, releaseCriticalWriteGuardFor]);
   const openCommandPalette = useCallback(() => setIsCommandPaletteOpen(true), []);
   const openShortcutOverlay = useCallback(() => setIsShortcutOverlayOpen(true), []);
   const outputSafety = useOutputSafetyController({
-    armCriticalWriteGuard,
+    armCriticalWriteGuard: armOutputSafetyCriticalWriteGuard,
     bridge,
-    externalMutationBusy: hasExternalCriticalWriteOperation,
+    externalMutationBusy:
+      hasExternalCriticalWriteOperation || isProjectScopeTransitioning,
     onMutationBusyChange: handleOutputSafetyMutationBusyChange,
     scope: outputSafetyScope
   });
@@ -3605,10 +3748,17 @@ export function App({
     availableOutputModes: availableChangeSetOutputModes,
     availableOutputProfiles: availableChangeSetOutputProfiles,
     bridge: unscopedBridge,
+    canStartOperation: () => (
+      projectScopeTransitionRef.current === null &&
+      criticalWriteOperationRef.current === null &&
+      supportSearchOperationRef.current === null
+    ),
     currentSession: editSession,
     enabled: userFacingFeatureVisibility.namedChangeSets,
     externalBusy:
-      hasCriticalWriteOperation ||
+      hasExternalCriticalWriteOperationWithoutChangeSetWorkspace ||
+      isOutputSafetyMutationBusy ||
+      isProjectScopeTransitioning ||
       isEditSessionMutating ||
       isSessionValidating ||
       isChangePlanCreating ||
@@ -3618,8 +3768,11 @@ export function App({
     onActiveStagingTargetChange: handleActiveChangeSetTargetChange,
     onEffectiveState: handleChangeSetEffectiveState,
     onRequestOutputProfileSwitch: setPendingOutputProfileId,
+    onScopeBlockingOperationBusyChange: setIsChangeSetWorkspaceWriteActive,
     scope: projectScope
   });
+  changeSetWorkspaceOperationCheckRef.current =
+    changeSetWorkspace.isScopeBlockingOperationInFlight;
   const changeSetStageGateRef = useRef({
     activeChangeSetId: null as string | null,
     captureStagedSession: changeSetWorkspace.captureStagedSession,
@@ -3824,10 +3977,13 @@ export function App({
   const swShPlacementRecoveryAttemptedRef = useRef(false);
   const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
   const editSessionReviewRunRef = useRef(0);
+  const editSessionReviewOperationRef = useRef<object | null>(null);
   const editSessionApplyRunRef = useRef(0);
   const editSessionApplyInFlightRef = useRef(false);
+  const exitDiscardOperationRef = useRef<object | null>(null);
   const invalidateEditSessionReview = useCallback(() => {
     editSessionReviewRunRef.current += 1;
+    editSessionReviewOperationRef.current = null;
     setIsSessionValidating(false);
     setIsChangePlanCreating(false);
   }, []);
@@ -3841,8 +3997,16 @@ export function App({
   const projectBridgeScopeRecycleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const projectBridgeScopeRecycleInFlightRef = useRef<Promise<boolean> | null>(null);
   const supportSearchRunRef = useRef(0);
+  const supportSearchOperationRef = useRef<object | null>(null);
+  const projectPathPickerOperationRef = useRef<object | null>(null);
+  const semanticExternalPickerOperationRef = useRef<object | null>(null);
+  const researchSourcePickerOperationRef = useRef<object | null>(null);
   const updateCheckRunRef = useRef(0);
+  const updateCheckOperationRef = useRef<object | null>(null);
   const modMergerReviewRevisionRef = useRef(0);
+  const modMergerOperationRef = useRef<{
+    readonly kind: 'applying' | 'configuration' | 'staging';
+  } | null>(null);
   const sidebarNavigationScrollRef = useRef<HTMLDivElement | null>(null);
   const sidebarToggleRef = useRef<HTMLButtonElement | null>(null);
   const shouldRestoreSidebarToggleFocusRef = useRef(false);
@@ -4054,6 +4218,7 @@ export function App({
     scopedEditorPanelStatesRef.current = {};
   }, []);
   const isEditSessionOperationBusy =
+    isEditStarting ||
     isEditSessionMutating ||
     isSessionValidating ||
     isChangePlanCreating ||
@@ -4587,7 +4752,11 @@ export function App({
     setModMergerResolutions({});
     setFpsPatchStatus(null);
     setFpsPatchDesiredAnimationTimingComponentIds([]);
+    fpsPatchLoadOperationRef.current = null;
+    setIsFpsPatchLoading(false);
     setProfanityFilterStatus(null);
+    profanityFilterLoadOperationRef.current = null;
+    setIsProfanityFilterLoading(false);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
     clearScopedEditorPanelState();
@@ -4646,6 +4815,7 @@ export function App({
   };
 
   const clearPendingEditState = useCallback(() => {
+    spreadsheetImportBrowseOperationRef.current = null;
     spreadsheetImportPreviewRunRef.current += 1;
     setIsSpreadsheetImportPreviewing(false);
     invalidateEditSessionReview();
@@ -4704,6 +4874,7 @@ export function App({
   const discardUnassignedPendingEdits = useCallback(async () => {
     if (
       editSessionApplyInFlightRef.current ||
+      editSessionReviewOperationRef.current !== null ||
       pendingEditSessionMutationTokensRef.current.size > 0
     ) {
       return false;
@@ -4769,11 +4940,22 @@ export function App({
 
   const resetLoadedProjectState = useCallback(() => {
     projectScopeGenerationRef.current += 1;
+    const modMergerOperation = modMergerOperationRef.current;
+    if (modMergerOperation?.kind === 'staging') {
+      setWorkProgress(null);
+    }
+    if (modMergerOperation?.kind !== 'applying') {
+      modMergerOperationRef.current = null;
+    }
+    modMergerReviewRevisionRef.current += 1;
+    setIsModMergerLoading(false);
+    setIsModMergerStaging(false);
     projectPathDraftChangeRunRef.current += 1;
     semanticExploreController.invalidate();
     svCacheWarmupRunRef.current += 1;
     svCacheOperationGenerationRef.current += 1;
     svCacheRefreshOperationRef.current += 1;
+    svCacheRefreshInFlightRef.current = null;
     svCacheSettingsOperationRef.current = null;
     svCacheAutomaticStartupRef.current = null;
     setIsSvCacheWarming(false);
@@ -4798,39 +4980,97 @@ export function App({
     semanticExploreController.invalidate
   ]);
 
-  const recycleProjectBridgeBeforeScopeChange = useCallback(async () => {
+  const cancelPendingProjectBridgeRecycle = useCallback(() => {
     if (projectBridgeScopeRecycleTimerRef.current !== null) {
       clearTimeout(projectBridgeScopeRecycleTimerRef.current);
       projectBridgeScopeRecycleTimerRef.current = null;
     }
-    if (!desktopServices.isAvailable) {
-      return true;
+  }, []);
+
+  const beginProjectScopeTransition = useCallback((
+    allowDuringCriticalWrite = false,
+    preserveSupportSearch = false
+  ) => {
+    if (
+      (!allowDuringCriticalWrite && criticalWriteOperationRef.current !== null) ||
+      (!preserveSupportSearch && supportSearchOperationRef.current !== null) ||
+      editSessionApplyInFlightRef.current ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
+      pendingEditSessionMutationTokensRef.current.size > 0 ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null
+    ) {
+      return null;
     }
-    if (projectBridgeScopeRecycleInFlightRef.current !== null) {
-      return projectBridgeScopeRecycleInFlightRef.current;
+    const transition = {};
+    projectScopeTransitionRef.current = transition;
+    projectScopeGenerationRef.current += 1;
+    if (!preserveSupportSearch) {
+      supportSearchRunRef.current += 1;
+      supportSearchOperationRef.current = null;
+      setIsSupportSearchPermissionOpen(false);
+      setIsSupportSearchRunning(false);
+      setWorkProgress(null);
+      if (desktopServices.isAvailable) {
+        void desktopServices.cancelSupportFileSearch().catch(() => undefined);
+      }
+    }
+    setIsProjectScopeTransitioning(true);
+    return transition;
+  }, [desktopServices.cancelSupportFileSearch, desktopServices.isAvailable]);
+
+  const finishProjectScopeTransition = useCallback((transition: object) => {
+    if (projectScopeTransitionRef.current === transition) {
+      projectScopeTransitionRef.current = null;
+      if (isAppMountedRef.current) {
+        setIsProjectScopeTransitioning(false);
+      }
+    }
+  }, []);
+
+  const recycleProjectBridgeBeforeScopeChange = useCallback(async (
+    transition: object,
+    allowDuringCriticalWrite = false
+  ) => {
+    if (
+      projectScopeTransitionRef.current !== transition ||
+      (!allowDuringCriticalWrite && criticalWriteOperationRef.current !== null)
+    ) {
+      return false;
     }
 
-    const request = desktopServices.recycleProjectBridge()
-      .then(() => true)
-      .catch((error) => {
-        setBridgeDiagnostics(
-          toDesktopDiagnostics(
-            error,
-            'Could not stop work from the previous project before changing project scope.',
-            desktopErrorCodes.bridgeRecycleFailed
-          )
-        );
-        return false;
-      });
-    projectBridgeScopeRecycleInFlightRef.current = request;
+    let request: Promise<boolean> | null = null;
     try {
+      cancelPendingProjectBridgeRecycle();
+      if (!desktopServices.isAvailable) {
+        return true;
+      }
+      if (projectBridgeScopeRecycleInFlightRef.current !== null) {
+        return false;
+      }
+
+      request = desktopServices.recycleProjectBridge()
+        .then(() => true)
+        .catch((error) => {
+          setBridgeDiagnostics(
+            toDesktopDiagnostics(
+              error,
+              'Could not stop work from the previous project before changing project scope.',
+              desktopErrorCodes.bridgeRecycleFailed
+            )
+          );
+          return false;
+        });
+      projectBridgeScopeRecycleInFlightRef.current = request;
       return await request;
     } finally {
-      if (projectBridgeScopeRecycleInFlightRef.current === request) {
+      if (request && projectBridgeScopeRecycleInFlightRef.current === request) {
         projectBridgeScopeRecycleInFlightRef.current = null;
       }
     }
   }, [
+    cancelPendingProjectBridgeRecycle,
     desktopServices.isAvailable,
     desktopServices.recycleProjectBridge,
     setBridgeDiagnostics
@@ -4843,11 +5083,23 @@ export function App({
     if (projectBridgeScopeRecycleTimerRef.current !== null) {
       clearTimeout(projectBridgeScopeRecycleTimerRef.current);
     }
-    projectBridgeScopeRecycleTimerRef.current = setTimeout(() => {
+    const attemptRecycle = () => {
       projectBridgeScopeRecycleTimerRef.current = null;
-      void recycleProjectBridgeBeforeScopeChange();
-    }, 150);
-  }, [desktopServices.isAvailable, recycleProjectBridgeBeforeScopeChange]);
+      const transition = beginProjectScopeTransition();
+      if (!transition) {
+        projectBridgeScopeRecycleTimerRef.current = setTimeout(attemptRecycle, 150);
+        return;
+      }
+      void recycleProjectBridgeBeforeScopeChange(transition)
+        .finally(() => finishProjectScopeTransition(transition));
+    };
+    projectBridgeScopeRecycleTimerRef.current = setTimeout(attemptRecycle, 150);
+  }, [
+    beginProjectScopeTransition,
+    desktopServices.isAvailable,
+    finishProjectScopeTransition,
+    recycleProjectBridgeBeforeScopeChange
+  ]);
 
   useEffect(() => () => {
     if (projectBridgeScopeRecycleTimerRef.current !== null) {
@@ -4856,8 +5108,24 @@ export function App({
     }
   }, []);
 
-  const prepareProjectPathChange = useCallback(async () => {
-    if (!(await settleLocalEditorDrafts())) {
+  const prepareProjectPathChange = useCallback(async (
+    allowedSupportSearchOperation: object | null = null
+  ) => {
+    const hasCompetingSupportSearch = () => (
+      supportSearchOperationRef.current !== null &&
+      supportSearchOperationRef.current !== allowedSupportSearchOperation
+    );
+    if (
+      criticalWriteOperationRef.current ||
+      hasCompetingSupportSearch() ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null ||
+      !(await settleLocalEditorDrafts()) ||
+      criticalWriteOperationRef.current ||
+      hasCompetingSupportSearch() ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null
+    ) {
       return false;
     }
     if (hasLatestLocalDraftProtection()) {
@@ -4870,8 +5138,16 @@ export function App({
       ]);
       return false;
     }
-    if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
-      return false;
+    if (activeNoteDirtyRef.current) {
+      if (
+        !(await flushActiveNoteRef.current()) ||
+        criticalWriteOperationRef.current ||
+        hasCompetingSupportSearch() ||
+        changeSetWorkspaceOperationCheckRef.current() ||
+        projectScopeTransitionRef.current !== null
+      ) {
+        return false;
+      }
     }
     return true;
   }, [
@@ -4886,6 +5162,7 @@ export function App({
       if (nextLanguage === language || !(await prepareProjectPathChange())) {
         return;
       }
+      projectScopeGenerationRef.current += 1;
       setLanguage(nextLanguage);
     },
     [language, prepareProjectPathChange, setLanguage]
@@ -4908,6 +5185,7 @@ export function App({
 
       projectValidationRunRef.current += 1;
       supportSearchRunRef.current += 1;
+      supportSearchOperationRef.current = null;
       setIsSupportSearchPermissionOpen(false);
       setIsSupportSearchRunning(false);
       setWorkProgress(null);
@@ -4951,7 +5229,12 @@ export function App({
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
       if (
+        exitDiscardOperationRef.current !== null ||
         editSessionApplyInFlightRef.current ||
+        editSessionReviewOperationRef.current !== null ||
+        criticalWriteOperationRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        projectScopeTransitionRef.current !== null ||
         isSessionValidating ||
         isChangePlanCreating ||
         isChangePlanApplying ||
@@ -5061,6 +5344,14 @@ export function App({
       preparedNavigation?: PendingWorkspaceNavigation,
       requestOptions?: WorkbenchNavigationRequestOptions
     ) => {
+      if (
+        criticalWriteOperationRef.current ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
+        projectScopeTransitionRef.current !== null
+      ) {
+        return null;
+      }
       stableLocationPreparationRevisionRef.current += 1;
       const requestRevision = ++workspaceNavigationRequestRevisionRef.current;
       const requestScopeRevision = workspaceNavigationScopeRevisionRef.current;
@@ -5075,7 +5366,23 @@ export function App({
       if (!(await flushActiveNoteRef.current())) {
         return null;
       }
+      if (
+        criticalWriteOperationRef.current ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
+        projectScopeTransitionRef.current !== null
+      ) {
+        return null;
+      }
       if (!(await settleLocalEditorDrafts())) {
+        return null;
+      }
+      if (
+        criticalWriteOperationRef.current ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
+        projectScopeTransitionRef.current !== null
+      ) {
         return null;
       }
       const currentScope = workspaceShellStateRef.current.scope;
@@ -5367,6 +5674,10 @@ export function App({
   const coldStableLocationCommitResolverRef = useRef<
     (location: WorkbenchLocation) => Promise<(() => void) | null>
   >(async () => null);
+  const stableLocationPreparationInFlightRef = useRef<{
+    key: string;
+    request: Promise<StableLocationPreparationResult>;
+  } | null>(null);
   const stableLocationSourceIsLoaded = useCallback((location: WorkbenchLocation) => {
     const selection = parseStableEntitySelection(location);
     if (!selection) {
@@ -5395,70 +5706,89 @@ export function App({
     }
   }, []);
   const prepareStableLocationCommit = useCallback(
-    async (location: WorkbenchLocation): Promise<
-      | { kind: 'aborted' }
-      | { kind: 'ready'; onCommit: () => void }
-      | { kind: 'unavailable' }
-    > => {
-      const preparationRevision = ++stableLocationPreparationRevisionRef.current;
-      const immediateCommit = resolveStableLocationCommit(location);
-      if (immediateCommit || !location.entity) {
-        return immediateCommit
-          ? { kind: 'ready', onCommit: immediateCommit }
-          : { kind: 'aborted' };
+    async (location: WorkbenchLocation): Promise<StableLocationPreparationResult> => {
+      const preparationKey = `${projectScopeGenerationRef.current}:${serializeWorkbenchLocation(location)}`;
+      const currentPreparation = stableLocationPreparationInFlightRef.current;
+      if (currentPreparation?.key === preparationKey) {
+        return currentPreparation.request;
       }
 
-      const guardState = navigationGuardStateRef.current;
-      if (
-        !guardState ||
-        guardState.hasCriticalWriteOperation ||
-        guardState.isEditSessionOperationBusy ||
-        !guardState.isDestinationAvailable(location)
-      ) {
-        return { kind: 'aborted' };
-      }
-
-      const scopeGeneration = projectScopeGenerationRef.current;
-      const isCurrentRequest = () =>
-        stableLocationPreparationRevisionRef.current === preparationRevision &&
-        projectScopeGenerationRef.current === scopeGeneration &&
-        activeProjectIdRef.current === location.projectId &&
-        draftPathsRef.current.selectedGame === location.game;
-
-      if (
-        !(await flushActiveNoteRef.current()) ||
-        !(await settleLocalEditorDrafts()) ||
-        !isCurrentRequest()
-      ) {
-        return { kind: 'aborted' };
-      }
-
-      let preparedCommit: (() => void) | null;
-      try {
-        preparedCommit = await coldStableLocationCommitResolverRef.current(location);
-      } catch (error) {
-        if (isCurrentRequest() && !isStaleProjectScopeError(error)) {
-          setBridgeDiagnostics(toBridgeDiagnostics(error));
-        }
-        return { kind: 'aborted' };
-      }
-      if (!isCurrentRequest()) {
-        return { kind: 'aborted' };
-      }
-      if (!preparedCommit) {
-        if (!stableLocationSourceIsLoaded(location)) {
+      const request = (async (): Promise<StableLocationPreparationResult> => {
+        const preparationRevision = ++stableLocationPreparationRevisionRef.current;
+        const guardState = navigationGuardStateRef.current;
+        if (
+          !guardState ||
+          supportSearchOperationRef.current !== null ||
+          changeSetWorkspaceOperationCheckRef.current() ||
+          guardState.hasCriticalWriteOperation ||
+          guardState.isEditSessionOperationBusy ||
+          !guardState.isDestinationAvailable(location)
+        ) {
           return { kind: 'aborted' };
         }
-        setBridgeDiagnostics([
-          {
-            domain: 'workspace.navigation',
-            message: t('workbench.navigation.targetUnavailable'),
-            severity: 'warning'
+
+        const immediateCommit = resolveStableLocationCommit(location);
+        if (immediateCommit || !location.entity) {
+          return immediateCommit
+            ? { kind: 'ready', onCommit: immediateCommit }
+            : { kind: 'aborted' };
+        }
+
+        const scopeGeneration = projectScopeGenerationRef.current;
+        const isCurrentRequest = () =>
+          stableLocationPreparationRevisionRef.current === preparationRevision &&
+          projectScopeGenerationRef.current === scopeGeneration &&
+          activeProjectIdRef.current === location.projectId &&
+          draftPathsRef.current.selectedGame === location.game;
+
+        if (
+          !(await flushActiveNoteRef.current()) ||
+          !(await settleLocalEditorDrafts()) ||
+          supportSearchOperationRef.current !== null ||
+          changeSetWorkspaceOperationCheckRef.current() ||
+          !isCurrentRequest()
+        ) {
+          return { kind: 'aborted' };
+        }
+
+        let preparedCommit: (() => void) | null;
+        try {
+          preparedCommit = await coldStableLocationCommitResolverRef.current(location);
+        } catch (error) {
+          if (isCurrentRequest() && !isStaleProjectScopeError(error)) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
           }
-        ]);
-        return { kind: 'unavailable' };
+          return { kind: 'aborted' };
+        }
+        if (!isCurrentRequest()) {
+          return { kind: 'aborted' };
+        }
+        if (!preparedCommit) {
+          if (!stableLocationSourceIsLoaded(location)) {
+            return { kind: 'aborted' };
+          }
+          setBridgeDiagnostics([
+            {
+              domain: 'workspace.navigation',
+              message: t('workbench.navigation.targetUnavailable'),
+              severity: 'warning'
+            }
+          ]);
+          return { kind: 'unavailable' };
+        }
+        return { kind: 'ready', onCommit: preparedCommit };
+      })();
+      stableLocationPreparationInFlightRef.current = {
+        key: preparationKey,
+        request
+      };
+      try {
+        return await request;
+      } finally {
+        if (stableLocationPreparationInFlightRef.current?.request === request) {
+          stableLocationPreparationInFlightRef.current = null;
+        }
       }
-      return { kind: 'ready', onCommit: preparedCommit };
     },
     [
       settleLocalEditorDrafts,
@@ -5754,18 +6084,28 @@ export function App({
     if (
       !desktopServices.isAvailable ||
       criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      semanticExternalPickerOperationRef.current !== null ||
       semanticExploreIsQueryingRef.current
     ) {
       return null;
     }
+    const operation = {};
+    semanticExternalPickerOperationRef.current = operation;
     const scopeGeneration = projectScopeGenerationRef.current;
     try {
       const selectedPath = await desktopServices.pickFolder({
         title: t('semanticExplore.external.action')
       });
       if (
+        semanticExternalPickerOperationRef.current !== operation ||
         projectScopeGenerationRef.current !== scopeGeneration ||
         criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
         semanticExploreIsQueryingRef.current
       ) {
         return null;
@@ -5773,8 +6113,12 @@ export function App({
       return selectedPath;
     } catch {
       if (
+        semanticExternalPickerOperationRef.current !== operation ||
         projectScopeGenerationRef.current !== scopeGeneration ||
         criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
         semanticExploreIsQueryingRef.current
       ) {
         return null;
@@ -5787,6 +6131,10 @@ export function App({
         }
       ]);
       return null;
+    } finally {
+      if (semanticExternalPickerOperationRef.current === operation) {
+        semanticExternalPickerOperationRef.current = null;
+      }
     }
   }, [
     desktopServices,
@@ -5794,7 +6142,13 @@ export function App({
     t
   ]);
   const handlePickSemanticMergeSource = useCallback(async (slot: 'a' | 'b') => {
-    if (!desktopServices.isAvailable || criticalWriteOperationRef.current) return null;
+    if (
+      !desktopServices.isAvailable ||
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current()
+    ) return null;
     const scopeGeneration = projectScopeGenerationRef.current;
     try {
       const selectedPath = await desktopServices.pickFolder({
@@ -5802,13 +6156,19 @@ export function App({
       });
       if (
         projectScopeGenerationRef.current !== scopeGeneration ||
-        criticalWriteOperationRef.current
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current()
       ) return null;
       return selectedPath;
     } catch {
       if (
         projectScopeGenerationRef.current !== scopeGeneration ||
-        criticalWriteOperationRef.current
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current()
       ) return null;
       setBridgeDiagnostics([{
         domain: 'desktop',
@@ -5819,21 +6179,38 @@ export function App({
     }
   }, [desktopServices, setBridgeDiagnostics, t]);
   const handlePickResearchSource = useCallback(async (slot: 0 | 1) => {
-    if (!desktopServices.isAvailable || criticalWriteOperationRef.current) return null;
+    if (
+      !desktopServices.isAvailable ||
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      researchSourcePickerOperationRef.current !== null
+    ) return null;
+    const operation = {};
+    researchSourcePickerOperationRef.current = operation;
     const scopeGeneration = projectScopeGenerationRef.current;
     try {
       const selectedPath = await desktopServices.pickFolder({
         title: t(slot === 0 ? 'researchLab.source.a' : 'researchLab.source.b')
       });
       if (
+        researchSourcePickerOperationRef.current !== operation ||
         projectScopeGenerationRef.current !== scopeGeneration ||
-        criticalWriteOperationRef.current
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current()
       ) return null;
       return selectedPath;
     } catch {
       if (
+        researchSourcePickerOperationRef.current !== operation ||
         projectScopeGenerationRef.current !== scopeGeneration ||
-        criticalWriteOperationRef.current
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current()
       ) return null;
       setBridgeDiagnostics([{
         domain: 'desktop',
@@ -5841,6 +6218,10 @@ export function App({
         severity: 'error'
       }]);
       return null;
+    } finally {
+      if (researchSourcePickerOperationRef.current === operation) {
+        researchSourcePickerOperationRef.current = null;
+      }
     }
   }, [desktopServices, setBridgeDiagnostics, t]);
   useEffect(() => {
@@ -6485,10 +6866,15 @@ export function App({
         }
       },
       (error: unknown) => {
+        const isCurrentReconciliation =
+          activeProjectIdRef.current === requestedProjectId &&
+          outputProfileReconciliationRef.current === reconciliationKey;
         if (outputProfileReconciliationRef.current === reconciliationKey) {
           outputProfileReconciliationRef.current = null;
         }
-        setPersonalWorkspaceError(getErrorMessage(error));
+        if (isCurrentReconciliation) {
+          setPersonalWorkspaceError(getErrorMessage(error));
+        }
       }
     );
   }, [
@@ -6536,6 +6922,7 @@ export function App({
     }
     if (
       isPersonalWorkspaceMutationBusy ||
+      personalWorkspaceMutationOperationRef.current !== null ||
       !personalProjectTarget ||
       !activeRecordLocation ||
       !activeScopedLocationKey
@@ -6546,6 +6933,8 @@ export function App({
     const requestedProjectId = personalProjectTarget.projectId;
     const requestedLocationKey = activeScopedLocationKey;
     const saveRevision = ++noteSaveRevisionRef.current;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
     setIsPersonalWorkspaceMutationBusy(true);
     setNoteStatusKey('workbench.notes.saving');
     const savePromise = (async () => {
@@ -6611,7 +7000,10 @@ export function App({
         }
         return false;
       } finally {
-        setIsPersonalWorkspaceMutationBusy(false);
+        if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+          personalWorkspaceMutationOperationRef.current = null;
+          setIsPersonalWorkspaceMutationBusy(false);
+        }
       }
     })();
     activeNoteSavePromiseRef.current = savePromise;
@@ -6668,7 +7060,13 @@ export function App({
       }
     : null;
   const handleToggleActivePin = useCallback(async () => {
-    if (!personalProjectTarget || !activePinLocation) return;
+    if (
+      personalWorkspaceMutationOperationRef.current !== null ||
+      !personalProjectTarget ||
+      !activePinLocation
+    ) return;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
     const existing = (projectWorkspaceDocument?.bookmarks ?? []).find(
       (bookmark) => bookmark.kind === 'pin' &&
         scopedWorkspaceLocationsEqual(
@@ -6696,9 +7094,14 @@ export function App({
         setPersonalWorkspaceError(null);
       }
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
     } finally {
-      setIsPersonalWorkspaceMutationBusy(false);
+      if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [
     activePinLocation,
@@ -6709,6 +7112,7 @@ export function App({
   ]);
   const handleCreateBookmark = useCallback(async (label: string): Promise<boolean> => {
     if (
+      personalWorkspaceMutationOperationRef.current !== null ||
       !personalProjectTarget ||
       !activeScopedLocation ||
       !activeRecordLocation ||
@@ -6720,6 +7124,8 @@ export function App({
     const requestedProjectId = personalProjectTarget.projectId;
     const requestedLocationKey = activeScopedLocationKey;
     const requestedStatusRevision = ++bookmarkStatusRevisionRef.current;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
     const isFeedbackCurrent = () =>
       activeProjectIdRef.current === requestedProjectId &&
       activeScopedLocationKeyRef.current === requestedLocationKey &&
@@ -6760,13 +7166,18 @@ export function App({
       }
       return true;
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === requestedProjectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
       if (isFeedbackCurrent()) {
         setBookmarkStatusKey('workbench.bookmarks.saveError');
       }
       return false;
     } finally {
-      setIsPersonalWorkspaceMutationBusy(false);
+      if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [
     activeRecordLocation,
@@ -6891,12 +7302,18 @@ export function App({
   const handleToggleCurrentWorkspaceView = useCallback(async () => {
     if (
       isSavedViewMutationBusy ||
+      savedViewMutationOperationRef.current !== null ||
+      personalWorkspaceMutationOperationRef.current !== null ||
       !personalProjectTarget ||
       !capturedCurrentWorkspaceView ||
       !currentWorkspaceViewLocation ||
       currentWorkspaceViewCanonicalPayload === null
     ) return;
+    const savedViewMutationOperation = {};
+    savedViewMutationOperationRef.current = savedViewMutationOperation;
+    personalWorkspaceMutationOperationRef.current = savedViewMutationOperation;
     setIsSavedViewMutationBusy(true);
+    setIsPersonalWorkspaceMutationBusy(true);
     try {
       const snapshot = currentSavedWorkspaceView
         ? await personalWorkspaceRegistry.removeView(
@@ -6925,9 +7342,18 @@ export function App({
         setPersonalWorkspaceError(null);
       }
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
     } finally {
-      setIsSavedViewMutationBusy(false);
+      if (savedViewMutationOperationRef.current === savedViewMutationOperation) {
+        savedViewMutationOperationRef.current = null;
+        setIsSavedViewMutationBusy(false);
+      }
+      if (personalWorkspaceMutationOperationRef.current === savedViewMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [
     activeSection,
@@ -6962,7 +7388,13 @@ export function App({
     projectWorkspaceDocument?.savedViews
   ]);
   const handleDeleteSavedView = useCallback(async (viewId: string) => {
-    if (!personalProjectTarget) return;
+    if (
+      personalWorkspaceMutationOperationRef.current !== null ||
+      !personalProjectTarget
+    ) return;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
+    setIsPersonalWorkspaceMutationBusy(true);
     try {
       const snapshot = await personalWorkspaceRegistry.removeView(
         personalProjectTarget,
@@ -6972,11 +7404,25 @@ export function App({
         setProjectWorkspaceSnapshot(snapshot);
       }
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    } finally {
+      if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [personalProjectTarget, personalWorkspaceRegistry]);
   const handleCreateOutputProfile = useCallback(async (name: string): Promise<boolean> => {
-    if (!personalProjectTarget || !draftPaths.outputRootPath) return false;
+    if (
+      personalWorkspaceMutationOperationRef.current !== null ||
+      !personalProjectTarget ||
+      !draftPaths.outputRootPath
+    ) return false;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
+    setIsPersonalWorkspaceMutationBusy(true);
     try {
       const snapshot = await personalWorkspaceRegistry.saveOutputProfile(
         personalProjectTarget,
@@ -6993,8 +7439,15 @@ export function App({
       }
       return true;
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
       return false;
+    } finally {
+      if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [
     draftPaths.outputRootPath,
@@ -7003,7 +7456,13 @@ export function App({
     personalWorkspaceRegistry
   ]);
   const handleDeleteOutputProfile = useCallback(async (profileId: string) => {
-    if (!personalProjectTarget) return;
+    if (
+      personalWorkspaceMutationOperationRef.current !== null ||
+      !personalProjectTarget
+    ) return;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
+    setIsPersonalWorkspaceMutationBusy(true);
     try {
       const snapshot = await personalWorkspaceRegistry.removeOutputProfile(
         personalProjectTarget,
@@ -7013,7 +7472,14 @@ export function App({
         setProjectWorkspaceSnapshot(snapshot);
       }
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    } finally {
+      if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [openProject?.projectId, personalProjectTarget, personalWorkspaceRegistry]);
   const inspectorAvailable = activeScopedLocation !== null;
@@ -7167,7 +7633,13 @@ export function App({
     [activeLocation, handleNavigateLocation, inspectorAvailable]
   );
   const handleRemoveBookmark = useCallback(async (bookmarkId: string) => {
-    if (!personalProjectTarget) return;
+    if (
+      personalWorkspaceMutationOperationRef.current !== null ||
+      !personalProjectTarget
+    ) return;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
+    setIsPersonalWorkspaceMutationBusy(true);
     try {
       const snapshot = await personalWorkspaceRegistry.removeBookmark(
         personalProjectTarget,
@@ -7177,7 +7649,14 @@ export function App({
         setProjectWorkspaceSnapshot(snapshot);
       }
     } catch (error) {
-      setPersonalWorkspaceError(getErrorMessage(error));
+      if (activeProjectIdRef.current === personalProjectTarget.projectId) {
+        setPersonalWorkspaceError(getErrorMessage(error));
+      }
+    } finally {
+      if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+        personalWorkspaceMutationOperationRef.current = null;
+        setIsPersonalWorkspaceMutationBusy(false);
+      }
     }
   }, [openProject?.projectId, personalProjectTarget, personalWorkspaceRegistry]);
   const persistedRecentTargetRef = useRef<string | null>(null);
@@ -7357,6 +7836,14 @@ export function App({
   );
   const handleActivateWorkspaceTab = useCallback(
     async (location: WorkbenchLocation) => {
+      if (
+        criticalWriteOperationRef.current ||
+        supportSearchOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
+        projectScopeTransitionRef.current !== null
+      ) {
+        return;
+      }
       const expectedRevision = workspaceShellStateRef.current.revision;
       const preparation = await prepareStableLocationCommit(location);
       if (
@@ -7382,6 +7869,14 @@ export function App({
     [handleNavigateLocation, prepareStableLocationCommit]
   );
   const handleCloseWorkspaceTab = useCallback(async (tabKey: string) => {
+    if (
+      criticalWriteOperationRef.current ||
+      supportSearchOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null
+    ) {
+      return;
+    }
     const currentState = workspaceShellStateRef.current;
     const protectedTabKeys = getProtectedWorkspaceTabKeys(
       currentState.tabs,
@@ -7460,6 +7955,21 @@ export function App({
   }, [hasCriticalWriteOperation, isEditSessionOperationBusy, requestEditorExit]);
 
   const handleConfirmExitDiscard = useCallback(async () => {
+    if (
+      exitDiscardOperationRef.current !== null ||
+      editSessionApplyInFlightRef.current ||
+      editSessionReviewOperationRef.current !== null ||
+      pendingEditSessionMutationTokensRef.current.size > 0 ||
+      criticalWriteOperationRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null
+    ) {
+      return;
+    }
+    const discardOperation = {};
+    exitDiscardOperationRef.current = discardOperation;
+    try {
     const prompt = exitPrompt;
     if (!prompt) {
       return;
@@ -7585,6 +8095,11 @@ export function App({
         );
       }
     }
+    } finally {
+      if (exitDiscardOperationRef.current === discardOperation) {
+        exitDiscardOperationRef.current = null;
+      }
+    }
   }, [
     activeEditorHasLocalDrafts,
     activeSection,
@@ -7604,6 +8119,7 @@ export function App({
   ]);
 
   const handleDeclineExitDiscard = useCallback(() => {
+    if (exitDiscardOperationRef.current !== null) return;
     setExitPrompt((prompt) => {
       if (!prompt) {
         return prompt;
@@ -7975,6 +8491,7 @@ export function App({
       svCacheWarmupRunRef.current += 1;
       svCacheOperationGenerationRef.current += 1;
       svCacheRefreshOperationRef.current += 1;
+      svCacheRefreshInFlightRef.current = null;
       svCacheSettingsOperationRef.current = null;
       svCacheAutomaticStartupRef.current = null;
       setIsSvCacheWarming(false);
@@ -7999,6 +8516,7 @@ export function App({
     svCacheWarmupRunRef.current += 1;
     svCacheOperationGenerationRef.current += 1;
     svCacheRefreshOperationRef.current += 1;
+    svCacheRefreshInFlightRef.current = null;
     svCacheSettingsOperationRef.current = null;
     setIsSvCacheWarming(false);
     setIsSvCacheRefreshing(false);
@@ -8052,14 +8570,16 @@ export function App({
     async (mode: TrinityCacheMode) => {
       if (
         !isProjectCacheGame(selectedGame) ||
+        svCacheRefreshInFlightRef.current !== null ||
         svCacheSettingsOperationRef.current !== null
       ) {
         return;
       }
+      const criticalWriteToken = beginCriticalWriteOperation();
+      if (!criticalWriteToken) return;
 
       const settingsOperation = {};
       svCacheSettingsOperationRef.current = settingsOperation;
-      criticalWriteOperationRef.current = true;
       setIsSvCacheSettingsUpdating(true);
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
@@ -8102,6 +8622,7 @@ export function App({
           message: 'Could not restart the project bridge after updating cache settings.'
         };
         await desktopServices.recycleProjectBridge();
+        cancelPendingProjectBridgeRecycle();
         if (!isCurrentOperation()) {
           return;
         }
@@ -8119,12 +8640,16 @@ export function App({
           svCacheSettingsOperationRef.current = null;
           setIsSvCacheSettingsUpdating(false);
         }
+        finishCriticalWriteOperation(criticalWriteToken);
       }
     },
     [
+      beginCriticalWriteOperation,
       bridge,
+      cancelPendingProjectBridgeRecycle,
       desktopServices.recycleProjectBridge,
       evictUnprotectedWorkflowPayloads,
+      finishCriticalWriteOperation,
       health,
       currentSvCacheStatus?.settings.maxCacheSizeBytes,
       projectSourceRevision.refresh,
@@ -8139,14 +8664,16 @@ export function App({
     async (maxCacheSizeBytes: number) => {
       if (
         !isProjectCacheGame(selectedGame) ||
+        svCacheRefreshInFlightRef.current !== null ||
         svCacheSettingsOperationRef.current !== null
       ) {
         return;
       }
+      const criticalWriteToken = beginCriticalWriteOperation();
+      if (!criticalWriteToken) return;
 
       const settingsOperation = {};
       svCacheSettingsOperationRef.current = settingsOperation;
-      criticalWriteOperationRef.current = true;
       setIsSvCacheSettingsUpdating(true);
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
@@ -8188,11 +8715,14 @@ export function App({
           svCacheSettingsOperationRef.current = null;
           setIsSvCacheSettingsUpdating(false);
         }
+        finishCriticalWriteOperation(criticalWriteToken);
       }
     },
     [
+      beginCriticalWriteOperation,
       bridge,
       currentSvCacheStatus?.settings.mode,
+      finishCriticalWriteOperation,
       health,
       selectedGame,
       startSvCacheWarmup,
@@ -8203,11 +8733,14 @@ export function App({
   const handleRefreshSvCacheStatus = useCallback(async () => {
     if (
       !isProjectCacheGame(selectedGame) ||
+      svCacheRefreshInFlightRef.current !== null ||
       svCacheSettingsOperationRef.current !== null
     ) {
       return;
     }
 
+    const refreshInFlightOperation = {};
+    svCacheRefreshInFlightRef.current = refreshInFlightOperation;
     const paths = createProjectPaths(draftPathsRef.current);
     const operationScopeKey = svCacheScopeKey;
     const operationGeneration = svCacheOperationGenerationRef.current + 1;
@@ -8215,6 +8748,7 @@ export function App({
     const refreshOperation = svCacheRefreshOperationRef.current + 1;
     svCacheRefreshOperationRef.current = refreshOperation;
     const isCurrentOperation = () =>
+      svCacheRefreshInFlightRef.current === refreshInFlightOperation &&
       svCacheOperationGenerationRef.current === operationGeneration &&
       svCacheScopeKeyRef.current === operationScopeKey;
     setIsSvCacheRefreshing(true);
@@ -8247,6 +8781,9 @@ export function App({
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
     } finally {
+      if (svCacheRefreshInFlightRef.current === refreshInFlightOperation) {
+        svCacheRefreshInFlightRef.current = null;
+      }
       if (svCacheRefreshOperationRef.current === refreshOperation) {
         setIsSvCacheRefreshing(false);
       }
@@ -8256,11 +8793,16 @@ export function App({
   const handleConfirmClearSvCache = useCallback(async () => {
     if (
       !isProjectCacheGame(selectedGame) ||
+      svCacheRefreshInFlightRef.current !== null ||
       svCacheSettingsOperationRef.current !== null
     ) {
       return;
     }
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
+    const settingsOperation = {};
+    svCacheSettingsOperationRef.current = settingsOperation;
     setIsSvCacheClearConfirmOpen(false);
     svCacheWarmupRunRef.current += 1;
     svCacheRefreshOperationRef.current += 1;
@@ -8269,6 +8811,7 @@ export function App({
     const operationGeneration = svCacheOperationGenerationRef.current + 1;
     svCacheOperationGenerationRef.current = operationGeneration;
     const isCurrentOperation = () =>
+      svCacheSettingsOperationRef.current === settingsOperation &&
       svCacheOperationGenerationRef.current === operationGeneration &&
       svCacheScopeKeyRef.current === operationScopeKey;
     setIsSvCacheWarming(false);
@@ -8297,6 +8840,7 @@ export function App({
         message: 'Could not restart the project bridge after clearing the cache.'
       };
       await desktopServices.recycleProjectBridge();
+      cancelPendingProjectBridgeRecycle();
       if (!isCurrentOperation()) {
         return;
       }
@@ -8307,14 +8851,19 @@ export function App({
         setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
       }
     } finally {
-      if (isCurrentOperation()) {
+      if (svCacheSettingsOperationRef.current === settingsOperation) {
+        svCacheSettingsOperationRef.current = null;
         setIsSvCacheClearing(false);
       }
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   }, [
+    beginCriticalWriteOperation,
     bridge,
+    cancelPendingProjectBridgeRecycle,
     desktopServices,
     evictUnprotectedWorkflowPayloads,
+    finishCriticalWriteOperation,
     projectSourceRevision.refresh,
     selectedGame,
     semanticExploreController.invalidate,
@@ -8382,125 +8931,149 @@ export function App({
     response: ApplyProjectRelocationResponse,
     candidatePaths: OutputSafetyScope['paths']
   ) => {
-    const didRecycleBridge = await recycleProjectBridgeBeforeScopeChange();
-    const nextSelectedGame = candidatePaths.selectedGame ?? selectedGame;
-    const nextDraftPaths: ProjectPathDraft = {
-      baseExeFsPath: candidatePaths.baseExeFsPath ?? '',
-      baseRomFsPath: candidatePaths.baseRomFsPath ?? '',
-      outputRootPath: candidatePaths.outputRootPath ?? '',
-      pokemonLegendsZASupportFolderPath:
-        candidatePaths.pokemonLegendsZASupportFolderPath ?? '',
-      saveFilePath: candidatePaths.saveFilePath ?? '',
-      scarletVioletSupportFolderPath:
-        candidatePaths.scarletVioletSupportFolderPath ?? '',
-      selectedGame: nextSelectedGame
-    };
-
-    projectValidationRunRef.current += 1;
-    supportSearchRunRef.current += 1;
-    resetLoadedProjectState();
-    draftPathsRef.current = nextDraftPaths;
-    const activatedPaths = createProjectPaths(nextDraftPaths);
-    setDraftPath('baseExeFsPath', nextDraftPaths.baseExeFsPath);
-    setDraftPath('baseRomFsPath', nextDraftPaths.baseRomFsPath);
-    setDraftPath('outputRootPath', nextDraftPaths.outputRootPath);
-    setDraftPath(
-      'pokemonLegendsZASupportFolderPath',
-      nextDraftPaths.pokemonLegendsZASupportFolderPath
-    );
-    setDraftPath('saveFilePath', nextDraftPaths.saveFilePath);
-    setDraftPath(
-      'scarletVioletSupportFolderPath',
-      nextDraftPaths.scarletVioletSupportFolderPath
-    );
-    setOpenProject({
-      health: response.health,
-      projectId: response.projectId
-    });
-    void rememberPrivateProject(activatedPaths, response.projectId);
-    if (didRecycleBridge) {
-      setBridgeDiagnostics(response.diagnostics);
-    }
-
-    const activationGeneration = projectScopeGenerationRef.current;
+    const transition = beginProjectScopeTransition(true);
+    if (!transition) return;
     try {
-      await refreshWorkflows(
-        activatedPaths,
-        response.health.canOpenReadOnlyWorkflows,
-        () => projectScopeGenerationRef.current === activationGeneration
+      const didRecycleBridge = await recycleProjectBridgeBeforeScopeChange(transition, true);
+      if (!didRecycleBridge) return;
+      const nextSelectedGame = candidatePaths.selectedGame ?? selectedGame;
+      const nextDraftPaths: ProjectPathDraft = {
+        baseExeFsPath: candidatePaths.baseExeFsPath ?? '',
+        baseRomFsPath: candidatePaths.baseRomFsPath ?? '',
+        outputRootPath: candidatePaths.outputRootPath ?? '',
+        pokemonLegendsZASupportFolderPath:
+          candidatePaths.pokemonLegendsZASupportFolderPath ?? '',
+        saveFilePath: candidatePaths.saveFilePath ?? '',
+        scarletVioletSupportFolderPath:
+          candidatePaths.scarletVioletSupportFolderPath ?? '',
+        selectedGame: nextSelectedGame
+      };
+
+      projectValidationRunRef.current += 1;
+      supportSearchRunRef.current += 1;
+      supportSearchOperationRef.current = null;
+      resetLoadedProjectState();
+      draftPathsRef.current = nextDraftPaths;
+      const activatedPaths = createProjectPaths(nextDraftPaths);
+      setDraftPath('baseExeFsPath', nextDraftPaths.baseExeFsPath);
+      setDraftPath('baseRomFsPath', nextDraftPaths.baseRomFsPath);
+      setDraftPath('outputRootPath', nextDraftPaths.outputRootPath);
+      setDraftPath(
+        'pokemonLegendsZASupportFolderPath',
+        nextDraftPaths.pokemonLegendsZASupportFolderPath
       );
-    } catch (error) {
-      if (projectScopeGenerationRef.current === activationGeneration) {
-        setBridgeDiagnostics([
-          ...response.diagnostics,
-          ...toBridgeDiagnostics(error)
-        ]);
+      setDraftPath('saveFilePath', nextDraftPaths.saveFilePath);
+      setDraftPath(
+        'scarletVioletSupportFolderPath',
+        nextDraftPaths.scarletVioletSupportFolderPath
+      );
+      setOpenProject({
+        health: response.health,
+        projectId: response.projectId
+      });
+      void rememberPrivateProject(activatedPaths, response.projectId);
+      setBridgeDiagnostics(response.diagnostics);
+
+      const activationGeneration = projectScopeGenerationRef.current;
+      try {
+        await refreshWorkflows(
+          activatedPaths,
+          response.health.canOpenReadOnlyWorkflows,
+          () => projectScopeGenerationRef.current === activationGeneration
+        );
+      } catch (error) {
+        if (projectScopeGenerationRef.current === activationGeneration) {
+          setBridgeDiagnostics([
+            ...response.diagnostics,
+            ...toBridgeDiagnostics(error)
+          ]);
+        }
+        return;
       }
-      return;
+    } finally {
+      finishProjectScopeTransition(transition);
     }
   };
 
   const handleValidateProject = async () => {
-    if (!(await settleLocalEditorDrafts())) {
+    if (
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null ||
+      !(await settleLocalEditorDrafts()) ||
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null
+    ) {
       return;
     }
-    if (!(await recycleProjectBridgeBeforeScopeChange())) {
-      return;
-    }
-    const runId = projectValidationRunRef.current + 1;
-    projectValidationRunRef.current = runId;
-    projectScopeGenerationRef.current += 1;
-    setProjectStatus('validating');
-    setBridgeDiagnostics([]);
-
+    const transition = beginProjectScopeTransition();
+    if (!transition) return;
     try {
-      const paths = createProjectPaths(draftPaths);
-      const response = await bridge.validateProject({ paths });
-      if (projectValidationRunRef.current !== runId) {
+      if (!(await recycleProjectBridgeBeforeScopeChange(transition))) {
         return;
       }
-      if (
-        activeProjectId !== null &&
-        response.projectId !== activeProjectId &&
-        hasLatestLocalDraftProtection()
-      ) {
-        setProjectStatus('idle');
-        setBridgeDiagnostics([
-          {
-            domain: 'workspace.drafts',
-            message: t('localDraft.projectSwitch.error'),
-            severity: 'warning'
-          }
-        ]);
-        return;
-      }
-      await activateValidatedProject(
-        paths,
-        response,
-        () => projectValidationRunRef.current === runId
-      );
-      if (projectValidationRunRef.current !== runId) {
-        return;
-      }
-    } catch (error) {
-      if (projectValidationRunRef.current !== runId) {
-        return;
-      }
+      const runId = projectValidationRunRef.current + 1;
+      projectValidationRunRef.current = runId;
+      projectScopeGenerationRef.current += 1;
+      setProjectStatus('validating');
+      setBridgeDiagnostics([]);
 
-      setProjectStatus('idle');
-      if (isStaleProjectScopeError(error)) {
-        return;
+      try {
+        const paths = createProjectPaths(draftPaths);
+        const response = await bridge.validateProject({ paths });
+        if (projectValidationRunRef.current !== runId) {
+          return;
+        }
+        if (
+          activeProjectId !== null &&
+          response.projectId !== activeProjectId &&
+          hasLatestLocalDraftProtection()
+        ) {
+          setProjectStatus('idle');
+          setBridgeDiagnostics([
+            {
+              domain: 'workspace.drafts',
+              message: t('localDraft.projectSwitch.error'),
+              severity: 'warning'
+            }
+          ]);
+          return;
+        }
+        await activateValidatedProject(
+          paths,
+          response,
+          () => projectValidationRunRef.current === runId
+        );
+        if (projectValidationRunRef.current !== runId) {
+          return;
+        }
+      } catch (error) {
+        if (projectValidationRunRef.current !== runId) {
+          return;
+        }
+
+        setProjectStatus('idle');
+        if (isStaleProjectScopeError(error)) {
+          return;
+        }
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      finishProjectScopeTransition(transition);
     }
   };
 
   const handleOpenRecentProject = async (projectId: string) => {
-    if (!(await settleLocalEditorDrafts())) {
+    if (
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null ||
+      !(await settleLocalEditorDrafts()) ||
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null
+    ) {
       return;
     }
     if (
-      hasCriticalWriteOperation ||
+      criticalWriteOperationRef.current ||
       isEditSessionOperationBusy ||
       isPersonalWorkspaceMutationBusy ||
       activeNoteSavePromiseRef.current !== null ||
@@ -8510,49 +9083,61 @@ export function App({
     ) {
       return;
     }
-    if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
-      return;
+    if (activeNoteDirtyRef.current) {
+      if (
+        !(await flushActiveNoteRef.current()) ||
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null
+      ) {
+        return;
+      }
     }
     const profile = applicationWorkspaceSnapshot.document?.recentProjects.find(
       (candidate) => candidate.projectId === projectId
     );
     if (!profile) return;
-    if (!(await recycleProjectBridgeBeforeScopeChange())) {
-      return;
-    }
-
-    const runId = ++projectValidationRunRef.current;
-    projectScopeGenerationRef.current += 1;
-    setProjectStatus('validating');
-    setBridgeDiagnostics([]);
+    const transition = beginProjectScopeTransition();
+    if (!transition) return;
     try {
-      const profilePaths = toProjectPaths(toProjectPathDraft(profile.paths), language);
-      const response = await unscopedBridge.validateProject({ paths: profilePaths });
-      if (projectValidationRunRef.current !== runId) return;
-      const nextDraft = toProjectPathDraft(profilePaths);
-      draftPathsRef.current = nextDraft;
-      setProjectPathDraft(nextDraft);
-      setExpandedWorkflowGroups(readExpandedWorkflowGroups(profile.game));
-      const activated = await activateValidatedProject(
-        profilePaths,
-        response,
-        () => projectValidationRunRef.current === runId
-      );
-      if (activated && projectValidationRunRef.current === runId) {
-        setUnavailableRecentProjectIds((current) => {
-          if (!current.has(projectId)) return current;
-          const next = new Set(current);
-          next.delete(projectId);
-          return next;
-        });
-      } else if (projectValidationRunRef.current === runId) {
-        setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
+      if (!(await recycleProjectBridgeBeforeScopeChange(transition))) {
+        return;
       }
-    } catch (error) {
-      if (projectValidationRunRef.current !== runId) return;
-      setProjectStatus('idle');
-      setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+
+      const runId = ++projectValidationRunRef.current;
+      projectScopeGenerationRef.current += 1;
+      setProjectStatus('validating');
+      setBridgeDiagnostics([]);
+      try {
+        const profilePaths = toProjectPaths(toProjectPathDraft(profile.paths), language);
+        const response = await unscopedBridge.validateProject({ paths: profilePaths });
+        if (projectValidationRunRef.current !== runId) return;
+        const nextDraft = toProjectPathDraft(profilePaths);
+        draftPathsRef.current = nextDraft;
+        setProjectPathDraft(nextDraft);
+        setExpandedWorkflowGroups(readExpandedWorkflowGroups(profile.game));
+        const activated = await activateValidatedProject(
+          profilePaths,
+          response,
+          () => projectValidationRunRef.current === runId
+        );
+        if (activated && projectValidationRunRef.current === runId) {
+          setUnavailableRecentProjectIds((current) => {
+            if (!current.has(projectId)) return current;
+            const next = new Set(current);
+            next.delete(projectId);
+            return next;
+          });
+        } else if (projectValidationRunRef.current === runId) {
+          setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
+        }
+      } catch (error) {
+        if (projectValidationRunRef.current !== runId) return;
+        setProjectStatus('idle');
+        setUnavailableRecentProjectIds((current) => new Set(current).add(projectId));
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
+    } finally {
+      finishProjectScopeTransition(transition);
     }
   };
 
@@ -8585,13 +9170,26 @@ export function App({
         if (isDisposed) {
           return;
         }
-        if (criticalWriteOperationRef.current) {
+        if (
+          criticalWriteOperationRef.current ||
+          projectScopeTransitionRef.current !== null
+        ) {
           return;
         }
-        if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
-          return;
+        if (activeNoteDirtyRef.current) {
+          if (
+            !(await flushActiveNoteRef.current()) ||
+            criticalWriteOperationRef.current ||
+            projectScopeTransitionRef.current !== null
+          ) {
+            return;
+          }
         }
-        if (!(await settleLocalEditorDrafts())) {
+        if (
+          !(await settleLocalEditorDrafts()) ||
+          criticalWriteOperationRef.current ||
+          projectScopeTransitionRef.current !== null
+        ) {
           return;
         }
         if (isDisposed) {
@@ -8602,10 +9200,34 @@ export function App({
           editorDraftDirtySectionsRef.current.size > 0 ||
           hasLatestLocalDraftProtection();
         if (editSessionRef.current === null && !hasLocalDrafts) {
+          if (windowExitCriticalWriteTokenRef.current !== null) return;
+          const exitToken = beginCriticalWriteOperation();
+          if (!exitToken) return;
+          windowExitCriticalWriteTokenRef.current = exitToken;
+          setIsWindowExitInFlight(true);
           try {
             await desktopServices.setCloseGuardEnabled(false);
+            if (
+              isDisposed ||
+              criticalWriteOperationRef.current !== exitToken ||
+              projectScopeTransitionRef.current !== null
+            ) {
+              await desktopServices.setCloseGuardEnabled(true).catch(() => undefined);
+              if (windowExitCriticalWriteTokenRef.current === exitToken) {
+                windowExitCriticalWriteTokenRef.current = null;
+                finishCriticalWriteOperation(exitToken);
+                if (!isDisposed) setIsWindowExitInFlight(false);
+              }
+              return;
+            }
             await desktopServices.exitApp();
           } catch (error) {
+            await desktopServices.setCloseGuardEnabled(true).catch(() => undefined);
+            if (windowExitCriticalWriteTokenRef.current === exitToken) {
+              windowExitCriticalWriteTokenRef.current = null;
+              finishCriticalWriteOperation(exitToken);
+              if (!isDisposed) setIsWindowExitInFlight(false);
+            }
             if (!isDisposed) setBridgeDiagnostics(
               toDesktopDiagnostics(
                 error,
@@ -8650,27 +9272,54 @@ export function App({
       unlisten?.();
     };
   }, [
+    beginCriticalWriteOperation,
     desktopServices.isAvailable,
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
+    finishCriticalWriteOperation,
     settleLocalEditorDrafts,
     hasLatestLocalDraftProtection,
     setBridgeDiagnostics
   ]);
 
   const handlePickProjectPath = async (pathField: ProjectPathField) => {
+    if (
+      projectPathPickerOperationRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null
+    ) return;
+    const pickerOperation = {};
+    projectPathPickerOperationRef.current = pickerOperation;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    const startingFieldValue = draftPathsRef.current[pathField.field];
     try {
       const pickPath =
         pathField.kind === 'file' ? desktopServices.pickFile : desktopServices.pickFolder;
       const selectedPath = await pickPath({
-        defaultPath: draftPaths[pathField.field] || undefined,
+        defaultPath: draftPathsRef.current[pathField.field] || undefined,
         title: `Select ${pathField.label}`
       });
 
-      if (selectedPath) {
+      if (
+        selectedPath &&
+        projectPathPickerOperationRef.current === pickerOperation &&
+        projectScopeGenerationRef.current === scopeGeneration &&
+        draftPathsRef.current[pathField.field] === startingFieldValue &&
+        criticalWriteOperationRef.current === null &&
+        !changeSetWorkspaceOperationCheckRef.current() &&
+        projectScopeTransitionRef.current === null
+      ) {
         await handleSetDraftPath(pathField.field, selectedPath);
       }
     } catch (error) {
+      if (
+        projectPathPickerOperationRef.current !== pickerOperation ||
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        criticalWriteOperationRef.current !== null ||
+        changeSetWorkspaceOperationCheckRef.current() ||
+        projectScopeTransitionRef.current !== null
+      ) return;
       setBridgeDiagnostics(
         toDesktopDiagnostics(
           error,
@@ -8678,6 +9327,10 @@ export function App({
           desktopErrorCodes.pathPickerFailed
         )
       );
+    } finally {
+      if (projectPathPickerOperationRef.current === pickerOperation) {
+        projectPathPickerOperationRef.current = null;
+      }
     }
   };
 
@@ -8744,22 +9397,23 @@ export function App({
     if (!(await prepareProjectPathChange())) {
       return;
     }
-    if (!(await recycleProjectBridgeBeforeScopeChange())) {
-      return;
-    }
-
+    const transition = beginProjectScopeTransition();
+    if (!transition) return;
     const runId = projectValidationRunRef.current + 1;
-    projectValidationRunRef.current = runId;
-    projectScopeGenerationRef.current += 1;
-    setIsOutputRootCreating(true);
-    setProjectStatus('validating');
-    setBridgeDiagnostics([]);
     let diagnosticFallback: UiDiagnosticFallback = {
       domain: 'bridge',
       message: 'Could not validate the project before creating the output root folder.'
     };
 
     try {
+      if (!(await recycleProjectBridgeBeforeScopeChange(transition))) {
+        return;
+      }
+      projectValidationRunRef.current = runId;
+      projectScopeGenerationRef.current += 1;
+      setIsOutputRootCreating(true);
+      setProjectStatus('validating');
+      setBridgeDiagnostics([]);
       const validationPaths = {
         ...createProjectPaths(draftPaths),
         outputRootPath: null
@@ -8791,7 +9445,7 @@ export function App({
       if (projectValidationRunRef.current !== runId) {
         return;
       }
-      if (!(await recycleProjectBridgeBeforeScopeChange())) {
+      if (!(await recycleProjectBridgeBeforeScopeChange(transition))) {
         return;
       }
       resetLoadedProjectState();
@@ -8829,10 +9483,17 @@ export function App({
       setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
     } finally {
       setIsOutputRootCreating(false);
+      finishProjectScopeTransition(transition);
     }
   };
 
   const handleRequestSupportSearch = () => {
+    if (
+      criticalWriteOperationRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      projectScopeTransitionRef.current !== null ||
+      supportSearchOperationRef.current !== null
+    ) return;
     if (!desktopServices.isAvailable) {
       setBridgeDiagnostics([
         {
@@ -8849,6 +9510,7 @@ export function App({
 
   const cancelSupportFileSearch = useCallback(() => {
     supportSearchRunRef.current += 1;
+    supportSearchOperationRef.current = null;
     setIsSupportSearchPermissionOpen(false);
     setIsSupportSearchRunning(false);
     setWorkProgress(null);
@@ -8860,6 +9522,7 @@ export function App({
   useEffect(
     () => () => {
       supportSearchRunRef.current += 1;
+      supportSearchOperationRef.current = null;
       if (desktopServices.isAvailable) {
         void desktopServices.cancelSupportFileSearch().catch(() => undefined);
       }
@@ -8868,17 +9531,38 @@ export function App({
   );
 
   const handleConfirmSupportSearch = async () => {
-    if (!(await prepareProjectPathChange())) {
-      return;
-    }
+    if (supportSearchOperationRef.current !== null) return;
+    const operation = {};
+    supportSearchOperationRef.current = operation;
+    const sourceScopeGeneration = projectScopeGenerationRef.current;
     const runId = supportSearchRunRef.current + 1;
     supportSearchRunRef.current = runId;
     setIsSupportSearchPermissionOpen(false);
     setIsSupportSearchRunning(true);
+    if (!(await prepareProjectPathChange(operation))) {
+      if (supportSearchOperationRef.current === operation) {
+        supportSearchOperationRef.current = null;
+        setIsSupportSearchRunning(false);
+        setIsSupportSearchPermissionOpen(true);
+      }
+      return;
+    }
+    if (
+      supportSearchOperationRef.current !== operation ||
+      supportSearchRunRef.current !== runId ||
+      projectScopeGenerationRef.current !== sourceScopeGeneration
+    ) {
+      if (supportSearchOperationRef.current === operation) {
+        supportSearchOperationRef.current = null;
+        setIsSupportSearchRunning(false);
+      }
+      return;
+    }
     setBridgeDiagnostics([]);
     setWorkProgress(createSupportSearchWorkProgress(null, formatLocale));
 
     let unlisten: (() => void) | null = null;
+    let projectTransition: object | null = null;
     let diagnosticFallback: UiDiagnosticFallback = {
       code: desktopErrorCodes.supportFileSearchFailed,
       domain: 'desktop',
@@ -8889,14 +9573,21 @@ export function App({
       unlisten = await listen<SupportSearchProgressPayload>(
         supportSearchProgressEvent,
         (event) => {
-          if (supportSearchRunRef.current === runId) {
+          if (
+            supportSearchOperationRef.current === operation &&
+            supportSearchRunRef.current === runId &&
+            projectScopeGenerationRef.current === sourceScopeGeneration
+          ) {
             setWorkProgress(createSupportSearchWorkProgress(event.payload, formatLocale));
           }
         }
       );
 
       const folderPath = await desktopServices.findSupportFileFolder();
-      if (supportSearchRunRef.current !== runId) {
+      if (
+        supportSearchRunRef.current !== runId ||
+        projectScopeGenerationRef.current !== sourceScopeGeneration
+      ) {
         return;
       }
 
@@ -8911,10 +9602,16 @@ export function App({
         return;
       }
 
-      if (!(await prepareProjectPathChange())) {
+      if (!(await prepareProjectPathChange(operation))) {
         return;
       }
-      if (!(await recycleProjectBridgeBeforeScopeChange())) {
+      if (
+        supportSearchRunRef.current !== runId ||
+        projectScopeGenerationRef.current !== sourceScopeGeneration
+      ) return;
+      projectTransition = beginProjectScopeTransition(false, true);
+      if (!projectTransition) return;
+      if (!(await recycleProjectBridgeBeforeScopeChange(projectTransition))) {
         return;
       }
 
@@ -8928,8 +9625,8 @@ export function App({
       const paths = createProjectPaths(nextDraftPaths);
       const projectRunId = projectValidationRunRef.current + 1;
       projectValidationRunRef.current = projectRunId;
-      projectScopeGenerationRef.current += 1;
       resetLoadedProjectState();
+      const applyScopeGeneration = projectScopeGenerationRef.current;
       setDraftPath(supportFolderField, folderPath);
       setProjectStatus('validating');
 
@@ -8940,21 +9637,23 @@ export function App({
       const response = await bridge.validateProject({ paths });
       if (
         supportSearchRunRef.current !== runId ||
-        projectValidationRunRef.current !== projectRunId
+        projectValidationRunRef.current !== projectRunId ||
+        projectScopeGenerationRef.current !== applyScopeGeneration
       ) {
         return;
       }
+      const canCommitSupportSearchActivation = () =>
+        supportSearchOperationRef.current === operation &&
+        supportSearchRunRef.current === runId &&
+        projectValidationRunRef.current === projectRunId &&
+        projectTransition !== null &&
+        projectScopeTransitionRef.current === projectTransition;
       await activateValidatedProject(
         paths,
         response,
-        () =>
-          supportSearchRunRef.current === runId &&
-          projectValidationRunRef.current === projectRunId
+        canCommitSupportSearchActivation
       );
-      if (
-        supportSearchRunRef.current !== runId ||
-        projectValidationRunRef.current !== projectRunId
-      ) {
+      if (!canCommitSupportSearchActivation()) {
         return;
       }
       setBridgeDiagnostics([
@@ -8967,6 +9666,8 @@ export function App({
     } catch (error) {
       if (
         supportSearchRunRef.current !== runId ||
+        (projectTransition === null &&
+          projectScopeGenerationRef.current !== sourceScopeGeneration) ||
         isSupportFileSearchCancellation(error)
       ) {
         return;
@@ -8976,9 +9677,15 @@ export function App({
       setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
     } finally {
       unlisten?.();
+      if (supportSearchOperationRef.current === operation) {
+        supportSearchOperationRef.current = null;
+      }
       if (supportSearchRunRef.current === runId) {
         setIsSupportSearchRunning(false);
         setWorkProgress(null);
+      }
+      if (projectTransition) {
+        finishProjectScopeTransition(projectTransition);
       }
     }
   };
@@ -8998,6 +9705,7 @@ export function App({
   useEffect(
     () => () => {
       updateCheckRunRef.current += 1;
+      updateCheckOperationRef.current = null;
       const nativeUpdate = availableNativeUpdateRef.current;
       availableNativeUpdateRef.current = null;
       void nativeUpdate?.close().catch(() => undefined);
@@ -9006,6 +9714,9 @@ export function App({
   );
 
   const handleCheckForUpdates = useCallback(async () => {
+    if (updateCheckOperationRef.current !== null) return;
+    const updateCheckOperation = {};
+    updateCheckOperationRef.current = updateCheckOperation;
     const runId = updateCheckRunRef.current + 1;
     updateCheckRunRef.current = runId;
     closeNativeUpdate(availableNativeUpdateRef.current);
@@ -9104,6 +9815,10 @@ export function App({
           message: 'Could not check for updates.'
         })
       });
+    } finally {
+      if (updateCheckOperationRef.current === updateCheckOperation) {
+        updateCheckOperationRef.current = null;
+      }
     }
   }, [
     closeNativeUpdate,
@@ -9134,11 +9849,13 @@ export function App({
   }, []);
 
   const handleRestartAfterUpdate = useCallback(async () => {
+    if (nativeUpdateRestartInFlightRef.current) return;
+    nativeUpdateRestartInFlightRef.current = true;
     setUpdateCheckStatus({
       kind: 'restarting',
       message: 'Update installed. Restarting KM Editor.'
     });
-    const didArmCloseGuard = await armCriticalWriteGuard();
+    const didArmCloseGuard = await armNativeUpdateCriticalWriteGuard();
     if (!isAppMountedRef.current) return;
     if (!didArmCloseGuard) {
       setUpdateCheckStatus({
@@ -9146,6 +9863,9 @@ export function App({
         kind: 'restartRequired',
         message: 'Update installed. Restart KM Editor to finish.'
       });
+      releaseNativeUpdateCriticalWriteGuard();
+      nativeUpdateInstallInFlightRef.current = false;
+      nativeUpdateRestartInFlightRef.current = false;
       return;
     }
 
@@ -9163,8 +9883,15 @@ export function App({
           message: 'Update installed. Restart KM Editor to finish.'
         });
       }
+      releaseNativeUpdateCriticalWriteGuard();
+      nativeUpdateInstallInFlightRef.current = false;
+      nativeUpdateRestartInFlightRef.current = false;
     }
-  }, [armCriticalWriteGuard, desktopServices.relaunchApp]);
+  }, [
+    armNativeUpdateCriticalWriteGuard,
+    desktopServices.relaunchApp,
+    releaseNativeUpdateCriticalWriteGuard
+  ]);
 
   const handleDownloadAvailableUpdate = useCallback(async () => {
     if (!availableUpdate) {
@@ -9182,6 +9909,8 @@ export function App({
       if (criticalWriteOperationRef.current) {
         return;
       }
+      if (nativeUpdateInstallInFlightRef.current) return;
+      nativeUpdateInstallInFlightRef.current = true;
 
       let downloadedBytes = 0;
       let contentLength: number | null = null;
@@ -9194,13 +9923,15 @@ export function App({
         kind: 'preparing',
         message: 'Preparing update.'
       });
-      const didArmCloseGuard = await armCriticalWriteGuard();
+      const didArmCloseGuard = await armNativeUpdateCriticalWriteGuard();
       if (!isAppMountedRef.current) return;
       if (!didArmCloseGuard) {
         setUpdateCheckStatus({
           kind: 'error',
           message: 'The update was not started because close protection could not be enabled.'
         });
+        releaseNativeUpdateCriticalWriteGuard();
+        nativeUpdateInstallInFlightRef.current = false;
         return;
       }
 
@@ -9211,6 +9942,8 @@ export function App({
             message: 'Save the active note before installing the update.'
           });
         }
+        releaseNativeUpdateCriticalWriteGuard();
+        nativeUpdateInstallInFlightRef.current = false;
         return;
       }
       if (!(await settleLocalEditorDrafts())) {
@@ -9220,6 +9953,8 @@ export function App({
             message: 'Finish or cancel the current editor input before installing the update.'
           });
         }
+        releaseNativeUpdateCriticalWriteGuard();
+        nativeUpdateInstallInFlightRef.current = false;
         return;
       }
       if (!isAppMountedRef.current) return;
@@ -9231,6 +9966,8 @@ export function App({
           kind: 'error',
           message: 'Finish or cancel the current edit session before installing the update.'
         });
+        releaseNativeUpdateCriticalWriteGuard();
+        nativeUpdateInstallInFlightRef.current = false;
         return;
       }
 
@@ -9241,7 +9978,10 @@ export function App({
 
       try {
         svCacheWarmupRunRef.current += 1;
+        svCacheOperationGenerationRef.current += 1;
+        svCacheRefreshOperationRef.current += 1;
         setIsSvCacheWarming(false);
+        setIsSvCacheRefreshing(false);
         setIsSvCacheClearing(true);
         try {
           const [svCacheClear, zaCacheClear, swShCacheClear] = await Promise.all([
@@ -9265,6 +10005,7 @@ export function App({
             message: 'Could not restart the project bridge before installing the update.'
           };
           await desktopServices.recycleProjectBridge();
+          cancelPendingProjectBridgeRecycle();
         } finally {
           if (isAppMountedRef.current) setIsSvCacheClearing(false);
         }
@@ -9347,6 +10088,8 @@ export function App({
             message: toErrorMessage(error, diagnosticFallback)
           });
         }
+        releaseNativeUpdateCriticalWriteGuard();
+        nativeUpdateInstallInFlightRef.current = false;
       }
 
       return;
@@ -9381,8 +10124,9 @@ export function App({
     }
   }, [
     availableUpdate,
-    armCriticalWriteGuard,
+    armNativeUpdateCriticalWriteGuard,
     bridge,
+    cancelPendingProjectBridgeRecycle,
     desktopServices.isAvailable,
     desktopServices.openExternalUrl,
     desktopServices.recycleProjectBridge,
@@ -9390,6 +10134,7 @@ export function App({
     hasCriticalWriteOperation,
     hasLatestLocalDraftProtection,
     handleRestartAfterUpdate,
+    releaseNativeUpdateCriticalWriteGuard,
     selectedGame,
     settleLocalEditorDrafts
   ]);
@@ -12297,6 +13042,15 @@ export function App({
   ]);
 
   const handlePreviewSpreadsheetImport = async (profileId: string, sourcePath: string) => {
+    if (
+      editSessionApplyInFlightRef.current ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
+      return;
+    }
+
     const runId = spreadsheetImportPreviewRunRef.current + 1;
     spreadsheetImportPreviewRunRef.current = runId;
     const projectGeneration = projectScopeGenerationRef.current;
@@ -12350,31 +13104,53 @@ export function App({
   };
 
   const handleBrowseSpreadsheetImportSource = async () => {
-    if (!desktopServices.isAvailable) {
+    if (
+      !desktopServices.isAvailable ||
+      spreadsheetImportBrowseOperationRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      projectScopeTransitionRef.current !== null
+    ) {
       return;
     }
 
+    const browseOperation = {};
+    spreadsheetImportBrowseOperationRef.current = browseOperation;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    const sourcePath = spreadsheetImportSourcePathRef.current;
+    const isCurrentBrowse = () =>
+      spreadsheetImportBrowseOperationRef.current === browseOperation &&
+      projectScopeGenerationRef.current === scopeGeneration &&
+      spreadsheetImportSourcePathRef.current === sourcePath &&
+      criticalWriteOperationRef.current === null &&
+      projectScopeTransitionRef.current === null;
     try {
       const selectedFile = await desktopServices.pickFile({
-        defaultPath: spreadsheetImportSourcePath || undefined,
+        defaultPath: sourcePath || undefined,
         title: translateLiteral('Select Dump Import source file')
       });
-      if (selectedFile) {
+      if (selectedFile && isCurrentBrowse()) {
         spreadsheetImportPreviewRunRef.current += 1;
         setIsSpreadsheetImportPreviewing(false);
+        spreadsheetImportSourcePathRef.current = selectedFile;
         setSpreadsheetImportSourcePath(selectedFile);
         setSpreadsheetImportPreview(null);
         setEditValidationDiagnostics([]);
         setBridgeDiagnostics([]);
       }
     } catch (error) {
-      setBridgeDiagnostics(
-        toDesktopDiagnostics(
-          error,
-          'Could not pick dump import source file.',
-          desktopErrorCodes.filePickerFailed
-        )
-      );
+      if (isCurrentBrowse()) {
+        setBridgeDiagnostics(
+          toDesktopDiagnostics(
+            error,
+            'Could not pick dump import source file.',
+            desktopErrorCodes.filePickerFailed
+          )
+        );
+      }
+    } finally {
+      if (spreadsheetImportBrowseOperationRef.current === browseOperation) {
+        spreadsheetImportBrowseOperationRef.current = null;
+      }
     }
   };
 
@@ -12507,7 +13283,42 @@ export function App({
     zaModSources
   ]);
 
+  const beginModMergerConfigurationOperation = () => {
+    if (
+      projectScopeTransitionRef.current !== null ||
+      modMergerOperationRef.current !== null
+    ) {
+      return null;
+    }
+
+    const operation = {
+      kind: 'configuration',
+      scopeGeneration: projectScopeGenerationRef.current
+    } as const;
+    modMergerOperationRef.current = operation;
+    return operation;
+  };
+
+  const isCurrentModMergerConfigurationOperation = (operation: {
+    readonly kind: 'configuration';
+    readonly scopeGeneration: number;
+  }) =>
+    modMergerOperationRef.current === operation &&
+    projectScopeGenerationRef.current === operation.scopeGeneration &&
+    projectScopeTransitionRef.current === null;
+
+  const finishModMergerConfigurationOperation = (operation: object) => {
+    if (modMergerOperationRef.current === operation) {
+      modMergerOperationRef.current = null;
+    }
+  };
+
   const handleAddSvModSource = async (kind: 'folder' | 'archive') => {
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
+
     try {
       const selection =
         kind === 'folder'
@@ -12520,6 +13331,9 @@ export function App({
               title: 'Add S/V Mod Archive'
             });
 
+      if (!isCurrentModMergerConfigurationOperation(operation)) {
+        return;
+      }
       if (!selection) {
         return;
       }
@@ -12529,51 +13343,85 @@ export function App({
       resetSvModMergerPlan();
       await loadSvModMergerWorkflow(nextSources);
     } catch (error) {
-      setBridgeDiagnostics(
-        toDesktopDiagnostics(
-          error,
-          'Could not choose a Scarlet/Violet mod source.',
-          kind === 'folder'
-            ? desktopErrorCodes.folderPickerFailed
-            : desktopErrorCodes.filePickerFailed
-        )
-      );
+      if (isCurrentModMergerConfigurationOperation(operation)) {
+        setBridgeDiagnostics(
+          toDesktopDiagnostics(
+            error,
+            'Could not choose a Scarlet/Violet mod source.',
+            kind === 'folder'
+              ? desktopErrorCodes.folderPickerFailed
+              : desktopErrorCodes.filePickerFailed
+          )
+        );
+      }
+    } finally {
+      finishModMergerConfigurationOperation(operation);
     }
   };
 
   const handleToggleSvModSource = async (sourceIndex: number) => {
-    const nextSources = svModSources.map((source, index) =>
-      index === sourceIndex ? { ...source, isEnabled: !source.isEnabled } : source
-    );
-    setSvModSources(nextSources);
-    resetSvModMergerPlan();
-    await loadSvModMergerWorkflow(nextSources);
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
+    try {
+      const nextSources = svModSources.map((source, index) =>
+        index === sourceIndex ? { ...source, isEnabled: !source.isEnabled } : source
+      );
+      setSvModSources(nextSources);
+      resetSvModMergerPlan();
+      await loadSvModMergerWorkflow(nextSources);
+    } finally {
+      finishModMergerConfigurationOperation(operation);
+    }
   };
 
   const handleMoveSvModSource = async (sourceIndex: number, direction: -1 | 1) => {
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
     const targetIndex = sourceIndex + direction;
     if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= svModSources.length) {
+      finishModMergerConfigurationOperation(operation);
       return;
     }
 
-    const nextSources = [...svModSources];
-    [nextSources[sourceIndex], nextSources[targetIndex]] = [
-      nextSources[targetIndex],
-      nextSources[sourceIndex]
-    ];
-    setSvModSources(nextSources);
-    resetSvModMergerPlan();
-    await loadSvModMergerWorkflow(nextSources);
+    try {
+      const nextSources = [...svModSources];
+      [nextSources[sourceIndex], nextSources[targetIndex]] = [
+        nextSources[targetIndex],
+        nextSources[sourceIndex]
+      ];
+      setSvModSources(nextSources);
+      resetSvModMergerPlan();
+      await loadSvModMergerWorkflow(nextSources);
+    } finally {
+      finishModMergerConfigurationOperation(operation);
+    }
   };
 
   const handleRemoveSvModSource = async (sourceIndex: number) => {
-    const nextSources = svModSources.filter((_, index) => index !== sourceIndex);
-    setSvModSources(nextSources);
-    resetSvModMergerPlan();
-    await loadSvModMergerWorkflow(nextSources);
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
+    try {
+      const nextSources = svModSources.filter((_, index) => index !== sourceIndex);
+      setSvModSources(nextSources);
+      resetSvModMergerPlan();
+      await loadSvModMergerWorkflow(nextSources);
+    } finally {
+      finishModMergerConfigurationOperation(operation);
+    }
   };
 
   const handleAddZaModSource = async (kind: 'folder' | 'archive') => {
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
+
     try {
       const selection =
         kind === 'folder'
@@ -12586,6 +13434,9 @@ export function App({
               title: 'Add ZA Mod Archive'
             });
 
+      if (!isCurrentModMergerConfigurationOperation(operation)) {
+        return;
+      }
       if (!selection) {
         return;
       }
@@ -12595,51 +13446,84 @@ export function App({
       resetZaModMergerPlan();
       await loadZaModMergerWorkflow(nextSources);
     } catch (error) {
-      setBridgeDiagnostics(
-        toDesktopDiagnostics(
-          error,
-          'Could not choose a Pokemon Legends ZA mod source.',
-          kind === 'folder'
-            ? desktopErrorCodes.folderPickerFailed
-            : desktopErrorCodes.filePickerFailed
-        )
-      );
+      if (isCurrentModMergerConfigurationOperation(operation)) {
+        setBridgeDiagnostics(
+          toDesktopDiagnostics(
+            error,
+            'Could not choose a Pokemon Legends ZA mod source.',
+            kind === 'folder'
+              ? desktopErrorCodes.folderPickerFailed
+              : desktopErrorCodes.filePickerFailed
+          )
+        );
+      }
+    } finally {
+      finishModMergerConfigurationOperation(operation);
     }
   };
 
   const handleToggleZaModSource = async (sourceIndex: number) => {
-    const nextSources = zaModSources.map((source, index) =>
-      index === sourceIndex ? { ...source, isEnabled: !source.isEnabled } : source
-    );
-    setZaModSources(nextSources);
-    resetZaModMergerPlan();
-    await loadZaModMergerWorkflow(nextSources);
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
+    try {
+      const nextSources = zaModSources.map((source, index) =>
+        index === sourceIndex ? { ...source, isEnabled: !source.isEnabled } : source
+      );
+      setZaModSources(nextSources);
+      resetZaModMergerPlan();
+      await loadZaModMergerWorkflow(nextSources);
+    } finally {
+      finishModMergerConfigurationOperation(operation);
+    }
   };
 
   const handleMoveZaModSource = async (sourceIndex: number, direction: -1 | 1) => {
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
     const targetIndex = sourceIndex + direction;
     if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= zaModSources.length) {
+      finishModMergerConfigurationOperation(operation);
       return;
     }
 
-    const nextSources = [...zaModSources];
-    [nextSources[sourceIndex], nextSources[targetIndex]] = [
-      nextSources[targetIndex],
-      nextSources[sourceIndex]
-    ];
-    setZaModSources(nextSources);
-    resetZaModMergerPlan();
-    await loadZaModMergerWorkflow(nextSources);
+    try {
+      const nextSources = [...zaModSources];
+      [nextSources[sourceIndex], nextSources[targetIndex]] = [
+        nextSources[targetIndex],
+        nextSources[sourceIndex]
+      ];
+      setZaModSources(nextSources);
+      resetZaModMergerPlan();
+      await loadZaModMergerWorkflow(nextSources);
+    } finally {
+      finishModMergerConfigurationOperation(operation);
+    }
   };
 
   const handleRemoveZaModSource = async (sourceIndex: number) => {
-    const nextSources = zaModSources.filter((_, index) => index !== sourceIndex);
-    setZaModSources(nextSources);
-    resetZaModMergerPlan();
-    await loadZaModMergerWorkflow(nextSources);
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
+    try {
+      const nextSources = zaModSources.filter((_, index) => index !== sourceIndex);
+      setZaModSources(nextSources);
+      resetZaModMergerPlan();
+      await loadZaModMergerWorkflow(nextSources);
+    } finally {
+      finishModMergerConfigurationOperation(operation);
+    }
   };
 
   const handlePickModMergerDirectory = async (slot: 1 | 2) => {
+    const operation = beginModMergerConfigurationOperation();
+    if (!operation) {
+      return;
+    }
     const currentPath = slot === 1 ? modMergerDirectory1 : modMergerDirectory2;
 
     try {
@@ -12648,6 +13532,9 @@ export function App({
         title: slot === 1 ? 'Set Mod Directory 1' : 'Set Mod Directory 2'
       });
 
+      if (!isCurrentModMergerConfigurationOperation(operation)) {
+        return;
+      }
       if (!selection) {
         return;
       }
@@ -12661,17 +13548,24 @@ export function App({
       resetModMergerPlan();
       await loadModMergerWorkflow(nextDirectory1, nextDirectory2);
     } catch (error) {
-      setBridgeDiagnostics(
-        toDesktopDiagnostics(
-          error,
-          'Could not choose a mod directory.',
-          desktopErrorCodes.folderPickerFailed
-        )
-      );
+      if (isCurrentModMergerConfigurationOperation(operation)) {
+        setBridgeDiagnostics(
+          toDesktopDiagnostics(
+            error,
+            'Could not choose a mod directory.',
+            desktopErrorCodes.folderPickerFailed
+          )
+        );
+      }
+    } finally {
+      finishModMergerConfigurationOperation(operation);
     }
   };
 
   const handleToggleModMergerFile = (directory: 1 | 2, relativePath: string) => {
+    if (modMergerOperationRef.current !== null) {
+      return;
+    }
     const updateSelection = (selection: Set<string>) => {
       const nextSelection = new Set(selection);
       if (nextSelection.has(relativePath)) {
@@ -12693,6 +13587,9 @@ export function App({
   };
 
   const handleSelectAllModMergerFiles = () => {
+    if (modMergerOperationRef.current !== null) {
+      return;
+    }
     setModMergerSelectedDirectory1Files(
       new Set(modMergerWorkflow?.directory1Files.map((file) => file.relativePath) ?? [])
     );
@@ -12703,6 +13600,9 @@ export function App({
   };
 
   const handleModMergerMergeModeChange = (mergeMode: ModMergerMergeMode) => {
+    if (modMergerOperationRef.current !== null) {
+      return;
+    }
     setModMergerMergeMode(mergeMode);
     resetModMergerPlan();
   };
@@ -12714,6 +13614,28 @@ export function App({
     }));
 
   const handleStageModMerge = async () => {
+    if (
+      projectScopeTransitionRef.current !== null ||
+      modMergerOperationRef.current !== null
+    ) {
+      return;
+    }
+
+    const operation = { kind: 'staging' } as const;
+    modMergerOperationRef.current = operation;
+    const operationScopeGeneration = projectScopeGenerationRef.current;
+    const canPublishOperation = () =>
+      modMergerOperationRef.current === operation &&
+      projectScopeGenerationRef.current === operationScopeGeneration;
+    const finishOperation = () => {
+      if (modMergerOperationRef.current !== operation) {
+        return;
+      }
+      modMergerOperationRef.current = null;
+      setIsModMergerStaging(false);
+      setWorkProgress(null);
+    };
+
     if (isScarletVioletGame(selectedGame)) {
       setIsModMergerStaging(true);
       setBridgeDiagnostics([]);
@@ -12730,13 +13652,17 @@ export function App({
           modSources: svModSources,
           paths: createProjectPaths(draftPaths)
         });
+        if (!canPublishOperation()) {
+          return;
+        }
         setSvModMergerWorkflow(response.workflow);
         setSvModMergerPreview(response.preview);
       } catch (error) {
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
+        if (canPublishOperation()) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
       } finally {
-        setIsModMergerStaging(false);
-        setWorkProgress(null);
+        finishOperation();
       }
 
       return;
@@ -12758,13 +13684,17 @@ export function App({
           modSources: zaModSources,
           paths: createProjectPaths(draftPaths)
         });
+        if (!canPublishOperation()) {
+          return;
+        }
         setZaModMergerWorkflow(response.workflow);
         setZaModMergerPreview(response.preview);
       } catch (error) {
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
+        if (canPublishOperation()) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
       } finally {
-        setIsModMergerStaging(false);
-        setWorkProgress(null);
+        finishOperation();
       }
 
       return;
@@ -12791,16 +13721,20 @@ export function App({
         selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
         selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
       });
-      if (modMergerReviewRevisionRef.current !== reviewRevision) {
+      if (
+        !canPublishOperation() ||
+        modMergerReviewRevisionRef.current !== reviewRevision
+      ) {
         return;
       }
       setModMergerWorkflow(response.workflow);
       setModMergerPreview(response.preview);
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (canPublishOperation()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsModMergerStaging(false);
-      setWorkProgress(null);
+      finishOperation();
     }
   };
 
@@ -12808,6 +13742,9 @@ export function App({
     conflictId: string,
     source: ModMergerConflictResolution['source']
   ) => {
+    if (modMergerOperationRef.current !== null) {
+      return;
+    }
     const currentSource =
       modMergerResolutions[conflictId] ??
       modMergerPreview?.conflicts.find((conflict) => conflict.conflictId === conflictId)?.resolution;
@@ -12833,11 +13770,38 @@ export function App({
   };
 
   const handleApplyModMerge = async () => {
-    if (!outputSafety.canApply) {
+    const isSvProject = isScarletVioletGame(selectedGame);
+    const isZaProject = isPokemonLegendsZAGame(selectedGame);
+    const legacyReviewToken = modMergerPreview?.canApply
+      ? modMergerPreview.reviewToken
+      : '';
+    if (
+      !outputSafety.canApply ||
+      modMergerOperationRef.current !== null ||
+      (!isSvProject && !isZaProject && !legacyReviewToken)
+    ) {
       return;
     }
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
-    if (isScarletVioletGame(selectedGame)) {
+    const operation = { kind: 'applying' } as const;
+    modMergerOperationRef.current = operation;
+    const operationScopeGeneration = projectScopeGenerationRef.current;
+    const canPublishOperation = () =>
+      modMergerOperationRef.current === operation &&
+      projectScopeGenerationRef.current === operationScopeGeneration;
+    const finishOperation = () => {
+      if (modMergerOperationRef.current !== operation) {
+        return;
+      }
+      modMergerOperationRef.current = null;
+      setIsModMergerApplying(false);
+      setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
+    };
+
+    if (isSvProject) {
       setIsModMergerApplying(true);
       setBridgeDiagnostics([]);
       setSvModMergerApplyResult(null);
@@ -12854,10 +13818,16 @@ export function App({
           modSources: svModSources,
           paths
         });
+        if (!canPublishOperation()) {
+          return;
+        }
         setSvModMergerWorkflow(response.workflow);
         setSvModMergerPreview(response.preview);
         setSvModMergerApplyResult(response);
         await notifySemanticOutputMutation();
+        if (!canPublishOperation()) {
+          return;
+        }
 
         const hasApplyErrors = response.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
@@ -12872,17 +13842,20 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
-        await notifySemanticOutputFailure(error);
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
+        if (canPublishOperation()) {
+          await notifySemanticOutputFailure(error);
+          if (canPublishOperation()) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          }
+        }
       } finally {
-        setIsModMergerApplying(false);
-        setWorkProgress(null);
+        finishOperation();
       }
 
       return;
     }
 
-    if (isPokemonLegendsZAGame(selectedGame)) {
+    if (isZaProject) {
       setIsModMergerApplying(true);
       setBridgeDiagnostics([]);
       setZaModMergerApplyResult(null);
@@ -12899,10 +13872,16 @@ export function App({
           modSources: zaModSources,
           paths
         });
+        if (!canPublishOperation()) {
+          return;
+        }
         setZaModMergerWorkflow(response.workflow);
         setZaModMergerPreview(response.preview);
         setZaModMergerApplyResult(response);
         await notifySemanticOutputMutation();
+        if (!canPublishOperation()) {
+          return;
+        }
 
         const hasApplyErrors = response.diagnostics.some(
           (diagnostic) => diagnostic.severity === 'error'
@@ -12917,17 +13896,16 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
-        await notifySemanticOutputFailure(error);
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
+        if (canPublishOperation()) {
+          await notifySemanticOutputFailure(error);
+          if (canPublishOperation()) {
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          }
+        }
       } finally {
-        setIsModMergerApplying(false);
-        setWorkProgress(null);
+        finishOperation();
       }
 
-      return;
-    }
-
-    if (!modMergerPreview?.canApply || !modMergerPreview.reviewToken) {
       return;
     }
 
@@ -12948,15 +13926,21 @@ export function App({
         modDirectory1: modMergerDirectory1.trim() || null,
         modDirectory2: modMergerDirectory2.trim() || null,
         paths,
-        reviewToken: modMergerPreview.reviewToken,
+        reviewToken: legacyReviewToken,
         resolutions: getModMergerResolutionList(),
         selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
         selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
       });
+      if (!canPublishOperation()) {
+        return;
+      }
       setModMergerWorkflow(response.workflow);
       setModMergerPreview(response.preview);
       setModMergerApplyResult(response);
       await notifySemanticOutputMutation();
+      if (!canPublishOperation()) {
+        return;
+      }
 
       const hasApplyErrors = response.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
@@ -12971,15 +13955,26 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      await notifySemanticOutputFailure(error);
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (canPublishOperation()) {
+        await notifySemanticOutputFailure(error);
+        if (canPublishOperation()) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      }
     } finally {
-      setIsModMergerApplying(false);
-      setWorkProgress(null);
+      finishOperation();
     }
   };
 
   const handleLoadFpsPatch = async () => {
+    if (fpsPatchLoadOperationRef.current !== null) return;
+    const operation = {};
+    fpsPatchLoadOperationRef.current = operation;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    const requestedPaths = createProjectPaths(draftPathsRef.current);
+    const canPublishOperation = () =>
+      fpsPatchLoadOperationRef.current === operation &&
+      projectScopeGenerationRef.current === scopeGeneration;
     const previousSourceSelection = fpsPatchStatus
       ? getEnabledFpsPatchAnimationTimingComponentIds(fpsPatchStatus)
       : [];
@@ -12988,8 +13983,9 @@ export function App({
 
     try {
       const response = await bridge.loadFpsPatch({
-        paths: createProjectPaths(draftPaths)
+        paths: requestedPaths
       });
+      if (!canPublishOperation()) return;
       setFpsPatchStatus(response.status);
       const nextSourceSelection = getEnabledFpsPatchAnimationTimingComponentIds(
         response.status
@@ -13002,18 +13998,23 @@ export function App({
         )
       );
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (canPublishOperation()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsFpsPatchLoading(false);
+      if (fpsPatchLoadOperationRef.current === operation) {
+        fpsPatchLoadOperationRef.current = null;
+        setIsFpsPatchLoading(false);
+      }
     }
   };
 
   const handleApplyFpsPatch = async (
     enabledAnimationTimingComponentIds: readonly FpsPatchAnimationTimingComponentId[]
   ) => {
-    if (!outputSafety.canApply) {
-      return;
-    }
+    if (!outputSafety.canApply) return;
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     const submittedSelection = [...enabledAnimationTimingComponentIds];
     setIsFpsPatchApplying(true);
@@ -13071,13 +14072,14 @@ export function App({
     } finally {
       setIsFpsPatchApplying(false);
       setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
   const handleRestoreFpsPatch = async () => {
-    if (!outputSafety.canApply) {
-      return;
-    }
+    if (!outputSafety.canApply) return;
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     const submittedSelection = [...fpsPatchDesiredAnimationTimingComponentIds];
     setIsFpsPatchApplying(true);
@@ -13132,29 +14134,44 @@ export function App({
     } finally {
       setIsFpsPatchApplying(false);
       setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
   const handleLoadProfanityFilter = async () => {
+    if (profanityFilterLoadOperationRef.current !== null) return;
+    const operation = {};
+    profanityFilterLoadOperationRef.current = operation;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    const requestedPaths = createProjectPaths(draftPathsRef.current);
+    const canPublishOperation = () =>
+      profanityFilterLoadOperationRef.current === operation &&
+      projectScopeGenerationRef.current === scopeGeneration;
     setIsProfanityFilterLoading(true);
     setBridgeDiagnostics([]);
 
     try {
       const response = await bridge.loadProfanityFilter({
-        paths: createProjectPaths(draftPaths)
+        paths: requestedPaths
       });
+      if (!canPublishOperation()) return;
       setProfanityFilterStatus(response.status);
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (canPublishOperation()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsProfanityFilterLoading(false);
+      if (profanityFilterLoadOperationRef.current === operation) {
+        profanityFilterLoadOperationRef.current = null;
+        setIsProfanityFilterLoading(false);
+      }
     }
   };
 
   const handleApplyProfanityFilter = async () => {
-    if (!outputSafety.canApply) {
-      return;
-    }
+    if (!outputSafety.canApply) return;
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     setIsProfanityFilterApplying(true);
     setBridgeDiagnostics([]);
@@ -13191,13 +14208,14 @@ export function App({
     } finally {
       setIsProfanityFilterApplying(false);
       setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
   const handleRestoreProfanityFilter = async () => {
-    if (!outputSafety.canApply) {
-      return;
-    }
+    if (!outputSafety.canApply) return;
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     setIsProfanityFilterApplying(true);
     setBridgeDiagnostics([]);
@@ -13234,12 +14252,17 @@ export function App({
     } finally {
       setIsProfanityFilterApplying(false);
       setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
   const handleImportRandomizerSeed = async (
     seed: string
   ): Promise<ImportRandomizerSeedResponse> => {
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) {
+      throw new Error('Another write or project change is already in progress.');
+    }
     setIsRandomizerApplying(true);
     setBridgeDiagnostics([]);
 
@@ -13247,6 +14270,7 @@ export function App({
       return await bridge.importRandomizerSeed({ seed });
     } finally {
       setIsRandomizerApplying(false);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
@@ -13254,6 +14278,10 @@ export function App({
     config: RandomizerConfig,
     operation: 'randomize' | 'applySeed' = 'randomize'
   ): Promise<ApplyRandomizerResponse> => {
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) {
+      throw new Error('Another write or project change is already in progress.');
+    }
     setIsRandomizerApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -13305,10 +14333,15 @@ export function App({
     } finally {
       setIsRandomizerApplying(false);
       setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
   const handleRestoreRandomizer = async (): Promise<RestoreRandomizerResponse> => {
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) {
+      throw new Error('Another write or project change is already in progress.');
+    }
     setIsRandomizerApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
@@ -13364,10 +14397,19 @@ export function App({
     } finally {
       setIsRandomizerApplying(false);
       setWorkProgress(null);
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
   const handleStartEditSession = async () => {
+    if (editSessionStartOperationRef.current !== null) return;
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
+    const operation = {};
+    editSessionStartOperationRef.current = operation;
+    const scopeGeneration = projectScopeGenerationRef.current;
+    const paths = createProjectPaths(draftPathsRef.current);
+    const requestedSection = activeSectionIsEditor ? activeSection : null;
     setIsEditStarting(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -13377,13 +14419,29 @@ export function App({
     setChangePlanSessionSignature(null);
 
     try {
-      const response = await bridge.startEditSession({ paths: createProjectPaths(draftPaths) });
+      const response = await bridge.startEditSession({ paths });
+      if (
+        editSessionStartOperationRef.current !== operation ||
+        criticalWriteOperationRef.current !== criticalWriteToken ||
+        projectScopeGenerationRef.current !== scopeGeneration ||
+        JSON.stringify(createProjectPaths(draftPathsRef.current)) !== JSON.stringify(paths)
+      ) return;
       setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditSessionSection(requestedSection);
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (
+        editSessionStartOperationRef.current === operation &&
+        criticalWriteOperationRef.current === criticalWriteToken &&
+        projectScopeGenerationRef.current === scopeGeneration
+      ) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsEditStarting(false);
+      if (editSessionStartOperationRef.current === operation) {
+        editSessionStartOperationRef.current = null;
+        setIsEditStarting(false);
+      }
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
@@ -13395,6 +14453,10 @@ export function App({
     (editIndex: number) => {
       if (
         editSessionApplyInFlightRef.current ||
+        editSessionReviewOperationRef.current !== null ||
+        criticalWriteOperationRef.current !== null ||
+        supportSearchOperationRef.current !== null ||
+        projectScopeTransitionRef.current !== null ||
         pendingEditSessionMutationTokensRef.current.size > 0 ||
         !editSession ||
         editIndex < 0 ||
@@ -13505,9 +14567,19 @@ export function App({
     onChangeSetCapture?: (response: CaptureChangeSetSessionResponse) => void,
     requiredAuthoringRequest?: AuthoringStageRequest
   ) => {
+    if (pendingEditSessionMutationTokensRef.current.size > 0) {
+      await editSessionMutationQueueRef.current.catch(() => undefined);
+      return null;
+    }
     if (
       isEditSessionOperationBusy ||
       editSessionApplyInFlightRef.current ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      projectScopeTransitionRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
       requiredSession === null
     ) {
       return null;
@@ -14011,6 +15083,16 @@ export function App({
     drafts: AdvancedAuthoringDraftSnapshot,
     sourceTransition?: AuthoringStagedSourceTransition
   ) => {
+    if (advancedAuthoringDraftSaveTokenRef.current !== null) {
+      throw new AdvancedAuthoringError('source-assumption-changed');
+    }
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) {
+      throw new AdvancedAuthoringError('source-assumption-changed');
+    }
+    advancedAuthoringDraftSaveTokenRef.current = criticalWriteToken;
+    setIsAdvancedAuthoringDraftSaving(true);
+    try {
     const scope = advancedAuthoringScope;
     const currentEffective = latestAcceptedChangeSetSnapshotRef.current?.effective ?? null;
     const currentBinding = currentEffective?.session?.authoringBinding ?? null;
@@ -14093,7 +15175,19 @@ export function App({
         currentDrafts
       )
     );
-  }, [advancedAuthoringScope, projectDraftRegistry]);
+    } finally {
+      if (advancedAuthoringDraftSaveTokenRef.current === criticalWriteToken) {
+        advancedAuthoringDraftSaveTokenRef.current = null;
+        setIsAdvancedAuthoringDraftSaving(false);
+      }
+      finishCriticalWriteOperation(criticalWriteToken);
+    }
+  }, [
+    advancedAuthoringScope,
+    beginCriticalWriteOperation,
+    finishCriticalWriteOperation,
+    projectDraftRegistry
+  ]);
 
   const executeAdvancedAuthoringHistory = useCallback<AuthoringStagedHistoryExecutor>(
     async (request) => {
@@ -16477,14 +17571,27 @@ export function App({
   };
 
   const handleValidateDynamaxAdventureEditSession = async () => {
-    if (!editSession || pendingEditSessionMutationTokensRef.current.size > 0) {
+    if (
+      !editSession ||
+      editSessionReviewOperationRef.current !== null ||
+      editSessionApplyInFlightRef.current ||
+      exitDiscardOperationRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      projectScopeTransitionRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
       return;
     }
 
+    const operation = {};
+    editSessionReviewOperationRef.current = operation;
     const runId = editSessionReviewRunRef.current + 1;
     editSessionReviewRunRef.current = runId;
     const initialSessionSignature = getEditSessionSignature(editSession);
     const isCurrentOperation = () =>
+      editSessionReviewOperationRef.current === operation &&
       editSessionReviewRunRef.current === runId &&
       getEditSessionSignature(editSessionRef.current) === initialSessionSignature;
 
@@ -16538,7 +17645,8 @@ export function App({
       }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      if (editSessionReviewRunRef.current === runId) {
+      if (editSessionReviewOperationRef.current === operation) {
+        editSessionReviewOperationRef.current = null;
         setIsSessionValidating(false);
         setIsChangePlanCreating(false);
       }
@@ -16553,6 +17661,8 @@ export function App({
       !editSession ||
       !visibleDynamaxAdventureChangePlan ||
       visibleDynamaxAdventureChangePlanRef.current === null ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
       pendingEditSessionMutationTokensRef.current.size > 0
     ) {
       return;
@@ -16560,6 +17670,8 @@ export function App({
     if (editSessionApplyInFlightRef.current) {
       return;
     }
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     editSessionApplyInFlightRef.current = true;
     const runId = editSessionApplyRunRef.current + 1;
@@ -16692,6 +17804,7 @@ export function App({
         setIsChangePlanApplying(false);
         setWorkProgress(null);
       }
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
@@ -17417,15 +18530,28 @@ export function App({
   };
 
   const handleValidateEditSession = async () => {
-    if (!editSession || pendingEditSessionMutationTokensRef.current.size > 0) {
+    if (
+      !editSession ||
+      editSessionReviewOperationRef.current !== null ||
+      editSessionApplyInFlightRef.current ||
+      exitDiscardOperationRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      projectScopeTransitionRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
       return;
     }
 
+    const operation = {};
+    editSessionReviewOperationRef.current = operation;
     const runId = editSessionReviewRunRef.current + 1;
     editSessionReviewRunRef.current = runId;
     const initialSessionSignature = getEditSessionSignature(editSession);
     let operationSessionSignature = initialSessionSignature;
     const isCurrentOperation = () =>
+      editSessionReviewOperationRef.current === operation &&
       editSessionReviewRunRef.current === runId &&
       getEditSessionSignature(editSessionRef.current) === operationSessionSignature;
 
@@ -17477,7 +18603,8 @@ export function App({
       }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      if (editSessionReviewRunRef.current === runId) {
+      if (editSessionReviewOperationRef.current === operation) {
+        editSessionReviewOperationRef.current = null;
         setIsSessionValidating(false);
         setIsChangePlanCreating(false);
       }
@@ -17487,16 +18614,26 @@ export function App({
   const handleCreateScopedEditorChangePlan = async (section: WorkbenchSection) => {
     if (
       !editSession ||
+      editSessionReviewOperationRef.current !== null ||
+      editSessionApplyInFlightRef.current ||
+      exitDiscardOperationRef.current !== null ||
+      criticalWriteOperationRef.current !== null ||
+      supportSearchOperationRef.current !== null ||
+      projectScopeTransitionRef.current !== null ||
+      changeSetWorkspaceOperationCheckRef.current() ||
       pendingEditSessionMutationTokensRef.current.size > 0 ||
       !scopedEditorPanelSectionIds.has(section)
     ) {
       return;
     }
 
+    const operation = {};
+    editSessionReviewOperationRef.current = operation;
     const runId = editSessionReviewRunRef.current + 1;
     editSessionReviewRunRef.current = runId;
     const sessionSignature = getEditSessionSignature(editSession);
     const isCurrentOperation = () =>
+      editSessionReviewOperationRef.current === operation &&
       editSessionReviewRunRef.current === runId &&
       getEditSessionSignature(editSessionRef.current) === sessionSignature;
 
@@ -17544,7 +18681,8 @@ export function App({
       }
       setScopedEditorPanelDiagnostics(section, toBridgeDiagnostics(error));
     } finally {
-      if (editSessionReviewRunRef.current === runId) {
+      if (editSessionReviewOperationRef.current === operation) {
+        editSessionReviewOperationRef.current = null;
         setIsChangePlanCreating(false);
       }
     }
@@ -17556,6 +18694,8 @@ export function App({
       !visibleChangePlan ||
       visibleChangePlanRef.current === null ||
       !canSaveValidatedChanges ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
       pendingEditSessionMutationTokensRef.current.size > 0
     ) {
       return;
@@ -17563,6 +18703,8 @@ export function App({
     if (editSessionApplyInFlightRef.current) {
       return;
     }
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     editSessionApplyInFlightRef.current = true;
     const runId = editSessionApplyRunRef.current + 1;
@@ -17736,6 +18878,7 @@ export function App({
         setIsChangePlanApplying(false);
         setWorkProgress(null);
       }
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
@@ -18464,6 +19607,8 @@ export function App({
       !editSession ||
       !panelOutput.changePlan ||
       !scopedEditorPanelStatesRef.current[section]?.changePlan ||
+      editSessionReviewOperationRef.current !== null ||
+      exitDiscardOperationRef.current !== null ||
       pendingEditSessionMutationTokensRef.current.size > 0 ||
       !scopedEditorPanelSectionIds.has(section)
     ) {
@@ -18472,6 +19617,8 @@ export function App({
     if (editSessionApplyInFlightRef.current) {
       return;
     }
+    const criticalWriteToken = beginCriticalWriteOperation();
+    if (!criticalWriteToken) return;
 
     editSessionApplyInFlightRef.current = true;
     const runId = editSessionApplyRunRef.current + 1;
@@ -18650,6 +19797,7 @@ export function App({
         setIsChangePlanApplying(false);
         setWorkProgress(null);
       }
+      finishCriticalWriteOperation(criticalWriteToken);
     }
   };
 
@@ -18677,11 +19825,17 @@ export function App({
         setIsGamePickerOpen(false);
         return;
       }
-      if (!(await settleLocalEditorDrafts())) {
+      if (
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null ||
+        !(await settleLocalEditorDrafts()) ||
+        criticalWriteOperationRef.current ||
+        projectScopeTransitionRef.current !== null
+      ) {
         return;
       }
       if (
-        hasCriticalWriteOperation ||
+        criticalWriteOperationRef.current ||
         isEditSessionOperationBusy ||
         isPersonalWorkspaceMutationBusy ||
         activeNoteSavePromiseRef.current !== null ||
@@ -18691,39 +19845,53 @@ export function App({
       ) {
         return;
       }
-      if (activeNoteDirtyRef.current && !(await flushActiveNoteRef.current())) {
-        return;
+      if (activeNoteDirtyRef.current) {
+        if (
+          !(await flushActiveNoteRef.current()) ||
+          criticalWriteOperationRef.current ||
+          projectScopeTransitionRef.current !== null
+        ) {
+          return;
+        }
       }
-      if (!(await recycleProjectBridgeBeforeScopeChange())) {
-        return;
-      }
+      const transition = beginProjectScopeTransition();
+      if (!transition) return;
+      try {
+        if (!(await recycleProjectBridgeBeforeScopeChange(transition))) {
+          return;
+        }
 
-      projectValidationRunRef.current += 1;
-      cancelSupportFileSearch();
-      resetLoadedProjectState();
-      setBridgeDiagnostics([]);
-      setExpandedWorkflowGroups(readExpandedWorkflowGroups(nextGame));
-      const rememberedProfile = applicationWorkspaceSnapshot.document?.recentProjects.find(
-        (profile) => profile.game === nextGame
-      );
-      if (rememberedProfile) {
-        const rememberedDraft = toProjectPathDraft(rememberedProfile.paths);
-        draftPathsRef.current = rememberedDraft;
-        setProjectPathDraft(rememberedDraft);
-      } else {
-        setSelectedGame(nextGame);
+        projectValidationRunRef.current += 1;
+        cancelSupportFileSearch();
+        resetLoadedProjectState();
+        setBridgeDiagnostics([]);
+        setExpandedWorkflowGroups(readExpandedWorkflowGroups(nextGame));
+        const rememberedProfile = applicationWorkspaceSnapshot.document?.recentProjects.find(
+          (profile) => profile.game === nextGame
+        );
+        if (rememberedProfile) {
+          const rememberedDraft = toProjectPathDraft(rememberedProfile.paths);
+          draftPathsRef.current = rememberedDraft;
+          setProjectPathDraft(rememberedDraft);
+        } else {
+          setSelectedGame(nextGame);
+        }
+        setIsGamePickerOpen(false);
+      } finally {
+        finishProjectScopeTransition(transition);
       }
-      setIsGamePickerOpen(false);
     },
     [
       cancelSupportFileSearch,
       applicationWorkspaceSnapshot.document?.recentProjects,
+      beginProjectScopeTransition,
       editorDraftDirtySections.size,
       settleLocalEditorDrafts,
       hasCriticalWriteOperation,
       hasLatestLocalDraftProtection,
       isEditSessionOperationBusy,
       isPersonalWorkspaceMutationBusy,
+      finishProjectScopeTransition,
       recycleProjectBridgeBeforeScopeChange,
       resetLoadedProjectState,
       selectedGame,
@@ -18734,11 +19902,18 @@ export function App({
   );
 
   const handleChangeGame = useCallback(async () => {
-    if (!(await settleLocalEditorDrafts())) {
+    if (
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null ||
+      !(await settleLocalEditorDrafts()) ||
+      criticalWriteOperationRef.current ||
+      projectScopeTransitionRef.current !== null
+    ) {
       return;
     }
     if (
-      hasCriticalWriteOperation ||
+      criticalWriteOperationRef.current ||
+      changeSetWorkspaceOperationCheckRef.current() ||
       editorDraftDirtySections.size > 0 ||
       hasLatestLocalDraftProtection()
     ) {
@@ -18760,7 +19935,11 @@ export function App({
           (profile) => profile.game
         ) ?? []}
         currentGame={selectedGame}
-        isLoading={isApplicationWorkspaceLoading || isLegacyWorkspaceMigrationRunning}
+        isLoading={
+          isApplicationWorkspaceLoading ||
+          isLegacyWorkspaceMigrationRunning ||
+          isProjectScopeTransitioning
+        }
         onCancel={selectedGame ? () => setIsGamePickerOpen(false) : undefined}
         onSelectGame={handleSelectGame}
       />
@@ -18838,7 +20017,10 @@ export function App({
           isCurrentViewSaved={currentSavedWorkspaceView !== null}
           isEditSessionOperationBusy={isEditSessionOperationBusy}
           isInspectorOpen={isInspectorOpen}
-          isSavedViewMutationBusy={isSavedViewMutationBusy}
+          isPinMutationBusy={isPersonalWorkspaceMutationBusy}
+          isSavedViewMutationBusy={
+            isSavedViewMutationBusy || isPersonalWorkspaceMutationBusy
+          }
           activeTargetIsPinned={activeTargetIsPinned}
           onBack={handleNavigateBack}
           onCloseEditor={handleCloseActiveEditor}
@@ -18857,12 +20039,17 @@ export function App({
 
         <RecordTabRail
           activeTabKey={workspaceTabKey(activeLocation)}
+          disabled={hasCriticalWriteOperation}
           onActivate={handleActivateWorkspaceTab}
           onClose={handleCloseWorkspaceTab}
           tabs={workspaceRecordTabs}
         />
 
-        <div className="workspace-content">
+        <div
+          aria-busy={isProjectScopeTransitioning || undefined}
+          className="workspace-content"
+          inert={isProjectScopeTransitioning ? true : undefined}
+        >
           <Fragment
             key={`${activeProjectId ?? 'no-project'}:${selectedGame}:${activeSection}:${workspaceContentDiscardRevision}`}
           >
@@ -18878,7 +20065,7 @@ export function App({
               health={health}
               isDesktopAvailable={desktopServices.isAvailable}
               bridgeDiagnostics={bridgeDiagnostics}
-              isBusy={isBusy}
+              isBusy={isBusy || hasCriticalWriteOperation}
               isOutputRootCreating={isOutputRootCreating}
               hasSvCacheRequestError={currentSvCacheRequestError}
               hasSvCacheWarmupError={currentSvCacheWarmupError}
@@ -18891,7 +20078,7 @@ export function App({
               onPickProjectPath={handlePickProjectPath}
               projectRelocationAction={
                 <ProjectRelocationPanel
-                  armCriticalWriteGuard={armCriticalWriteGuard}
+                  armCriticalWriteGuard={armProjectRelocationCriticalWriteGuard}
                   bridge={bridge}
                   canRelocate={
                     unassignedPendingEditCount === 0 &&
@@ -19685,7 +20872,7 @@ export function App({
               <DynamaxAdventuresSection
                 actionDiagnostics={dynamaxAdventurePanelDiagnostics}
                 applyResult={dynamaxAdventureApplyResult}
-                armCriticalWriteGuard={armCriticalWriteGuard}
+                armCriticalWriteGuard={armDynamaxAdventureCriticalWriteGuard}
                 changePlan={visibleDynamaxAdventureChangePlan}
                 editSession={getEditSessionForSection('dynamaxAdventures')}
                 hasConfiguredSave={
@@ -20429,7 +21616,7 @@ export function App({
               desktopServices={desktopServices}
               health={health}
               onRememberDestination={handleRememberGameDumpDestination}
-              onWriteStateChange={setIsGameDumpWriting}
+              onWriteStateChange={handleGameDumpWriteStateChange}
               paths={gameDumpPaths}
               rememberedDestination={
                 applicationWorkspaceSnapshot.document?.gameDumpDestinations.find(
@@ -20523,7 +21710,7 @@ export function App({
           ) : null}
           {activeSection === 'gameplaySettings' ? (
             <GameplaySettingsSection
-              armCriticalWriteGuard={armCriticalWriteGuard}
+              armCriticalWriteGuard={armGameplaySettingsCriticalWriteGuard}
               bridge={bridge}
               canApply={outputSafety.canApply}
               onApplied={handleGameplaySettingsApplied}
@@ -20556,6 +21743,8 @@ export function App({
                     } : null
                   }
                   controller={changeSetWorkspace.controller}
+                  getScopeGeneration={getProjectScopeGeneration}
+                  scopeGeneration={projectScopeGenerationRef.current}
                 />
               ) : null}
               diagnostics={editValidationDiagnostics}
@@ -20629,6 +21818,7 @@ export function App({
               }
               themeSettings={<ThemeSettingsPanel />}
               editorLayout={editorLayout}
+              hasBlockingProjectOperation={hasCriticalWriteOperation}
               hasSvCacheRequestError={currentSvCacheRequestError}
               isSvCacheClearing={isSvCacheClearing}
               isSvCacheRefreshing={isSvCacheRefreshing}
@@ -20764,7 +21954,7 @@ export function App({
       />
       {pendingOutputProfile && projectScope && personalProjectTarget ? (
         <OutputProfileSwitchDialog
-          armCriticalWriteGuard={armCriticalWriteGuard}
+          armCriticalWriteGuard={armOutputProfileCriticalWriteGuard}
           bridge={bridge}
           canApply={
             outputSafety.canApply &&
@@ -20923,7 +22113,12 @@ function GameSelectionPage({
         </div>
         {onCancel ? (
           <div className="game-selection-actions">
-            <button className="secondary-button" onClick={onCancel} type="button">
+            <button
+              className="secondary-button"
+              disabled={isLoading}
+              onClick={onCancel}
+              type="button"
+            >
               <X aria-hidden="true" size={16} />
               <span>{translateLiteral('Cancel')}</span>
             </button>
@@ -21382,6 +22577,7 @@ function HealthSection({
                 <div className="path-input-row">
                   <input
                     aria-describedby={`${pathField.field}-status`}
+                    disabled={isBusy}
                     id={inputId}
                     onChange={(event) => onSetDraftPath(pathField.field, event.target.value)}
                     placeholder="Not set"
@@ -54384,9 +55580,17 @@ function SvModMergerSection({
   workflow: SvModMergerWorkflow | ZaModMergerWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
-  const canStage = modSources.some((source) => source.isEnabled) && !isStaging && !isLoading;
+  const canStage =
+    modSources.some((source) => source.isEnabled) &&
+    !isStaging &&
+    !isApplying &&
+    !isLoading;
   const canApply =
-    outputWritesReady && Boolean(preview?.canApply) && !isApplying && !isStaging;
+    outputWritesReady &&
+    Boolean(preview?.canApply) &&
+    !isApplying &&
+    !isStaging &&
+    !isLoading;
 
   return (
     <>
@@ -54409,7 +55613,7 @@ function SvModMergerSection({
         <div className="editor-toolbar">
           <button
             className="secondary-button"
-            disabled={!isDesktopAvailable || isLoading}
+            disabled={!isDesktopAvailable || isLoading || isStaging || isApplying}
             onClick={onAddFolder}
             type="button"
           >
@@ -54418,7 +55622,7 @@ function SvModMergerSection({
           </button>
           <button
             className="secondary-button"
-            disabled={!isDesktopAvailable || isLoading}
+            disabled={!isDesktopAvailable || isLoading || isStaging || isApplying}
             onClick={onAddArchive}
             type="button"
           >
@@ -54678,11 +55882,12 @@ function ModMergerSection({
   ]).size;
   const hasSelectedFiles =
     selectedDirectory1Files.size > 0 || selectedDirectory2Files.size > 0;
+  const isConfigurationLocked = isLoading || isStaging || isApplying;
   const canSelectAll = directory1Files.length > 0 || directory2Files.length > 0;
-  const canStage = Boolean(workflow) && hasSelectedFiles && !isStaging && !isApplying;
-  const canReview = Boolean(preview) && hasSelectedFiles && !isStaging && !isApplying;
+  const canStage = Boolean(workflow) && hasSelectedFiles && !isConfigurationLocked;
+  const canReview = Boolean(preview) && hasSelectedFiles && !isConfigurationLocked;
   const canApply =
-    outputWritesReady && Boolean(preview?.canApply) && !isApplying && !isStaging;
+    outputWritesReady && Boolean(preview?.canApply) && !isConfigurationLocked;
   const diagnostics = [
     ...(workflow?.diagnostics ?? []),
     ...(preview?.diagnostics ?? []),
@@ -54732,7 +55937,7 @@ function ModMergerSection({
             <button
               aria-busy={isLoading || undefined}
               className="secondary-button"
-              disabled={!isDesktopAvailable || isLoading}
+              disabled={!isDesktopAvailable || isConfigurationLocked}
               onClick={() => onPickDirectory(1)}
               title="Set Mod Directory 1 by choosing a mod folder that contains RomFS files."
               type="button"
@@ -54761,7 +55966,7 @@ function ModMergerSection({
             <button
               aria-busy={isLoading || undefined}
               className="secondary-button"
-              disabled={!isDesktopAvailable || isLoading}
+              disabled={!isDesktopAvailable || isConfigurationLocked}
               onClick={() => onPickDirectory(2)}
               title="Set Mod Directory 2 by choosing the second mod folder to compare."
               type="button"
@@ -54805,6 +56010,7 @@ function ModMergerSection({
                   isSelected ? 'mod-merger-mode-selected' : ''
                 }`}
                 key={option.id}
+                disabled={isConfigurationLocked}
                 onClick={() => onMergeModeChange(option.id)}
                 role="radio"
                 title={option.description}
@@ -54850,7 +56056,7 @@ function ModMergerSection({
         <div className="mod-merger-action-row">
           <button
             className="secondary-button"
-            disabled={!canSelectAll || isStaging || isApplying}
+            disabled={!canSelectAll || isConfigurationLocked}
             onClick={onSelectAll}
             title="Select every RomFS file in both mod directories."
             type="button"
@@ -54915,6 +56121,7 @@ function ModMergerSection({
         {workflow ? (
           <div className="mod-merger-file-lists">
             <ModMergerFileList
+              disabled={isConfigurationLocked}
               directory={1}
               files={directory1Files}
               onToggleFile={onToggleFile}
@@ -54922,6 +56129,7 @@ function ModMergerSection({
               title="Mod Directory 1 files"
             />
             <ModMergerFileList
+              disabled={isConfigurationLocked}
               directory={2}
               files={directory2Files}
               onToggleFile={onToggleFile}
@@ -55050,6 +56258,7 @@ function ModMergerSection({
                       className={`secondary-button ${
                         selectedSource === 'mod1' ? 'mod-merger-resolution-selected' : ''
                       }`}
+                      disabled={isConfigurationLocked}
                       onClick={() => onResolveConflict(conflict.conflictId, 'mod1')}
                       title="Use Mod Directory 1 for this overlap."
                       type="button"
@@ -55061,6 +56270,7 @@ function ModMergerSection({
                       className={`secondary-button ${
                         selectedSource === 'mod2' ? 'mod-merger-resolution-selected' : ''
                       }`}
+                      disabled={isConfigurationLocked}
                       onClick={() => onResolveConflict(conflict.conflictId, 'mod2')}
                       title="Use Mod Directory 2 for this overlap."
                       type="button"
@@ -55115,12 +56325,14 @@ function ModMergerSection({
 }
 
 function ModMergerFileList({
+  disabled,
   directory,
   files,
   onToggleFile,
   selectedFiles,
   title
 }: {
+  disabled: boolean;
   directory: 1 | 2;
   files: ModMergerWorkflow['directory1Files'];
   onToggleFile: (directory: 1 | 2, relativePath: string) => void;
@@ -55151,6 +56363,7 @@ function ModMergerFileList({
                 <input
                   checked={isSelected}
                   className="km-choice-control"
+                  disabled={disabled}
                   onChange={() => onToggleFile(directory, file.relativePath)}
                   type="checkbox"
                 />
@@ -55542,6 +56755,7 @@ function SettingsSection({
   personalizationSettings,
   themeSettings,
   editorLayout,
+  hasBlockingProjectOperation,
   hasSvCacheRequestError,
   isSvCacheClearing,
   isSvCacheRefreshing,
@@ -55567,6 +56781,7 @@ function SettingsSection({
   personalizationSettings: ReactNode;
   themeSettings: ReactNode;
   editorLayout: EditorLayoutPreference;
+  hasBlockingProjectOperation: boolean;
   hasSvCacheRequestError: boolean;
   isSvCacheClearing: boolean;
   isSvCacheRefreshing: boolean;
@@ -55596,6 +56811,7 @@ function SettingsSection({
       : null
   });
   const isBusy =
+    hasBlockingProjectOperation ||
     status.kind === 'checking' ||
     status.kind === 'downloading' ||
     status.kind === 'installing' ||
@@ -55611,6 +56827,7 @@ function SettingsSection({
     translateLiteral('Unavailable')
   );
   const isCacheControlBusy =
+    isBusy ||
     isSvCacheClearing ||
     isSvCacheRefreshing ||
     isSvCacheSettingsUpdating ||
@@ -56055,7 +57272,7 @@ function SettingsSection({
               <button
                 aria-checked={communityInterfaceLocaleIsActive ? undefined : isSelected}
                 className={`language-option${isSelected ? ' language-option-selected' : ''}`}
-                disabled={isSelected}
+                disabled={hasBlockingProjectOperation || isSelected}
                 key={option.code}
                 onClick={() => void onChangeLanguage(option.code as LanguageCode)}
                 role={communityInterfaceLocaleIsActive ? undefined : 'radio'}

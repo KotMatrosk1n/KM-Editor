@@ -74,6 +74,7 @@ export function AdvancedAuthoringPanel({
   } | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const activeOperationRef = useRef<object | null>(null);
   const errorMessage = errorKey ? t(errorKey) : null;
   usePublishCommonEditorError({
     domain: 'workflow.changeSets',
@@ -276,6 +277,18 @@ export function AdvancedAuthoringPanel({
     setIsBusy(nextBusy);
     onBusyChange?.(nextBusy);
   };
+  const beginAuthoringOperation = () => {
+    if (controlsBusy || activeOperationRef.current !== null) return null;
+    const operation = {};
+    activeOperationRef.current = operation;
+    setAuthoringBusy(true);
+    return operation;
+  };
+  const finishAuthoringOperation = (operation: object) => {
+    if (activeOperationRef.current !== operation) return;
+    activeOperationRef.current = null;
+    setAuthoringBusy(false);
+  };
   const run = (operation: () => void) => {
     try {
       operation();
@@ -336,10 +349,10 @@ export function AdvancedAuthoringPanel({
     });
   };
   const runDraftMutation = async (operation: () => AuthoringDraftSnapshot) => {
-    if (controlsBusy) return;
+    const activeOperation = beginAuthoringOperation();
+    if (!activeOperation) return;
     const priorDrafts = controller.getSnapshot().drafts;
     let didMutate = false;
-    setAuthoringBusy(true);
     setErrorKey(null);
     try {
       const drafts = operation();
@@ -360,7 +373,7 @@ export function AdvancedAuthoringPanel({
       }
       refreshSnapshot();
     } finally {
-      setAuthoringBusy(false);
+      finishAuthoringOperation(activeOperation);
     }
   };
   const handleApplyDrafts = () => {
@@ -368,8 +381,9 @@ export function AdvancedAuthoringPanel({
     void runDraftMutation(() => controller.applyPreviewToDrafts(preview));
   };
   const handleStage = async () => {
-    if (!preview || controlsBusy) return;
-    setAuthoringBusy(true);
+    if (!preview) return;
+    const activeOperation = beginAuthoringOperation();
+    if (!activeOperation) return;
     setErrorKey(null);
     try {
       const priorDrafts = controller.getSnapshot().drafts;
@@ -389,12 +403,12 @@ export function AdvancedAuthoringPanel({
     } catch (error) {
       setErrorKey(toAuthoringErrorKey(error));
     } finally {
-      setAuthoringBusy(false);
+      finishAuthoringOperation(activeOperation);
     }
   };
   const runStagedHistory = async (direction: 'undo' | 'redo') => {
-    if (controlsBusy) return;
-    setAuthoringBusy(true);
+    const activeOperation = beginAuthoringOperation();
+    if (!activeOperation) return;
     setErrorKey(null);
     try {
       if (direction === 'undo') await controller.undoStaged(executeStagedHistory);
@@ -404,7 +418,7 @@ export function AdvancedAuthoringPanel({
     } catch (error) {
       setErrorKey(toAuthoringErrorKey(error));
     } finally {
-      setAuthoringBusy(false);
+      finishAuthoringOperation(activeOperation);
     }
   };
 

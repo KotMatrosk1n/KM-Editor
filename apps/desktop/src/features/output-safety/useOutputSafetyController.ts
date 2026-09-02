@@ -175,8 +175,7 @@ export function useOutputSafetyController({
       return;
     }
 
-    const refreshAlreadyRunning = busyActionRef.current === 'refresh';
-    if (!refreshAlreadyRunning && !beginAction('refresh')) {
+    if (!beginAction('refresh')) {
       return;
     }
 

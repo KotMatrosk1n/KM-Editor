@@ -162,6 +162,7 @@ class ResearchLabControllerStore {
   private activeRequests = new Set<number>();
   private bridge: ResearchLabProjectBridgeApi;
   private comparisonCursors = new Set<string>();
+  private annotationReadOperationRef: object | null = null;
   private contextKey: string | null = null;
   private freshness = new ProjectQueryEpoch<RequestChannel>();
   private listeners = new Set<() => void>();
@@ -219,6 +220,7 @@ class ResearchLabControllerStore {
   public cancel() {
     this.freshness.invalidateAll();
     this.activeRequests.clear();
+    this.annotationReadOperationRef = null;
     this.snapshot = {
       ...this.snapshot,
       annotations: retainAnnotationsAfterCancel(this.snapshot.annotations),
@@ -266,6 +268,7 @@ class ResearchLabControllerStore {
   }
 
   public async refreshCapabilities() {
+    if (this.activeRequests.size > 0) return;
     this.invalidateChannel('capabilities');
     this.invalidateResearchSources();
     this.snapshot = {
@@ -277,6 +280,7 @@ class ResearchLabControllerStore {
   }
 
   public async openSource(slot: 0 | 1, rootPath: string) {
+    if (this.activeRequests.size > 0) return;
     this.requireCapability('sourceComparison');
     const channel = slot === 0 ? 'source0' : 'source1';
     const retained = this.snapshot.sources[slot];
@@ -366,6 +370,7 @@ class ResearchLabControllerStore {
   }
 
   public async clearSource(slot: 0 | 1) {
+    if (this.activeRequests.size > 0) return;
     const retained = this.snapshot.sources[slot];
     if (!retained.data) {
       const sources = [...this.snapshot.sources] as [ResearchSourceState, ResearchSourceState];
@@ -455,6 +460,7 @@ class ResearchLabControllerStore {
   }
 
   public async compare(selectedRelativePaths: readonly string[] = []) {
+    if (this.activeRequests.size > 0) return;
     this.requireCapability('sourceComparison');
     this.requireSourceIds();
     this.comparisonCursors.clear();
@@ -558,6 +564,7 @@ class ResearchLabControllerStore {
     offset: number,
     length: number
   ) {
+    if (this.activeRequests.size > 0) return;
     this.requireCapability('byteWindows');
     const comparison = this.requireComparison();
     const storedFinding = comparison.items.find(
@@ -623,8 +630,14 @@ class ResearchLabControllerStore {
   }
 
   public async loadAnnotations() {
-    if (this.snapshot.annotations.status === 'loading') return;
+    if (
+      this.annotationReadOperationRef !== null ||
+      this.snapshot.annotations.isSaving ||
+      this.snapshot.annotations.status === 'loading'
+    ) return;
     this.requireCapability('annotations');
+    const operation = {};
+    this.annotationReadOperationRef = operation;
     const token = this.begin('annotations');
     this.snapshot = {
       ...this.snapshot,
@@ -652,11 +665,18 @@ class ResearchLabControllerStore {
     } catch (error) {
       this.failAnnotations(token, null, false, error);
     } finally {
+      if (this.annotationReadOperationRef === operation) {
+        this.annotationReadOperationRef = null;
+      }
       this.finish(token);
     }
   }
 
   public async refreshAnnotations() {
+    if (
+      this.annotationReadOperationRef !== null ||
+      this.snapshot.annotations.isSaving
+    ) return;
     this.invalidateChannel('annotations');
     this.snapshot = { ...this.snapshot, annotations: idleAnnotations() };
     this.emit();
@@ -664,6 +684,10 @@ class ResearchLabControllerStore {
   }
 
   public async upsertAnnotation(draft: ResearchAnnotationDraft) {
+    if (
+      this.annotationReadOperationRef !== null ||
+      this.snapshot.annotations.isSaving
+    ) return false;
     try {
       const current = this.requireAnnotations();
       const context = this.requireContext();
@@ -691,6 +715,10 @@ class ResearchLabControllerStore {
   }
 
   public async deleteAnnotation(annotationId: string) {
+    if (
+      this.annotationReadOperationRef !== null ||
+      this.snapshot.annotations.isSaving
+    ) return false;
     try {
       const current = this.requireAnnotations();
       if (!current.document?.annotations.some((annotation) => (
@@ -1035,6 +1063,7 @@ class ResearchLabControllerStore {
   }
 
   private rejectAnnotationPrecondition(error: unknown) {
+    if (this.snapshot.annotations.isSaving) return;
     if (this.handleStale(error)) return;
     this.snapshot = {
       ...this.snapshot,
@@ -1068,6 +1097,7 @@ class ResearchLabControllerStore {
     this.comparisonCursors.clear();
     this.sourceRevocations.clear();
     this.activeRequests.clear();
+    this.annotationReadOperationRef = null;
     this.snapshot = {
       annotations: idleAnnotations(),
       byteWindow: idleByteWindow(),

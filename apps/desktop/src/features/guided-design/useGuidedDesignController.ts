@@ -207,6 +207,7 @@ class GuidedDesignControllerStore {
   }
 
   public async previewDesign(input: GuidedDesignInput, targetSearchText: string | null = null) {
+    if (this.snapshot.isQuerying) return;
     this.supersedeRequests();
     this.activeTargetSearchText = targetSearchText;
     this.snapshot = { ...this.snapshot, activeInput: input };
@@ -214,6 +215,7 @@ class GuidedDesignControllerStore {
   }
 
   public async refresh() {
+    if (this.snapshot.isQuerying) return;
     const input = this.snapshot.preview.data?.normalizedInput ?? this.snapshot.activeInput;
     if (!input) return;
     await this.runPreview(
@@ -224,6 +226,7 @@ class GuidedDesignControllerStore {
   }
 
   public async loadMore() {
+    if (this.snapshot.isQuerying) return;
     const input = this.snapshot.preview.data?.normalizedInput ?? this.snapshot.activeInput;
     if (!input) return;
     await this.runPreview(

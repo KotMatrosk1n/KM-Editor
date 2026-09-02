@@ -413,6 +413,8 @@ function CompareModulePanel({
   const [externalPickFailed, setExternalPickFailed] = useState(false);
   const initializedRevisionRef = useRef<string | null>(null);
   const pickerGenerationRef = useRef(0);
+  const pickerOperationRef = useRef<object | null>(null);
+  const [isPickingExternalMod, setIsPickingExternalMod] = useState(false);
   const revisionIdentityRef = useRef(
     semanticRevisionIdentity(controller.capabilities.data?.revision)
   );
@@ -420,8 +422,14 @@ function CompareModulePanel({
     controller.capabilities.data?.revision
   );
   useEffect(() => () => {
+    pickerOperationRef.current = null;
     pickerGenerationRef.current += 1;
   }, []);
+  useEffect(() => {
+    pickerOperationRef.current = null;
+    pickerGenerationRef.current += 1;
+    setIsPickingExternalMod(false);
+  }, [controller.capabilities.data?.revision.fingerprint]);
   useEffect(() => {
     const revision = controller.capabilities.data?.revision.fingerprint ?? null;
     if (revision && initializedRevisionRef.current !== revision) {
@@ -465,6 +473,10 @@ function CompareModulePanel({
   }, [recordKey, recordOptions]);
 
   const runExternalComparison = async () => {
+    if (pickerOperationRef.current !== null) return;
+    const operation = {};
+    pickerOperationRef.current = operation;
+    setIsPickingExternalMod(true);
     const pickerGeneration = ++pickerGenerationRef.current;
     const expectedRevisionIdentity = revisionIdentityRef.current;
     const expectedLeft = left;
@@ -473,6 +485,7 @@ function CompareModulePanel({
       const externalRootPath = await onPickExternalMod();
       if (
         !externalRootPath ||
+        pickerOperationRef.current !== operation ||
         pickerGenerationRef.current !== pickerGeneration ||
         expectedRevisionIdentity === null ||
         revisionIdentityRef.current !== expectedRevisionIdentity
@@ -488,6 +501,11 @@ function CompareModulePanel({
         revisionIdentityRef.current === expectedRevisionIdentity
       ) {
         setExternalPickFailed(true);
+      }
+    } finally {
+      if (pickerOperationRef.current === operation) {
+        pickerOperationRef.current = null;
+        setIsPickingExternalMod(false);
       }
     }
   };
@@ -518,7 +536,12 @@ function CompareModulePanel({
         {canExternal ? (
           <button
             className="secondary-button"
-            disabled={externalComparisonDisabled || controller.isQuerying || !selectedRecord}
+            disabled={
+              externalComparisonDisabled ||
+              isPickingExternalMod ||
+              controller.isQuerying ||
+              !selectedRecord
+            }
             onClick={() => void runExternalComparison()}
             type="button"
           >
