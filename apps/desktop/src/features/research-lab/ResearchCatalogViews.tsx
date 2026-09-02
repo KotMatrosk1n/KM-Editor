@@ -9,6 +9,7 @@ import type {
   ResearchCoverageState
 } from '../../bridge/researchLabContracts';
 import { researchLabMaximumAccumulatedFindings } from '../../bridge/researchLabContracts';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import { TechnicalDetails } from '../workbench/AnalysisPresentation';
 import { humanizeIdentifier } from '../workbench/analysisPresentationUtils';
@@ -111,7 +112,7 @@ export function ResearchOwnershipView({
     (candidate) => candidate.feature === 'ownershipEvidence'
   );
   const capabilityReasonKey = researchReasonKey(capability?.reasonCode ?? null);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useCoalescedTextInputState();
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matches = useMemo(() => normalizedQuery

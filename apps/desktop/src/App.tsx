@@ -102,6 +102,7 @@ import {
   useRef,
   useState
 } from 'react';
+import { useCoalescedTextInputState } from './components/useCoalescedTextInputState';
 import {
   type ApiDiagnostic,
   type ApplyResult,
@@ -402,7 +403,9 @@ import {
   transitionSearchableOptionInteraction
 } from './components/searchableOptionInputState';
 import {
+  areStringSetsEqual,
   clearSubmittedKeyedEditorDraft,
+  getNextOutstandingEditorDraftKey,
   reconcileKeyedSourceBackedEditorDrafts,
   reconcileSourceBackedDraft
 } from './components/localEditorDraftState';
@@ -701,7 +704,8 @@ import {
   type PersonalWorkspaceSnapshot
 } from './workbench/personalWorkspaceRegistry';
 import {
-  createBridgeBackedProjectDraftRegistry
+  createBridgeBackedProjectDraftRegistry,
+  type ProjectDraft
 } from './workbench/draftRegistry';
 import {
   type OrdinaryFieldDraftPayload,
@@ -719,6 +723,7 @@ import {
 } from './authoring/authoringDomainAdapters';
 import { advancedAuthoringAdapterRegistry } from './authoring/authoringAdapterRegistry';
 import {
+  advancedAuthoringProjectDraftMatchesCapture,
   advancedAuthoringProjectDraftAdapter,
   createAdvancedAuthoringProjectDraftKey
 } from './authoring/advancedAuthoringDraftAdapter';
@@ -949,6 +954,25 @@ function createTextWorkflowQuery(
   };
 }
 
+function createExactTextMutationQuery(
+  game: ProjectGame | null,
+  target: TextEntryRecord
+): TextWorkflowQuery | undefined {
+  const supportsCategorizedTextQuery =
+    isSwordShieldGame(game) || isScarletVioletGame(game) || isPokemonLegendsZAGame(game);
+  if (!supportsCategorizedTextQuery) {
+    return undefined;
+  }
+
+  return {
+    categoryId: null,
+    language: target.language,
+    limit: 1,
+    offset: target.lineIndex,
+    searchText: target.sourceFile
+  };
+}
+
 function parseTextStableLocationTarget(textKey: string) {
   if (
     textKey.length === 0 ||
@@ -971,9 +995,10 @@ function parseTextStableLocationTarget(textKey: string) {
   }
   const sourceFile = textKey.slice(0, separatorIndex);
   const sourceSegments = sourceFile.split(/[\\/]/u);
-  const messageIndex = sourceSegments.findIndex(
-    (segment) => segment.toLowerCase() === 'message'
-  );
+  const messageIndex = sourceSegments.findIndex((segment) => {
+    const normalizedSegment = segment.toLowerCase();
+    return normalizedSegment === 'message' || normalizedSegment.endsWith('_message');
+  });
   const languageIndex =
     messageIndex >= 0 && sourceSegments[messageIndex + 1]?.toLowerCase() === 'dat'
       ? messageIndex + 2
@@ -1667,6 +1692,8 @@ type StableLocationPreparationResult =
   | { kind: 'aborted' }
   | { kind: 'ready'; onCommit: () => void }
   | { kind: 'unavailable' };
+
+type PlacementDraftReviewResult = 'aborted' | 'reviewed' | 'unavailable';
 
 function createSupportSearchWorkProgress(
   progress: SupportSearchProgressPayload | null,
@@ -3157,6 +3184,7 @@ export function App({
     });
   const [isAdvancedAuthoringDraftSaving, setIsAdvancedAuthoringDraftSaving] = useState(false);
   const advancedAuthoringDraftSaveTokenRef = useRef<object | null>(null);
+  const advancedAuthoringUnavailableDraftDiscardTokenRef = useRef<object | null>(null);
   const previousActiveWorkflowSectionRef = useRef<WorkbenchSection>(activeSection);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
@@ -3401,7 +3429,7 @@ export function App({
   const ordinaryEditorSearchRevisionRef = useRef<Record<string, number>>({});
   const commitOrdinaryEditorSearch = useCallback(
     async (
-      section: Extract<WorkbenchSection, 'items' | 'moves' | 'pokemon' | 'trainers'>,
+      section: WorkbenchSection,
       commit: () => void
     ) => {
       const revision = (ordinaryEditorSearchRevisionRef.current[section] ?? 0) + 1;
@@ -3436,6 +3464,100 @@ export function App({
     (value: string) =>
       commitOrdinaryEditorSearch('trainers', () => setTrainerSearchText(value)),
     [commitOrdinaryEditorSearch, setTrainerSearchText]
+  );
+  const handleGiftPokemonSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('giftPokemon', () => setGiftPokemonSearchText(value)),
+    [commitOrdinaryEditorSearch, setGiftPokemonSearchText]
+  );
+  const handleTradePokemonSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('tradePokemon', () => setTradePokemonSearchText(value)),
+    [commitOrdinaryEditorSearch, setTradePokemonSearchText]
+  );
+  const handleStaticEncounterSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('staticEncounters', () =>
+        setStaticEncounterSearchText(value)
+      ),
+    [commitOrdinaryEditorSearch, setStaticEncounterSearchText]
+  );
+  const handleRentalPokemonSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('rentalPokemon', () => setRentalPokemonSearchText(value)),
+    [commitOrdinaryEditorSearch, setRentalPokemonSearchText]
+  );
+  const handleDynamaxAdventureSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('dynamaxAdventures', () =>
+        setDynamaxAdventureSearchText(value)
+      ),
+    [commitOrdinaryEditorSearch, setDynamaxAdventureSearchText]
+  );
+  const handleShopSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('shops', () => setShopSearchText(value)),
+    [commitOrdinaryEditorSearch, setShopSearchText]
+  );
+  const handleEncounterSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('encounters', () => setEncounterSearchText(value)),
+    [commitOrdinaryEditorSearch, setEncounterSearchText]
+  );
+  const handleTeraRaidSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('teraRaids', () => setTeraRaidSearchText(value)),
+    [commitOrdinaryEditorSearch, setTeraRaidSearchText]
+  );
+  const handleRaidRewardSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('raidRewards', () => setRaidRewardSearchText(value)),
+    [commitOrdinaryEditorSearch, setRaidRewardSearchText]
+  );
+  const handleRaidBonusRewardSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('raidBonusRewards', () =>
+        setRaidBonusRewardSearchText(value)
+      ),
+    [commitOrdinaryEditorSearch, setRaidBonusRewardSearchText]
+  );
+  const handleRaidBattleSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('raidBattles', () => setRaidBattleSearchText(value)),
+    [commitOrdinaryEditorSearch, setRaidBattleSearchText]
+  );
+  const handlePlacementSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('placement', () => setPlacementSearchText(value)),
+    [commitOrdinaryEditorSearch, setPlacementSearchText]
+  );
+  const handleSwShPlacementSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('placement', () => {
+        setPlacementSearchText(value);
+        setSwShPlacementOffset(0);
+      }),
+    [commitOrdinaryEditorSearch, setPlacementSearchText]
+  );
+  const handleBehaviorSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('behavior', () => setBehaviorSearchText(value)),
+    [commitOrdinaryEditorSearch, setBehaviorSearchText]
+  );
+  const handleFlagworkSaveSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('flagworkSave', () => setFlagworkSaveSearchText(value)),
+    [commitOrdinaryEditorSearch, setFlagworkSaveSearchText]
+  );
+  const handleExeFsPatchSearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('exefsPatches', () => setExeFsPatchSearchText(value)),
+    [commitOrdinaryEditorSearch, setExeFsPatchSearchText]
+  );
+  const handleRoyalCandySearchChange = useCallback(
+    (value: string) =>
+      commitOrdinaryEditorSearch('royalCandy', () => setRoyalCandySearchText(value)),
+    [commitOrdinaryEditorSearch, setRoyalCandySearchText]
   );
   const discardLocalEditorDraftProtection = useCallback(async () => {
     setWorkspaceContentDiscardRevision((revision) => revision + 1);
@@ -6427,6 +6549,51 @@ export function App({
       setSelectedTrainerPartySlot
     ]
   );
+  const handleReviewTrainerDraftLocation = useCallback(
+    (trainerId: number, slot: number | null) => {
+      if (!activeProjectId || !selectedGame) {
+        setSelectedTrainerId(trainerId);
+        setSelectedTrainerPartySlot(slot);
+        return;
+      }
+
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        section: 'trainers',
+        subrecordId: slot === null ? null : `party-slot:${slot}`,
+        value: trainerId
+      });
+      return handleNavigateLocation(
+        destination,
+        () => {
+          setSelectedTrainerId(trainerId);
+          setSelectedTrainerPartySlot(slot);
+        },
+        'replace',
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            destination,
+            sessionLocalEditorSections
+          )
+        },
+        undefined,
+        { preserveSameSectionDraftScope: true }
+      );
+    },
+    [
+      activeProjectId,
+      handleNavigateLocation,
+      selectedGame,
+      setSelectedTrainerId,
+      setSelectedTrainerPartySlot
+    ]
+  );
   const handleSelectShopLocation = useCallback(
     (shopId: string | null) =>
       handleSelectStableLocation('shops', shopId, () => setSelectedShopId(shopId)),
@@ -6479,32 +6646,81 @@ export function App({
       setSelectedEncounterSlot
     ]
   );
+  const handleReviewEncounterDraftLocation = useCallback(
+    (tableId: string, slot: number) => {
+      if (!activeProjectId || !selectedGame) {
+        setSelectedEncounterTableId(tableId);
+        setSelectedEncounterSlot(slot);
+        return;
+      }
+
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        section: 'encounters',
+        subrecordId: `slot:${slot}`,
+        value: tableId
+      });
+      return handleNavigateLocation(
+        destination,
+        () => {
+          setSelectedEncounterTableId(tableId);
+          setSelectedEncounterSlot(slot);
+        },
+        'replace',
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            destination,
+            sessionLocalEditorSections
+          )
+        },
+        undefined,
+        { preserveSameSectionDraftScope: true }
+      );
+    },
+    [
+      activeProjectId,
+      handleNavigateLocation,
+      selectedGame,
+      setSelectedEncounterSlot,
+      setSelectedEncounterTableId
+    ]
+  );
   const handleSelectTeraRaidLocation = useCallback(
-    (recordId: string | null) =>
-      handleSelectStableLocation('teraRaids', recordId, () =>
-        setSelectedTeraRaidRecordId(recordId)
-      ),
+    (recordId: string | null, onCommit?: () => void) =>
+      handleSelectStableLocation('teraRaids', recordId, () => {
+        setSelectedTeraRaidRecordId(recordId);
+        onCommit?.();
+      }),
     [handleSelectStableLocation, setSelectedTeraRaidRecordId]
   );
   const handleSelectRaidRewardLocation = useCallback(
-    (tableId: string) =>
-      handleSelectStableLocation('raidRewards', tableId, () =>
-        setSelectedRaidRewardTableId(tableId)
-      ),
+    (tableId: string, onCommit?: () => void) =>
+      handleSelectStableLocation('raidRewards', tableId, () => {
+        setSelectedRaidRewardTableId(tableId);
+        onCommit?.();
+      }),
     [handleSelectStableLocation, setSelectedRaidRewardTableId]
   );
   const handleSelectRaidBonusRewardLocation = useCallback(
-    (tableId: string) =>
-      handleSelectStableLocation('raidBonusRewards', tableId, () =>
-        setSelectedRaidBonusRewardTableId(tableId)
-      ),
+    (tableId: string, onCommit?: () => void) =>
+      handleSelectStableLocation('raidBonusRewards', tableId, () => {
+        setSelectedRaidBonusRewardTableId(tableId);
+        onCommit?.();
+      }),
     [handleSelectStableLocation, setSelectedRaidBonusRewardTableId]
   );
   const handleSelectRaidBattleLocation = useCallback(
-    (tableId: string | null) =>
-      handleSelectStableLocation('raidBattles', tableId, () =>
-        setSelectedRaidBattleTableId(tableId)
-      ),
+    (tableId: string | null, onCommit?: () => void) =>
+      handleSelectStableLocation('raidBattles', tableId, () => {
+        setSelectedRaidBattleTableId(tableId);
+        onCommit?.();
+      }),
     [handleSelectStableLocation, setSelectedRaidBattleTableId]
   );
   const handleSelectPlacementLocation = useCallback(
@@ -6513,6 +6729,55 @@ export function App({
         setSelectedPlacementObjectId(objectId)
       ),
     [handleSelectStableLocation, setSelectedPlacementObjectId]
+  );
+  const handleReviewPlacementDraftLocation = useCallback(
+    async (objectId: string): Promise<PlacementDraftReviewResult> => {
+      if (!activeProjectId || !selectedGame) {
+        setSelectedPlacementObjectId(objectId);
+        return 'reviewed';
+      }
+
+      const destination = createStableEntityLocation({
+        game: selectedGame,
+        projectId: activeProjectId,
+        section: 'placement',
+        value: objectId
+      });
+      const preparation = await prepareStableLocationCommit(destination);
+      if (preparation.kind === 'unavailable') {
+        return 'unavailable';
+      }
+      if (preparation.kind !== 'ready') {
+        return 'aborted';
+      }
+
+      await handleNavigateLocation(
+        destination,
+        preparation.onCommit,
+        'replace',
+        {
+          protectedTabKeys: getProtectedWorkspaceTabKeys(
+            workspaceShellStateRef.current.tabs,
+            editorDraftDirtySectionsRef.current
+          ),
+          rememberRecent: false,
+          tabEligible: isStableLocationTabEligible(
+            destination,
+            sessionLocalEditorSections
+          )
+        },
+        undefined,
+        { preserveSameSectionDraftScope: true }
+      );
+      return 'reviewed';
+    },
+    [
+      activeProjectId,
+      handleNavigateLocation,
+      prepareStableLocationCommit,
+      selectedGame,
+      setSelectedPlacementObjectId
+    ]
   );
   const handleSelectBehaviorLocation = useCallback(
     (entryId: string | null) =>
@@ -14870,6 +15135,12 @@ export function App({
     useState<string | null>(null);
   const [isAdvancedAuthoringDraftPending, setIsAdvancedAuthoringDraftPending] =
     useState(false);
+  const [advancedAuthoringUnavailableDraft, setAdvancedAuthoringUnavailableDraft] =
+    useState<AdvancedAuthoringUnavailableDraft | null>(null);
+  const [isAdvancedAuthoringUnavailableDraftDiscarding,
+    setIsAdvancedAuthoringUnavailableDraftDiscarding] = useState(false);
+  const [advancedAuthoringDraftRecoveryRevision,
+    setAdvancedAuthoringDraftRecoveryRevision] = useState(0);
   const advancedAuthoringLoadRevisionRef = useRef(0);
   useEffect(() => {
     const loadRevision = ++advancedAuthoringLoadRevisionRef.current;
@@ -14887,6 +15158,9 @@ export function App({
         null,
         true
       )
+    );
+    setAdvancedAuthoringUnavailableDraft((current) =>
+      current?.protectionScopeKey === protectionScopeKey ? current : null
     );
     if (!advancedAuthoringScope) {
       advancedAuthoringControllerRef.current = null;
@@ -14973,6 +15247,7 @@ export function App({
           return;
         }
         if (!draft) {
+          setAdvancedAuthoringUnavailableDraft(null);
           setAdvancedAuthoringDraftProtection((current) =>
             updateAdvancedAuthoringDraftProtection(
               current,
@@ -15018,6 +15293,7 @@ export function App({
             )
           );
           controller.hydrateDrafts(payload);
+          setAdvancedAuthoringUnavailableDraft(null);
           setAdvancedAuthoringDraftProtection((current) =>
             updateAdvancedAuthoringDraftProtection(
               current,
@@ -15045,11 +15321,15 @@ export function App({
               return registration !== undefined && !loadedAdapterIds.has(registration.id);
             });
           if (!isWaitingForWorkspace) {
+            setAdvancedAuthoringUnavailableDraft({
+              draft,
+              protectionScopeKey: protectionScopeKey!
+            });
             setAdvancedAuthoringDraftProtection((current) =>
               updateAdvancedAuthoringDraftProtection(
                 current,
                 protectionScopeKey,
-                null
+                draft.payload
               )
             );
             setIsAdvancedAuthoringDraftPending(false);
@@ -15072,11 +15352,95 @@ export function App({
       }
     );
   }, [
+    advancedAuthoringDraftRecoveryRevision,
     advancedAuthoringScope,
     advancedAuthoringWorkspaces,
     changeSetWorkspace.snapshot,
     projectDraftRegistry,
     setBridgeDiagnostics
+  ]);
+
+  const discardUnavailableAdvancedAuthoringDraft = useCallback(async () => {
+    const capturedUnavailableDraft = advancedAuthoringUnavailableDraft;
+    if (
+      !capturedUnavailableDraft ||
+      advancedAuthoringUnavailableDraftDiscardTokenRef.current !== null
+    ) {
+      return;
+    }
+
+    const discardAdmissionToken = {};
+    advancedAuthoringUnavailableDraftDiscardTokenRef.current = discardAdmissionToken;
+    let criticalWriteToken: object | null = null;
+    try {
+      if (!window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.advancedAuthoring', {
+          fieldCount: capturedUnavailableDraft.draft.payload.entries.length
+        })
+      )) {
+        return;
+      }
+      criticalWriteToken = beginCriticalWriteOperation();
+      if (!criticalWriteToken) {
+        return;
+      }
+
+      setIsAdvancedAuthoringUnavailableDraftDiscarding(true);
+      const reconciliation = await projectDraftRegistry.reconcile(
+        capturedUnavailableDraft.draft.key,
+        advancedAuthoringProjectDraftAdapter,
+        (currentDraft) =>
+          currentDraft && advancedAuthoringProjectDraftMatchesCapture(
+            currentDraft,
+            capturedUnavailableDraft.draft
+          )
+            ? { kind: 'delete', result: true }
+            : { kind: 'keep', result: false }
+      );
+      if (!reconciliation.result) {
+        setIsAdvancedAuthoringDraftPending(true);
+        setAdvancedAuthoringDraftRecoveryRevision((revision) => revision + 1);
+        return;
+      }
+
+      setAdvancedAuthoringUnavailableDraft((current) =>
+        current && advancedAuthoringProjectDraftMatchesCapture(
+          current.draft,
+          capturedUnavailableDraft.draft
+        )
+          ? null
+          : current
+      );
+      setAdvancedAuthoringDraftProtection((current) =>
+        current.scopeKey === capturedUnavailableDraft.protectionScopeKey
+          ? updateAdvancedAuthoringDraftProtection(
+              current,
+              capturedUnavailableDraft.protectionScopeKey,
+              null
+            )
+          : current
+      );
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      if (
+        advancedAuthoringUnavailableDraftDiscardTokenRef.current ===
+        discardAdmissionToken
+      ) {
+        advancedAuthoringUnavailableDraftDiscardTokenRef.current = null;
+      }
+      if (criticalWriteToken) {
+        setIsAdvancedAuthoringUnavailableDraftDiscarding(false);
+        finishCriticalWriteOperation(criticalWriteToken);
+      }
+    }
+  }, [
+    advancedAuthoringUnavailableDraft,
+    beginCriticalWriteOperation,
+    finishCriticalWriteOperation,
+    projectDraftRegistry,
+    setBridgeDiagnostics,
+    t
   ]);
 
   const saveAdvancedAuthoringDrafts = useCallback(async (
@@ -16222,8 +16586,11 @@ export function App({
     }
   };
 
-  const handleUpdateTextEntry = async (textKey: string, value: string) => {
-    const queryRevision = textQueryRevisionRef.current;
+  const handleUpdateTextEntry = async (
+    textKey: string,
+    value: string,
+    sourceEntry: TextEntryRecord
+  ) => {
     workflowLoadGenerationRef.current.invalidate('text');
     isTextUpdatingRef.current = true;
     setIsTextUpdating(true);
@@ -16235,13 +16602,7 @@ export function App({
         async (session) => {
           const updateResponse = await bridge.updateTextEntry({
             paths: createProjectPaths(draftPaths),
-            query: createTextWorkflowQuery(
-              selectedGame,
-              textSearchText,
-              textCategoryId,
-              textResultOffset,
-              textLanguage
-            ),
+            query: createExactTextMutationQuery(selectedGame, sourceEntry),
             session,
             textKey,
             value
@@ -16258,9 +16619,6 @@ export function App({
           };
         },
         (updateResponse) => {
-          if (updateResponse.didSucceed && updateResponse.workflow) {
-            commitTextWorkflow(updateResponse.workflow, queryRevision);
-          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         },
         getEditSessionForSection('text')
@@ -20677,6 +21035,7 @@ export function App({
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
                 onTrainerCategoryChange={setSelectedTrainerCategoryId}
+                onReviewTrainerDraftTarget={handleReviewTrainerDraftLocation}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
@@ -20700,6 +21059,7 @@ export function App({
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
                 onTrainerCategoryChange={setSelectedTrainerCategoryId}
+                onReviewTrainerDraftTarget={handleReviewTrainerDraftLocation}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
@@ -20723,6 +21083,7 @@ export function App({
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
                 onTrainerCategoryChange={setSelectedTrainerCategoryId}
+                onReviewTrainerDraftTarget={handleReviewTrainerDraftLocation}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
@@ -20792,7 +21153,7 @@ export function App({
                 editSession={getEditSessionForSection('giftPokemon')}
                 isEditStarting={isEditStarting}
                 isGiftPokemonUpdating={isGiftPokemonUpdating}
-                onSearchChange={setGiftPokemonSearchText}
+                onSearchChange={handleGiftPokemonSearchChange}
                 onSelectGift={setSelectedGiftPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveGiftPokemonShinyLocks={handleRemoveGiftPokemonShinyLocks}
@@ -20815,7 +21176,7 @@ export function App({
                 editSession={getEditSessionForSection('tradePokemon')}
                 isEditStarting={isEditStarting}
                 isTradePokemonUpdating={isTradePokemonUpdating}
-                onSearchChange={setTradePokemonSearchText}
+                onSearchChange={handleTradePokemonSearchChange}
                 onSelectTrade={setSelectedTradePokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveTradePokemonShinyLocks={handleRemoveTradePokemonShinyLocks}
@@ -20835,7 +21196,7 @@ export function App({
                 editSession={getEditSessionForSection('staticEncounters')}
                 isEditStarting={isEditStarting}
                 isStaticEncounterUpdating={isStaticEncounterUpdating}
-                onSearchChange={setStaticEncounterSearchText}
+                onSearchChange={handleStaticEncounterSearchChange}
                 onSelectEncounter={setSelectedStaticEncounterIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveStaticEncounterShinyLocks={handleRemoveStaticEncounterShinyLocks}
@@ -20854,7 +21215,7 @@ export function App({
                 editSession={getEditSessionForSection('rentalPokemon')}
                 isEditStarting={isEditStarting}
                 isRentalPokemonUpdating={isRentalPokemonUpdating}
-                onSearchChange={setRentalPokemonSearchText}
+                onSearchChange={handleRentalPokemonSearchChange}
                 onSelectRental={setSelectedRentalPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRentalPokemonFields={handleUpdateRentalPokemonFields}
@@ -20900,7 +21261,7 @@ export function App({
                 }
                 onSaveBusyChange={handleDynamaxAdventureSaveSeedWritingChange}
                 onPreviewDynamaxAdventureDefaults={handlePreviewDynamaxAdventureDefaults}
-                onSearchChange={setDynamaxAdventureSearchText}
+                onSearchChange={handleDynamaxAdventureSearchChange}
                 onSelectAdventure={setSelectedDynamaxAdventureEntryIndex}
                 onStageRepair={handleStageDynamaxAdventureRepair}
                 onStageTableRestore={handleStageDynamaxAdventureTableRestore}
@@ -20938,7 +21299,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
                 isShopUpdating={isShopUpdating}
-                onSearchChange={setShopSearchText}
+                onSearchChange={handleShopSearchChange}
                 onOpenItem={handleOpenShopItem}
                 onSelectShop={handleSelectShopLocation}
                 onStartEditSession={handleStartEditSession}
@@ -20984,7 +21345,8 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onCopyEncounterSlot={handleCopyEncounterClipboard}
                 onPasteEncounterSlot={handlePasteEncounterClipboard}
-                onSearchChange={setEncounterSearchText}
+                onReviewDraftTarget={handleReviewEncounterDraftLocation}
+                onSearchChange={handleEncounterSearchChange}
                 onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
                 onStartEditSession={handleStartEditSession}
@@ -21002,7 +21364,8 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onCopyEncounterSlot={handleCopyEncounterClipboard}
                 onPasteEncounterSlot={handlePasteEncounterClipboard}
-                onSearchChange={setEncounterSearchText}
+                onReviewDraftTarget={handleReviewEncounterDraftLocation}
+                onSearchChange={handleEncounterSearchChange}
                 onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
                 onStageEncounterVanilla={handleStageEncounterSlotVanilla}
@@ -21021,7 +21384,8 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onCopyEncounterSlot={handleCopyEncounterClipboard}
                 onPasteEncounterSlot={handlePasteEncounterClipboard}
-                onSearchChange={setEncounterSearchText}
+                onReviewDraftTarget={handleReviewEncounterDraftLocation}
+                onSearchChange={handleEncounterSearchChange}
                 onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
                 onStartEditSession={handleStartEditSession}
@@ -21042,7 +21406,7 @@ export function App({
                 editSession={getEditSessionForSection('teraRaids')}
                 isEditStarting={isEditStarting}
                 isTeraRaidUpdating={isTeraRaidUpdating}
-                onSearchChange={setTeraRaidSearchText}
+                onSearchChange={handleTeraRaidSearchChange}
                 onSelectRaid={handleSelectTeraRaidLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTeraRaidField={handleUpdateTeraRaidField}
@@ -21063,7 +21427,7 @@ export function App({
                 headingId="raid-rewards-heading"
                 isEditStarting={isEditStarting}
                 isRaidRewardUpdating={isRaidRewardUpdating}
-                onSearchChange={setRaidRewardSearchText}
+                onSearchChange={handleRaidRewardSearchChange}
                 onSelectTable={handleSelectRaidRewardLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidRewardFields={handleUpdateRaidRewardFields}
@@ -21087,7 +21451,7 @@ export function App({
                 headingId="raid-bonus-rewards-heading"
                 isEditStarting={isEditStarting}
                 isRaidRewardUpdating={isRaidBonusRewardUpdating}
-                onSearchChange={setRaidBonusRewardSearchText}
+                onSearchChange={handleRaidBonusRewardSearchChange}
                 onSelectTable={handleSelectRaidBonusRewardLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidRewardFields={handleUpdateRaidBonusRewardFields}
@@ -21109,7 +21473,7 @@ export function App({
                 editSession={getEditSessionForSection('raidBattles')}
                 isEditStarting={isEditStarting}
                 isRaidBattleUpdating={isRaidBattleUpdating}
-                onSearchChange={setRaidBattleSearchText}
+                onSearchChange={handleRaidBattleSearchChange}
                 onSelectTable={handleSelectRaidBattleLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidBattleSlotFields={handleUpdateRaidBattleSlotFields}
@@ -21127,7 +21491,8 @@ export function App({
                 editSession={getEditSessionForSection('placement')}
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
-                onSearchChange={setPlacementSearchText}
+                onReviewDraftTarget={handleReviewPlacementDraftLocation}
+                onSearchChange={handlePlacementSearchChange}
                 onSelectObject={handleSelectPlacementLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
@@ -21147,7 +21512,8 @@ export function App({
                 editSession={getEditSessionForSection('placement')}
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
-                onSearchChange={setPlacementSearchText}
+                onReviewDraftTarget={handleReviewPlacementDraftLocation}
+                onSearchChange={handlePlacementSearchChange}
                 onSelectObject={handleSelectPlacementLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
@@ -21167,10 +21533,8 @@ export function App({
                 editSession={getEditSessionForSection('placement')}
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
-                onSearchChange={(value) => {
-                  setPlacementSearchText(value);
-                  setSwShPlacementOffset(0);
-                }}
+                onReviewDraftTarget={handleReviewPlacementDraftLocation}
+                onSearchChange={handleSwShPlacementSearchChange}
                 onSelectObject={handleSelectPlacementLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
@@ -21218,7 +21582,7 @@ export function App({
                 editSession={getEditSessionForSection('behavior')}
                 isBehaviorUpdating={isBehaviorUpdating}
                 isEditStarting={isEditStarting}
-                onSearchChange={setBehaviorSearchText}
+                onSearchChange={handleBehaviorSearchChange}
                 onSelectEntry={handleSelectBehaviorLocation}
                 onStartEditSession={handleStartEditSession}
                 onUpdateBehaviorEntryFields={handleUpdateBehaviorEntryFields}
@@ -21233,7 +21597,7 @@ export function App({
               <WorkflowLoadingPanel label="Flagwork and Save Inspectors" />
             ) : (
               <FlagworkSaveSection
-                onSearchChange={setFlagworkSaveSearchText}
+                onSearchChange={handleFlagworkSaveSearchChange}
                 onSelectFlag={handleSelectFlagLocation}
                 onSelectSaveBlock={handleSelectSaveBlockLocation}
                 searchText={flagworkSaveSearchText}
@@ -21460,7 +21824,7 @@ export function App({
             ) : (
               <ExeFsPatchSection
                 isStaging={isExeFsPatchStaging}
-                onSearchChange={setExeFsPatchSearchText}
+                onSearchChange={handleExeFsPatchSearchChange}
                 onSelectCheck={handleSelectExeFsCheckLocation}
                 onSelectPatch={handleSelectExeFsPatchLocation}
                 onStagePatch={handleStageExeFsPatch}
@@ -21483,7 +21847,7 @@ export function App({
                 onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('royalCandy')}
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('royalCandy')}
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('royalCandy', isDirty)}
-                onSearchChange={setRoyalCandySearchText}
+                onSearchChange={handleRoyalCandySearchChange}
                 onSelectCheck={handleSelectRoyalCandyCheckLocation}
                 onSelectWorkflow={handleSelectRoyalCandyWorkflowLocation}
                 onStageWorkflow={handleStageRoyalCandyWorkflow}
@@ -21739,7 +22103,13 @@ export function App({
                       isEditSessionMutating,
                     onDraftsChange: saveAdvancedAuthoringDrafts,
                     onStageRequest: handleAdvancedAuthoringStage,
-                    revisionKey: advancedAuthoringRevision.toString()
+                    revisionKey: advancedAuthoringRevision.toString(),
+                    unavailableDraft: advancedAuthoringUnavailableDraft ? {
+                      fieldCount:
+                        advancedAuthoringUnavailableDraft.draft.payload.entries.length,
+                      isDiscarding: isAdvancedAuthoringUnavailableDraftDiscarding,
+                      onDiscard: () => void discardUnavailableAdvancedAuthoringDraft()
+                    } : null
                     } : null
                   }
                   controller={changeSetWorkspace.controller}
@@ -21997,6 +22367,7 @@ export function App({
         <ExitPromptModal
           kind={exitPrompt.kind}
           allowGoToChanges={exitPrompt.allowGoToChanges ?? true}
+          isOpeningChanges={exitPrompt.destination?.section === 'changes'}
           isDiscardBlocked={
             isSessionValidating || isChangePlanCreating || isChangePlanApplying
           }
@@ -23194,6 +23565,7 @@ function ItemsSection({
               canEditItems={canEditItems}
               editSession={editSession}
               editorFamily={editorFamily}
+              items={loadedItems}
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               isPokemonLoading={isPokemonLoading}
@@ -23204,6 +23576,7 @@ function ItemsSection({
               onStageItemVanilla={onStageItemVanilla}
               onStageItemDrafts={onStageItemDrafts}
               onUpdateItemFields={onUpdateItemFields}
+              onSelectItem={onSelectItem}
               ordinaryDraftProject={ordinaryDraftProject}
               pokemonWorkflow={pokemonWorkflow}
             />
@@ -23244,6 +23617,8 @@ function SelectedItemPanel({
   isPokemonLoading,
   isPokemonUpdating,
   item,
+  items,
+  onSelectItem,
   onStageItemDrafts,
   onStageItemVanilla,
   onUpdateItemFields,
@@ -23260,6 +23635,8 @@ function SelectedItemPanel({
   isPokemonLoading: boolean;
   isPokemonUpdating: boolean;
   item: ItemRecord | null;
+  items: ItemRecord[];
+  onSelectItem: (itemId: number | null) => void;
   onStageItemDrafts?: (
     itemId: number,
     itemChanges: Array<{ field: string; value: string }>,
@@ -23281,7 +23658,8 @@ function SelectedItemPanel({
     Record<string, Record<string, string>>
   >({});
   const [itemSourceMutationError, setItemSourceMutationError] = useState<string | null>(null);
-  const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
+  const [compatibilitySearchText, setCompatibilitySearchText] =
+    useCoalescedTextInputState();
   const [showAllTechnicalMachinePokemon, setShowAllTechnicalMachinePokemon] = useState(false);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const contextualEditableFields = useMemo(
@@ -23445,6 +23823,23 @@ function SelectedItemPanel({
       localTechnicalMachineCompatibilityDraftCount;
   const stagedItemDraftCount =
     stagedItemChanges.length + localTechnicalMachineCompatibilityDraftCount;
+  const outstandingItemDraftKeys = [
+    ...new Set([
+      ...Object.keys(fieldDraftsByItemId).filter(
+        (key) => Object.keys(fieldDraftsByItemId[key] ?? {}).length > 0
+      ),
+      ...Object.keys(compatibilityDraftsByItemId).filter(
+        (key) => Object.keys(compatibilityDraftsByItemId[key] ?? {}).length > 0
+      )
+    ])
+  ];
+  const nextItemDraftKey = getNextOutstandingEditorDraftKey(
+    outstandingItemDraftKeys,
+    itemDraftKey
+  );
+  const nextItemDraftTarget = nextItemDraftKey === null
+    ? null
+    : items.find((candidate) => getItemStorageDraftKey(candidate) === nextItemDraftKey) ?? null;
   useRegisterEditorDraftDirty(
     'items',
     countFieldDraftRecords(fieldDraftsByItemId) > 0 ||
@@ -23783,6 +24178,16 @@ function SelectedItemPanel({
                     label="Stage"
                   />
                 </button>
+                {nextItemDraftTarget ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isItemUpdating || isPokemonUpdating}
+                    onClick={() => onSelectItem(nextItemDraftTarget.itemId)}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isItemUpdating || isPokemonUpdating}
@@ -23797,7 +24202,12 @@ function SelectedItemPanel({
                   <X aria-hidden="true" size={16} />
                   <span>Cancel</span>
                 </button>
-                <span className="draft-action-summary">{itemDraftActionSummary}</span>
+                <span className="draft-action-summary">
+                  {itemDraftActionSummary};{' '}
+                  {t('editorDrafts.summary.items', {
+                    count: outstandingItemDraftKeys.length
+                  })}
+                </span>
               </EditorSessionBarActions>
             ) : null}
 
@@ -24346,6 +24756,7 @@ function PokemonSection({
               learnsetMoveOptions={workflow.learnsetMoveOptions}
               onCopyLearnsetRow={onCopyLearnsetRow}
               onPasteLearnsetRow={onPasteLearnsetRow}
+              onSelectPokemon={onSelectPokemon}
               onStartEditSession={onStartEditSession}
               onSelectPokemonEvolution={onSelectPokemonEvolution}
               pokemonTable={
@@ -24553,19 +24964,19 @@ function areZaPokemonDexSwapDraftSnapshotsEqual(
 function ZaPokemonDexPlacementEditor({
   canEditPokemon,
   dexEditor,
-  discardEpoch,
+  draft,
   editSessionActive,
   isPokemonUpdating,
-  onDirtyStateChange,
+  onDraftChange,
   onStageSwap,
   pokemon
 }: {
   canEditPokemon: boolean;
   dexEditor: PokemonDexEditor;
-  discardEpoch: number;
+  draft: ZaPokemonDexSwapDraftSnapshot | null;
   editSessionActive: boolean;
   isPokemonUpdating: boolean;
-  onDirtyStateChange?: (isDirty: boolean) => void;
+  onDraftChange: (draft: ZaPokemonDexSwapDraftSnapshot | null) => void;
   onStageSwap?: (
     sourceSpeciesId: number,
     targetSpeciesId: number,
@@ -24578,23 +24989,31 @@ function ZaPokemonDexPlacementEditor({
     dexEditor.placements.find((placement) => placement.speciesId === pokemon.speciesId) ?? null;
   const defaultDestinationDexKind: PokemonDexPlacement['dexKind'] =
     currentPlacement?.dexKind === 'regular' ? 'hyperspace' : 'regular';
-  const [destinationDexKind, setDestinationDexKind] =
-    useState<PokemonDexPlacement['dexKind']>(defaultDestinationDexKind);
-  const [targetSpeciesIdDraft, setTargetSpeciesIdDraft] = useState('');
-  const latestSwapDraftRef = useRef<ZaPokemonDexSwapDraftSnapshot>({
-    destinationDexKind,
-    personalId: pokemon.personalId,
-    target: targetSpeciesIdDraft
-  });
-  latestSwapDraftRef.current = {
+  const retainedDraft = draft?.personalId === pokemon.personalId ? draft : null;
+  const destinationDexKind = retainedDraft?.destinationDexKind ?? defaultDestinationDexKind;
+  const targetSpeciesIdDraft = retainedDraft?.target ?? '';
+  const currentSwapDraft: ZaPokemonDexSwapDraftSnapshot = {
     destinationDexKind,
     personalId: pokemon.personalId,
     target: targetSpeciesIdDraft
   };
+  const latestSwapDraftRef = useRef<ZaPokemonDexSwapDraftSnapshot>(currentSwapDraft);
+  latestSwapDraftRef.current = currentSwapDraft;
   const swapDraftIsActiveRef = useRef(true);
-  const previousScopeRef = useRef(pokemon.personalId);
-  const previousDefaultDestinationRef = useRef(defaultDestinationDexKind);
-  const previousDiscardEpochRef = useRef(discardEpoch);
+  const updateSwapDraft = (
+    nextDestinationDexKind: PokemonDexPlacement['dexKind'],
+    nextTarget: string
+  ) => {
+    onDraftChange(
+      nextDestinationDexKind === defaultDestinationDexKind && nextTarget === ''
+        ? null
+        : {
+            destinationDexKind: nextDestinationDexKind,
+            personalId: pokemon.personalId,
+            target: nextTarget
+          }
+    );
+  };
   const formatPlacementLabel = useCallback(
     (placement: PokemonDexPlacement) =>
       `${translateLiteral(formatPokemonDexKind(placement.dexKind))} #${formatPokemonDexNumber(
@@ -24604,40 +25023,11 @@ function ZaPokemonDexPlacementEditor({
   );
 
   useEffect(() => {
-    const scopeChanged = previousScopeRef.current !== pokemon.personalId;
-    const discardRequested = previousDiscardEpochRef.current !== discardEpoch;
-    if (scopeChanged || discardRequested) {
-      setDestinationDexKind(defaultDestinationDexKind);
-      setTargetSpeciesIdDraft('');
-    } else {
-      setDestinationDexKind((currentDraft) =>
-        reconcileSourceBackedDraft(
-          currentDraft,
-          previousDefaultDestinationRef.current,
-          defaultDestinationDexKind,
-          Object.is
-        )
-      );
-    }
-    previousScopeRef.current = pokemon.personalId;
-    previousDefaultDestinationRef.current = defaultDestinationDexKind;
-    previousDiscardEpochRef.current = discardEpoch;
-  }, [defaultDestinationDexKind, discardEpoch, pokemon.personalId]);
-
-  useEffect(() => {
     swapDraftIsActiveRef.current = true;
     return () => {
       swapDraftIsActiveRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    onDirtyStateChange?.(
-      targetSpeciesIdDraft !== '' || destinationDexKind !== defaultDestinationDexKind
-    );
-  }, [defaultDestinationDexKind, destinationDexKind, onDirtyStateChange, targetSpeciesIdDraft]);
-
-  useEffect(() => () => onDirtyStateChange?.(false), [onDirtyStateChange]);
 
   const destinationOptions = useMemo(
     () =>
@@ -24729,10 +25119,10 @@ function ZaPokemonDexPlacementEditor({
                     return;
                   }
 
-                  setDestinationDexKind(
-                    event.target.value === 'hyperspace' ? 'hyperspace' : 'regular'
+                  updateSwapDraft(
+                    event.target.value === 'hyperspace' ? 'hyperspace' : 'regular',
+                    ''
                   );
-                  setTargetSpeciesIdDraft('');
                 }}
                 value={destinationDexKind}
               >
@@ -24758,7 +25148,7 @@ function ZaPokemonDexPlacementEditor({
                 id="za-pokemon-destination-slot"
                 onChange={(value) => {
                   if (editSessionActive) {
-                    setTargetSpeciesIdDraft(value);
+                    updateSwapDraft(destinationDexKind, value);
                   }
                 }}
                 options={destinationOptions}
@@ -24813,7 +25203,7 @@ function ZaPokemonDexPlacementEditor({
                     isSubmittedDraftCurrent
                   );
                   if (didStage && isSubmittedDraftCurrent()) {
-                    setTargetSpeciesIdDraft('');
+                    onDraftChange(null);
                   }
                 }
               }}
@@ -24862,6 +25252,7 @@ function SelectedPokemonPanel({
   learnsetMoveOptions,
   onCopyLearnsetRow,
   onPasteLearnsetRow,
+  onSelectPokemon,
   onSelectPokemonEvolution,
   onStartEditSession,
   pokemonTable,
@@ -24889,6 +25280,7 @@ function SelectedPokemonPanel({
   onPasteLearnsetRow: (
     input: PokemonLearnsetClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
+  onSelectPokemon: (personalId: number | null) => void;
   onSelectPokemonEvolution: (slot: number | null) => void;
   onStartEditSession: () => void;
   pokemonTable: ReactNode;
@@ -24953,8 +25345,9 @@ function SelectedPokemonPanel({
   const [pokemonSourceMutationError, setPokemonSourceMutationError] = useState<
     string | null
   >(null);
-  const [hasPokemonDexPlacementDrafts, setHasPokemonDexPlacementDrafts] = useState(false);
-  const [pokemonDraftDiscardEpoch, setPokemonDraftDiscardEpoch] = useState(0);
+  const [dexSwapDraftsByPokemonId, setDexSwapDraftsByPokemonId] = useState<
+    Record<string, ZaPokemonDexSwapDraftSnapshot>
+  >({});
   const [isLearnsetClipboardBusy, setIsLearnsetClipboardBusy] = useState(false);
   const learnsetClipboardOperationRef = useRef<symbol | null>(null);
   const [isLearnsetPasteApplying, setIsLearnsetPasteApplying] = useState(false);
@@ -25038,7 +25431,8 @@ function SelectedPokemonPanel({
   const [selectedCompatibilityGroupId, setSelectedCompatibilityGroupId] = useState(
     pokemon?.compatibility[0]?.groupId ?? ''
   );
-  const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
+  const [compatibilitySearchText, setCompatibilitySearchText] =
+    useCoalescedTextInputState();
   const orderedEvolutions = useMemo(
     () => [...(pokemon?.evolutions ?? [])].sort((left, right) => left.slot - right.slot),
     [pokemon]
@@ -25074,6 +25468,32 @@ function SelectedPokemonPanel({
     ? learnsetDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
     : {};
   const pokemonDraftRecordKey = pokemon?.personalId.toString() ?? null;
+  const selectedDexSwapDraft = pokemonDraftRecordKey === null
+    ? null
+    : dexSwapDraftsByPokemonId[pokemonDraftRecordKey] ?? null;
+  const updateSelectedDexSwapDraft = useCallback(
+    (nextDraft: ZaPokemonDexSwapDraftSnapshot | null) => {
+      if (pokemonDraftRecordKey === null) {
+        return;
+      }
+      setDexSwapDraftsByPokemonId((currentDrafts) => {
+        if (
+          nextDraft !== null &&
+          nextDraft.personalId.toString() !== pokemonDraftRecordKey
+        ) {
+          return currentDrafts;
+        }
+        const nextDrafts = { ...currentDrafts };
+        if (nextDraft === null) {
+          delete nextDrafts[pokemonDraftRecordKey];
+        } else {
+          nextDrafts[pokemonDraftRecordKey] = nextDraft;
+        }
+        return nextDrafts;
+      });
+    },
+    [pokemonDraftRecordKey]
+  );
   const pokemonDraftPayload = useMemo<OrdinaryPokemonDraftPayload>(() => {
     if (pokemonDraftRecordKey === null) {
       return {
@@ -25426,6 +25846,89 @@ function SelectedPokemonPanel({
     () => addCurrentPokemonFieldOption(learnsetMoveOptions, newLearnsetMoveIdDraft, 'Move'),
     [learnsetMoveOptions, newLearnsetMoveIdDraft]
   );
+  const outstandingPokemonDraftRecordKeys = useMemo(() => {
+    const knownPokemonDraftKeys = new Set(
+      pokemonRecords
+        .filter((candidate) => !isPlaceholderPokemonRecord(candidate))
+        .map((candidate) => candidate.personalId.toString())
+    );
+    const pokemonDraftKeyByAlphaMoveKey = new Map<string, string | null>();
+    for (const candidate of pokemonRecords) {
+      if (isPlaceholderPokemonRecord(candidate)) {
+        continue;
+      }
+      const candidateAlphaMoveKey = `${candidate.speciesId}:${candidate.form}`;
+      const candidateDraftKey = candidate.personalId.toString();
+      const existingDraftKey = pokemonDraftKeyByAlphaMoveKey.get(candidateAlphaMoveKey);
+      pokemonDraftKeyByAlphaMoveKey.set(
+        candidateAlphaMoveKey,
+        existingDraftKey === undefined || existingDraftKey === candidateDraftKey
+          ? candidateDraftKey
+          : null
+      );
+    }
+
+    const outstandingKeys: string[] = [];
+    const addedKeys = new Set<string>();
+    const addPokemonDraftKey = (candidateKey: string | null | undefined) => {
+      if (
+        candidateKey === null ||
+        candidateKey === undefined ||
+        !knownPokemonDraftKeys.has(candidateKey) ||
+        addedKeys.has(candidateKey)
+      ) {
+        return;
+      }
+      addedKeys.add(candidateKey);
+      outstandingKeys.push(candidateKey);
+    };
+    for (const [candidateKey, fields] of Object.entries(personalDraftsByPokemonId)) {
+      if (Object.keys(fields).length > 0) {
+        addPokemonDraftKey(candidateKey);
+      }
+    }
+    for (const candidateAlphaMoveKey of Object.keys(alphaMoveDraftsByPokemonKey)) {
+      addPokemonDraftKey(pokemonDraftKeyByAlphaMoveKey.get(candidateAlphaMoveKey));
+    }
+    for (const [candidateKey, slots] of Object.entries(evolutionDraftsByPokemonId)) {
+      if (Object.keys(slots).length > 0) {
+        addPokemonDraftKey(candidateKey);
+      }
+    }
+    for (const [candidateKey, slots] of Object.entries(learnsetDraftsByPokemonId)) {
+      if (Object.keys(slots).length > 0) {
+        addPokemonDraftKey(candidateKey);
+      }
+    }
+    for (const candidateKey of Object.keys(newEvolutionDraftsByPokemonId)) {
+      addPokemonDraftKey(candidateKey);
+    }
+    for (const candidateKey of Object.keys(newLearnsetDraftsByPokemonId)) {
+      addPokemonDraftKey(candidateKey);
+    }
+    for (const candidateKey of Object.keys(dexSwapDraftsByPokemonId)) {
+      addPokemonDraftKey(candidateKey);
+    }
+    return outstandingKeys;
+  }, [
+    alphaMoveDraftsByPokemonKey,
+    dexSwapDraftsByPokemonId,
+    evolutionDraftsByPokemonId,
+    learnsetDraftsByPokemonId,
+    newEvolutionDraftsByPokemonId,
+    newLearnsetDraftsByPokemonId,
+    personalDraftsByPokemonId,
+    pokemonRecords
+  ]);
+  const nextPokemonDraftRecordKey = getNextOutstandingEditorDraftKey(
+    outstandingPokemonDraftRecordKeys,
+    pokemonDraftRecordKey
+  );
+  const nextPokemonDraftTarget = nextPokemonDraftRecordKey === null
+    ? null
+    : pokemonRecords.find(
+        (candidate) => candidate.personalId.toString() === nextPokemonDraftRecordKey
+      ) ?? null;
 
   useRegisterEditorDraftDirty(
     'pokemon',
@@ -25434,7 +25937,7 @@ function SelectedPokemonPanel({
       Object.keys(evolutionDraftsByPokemonId).length > 0 ||
       Object.keys(learnsetDraftsByPokemonId).length > 0 ||
       hasPokemonCreationDrafts ||
-      hasPokemonDexPlacementDrafts
+      Object.keys(dexSwapDraftsByPokemonId).length > 0
   );
 
   useEffect(() => {
@@ -26430,7 +26933,7 @@ function SelectedPokemonPanel({
       setLearnsetDraftsByPokemonId({});
       setNewEvolutionDraftsByPokemonId({});
       setNewLearnsetDraftsByPokemonId({});
-      setPokemonDraftDiscardEpoch((currentEpoch) => currentEpoch + 1);
+      setDexSwapDraftsByPokemonId({});
     });
 
   return (
@@ -26494,6 +26997,16 @@ function SelectedPokemonPanel({
               label="Stage"
             />
           </button>
+          {nextPokemonDraftTarget ? (
+            <button
+              className="secondary-button"
+              disabled={isPokemonUpdating}
+              onClick={() => onSelectPokemon(nextPokemonDraftTarget.personalId)}
+              type="button"
+            >
+              {t('editorDrafts.reviewNext')}
+            </button>
+          ) : null}
           <button
             className="danger-button"
             disabled={isPokemonUpdating}
@@ -26511,6 +27024,10 @@ function SelectedPokemonPanel({
                     pokemonDraftInvalidCount === 1 ? '' : 's'
                   } need valid values`
                 : `${pokemonDraftChangedCount} changed`}
+            ;{' '}
+            {t('editorDrafts.summary.pokemon', {
+              count: outstandingPokemonDraftRecordKeys.length
+            })}
           </span>
         </EditorSessionBarActions>
       ) : null}
@@ -26736,10 +27253,10 @@ function SelectedPokemonPanel({
             <ZaPokemonDexPlacementEditor
               canEditPokemon={canEditPokemon}
               dexEditor={dexEditor}
-              discardEpoch={pokemonDraftDiscardEpoch}
+              draft={selectedDexSwapDraft}
               editSessionActive={editSession !== null}
               isPokemonUpdating={isPokemonUpdating}
-              onDirtyStateChange={setHasPokemonDexPlacementDrafts}
+              onDraftChange={updateSelectedDexSwapDraft}
               onStageSwap={
                 onSwapPokemonDexPlacement
                   ? (sourceSpeciesId, targetSpeciesId, isSubmittedDraftCurrent) =>
@@ -28138,7 +28655,9 @@ function MovesSection({
               isEditStarting={isEditStarting}
               isMoveUpdating={isMoveUpdating}
               move={selectedMove}
+              moves={moves}
               ordinaryDraftProject={ordinaryDraftProject}
+              onSelectMove={onSelectMove}
               onStageMoveVanilla={onStageMoveVanilla}
               onSelectRuntimeVariant={(variant) => {
                 if (!selectedMove) {
@@ -28770,7 +29289,9 @@ function SelectedMovePanel({
   isEditStarting,
   isMoveUpdating,
   move,
+  moves,
   ordinaryDraftProject,
+  onSelectMove,
   onSelectRuntimeVariant,
   onStageMoveVanilla,
   onUpdateMoveFields,
@@ -28785,7 +29306,9 @@ function SelectedMovePanel({
   isEditStarting: boolean;
   isMoveUpdating: boolean;
   move: MoveRecord | null;
+  moves: MoveRecord[];
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
+  onSelectMove: (moveId: number | null) => void;
   onSelectRuntimeVariant: (variant: number) => void;
   onStageMoveVanilla?: (moveId: number) => Promise<boolean>;
   onUpdateMoveFields: (
@@ -29078,6 +29601,16 @@ function SelectedMovePanel({
     [allMoveFields, baselineValues, move, moveDrafts]
   );
   useRegisterEditorDraftDirty('moves', countFieldDraftRecords(moveDraftsByMoveId) > 0);
+  const outstandingMoveDraftKeys = Object.keys(moveDraftsByMoveId).filter(
+    (key) => Object.keys(moveDraftsByMoveId[key] ?? {}).length > 0
+  );
+  const nextMoveDraftKey = getNextOutstandingEditorDraftKey(
+    outstandingMoveDraftKeys,
+    moveDraftStorageKey
+  );
+  const nextMoveDraftTarget = nextMoveDraftKey === null
+    ? null
+    : moves.find((candidate) => candidate.moveId.toString() === nextMoveDraftKey) ?? null;
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const qualityField = moveFields.find((field) => field.field === 'quality');
   const mappedQualityLabel = move
@@ -29643,6 +30176,16 @@ function SelectedMovePanel({
                     label="Stage"
                   />
                 </button>
+                {nextMoveDraftTarget ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isMoveUpdating}
+                    onClick={() => onSelectMove(nextMoveDraftTarget.moveId)}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isMoveUpdating}
@@ -29656,7 +30199,12 @@ function SelectedMovePanel({
                   <X aria-hidden="true" size={16} />
                   <span>Cancel</span>
                 </button>
-                <span className="draft-action-summary">{formatDraftSummary(moveDraftSummary)}</span>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(moveDraftSummary)};{' '}
+                  {t('editorDrafts.summary.moves', {
+                    count: outstandingMoveDraftKeys.length
+                  })}
+                </span>
               </EditorSessionBarActions>
             ) : null}
             {onStageMoveVanilla ? (
@@ -30058,7 +30606,11 @@ function TextSection({
   onSearchChange: (searchText: string) => void;
   onSelectTextEntry: (textKey: string | null) => void;
   onStartEditSession: () => void;
-  onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
+  onUpdateTextEntry: (
+    textKey: string,
+    value: string,
+    sourceEntry: TextEntryRecord
+  ) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   searchText: string;
   selectedCategoryId: string | null;
@@ -30075,13 +30627,38 @@ function TextSection({
     () => (workflow?.page ? entries : filterTextEntries(entries, searchText)),
     [entries, searchText, workflow?.page]
   );
+  const [reviewedDraftEntry, setReviewedDraftEntry] = useState<TextEntryRecord | null>(null);
+  const reviewedDraftEntryWithPendingValue = useMemo(
+    () =>
+      reviewedDraftEntry
+        ? overlayPendingTextValues([reviewedDraftEntry], editSession)[0] ?? reviewedDraftEntry
+        : null,
+    [editSession, reviewedDraftEntry]
+  );
   const selectedEntry = useMemo(
     () =>
       entries.find((entry) => entry.textKey === selectedTextKey) ??
+      (reviewedDraftEntryWithPendingValue?.textKey === selectedTextKey
+        ? reviewedDraftEntryWithPendingValue
+        : null) ??
       filteredEntries[0] ??
       null,
-    [entries, filteredEntries, selectedTextKey]
+    [entries, filteredEntries, reviewedDraftEntryWithPendingValue, selectedTextKey]
   );
+  const handleReviewTextDraftTarget = useCallback(
+    (target: TextEntryRecord) => {
+      setReviewedDraftEntry(target);
+      onSelectTextEntry(target.textKey);
+    },
+    [onSelectTextEntry]
+  );
+  const handleReviewedTextEntryStaged = useCallback((textKey: string, value: string) => {
+    setReviewedDraftEntry((currentEntry) =>
+      currentEntry?.textKey === textKey
+        ? { ...currentEntry, value }
+        : currentEntry
+    );
+  }, []);
   const canEditText = workflow?.summary.availability === 'available';
   const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
   const categories = workflow?.categories ?? [];
@@ -30319,6 +30896,8 @@ function TextSection({
               entry={selectedEntry}
               isTextQueryPending={isTextQueryPending}
               isTextUpdating={isTextUpdating}
+              onReviewTextDraftTarget={handleReviewTextDraftTarget}
+              onReviewedTextEntryStaged={handleReviewedTextEntryStaged}
               onUpdateTextEntry={onUpdateTextEntry}
               ordinaryDraftProject={ordinaryDraftProject}
             />
@@ -30340,6 +30919,8 @@ function SelectedTextPanel({
   entry,
   isTextQueryPending,
   isTextUpdating,
+  onReviewTextDraftTarget,
+  onReviewedTextEntryStaged,
   onUpdateTextEntry,
   ordinaryDraftProject
 }: {
@@ -30349,11 +30930,18 @@ function SelectedTextPanel({
   entry: TextEntryRecord | null;
   isTextQueryPending: boolean;
   isTextUpdating: boolean;
-  onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
+  onReviewTextDraftTarget: (target: TextEntryRecord) => void;
+  onReviewedTextEntryStaged: (textKey: string, value: string) => void;
+  onUpdateTextEntry: (
+    textKey: string,
+    value: string,
+    sourceEntry: TextEntryRecord
+  ) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
 }) {
   const { t } = useLocalization();
   const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
+  const draftTargetByTextKeyRef = useRef<Record<string, TextEntryRecord>>({});
   const [textSourceMutationError, setTextSourceMutationError] = useState<string | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const textValueTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -30381,6 +30969,9 @@ function SelectedTextPanel({
     (payload: OrdinaryTextDraftPayload | null) => {
       if (!entry) {
         return;
+      }
+      if (payload && payload.value !== entry.value) {
+        draftTargetByTextKeyRef.current[entry.textKey] = entry;
       }
       setDraftsByTextKey((currentDrafts) => {
         const nextDrafts = { ...currentDrafts };
@@ -30441,6 +31032,9 @@ function SelectedTextPanel({
       if (!entry) {
         return;
       }
+      if (nextValue !== entry.value) {
+        draftTargetByTextKeyRef.current[entry.textKey] = entry;
+      }
 
       setDraftsByTextKey((currentDrafts) => {
         if (nextValue === entry.value) {
@@ -30499,6 +31093,13 @@ function SelectedTextPanel({
   const draftState = getTextDraftState(draftValue, entry, valueField);
   const canSubmit = editSession !== null && !isTextQueryPending && draftState.canSubmit;
   const textDraftCount = Object.keys(draftsByTextKey).length;
+  const nextTextDraftKey = getNextOutstandingEditorDraftKey(
+    Object.keys(draftsByTextKey),
+    entry?.textKey
+  );
+  const nextTextDraftTarget = nextTextDraftKey === null
+    ? null
+    : draftTargetByTextKeyRef.current[nextTextDraftKey] ?? null;
   const textLengthHelpId = 'selected-text-canonical-length';
   const maximumTextLength = valueField?.maximumLength ?? null;
 
@@ -30528,10 +31129,17 @@ function SelectedTextPanel({
               }
 
               const draftValueBeforeStage = draftValue;
+              const submittedTextKey = entry.textKey;
+              const submittedTarget =
+                draftTargetByTextKeyRef.current[submittedTextKey] ?? entry;
               const sourceMutation = await runSessionLocalEditorSourceMutation({
                 binding: textDraftBinding,
                 didMutate: (didSave) => didSave,
-                mutation: () => onUpdateTextEntry(entry.textKey, draftValueBeforeStage),
+                mutation: () => onUpdateTextEntry(
+                  submittedTextKey,
+                  draftValueBeforeStage,
+                  submittedTarget
+                ),
                 reduceLatestPayload: (latestPayload) =>
                   latestPayload.value === draftValueBeforeStage
                     ? { value: draftValueBeforeStage }
@@ -30543,9 +31151,10 @@ function SelectedTextPanel({
               }
               setTextSourceMutationError(null);
               if (sourceMutation.kind === 'source-mutated') {
+                onReviewedTextEntryStaged(submittedTextKey, draftValueBeforeStage);
                 setDraftsByTextKey((currentDrafts) =>
-                  currentDrafts[entry.textKey] === draftValueBeforeStage
-                    ? deleteFieldDraftRecord(currentDrafts, entry.textKey)
+                  currentDrafts[submittedTextKey] === draftValueBeforeStage
+                    ? deleteFieldDraftRecord(currentDrafts, submittedTextKey)
                     : currentDrafts
                 );
               }
@@ -30559,6 +31168,16 @@ function SelectedTextPanel({
               label="Stage"
             />
           </button>
+          {nextTextDraftTarget ? (
+            <button
+              className="secondary-button"
+              disabled={isTextQueryPending || isTextUpdating}
+              onClick={() => onReviewTextDraftTarget(nextTextDraftTarget)}
+              type="button"
+            >
+              {t('editorDrafts.reviewNext')}
+            </button>
+          ) : null}
           <button
             className="danger-button"
             disabled={isTextUpdating}
@@ -30569,7 +31188,7 @@ function SelectedTextPanel({
             <span>Cancel</span>
           </button>
           <span className="draft-action-summary">
-            {textDraftCount} changed
+            {t('editorDrafts.summary.text', { count: textDraftCount })}
           </span>
         </EditorSessionBarActions>
       ) : null}
@@ -30886,6 +31505,7 @@ type TrainersSectionProps = {
   onPasteTrainerPartyClipboard: (
     input: TrainerPartyClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
+  onReviewTrainerDraftTarget: (trainerId: number, slot: number | null) => void;
   onSearchChange: (searchText: string) => void;
   onTrainerCategoryChange: (categoryId: TrainerCategoryId) => void;
   onSelectTrainer: (trainerId: number | null) => void;
@@ -30935,6 +31555,7 @@ function TrainersSection({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
+  onReviewTrainerDraftTarget,
   onTrainerCategoryChange,
   onSelectTrainer,
   onSelectTrainerPartySlot,
@@ -31302,6 +31923,7 @@ function TrainersSection({
                 onCopyTrainerPartyClipboard={onCopyTrainerPartyClipboard}
                 onPasteTrainerPartyClipboard={onPasteTrainerPartyClipboard}
                 ordinaryDraftProject={ordinaryDraftProject}
+                onReviewDraftTarget={onReviewTrainerDraftTarget}
                 onSelectSlot={onSelectTrainerPartySlot}
                 onUpdateTrainerField={onUpdateTrainerField}
                 onUpdateTrainerFields={onUpdateTrainerFields}
@@ -31309,6 +31931,7 @@ function TrainersSection({
                 selectedPokemon={selectedPokemon}
                 selectedSlot={selectedTrainerPartySlot}
                 trainer={selectedTrainer}
+                trainerRecords={trainers}
                 zaClassPairOptions={workflow.zaClassPairOptions}
               />
             </div>
@@ -31436,6 +32059,7 @@ function SelectedTrainerPanel({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
+  onReviewDraftTarget,
   onSelectSlot,
   onUpdateTrainerField,
   onUpdateTrainerFields,
@@ -31443,6 +32067,7 @@ function SelectedTrainerPanel({
   selectedPokemon,
   selectedSlot,
   trainer,
+  trainerRecords,
   zaClassPairOptions
 }: {
   canEditTrainers: boolean;
@@ -31461,6 +32086,7 @@ function SelectedTrainerPanel({
     input: TrainerPartyClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
+  onReviewDraftTarget: (trainerId: number, slot: number | null) => void;
   onSelectSlot: (slot: number | null) => void;
   onUpdateTrainerField: (
     trainerId: number,
@@ -31473,6 +32099,7 @@ function SelectedTrainerPanel({
   selectedPokemon: TrainerPokemonRecord | null;
   selectedSlot: number | null;
   trainer: TrainerRecord | null;
+  trainerRecords: TrainerRecord[];
   zaClassPairOptions: TrainersWorkflow['zaClassPairOptions'];
 }) {
   const { formatLocale, t, translateLiteral } = useLocalization();
@@ -31495,7 +32122,7 @@ function SelectedTrainerPanel({
     slot: number;
     trainerId: number;
   } | null>(null);
-  const [hasTrainerIdentityDrafts, setHasTrainerIdentityDrafts] = useState(false);
+  const [trainerIdentityDraftKeys, setTrainerIdentityDraftKeys] = useState<string[]>([]);
   const [trainerIdentityDiscardEpoch, setTrainerIdentityDiscardEpoch] = useState(0);
   const [trainerSourceMutationError, setTrainerSourceMutationError] = useState<
     string | null
@@ -32078,8 +32705,116 @@ function SelectedTrainerPanel({
     'trainers',
     countFieldDraftRecords(trainerDraftsByTrainerId) > 0 ||
       countFieldDraftRecords(canonicalPokemonDraftsByTrainerSlot) > 0 ||
-      hasTrainerIdentityDrafts
+      trainerIdentityDraftKeys.length > 0
   );
+  const outstandingTrainerDraftCount = countFieldDraftRecords(trainerDraftsByTrainerId);
+  const outstandingPartySlotDraftCount = countFieldDraftRecords(
+    canonicalPokemonDraftsByTrainerSlot
+  );
+  const outstandingTrainerIdentityDraftCount = trainerIdentityDraftKeys.length;
+  const outstandingTrainerDraftScopeCount =
+    outstandingTrainerDraftCount +
+    outstandingPartySlotDraftCount +
+    outstandingTrainerIdentityDraftCount;
+  const trainerDraftReviewTargets = useMemo(() => {
+    const targets = new Map<string, { slot: number | null; trainerId: number }>();
+    const trainerRecordsById = new Map(
+      trainerRecords.map((candidate) => [candidate.trainerId, candidate] as const)
+    );
+    for (const [trainerDraftKey, fields] of Object.entries(trainerDraftsByTrainerId)) {
+      if (Object.keys(fields).length === 0) {
+        continue;
+      }
+      if (!/^\d+$/u.test(trainerDraftKey)) {
+        continue;
+      }
+      const trainerId = Number.parseInt(trainerDraftKey, 10);
+      if (trainerRecordsById.has(trainerId)) {
+        targets.set(`trainer:${trainerDraftKey}`, { slot: null, trainerId });
+      }
+    }
+    for (const [partyDraftKey, fields] of Object.entries(
+      canonicalPokemonDraftsByTrainerSlot
+    )) {
+      if (Object.keys(fields).length === 0) {
+        continue;
+      }
+      const keyMatch = /^(\d+):(\d+)$/u.exec(partyDraftKey);
+      if (!keyMatch) {
+        continue;
+      }
+      const trainerId = Number.parseInt(keyMatch[1]!, 10);
+      const slot = Number.parseInt(keyMatch[2]!, 10);
+      const targetTrainer = trainerRecordsById.get(trainerId);
+      if (targetTrainer?.team.some((candidate) => candidate.slot === slot)) {
+        targets.set(`party:${partyDraftKey}`, { slot, trainerId });
+      }
+    }
+    for (const identityDraftKey of trainerIdentityDraftKeys) {
+      if (!/^\d+$/u.test(identityDraftKey)) {
+        continue;
+      }
+      const trainerId = Number.parseInt(identityDraftKey, 10);
+      if (trainerRecordsById.has(trainerId)) {
+        targets.set(`identity:${identityDraftKey}`, { slot: null, trainerId });
+      }
+    }
+    return targets;
+  }, [
+    canonicalPokemonDraftsByTrainerSlot,
+    trainerDraftsByTrainerId,
+    trainerIdentityDraftKeys,
+    trainerRecords
+  ]);
+  const nextTrainerDraftTargetKey = useMemo(() => {
+    const outstandingTargetKeys = [...trainerDraftReviewTargets.keys()];
+    const visibleTargetKeys = new Set(
+      [...trainerDraftReviewTargets.entries()]
+        .filter(
+          ([targetKey, target]) =>
+            target.trainerId === trainer?.trainerId &&
+            (!targetKey.startsWith('party:') || target.slot === selectedPokemon?.slot)
+        )
+        .map(([targetKey]) => targetKey)
+    );
+    const selectedPartyTargetKey =
+      trainer === null || selectedPokemon === null
+        ? null
+        : `party:${trainer.trainerId}:${selectedPokemon.slot}`;
+    const selectedTrainerTargetKey =
+      trainer === null ? null : `trainer:${trainer.trainerId}`;
+    const selectedIdentityTargetKey =
+      trainer === null ? null : `identity:${trainer.trainerId}`;
+    let cursor =
+      (selectedPartyTargetKey !== null &&
+      trainerDraftReviewTargets.has(selectedPartyTargetKey)
+        ? selectedPartyTargetKey
+        : null) ??
+      (selectedTrainerTargetKey !== null &&
+      trainerDraftReviewTargets.has(selectedTrainerTargetKey)
+        ? selectedTrainerTargetKey
+        : null) ??
+      (selectedIdentityTargetKey !== null &&
+      trainerDraftReviewTargets.has(selectedIdentityTargetKey)
+        ? selectedIdentityTargetKey
+        : null);
+    const visitedTargetKeys = new Set<string>();
+    while (visitedTargetKeys.size < outstandingTargetKeys.length) {
+      const candidateKey = getNextOutstandingEditorDraftKey(outstandingTargetKeys, cursor);
+      if (candidateKey === null || visitedTargetKeys.has(candidateKey)) {
+        return null;
+      }
+      if (!visibleTargetKeys.has(candidateKey)) {
+        return candidateKey;
+      }
+      visitedTargetKeys.add(candidateKey);
+      cursor = candidateKey;
+    }
+    return null;
+  }, [trainerDraftReviewTargets, selectedPokemon, trainer]);
+  const nextTrainerDraftTarget = nextTrainerDraftTargetKey === null
+    ? null
+    : trainerDraftReviewTargets.get(nextTrainerDraftTargetKey) ?? null;
 
   const closePartySlotContextMenu = useCallback(() => {
     setPartySlotContextMenu(null);
@@ -32536,8 +33271,23 @@ function SelectedTrainerPanel({
                 busyLabel="Staging"
                 icon={<Save aria-hidden="true" size={16} />}
                 isBusy={isTrainerUpdating}
-                label="Stage Party"
+                label={t('editorDrafts.stageSelectedPokemon')}
               />
+            </button>
+          ) : null}
+          {nextTrainerDraftTarget ? (
+            <button
+              className="secondary-button"
+              disabled={isTrainerUpdating}
+              onClick={() =>
+                onReviewDraftTarget(
+                  nextTrainerDraftTarget.trainerId,
+                  nextTrainerDraftTarget.slot
+                )
+              }
+              type="button"
+            >
+              {t('editorDrafts.reviewNext')}
             </button>
           ) : null}
           <button
@@ -32554,6 +33304,13 @@ function SelectedTrainerPanel({
             {selectedPokemon
               ? `; party: ${formatDraftSummary(pokemonDraftSummary)}`
               : ''}
+            ;{' '}
+            {t('editorDrafts.summary.trainers', {
+              identityCount: outstandingTrainerIdentityDraftCount,
+              partyCount: outstandingPartySlotDraftCount,
+              scopeCount: outstandingTrainerDraftScopeCount,
+              trainerCount: outstandingTrainerDraftCount
+            })}
           </span>
         </EditorSessionBarActions>
       ) : null}
@@ -32670,7 +33427,7 @@ function SelectedTrainerPanel({
               classPairOptions={zaClassPairOptions}
               discardEpoch={trainerIdentityDiscardEpoch}
               isUpdating={isTrainerUpdating}
-              onDirtyStateChange={setHasTrainerIdentityDrafts}
+              onDraftKeysChange={setTrainerIdentityDraftKeys}
               onNavigateTextTarget={onNavigateZaTrainerTextTarget}
               onStageClassPair={(pairId) =>
                 runSelectedTrainerSourceMutation(() =>
@@ -37923,6 +38680,7 @@ function GiftPokemonSection({
               editorFamily={editorFamily}
               gift={selectedGift}
               isGiftPokemonUpdating={isGiftPokemonUpdating}
+              onSelectGift={onSelectGift}
               onStageGiftPokemonVanilla={onStageGiftPokemonVanilla}
               onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
@@ -37965,6 +38723,7 @@ function SelectedGiftPokemonPanel({
   editorFamily,
   gift,
   isGiftPokemonUpdating,
+  onSelectGift,
   onStageGiftPokemonVanilla,
   onUpdateGiftPokemonFields,
   pokemonWorkflow
@@ -37975,6 +38734,7 @@ function SelectedGiftPokemonPanel({
   editorFamily: EditorUiFamily;
   gift: GiftPokemonRecord | null;
   isGiftPokemonUpdating: boolean;
+  onSelectGift: (giftIndex: number | null) => void;
   onStageGiftPokemonVanilla?: (giftIndex: number) => Promise<boolean>;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
@@ -38165,6 +38925,11 @@ function SelectedGiftPokemonPanel({
     [baseGiftDraftSummary, gift?.alphaLevelBonus, giftAlphaRangeError, giftDrafts, t]
   );
   useRegisterEditorDraftDirty('giftPokemon', countFieldDraftRecords(giftDraftsByIndex) > 0);
+  const outstandingGiftDraftCount = countFieldDraftRecords(giftDraftsByIndex);
+  const nextGiftDraftKey = getNextOutstandingEditorDraftKey(
+    Object.keys(giftDraftsByIndex),
+    gift?.giftIndex.toString()
+  );
   const canSaveGiftDrafts =
     gift !== null &&
     editSession !== null &&
@@ -38541,6 +39306,16 @@ function SelectedGiftPokemonPanel({
                     label="Stage"
                   />
                 </button>
+                {nextGiftDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isGiftPokemonUpdating}
+                    onClick={() => onSelectGift(Number.parseInt(nextGiftDraftKey, 10))}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isGiftPokemonUpdating}
@@ -38550,7 +39325,12 @@ function SelectedGiftPokemonPanel({
                   <X aria-hidden="true" size={16} />
                   <span>Cancel</span>
                 </button>
-                <span className="draft-action-summary">{formatDraftSummary(giftDraftSummary)}</span>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(giftDraftSummary)};{' '}
+                  {t('editorDrafts.summary.gifts', {
+                    count: outstandingGiftDraftCount
+                  })}
+                </span>
               </EditorSessionBarActions>
             ) : null}
             {onStageGiftPokemonVanilla ? (
@@ -38778,6 +39558,7 @@ function TradePokemonSection({
               editorFamily={editorFamily}
               isTradePokemonUpdating={isTradePokemonUpdating}
               isZaTradeWorkflow={isZaTradeWorkflow}
+              onSelectTrade={onSelectTrade}
               onUpdateTradePokemonFields={onUpdateTradePokemonFields}
               pokemonWorkflow={pokemonWorkflow}
               trade={selectedTrade}
@@ -38820,6 +39601,7 @@ function SelectedTradePokemonPanel({
   editorFamily,
   isTradePokemonUpdating,
   isZaTradeWorkflow,
+  onSelectTrade,
   onUpdateTradePokemonFields,
   pokemonWorkflow,
   trade
@@ -38830,6 +39612,7 @@ function SelectedTradePokemonPanel({
   editorFamily: EditorUiFamily;
   isTradePokemonUpdating: boolean;
   isZaTradeWorkflow: boolean;
+  onSelectTrade: (tradeIndex: number | null) => void;
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -38837,6 +39620,7 @@ function SelectedTradePokemonPanel({
   pokemonWorkflow: PokemonWorkflow | null;
   trade: TradePokemonRecord | null;
 }) {
+  const { t } = useLocalization();
   const [tradeDraftsByIndex, setTradeDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -38995,6 +39779,11 @@ function SelectedTradePokemonPanel({
     [contextualTradeFields, trade, tradeDrafts]
   );
   useRegisterEditorDraftDirty('tradePokemon', countFieldDraftRecords(tradeDraftsByIndex) > 0);
+  const outstandingTradeDraftCount = countFieldDraftRecords(tradeDraftsByIndex);
+  const nextTradeDraftKey = getNextOutstandingEditorDraftKey(
+    Object.keys(tradeDraftsByIndex),
+    trade?.tradeIndex.toString()
+  );
   const canSaveTradeDrafts =
     trade !== null &&
     editSession !== null &&
@@ -39352,6 +40141,16 @@ function SelectedTradePokemonPanel({
                     label="Stage"
                   />
                 </button>
+                {nextTradeDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isTradePokemonUpdating}
+                    onClick={() => onSelectTrade(Number.parseInt(nextTradeDraftKey, 10))}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isTradePokemonUpdating}
@@ -39361,7 +40160,12 @@ function SelectedTradePokemonPanel({
                   <X aria-hidden="true" size={16} />
                   <span>Cancel</span>
                 </button>
-                <span className="draft-action-summary">{formatDraftSummary(tradeDraftSummary)}</span>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(tradeDraftSummary)};{' '}
+                  {t('editorDrafts.summary.trades', {
+                    count: outstandingTradeDraftCount
+                  })}
+                </span>
               </EditorSessionBarActions>
             ) : null}
 
@@ -39516,6 +40320,7 @@ function RentalPokemonSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               isRentalPokemonUpdating={isRentalPokemonUpdating}
+              onSelectRental={onSelectRental}
               onUpdateRentalPokemonFields={onUpdateRentalPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
               rental={selectedRental}
@@ -39536,6 +40341,7 @@ function SelectedRentalPokemonPanel({
   editSession,
   editableFields,
   isRentalPokemonUpdating,
+  onSelectRental,
   onUpdateRentalPokemonFields,
   pokemonWorkflow,
   rental
@@ -39544,6 +40350,7 @@ function SelectedRentalPokemonPanel({
   editSession: EditSession | null;
   editableFields: RentalPokemonEditableField[];
   isRentalPokemonUpdating: boolean;
+  onSelectRental: (rentalIndex: number | null) => void;
   onUpdateRentalPokemonFields: (
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -39551,6 +40358,7 @@ function SelectedRentalPokemonPanel({
   pokemonWorkflow: PokemonWorkflow | null;
   rental: RentalPokemonRecord | null;
 }) {
+  const { t } = useLocalization();
   const [rentalDraftsByIndex, setRentalDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -39660,6 +40468,11 @@ function SelectedRentalPokemonPanel({
     [contextualRentalFields, rental, rentalDrafts]
   );
   useRegisterEditorDraftDirty('rentalPokemon', countFieldDraftRecords(rentalDraftsByIndex) > 0);
+  const outstandingRentalDraftCount = countFieldDraftRecords(rentalDraftsByIndex);
+  const nextRentalDraftKey = getNextOutstandingEditorDraftKey(
+    Object.keys(rentalDraftsByIndex),
+    rental?.rentalIndex.toString()
+  );
   const canSaveRentalDrafts =
     rental !== null &&
     editSession !== null &&
@@ -39935,6 +40748,16 @@ function SelectedRentalPokemonPanel({
                     label="Stage"
                   />
                 </button>
+                {nextRentalDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isRentalPokemonUpdating}
+                    onClick={() => onSelectRental(Number.parseInt(nextRentalDraftKey, 10))}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isRentalPokemonUpdating}
@@ -39945,7 +40768,10 @@ function SelectedRentalPokemonPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">
-                  {formatDraftSummary(rentalDraftSummary)}
+                  {formatDraftSummary(rentalDraftSummary)};{' '}
+                  {t('editorDrafts.summary.rentals', {
+                    count: outstandingRentalDraftCount
+                  })}
                 </span>
               </EditorSessionBarActions>
             ) : null}
@@ -40307,6 +41133,7 @@ function DynamaxAdventuresSection({
               onCancelDynamaxAdventurePreview={onCancelDynamaxAdventurePreview}
               onCreateChangePlan={onCreateChangePlan}
               onPreviewDynamaxAdventureDefaults={onPreviewDynamaxAdventureDefaults}
+              onSelectAdventure={onSelectAdventure}
               onUpdateDynamaxAdventureEntryChanges={onUpdateDynamaxAdventureEntryChanges}
               onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
               outputWritesReady={outputWritesReady}
@@ -40342,6 +41169,7 @@ function SelectedDynamaxAdventurePanel({
   onCancelDynamaxAdventurePreview,
   onCreateChangePlan,
   onPreviewDynamaxAdventureDefaults,
+  onSelectAdventure,
   onUpdateDynamaxAdventureEntryChanges,
   onUpdateDynamaxAdventureFields,
   outputWritesReady,
@@ -40360,12 +41188,13 @@ function SelectedDynamaxAdventurePanel({
   onCancelDynamaxAdventurePreview: () => void;
   onCreateChangePlan: () => void;
   onPreviewDynamaxAdventureDefaults: (entryIndex: number, species: number, form: number, level: number) => Promise<PreviewDynamaxAdventureDefaultsResponse | null>;
+  onSelectAdventure: (entryIndex: number | null) => void;
   onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
   onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>) => Promise<boolean>;
   outputWritesReady: boolean;
   safeNormalSpeciesOptions: EditableFieldOption[];
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [draftsByEntryIndex, setDraftsByEntryIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -40420,6 +41249,11 @@ function SelectedDynamaxAdventurePanel({
   useRegisterEditorDraftDirty(
     'dynamaxAdventures',
     countFieldDraftRecords(draftsByEntryIndex) > 0
+  );
+  const outstandingAdventureDraftCount = countFieldDraftRecords(draftsByEntryIndex);
+  const nextAdventureDraftKey = getNextOutstandingEditorDraftKey(
+    Object.keys(draftsByEntryIndex),
+    encounter?.entryIndex.toString()
   );
   const canEditSelectedAdventure =
     canEditDynamaxAdventures && encounter?.isEditable === true;
@@ -41079,6 +41913,22 @@ function SelectedDynamaxAdventurePanel({
                   label="Stage Restore"
                 />
               </button>
+              {nextAdventureDraftKey !== null ? (
+                <button
+                  className="secondary-button"
+                  disabled={
+                    isDynamaxAdventureUpdating ||
+                    isChangePlanCreating ||
+                    isChangePlanApplying
+                  }
+                  onClick={() =>
+                    onSelectAdventure(Number.parseInt(nextAdventureDraftKey, 10))
+                  }
+                  type="button"
+                >
+                  {t('editorDrafts.reviewNext')}
+                </button>
+              ) : null}
               <button
                 aria-busy={isChangePlanCreating || undefined}
                 className="secondary-button"
@@ -41108,7 +41958,10 @@ function SelectedDynamaxAdventurePanel({
                 />
               </button>
               <span className="draft-action-summary">
-                {formatDraftSummary(adventureDraftSummary)}
+                {formatDraftSummary(adventureDraftSummary)};{' '}
+                {t('editorDrafts.summary.adventures', {
+                  count: outstandingAdventureDraftCount
+                })}
               </span>
             </div>
           </div>
@@ -41366,7 +42219,9 @@ function StaticEncountersSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               encounter={selectedEncounter}
+              encounters={encounters}
               isStaticEncounterUpdating={isStaticEncounterUpdating}
+              onSelectEncounter={onSelectEncounter}
               onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
             />
           </div>
@@ -41407,21 +42262,25 @@ function SelectedStaticEncounterPanel({
   editSession,
   editableFields,
   encounter,
+  encounters,
   isStaticEncounterUpdating,
+  onSelectEncounter,
   onUpdateStaticEncounterFields
 }: {
   canEditStaticEncounters: boolean;
   editSession: EditSession | null;
   editableFields: StaticEncounterEditableField[];
   encounter: StaticEncounterRecord | null;
+  encounters: StaticEncounterRecord[];
   isStaticEncounterUpdating: boolean;
+  onSelectEncounter: (encounterIndex: number | null) => void;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
     encounterId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const [encounterDraftsByIndex, setEncounterDraftsByIndex] = useState<
     Record<string, Record<string, string>>
@@ -41507,6 +42366,25 @@ function SelectedStaticEncounterPanel({
     'staticEncounters',
     countFieldDraftRecords(encounterDraftsByIndex) > 0
   );
+  const outstandingEncounterDraftCount = countFieldDraftRecords(encounterDraftsByIndex);
+  const encounterIndexByDraftKey = useMemo(
+    () =>
+      new Map(
+        encounters.map((candidate) => [
+          getStaticEncounterDraftKey(candidate),
+          candidate.encounterIndex
+        ])
+      ),
+    [encounters]
+  );
+  const nextEncounterDraftKey = getNextOutstandingEditorDraftKey(
+    Object.keys(encounterDraftsByIndex).filter((key) => encounterIndexByDraftKey.has(key)),
+    encounterDraftKey
+  );
+  const nextEncounterDraftIndex =
+    nextEncounterDraftKey === null
+      ? null
+      : encounterIndexByDraftKey.get(nextEncounterDraftKey) ?? null;
   const canSaveEncounterDrafts =
     encounter !== null &&
     editSession !== null &&
@@ -41792,6 +42670,16 @@ function SelectedStaticEncounterPanel({
                     label="Stage"
                   />
                 </button>
+                {nextEncounterDraftIndex !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isStaticEncounterUpdating}
+                    onClick={() => onSelectEncounter(nextEncounterDraftIndex)}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={
@@ -41804,7 +42692,10 @@ function SelectedStaticEncounterPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">
-                  {formatDraftSummary(encounterDraftSummary)}
+                  {formatDraftSummary(encounterDraftSummary)};{' '}
+                  {t('editorDrafts.summary.staticEncounters', {
+                    count: outstandingEncounterDraftCount
+                  })}
                 </span>
               </EditorSessionBarActions>
             ) : null}
@@ -41990,6 +42881,7 @@ function ShopsSection({
               isItemUpdating={isItemUpdating}
               isShopUpdating={isShopUpdating}
               onOpenItem={onOpenItem}
+              onSelectShop={onSelectShop}
               onSelectSlot={setSelectedSlot}
               onUpdateShopChanges={onUpdateShopChanges}
               selectedSlot={selectedSlot}
@@ -42016,6 +42908,7 @@ function SelectedShopPanel({
   isItemUpdating,
   isShopUpdating,
   onOpenItem,
+  onSelectShop,
   onSelectSlot,
   onUpdateShopChanges,
   selectedSlot,
@@ -42028,6 +42921,7 @@ function SelectedShopPanel({
   isItemUpdating: boolean;
   isShopUpdating: boolean;
   onOpenItem: (itemId: number) => void;
+  onSelectShop: (shopId: string | null) => void;
   onSelectSlot: (slot: number | null) => void;
   onUpdateShopChanges: (
     shopId: string,
@@ -42100,6 +42994,11 @@ function SelectedShopPanel({
     setInventoryDraftsByShopId({});
   }, []);
   useRegisterEditorDraftDirty('shops', Object.keys(inventoryDraftsByShopId).length > 0);
+  const outstandingShopDraftKeys = Object.keys(inventoryDraftsByShopId);
+  const nextShopDraftKey = getNextOutstandingEditorDraftKey(
+    outstandingShopDraftKeys,
+    shop?.shopId
+  );
 
   const shopInventoryRows = useMemo(
     () => createShopInventoryDraftRows(shop, currentShopDraft, itemIdOptions, translateLiteral),
@@ -42531,6 +43430,16 @@ function SelectedShopPanel({
                     label={translateLiteral('Stage')}
                   />
                 </button>
+                {nextShopDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isShopUpdating || isItemUpdating}
+                    onClick={() => onSelectShop(nextShopDraftKey)}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isShopUpdating || isItemUpdating}
@@ -42550,6 +43459,11 @@ function SelectedShopPanel({
                       ? translateLiteral('Fix invalid prices.')
                       : translateLiteral('Fix invalid inventory rows.')
                     : `${changedSlotCount} ${translateLiteral('Pending changes')}.`}
+                  {' '}
+                  {t('editorDrafts.summary.shops', {
+                    count: outstandingShopDraftKeys.length
+                  })}
+                  .
                 </span>
               </EditorSessionBarActions>
             ) : null}
@@ -43760,6 +44674,7 @@ type EncountersSectionProps = {
   onPasteEncounterSlot: (
     input: EncounterClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
+  onReviewDraftTarget: (tableId: string, slot: number) => void;
   onSearchChange: (searchText: string) => void;
   onSelectSlot: (slot: number | null, retainInRecordTab?: boolean) => void;
   onSelectTable: (tableId: string | null) => void;
@@ -43798,6 +44713,7 @@ function EncountersSection({
   isEncounterUpdating,
   onCopyEncounterSlot,
   onPasteEncounterSlot,
+  onReviewDraftTarget,
   onSearchChange,
   onSelectSlot,
   onSelectTable,
@@ -43977,6 +44893,7 @@ function EncountersSection({
               isEncounterUpdating={isEncounterUpdating}
               onCopyEncounterSlot={onCopyEncounterSlot}
               onPasteEncounterSlot={onPasteEncounterSlot}
+              onReviewDraftTarget={onReviewDraftTarget}
               onSelectSlot={onSelectSlot}
               onSelectTable={onSelectTable}
               onStageEncounterVanilla={onStageEncounterVanilla}
@@ -44012,6 +44929,7 @@ function SelectedEncounterPanel({
   isEncounterUpdating,
   onCopyEncounterSlot,
   onPasteEncounterSlot,
+  onReviewDraftTarget,
   onSelectSlot,
   onSelectTable,
   onStageEncounterVanilla,
@@ -44039,6 +44957,7 @@ function SelectedEncounterPanel({
   onPasteEncounterSlot: (
     input: EncounterClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
+  onReviewDraftTarget: (tableId: string, slot: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
@@ -44607,6 +45526,245 @@ function SelectedEncounterPanel({
       Object.keys(scriptedBossDraftsBySelectorId).length >
       0
   );
+  const {
+    outstandingEncounterDraftTargets,
+    unavailableEncounterDraftIdentities
+  } = useMemo(() => {
+    const outstandingDraftIdentities = new Set<string>();
+    const addDraftIdentities = (prefix: string, draftKeys: string[]) => {
+      for (const draftKey of draftKeys) {
+        outstandingDraftIdentities.add(`${prefix}:${draftKey}`);
+      }
+    };
+
+    addDraftIdentities('encounter', Object.keys(draftsBySlotKey));
+    addDraftIdentities('za-slot', Object.keys(zaSlotDraftsBySlotKey));
+    addDraftIdentities('za-appearance', Object.keys(zaAppearanceDraftsByTableId));
+    addDraftIdentities('level', Object.keys(levelDraftsByScopeKey));
+    addDraftIdentities('player-partner', Object.keys(playerPartnerDraftsByKey));
+    addDraftIdentities('scripted-boss', Object.keys(scriptedBossDraftsBySelectorId));
+
+    const candidates: Array<{
+      key: string;
+      slot: number;
+      tableId: string;
+      visibleDraftIdentities: string[];
+    }> = [];
+
+    for (const candidateTable of tables) {
+      for (const candidateSlot of candidateTable.slots) {
+        const visibleDraftIdentities: string[] = [];
+        const encounterScopeKey =
+          editorFamily === 'za'
+            ? getZaEncounterGroupKey(candidateTable.tableId, candidateSlot)
+            : `${candidateTable.tableId}:${candidateSlot.slot}`;
+        visibleDraftIdentities.push(`encounter:${encounterScopeKey}`);
+
+        if (editorFamily === 'swsh') {
+          visibleDraftIdentities.push(`level:${candidateTable.tableId}`);
+        }
+
+        if (editorFamily === 'za' && isPokemonLegendsZAEncounterTable(candidateTable)) {
+          visibleDraftIdentities.push(
+            `za-slot:${candidateTable.tableId}:${candidateSlot.slot}`,
+            `za-appearance:${candidateTable.tableId}`,
+            `level:${encounterScopeKey}`
+          );
+
+          const playerPartner = candidateTable.playerPartner;
+          if (playerPartner) {
+            visibleDraftIdentities.push(
+              `player-partner:${candidateTable.tableId}:${playerPartner.pokemonDataId}:${playerPartner.pokemonDataSourceIndex}`
+            );
+          }
+
+          const scriptedMoveOwnership = candidateTable.scriptedMoveOwnership ?? null;
+          const hasNonAuthoritativeOwnership =
+            scriptedMoveOwnership?.encounterMoveListAuthoritative === false;
+          const exposesEditableScriptedBossActions =
+            scriptedMoveOwnership?.authority !== 'shared-primary-controller' &&
+            (isZaScriptedBossEncounterTable(candidateTable) || hasNonAuthoritativeOwnership);
+          if (exposesEditableScriptedBossActions) {
+            const profile =
+              hasNonAuthoritativeOwnership && scriptedMoveOwnership
+                ? scriptedBosses.find(
+                    (candidateProfile) =>
+                      candidateProfile.key === scriptedMoveOwnership.profileKey
+                  ) ?? null
+                : findScriptedBossProfile(
+                    scriptedBosses,
+                    candidateSlot.speciesId,
+                    candidateSlot.form,
+                    getZaBossEncounterLineageKey(candidateTable)
+                  );
+            for (const action of profile?.actions ?? []) {
+              if (
+                action.selectorActionId !== null &&
+                action.canEdit &&
+                action.kind === 'battle-move' &&
+                action.variant !== null
+              ) {
+                visibleDraftIdentities.push(
+                  `scripted-boss:${action.selectorActionId.toString()}`
+                );
+              }
+            }
+          }
+        }
+
+        const visibleOutstandingDraftIdentities = [
+          ...new Set(
+            visibleDraftIdentities.filter((identity) =>
+              outstandingDraftIdentities.has(identity)
+            )
+          )
+        ];
+        if (visibleOutstandingDraftIdentities.length === 0) {
+          continue;
+        }
+
+        candidates.push({
+          key: JSON.stringify([candidateTable.tableId, candidateSlot.slot]),
+          slot: candidateSlot.slot,
+          tableId: candidateTable.tableId,
+          visibleDraftIdentities: visibleOutstandingDraftIdentities
+        });
+      }
+    }
+
+    const coveredDraftIdentities = new Set<string>();
+    const targets: Array<{
+      equivalentSelectionKeys: string[];
+      key: string;
+      slot: number;
+      tableId: string;
+    }> = [];
+    while (true) {
+      let bestCandidate: (typeof candidates)[number] | null = null;
+      let bestUncoveredCount = 0;
+      for (const candidate of candidates) {
+        const uncoveredCount = candidate.visibleDraftIdentities.reduce(
+          (count, identity) => count + (coveredDraftIdentities.has(identity) ? 0 : 1),
+          0
+        );
+        if (uncoveredCount > bestUncoveredCount) {
+          bestCandidate = candidate;
+          bestUncoveredCount = uncoveredCount;
+        }
+      }
+
+      if (!bestCandidate) {
+        break;
+      }
+
+      const newlyCoveredDraftIdentities = bestCandidate.visibleDraftIdentities.filter(
+        (identity) => !coveredDraftIdentities.has(identity)
+      );
+      targets.push({
+        equivalentSelectionKeys: candidates
+          .filter((candidate) =>
+            newlyCoveredDraftIdentities.every((identity) =>
+              candidate.visibleDraftIdentities.includes(identity)
+            )
+          )
+          .map((candidate) => candidate.key),
+        key: bestCandidate.key,
+        slot: bestCandidate.slot,
+        tableId: bestCandidate.tableId
+      });
+      for (const identity of bestCandidate.visibleDraftIdentities) {
+        coveredDraftIdentities.add(identity);
+      }
+      if (coveredDraftIdentities.size === outstandingDraftIdentities.size) {
+        break;
+      }
+    }
+
+    return {
+      outstandingEncounterDraftTargets: targets,
+      unavailableEncounterDraftIdentities: [...outstandingDraftIdentities].filter(
+        (identity) => !coveredDraftIdentities.has(identity)
+      )
+    };
+  }, [
+    draftsBySlotKey,
+    editorFamily,
+    levelDraftsByScopeKey,
+    playerPartnerDraftsByKey,
+    scriptedBossDraftsBySelectorId,
+    scriptedBosses,
+    tables,
+    zaAppearanceDraftsByTableId,
+    zaSlotDraftsBySlotKey
+  ]);
+  const selectedEncounterPlacementKey =
+    table && encounterSlot ? JSON.stringify([table.tableId, encounterSlot.slot]) : null;
+  const selectedEncounterDraftTargetKey = selectedEncounterPlacementKey
+    ? outstandingEncounterDraftTargets.find((target) =>
+        target.equivalentSelectionKeys.includes(selectedEncounterPlacementKey)
+      )?.key ?? null
+    : null;
+  const nextEncounterDraftTargetKey = getNextOutstandingEditorDraftKey(
+    outstandingEncounterDraftTargets.map((target) => target.key),
+    selectedEncounterDraftTargetKey
+  );
+  const nextEncounterDraftTarget = nextEncounterDraftTargetKey
+    ? outstandingEncounterDraftTargets.find(
+        (target) => target.key === nextEncounterDraftTargetKey
+      ) ?? null
+    : null;
+  const outstandingEncounterDraftCount =
+    outstandingEncounterDraftTargets.length + unavailableEncounterDraftIdentities.length;
+  const discardUnavailableEncounterDrafts = () => {
+    if (
+      unavailableEncounterDraftIdentities.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.encounters', {
+          count: unavailableEncounterDraftIdentities.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const unavailableIdentities = new Set(unavailableEncounterDraftIdentities);
+    const unavailableKeys = (prefix: string, records: Record<string, unknown>) =>
+      new Set(
+        Object.keys(records).filter((recordKey) =>
+          unavailableIdentities.has(`${prefix}:${recordKey}`)
+        )
+      );
+    setDraftsBySlotKey((currentDrafts) =>
+      deleteFieldDraftRecords(
+        currentDrafts,
+        unavailableKeys('encounter', currentDrafts)
+      )
+    );
+    setZaSlotDraftsBySlotKey((currentDrafts) =>
+      deleteFieldDraftRecords(currentDrafts, unavailableKeys('za-slot', currentDrafts))
+    );
+    setZaAppearanceDraftsByTableId((currentDrafts) =>
+      deleteFieldDraftRecords(
+        currentDrafts,
+        unavailableKeys('za-appearance', currentDrafts)
+      )
+    );
+    setLevelDraftsByScopeKey((currentDrafts) =>
+      deleteFieldDraftRecords(currentDrafts, unavailableKeys('level', currentDrafts))
+    );
+    setPlayerPartnerDraftsByKey((currentDrafts) =>
+      deleteFieldDraftRecords(
+        currentDrafts,
+        unavailableKeys('player-partner', currentDrafts)
+      )
+    );
+    setScriptedBossDraftsBySelectorId((currentDrafts) =>
+      deleteFieldDraftRecords(
+        currentDrafts,
+        unavailableKeys('scripted-boss', currentDrafts)
+      )
+    );
+  };
   const selectedScriptedBossHasLocalDrafts = scriptedBossActionEditorEntries.some(
     ({ action }) =>
       Object.prototype.hasOwnProperty.call(
@@ -45136,8 +46294,20 @@ function SelectedEncounterPanel({
               setScriptedBossDraftsBySelectorId({});
             })
           }
-          summary="No encounter slot selected."
+          summary={t('editorDrafts.empty.encounters', {
+            unavailableCount: unavailableEncounterDraftIdentities.length
+          })}
         />
+      ) : null}
+      {editSession && !encounterSlot && unavailableEncounterDraftIdentities.length > 0 ? (
+        <button
+          className="danger-button"
+          disabled={isEncounterUpdating || isEncounterClipboardBusy}
+          onClick={discardUnavailableEncounterDrafts}
+          type="button"
+        >
+          {t('editorDrafts.discardUnavailable')}
+        </button>
       ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
@@ -46368,6 +47538,31 @@ function SelectedEncounterPanel({
                         label="Stage"
                       />
                     </button>
+                    {nextEncounterDraftTarget ? (
+                      <button
+                        className="secondary-button"
+                        disabled={isEncounterUpdating || isEncounterClipboardBusy}
+                        onClick={() =>
+                          onReviewDraftTarget(
+                            nextEncounterDraftTarget.tableId,
+                            nextEncounterDraftTarget.slot
+                          )
+                        }
+                        type="button"
+                      >
+                        {t('editorDrafts.reviewNext')}
+                      </button>
+                    ) : null}
+                    {unavailableEncounterDraftIdentities.length > 0 ? (
+                      <button
+                        className="danger-button"
+                        disabled={isEncounterUpdating || isEncounterClipboardBusy}
+                        onClick={discardUnavailableEncounterDrafts}
+                        type="button"
+                      >
+                        {t('editorDrafts.discardUnavailable')}
+                      </button>
+                    ) : null}
                     <button
                       className="danger-button"
                       disabled={isEncounterUpdating}
@@ -46387,7 +47582,11 @@ function SelectedEncounterPanel({
                       <span>Cancel</span>
                     </button>
                     <span className="draft-action-summary">
-                      {formatDraftSummary(combinedEncounterDraftSummary)}
+                      {formatDraftSummary(combinedEncounterDraftSummary)};{' '}
+                      {t('editorDrafts.summary.encounters', {
+                        count: outstandingEncounterDraftCount,
+                        unavailableCount: unavailableEncounterDraftIdentities.length
+                      })}
                     </span>
                   </EditorSessionBarActions>
                 ) : null}
@@ -47548,7 +48747,7 @@ function TeraRaidsSection({
   isEditStarting: boolean;
   isTeraRaidUpdating: boolean;
   onSearchChange: (value: string) => void;
-  onSelectRaid: (recordId: string | null) => void;
+  onSelectRaid: (recordId: string | null, onCommit?: () => void) => void;
   onStartEditSession: () => void;
   onUpdateTeraRaidField: (
     recordId: string,
@@ -47563,7 +48762,7 @@ function TeraRaidsSection({
   selectedRaidRecordId: string | null;
   workflow: TeraRaidsWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const [draftsByRecordId, setDraftsByRecordId] = useState<
     Record<string, Record<string, string>>
@@ -47656,6 +48855,93 @@ function TeraRaidsSection({
       : null) ??
     activeRewardRows[0] ??
     null;
+
+  const teraRaidDraftTargets = useMemo(() => {
+    const targets = new Map<
+      string,
+      {
+        raidRecordId: string;
+        recordId: string;
+        rewardKind: 'fixed' | 'lottery' | null;
+      }
+    >();
+    for (const raid of workflow?.raids ?? []) {
+      targets.set(raid.recordId, {
+        raidRecordId: raid.recordId,
+        recordId: raid.recordId,
+        rewardKind: null
+      });
+
+      const raidRewardTables = [
+        {
+          rewardKind: 'fixed' as const,
+          table: findTeraRaidRewardTableByHash(
+            workflow?.fixedRewardTables ?? [],
+            raid.fixedRewardTableHash
+          )
+        },
+        {
+          rewardKind: 'lottery' as const,
+          table: findTeraRaidRewardTableByHash(
+            workflow?.lotteryRewardTables ?? [],
+            raid.lotteryRewardTableHash
+          )
+        }
+      ];
+      for (const { rewardKind: targetRewardKind, table: rewardTable } of raidRewardTables) {
+        for (const reward of rewardTable?.rewards ?? []) {
+          if (!targets.has(reward.recordId)) {
+            targets.set(reward.recordId, {
+              raidRecordId: raid.recordId,
+              recordId: reward.recordId,
+              rewardKind: targetRewardKind
+            });
+          }
+        }
+      }
+    }
+    return targets;
+  }, [workflow?.fixedRewardTables, workflow?.lotteryRewardTables, workflow?.raids]);
+  const currentTeraRaidDraftKey =
+    selectedReward && draftsByRecordId[selectedReward.recordId]
+      ? selectedReward.recordId
+      : selectedRaid && draftsByRecordId[selectedRaid.recordId]
+        ? selectedRaid.recordId
+        : null;
+  const reviewableTeraRaidDraftKeys = Object.keys(draftsByRecordId).filter(
+    (draftKey) =>
+      teraRaidDraftTargets.has(draftKey) &&
+      (draftKey === currentTeraRaidDraftKey ||
+        (draftKey !== selectedRaid?.recordId && draftKey !== selectedReward?.recordId))
+  );
+  const unavailableTeraRaidDraftKeys = Object.keys(draftsByRecordId).filter(
+    (draftKey) => !teraRaidDraftTargets.has(draftKey)
+  );
+  const nextHiddenTeraRaidDraftKey = getNextOutstandingEditorDraftKey(
+    reviewableTeraRaidDraftKeys,
+    currentTeraRaidDraftKey
+  );
+  const nextHiddenTeraRaidDraftTarget =
+    nextHiddenTeraRaidDraftKey === null
+      ? null
+      : teraRaidDraftTargets.get(nextHiddenTeraRaidDraftKey) ?? null;
+  const discardUnavailableTeraRaidDrafts = () => {
+    if (
+      unavailableTeraRaidDraftKeys.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.teraRaids', {
+          count: unavailableTeraRaidDraftKeys.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const unavailableDraftKeys = new Set(unavailableTeraRaidDraftKeys);
+    setDraftsByRecordId((currentDrafts) =>
+      deleteFieldDraftRecords(currentDrafts, unavailableDraftKeys)
+    );
+  };
 
   useRegisterEditorDraftDirty('teraRaids', countFieldDraftRecords(draftsByRecordId) > 0);
 
@@ -48061,6 +49347,36 @@ function TeraRaidsSection({
         )}
         {editSession ? (
           <EditorSessionBarActions>
+            {nextHiddenTeraRaidDraftTarget ? (
+              <button
+                className="secondary-button"
+                disabled={isTeraRaidUpdating}
+                onClick={() =>
+                  onSelectRaid(nextHiddenTeraRaidDraftTarget.raidRecordId, () => {
+                    if (nextHiddenTeraRaidDraftTarget.rewardKind === null) {
+                      setSelectedRewardRecordId(null);
+                      return;
+                    }
+
+                    setRewardKind(nextHiddenTeraRaidDraftTarget.rewardKind);
+                    setSelectedRewardRecordId(nextHiddenTeraRaidDraftTarget.recordId);
+                  })
+                }
+                type="button"
+              >
+                {t('editorDrafts.reviewNext')}
+              </button>
+            ) : null}
+            {unavailableTeraRaidDraftKeys.length > 0 ? (
+              <button
+                className="danger-button"
+                disabled={isTeraRaidUpdating}
+                onClick={discardUnavailableTeraRaidDrafts}
+                type="button"
+              >
+                {t('editorDrafts.discardUnavailable')}
+              </button>
+            ) : null}
             <button
               className="danger-button"
               disabled={isTeraRaidUpdating}
@@ -48073,8 +49389,10 @@ function TeraRaidsSection({
               <span>{translateLiteral('Cancel')}</span>
             </button>
             <span className="draft-action-summary">
-              {countFieldDraftRecords(draftsByRecordId)}{' '}
-              {translateLiteral('Pending changes')}
+              {t('editorDrafts.summary.teraRaids', {
+                count: countFieldDraftRecords(draftsByRecordId),
+                unavailableCount: unavailableTeraRaidDraftKeys.length
+              })}
             </span>
           </EditorSessionBarActions>
         ) : null}
@@ -48318,7 +49636,7 @@ function RaidBattlesSection({
   isEditStarting: boolean;
   isRaidBattleUpdating: boolean;
   onSearchChange: (value: string) => void;
-  onSelectTable: (tableId: string) => void;
+  onSelectTable: (tableId: string, onCommit?: () => void) => void;
   onStartEditSession: () => void;
   onUpdateRaidBattleSlotFields: (
     updates: Array<{ tableId: string; slot: number; field: string; value: string }>
@@ -48328,6 +49646,11 @@ function RaidBattlesSection({
   workflow: RaidBattlesWorkflow | null;
 }) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const handleReviewDraftTarget = useCallback(
+    (tableId: string, slot: number) =>
+      onSelectTable(tableId, () => setSelectedSlot(slot)),
+    [onSelectTable]
+  );
   const { translateLiteral } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
   const filteredTables =
@@ -48477,10 +49800,12 @@ function RaidBattlesSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               isRaidBattleUpdating={isRaidBattleUpdating}
+              onReviewDraftTarget={handleReviewDraftTarget}
               onSelectSlot={setSelectedSlot}
               onUpdateRaidBattleSlotFields={onUpdateRaidBattleSlotFields}
               selectedSlot={selectedSlot}
               table={selectedTable}
+              tables={workflow.tables}
             />
           </div>
         ) : (
@@ -48499,23 +49824,28 @@ function SelectedRaidBattlePanel({
   editSession,
   editableFields,
   isRaidBattleUpdating,
+  onReviewDraftTarget,
   onSelectSlot,
   onUpdateRaidBattleSlotFields,
   selectedSlot,
-  table
+  table,
+  tables
 }: {
   battleSlot: RaidBattleSlotRecord | null;
   canEditRaidBattles: boolean;
   editSession: EditSession | null;
   editableFields: RaidBattleEditableField[];
   isRaidBattleUpdating: boolean;
+  onReviewDraftTarget: (tableId: string, slot: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onUpdateRaidBattleSlotFields: (
     updates: Array<{ tableId: string; slot: number; field: string; value: string }>
   ) => Promise<boolean>;
   selectedSlot: number | null;
   table: RaidBattleTableRecord | null;
+  tables: RaidBattleTableRecord[];
 }) {
+  const { t } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -48615,6 +49945,49 @@ function SelectedRaidBattlePanel({
     return { changedFields, dirtyFieldCount, invalidFields, updates };
   }, [draftsBySlotKey, editableFields, table]);
   useRegisterEditorDraftDirty('raidBattles', countFieldDraftRecords(draftsBySlotKey) > 0);
+  const raidBattleDraftTargetsByKey = useMemo(() => {
+    const targets = new Map<string, { slot: number; tableId: string }>();
+    for (const candidateTable of tables) {
+      for (const candidateSlot of candidateTable.slots) {
+        targets.set(`${candidateTable.tableId}:${candidateSlot.slot}`, {
+          slot: candidateSlot.slot,
+          tableId: candidateTable.tableId
+        });
+      }
+    }
+    return targets;
+  }, [tables]);
+  const outstandingRaidBattleDraftKeys = Object.keys(draftsBySlotKey).filter((draftKey) =>
+    raidBattleDraftTargetsByKey.has(draftKey)
+  );
+  const unavailableRaidBattleDraftKeys = Object.keys(draftsBySlotKey).filter(
+    (draftKey) => !raidBattleDraftTargetsByKey.has(draftKey)
+  );
+  const outstandingRaidBattleDraftCount = countFieldDraftRecords(draftsBySlotKey);
+  const nextRaidBattleDraftKey = getNextOutstandingEditorDraftKey(
+    outstandingRaidBattleDraftKeys,
+    raidBattleDraftKey
+  );
+  const nextRaidBattleDraftTarget = nextRaidBattleDraftKey
+    ? raidBattleDraftTargetsByKey.get(nextRaidBattleDraftKey) ?? null
+    : null;
+  const discardUnavailableRaidBattleDrafts = () => {
+    if (
+      unavailableRaidBattleDraftKeys.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.raidBattles', {
+          count: unavailableRaidBattleDraftKeys.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const unavailableDraftKeys = new Set(unavailableRaidBattleDraftKeys);
+    setDraftsBySlotKey((currentDrafts) =>
+      deleteFieldDraftRecords(currentDrafts, unavailableDraftKeys)
+    );
+  };
   const canSaveRaidBattleDrafts =
     table !== null &&
     battleSlot !== null &&
@@ -48644,8 +50017,21 @@ function SelectedRaidBattlePanel({
         <EmptySelectionEditorSessionActions
           isBusy={isRaidBattleUpdating}
           onCancel={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
-          summary="No raid battle selected."
+          summary={t('editorDrafts.empty.raidBattles', {
+            count: outstandingRaidBattleDraftCount,
+            unavailableCount: unavailableRaidBattleDraftKeys.length
+          })}
         />
+      ) : null}
+      {editSession && !battleSlot && unavailableRaidBattleDraftKeys.length > 0 ? (
+        <button
+          className="danger-button"
+          disabled={isRaidBattleUpdating}
+          onClick={discardUnavailableRaidBattleDrafts}
+          type="button"
+        >
+          {t('editorDrafts.discardUnavailable')}
+        </button>
       ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
@@ -48945,6 +50331,31 @@ function SelectedRaidBattlePanel({
                         label="Stage"
                       />
                     </button>
+                    {nextRaidBattleDraftTarget ? (
+                      <button
+                        className="secondary-button"
+                        disabled={isRaidBattleUpdating}
+                        onClick={() =>
+                          onReviewDraftTarget(
+                            nextRaidBattleDraftTarget.tableId,
+                            nextRaidBattleDraftTarget.slot
+                          )
+                        }
+                        type="button"
+                      >
+                        {t('editorDrafts.reviewNext')}
+                      </button>
+                    ) : null}
+                    {unavailableRaidBattleDraftKeys.length > 0 ? (
+                      <button
+                        className="danger-button"
+                        disabled={isRaidBattleUpdating}
+                        onClick={discardUnavailableRaidBattleDrafts}
+                        type="button"
+                      >
+                        {t('editorDrafts.discardUnavailable')}
+                      </button>
+                    ) : null}
                     <button
                       className="danger-button"
                       disabled={isRaidBattleUpdating}
@@ -48955,7 +50366,11 @@ function SelectedRaidBattlePanel({
                       <span>Cancel</span>
                     </button>
                     <span className="draft-action-summary">
-                      {formatDraftSummary(raidBattleTableDraftSummary)}
+                      {formatDraftSummary(raidBattleTableDraftSummary)};{' '}
+                      {t('editorDrafts.summary.raidBattles', {
+                        count: outstandingRaidBattleDraftCount,
+                        unavailableCount: unavailableRaidBattleDraftKeys.length
+                      })}
                     </span>
                   </EditorSessionBarActions>
                 ) : null}
@@ -48997,7 +50412,7 @@ function RaidRewardsSection({
   isEditStarting: boolean;
   isRaidRewardUpdating: boolean;
   onSearchChange: (value: string) => void;
-  onSelectTable: (tableId: string) => void;
+  onSelectTable: (tableId: string, onCommit?: () => void) => void;
   onStartEditSession: () => void;
   onUpdateRaidRewardFields: (
     tableId: string,
@@ -49014,6 +50429,11 @@ function RaidRewardsSection({
 }) {
   const { translateLiteral } = useLocalization();
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const handleReviewDraftTarget = useCallback(
+    (tableId: string, slot: number) =>
+      onSelectTable(tableId, () => setSelectedSlot(slot)),
+    [onSelectTable]
+  );
   const filteredTables = useMemo(() => {
     const normalizedSearch = searchText.trim().toLocaleLowerCase();
     if (!normalizedSearch) {
@@ -49147,12 +50567,14 @@ function RaidRewardsSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               isRaidRewardUpdating={isRaidRewardUpdating}
+              onReviewDraftTarget={handleReviewDraftTarget}
               onSelectSlot={setSelectedSlot}
               onUpdateRaidRewardFields={onUpdateRaidRewardFields}
               reward={selectedReward}
               sectionId={sectionId}
               selectedSlot={selectedSlot}
               table={selectedTable}
+              tables={workflow.tables}
             />
           </div>
         ) : (
@@ -49170,17 +50592,20 @@ function SelectedRaidRewardPanel({
   editSession,
   editableFields,
   isRaidRewardUpdating,
+  onReviewDraftTarget,
   onSelectSlot,
   onUpdateRaidRewardFields,
   reward,
   sectionId,
   selectedSlot,
-  table
+  table,
+  tables
 }: {
   canEditRaidRewards: boolean;
   editSession: EditSession | null;
   editableFields: RaidRewardEditableField[];
   isRaidRewardUpdating: boolean;
+  onReviewDraftTarget: (tableId: string, slot: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onUpdateRaidRewardFields: (
     tableId: string,
@@ -49191,8 +50616,9 @@ function SelectedRaidRewardPanel({
   sectionId: WorkbenchSection;
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
+  tables: RaidRewardTableRecord[];
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -49251,6 +50677,49 @@ function SelectedRaidRewardPanel({
     [drafts, raidRewardFields, reward]
   );
   useRegisterEditorDraftDirty(sectionId, countFieldDraftRecords(draftsBySlotKey) > 0);
+  const raidRewardDraftTargetsByKey = useMemo(() => {
+    const targets = new Map<string, { slot: number; tableId: string }>();
+    for (const candidateTable of tables) {
+      for (const candidateReward of candidateTable.rewards) {
+        targets.set(`${candidateTable.tableId}:${candidateReward.slot}`, {
+          slot: candidateReward.slot,
+          tableId: candidateTable.tableId
+        });
+      }
+    }
+    return targets;
+  }, [tables]);
+  const outstandingRaidRewardDraftKeys = Object.keys(draftsBySlotKey).filter((draftKey) =>
+    raidRewardDraftTargetsByKey.has(draftKey)
+  );
+  const unavailableRaidRewardDraftKeys = Object.keys(draftsBySlotKey).filter(
+    (draftKey) => !raidRewardDraftTargetsByKey.has(draftKey)
+  );
+  const outstandingRaidRewardDraftCount = countFieldDraftRecords(draftsBySlotKey);
+  const nextRaidRewardDraftKey = getNextOutstandingEditorDraftKey(
+    outstandingRaidRewardDraftKeys,
+    raidRewardDraftKey
+  );
+  const nextRaidRewardDraftTarget = nextRaidRewardDraftKey
+    ? raidRewardDraftTargetsByKey.get(nextRaidRewardDraftKey) ?? null
+    : null;
+  const discardUnavailableRaidRewardDrafts = () => {
+    if (
+      unavailableRaidRewardDraftKeys.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.raidRewards', {
+          count: unavailableRaidRewardDraftKeys.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const unavailableDraftKeys = new Set(unavailableRaidRewardDraftKeys);
+    setDraftsBySlotKey((currentDrafts) =>
+      deleteFieldDraftRecords(currentDrafts, unavailableDraftKeys)
+    );
+  };
   const canSaveRaidRewardDrafts =
     table !== null &&
     reward !== null &&
@@ -49283,8 +50752,21 @@ function SelectedRaidRewardPanel({
         <EmptySelectionEditorSessionActions
           isBusy={isRaidRewardUpdating}
           onCancel={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
-          summary="No raid reward selected."
+          summary={t('editorDrafts.empty.raidRewards', {
+            count: outstandingRaidRewardDraftCount,
+            unavailableCount: unavailableRaidRewardDraftKeys.length
+          })}
         />
+      ) : null}
+      {editSession && !reward && unavailableRaidRewardDraftKeys.length > 0 ? (
+        <button
+          className="danger-button"
+          disabled={isRaidRewardUpdating}
+          onClick={discardUnavailableRaidRewardDrafts}
+          type="button"
+        >
+          {t('editorDrafts.discardUnavailable')}
+        </button>
       ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
@@ -49477,6 +50959,31 @@ function SelectedRaidRewardPanel({
                         label="Stage"
                       />
                     </button>
+                    {nextRaidRewardDraftTarget ? (
+                      <button
+                        className="secondary-button"
+                        disabled={isRaidRewardUpdating}
+                        onClick={() =>
+                          onReviewDraftTarget(
+                            nextRaidRewardDraftTarget.tableId,
+                            nextRaidRewardDraftTarget.slot
+                          )
+                        }
+                        type="button"
+                      >
+                        {t('editorDrafts.reviewNext')}
+                      </button>
+                    ) : null}
+                    {unavailableRaidRewardDraftKeys.length > 0 ? (
+                      <button
+                        className="danger-button"
+                        disabled={isRaidRewardUpdating}
+                        onClick={discardUnavailableRaidRewardDrafts}
+                        type="button"
+                      >
+                        {t('editorDrafts.discardUnavailable')}
+                      </button>
+                    ) : null}
                     <button
                       className="danger-button"
                       disabled={isRaidRewardUpdating}
@@ -49487,7 +50994,11 @@ function SelectedRaidRewardPanel({
                       <span>{translateLiteral('Cancel')}</span>
                     </button>
                     <span className="draft-action-summary">
-                      {formatDraftSummary(raidRewardDraftSummary)}
+                      {formatDraftSummary(raidRewardDraftSummary)};{' '}
+                      {t('editorDrafts.summary.raidRewards', {
+                        count: outstandingRaidRewardDraftCount,
+                        unavailableCount: unavailableRaidRewardDraftKeys.length
+                      })}
                     </span>
                   </EditorSessionBarActions>
                 ) : null}
@@ -49733,6 +51244,7 @@ function BehaviorSection({
               entry={selectedEntry}
               fields={workflow.fields}
               isBehaviorUpdating={isBehaviorUpdating}
+              onSelectEntry={onSelectEntry}
               onUpdateBehaviorEntryFields={onUpdateBehaviorEntryFields}
             />
           </div>
@@ -49754,6 +51266,7 @@ function SelectedBehaviorPanel({
   entry,
   fields,
   isBehaviorUpdating,
+  onSelectEntry,
   onUpdateBehaviorEntryFields
 }: {
   canEditBehavior: boolean;
@@ -49761,6 +51274,7 @@ function SelectedBehaviorPanel({
   entry: BehaviorEntryRecord | null;
   fields: BehaviorField[];
   isBehaviorUpdating: boolean;
+  onSelectEntry: (entryId: string | null) => void;
   onUpdateBehaviorEntryFields: (
     entryId: string,
     changes: Array<{ field: string; value: string }>
@@ -49783,6 +51297,11 @@ function SelectedBehaviorPanel({
     [drafts, entry, fields]
   );
   useRegisterEditorDraftDirty('behavior', countFieldDraftRecords(draftsByEntryId) > 0);
+  const outstandingBehaviorDraftKeys = Object.keys(draftsByEntryId);
+  const nextBehaviorDraftKey = getNextOutstandingEditorDraftKey(
+    outstandingBehaviorDraftKeys,
+    entry?.entryId
+  );
   const canSaveBehaviorDrafts =
     entry !== null &&
     editSession !== null &&
@@ -50107,6 +51626,16 @@ function SelectedBehaviorPanel({
                     label="Stage"
                   />
                 </button>
+                {nextBehaviorDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isBehaviorUpdating}
+                    onClick={() => onSelectEntry(nextBehaviorDraftKey)}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
                   disabled={isBehaviorUpdating}
@@ -50117,7 +51646,10 @@ function SelectedBehaviorPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">
-                  {formatDraftSummary(behaviorDraftSummary)}
+                  {formatDraftSummary(behaviorDraftSummary)};{' '}
+                  {t('editorDrafts.summary.behavior', {
+                    count: outstandingBehaviorDraftKeys.length
+                  })}
                 </span>
               </EditorSessionBarActions>
             ) : null}
@@ -50136,6 +51668,7 @@ type PlacementSectionProps = {
   editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isPlacementUpdating: boolean;
+  onReviewDraftTarget: (objectId: string) => Promise<PlacementDraftReviewResult>;
   onSearchChange: (value: string) => void;
   onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
@@ -50183,6 +51716,7 @@ function PlacementSection({
   editorFamily,
   isEditStarting,
   isPlacementUpdating,
+  onReviewDraftTarget,
   onSearchChange,
   onSelectObject,
   onStartEditSession,
@@ -50507,6 +52041,7 @@ function PlacementSection({
               editableFields={workflow.editableFields}
               isDetailsLoading={remotePaging?.isDetailLoading ?? false}
               isPlacementUpdating={isPlacementUpdating}
+              onReviewDraftTarget={onReviewDraftTarget}
               onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
               onSelectObject={onSelectObject}
               placementGroup={selectedGroup}
@@ -50530,6 +52065,7 @@ function SelectedPlacementPanel({
   editableFields,
   isDetailsLoading,
   isPlacementUpdating,
+  onReviewDraftTarget,
   onSelectObject,
   onUpdatePlacementObjectFields,
   placementGroup,
@@ -50541,6 +52077,7 @@ function SelectedPlacementPanel({
   editableFields: PlacementEditableField[];
   isDetailsLoading: boolean;
   isPlacementUpdating: boolean;
+  onReviewDraftTarget: (objectId: string) => Promise<PlacementDraftReviewResult>;
   onSelectObject: (objectId: string | null) => void;
   onUpdatePlacementObjectFields: (
     objectId: string,
@@ -50552,6 +52089,13 @@ function SelectedPlacementPanel({
   const [draftsByObjectId, setDraftsByObjectId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [confirmedUnavailableDraftKeys, setConfirmedUnavailableDraftKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [isReviewingPlacementDraft, setIsReviewingPlacementDraft] = useState(false);
+  const placementDraftReviewPendingRef = useRef(false);
+  const draftsByObjectIdRef = useRef(draftsByObjectId);
+  draftsByObjectIdRef.current = draftsByObjectId;
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const { t, translateLiteral } = useLocalization();
   const cancelActiveEditSession = useCancelActiveEditSession();
@@ -50600,11 +52144,24 @@ function SelectedPlacementPanel({
     [drafts, placedObject, visibleFields]
   );
   useRegisterEditorDraftDirty('placement', countFieldDraftRecords(draftsByObjectId) > 0);
+  const outstandingPlacementDraftKeys = Object.keys(draftsByObjectId);
+  const unavailablePlacementDraftKeys = outstandingPlacementDraftKeys.filter((draftKey) =>
+    confirmedUnavailableDraftKeys.has(draftKey)
+  );
+  const unavailablePlacementDraftKeySet = new Set(unavailablePlacementDraftKeys);
+  const reviewablePlacementDraftKeys = outstandingPlacementDraftKeys.filter(
+    (draftKey) => !unavailablePlacementDraftKeySet.has(draftKey)
+  );
+  const nextPlacementDraftKey = getNextOutstandingEditorDraftKey(
+    reviewablePlacementDraftKeys,
+    placedObject?.objectId
+  );
   const canSavePlacementDrafts =
     placedObject !== null &&
     editSession !== null &&
     canEditPlacement &&
     !isPlacementUpdating &&
+    !isReviewingPlacementDraft &&
     placementDraftSummary.changedFields.length > 0 &&
     placementDraftSummary.invalidFields.length === 0;
   const inspectorPrimaryData = placedObject
@@ -50619,7 +52176,19 @@ function SelectedPlacementPanel({
     setDraftsByObjectId((currentDrafts) =>
       pruneFieldDraftRecord(currentDrafts, placedObject.objectId, placementDraftDefaults)
     );
+    setConfirmedUnavailableDraftKeys((currentKeys) =>
+      removeStringSetValue(currentKeys, placedObject.objectId)
+    );
   }, [placedObject, placementDraftDefaults]);
+
+  useEffect(() => {
+    setConfirmedUnavailableDraftKeys((currentKeys) => {
+      const nextKeys = new Set(
+        [...currentKeys].filter((draftKey) => Object.hasOwn(draftsByObjectId, draftKey))
+      );
+      return areStringSetsEqual(currentKeys, nextKeys) ? currentKeys : nextKeys;
+    });
+  }, [draftsByObjectId]);
 
   const handlePlacementDraftChange = (
     field: PlacementFieldControl,
@@ -50689,6 +52258,62 @@ function SelectedPlacementPanel({
         placementDraftDefaults
       )
     );
+    setConfirmedUnavailableDraftKeys((currentKeys) =>
+      removeStringSetValue(currentKeys, placedObject.objectId)
+    );
+  };
+
+  const reviewNextPlacementDraft = async () => {
+    if (
+      nextPlacementDraftKey === null ||
+      placementDraftReviewPendingRef.current ||
+      isPlacementUpdating ||
+      isDetailsLoading
+    ) {
+      return;
+    }
+
+    const reviewedDraftKey = nextPlacementDraftKey;
+    placementDraftReviewPendingRef.current = true;
+    setIsReviewingPlacementDraft(true);
+    try {
+      const result = await onReviewDraftTarget(reviewedDraftKey);
+      if (!Object.hasOwn(draftsByObjectIdRef.current, reviewedDraftKey)) {
+        return;
+      }
+      setConfirmedUnavailableDraftKeys((currentKeys) =>
+        result === 'unavailable'
+          ? addStringSetValue(currentKeys, reviewedDraftKey)
+          : result === 'reviewed'
+            ? removeStringSetValue(currentKeys, reviewedDraftKey)
+            : currentKeys
+      );
+    } finally {
+      placementDraftReviewPendingRef.current = false;
+      setIsReviewingPlacementDraft(false);
+    }
+  };
+
+  const discardUnavailablePlacementDrafts = () => {
+    const capturedUnavailableDraftKeys = [...unavailablePlacementDraftKeys];
+    if (
+      capturedUnavailableDraftKeys.length === 0 ||
+      !window.confirm(
+        t('editorDrafts.confirmDiscardUnavailable.placement', {
+          count: capturedUnavailableDraftKeys.length
+        })
+      )
+    ) {
+      return;
+    }
+
+    const capturedUnavailableDraftKeySet = new Set(capturedUnavailableDraftKeys);
+    setDraftsByObjectId((currentDrafts) =>
+      deleteFieldDraftRecords(currentDrafts, capturedUnavailableDraftKeySet)
+    );
+    setConfirmedUnavailableDraftKeys((currentKeys) =>
+      removeStringSetValues(currentKeys, capturedUnavailableDraftKeySet)
+    );
   };
 
   return (
@@ -50699,11 +52324,45 @@ function SelectedPlacementPanel({
       />
       {editSession && !placedObject ? (
         <EmptySelectionEditorSessionActions
-          isBusy={isPlacementUpdating}
+          isBusy={isPlacementUpdating || isReviewingPlacementDraft}
           onCancel={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
           stageLabel="Stage Changes"
-          summary="No placement object selected."
+          summary={`${t('editorDrafts.summary.placement', {
+            count: outstandingPlacementDraftKeys.length
+          })}; ${t('editorDrafts.summary.unavailable', {
+            count: unavailablePlacementDraftKeys.length
+          })}`}
         />
+      ) : null}
+      {editSession && !placedObject && (
+        nextPlacementDraftKey !== null || unavailablePlacementDraftKeys.length > 0
+      ) ? (
+        <div className="button-row">
+          {nextPlacementDraftKey !== null ? (
+            <button
+              className="secondary-button"
+              disabled={
+                isPlacementUpdating ||
+                isDetailsLoading ||
+                isReviewingPlacementDraft
+              }
+              onClick={() => void reviewNextPlacementDraft()}
+              type="button"
+            >
+              {t('editorDrafts.reviewNext')}
+            </button>
+          ) : null}
+          {unavailablePlacementDraftKeys.length > 0 ? (
+            <button
+              className="danger-button"
+              disabled={isPlacementUpdating || isReviewingPlacementDraft}
+              onClick={discardUnavailablePlacementDrafts}
+              type="button"
+            >
+              {t('editorDrafts.discardUnavailable')}
+            </button>
+          ) : null}
+        </div>
       ) : null}
       <div className="panel-heading">
         <MapPin aria-hidden="true" size={18} />
@@ -50959,9 +52618,33 @@ function SelectedPlacementPanel({
                     label="Stage Changes"
                   />
                 </button>
+                {nextPlacementDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={
+                      isPlacementUpdating ||
+                      isDetailsLoading ||
+                      isReviewingPlacementDraft
+                    }
+                    onClick={() => void reviewNextPlacementDraft()}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
+                {unavailablePlacementDraftKeys.length > 0 ? (
+                  <button
+                    className="danger-button"
+                    disabled={isPlacementUpdating || isReviewingPlacementDraft}
+                    onClick={discardUnavailablePlacementDrafts}
+                    type="button"
+                  >
+                    {t('editorDrafts.discardUnavailable')}
+                  </button>
+                ) : null}
                 <button
                   className="danger-button"
-                  disabled={isPlacementUpdating}
+                  disabled={isPlacementUpdating || isReviewingPlacementDraft}
                   onClick={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
                   type="button"
                 >
@@ -50969,7 +52652,13 @@ function SelectedPlacementPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">
-                  {formatDraftSummary(placementDraftSummary)}
+                  {formatDraftSummary(placementDraftSummary)};{' '}
+                  {t('editorDrafts.summary.placement', {
+                    count: outstandingPlacementDraftKeys.length
+                  })};{' '}
+                  {t('editorDrafts.summary.unavailable', {
+                    count: unavailablePlacementDraftKeys.length
+                  })}
                 </span>
               </EditorSessionBarActions>
             ) : null}
@@ -58222,6 +59911,7 @@ function DependencyWarningModal({
 function ExitPromptModal({
   allowGoToChanges,
   isDiscardBlocked,
+  isOpeningChanges,
   kind,
   mode,
   onConfirmDiscard,
@@ -58232,6 +59922,7 @@ function ExitPromptModal({
 }: {
   allowGoToChanges: boolean;
   isDiscardBlocked: boolean;
+  isOpeningChanges: boolean;
   kind: ExitPromptState['kind'];
   mode: ExitPromptState['mode'];
   onConfirmDiscard: () => void;
@@ -58240,10 +59931,12 @@ function ExitPromptModal({
   onStay: () => void;
   stageOnlyDexLayout: boolean;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const isConfirmMode = mode === 'confirm';
   const isCancelPrompt = kind === 'cancel';
   const isEditorSwitchPrompt = kind === 'editorSwitch';
+  const isOpeningChangesWithLocalDraft =
+    isEditorSwitchPrompt && isOpeningChanges && allowGoToChanges;
   const dialogRef = useModalDialog({ onClose: onStay });
 
   return (
@@ -58261,7 +59954,9 @@ function ExitPromptModal({
           <h2 id="exit-prompt-heading">
             {isConfirmMode
               ? isEditorSwitchPrompt
-                ? 'Switch Editors?'
+                ? isOpeningChangesWithLocalDraft
+                  ? t('editorDrafts.openChanges.title')
+                  : 'Switch Editors?'
                 : isCancelPrompt
                 ? 'Discard All Changes?'
                 : 'Discard Pending Changes?'
@@ -58271,7 +59966,9 @@ function ExitPromptModal({
         <p className="modal-copy">
           {isConfirmMode
             ? isEditorSwitchPrompt
-              ? allowGoToChanges
+              ? isOpeningChangesWithLocalDraft
+                ? t('editorDrafts.openChanges.description')
+                : allowGoToChanges
                 ? 'This editor has unsaved changes. Switching editors now will revert those edits.'
                 : stageOnlyDexLayout
                   ? translateLiteral(
@@ -58299,7 +59996,13 @@ function ExitPromptModal({
                 type="button"
               >
                 <Trash2 aria-hidden="true" size={16} />
-                <span>{isEditorSwitchPrompt ? 'Switch and Revert' : 'Yes, Discard'}</span>
+                <span>
+                  {isOpeningChangesWithLocalDraft
+                    ? t('editorDrafts.openChanges.confirm')
+                    : isEditorSwitchPrompt
+                      ? 'Switch and Revert'
+                      : 'Yes, Discard'}
+                </span>
               </button>
               <button
                 className="secondary-button"
@@ -63726,7 +65429,7 @@ function SearchableOptionInput({
     () => formatSearchableOptionValue(value, localizedOptions, localizedEmptyOptionLabel),
     [localizedEmptyOptionLabel, localizedOptions, value]
   );
-  const [query, setQuery] = useState(formattedValue);
+  const [query, setQuery] = useCoalescedTextInputState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
   const inputTooltipText = hasUserQuery ? undefined : formattedValue || undefined;
   const optionQuery = hasUserQuery ? query : '';
@@ -64169,6 +65872,48 @@ function deleteFieldDraftRecord<T>(records: Record<string, T>, recordKey: string
   const nextRecords = { ...records };
   delete nextRecords[normalizedKey];
   return nextRecords;
+}
+
+function deleteFieldDraftRecords<T>(
+  records: Record<string, T>,
+  recordKeys: ReadonlySet<string>
+) {
+  if (recordKeys.size === 0) {
+    return records;
+  }
+
+  const nextRecords = Object.fromEntries(
+    Object.entries(records).filter(([recordKey]) => !recordKeys.has(recordKey))
+  ) as Record<string, T>;
+  return Object.keys(nextRecords).length === Object.keys(records).length
+    ? records
+    : nextRecords;
+}
+
+function addStringSetValue(values: ReadonlySet<string>, value: string) {
+  if (values.has(value)) {
+    return values;
+  }
+  const nextValues = new Set(values);
+  nextValues.add(value);
+  return nextValues;
+}
+
+function removeStringSetValue(values: ReadonlySet<string>, value: string) {
+  if (!values.has(value)) {
+    return values;
+  }
+  const nextValues = new Set(values);
+  nextValues.delete(value);
+  return nextValues;
+}
+
+function removeStringSetValues(
+  values: ReadonlySet<string>,
+  removedValues: ReadonlySet<string>
+) {
+  const nextValues = new Set([...values].filter((value) => !removedValues.has(value)));
+  return areStringSetsEqual(values, nextValues) ? values : nextValues;
 }
 
 function countFieldDraftRecords(records: Record<string, Record<string, string>>) {
@@ -67930,6 +69675,11 @@ function createSessionWithPendingEdits(
 type AdvancedAuthoringDraftProtection = {
   scopeKey: string | null;
   sections: ReadonlySet<RetainedWorkflowSection>;
+};
+
+type AdvancedAuthoringUnavailableDraft = {
+  draft: ProjectDraft<AdvancedAuthoringDraftSnapshot>;
+  protectionScopeKey: string;
 };
 
 const advancedAuthoringRetainedSections = new Set<RetainedWorkflowSection>([

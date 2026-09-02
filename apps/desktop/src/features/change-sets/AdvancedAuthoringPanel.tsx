@@ -27,6 +27,7 @@ import {
   type AuthoringTransform
 } from '../../authoring/advancedAuthoringTypes';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey, type SemanticRecordRef } from '../../workbench/semanticContracts';
 
@@ -41,6 +42,11 @@ export type AdvancedAuthoringPanelProps = {
   ) => Promise<void> | void;
   onStageRequest: (request: AuthoringStageRequest) => Promise<AuthoringStagedCommitMetadata>;
   revisionKey?: string;
+  unavailableDraft?: {
+    fieldCount: number;
+    isDiscarding: boolean;
+    onDiscard: () => void;
+  } | null;
 };
 
 const maximumRenderedPreviewMutations = 100;
@@ -53,7 +59,8 @@ export function AdvancedAuthoringPanel({
   onBusyChange,
   onDraftsChange,
   onStageRequest,
-  revisionKey
+  revisionKey,
+  unavailableDraft = null
 }: AdvancedAuthoringPanelProps) {
   const { formatLocale, t } = useLocalization();
   const workspaces = controller.getWorkspaces();
@@ -64,7 +71,7 @@ export function AdvancedAuthoringPanel({
   const [primaryValue, setPrimaryValue] = useState('');
   const [secondaryValue, setSecondaryValue] = useState('');
   const [rounding, setRounding] = useState<'ceil' | 'floor' | 'nearest'>('nearest');
-  const [recordQuery, setRecordQuery] = useState('');
+  const [recordQuery, setRecordQuery] = useCoalescedTextInputState();
   const [recordOrder, setRecordOrder] = useState<'name' | 'identifier'>('name');
   const [sourceRecordKey, setSourceRecordKey] = useState('');
   const [pasteGroupId, setPasteGroupId] = useState('');
@@ -98,7 +105,8 @@ export function AdvancedAuthoringPanel({
   const pasteGroup = workspace?.pasteSpecialGroups.find((group) => group.id === pasteGroupId)
     ?? workspace?.pasteSpecialGroups[0]
     ?? null;
-  const controlsBusy = externalBusy || isBusy;
+  const operationBusy = externalBusy || isBusy || unavailableDraft?.isDiscarding === true;
+  const controlsBusy = operationBusy || unavailableDraft !== null;
   const filteredRecordResult = useMemo(() => {
     if (!workspace) return { records: [], total: 0 };
     const normalizedQuery = recordQuery.trim().toLocaleLowerCase(formatLocale);
@@ -424,7 +432,7 @@ export function AdvancedAuthoringPanel({
 
   return (
     <section
-      aria-busy={controlsBusy || undefined}
+      aria-busy={operationBusy || undefined}
       aria-labelledby="advanced-authoring-heading"
       className="panel wide-panel change-set-authoring"
     >
@@ -483,6 +491,27 @@ export function AdvancedAuthoringPanel({
       </header>
 
       {errorMessage ? <p className="change-set-local-error" role="alert">{errorMessage}</p> : null}
+
+      {unavailableDraft ? (
+        <div className="change-set-profile-mismatch" role="alert">
+          <div>
+            <strong>{t('editorDrafts.summary.unavailable', { count: 1 })}</strong>
+            <span>
+              {t('changeSets.authoring.unavailableDraftHelp', {
+                fieldCount: unavailableDraft.fieldCount
+              })}
+            </span>
+          </div>
+          <button
+            className="danger-button compact-button"
+            disabled={operationBusy}
+            onClick={unavailableDraft.onDiscard}
+            type="button"
+          >
+            {t('editorDrafts.discardUnavailable')}
+          </button>
+        </div>
+      ) : null}
 
       <div className="change-set-authoring-grid">
         <section className="change-set-card change-set-authoring-selection">
@@ -780,6 +809,9 @@ export function AdvancedAuthoringPanel({
       <div className="change-set-authoring-summary" role="status">
         <History aria-hidden="true" size={16} />
         <span>{t('changeSets.authoring.draftCount', { count: snapshot.drafts.entries.length })}</span>
+        {unavailableDraft ? (
+          <span>{t('editorDrafts.summary.unavailable', { count: 1 })}</span>
+        ) : null}
         <span>{t(snapshot.clipboard
           ? 'changeSets.authoring.clipboardReady'
           : 'changeSets.authoring.clipboardEmpty')}</span>

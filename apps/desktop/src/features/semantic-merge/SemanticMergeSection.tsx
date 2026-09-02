@@ -24,6 +24,7 @@ import {
   type FormEvent
 } from 'react';
 import type { ApiDiagnostic } from '../../bridge/contracts';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   kmRecipeMaximumBytes,
   kmRecipeMaximumOperations,
@@ -378,7 +379,7 @@ function MergeSurface({
   scope: SemanticExploreScope;
 }) {
   const { t } = useLocalization();
-  const [searchDraft, setSearchDraft] = useState('');
+  const [searchDraft, setSearchDraft] = useCoalescedTextInputState();
   const [selectedRows, setSelectedRows] = useState<Map<string, SemanticMergeRow>>(new Map());
   const [resolutionDraft, setResolutionDraft] = useState<
     Map<string, SemanticMergeConflictChoice>
@@ -1162,7 +1163,7 @@ function MergeRows({
   rows: readonly SemanticMergeRow[];
 }) {
   const { t, translateLiteral } = useLocalization();
-  const [resultFilter, setResultFilter] = useState('');
+  const [resultFilter, setResultFilter] = useCoalescedTextInputState();
   const [stateFilter, setStateFilter] = useState('all');
   const [resultOrder, setResultOrder] = useState<'record' | 'field' | 'state'>('record');
   const states = useMemo(
@@ -1367,7 +1368,7 @@ function RecipeSurface({
   const [importError, setImportError] = useState(false);
   const importOperationRef = useRef<object | null>(null);
   const [compatibilityFilter, setCompatibilityFilter] = useState('all');
-  const [compatibilitySearch, setCompatibilitySearch] = useState('');
+  const [compatibilitySearch, setCompatibilitySearch] = useCoalescedTextInputState();
   const [compatibilityOrder, setCompatibilityOrder] = useState<
     'record' | 'field' | 'state'
   >('record');

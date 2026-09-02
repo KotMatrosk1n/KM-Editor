@@ -24,6 +24,7 @@ import {
 import type { SemanticExploreRevision } from '../../bridge/semanticExploreContracts';
 import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
   researchDifferenceKey,
@@ -45,7 +46,7 @@ export function ResearchComparisonView({
 }) {
   const { t, translateLiteral } = useLocalization();
   const [selectedPaths, setSelectedPaths] = useState<readonly string[]>([]);
-  const [resultFilter, setResultFilter] = useState('');
+  const [resultFilter, setResultFilter] = useCoalescedTextInputState();
   const [differenceFilter, setDifferenceFilter] = useState<
     'all' | ResearchFileFinding['differenceKind']
   >('all');
