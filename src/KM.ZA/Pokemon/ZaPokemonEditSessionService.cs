@@ -2109,6 +2109,7 @@ internal sealed class ZaPokemonEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -2257,7 +2258,7 @@ internal sealed class ZaPokemonEditSessionService
                     [new OutputApplyOrigin(
                         OutputApplyOriginKind.Workflow,
                         ZaEditSessionSupport.PokemonDomain)]);
-                ZaWorkflowFileSource.ApplyHybridMixedBatch(
+                outputTransaction = ZaWorkflowFileSource.ApplyHybridMixedBatch(
                     paths,
                     outputMode,
                     isolateTrinityModManagerRomFs,
@@ -2377,7 +2378,7 @@ internal sealed class ZaPokemonEditSessionService
             }
             else
             {
-                ZaWorkflowFileSource.WriteBatch(
+                outputTransaction = ZaWorkflowFileSource.WriteBatch(
                     paths,
                     outputWrites,
                     outputMode,
@@ -2457,6 +2458,16 @@ internal sealed class ZaPokemonEditSessionService
                 applyMessage,
                 ZaEditSessionSupport.PokemonDomain));
         }
+        catch (ZaOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            writtenFiles.Clear();
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon Data output could not be committed atomically: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                expected: "A committed Pokemon Data output transaction"));
+        }
         catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -2466,7 +2477,13 @@ internal sealed class ZaPokemonEditSessionService
                 expected: "Readable Pokemon and Pokédex sources with a writable output root"));
         }
 
-        return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return ZaEditSessionSupport.CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles,
+            diagnostics,
+            outputTransaction);
     }
 
     private ApplyResult ApplyMegaDexSyncChangePlan(
@@ -2480,6 +2497,7 @@ internal sealed class ZaPokemonEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -2512,7 +2530,7 @@ internal sealed class ZaPokemonEditSessionService
                 row => (ZaPokedexContentsGroup)row.Group);
             var output = megaContents.WriteSpeciesGroups(groupsBySpecies);
 
-            ZaWorkflowFileSource.WriteBatch(
+            outputTransaction = ZaWorkflowFileSource.WriteBatch(
                 paths,
                 [new ZaWorkflowFileWrite(ZaDataPaths.PokedexMegaContentsData, output)],
                 outputMode,
@@ -2536,6 +2554,16 @@ internal sealed class ZaPokemonEditSessionService
                     outputMode),
                 ZaEditSessionSupport.PokemonDomain));
         }
+        catch (ZaOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            writtenFiles.Clear();
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Mega Pokédex synchronization output could not be committed atomically: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                expected: "A committed Mega Pokédex synchronization output transaction"));
+        }
         catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -2550,7 +2578,8 @@ internal sealed class ZaPokemonEditSessionService
             appliedAt,
             currentPlan,
             writtenFiles,
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private ApplyResult ApplyAlphaAwareChangePlan(

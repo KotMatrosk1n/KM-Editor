@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.ZA.Data;
 using KM.ZA.Items;
@@ -386,6 +387,7 @@ internal sealed class ZaShopsEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -403,7 +405,7 @@ internal sealed class ZaShopsEditSessionService
         var planBecameStale = false;
         try
         {
-            ZaWorkflowFileSource.ApplyHybridMixedBatch(
+            outputTransaction = ZaWorkflowFileSource.ApplyHybridMixedBatch(
                 paths,
                 outputMode,
                 isolateTrinityModManagerRomFs: false,
@@ -501,6 +503,16 @@ internal sealed class ZaShopsEditSessionService
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage("Shops", outputMode)));
         }
+        catch (ZaOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            writtenFiles.Clear();
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shops output could not be committed atomically: {exception.Message}",
+                file: $"romfs/{ZaDataPaths.ShopItemLineupArray}",
+                expected: "A committed Shops output transaction"));
+        }
         catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             if (!planBecameStale)
@@ -513,7 +525,13 @@ internal sealed class ZaShopsEditSessionService
             }
         }
 
-        return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return ZaEditSessionSupport.CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles,
+            diagnostics,
+            outputTransaction);
     }
 
     private static PendingEdit? CreatePendingEdit(

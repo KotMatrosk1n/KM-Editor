@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Output;
 using KM.Core.Projects;
 using KM.ZA.Data;
 using KM.ZA.Workflows;
@@ -456,6 +457,7 @@ internal sealed class ZaAngeFightEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
         if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -500,7 +502,7 @@ internal sealed class ZaAngeFightEditSessionService
                     descriptorPreview,
                     retainedOutputs.Select(output => output.VirtualPath),
                     deletedOutputs.Select(output => output.VirtualPath));
-            ZaWorkflowFileSource.ApplyBatch(
+            outputTransaction = ZaWorkflowFileSource.ApplyBatch(
                 paths,
                 retainedOutputs
                     .Select(output => new ZaWorkflowFileWrite(
@@ -542,6 +544,15 @@ internal sealed class ZaAngeFightEditSessionService
                         ZaAngeFightWorkflowService.WorkflowLabel,
                         outputMode)));
         }
+        catch (ZaOutputApplyNotCommittedException exception)
+        {
+            outputTransaction = exception.Result;
+            writtenFiles.Clear();
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Ange Fight output could not be committed atomically: {exception.Message}",
+                expected: "A committed Ange Fight output transaction"));
+        }
         catch (Exception exception) when (!ZaEditSessionSupport.IsOutputSafetyException(exception))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -555,7 +566,8 @@ internal sealed class ZaAngeFightEditSessionService
             appliedAt,
             currentPlan,
             writtenFiles,
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private static PreparedAngeFightBatch PrepareOutputs(

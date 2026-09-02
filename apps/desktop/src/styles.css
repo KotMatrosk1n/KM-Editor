@@ -1636,7 +1636,7 @@ h2 {
 }
 
 .primary-button:hover:not(:disabled):not([aria-disabled='true']) {
-  background: linear-gradient(135deg, #5d55f0, #7780ff);
+  background: linear-gradient(135deg, #5d55f0, #5862d8);
 }
 
 .primary-button svg,
@@ -16585,6 +16585,11 @@ select.km-select-control:dir(rtl) {
   border-color: var(--color-accent-bright);
 }
 
+:root[data-km-visual-theme='renegade'][data-km-theme='colorSafe']
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent-hover));
+}
+
 :root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .danger-button,
 :root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
   .danger-icon-button {
@@ -17109,6 +17114,18 @@ select.km-select-control:dir(rtl) {
 :root[data-km-visual-theme='royal'][data-km-theme='colorSafe']
   :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
   background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
+}
+
+:root[data-km-theme='highContrast']
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent-hover));
+}
+
+:root[data-km-theme='colorSafe']
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent-hover));
 }
 
 :root[data-km-visual-theme='royal']:not([data-km-theme='highContrast']) .danger-button,

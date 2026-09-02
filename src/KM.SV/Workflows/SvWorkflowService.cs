@@ -1585,8 +1585,13 @@ public sealed class SvWorkflowService
             using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
             projectWorkspaceService.ClearMemoryCache();
             var domain = GetDomain(session);
-            return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
-                ? ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode)
+            if (domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains))
+            {
+                return ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode);
+            }
+
+            return IsNormalDomain(domain)
+                ? ApplyTransactionalSingleDomainChangePlan(paths, session, changePlan, domain, outputMode)
                 : ApplySingleDomainChangePlan(paths, session, changePlan, domain, outputMode);
         }
         finally
@@ -1685,6 +1690,84 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
         };
+    }
+
+    private ApplyResult ApplyTransactionalSingleDomainChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        SvEditSessionDomain domain,
+        SvOutputMode outputMode)
+    {
+        ApplyResult? result = null;
+        OutputApplyResult? outputTransaction = null;
+        try
+        {
+            var context = new SvOutputApplyContext(
+                OutputReviewFingerprint.FromChangePlan(reviewedPlan),
+                GetSingleDomainOutputOwnerId(domain),
+                [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, GetDomainName(domain))]);
+            using var outputBatch = SvWorkflowFileSource.BeginDeferredOutputBatch(
+                paths,
+                outputMode,
+                reviewedPlan,
+                context);
+            result = ApplySingleDomainChangePlan(
+                paths,
+                session,
+                reviewedPlan,
+                domain,
+                outputMode);
+            var hasErrors = result.Diagnostics.Any(diagnostic =>
+                diagnostic.Severity == DiagnosticSeverity.Error);
+            if (!hasErrors && outputBatch.HasPendingMutations)
+            {
+                outputTransaction = outputBatch.Commit();
+            }
+
+            return result with
+            {
+                WrittenFiles = hasErrors || outputTransaction is null
+                    ? Array.Empty<ProjectFileReference>()
+                    : result.WrittenFiles,
+                OutputTransaction = outputTransaction,
+            };
+        }
+        catch (Exception exception) when (exception is OutputCoordinatorException
+            or IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or InvalidOperationException
+            or ArgumentException
+            or NotSupportedException)
+        {
+            if (exception is SvOutputApplyNotCommittedException notCommitted)
+            {
+                outputTransaction = notCommitted.Result;
+            }
+
+            var diagnostics = (result?.Diagnostics ?? reviewedPlan.Diagnostics).ToList();
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Scarlet/Violet output could not be committed: {exception.Message}",
+                GetDomainName(domain),
+                expected: "Current reviewed output targets and a writable output root"));
+
+            return result is null
+                ? SvEditSessionSupport.CreateApplyResult(
+                    Guid.NewGuid().ToString("N"),
+                    DateTimeOffset.UtcNow,
+                    reviewedPlan,
+                    Array.Empty<ProjectFileReference>(),
+                    diagnostics,
+                    outputTransaction)
+                : result with
+                {
+                    WrittenFiles = Array.Empty<ProjectFileReference>(),
+                    Diagnostics = diagnostics,
+                    OutputTransaction = outputTransaction,
+                };
+        }
     }
 
     private SvEditSessionValidation ValidateNormalDomains(
@@ -1845,6 +1928,7 @@ public sealed class SvWorkflowService
         var currentPlan = currentSnapshot.CombinedPlan;
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
@@ -1898,10 +1982,14 @@ public sealed class SvWorkflowService
                 }
             }
 
-            if (writtenFiles.Count > 0
-                && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error)
+                && outputBatch.HasPendingMutations)
             {
-                outputBatch.Commit();
+                outputTransaction = outputBatch.Commit();
+                if (outputTransaction is null)
+                {
+                    writtenFiles.Clear();
+                }
             }
         }
         catch (Exception exception) when (exception is OutputCoordinatorException
@@ -1912,6 +2000,11 @@ public sealed class SvWorkflowService
             or ArgumentException
             or NotSupportedException)
         {
+            if (exception is SvOutputApplyNotCommittedException notCommitted)
+            {
+                outputTransaction = notCommitted.Result;
+            }
+
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 $"Scarlet/Violet mixed change plan could not be applied: {exception.Message}",
@@ -1925,7 +2018,8 @@ public sealed class SvWorkflowService
             appliedAt,
             currentPlan,
             writtenFiles.Distinct().ToArray(),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private static SvEditSessionDomain GetDomain(EditSession session)
@@ -2032,6 +2126,17 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.GiftPokemon or
             SvEditSessionDomain.TradePokemon or
             SvEditSessionDomain.Placement;
+    }
+
+    private static OwnershipOwnerId GetSingleDomainOutputOwnerId(SvEditSessionDomain domain)
+    {
+        return domain switch
+        {
+            SvEditSessionDomain.Text => new OwnershipOwnerId("workflow.sv.text"),
+            SvEditSessionDomain.TmMachineControls => new OwnershipOwnerId("workflow.sv.tm-machine-controls"),
+            SvEditSessionDomain.HabitatCoordinates => new OwnershipOwnerId("workflow.sv.habitat-coordinates"),
+            _ => new OwnershipOwnerId("workflow.sv.output"),
+        };
     }
 
     private static EditSession SliceSession(EditSession session, SvEditSessionDomain domain)

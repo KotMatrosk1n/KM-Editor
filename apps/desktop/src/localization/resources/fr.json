@@ -1914,6 +1914,7 @@
     "trainers.partyClipboard.incompatibleReason": "L'emplacement copié appartient à l'éditeur d'un autre jeu.",
     "trainers.partyClipboard.sameSlotReason": "Choisissez un autre emplacement de destination.",
     "trainers.partyClipboard.blockedTargetReason": "Remplissez l'emplacement vide précédent avant de coller ici.",
+    "trainers.partyClipboard.stagePreviousSlotReason": "Préparez le nouvel emplacement précédent avant de préparer ce Pokémon.",
     "trainers.partyClipboard.sourceSummary": "Source copiée : {trainer}, emplacement {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}, emplacement {slot}",
     "trainers.partyClipboard.unavailableTarget": "Emplacement d'équipe indisponible",

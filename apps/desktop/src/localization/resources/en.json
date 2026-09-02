@@ -1901,6 +1901,7 @@
     "trainers.partyClipboard.incompatibleReason": "The copied slot belongs to a different game editor.",
     "trainers.partyClipboard.sameSlotReason": "Choose a different destination slot.",
     "trainers.partyClipboard.blockedTargetReason": "Fill the earlier empty party slot before pasting here.",
+    "trainers.partyClipboard.stagePreviousSlotReason": "Stage the earlier new party slot before staging this Pokémon.",
     "trainers.partyClipboard.sourceSummary": "Copied source: {trainer}, slot {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}, slot {slot}",
     "trainers.partyClipboard.unavailableTarget": "Party slot unavailable",

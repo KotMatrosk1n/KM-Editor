@@ -278,6 +278,7 @@ public sealed class ZaTypeChartEditSessionService
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
+        OutputApplyResult? outputTransaction = null;
 
         if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
@@ -300,35 +301,61 @@ public sealed class ZaTypeChartEditSessionService
             OutputReviewFingerprint.FromChangePlan(currentPlan),
             new OwnershipOwnerId("workflow.za.type-chart"),
             [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, TypeChartEditDomain)]);
-        var pendingEdit = session.PendingEdits.Single();
-        if (IsUninstallEdit(pendingEdit))
+        try
         {
-            ApplyUninstall(
+            var pendingEdit = session.PendingEdits.Single();
+            if (IsUninstallEdit(pendingEdit))
+            {
+                outputTransaction = ApplyUninstall(
+                    paths,
+                    writtenFiles,
+                    diagnostics,
+                    outputContext,
+                    revalidateReviewedState);
+                return CreateApplyResult(
+                    applyId,
+                    appliedAt,
+                    currentPlan,
+                    writtenFiles,
+                    diagnostics,
+                    outputTransaction);
+            }
+
+            var values = DecodeValues(pendingEdit.NewValue, diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            }
+
+            outputTransaction = ApplyMain(
                 paths,
+                values,
                 writtenFiles,
                 diagnostics,
                 outputContext,
                 revalidateReviewedState);
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
-
-        var values = DecodeValues(pendingEdit.NewValue, diagnostics);
-        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        catch (ZaOutputApplyNotCommittedException exception)
         {
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            outputTransaction = exception.Result;
+            writtenFiles.Clear();
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Type Chart output could not be committed atomically: {exception.Message}",
+                file: ZaTypeChartWorkflowService.ExeFsMainPath,
+                expected: "A committed Type Chart output transaction"));
         }
 
-        ApplyMain(
-            paths,
-            values,
+        return CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
             writtenFiles,
             diagnostics,
-            outputContext,
-            revalidateReviewedState);
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            outputTransaction);
     }
 
-    private void ApplyMain(
+    private OutputApplyResult? ApplyMain(
         ProjectPaths paths,
         IReadOnlyList<int> values,
         ICollection<ProjectFileReference> writtenFiles,
@@ -346,13 +373,13 @@ public sealed class ZaTypeChartEditSessionService
                 "Type Chart source or output target could not be resolved.",
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Readable exefs/main source and writable LayeredFS target"));
-            return;
+            return null;
         }
 
         try
         {
             var gameOrderValues = ZaTypeChartWorkflowService.ToGameOrder(values);
-            ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
+            var outputTransaction = ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
                 paths,
                 () =>
                 {
@@ -377,6 +404,7 @@ public sealed class ZaTypeChartEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 "Applied Type Chart changes to exefs/main in the configured LayeredFS output root."));
+            return outputTransaction;
         }
         catch (InvalidDataException exception)
         {
@@ -402,9 +430,11 @@ public sealed class ZaTypeChartEditSessionService
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Writable output root"));
         }
+
+        return null;
     }
 
-    private static void ApplyUninstall(
+    private static OutputApplyResult? ApplyUninstall(
         ProjectPaths paths,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics,
@@ -420,7 +450,7 @@ public sealed class ZaTypeChartEditSessionService
                 "Type Chart uninstall could not resolve base exefs/main for restoration.",
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Readable base ExeFS main"));
-            return;
+            return null;
         }
 
         if (!File.Exists(targetPath))
@@ -430,12 +460,12 @@ public sealed class ZaTypeChartEditSessionService
                 "Type Chart uninstall target no longer exists. Review the change plan again before applying.",
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Existing reviewed LayeredFS exefs/main"));
-            return;
+            return null;
         }
 
         try
         {
-            ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
+            var outputTransaction = ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
                 paths,
                 () =>
                 {
@@ -478,6 +508,7 @@ public sealed class ZaTypeChartEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 "Uninstalled Type Chart changes from the configured LayeredFS output root."));
+            return outputTransaction;
         }
         catch (InvalidDataException exception)
         {
@@ -503,6 +534,8 @@ public sealed class ZaTypeChartEditSessionService
                 file: ZaTypeChartWorkflowService.ExeFsMainPath,
                 expected: "Writable output root"));
         }
+
+        return null;
     }
 
     private static bool CanStage(
@@ -734,14 +767,16 @@ public sealed class ZaTypeChartEditSessionService
         DateTimeOffset appliedAt,
         ChangePlan currentPlan,
         IReadOnlyList<ProjectFileReference> writtenFiles,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        OutputApplyResult? outputTransaction = null)
     {
         return new ApplyResult(
             applyId,
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
-            diagnostics);
+            diagnostics,
+            outputTransaction);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

@@ -1914,6 +1914,7 @@
     "trainers.partyClipboard.incompatibleReason": "Скопированная ячейка относится к редактору другой игры.",
     "trainers.partyClipboard.sameSlotReason": "Выберите другую целевую ячейку.",
     "trainers.partyClipboard.blockedTargetReason": "Заполните предыдущую пустую ячейку команды перед вставкой сюда.",
+    "trainers.partyClipboard.stagePreviousSlotReason": "Сначала подготовьте предыдущую новую ячейку команды, а затем этого покемона.",
     "trainers.partyClipboard.sourceSummary": "Скопированный источник: {trainer}, ячейка {slot}",
     "trainers.partyClipboard.targetSummary": "{trainer}, ячейка {slot}",
     "trainers.partyClipboard.unavailableTarget": "Ячейка команды недоступна",

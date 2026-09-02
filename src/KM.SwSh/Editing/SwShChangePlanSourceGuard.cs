@@ -748,13 +748,18 @@ public static class SwShChangePlanSourceGuard
                     throw new IOException("The verified apply snapshot contains a symbolic link or junction.");
                 }
 
+                var relativePath = NormalizeRelativePath(Path.GetRelativePath(rootPath, entryPath));
+                if (OutputMetadataNamespace.ContainsReservedSegment(relativePath))
+                {
+                    continue;
+                }
+
                 if (attributes.HasFlag(FileAttributes.Directory))
                 {
                     pendingDirectories.Push(entryPath);
                     continue;
                 }
 
-                var relativePath = NormalizeRelativePath(Path.GetRelativePath(rootPath, entryPath));
                 states.Add(relativePath, CaptureFileState(entryPath));
             }
         }
@@ -910,6 +915,7 @@ public static class SwShChangePlanSourceGuard
             {
                 Manifest = snapshotResult.Manifest with { Writes = CurrentPlan.Writes },
                 Diagnostics = diagnostics,
+                OutputTransaction = null,
             };
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
