@@ -16,6 +16,10 @@ export type TrainerPartySlotOccupancy = {
   sourceSpeciesId: number;
 };
 
+export type TrainerFieldDraftRecords = Readonly<
+  Record<string, Readonly<Record<string, string>>>
+>;
+
 export function applyTrainerWorkflowDelta(
   workflow: TrainersWorkflow,
   delta: TrainersWorkflowDelta,
@@ -166,6 +170,24 @@ export function orderTrainerFieldUpdates<T extends TrainerFieldUpdateLike>(
     .map(({ update }) => update);
 }
 
+export function clearSubmittedTrainerDraftRecords(
+  latestRecords: TrainerFieldDraftRecords,
+  submittedRecords: TrainerFieldDraftRecords
+): Record<string, Record<string, string>> {
+  const nextRecords = Object.fromEntries(
+    Object.entries(latestRecords).map(([key, fields]) => [key, { ...fields }])
+  );
+
+  for (const [key, submittedFields] of Object.entries(submittedRecords)) {
+    const latestFields = latestRecords[key];
+    if (latestFields && trainerFieldDraftsEqual(latestFields, submittedFields)) {
+      delete nextRecords[key];
+    }
+  }
+
+  return nextRecords;
+}
+
 export function isTrainerSlotOccupiedForMaxIvs(
   sourceSpeciesId: number,
   projectedSpeciesId: number | null
@@ -187,18 +209,6 @@ export function isTrainerPartySlotBlockedByEarlierEmptySlot(
       slot.slot < targetSlot &&
       !isTrainerSlotOccupiedForMaxIvs(slot.sourceSpeciesId, slot.projectedSpeciesId)
   );
-}
-
-export function isTrainerPartySlotStageBlockedByEarlierUnstagedSlot(
-  slots: readonly TrainerPartySlotOccupancy[],
-  targetSlot: number
-) {
-  const target = slots.find((slot) => slot.slot === targetSlot);
-  if (!target || target.sourceSpeciesId > 0) {
-    return false;
-  }
-
-  return slots.some((slot) => slot.slot < targetSlot && slot.sourceSpeciesId <= 0);
 }
 
 export function trainerSlotHasNonMaxIvDrafts(
@@ -257,6 +267,14 @@ function getIdentityFieldPriority(field: string) {
   }
 
   return 2;
+}
+
+function trainerFieldDraftsEqual(
+  left: Readonly<Record<string, string>>,
+  right: Readonly<Record<string, string>>
+) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => left[key] === right[key]);
 }
 
 function createTrainerPartySlotKey(trainerId: number, slot: number) {

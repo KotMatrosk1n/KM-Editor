@@ -230,7 +230,7 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         var updatedSession = currentSession;
-        var effectiveWorkflow = workflow;
+        var effectiveOverlay = new PokemonWorkflowOverlay(workflow);
         foreach (var update in updates)
         {
             if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
@@ -248,14 +248,14 @@ internal sealed class ZaPokemonEditSessionService
             if (IsGlobalYieldField(update.Field))
             {
                 pendingEdit = CreateGlobalYieldPendingEdit(
-                    effectiveWorkflow,
+                    effectiveOverlay.Workflow,
                     update.Field,
                     update.Value,
                     diagnostics);
             }
             else
             {
-                var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == update.PersonalId);
+                var pokemon = effectiveOverlay.FindPokemon(update.PersonalId);
                 if (pokemon is null)
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -267,7 +267,12 @@ internal sealed class ZaPokemonEditSessionService
                     continue;
                 }
 
-                pendingEdit = CreateFieldPendingEdit(effectiveWorkflow, pokemon, update.Field, update.Value, diagnostics);
+                pendingEdit = CreateFieldPendingEdit(
+                    effectiveOverlay.Workflow,
+                    pokemon,
+                    update.Field,
+                    update.Value,
+                    diagnostics);
             }
 
             if (pendingEdit is null)
@@ -283,9 +288,16 @@ internal sealed class ZaPokemonEditSessionService
                 && previousSession.PendingEdits.Any(candidate =>
                     IsGlobalYieldEdit(candidate)
                     && ShouldReplacePendingEdit(candidate, pendingEdit));
-            effectiveWorkflow = removesBroaderGlobalYield
-                ? OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits)
-                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            if (removesBroaderGlobalYield)
+            {
+                effectiveOverlay = CreatePokemonWorkflowOverlay(
+                    loadedWorkflow,
+                    updatedSession.PendingEdits);
+            }
+            else
+            {
+                effectiveOverlay.Apply(pendingEdit);
+            }
         }
 
         var interactionDiagnostics = new List<ValidationDiagnostic>();
@@ -340,7 +352,7 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         var workingSession = originalSession;
-        var effectiveWorkflow = originalWorkflow;
+        var effectiveOverlay = new PokemonWorkflowOverlay(originalWorkflow);
         foreach (var update in fieldUpdates)
         {
             if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
@@ -358,15 +370,14 @@ internal sealed class ZaPokemonEditSessionService
             if (IsGlobalYieldField(update.Field))
             {
                 pendingEdit = CreateGlobalYieldPendingEdit(
-                    effectiveWorkflow,
+                    effectiveOverlay.Workflow,
                     update.Field,
                     update.Value,
                     diagnostics);
             }
             else
             {
-                var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
-                    candidate.PersonalId == update.PersonalId);
+                var pokemon = effectiveOverlay.FindPokemon(update.PersonalId);
                 if (pokemon is null)
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -379,7 +390,7 @@ internal sealed class ZaPokemonEditSessionService
                 }
 
                 pendingEdit = CreateFieldPendingEdit(
-                    effectiveWorkflow,
+                    effectiveOverlay.Workflow,
                     pokemon,
                     update.Field,
                     update.Value,
@@ -399,9 +410,16 @@ internal sealed class ZaPokemonEditSessionService
                 && previousSession.PendingEdits.Any(candidate =>
                     IsGlobalYieldEdit(candidate)
                     && ShouldReplacePendingEdit(candidate, pendingEdit));
-            effectiveWorkflow = removesBroaderGlobalYield
-                ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
-                : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            if (removesBroaderGlobalYield)
+            {
+                effectiveOverlay = CreatePokemonWorkflowOverlay(
+                    loadedWorkflow,
+                    workingSession.PendingEdits);
+            }
+            else
+            {
+                effectiveOverlay.Apply(pendingEdit);
+            }
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -422,8 +440,7 @@ internal sealed class ZaPokemonEditSessionService
                 break;
             }
 
-            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
-                candidate.PersonalId == update.PersonalId);
+            var pokemon = effectiveOverlay.FindPokemon(update.PersonalId);
             if (pokemon is null)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -458,7 +475,7 @@ internal sealed class ZaPokemonEditSessionService
                 CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
                 FormatEvolutionValue(operation));
             workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            effectiveOverlay.Apply(pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -479,8 +496,7 @@ internal sealed class ZaPokemonEditSessionService
                 break;
             }
 
-            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
-                candidate.PersonalId == update.PersonalId);
+            var pokemon = effectiveOverlay.FindPokemon(update.PersonalId);
             if (pokemon is null)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -512,7 +528,7 @@ internal sealed class ZaPokemonEditSessionService
                 CreateOperationField(LearnsetFieldPrefix, operation.Action, operation.Slot),
                 FormatOperationValue(operation.MoveId, operation.RawLevel));
             workingSession = ReplacePendingPokemonEdit(workingSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            effectiveOverlay.Apply(pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -542,14 +558,20 @@ internal sealed class ZaPokemonEditSessionService
                 expected: "A Dex Layout-only edit session"));
         }
 
-        var validationWorkflow = loadedWorkflow;
-        foreach (var edit in OrderPersonalEditsForApply(workingSession.PendingEdits))
+        var pokemonEdits = workingSession.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Domain,
+                ZaEditSessionSupport.PokemonDomain,
+                StringComparison.Ordinal))
+            .ToArray();
+        var validationOverlay = new PokemonWorkflowOverlay(loadedWorkflow);
+        foreach (var edit in OrderPersonalEditsForApply(pokemonEdits))
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-            ValidatePendingEdit(project, validationWorkflow, edit, diagnostics);
+            ValidatePendingEdit(project, validationOverlay.Workflow, edit, diagnostics);
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
             {
-                validationWorkflow = OverlayPendingEdit(validationWorkflow, edit);
+                validationOverlay.Apply(edit);
             }
         }
 
@@ -569,7 +591,7 @@ internal sealed class ZaPokemonEditSessionService
 
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             ? RollBack()
-            : new ZaPokemonEditResult(validationWorkflow, workingSession, diagnostics);
+            : new ZaPokemonEditResult(validationOverlay.Workflow, workingSession, diagnostics);
     }
 
     public ZaPokemonEditResult SwapDexPlacement(
@@ -1431,11 +1453,10 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         var updatedSession = currentSession;
-        var effectiveWorkflow = workflow;
+        var effectiveOverlay = new PokemonWorkflowOverlay(workflow);
         foreach (var update in updates)
         {
-            var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate =>
-                candidate.PersonalId == update.PersonalId);
+            var pokemon = effectiveOverlay.FindPokemon(update.PersonalId);
             if (pokemon is null)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -1472,7 +1493,7 @@ internal sealed class ZaPokemonEditSessionService
                 CreateOperationField(EvolutionFieldPrefix, operation.Action, operation.Slot),
                 FormatEvolutionValue(operation));
             updatedSession = ReplacePendingPokemonEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            effectiveOverlay.Apply(pendingEdit);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -1532,14 +1553,14 @@ internal sealed class ZaPokemonEditSessionService
                 expected: "A Dex Layout-only edit session"));
         }
 
-        var effectiveWorkflow = workflow;
+        var effectiveOverlay = new PokemonWorkflowOverlay(workflow);
         foreach (var edit in OrderPersonalEditsForApply(session.PendingEdits))
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-            ValidatePendingEdit(project, effectiveWorkflow, edit, diagnostics);
+            ValidatePendingEdit(project, effectiveOverlay.Workflow, edit, diagnostics);
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
             {
-                effectiveWorkflow = OverlayPendingEdits(effectiveWorkflow, [edit]);
+                effectiveOverlay.Apply(edit);
             }
         }
 
@@ -1618,6 +1639,14 @@ internal sealed class ZaPokemonEditSessionService
 
         var hasBindingConflict = session.PendingEdits.Any(edit =>
         {
+            if (!string.Equals(
+                    edit.Domain,
+                    ZaEditSessionSupport.PokemonDomain,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
             var changesForm = string.Equals(
                 edit.Field,
                 ZaPokemonWorkflowService.FormField,
@@ -1651,7 +1680,11 @@ internal sealed class ZaPokemonEditSessionService
 
             var effectiveForm = session.PendingEdits
                 .Where(candidate =>
-                    string.Equals(candidate.RecordId, edit.RecordId, StringComparison.Ordinal)
+                    string.Equals(
+                        candidate.Domain,
+                        ZaEditSessionSupport.PokemonDomain,
+                        StringComparison.Ordinal)
+                    && string.Equals(candidate.RecordId, edit.RecordId, StringComparison.Ordinal)
                     && string.Equals(
                         candidate.Field,
                         ZaPokemonWorkflowService.FormField,
@@ -2959,9 +2992,13 @@ internal sealed class ZaPokemonEditSessionService
     {
         if (!session.PendingEdits.Any(IsGlobalYieldRestoreEdit)
             || !session.PendingEdits.Any(edit => string.Equals(
-                edit.Field,
-                ZaPokemonWorkflowService.FormField,
-                StringComparison.Ordinal)))
+                    edit.Domain,
+                    ZaEditSessionSupport.PokemonDomain,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    edit.Field,
+                    ZaPokemonWorkflowService.FormField,
+                    StringComparison.Ordinal)))
         {
             return;
         }
@@ -3407,13 +3444,75 @@ internal sealed class ZaPokemonEditSessionService
 
     private static ZaPokemonWorkflow OverlayPendingEdits(ZaPokemonWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
-        var updated = workflow;
+        return CreatePokemonWorkflowOverlay(workflow, edits).Workflow;
+    }
+
+    private static PokemonWorkflowOverlay CreatePokemonWorkflowOverlay(
+        ZaPokemonWorkflow workflow,
+        IEnumerable<PendingEdit> edits)
+    {
+        var overlay = new PokemonWorkflowOverlay(workflow);
         foreach (var edit in OrderPersonalEditsForApply(edits))
         {
-            updated = OverlayPendingEdit(updated, edit);
+            overlay.Apply(edit);
         }
 
-        return updated;
+        return overlay;
+    }
+
+    private sealed class PokemonWorkflowOverlay
+    {
+        private ZaPokemonRecord[] pokemon;
+        private Dictionary<int, int> pokemonIndices;
+
+        public PokemonWorkflowOverlay(ZaPokemonWorkflow workflow)
+        {
+            pokemon = [];
+            pokemonIndices = [];
+            Reset(workflow);
+        }
+
+        public ZaPokemonWorkflow Workflow { get; private set; } = null!;
+
+        public ZaPokemonRecord? FindPokemon(int personalId)
+        {
+            return pokemonIndices.TryGetValue(personalId, out var index)
+                ? pokemon[index]
+                : null;
+        }
+
+        public void Apply(PendingEdit edit)
+        {
+            if (string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+                && int.TryParse(
+                    edit.RecordId,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var personalId)
+                && pokemonIndices.TryGetValue(personalId, out var index))
+            {
+                pokemon[index] = OverlayPokemon(Workflow, pokemon[index], edit);
+                return;
+            }
+
+            var updatedWorkflow = OverlayPendingEdit(Workflow, edit);
+            if (!ReferenceEquals(updatedWorkflow, Workflow))
+            {
+                Reset(updatedWorkflow);
+            }
+        }
+
+        private void Reset(ZaPokemonWorkflow workflow)
+        {
+            pokemon = workflow.Pokemon.ToArray();
+            pokemonIndices = new Dictionary<int, int>(pokemon.Length);
+            for (var index = 0; index < pokemon.Length; index++)
+            {
+                pokemonIndices.TryAdd(pokemon[index].PersonalId, index);
+            }
+
+            Workflow = workflow with { Pokemon = pokemon };
+        }
     }
 
     private static ZaPokemonWorkflow OverlayPendingEdit(ZaPokemonWorkflow workflow, PendingEdit edit)

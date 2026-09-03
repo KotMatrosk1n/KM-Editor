@@ -12,17 +12,17 @@ internal static class Program
         if (args is ["bridge-once"])
         {
             var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-            Console.InputEncoding = utf8;
             Console.OutputEncoding = utf8;
-            return await new BridgeLineRunner().RunOnceAsync(Console.In, Console.Out).ConfigureAwait(false);
+            await using var input = Console.OpenStandardInput();
+            return await new BridgeLineRunner().RunOnceAsync(input, Console.Out).ConfigureAwait(false);
         }
 
         if (args is ["bridge"])
         {
             var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-            Console.InputEncoding = utf8;
             Console.OutputEncoding = utf8;
-            return await new BridgeLineRunner().RunAsync(Console.In, Console.Out).ConfigureAwait(false);
+            await using var input = Console.OpenStandardInput();
+            return await new BridgeLineRunner().RunAsync(input, Console.Out).ConfigureAwait(false);
         }
 
         return 0;

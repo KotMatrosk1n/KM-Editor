@@ -26,6 +26,7 @@ const publishRoot = resolve(binariesDirectory, '.publish');
 const publishDirectory = resolve(publishRoot, runtimeIdentifier);
 const projectPath = resolve(repositoryRoot, 'src', 'KM.Tools', 'KM.Tools.csproj');
 const releaseVersionScript = resolve(repositoryRoot, 'scripts', 'release-version.mjs');
+const sidecarFramingVerificationScript = resolve(scriptDirectory, 'verify-sidecar-framing.mjs');
 const tauriConfigPath = resolve(tauriRoot, 'tauri.conf.json');
 const publishedBinary = resolve(publishDirectory, `KM.Tools${binaryExtension}`);
 const stagedBinary = resolve(
@@ -53,6 +54,7 @@ try {
       'true',
       '-p:PublishSingleFile=true',
       '-p:EnableCompressionInSingleFile=true',
+      '-p:IncludeAllContentForSelfExtract=true',
       '-p:PublishTrimmed=false',
       `-p:Version=${applicationVersion}`,
       `-p:AssemblyVersion=${applicationVersion}.0`,
@@ -68,6 +70,7 @@ try {
   );
 
   assertFile(publishedBinary, 'KM.Tools publish did not produce the expected executable.');
+  verifyPublishedBridge(publishedBinary);
   copyFileSync(publishedBinary, stagedBinary);
 } finally {
   rmSync(publishRoot, { force: true, recursive: true });
@@ -145,4 +148,23 @@ function assertFile(path, message) {
   }
 
   throw new Error(message);
+}
+
+function verifyPublishedBridge(executablePath) {
+  try {
+    execFileSync(executablePath, ['bridge-once'], {
+      cwd: repositoryRoot,
+      input: '',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 30_000
+    });
+    execFileSync(process.execPath, [sidecarFramingVerificationScript, executablePath], {
+      cwd: repositoryRoot,
+      stdio: 'inherit',
+      timeout: 30_000
+    });
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(`Published KM.Tools bridge failed its startup smoke: ${details}`);
+  }
 }

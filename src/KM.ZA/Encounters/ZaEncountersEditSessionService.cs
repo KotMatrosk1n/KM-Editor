@@ -644,7 +644,11 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         var retainedEdits = currentSession.PendingEdits
-            .Where(edit => !ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId))
+            .Where(edit => !string.Equals(
+                    edit.Domain,
+                    ZaEditSessionSupport.EncountersDomain,
+                    StringComparison.Ordinal)
+                || !ZaEncounterPlayerPartnerCatalog.IsRecordId(edit.RecordId))
             .ToArray();
         var removedEditCount = currentSession.PendingEdits.Count - retainedEdits.Length;
         var updatedSession = currentSession with { PendingEdits = retainedEdits };
@@ -3541,7 +3545,11 @@ internal sealed class ZaEncountersEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var targets = edits
-            .Where(edit => AffectsSpawnerData(edit.Field))
+            .Where(edit => string.Equals(
+                    edit.Domain,
+                    ZaEditSessionSupport.EncountersDomain,
+                    StringComparison.Ordinal)
+                && AffectsSpawnerData(edit.Field))
             .Select(edit => TryResolveSpawnerTableId(workflow, edit.RecordId, out var tableId)
                 ? (TableId: tableId, edit.Field, edit.RecordId)
                 : (TableId: string.Empty, edit.Field, edit.RecordId))

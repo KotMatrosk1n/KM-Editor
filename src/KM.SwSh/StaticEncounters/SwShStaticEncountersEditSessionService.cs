@@ -536,6 +536,12 @@ public sealed class SwShStaticEncountersEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        var staticEncounterEdits = session.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Domain,
+                SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
+                StringComparison.Ordinal))
+            .ToArray();
         var effectiveWorkflow = workflow;
         var evRecords = new HashSet<(int Index, ulong EncounterId)>();
         var ivRecords = new HashSet<(int Index, ulong EncounterId)>();
@@ -545,7 +551,7 @@ public sealed class SwShStaticEncountersEditSessionService
         var gigantamaxRecords = new HashSet<(int Index, ulong EncounterId)>();
         var seenFields = new HashSet<(int Index, ulong EncounterId, string Field)>();
 
-        foreach (var edit in session.PendingEdits)
+        foreach (var edit in staticEncounterEdits)
         {
             var errorsBefore = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidatePendingEdit(project, effectiveWorkflow, edit, diagnostics);
@@ -626,13 +632,16 @@ public sealed class SwShStaticEncountersEditSessionService
             diagnostics);
         ValidateGigantamaxCapability(effectiveWorkflow, gigantamaxRecords, diagnostics);
 
-        if (session.PendingEdits.Count > 0
+        if (staticEncounterEdits.Length > 0
             && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
-            PreflightArchiveWrite(project, session, diagnostics);
+            PreflightArchiveWrite(
+                project,
+                session with { PendingEdits = staticEncounterEdits },
+                diagnostics);
         }
 
-        if (session.PendingEdits.Count > 0
+        if (staticEncounterEdits.Length > 0
             && addSuccessDiagnostic
             && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
