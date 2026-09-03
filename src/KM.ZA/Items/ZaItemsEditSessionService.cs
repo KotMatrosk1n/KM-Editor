@@ -2539,9 +2539,13 @@ internal sealed class ZaItemsEditSessionService
 
         var edits = session.PendingEdits
             .Where(edit => string.Equals(
-                edit.Field,
-                ZaItemsWorkflowService.MachineMoveIdField,
-                StringComparison.Ordinal))
+                    edit.Domain,
+                    ZaEditSessionSupport.ItemsDomain,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    edit.Field,
+                    ZaItemsWorkflowService.MachineMoveIdField,
+                    StringComparison.Ordinal))
             .ToArray();
         if (edits.Length == 0)
         {

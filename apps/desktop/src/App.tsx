@@ -75,9 +75,9 @@ import {
 import {
   applyTrainerWorkflowDelta,
   canonicalizeTrainerPartySlotDrafts,
+  clearSubmittedTrainerDraftRecords,
   createTrainerPartySourceSpeciesIndex,
   isTrainerPartySlotBlockedByEarlierEmptySlot,
-  isTrainerPartySlotStageBlockedByEarlierUnstagedSlot,
   isTrainerSlotOccupiedForMaxIvs,
   orderTrainerFieldUpdates,
   reconcileTrainerSlotMaxIvDrafts,
@@ -323,7 +323,8 @@ import {
 import {
   supportedLanguages,
   useLocalization,
-  type LanguageCode
+  type LanguageCode,
+  type LocalizationContextValue
 } from './localization';
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
 import { getContextualItemEditableFields } from './itemsEditor';
@@ -408,9 +409,17 @@ import {
   areStringSetsEqual,
   clearSubmittedKeyedEditorDraft,
   getNextOutstandingEditorDraftKey,
+  pruneSparseFieldDraftRecord,
   reconcileKeyedSourceBackedEditorDrafts,
-  reconcileSourceBackedDraft
+  reconcileSourceBackedDraft,
+  setSparseFieldDraftRecord,
+  setSparseFieldDraftValue
 } from './components/localEditorDraftState';
+import {
+  runSessionLocalEditorSourceMutation,
+  type SessionLocalEditorMutationBinding,
+  type SessionLocalEditorMutationReservation
+} from './components/sessionLocalEditorSourceMutation';
 import {
   TooltipIconVisibilityProvider
 } from './components/TooltipIconVisibility';
@@ -1318,6 +1327,14 @@ type PokemonLearnsetDraftFields = {
   moveId: string;
   level: string;
 };
+const emptyPokemonEvolutionDraftsBySlot: Record<
+  number,
+  PokemonEvolutionDraftFields
+> = {};
+const emptyPokemonLearnsetDraftsBySlot: Record<
+  number,
+  PokemonLearnsetDraftFields
+> = {};
 const emptyPokemonEvolutionCreationDraft: PokemonEvolutionDraftFields = {
   argument: '0',
   form: '0',
@@ -25463,7 +25480,7 @@ function SelectedPokemonPanel({
       new Set(
         pokemon
           ? [
-              ...contextualPersonalFields
+              ...editableFields
                 .filter(
                   (field) =>
                     getEditablePersonalFieldValue(pokemon, field.field) !== null &&
@@ -25478,7 +25495,7 @@ function SelectedPokemonPanel({
             ]
           : []
       ),
-    [contextualPersonalFields, pokemon]
+    [editableFields, pokemon]
   );
   const alphaMove = editorFamily === 'za' ? pokemon?.alphaMove ?? null : null;
   const alphaMoveDraftKey = pokemon
@@ -25528,11 +25545,13 @@ function SelectedPokemonPanel({
     Record<string, Record<number, PokemonLearnsetDraftFields>>
   >({});
   const evolutionDraftsBySlot = pokemon
-    ? evolutionDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
-    : {};
+    ? evolutionDraftsByPokemonId[pokemon.personalId.toString()] ??
+      emptyPokemonEvolutionDraftsBySlot
+    : emptyPokemonEvolutionDraftsBySlot;
   const learnsetDraftsBySlot = pokemon
-    ? learnsetDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
-    : {};
+    ? learnsetDraftsByPokemonId[pokemon.personalId.toString()] ??
+      emptyPokemonLearnsetDraftsBySlot
+    : emptyPokemonLearnsetDraftsBySlot;
   const pokemonDraftRecordKey = pokemon?.personalId.toString() ?? null;
   const selectedDexSwapDraft = pokemonDraftRecordKey === null
     ? null
@@ -27380,15 +27399,12 @@ function SelectedPokemonPanel({
                           }}
                           key={field.field}
                           onChange={(value) => {
-                            const nextDrafts = {
-                              ...personalDrafts,
-                              [field.field]: value
-                            };
                             setPersonalDraftsByPokemonId((currentDrafts) =>
-                              setSparseFieldDraftRecord(
+                              setSparseFieldDraftValue(
                                 currentDrafts,
                                 pokemon.personalId,
-                                nextDrafts,
+                                field.field,
+                                value,
                                 personalDraftDefaults
                               )
                             );
@@ -27926,13 +27942,11 @@ function SelectedPokemonPanel({
                               );
                               const value = event.target.checked ? '1' : '0';
                               setPersonalDraftsByPokemonId((currentDrafts) =>
-                                setSparseFieldDraftRecord(
+                                setSparseFieldDraftValue(
                                   currentDrafts,
                                   pokemon.personalId,
-                                  {
-                                    ...personalDrafts,
-                                    [field]: value
-                                  },
+                                  field,
+                                  value,
                                   personalDraftDefaults
                                 )
                               );
@@ -32401,108 +32415,45 @@ function SelectedTrainerPanel({
       }),
     [pokemonFields, selectedPokemonFormOptionContext]
   );
-  const projectedTrainerHighestLevel = useMemo(
-    () => getProjectedTrainerHighestLevel(trainer, pokemonFields, canonicalPokemonDraftsByTrainerSlot),
-    [canonicalPokemonDraftsByTrainerSlot, pokemonFields, trainer]
-  );
   const contextualTrainerFields = useMemo(
     () =>
-      trainerFields.map((field) =>
-        field.field === moneyFieldName
-          ? {
-              ...field,
-              label:
-                editorFamily === 'swsh'
-                  ? 'Prize money rate'
-                  : editorFamily === 'za'
-                    ? 'Base prize money'
-                    : field.label,
-              options:
-                editorFamily === 'za'
-                  ? createZaTrainerPrizeMoneyOptions(projectedTrainerHighestLevel, formatLocale)
-                  : field.options
-            }
-          : field
+      createContextualTrainerFields(
+        editorFamily,
+        formatLocale,
+        trainer,
+        trainerFields,
+        pokemonFields,
+        canonicalPokemonDraftsByTrainerSlot
       ),
-    [editorFamily, formatLocale, projectedTrainerHighestLevel, trainerFields]
+    [
+      canonicalPokemonDraftsByTrainerSlot,
+      editorFamily,
+      formatLocale,
+      pokemonFields,
+      trainer,
+      trainerFields
+    ]
   );
-  const trainerDraftRecordKey = trainer?.trainerId.toString() ?? null;
-  const trainerPartyDraftPrefix =
-    trainerDraftRecordKey === null ? null : `${trainerDraftRecordKey}:`;
-  const trainerDraftPayload = useMemo<OrdinaryTrainerDraftPayload>(() => {
-    if (trainerDraftRecordKey === null || trainerPartyDraftPrefix === null) {
-      return { partyBySlot: {}, trainerFields: {} };
-    }
-    return {
-      partyBySlot: Object.fromEntries(
-        Object.entries(canonicalPokemonDraftsByTrainerSlot)
-          .filter(([key]) => key.startsWith(trainerPartyDraftPrefix))
-          .map(([key, fields]) => [
-            key.slice(trainerPartyDraftPrefix.length),
-            { ...fields }
-          ])
-      ),
-      trainerFields: {
-        ...(trainerDraftsByTrainerId[trainerDraftRecordKey] ?? {})
-      }
-    };
-  }, [
-    canonicalPokemonDraftsByTrainerSlot,
-    trainerDraftRecordKey,
-    trainerDraftsByTrainerId,
-    trainerPartyDraftPrefix
-  ]);
+  const trainerDraftPayload = useMemo<OrdinaryTrainerDraftPayload>(
+    () => ({
+      partyByTrainerSlot: canonicalPokemonDraftsByTrainerSlot,
+      trainerFieldsByTrainerId: trainerDraftsByTrainerId
+    }),
+    [canonicalPokemonDraftsByTrainerSlot, trainerDraftsByTrainerId]
+  );
   const applyHydratedTrainerDraft = useCallback(
     (payload: OrdinaryTrainerDraftPayload | null) => {
-      if (trainerDraftRecordKey === null || trainerPartyDraftPrefix === null) {
-        return;
-      }
-      setTrainerDraftsByTrainerId((currentDrafts) => {
-        const nextDrafts = { ...currentDrafts };
-        delete nextDrafts[trainerDraftRecordKey];
-        if (payload && Object.keys(payload.trainerFields).length > 0) {
-          nextDrafts[trainerDraftRecordKey] = { ...payload.trainerFields };
-        }
-        return nextDrafts;
-      });
-      setPokemonDraftsByTrainerSlot((currentDrafts) => {
-        const nextDrafts = Object.fromEntries(
-          Object.entries(currentDrafts).filter(
-            ([key]) => !key.startsWith(trainerPartyDraftPrefix)
-          )
-        );
-        if (payload && trainer) {
-          for (const [slot, fields] of Object.entries(payload.partyBySlot)) {
-            const slotNumber = /^\d+$/u.test(slot) ? Number.parseInt(slot, 10) : -1;
-            const pokemon = trainer.team.find((candidate) => candidate.slot === slotNumber);
-            if (!pokemon || Object.keys(fields).length === 0) {
-              continue;
-            }
-
-            const defaults = createTrainerDrafts(defaultContextualPokemonFields, (field) =>
-              getEditablePokemonFieldValue(pokemon, field)
-            );
-            const canonicalDrafts = canonicalizeTrainerPartySlotDrafts(
-              { ...defaults, ...fields },
-              defaults,
-              pokemon.speciesId
-            );
-            if (!areFieldDraftsEqual(canonicalDrafts, defaults)) {
-              nextDrafts[`${trainerPartyDraftPrefix}${slot}`] = canonicalDrafts;
-            }
-          }
-        }
-        return nextDrafts;
-      });
+      setTrainerDraftsByTrainerId(payload?.trainerFieldsByTrainerId ?? {});
+      setPokemonDraftsByTrainerSlot(payload?.partyByTrainerSlot ?? {});
     },
-    [defaultContextualPokemonFields, trainer, trainerDraftRecordKey, trainerPartyDraftPrefix]
+    []
   );
   const trainerDraftBinding = useSessionLocalEditorDraftBinding({
     applyHydratedPayload: applyHydratedTrainerDraft,
     bindingId: 'trainers',
     payload: trainerDraftPayload,
     project: ordinaryDraftProject,
-    recordValue: trainer?.trainerId ?? null,
+    recordValue: 'all-trainers',
     section: 'trainers'
   });
   const runSelectedTrainerSourceMutation = useCallback(
@@ -32633,16 +32584,6 @@ function SelectedTrainerPanel({
       selectedPokemon.slot
     );
   }, [projectedTrainerPartySlotOccupancy, selectedPokemon]);
-  const selectedPokemonStageBlockedByPreviousSlot = useMemo(() => {
-    if (!selectedPokemon) {
-      return false;
-    }
-
-    return isTrainerPartySlotStageBlockedByEarlierUnstagedSlot(
-      projectedTrainerPartySlotOccupancy,
-      selectedPokemon.slot
-    );
-  }, [projectedTrainerPartySlotOccupancy, selectedPokemon]);
   const contextMenuPokemon =
     partySlotContextMenu && trainer?.trainerId === partySlotContextMenu.trainerId
       ? trainer.team.find((pokemon) => pokemon.slot === partySlotContextMenu.slot) ?? null
@@ -32742,39 +32683,158 @@ function SelectedTrainerPanel({
       ),
     [contextualPokemonFields, pokemonDrafts, selectedPokemon]
   );
-  const pokemonHasInvalidEvTotal = useMemo(
-    () =>
-      editorFamily === 'za' &&
-      selectedPokemon !== null &&
-      hasChangedPokemonEvTotalOverLimit(
-        contextualPokemonFields,
-        pokemonDrafts,
-        (field) => getEditablePokemonFieldValue(selectedPokemon, field)
-      ),
-    [contextualPokemonFields, editorFamily, pokemonDrafts, selectedPokemon]
-  );
-  const canSaveTrainerDrafts =
-    trainer !== null &&
+  const trainerStagePlan = useMemo(() => {
+    const invalidFields: LocalEditorValidationIssue[] = [];
+    const submittedPartyDraftsByTrainerSlot: Record<
+      string,
+      Record<string, string>
+    > = {};
+    const submittedTrainerDraftsByTrainerId: Record<
+      string,
+      Record<string, string>
+    > = {};
+    const updates: TrainerFieldUpdate[] = [];
+    const knownPartyDraftKeys = new Set<string>();
+    const knownTrainerDraftKeys = new Set<string>();
+
+    for (const targetTrainer of [...trainerRecords].sort(
+      (left, right) => left.trainerId - right.trainerId
+    )) {
+      const trainerKey = targetTrainer.trainerId.toString();
+      knownTrainerDraftKeys.add(trainerKey);
+      const targetTrainerDrafts = trainerDraftsByTrainerId[trainerKey];
+      if (targetTrainerDrafts) {
+        const targetTrainerFields = createContextualTrainerFields(
+          editorFamily,
+          formatLocale,
+          targetTrainer,
+          trainerFields,
+          pokemonFields,
+          canonicalPokemonDraftsByTrainerSlot
+        );
+        const targetTrainerSummary = getTrainerDraftSummary(
+          [...targetTrainerFields, ...(aiFlagsField ? [aiFlagsField] : [])],
+          targetTrainerDrafts,
+          (field) => getEditableTrainerFieldValue(targetTrainer, field)
+        );
+        invalidFields.push(
+          ...targetTrainerSummary.invalidFields.map((issue) => ({
+            field: `trainer:${targetTrainer.trainerId}:${issue.field}`,
+            label: `${targetTrainer.name} - ${issue.label}`
+          }))
+        );
+        if (targetTrainerSummary.changedFields.length > 0) {
+          submittedTrainerDraftsByTrainerId[trainerKey] = { ...targetTrainerDrafts };
+          updates.push(
+            ...targetTrainerSummary.changedFields.map((change) => ({
+              field: change.field,
+              slot: null,
+              trainerId: targetTrainer.trainerId,
+              value: change.value
+            }))
+          );
+        }
+      }
+
+      for (const targetPokemon of [...targetTrainer.team].sort(
+        (left, right) => left.slot - right.slot
+      )) {
+        const partyKey = `${targetTrainer.trainerId}:${targetPokemon.slot}`;
+        knownPartyDraftKeys.add(partyKey);
+        const targetPokemonDrafts = canonicalPokemonDraftsByTrainerSlot[partyKey];
+        if (!targetPokemonDrafts) {
+          continue;
+        }
+
+        const targetPokemonFields = createContextualTrainerPokemonFields(
+          editorFamily,
+          pokemonFields,
+          pokemonWorkflow,
+          targetPokemon,
+          targetPokemonDrafts,
+          t
+        );
+        const targetPokemonSummary = getTrainerDraftSummary(
+          targetPokemonFields,
+          targetPokemonDrafts,
+          (field) => getEditablePokemonFieldValue(targetPokemon, field)
+        );
+        const targetSlotLabel = formatTrainerSlotNumber(targetPokemon.slot, editorFamily);
+        invalidFields.push(
+          ...targetPokemonSummary.invalidFields.map((issue) => ({
+            field: `trainer:${targetTrainer.trainerId}:${targetPokemon.slot}:${issue.field}`,
+            label: `${targetTrainer.name}, slot ${targetSlotLabel} - ${issue.label}`
+          }))
+        );
+        if (
+          editorFamily === 'za' &&
+          hasChangedPokemonEvTotalOverLimit(
+            targetPokemonFields,
+            targetPokemonDrafts,
+            (field) => getEditablePokemonFieldValue(targetPokemon, field)
+          )
+        ) {
+          invalidFields.push({
+            field: `trainer:${targetTrainer.trainerId}:${targetPokemon.slot}:evTotal`,
+            label: `${targetTrainer.name}, slot ${targetSlotLabel} - Pokemon EV total`,
+            message: 'The Pokemon EV total exceeds the supported maximum.'
+          });
+        }
+        if (targetPokemonSummary.changedFields.length > 0) {
+          submittedPartyDraftsByTrainerSlot[partyKey] = { ...targetPokemonDrafts };
+          updates.push(
+            ...targetPokemonSummary.changedFields.map((change) => ({
+              field: change.field,
+              slot: targetPokemon.slot,
+              trainerId: targetTrainer.trainerId,
+              value: change.value
+            }))
+          );
+        }
+      }
+    }
+
+    for (const [key, fields] of Object.entries(trainerDraftsByTrainerId)) {
+      if (!knownTrainerDraftKeys.has(key) && Object.keys(fields).length > 0) {
+        invalidFields.push({
+          field: `trainer:${key}`,
+          message: 'A retained Trainer draft no longer matches a loaded Trainer.'
+        });
+      }
+    }
+    for (const [key, fields] of Object.entries(canonicalPokemonDraftsByTrainerSlot)) {
+      if (!knownPartyDraftKeys.has(key) && Object.keys(fields).length > 0) {
+        invalidFields.push({
+          field: `trainer:${key}`,
+          message: 'A retained Trainer party draft no longer matches a loaded party slot.'
+        });
+      }
+    }
+
+    return {
+      invalidFields,
+      submittedPartyDraftsByTrainerSlot,
+      submittedTrainerDraftsByTrainerId,
+      updates: orderTrainerFieldUpdates(updates)
+    };
+  }, [
+    aiFlagsField,
+    canonicalPokemonDraftsByTrainerSlot,
+    editorFamily,
+    formatLocale,
+    pokemonFields,
+    pokemonWorkflow,
+    t,
+    trainerDraftsByTrainerId,
+    trainerFields,
+    trainerRecords
+  ]);
+  const canStageTrainerChanges =
     editSession !== null &&
     canEditTrainers &&
     !isTrainerUpdating &&
-    trainerDraftSummary.changedFields.length > 0 &&
-    trainerDraftSummary.invalidFields.length === 0;
-  const canSavePokemonDrafts =
-    trainer !== null &&
-    selectedPokemon !== null &&
-    editSession !== null &&
-    canEditTrainers &&
-    !isTrainerUpdating &&
-    pokemonDraftSummary.changedFields.length > 0 &&
-    pokemonDraftSummary.invalidFields.length === 0 &&
-    !pokemonHasInvalidEvTotal &&
-    !selectedPokemonStageBlockedByPreviousSlot;
-  const showSelectedPokemonStageOrderReason =
-    selectedPokemonStageBlockedByPreviousSlot &&
-    pokemonDraftSummary.changedFields.length > 0 &&
-    pokemonDraftSummary.invalidFields.length === 0 &&
-    !pokemonHasInvalidEvTotal;
+    trainerStagePlan.updates.length > 0 &&
+    trainerStagePlan.invalidFields.length === 0;
   const trainerMaxIvUpdates = useMemo(
     () =>
       createTrainerMaxIvUpdates(
@@ -32975,31 +33035,24 @@ function SelectedTrainerPanel({
   }, [pokemonDraftDefaults, selectedPokemon, selectedPokemonDraftKey]);
 
   const stageTrainerDrafts = async () => {
-    if (!trainer) {
+    if (!canStageTrainerChanges) {
       return;
     }
 
-    const trainerFieldsBeforeStage = trainerDraftPayload.trainerFields;
+    const submittedPlan = trainerStagePlan;
     const sourceMutation = await runSessionLocalEditorSourceMutation({
       binding: trainerDraftBinding,
       didMutate: (didSave) => didSave,
-      mutation: () =>
-        onUpdateTrainerFields(
-          trainerDraftSummary.changedFields.map((change) => ({
-            field: change.field,
-            slot: null,
-            trainerId: trainer.trainerId,
-            value: change.value
-          }))
-        ),
+      mutation: () => onUpdateTrainerFields(submittedPlan.updates),
       reduceLatestPayload: (latestPayload) => ({
-        ...latestPayload,
-        trainerFields: areFieldDraftsEqual(
-          latestPayload.trainerFields,
-          trainerFieldsBeforeStage
+        partyByTrainerSlot: clearSubmittedTrainerDraftRecords(
+          latestPayload.partyByTrainerSlot,
+          submittedPlan.submittedPartyDraftsByTrainerSlot
+        ),
+        trainerFieldsByTrainerId: clearSubmittedTrainerDraftRecords(
+          latestPayload.trainerFieldsByTrainerId,
+          submittedPlan.submittedTrainerDraftsByTrainerId
         )
-          ? {}
-          : latestPayload.trainerFields
       })
     });
     if (sourceMutation.kind === 'reservation-unavailable') {
@@ -33007,69 +33060,10 @@ function SelectedTrainerPanel({
       return;
     }
     setTrainerSourceMutationError(null);
-    if (sourceMutation.kind === 'source-mutated') {
-      setTrainerDraftsByTrainerId((currentDrafts) => {
-        const latestFields = currentDrafts[trainer.trainerId.toString()];
-        return latestFields &&
-          areFieldDraftsEqual(latestFields, trainerFieldsBeforeStage)
-          ? deleteFieldDraftRecord(currentDrafts, trainer.trainerId)
-          : currentDrafts;
-      });
-    }
-  };
-
-  const stagePokemonDrafts = async () => {
-    if (!canSavePokemonDrafts || !trainer || !selectedPokemon) {
-      return;
-    }
-
-    const selectedSlot = selectedPokemon.slot.toString();
-    const pokemonDraftBeforeStage = trainerDraftPayload.partyBySlot[selectedSlot];
-    const sourceMutation = await runSessionLocalEditorSourceMutation({
-      binding: trainerDraftBinding,
-      didMutate: (didSave) => didSave,
-      mutation: () =>
-        onUpdateTrainerFields(
-          pokemonDraftSummary.changedFields.map((change) => ({
-            field: change.field,
-            slot: selectedPokemon.slot,
-            trainerId: trainer.trainerId,
-            value: change.value
-          }))
-        ),
-      reduceLatestPayload: (latestPayload) => {
-        const latestDraft = latestPayload.partyBySlot[selectedSlot];
-        if (
-          !latestDraft ||
-          !pokemonDraftBeforeStage ||
-          !areFieldDraftsEqual(latestDraft, pokemonDraftBeforeStage)
-        ) {
-          return latestPayload;
-        }
-        const nextPartyBySlot = { ...latestPayload.partyBySlot };
-        delete nextPartyBySlot[selectedSlot];
-        return { ...latestPayload, partyBySlot: nextPartyBySlot };
-      }
-    });
-    if (sourceMutation.kind === 'reservation-unavailable') {
-      setTrainerSourceMutationError(sessionLocalDraftMutationBusyMessage);
-      return;
-    }
-    setTrainerSourceMutationError(null);
-    if (sourceMutation.kind === 'source-mutated' && selectedPokemonDraftKey) {
-      setPokemonDraftsByTrainerSlot((currentDrafts) => {
-        const latestDraft = currentDrafts[selectedPokemonDraftKey];
-        return latestDraft &&
-          pokemonDraftBeforeStage &&
-          areFieldDraftsEqual(latestDraft, pokemonDraftBeforeStage)
-          ? deleteFieldDraftRecord(currentDrafts, selectedPokemonDraftKey)
-          : currentDrafts;
-      });
-    }
   };
 
   const stageTrainerMaxIvs = async () => {
-    if (!trainer || trainerPartyDraftPrefix === null) {
+    if (!trainer) {
       return;
     }
 
@@ -33107,47 +33101,21 @@ function SelectedTrainerPanel({
       binding: trainerDraftBinding,
       didMutate: (didSave) => didSave,
       mutation: () => onUpdateTrainerFields(trainerMaxIvUpdates),
-      reduceLatestPayload: (latestPayload) => {
-        const latestGlobalDrafts = Object.fromEntries(
-          Object.entries(latestPayload.partyBySlot).map(([slot, fields]) => [
-            `${trainerPartyDraftPrefix}${slot}`,
-            { ...fields }
-          ])
-        );
-        const reconciledGlobalDrafts = reconcileTrainerMaxIvDrafts(
-          latestGlobalDrafts,
+      reduceLatestPayload: (latestPayload) => ({
+        ...latestPayload,
+        partyByTrainerSlot: reconcileTrainerMaxIvDrafts(
+          latestPayload.partyByTrainerSlot,
           trainer,
           contextualPokemonFields,
           submittedDraftsByTrainerSlot
-        );
-        return {
-          ...latestPayload,
-          partyBySlot: Object.fromEntries(
-            Object.entries(reconciledGlobalDrafts)
-              .filter(([key]) => key.startsWith(trainerPartyDraftPrefix))
-              .map(([key, fields]) => [
-                key.slice(trainerPartyDraftPrefix.length),
-                { ...fields }
-              ])
-          )
-        };
-      }
+        )
+      })
     });
     if (sourceMutation.kind === 'reservation-unavailable') {
       setTrainerSourceMutationError(sessionLocalDraftMutationBusyMessage);
       return;
     }
     setTrainerSourceMutationError(null);
-    if (sourceMutation.kind === 'source-mutated') {
-      setPokemonDraftsByTrainerSlot((currentDrafts) =>
-        reconcileTrainerMaxIvDrafts(
-          currentDrafts,
-          trainer,
-          contextualPokemonFields,
-          submittedDraftsByTrainerSlot
-        )
-      );
-    }
   };
 
   const openPartySlotContextMenu = (
@@ -33160,7 +33128,6 @@ function SelectedTrainerPanel({
       return;
     }
 
-    onSelectSlot(pokemon.slot);
     setPartySlotContextMenu({
       left,
       slot: pokemon.slot,
@@ -33329,24 +33296,14 @@ function SelectedTrainerPanel({
     <aside aria-label="Selected trainer provenance" className="trainer-inspector">
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.trainers"
-        issues={[
-          ...trainerDraftSummary.invalidFields,
-          ...pokemonDraftSummary.invalidFields,
-          ...(pokemonHasInvalidEvTotal
-            ? [{
-                field: 'evTotal',
-                label: 'Pokemon EV total',
-                message: 'The Pokemon EV total exceeds the supported maximum.'
-              }]
-            : [])
-        ]}
+        issues={trainerStagePlan.invalidFields}
       />
       {editSession ? (
         <EditorSessionBarActions>
           <button
             aria-busy={isTrainerUpdating || undefined}
             className="primary-button"
-            disabled={!canSaveTrainerDrafts}
+            disabled={!canStageTrainerChanges}
             onClick={stageTrainerDrafts}
             type="button"
           >
@@ -33354,33 +33311,14 @@ function SelectedTrainerPanel({
               busyLabel="Staging"
               icon={<Save aria-hidden="true" size={16} />}
               isBusy={isTrainerUpdating}
-              label="Stage Trainer"
+              label="Stage Trainer Changes"
             />
           </button>
-          {selectedPokemon ? (
-            <button
-              aria-busy={isTrainerUpdating || undefined}
-              className="primary-button"
-              disabled={!canSavePokemonDrafts}
-              onClick={stagePokemonDrafts}
-              title={
-                showSelectedPokemonStageOrderReason
-                  ? t('trainers.partyClipboard.stagePreviousSlotReason')
-                  : undefined
-              }
-              type="button"
-            >
-              <BusyActionContent
-                busyLabel="Staging"
-                icon={<Save aria-hidden="true" size={16} />}
-                isBusy={isTrainerUpdating}
-                label={t('editorDrafts.stageSelectedPokemon')}
-              />
-            </button>
-          ) : null}
-          {showSelectedPokemonStageOrderReason ? (
-            <span className="draft-action-summary">
-              {t('trainers.partyClipboard.stagePreviousSlotReason')}
+          {trainerStagePlan.invalidFields.length > 0 ? (
+            <span className="draft-action-summary" role="status">
+              {`${trainerStagePlan.invalidFields.length} Trainer draft${
+                trainerStagePlan.invalidFields.length === 1 ? '' : 's'
+              } need valid values before staging.`}
             </span>
           ) : null}
           {nextTrainerDraftTarget ? (
@@ -34442,6 +34380,116 @@ function resolveZaTrainerMeowsticFormForGender(gender: number, form: number) {
   }
 
   return form;
+}
+
+function createContextualTrainerFields(
+  editorFamily: EditorUiFamily,
+  formatLocale: string,
+  trainer: TrainerRecord | null,
+  trainerFields: TrainerEditableField[],
+  pokemonFields: TrainerEditableField[],
+  draftsByTrainerSlot: Record<string, Record<string, string>>
+) {
+  const projectedHighestLevel = getProjectedTrainerHighestLevel(
+    trainer,
+    pokemonFields,
+    draftsByTrainerSlot
+  );
+  return trainerFields.map((field) =>
+    field.field === moneyFieldName
+      ? {
+          ...field,
+          label:
+            editorFamily === 'swsh'
+              ? 'Prize money rate'
+              : editorFamily === 'za'
+                ? 'Base prize money'
+                : field.label,
+          options:
+            editorFamily === 'za'
+              ? createZaTrainerPrizeMoneyOptions(projectedHighestLevel, formatLocale)
+              : field.options
+        }
+      : field
+  );
+}
+
+function createContextualTrainerPokemonFields(
+  editorFamily: EditorUiFamily,
+  pokemonFields: TrainerEditableField[],
+  pokemonWorkflow: PokemonWorkflow | null,
+  pokemon: TrainerPokemonRecord,
+  drafts: Record<string, string>,
+  t: LocalizationContextValue['t']
+) {
+  const defaultContextualFields = pokemonFields.map((field) => {
+    const options = getContextualFieldOptions(field, {
+      abilityOptions: pokemon.abilityOptions,
+      formOptions: pokemon.formOptions,
+      gameFamily: editorFamily,
+      species: pokemon.species,
+      speciesId: pokemon.speciesId
+    });
+    return options === field.options ? field : { ...field, options };
+  });
+  const context = createDraftSpeciesFormOptionContext(
+    defaultContextualFields.find((field) => field.field === speciesIdFieldName) ?? null,
+    drafts[speciesIdFieldName],
+    pokemon.species,
+    pokemon.speciesId,
+    pokemon.abilityOptions,
+    editorFamily,
+    undefined,
+    pokemon.formOptions
+  );
+  const draftedForm = Number.parseInt(drafts[formFieldName] ?? pokemon.form.toString(), 10);
+  const referencePokemon = pokemonWorkflow?.pokemon.find(
+    (candidate) =>
+      candidate.speciesId === context.speciesId &&
+      candidate.form === (Number.isInteger(draftedForm) ? draftedForm : pokemon.form)
+  );
+  const usesCurrentIdentity =
+    context.speciesId === pokemon.speciesId && draftedForm === pokemon.form;
+  const projectedGender =
+    getProjectedTrainerPokemonFieldValue(
+      pokemon,
+      defaultContextualFields,
+      drafts,
+      genderFieldName
+    ) ?? pokemon.gender;
+  const zaTrainerMeowstic =
+    editorFamily === 'za' && context.speciesId === zaMeowsticSpeciesId;
+  const genderOptions = zaTrainerMeowstic
+    ? (pokemonFields.find((field) => field.field === genderFieldName)?.options ?? []).map(
+        (option) =>
+          option.value === 0
+            ? { ...option, label: t('za.trainers.meowstic.defaultGenderOption') }
+            : option
+      )
+    : undefined;
+  const allowedFormValues = zaTrainerMeowstic
+    ? getZaTrainerMeowsticFormsForGender(projectedGender)
+    : undefined;
+  const formLabelOverrides =
+    zaTrainerMeowstic && projectedGender === 0
+      ? { [draftedForm]: t('za.trainers.meowstic.defaultFormOption') }
+      : undefined;
+  const formOptionContext = {
+    ...context,
+    abilityOptions: referencePokemon
+      ? createTrainerPokemonAbilityOptions(referencePokemon)
+      : usesCurrentIdentity
+        ? pokemon.abilityOptions
+        : [],
+    allowedFormValues,
+    formLabelOverrides,
+    genderOptions
+  };
+
+  return defaultContextualFields.map((field) => {
+    const options = getContextualFieldOptions(field, formOptionContext);
+    return options === field.options ? field : { ...field, options };
+  });
 }
 
 function createTrainerDrafts(
@@ -36500,60 +36548,6 @@ const recordKeyedLocalDraftSections = new Set<WorkbenchSection>([
 const sessionLocalDraftMutationBusyMessage =
   'This record is already being staged. Wait for it to finish and try again.';
 
-type SessionLocalEditorMutationReservation = Readonly<{
-  adapterIdentity: string;
-  scopeBaseIdentity: string;
-}>;
-
-type SessionLocalEditorMutationBinding<TDraft> = Readonly<{
-  cancelDraftSourceMutation: (
-    reservation: SessionLocalEditorMutationReservation
-  ) => boolean;
-  commitDraftSourceMutation: (
-    reservation: SessionLocalEditorMutationReservation,
-    reduceLatestPayload: (latestPayload: TDraft) => TDraft
-  ) => boolean;
-  reserveDraftSourceMutation: () =>
-    SessionLocalEditorMutationReservation | null;
-}>;
-
-async function runSessionLocalEditorSourceMutation<TDraft, TResult>(options: {
-  binding: SessionLocalEditorMutationBinding<TDraft>;
-  didMutate: (result: TResult) => boolean;
-  mutation: () => Promise<TResult>;
-  reduceLatestPayload: (latestPayload: TDraft, result: TResult) => TDraft;
-}): Promise<
-  | Readonly<{ kind: 'not-mutated'; result: TResult }>
-  | Readonly<{ kind: 'reservation-unavailable' }>
-  | Readonly<{ kind: 'source-mutated'; result: TResult }>
-> {
-  const reservation = options.binding.reserveDraftSourceMutation();
-  if (!reservation) {
-    return { kind: 'reservation-unavailable' };
-  }
-
-  try {
-    const result = await options.mutation();
-    if (!options.didMutate(result)) {
-      options.binding.cancelDraftSourceMutation(reservation);
-      return { kind: 'not-mutated', result };
-    }
-    if (
-      !options.binding.commitDraftSourceMutation(
-        reservation,
-        (latestPayload) => options.reduceLatestPayload(latestPayload, result)
-      )
-    ) {
-      options.binding.cancelDraftSourceMutation(reservation);
-      return { kind: 'reservation-unavailable' };
-    }
-    return { kind: 'source-mutated', result };
-  } catch (error) {
-    options.binding.cancelDraftSourceMutation(reservation);
-    throw error;
-  }
-}
-
 function useSessionLocalEditorDraftBinding<TDraft>({
   applyHydratedPayload,
   bindingId,
@@ -36591,21 +36585,29 @@ function useSessionLocalEditorDraftBinding<TDraft>({
         : null,
     [isReady, project?.game, project?.projectId, recordKind, recordValue, section]
   );
+  const currentBindingRef = useRef({
+    applyHydratedPayload,
+    sourceTransitionAdapterIdentity,
+    scopeBaseIdentity
+  });
+  currentBindingRef.current = {
+    applyHydratedPayload,
+    sourceTransitionAdapterIdentity,
+    scopeBaseIdentity
+  };
 
   const reserveDraftSourceMutation = useCallback(() => {
-    if (!scopeBaseIdentity || mutationReservationRef.current !== null) {
+    const currentBinding = currentBindingRef.current;
+    if (!currentBinding.scopeBaseIdentity || mutationReservationRef.current !== null) {
       return null;
     }
     const reservation: SessionLocalEditorMutationReservation = Object.freeze({
-      adapterIdentity: sourceTransitionAdapterIdentity,
-      scopeBaseIdentity
+      adapterIdentity: currentBinding.sourceTransitionAdapterIdentity,
+      scopeBaseIdentity: currentBinding.scopeBaseIdentity
     });
     mutationReservationRef.current = reservation;
     return reservation;
-  }, [
-    scopeBaseIdentity,
-    sourceTransitionAdapterIdentity,
-  ]);
+  }, []);
 
   const commitDraftSourceMutation = useCallback(
     (
@@ -36614,9 +36616,10 @@ function useSessionLocalEditorDraftBinding<TDraft>({
     ) => {
       let nextPayload: TDraft;
       try {
+        const currentBinding = currentBindingRef.current;
         if (
-          reservation.adapterIdentity !== sourceTransitionAdapterIdentity ||
-          reservation.scopeBaseIdentity !== scopeBaseIdentity ||
+          reservation.adapterIdentity !== currentBinding.sourceTransitionAdapterIdentity ||
+          reservation.scopeBaseIdentity !== currentBinding.scopeBaseIdentity ||
           mutationReservationRef.current !== reservation
         ) {
           return false;
@@ -36627,24 +36630,21 @@ function useSessionLocalEditorDraftBinding<TDraft>({
         return false;
       }
       mutationReservationRef.current = null;
-      applyHydratedPayload(nextPayload);
+      currentBindingRef.current.applyHydratedPayload(nextPayload);
       return true;
     },
-    [applyHydratedPayload, scopeBaseIdentity, sourceTransitionAdapterIdentity]
+    []
   );
 
   const cancelDraftSourceMutation = useCallback(
     (reservation: SessionLocalEditorMutationReservation) => {
-      if (
-        reservation.adapterIdentity !== sourceTransitionAdapterIdentity ||
-        mutationReservationRef.current !== reservation
-      ) {
+      if (mutationReservationRef.current !== reservation) {
         return false;
       }
       mutationReservationRef.current = null;
       return true;
     },
-    [sourceTransitionAdapterIdentity]
+    []
   );
 
   return {
@@ -65894,29 +65894,6 @@ function setFieldDraftRecord(
   return nextRecords;
 }
 
-function setSparseFieldDraftRecord(
-  records: Record<string, Record<string, string>>,
-  recordKey: string | number,
-  nextDrafts: Record<string, string>,
-  defaultDrafts: Record<string, string>
-) {
-  const normalizedKey = recordKey.toString();
-  const sparseDrafts = Object.fromEntries(
-    Object.entries(nextDrafts).filter(
-      ([field, value]) => value !== (defaultDrafts[field] ?? '')
-    )
-  );
-  const nextRecords = { ...records };
-
-  if (Object.keys(sparseDrafts).length === 0) {
-    delete nextRecords[normalizedKey];
-  } else {
-    nextRecords[normalizedKey] = sparseDrafts;
-  }
-
-  return nextRecords;
-}
-
 function updateSparseFieldDraftRecordAfterStage(
   records: Record<string, Record<string, string>>,
   recordKey: string | number,
@@ -65935,24 +65912,6 @@ function updateSparseFieldDraftRecordAfterStage(
     nextRecords[normalizedKey] = nextFields;
   }
   return nextRecords;
-}
-
-function pruneSparseFieldDraftRecord(
-  records: Record<string, Record<string, string>>,
-  recordKey: string | number,
-  defaultDrafts: Record<string, string>,
-  allowedFields: ReadonlySet<string>
-) {
-  const normalizedKey = recordKey.toString();
-  const currentDrafts = records[normalizedKey];
-  if (!currentDrafts) {
-    return records;
-  }
-
-  const writableDrafts = Object.fromEntries(
-    Object.entries(currentDrafts).filter(([field]) => allowedFields.has(field))
-  );
-  return setSparseFieldDraftRecord(records, recordKey, writableDrafts, defaultDrafts);
 }
 
 function pruneFieldDraftRecord(

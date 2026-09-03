@@ -25,6 +25,6 @@ export type OrdinaryTextDraftPayload = {
 };
 
 export type OrdinaryTrainerDraftPayload = {
-  partyBySlot: Record<string, Record<string, string>>;
-  trainerFields: Record<string, string>;
+  partyByTrainerSlot: Record<string, Record<string, string>>;
+  trainerFieldsByTrainerId: Record<string, Record<string, string>>;
 };

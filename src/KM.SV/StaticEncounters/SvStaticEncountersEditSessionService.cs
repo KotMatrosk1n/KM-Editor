@@ -154,8 +154,14 @@ internal sealed class SvStaticEncountersEditSessionService
             return new SvStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits);
-        foreach (var edit in workingSession.PendingEdits)
+        var staticEncounterEdits = workingSession.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Domain,
+                SvEditSessionSupport.StaticEncountersDomain,
+                StringComparison.Ordinal))
+            .ToArray();
+        effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, staticEncounterEdits);
+        foreach (var edit in staticEncounterEdits)
         {
             ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
         }

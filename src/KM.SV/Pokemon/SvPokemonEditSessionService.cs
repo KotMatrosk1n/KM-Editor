@@ -422,8 +422,14 @@ internal sealed class SvPokemonEditSessionService
             return RollBack();
         }
 
+        var pokemonEdits = workingSession.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Domain,
+                SvEditSessionSupport.PokemonDomain,
+                StringComparison.Ordinal))
+            .ToArray();
         var validationWorkflow = loadedWorkflow;
-        foreach (var edit in workingSession.PendingEdits)
+        foreach (var edit in pokemonEdits)
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidatePendingEdit(validationWorkflow, edit, diagnostics);

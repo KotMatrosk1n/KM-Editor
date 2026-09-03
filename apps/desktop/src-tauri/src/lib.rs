@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use std::collections::VecDeque;
+use std::fs::{File, OpenOptions};
 use std::future::Future;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -8,7 +9,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, Weak};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::ffi::c_void;
@@ -35,6 +36,8 @@ const PROJECT_BRIDGE_READ_WORKER_ENVIRONMENT_VARIABLE: &str = "KM_MANAGED_READ_W
 const PROJECT_BRIDGE_CPU_LIMIT_ENVIRONMENT_VARIABLE: &str = "KM_MANAGED_CONCURRENCY_CPU_LIMIT";
 const PROJECT_BRIDGE_MEMORY_LIMIT_ENVIRONMENT_VARIABLE: &str =
     "KM_MANAGED_CONCURRENCY_MEMORY_BYTES";
+const PROJECT_BRIDGE_TRACE_PATH_ENVIRONMENT_VARIABLE: &str = "KM_PROJECT_BRIDGE_TRACE_PATH";
+const PROJECT_BRIDGE_TRACE_SCHEMA_VERSION: u8 = 1;
 const MAX_PROJECT_BRIDGE_PENDING_REQUESTS: usize = 64;
 const MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES: usize = 256 * 1024 * 1024;
 const PROJECT_BRIDGE_LIMIT_PROVISION_MULTIPLIER: usize = 4;
@@ -441,6 +444,132 @@ impl SupportSearchState {
     fn is_current(&self, generation: usize) -> bool {
         self.generation.load(Ordering::Acquire) == generation
     }
+}
+
+#[derive(Clone, Default)]
+struct ProjectBridgeTraceState {
+    sink: Option<Arc<Mutex<File>>>,
+    next_sequence: Arc<AtomicUsize>,
+}
+
+#[derive(Clone)]
+struct ProjectBridgeTraceRequest {
+    state: ProjectBridgeTraceState,
+    sequence: usize,
+    command: String,
+    request_id: Option<String>,
+    started_at: Instant,
+}
+
+impl ProjectBridgeTraceState {
+    fn from_environment() -> Result<Self, String> {
+        let Some(path) = std::env::var_os(PROJECT_BRIDGE_TRACE_PATH_ENVIRONMENT_VARIABLE) else {
+            return Ok(Self::default());
+        };
+        if path.is_empty() {
+            return Ok(Self::default());
+        }
+
+        Self::from_path(Path::new(&path))
+    }
+
+    fn from_path(path: &Path) -> Result<Self, String> {
+        if !path.is_absolute() || path.extension().and_then(|value| value.to_str()) != Some("jsonl")
+        {
+            return Err(format!(
+                "{PROJECT_BRIDGE_TRACE_PATH_ENVIRONMENT_VARIABLE} must be an absolute .jsonl path."
+            ));
+        }
+        let parent = path.parent().ok_or_else(|| {
+            format!(
+                "{PROJECT_BRIDGE_TRACE_PATH_ENVIRONMENT_VARIABLE} did not identify a file parent."
+            )
+        })?;
+        if !parent.is_dir() {
+            return Err(format!(
+                "{PROJECT_BRIDGE_TRACE_PATH_ENVIRONMENT_VARIABLE} parent directory does not exist."
+            ));
+        }
+
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)
+            .map_err(|error| format!("Could not create the project bridge trace: {error}"))?;
+        let state = Self {
+            sink: Some(Arc::new(Mutex::new(file))),
+            next_sequence: Arc::new(AtomicUsize::new(1)),
+        };
+        state.write_value(&serde_json::json!({
+            "event": "trace-started",
+            "processId": std::process::id(),
+            "schemaVersion": PROJECT_BRIDGE_TRACE_SCHEMA_VERSION,
+            "timestampUnixMs": project_bridge_trace_timestamp_millis(),
+        }));
+        Ok(state)
+    }
+
+    fn begin_request(&self, request_json: &str) -> Option<ProjectBridgeTraceRequest> {
+        self.sink.as_ref()?;
+        let request = serde_json::from_str::<serde_json::Value>(request_json).ok();
+        let command = request
+            .as_ref()
+            .and_then(|value| value.get("command"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("(unparsed)")
+            .to_owned();
+        let request_id = request
+            .as_ref()
+            .and_then(|value| value.get("requestId"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
+        Some(ProjectBridgeTraceRequest {
+            state: self.clone(),
+            sequence,
+            command,
+            request_id,
+            started_at: Instant::now(),
+        })
+    }
+
+    fn write_value(&self, value: &serde_json::Value) {
+        let Some(sink) = self.sink.as_ref() else {
+            return;
+        };
+        let mut file = match sink.lock() {
+            Ok(file) => file,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if serde_json::to_writer(&mut *file, value).is_ok() {
+            let _ = file.write_all(b"\n");
+            let _ = file.flush();
+        }
+    }
+}
+
+impl ProjectBridgeTraceRequest {
+    fn record(&self, event: &str, details: serde_json::Value) {
+        self.state.write_value(&serde_json::json!({
+            "command": self.command,
+            "details": details,
+            "event": event,
+            "processId": std::process::id(),
+            "requestElapsedMs": self.started_at.elapsed().as_millis(),
+            "requestId": self.request_id,
+            "schemaVersion": PROJECT_BRIDGE_TRACE_SCHEMA_VERSION,
+            "sequence": self.sequence,
+            "timestampUnixMs": project_bridge_trace_timestamp_millis(),
+        }));
+    }
+}
+
+fn project_bridge_trace_timestamp_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 #[derive(Clone)]
@@ -1038,83 +1167,209 @@ struct SupportSearchProgress {
 async fn project_bridge(
     app_handle: tauri::AppHandle,
     bridge_state: tauri::State<'_, ProjectBridgeState>,
+    trace_state: tauri::State<'_, ProjectBridgeTraceState>,
     request_json: String,
 ) -> Result<String, String> {
-    validate_project_bridge_request_transport(&request_json)?;
+    let trace_request = trace_state.begin_request(&request_json);
+    if let Some(trace) = trace_request.as_ref() {
+        trace.record(
+            "request-received",
+            serde_json::json!({ "requestBytes": request_json.len() }),
+        );
+    }
+    if let Err(error) = validate_project_bridge_request_transport(&request_json) {
+        if let Some(trace) = trace_request.as_ref() {
+            trace.record(
+                "request-finished",
+                serde_json::json!({ "outcome": "transport-validation-rejected" }),
+            );
+        }
+        return Err(error);
+    }
 
     let bridge_state = bridge_state.inner().clone();
-    let _pending_request = bridge_state.reserve_pending_request(request_json.len())?;
+    let _pending_request = match bridge_state.reserve_pending_request(request_json.len()) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            if let Some(trace) = trace_request.as_ref() {
+                trace.record(
+                    "request-finished",
+                    serde_json::json!({ "outcome": "pending-budget-rejected" }),
+                );
+            }
+            return Err(error);
+        }
+    };
     let request_policy = resolved_project_bridge_request_policy(&request_json);
+    if let Some(trace) = trace_request.as_ref() {
+        trace.record(
+            "request-scheduled",
+            serde_json::json!({
+                "concurrency": format!("{:?}", request_policy.concurrency),
+                "executionTimeoutMs": request_policy.execution_timeout.map(|timeout| timeout.as_millis()),
+                "recycleReadWorkersAfterExecution": request_policy.recycle_read_workers_after_execution,
+                "recycleReadWorkersBeforeExecution": request_policy.recycle_read_workers_before_execution,
+                "retryAfterTransportFailure": request_policy.retry_after_transport_failure,
+                "writerPriorityBeforeExecution": request_policy.writer_priority_before_execution,
+            }),
+        );
+    }
+    let mut scheduler_attempt = 0_usize;
     loop {
+        scheduler_attempt += 1;
         let request_generation = bridge_state.generation.load(Ordering::Acquire);
         let request_read_generation = bridge_state.read_generation.load(Ordering::Acquire);
+        let permit_started_at = Instant::now();
+        if let Some(trace) = trace_request.as_ref() {
+            trace.record(
+                "permit-wait-started",
+                serde_json::json!({
+                    "attempt": scheduler_attempt,
+                    "generation": request_generation,
+                    "readGeneration": request_read_generation,
+                }),
+            );
+        }
         let execution_permit = match bridge_state
             .acquire_execution_permit_for_request(request_generation, request_policy)
             .await
         {
-            Ok(permit) => permit,
+            Ok(permit) => {
+                if let Some(trace) = trace_request.as_ref() {
+                    trace.record(
+                        "permit-acquired",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "waitMs": permit_started_at.elapsed().as_millis(),
+                        }),
+                    );
+                }
+                permit
+            }
             Err(error)
                 if project_bridge_request_should_restart_after_preemption(
                     request_policy,
                     &error,
                 ) =>
             {
+                if let Some(trace) = trace_request.as_ref() {
+                    trace.record(
+                        "permit-restarted",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "waitMs": permit_started_at.elapsed().as_millis(),
+                        }),
+                    );
+                }
                 continue;
             }
-            Err(error) => return Err(error),
+            Err(error) => {
+                if let Some(trace) = trace_request.as_ref() {
+                    trace.record(
+                        "request-finished",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "outcome": "permit-rejected",
+                            "waitMs": permit_started_at.elapsed().as_millis(),
+                        }),
+                    );
+                }
+                return Err(error);
+            }
         };
         let request_bridge_state = bridge_state.clone();
         let request_app_handle = app_handle.clone();
         let request_json_for_attempt = request_json.clone();
-        let mut response = tauri::async_runtime::spawn_blocking(move || {
+        let trace_for_execution = trace_request.clone();
+        let blocking_task = tauri::async_runtime::spawn_blocking(move || {
             let _execution_permit = execution_permit;
-            if request_policy.recycle_read_workers_before_execution {
-                recycle_project_bridge_read_workers(&request_bridge_state)?;
+            let execution_started_at = Instant::now();
+            if let Some(trace) = trace_for_execution.as_ref() {
+                trace.record(
+                    "execution-started",
+                    serde_json::json!({ "attempt": scheduler_attempt }),
+                );
             }
+            let response = (|| -> Result<String, String> {
+                if request_policy.recycle_read_workers_before_execution {
+                    recycle_project_bridge_read_workers(&request_bridge_state)?;
+                }
 
-            let response = match request_policy.concurrency {
-                ProjectBridgeCommandConcurrency::IndependentRead(affinity) => {
-                    run_project_bridge_read_request(
+                let response = match request_policy.concurrency {
+                    ProjectBridgeCommandConcurrency::IndependentRead(affinity) => {
+                        run_project_bridge_read_request(
+                            &request_app_handle,
+                            &request_bridge_state,
+                            request_generation,
+                            Some(request_read_generation),
+                            request_json_for_attempt,
+                            request_policy,
+                            affinity,
+                            trace_for_execution.as_ref(),
+                            scheduler_attempt,
+                        )
+                    }
+                    ProjectBridgeCommandConcurrency::AffinityOrdered(affinity)
+                    | ProjectBridgeCommandConcurrency::AffinityExclusive(affinity) => {
+                        run_project_bridge_read_request(
+                            &request_app_handle,
+                            &request_bridge_state,
+                            request_generation,
+                            None,
+                            request_json_for_attempt,
+                            request_policy,
+                            affinity,
+                            trace_for_execution.as_ref(),
+                            scheduler_attempt,
+                        )
+                    }
+                    ProjectBridgeCommandConcurrency::OwnerOrdered
+                    | ProjectBridgeCommandConcurrency::Exclusive => run_project_bridge_request(
                         &request_app_handle,
                         &request_bridge_state,
                         request_generation,
-                        Some(request_read_generation),
                         request_json_for_attempt,
                         request_policy,
-                        affinity,
-                    )
+                        trace_for_execution.as_ref(),
+                        scheduler_attempt,
+                    ),
+                };
+                if request_policy.recycle_read_workers_after_execution {
+                    let recycle_result = recycle_project_bridge_read_workers(&request_bridge_state);
+                    if response.is_ok() {
+                        recycle_result?;
+                    }
                 }
-                ProjectBridgeCommandConcurrency::AffinityOrdered(affinity)
-                | ProjectBridgeCommandConcurrency::AffinityExclusive(affinity) => {
-                    run_project_bridge_read_request(
-                        &request_app_handle,
-                        &request_bridge_state,
-                        request_generation,
-                        None,
-                        request_json_for_attempt,
-                        request_policy,
-                        affinity,
-                    )
-                }
-                ProjectBridgeCommandConcurrency::OwnerOrdered
-                | ProjectBridgeCommandConcurrency::Exclusive => run_project_bridge_request(
-                    &request_app_handle,
-                    &request_bridge_state,
-                    request_generation,
-                    request_json_for_attempt,
-                    request_policy,
-                ),
-            };
-            if request_policy.recycle_read_workers_after_execution {
-                let recycle_result = recycle_project_bridge_read_workers(&request_bridge_state);
-                if response.is_ok() {
-                    recycle_result?;
-                }
+                response
+            })();
+            if let Some(trace) = trace_for_execution.as_ref() {
+                trace.record(
+                    "execution-finished",
+                    serde_json::json!({
+                        "attempt": scheduler_attempt,
+                        "durationMs": execution_started_at.elapsed().as_millis(),
+                        "outcome": if response.is_ok() { "success" } else { "failure" },
+                        "responseBytes": response.as_ref().ok().map(String::len),
+                    }),
+                );
             }
             response
-        })
-        .await
-        .map_err(|error| format!("Project bridge request task failed: {error}"))?;
+        });
+        let mut response = match blocking_task.await {
+            Ok(response) => response,
+            Err(error) => {
+                if let Some(trace) = trace_request.as_ref() {
+                    trace.record(
+                        "request-finished",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "outcome": "blocking-task-failed",
+                        }),
+                    );
+                }
+                return Err(format!("Project bridge request task failed: {error}"));
+            }
+        };
 
         response = accept_project_bridge_response_for_epoch(
             &bridge_state,
@@ -1127,10 +1382,26 @@ async fn project_bridge(
         if response.as_ref().is_err_and(|error| {
             project_bridge_request_should_restart_after_preemption(request_policy, error)
         }) {
+            if let Some(trace) = trace_request.as_ref() {
+                trace.record(
+                    "response-restarted",
+                    serde_json::json!({ "attempt": scheduler_attempt }),
+                );
+            }
             // The old read permit has been dropped by the blocking task. Re-admit the same
             // replay-safe read behind the queued writer using the new read generation so
             // background preparation recovers without surfacing a false editor error.
             continue;
+        }
+        if let Some(trace) = trace_request.as_ref() {
+            trace.record(
+                "request-finished",
+                serde_json::json!({
+                    "attempt": scheduler_attempt,
+                    "outcome": if response.is_ok() { "success" } else { "failure" },
+                    "responseBytes": response.as_ref().ok().map(String::len),
+                }),
+            );
         }
         return response;
     }
@@ -1216,6 +1487,8 @@ fn run_project_bridge_request(
     request_generation: usize,
     request_json: String,
     request_policy: ProjectBridgeRequestPolicy,
+    trace_request: Option<&ProjectBridgeTraceRequest>,
+    scheduler_attempt: usize,
 ) -> Result<String, String> {
     run_project_bridge_request_with(
         bridge_state,
@@ -1224,10 +1497,14 @@ fn run_project_bridge_request(
         request_policy,
         None,
         &bridge_state.process,
+        trace_request,
+        "owner",
+        scheduler_attempt,
         || start_project_bridge_process(app_handle, None),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_project_bridge_read_request(
     app_handle: &tauri::AppHandle,
     bridge_state: &ProjectBridgeState,
@@ -1236,9 +1513,12 @@ fn run_project_bridge_read_request(
     request_json: String,
     request_policy: ProjectBridgeRequestPolicy,
     affinity: ProjectBridgeReadAffinity,
+    trace_request: Option<&ProjectBridgeTraceRequest>,
+    scheduler_attempt: usize,
 ) -> Result<String, String> {
     let process_index = affinity.stable_index() % bridge_state.read_processes.len();
     let process_slot = &bridge_state.read_processes[process_index];
+    let lane = format!("read-worker-{process_index}");
     run_project_bridge_request_with(
         bridge_state,
         request_generation,
@@ -1246,10 +1526,14 @@ fn run_project_bridge_read_request(
         request_policy,
         request_read_generation,
         process_slot,
+        trace_request,
+        &lane,
+        scheduler_attempt,
         || start_project_bridge_process(app_handle, Some(bridge_state.read_processes.len())),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_project_bridge_request_with<F>(
     bridge_state: &ProjectBridgeState,
     request_generation: usize,
@@ -1257,6 +1541,9 @@ fn run_project_bridge_request_with<F>(
     request_policy: ProjectBridgeRequestPolicy,
     request_read_generation: Option<usize>,
     process_slot: &Mutex<Option<Arc<ProjectBridgeProcess>>>,
+    trace_request: Option<&ProjectBridgeTraceRequest>,
+    lane: &str,
+    scheduler_attempt: usize,
     mut start_process: F,
 ) -> Result<String, String>
 where
@@ -1282,6 +1569,9 @@ where
             request_json,
             request_policy.execution_timeout,
             request_read_generation,
+            trace_request,
+            lane,
+            scheduler_attempt,
         );
         match request_result {
             Ok(response) => {
@@ -1383,6 +1673,7 @@ impl ProjectBridgeProcess {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn request(
         self: &Arc<Self>,
         bridge_state: &ProjectBridgeState,
@@ -1390,21 +1681,97 @@ impl ProjectBridgeProcess {
         request_json: &str,
         execution_timeout: Option<Duration>,
         request_read_generation: Option<usize>,
+        trace_request: Option<&ProjectBridgeTraceRequest>,
+        lane: &str,
+        scheduler_attempt: usize,
     ) -> Result<String, ProjectBridgeRequestFailure> {
         let request_token = self.allocate_request_token();
+        let admission_started_at = Instant::now();
+        if let Some(trace) = trace_request {
+            trace.record(
+                "process-admission-wait-started",
+                serde_json::json!({
+                    "attempt": scheduler_attempt,
+                    "lane": lane,
+                    "requestToken": request_token,
+                }),
+            );
+        }
         let _admission = match self.admission.acquire(request_token) {
-            Ok(admission) => admission,
+            Ok(admission) => {
+                if let Some(trace) = trace_request {
+                    trace.record(
+                        "process-admission-acquired",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "lane": lane,
+                            "requestToken": request_token,
+                            "waitMs": admission_started_at.elapsed().as_millis(),
+                        }),
+                    );
+                }
+                admission
+            }
             Err(ProjectBridgeAdmissionFailure::Poisoned) => {
+                if let Some(trace) = trace_request {
+                    trace.record(
+                        "process-request-finished",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "lane": lane,
+                            "outcome": "admission-rejected",
+                            "requestToken": request_token,
+                        }),
+                    );
+                }
                 return Err(ProjectBridgeRequestFailure::Retryable(
                     "Project bridge admission queue was poisoned.".to_owned(),
                 ));
             }
         };
-        let mut io = self.io.lock().map_err(|_| {
-            ProjectBridgeRequestFailure::Retryable(
-                "Project bridge I/O lock was poisoned.".to_owned(),
-            )
-        })?;
+        let io_started_at = Instant::now();
+        if let Some(trace) = trace_request {
+            trace.record(
+                "process-io-wait-started",
+                serde_json::json!({
+                    "attempt": scheduler_attempt,
+                    "lane": lane,
+                    "requestToken": request_token,
+                }),
+            );
+        }
+        let mut io = match self.io.lock() {
+            Ok(io) => {
+                if let Some(trace) = trace_request {
+                    trace.record(
+                        "process-io-acquired",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "lane": lane,
+                            "requestToken": request_token,
+                            "waitMs": io_started_at.elapsed().as_millis(),
+                        }),
+                    );
+                }
+                io
+            }
+            Err(_) => {
+                if let Some(trace) = trace_request {
+                    trace.record(
+                        "process-request-finished",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "lane": lane,
+                            "outcome": "io-lock-rejected",
+                            "requestToken": request_token,
+                        }),
+                    );
+                }
+                return Err(ProjectBridgeRequestFailure::Retryable(
+                    "Project bridge I/O lock was poisoned.".to_owned(),
+                ));
+            }
+        };
         let _active_request = ProjectBridgeActiveRequest::begin(
             &self.active_request_token,
             &self.active_preemptible_request,
@@ -1418,8 +1785,22 @@ impl ProjectBridgeProcess {
                 self.clone(),
                 request_token,
                 timeout,
+                trace_request.cloned(),
+                lane.to_owned(),
+                scheduler_attempt,
             )
         });
+        if let Some(trace) = trace_request {
+            trace.record(
+                "process-watchdog-armed",
+                serde_json::json!({
+                    "attempt": scheduler_attempt,
+                    "lane": lane,
+                    "requestToken": request_token,
+                    "timeoutMs": execution_timeout.map(|timeout| timeout.as_millis()),
+                }),
+            );
+        }
         let request_cancellation = ProjectBridgeRequestCancellation {
             request_state: watchdog
                 .as_ref()
@@ -1433,22 +1814,51 @@ impl ProjectBridgeProcess {
         let request_result = (|| -> Result<String, ProjectBridgeRequestFailure> {
             ensure_project_bridge_request_is_current(bridge_state, request_generation)
                 .map_err(ProjectBridgeRequestFailure::Retryable)?;
-            write_project_bridge_request_with_cancellation(
+            let write_started_at = Instant::now();
+            let write_result = write_project_bridge_request_with_cancellation(
                 &mut io.stdin,
                 request_json,
                 &request_cancellation,
-            )?;
+            );
+            if let Some(trace) = trace_request {
+                trace.record(
+                    "request-write-finished",
+                    serde_json::json!({
+                        "attempt": scheduler_attempt,
+                        "durationMs": write_started_at.elapsed().as_millis(),
+                        "lane": lane,
+                        "outcome": if write_result.is_ok() { "success" } else { "failure" },
+                        "requestToken": request_token,
+                    }),
+                );
+            }
+            write_result?;
 
             let ProjectBridgeIo {
                 stdout,
                 buffered_stdout,
                 ..
             } = &mut *io;
-            let mut response = read_bounded_project_bridge_response(
+            let response_started_at = Instant::now();
+            let response_result = read_bounded_project_bridge_response(
                 stdout,
                 buffered_stdout,
                 &request_cancellation,
-            )?;
+            );
+            if let Some(trace) = trace_request {
+                trace.record(
+                    "response-read-finished",
+                    serde_json::json!({
+                        "attempt": scheduler_attempt,
+                        "durationMs": response_started_at.elapsed().as_millis(),
+                        "lane": lane,
+                        "outcome": if response_result.is_ok() { "success" } else { "failure" },
+                        "requestToken": request_token,
+                        "responseBytes": response_result.as_ref().ok().map(String::len),
+                    }),
+                );
+            }
+            let mut response = response_result?;
 
             while response.ends_with(['\r', '\n']) {
                 response.pop();
@@ -1463,6 +1873,24 @@ impl ProjectBridgeProcess {
             Ok(response)
         })();
         let timed_out = watchdog.is_some_and(ProjectBridgeRequestWatchdog::finish);
+        if let Some(trace) = trace_request {
+            trace.record(
+                "process-request-finished",
+                serde_json::json!({
+                    "attempt": scheduler_attempt,
+                    "lane": lane,
+                    "outcome": if timed_out {
+                        "timed-out"
+                    } else if request_result.is_ok() {
+                        "success"
+                    } else {
+                        "failure"
+                    },
+                    "requestToken": request_token,
+                    "watchdogTimedOut": timed_out,
+                }),
+            );
+        }
         if timed_out {
             return Err(ProjectBridgeRequestFailure::TimedOut(
                 create_project_bridge_timeout_error(
@@ -1930,12 +2358,16 @@ impl Drop for ProjectBridgeActiveRequest<'_> {
 }
 
 impl ProjectBridgeRequestWatchdog {
+    #[allow(clippy::too_many_arguments)]
     fn start(
         bridge_state: ProjectBridgeState,
         request_generation: usize,
         process: Arc<ProjectBridgeProcess>,
         request_token: usize,
         timeout: Duration,
+        trace_request: Option<ProjectBridgeTraceRequest>,
+        lane: String,
+        scheduler_attempt: usize,
     ) -> Self {
         let request_state = Arc::new(AtomicUsize::new(PROJECT_BRIDGE_REQUEST_RUNNING));
         let watchdog_request_state = request_state.clone();
@@ -1958,7 +2390,32 @@ impl ProjectBridgeRequestWatchdog {
                     request_token,
                 )
             {
-                let _ = timeout_project_bridge_process(&bridge_state, request_generation, &process);
+                if let Some(trace) = trace_request.as_ref() {
+                    trace.record(
+                        "process-watchdog-fired",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "lane": lane,
+                            "requestToken": request_token,
+                            "timeoutMs": timeout.as_millis(),
+                        }),
+                    );
+                }
+                let cleanup_started_at = Instant::now();
+                let cleanup_result =
+                    timeout_project_bridge_process(&bridge_state, request_generation, &process);
+                if let Some(trace) = trace_request.as_ref() {
+                    trace.record(
+                        "process-watchdog-cleanup-finished",
+                        serde_json::json!({
+                            "attempt": scheduler_attempt,
+                            "durationMs": cleanup_started_at.elapsed().as_millis(),
+                            "lane": lane,
+                            "outcome": if cleanup_result.is_ok() { "success" } else { "failure" },
+                            "requestToken": request_token,
+                        }),
+                    );
+                }
             }
         });
 
@@ -3200,6 +3657,8 @@ fn create_open_path_command(path: &Path) -> Command {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let context = tauri::generate_context!();
+    let project_bridge_trace = ProjectBridgeTraceState::from_environment()
+        .expect("KM Editor could not initialize the requested project bridge trace");
     #[cfg(windows)]
     windows_app_identity::set_current_process(&context.config().identifier)
         .expect("KM Editor could not establish its stable Windows taskbar identity");
@@ -3211,6 +3670,7 @@ pub fn run() {
         })
         .manage(SupportSearchState::default())
         .manage(ProjectBridgeState::default())
+        .manage(project_bridge_trace)
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -4035,6 +4495,9 @@ mod tests {
                             &request,
                             Some(Duration::from_secs(5)),
                             None,
+                            None,
+                            "direct",
+                            0,
                         )
                         .unwrap_or_else(|error| {
                             panic!("request {request_index} failed: {error:?}")
@@ -4073,6 +4536,9 @@ mod tests {
             policy,
             None,
             &bridge_state.process,
+            None,
+            "direct",
+            0,
             || {
                 starts += 1;
                 Ok(if starts == 1 {
@@ -4117,6 +4583,9 @@ mod tests {
                 policy,
                 None,
                 &request_state.process,
+                None,
+                "direct",
+                0,
                 || Ok(spawn_delayed_echo_project_bridge_fixture()),
             );
             drop(execution_permit);
@@ -4181,6 +4650,9 @@ mod tests {
             &request,
             Some(Duration::from_millis(50)),
             None,
+            None,
+            "direct",
+            0,
         );
         assert!(matches!(
             result,
@@ -4379,6 +4851,9 @@ mod tests {
                     read_policy,
                     Some(request_read_generation),
                     &read_state.read_processes[0],
+                    None,
+                    "direct",
+                    0,
                     || panic!("the preempted generation must not start another worker"),
                 );
                 drop(permit);
@@ -4432,6 +4907,9 @@ mod tests {
                 read_policy,
                 Some(restarted_read_generation),
                 &bridge_state.read_processes[0],
+                None,
+                "direct",
+                0,
                 || Ok(spawn_echo_project_bridge_fixture()),
             )
             .expect("fresh read generation");
@@ -4447,6 +4925,9 @@ mod tests {
                         owner_probe,
                         Some(Duration::from_secs(5)),
                         None,
+                        None,
+                        "direct",
+                        0,
                     )
                     .expect("writer preemption must never terminate the owner"),
                 owner_probe
@@ -4563,6 +5044,9 @@ mod tests {
                     read_policy,
                     Some(request_read_generation),
                     &read_state.read_processes[0],
+                    None,
+                    "direct",
+                    0,
                     || panic!("the preempted generation must not start another worker"),
                 );
                 drop(permit);
@@ -4871,6 +5355,9 @@ mod tests {
                     read_policy,
                     Some(request_read_generation),
                     &read_state.read_processes[0],
+                    None,
+                    "direct",
+                    0,
                     || panic!("the preempted generation must not start another worker"),
                 );
                 drop(permit);
@@ -4895,6 +5382,9 @@ mod tests {
                     protected_policy,
                     None,
                     &protected_state.read_processes[1],
+                    None,
+                    "direct",
+                    0,
                     || panic!("the protected process already exists"),
                 );
                 drop(permit);
@@ -4978,6 +5468,9 @@ mod tests {
                 protected_policy,
                 None,
                 &protected_state.read_processes[1],
+                None,
+                "direct",
+                0,
                 || panic!("the protected process already exists"),
             );
             drop(permit);
@@ -5095,6 +5588,9 @@ mod tests {
                     protected_policy,
                     None,
                     &protected_state.read_processes[0],
+                    None,
+                    "direct",
+                    0,
                     || panic!("protected process already exists"),
                 );
                 drop(permit);
@@ -5174,6 +5670,9 @@ mod tests {
                     protected_policy,
                     None,
                     &protected_state.read_processes[0],
+                    None,
+                    "direct",
+                    0,
                     || panic!("export process already exists"),
                 );
                 drop(permit);

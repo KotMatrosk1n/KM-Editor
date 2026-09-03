@@ -827,10 +827,26 @@ assert.ok(
   'Deferred Workbench admission must reject callbacks from an obsolete project scope.'
 );
 const nativeBridge = read('../src-tauri/src/lib.rs');
+const pendingRequestReservation = nativeBridge.match(
+  /fn reserve_pending_request\([\s\S]*?\n    }\n\n    async fn acquire_execution_permit_for_generation/
+)?.[0] ?? '';
+const orderedBridgeBoundary = nativeBridge.match(
+  /async fn project_bridge\([\s\S]*?\n}\n\nfn project_bridge_concurrency_is_preemptible_read/
+)?.[0] ?? '';
 assert.ok(
   nativeBridge.includes('MAX_PROJECT_BRIDGE_PENDING_REQUESTS')
     && nativeBridge.includes('MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES')
-    && nativeBridge.includes('reserve_pending_request(request_json.len())?'),
+    && pendingRequestReservation.includes('if pending.count >= MAX_PROJECT_BRIDGE_PENDING_REQUESTS')
+    && pendingRequestReservation.includes(
+      'if request_bytes > MAX_PROJECT_BRIDGE_PENDING_REQUEST_BYTES - pending.bytes'
+    )
+    && pendingRequestReservation.includes('pending.count += 1')
+    && pendingRequestReservation.includes('pending.bytes += request_bytes')
+    && /let _pending_request = (?:bridge_state\.reserve_pending_request\(request_json\.len\(\)\)\?|match bridge_state\.reserve_pending_request\(request_json\.len\(\)\))/.test(
+      orderedBridgeBoundary
+    )
+    && orderedBridgeBoundary.indexOf('let _pending_request =')
+      < orderedBridgeBoundary.indexOf('acquire_execution_permit_for_request'),
   'The ordered native bridge boundary must bound both queued request count and retained request bytes.'
 );
 assert.ok(

@@ -4,6 +4,91 @@ export type DraftEquality<T> = (left: T, right: T) => boolean;
 
 export type KeyedEditorDrafts<T> = Record<string, T>;
 
+type SparseFieldDraftRecords = Record<string, Record<string, string>>;
+
+function haveExactFieldDraftEntries(
+  left: Record<string, string>,
+  right: Record<string, string>
+) {
+  const leftEntries = Object.entries(left);
+  return leftEntries.length === Object.keys(right).length &&
+    leftEntries.every(
+      ([field, value]) => Object.hasOwn(right, field) && right[field] === value
+    );
+}
+
+export function setSparseFieldDraftRecord(
+  records: SparseFieldDraftRecords,
+  recordKey: string | number,
+  nextDrafts: Record<string, string>,
+  defaultDrafts: Record<string, string>
+) {
+  const normalizedKey = recordKey.toString();
+  const sparseDrafts = Object.fromEntries(
+    Object.entries(nextDrafts).filter(
+      ([field, value]) => value !== (defaultDrafts[field] ?? '')
+    )
+  );
+  const hasCurrentRecord = Object.hasOwn(records, normalizedKey);
+  const currentDrafts = records[normalizedKey];
+
+  if (Object.keys(sparseDrafts).length === 0) {
+    if (!hasCurrentRecord) {
+      return records;
+    }
+    const nextRecords = { ...records };
+    delete nextRecords[normalizedKey];
+    return nextRecords;
+  }
+
+  if (currentDrafts && haveExactFieldDraftEntries(currentDrafts, sparseDrafts)) {
+    return records;
+  }
+
+  return {
+    ...records,
+    [normalizedKey]: sparseDrafts
+  };
+}
+
+export function setSparseFieldDraftValue(
+  records: SparseFieldDraftRecords,
+  recordKey: string | number,
+  field: string,
+  value: string,
+  defaultDrafts: Record<string, string>
+) {
+  const normalizedKey = recordKey.toString();
+  return setSparseFieldDraftRecord(
+    records,
+    normalizedKey,
+    {
+      ...defaultDrafts,
+      ...(records[normalizedKey] ?? {}),
+      [field]: value
+    },
+    defaultDrafts
+  );
+}
+
+export function pruneSparseFieldDraftRecord(
+  records: SparseFieldDraftRecords,
+  recordKey: string | number,
+  defaultDrafts: Record<string, string>,
+  allowedFields: ReadonlySet<string>
+) {
+  const normalizedKey = recordKey.toString();
+  const currentDrafts = records[normalizedKey];
+  if (!currentDrafts) {
+    return records;
+  }
+
+  const writableDrafts = Object.fromEntries(
+    Object.entries(currentDrafts).filter(([field]) => allowedFields.has(field))
+  );
+  return setSparseFieldDraftRecord(records, recordKey, writableDrafts, defaultDrafts);
+}
+
 /**
  * Select another outstanding draft without changing or clearing any draft state.
  * Object-key insertion order is deliberate: it follows the order in which the

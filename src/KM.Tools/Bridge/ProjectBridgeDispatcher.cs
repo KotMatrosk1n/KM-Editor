@@ -487,6 +487,14 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             requestId: null);
     }
 
+    internal static string SerializeInvalidRequestEncodingFailure()
+    {
+        return SerializeFailure(
+            BridgeErrorCodes.InvalidJson,
+            "Bridge request JSON must use valid UTF-8 encoding.",
+            requestId: null);
+    }
+
     internal static string SerializeResponseTooLargeFailure(string? requestId)
     {
         return SerializeFailure(
