@@ -59202,9 +59202,11 @@ function ChangesSection({
             value={
               pendingEdits.length === 0
                 ? 'No changes'
-                : isEditSessionValidated
-                  ? 'Valid'
-                  : 'Needed'
+                : changePlan !== null && !changePlan.canApply
+                  ? 'Needs fixes'
+                  : isEditSessionValidated
+                    ? 'Valid'
+                    : 'Needed'
             }
           />
           <button

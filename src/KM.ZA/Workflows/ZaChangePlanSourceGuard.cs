@@ -89,9 +89,11 @@ internal static class ZaChangePlanSourceGuard
             var fileSource = new ZaWorkflowFileSource(bypassReusableBaseCache: true);
             var sourceSnapshots = new Dictionary<SourceSnapshotKey, SourceSnapshot>();
             var effectiveSnapshots = new Dictionary<string, SourceSnapshot>(StringComparer.Ordinal);
-            var descriptorPreview = CreateDescriptorPreviewIfNeeded(paths, plan.Writes, outputMode);
+            var descriptorPreview = ChangePlanSourceDiagnostics.WithFileContext(
+                () => CreateDescriptorPreviewIfNeeded(paths, plan.Writes, outputMode),
+                $"romfs/{ZaWorkflowFileSource.DescriptorVirtualPath}");
             var writes = plan.Writes
-                .Select(write => CaptureWrite(
+                .Select(write => ChangePlanSourceDiagnostics.WithFileContext(() => CaptureWrite(
                     paths,
                     effectiveSession,
                     write,
@@ -99,7 +101,7 @@ internal static class ZaChangePlanSourceGuard
                     sourceSnapshots,
                     effectiveSnapshots,
                     descriptorPreview,
-                    outputMode))
+                    outputMode), write.TargetRelativePath))
                 .ToArray();
 
             return plan with { Writes = writes };
@@ -115,11 +117,7 @@ internal static class ZaChangePlanSourceGuard
             CryptographicException)
         {
             var diagnostics = plan?.Diagnostics.ToList() ?? [];
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pokemon Legends Z-A change-plan source verification could not read the current sources or output preimages.",
-                "za.editor",
-                expected: "Readable current semantic sources and output preimages"));
+            diagnostics.Add(ChangePlanSourceDiagnostics.CreateFailure(exception, session, "za.editor"));
             return new ChangePlan(
                 plan?.SessionId ?? session.Id,
                 Array.Empty<PlannedFileWrite>(),
@@ -277,14 +275,12 @@ internal static class ZaChangePlanSourceGuard
         if (!string.IsNullOrWhiteSpace(write.SourceFingerprint)
             && !IsSha256(write.SourceFingerprint))
         {
-            throw new InvalidDataException(
-                $"The planned write for '{write.TargetRelativePath}' has a malformed source fingerprint.");
+            throw new ChangePlanSourceFingerprintException();
         }
         if (!string.IsNullOrWhiteSpace(write.SourceBindingFingerprint)
             && !IsSha256(write.SourceBindingFingerprint))
         {
-            throw new InvalidDataException(
-                $"The planned write for '{write.TargetRelativePath}' has a malformed source-binding fingerprint.");
+            throw new ChangePlanSourceFingerprintException();
         }
 
         var target = new RelativeOutputPath(write.TargetRelativePath);
@@ -313,7 +309,11 @@ internal static class ZaChangePlanSourceGuard
             var key = new SourceSnapshotKey(source.Layer, sourcePath.CanonicalKey);
             if (!sourceSnapshots.TryGetValue(key, out var snapshot))
             {
-                snapshot = CaptureSourceSnapshot(paths, source, fileSource);
+                snapshot = ChangePlanSourceDiagnostics.WithFileContext(
+                    () => CaptureSourceSnapshot(paths, source, fileSource),
+                    source.RelativePath,
+                    source.Layer,
+                    ProjectFileOperation.Read);
                 sourceSnapshots.Add(key, snapshot);
             }
 
@@ -338,7 +338,15 @@ internal static class ZaChangePlanSourceGuard
         AppendSnapshot(
             boundaryHash,
             CaptureEffectiveSource(paths, ToSemanticSourcePath(target.Value), fileSource));
-        AppendOutputTargetState(boundaryHash, paths, write.TargetRelativePath);
+        ChangePlanSourceDiagnostics.WithFileContext(
+            () =>
+            {
+                AppendOutputTargetState(boundaryHash, paths, write.TargetRelativePath);
+                return true;
+            },
+            write.TargetRelativePath,
+            ProjectFileLayer.Layered,
+            ProjectFileOperation.Read);
         if (descriptorPreview is not null
             && string.Equals(
                 new RelativeOutputPath(write.TargetRelativePath).CanonicalKey,

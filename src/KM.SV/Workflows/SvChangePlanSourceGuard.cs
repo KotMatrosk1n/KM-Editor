@@ -55,9 +55,11 @@ internal static class SvChangePlanSourceGuard
                 var fileSource = new SvWorkflowFileSource(bypassReusableBaseCache: true);
                 var declaredSnapshots = new Dictionary<SourceSnapshotKey, SourceSnapshot>();
                 var effectiveSnapshots = new Dictionary<string, SourceSnapshot>(StringComparer.Ordinal);
-                var descriptorPreview = CreateDescriptorPreviewIfNeeded(paths, plan.Writes, outputMode);
+                var descriptorPreview = ChangePlanSourceDiagnostics.WithFileContext(
+                    () => CreateDescriptorPreviewIfNeeded(paths, plan.Writes, outputMode),
+                    $"romfs/{SvWorkflowFileSource.DescriptorVirtualPath}");
                 var writes = plan.Writes
-                    .Select(write => CaptureWrite(
+                    .Select(write => ChangePlanSourceDiagnostics.WithFileContext(() => CaptureWrite(
                         paths,
                         session,
                         write,
@@ -65,7 +67,7 @@ internal static class SvChangePlanSourceGuard
                         fileSource,
                         declaredSnapshots,
                         effectiveSnapshots,
-                        descriptorPreview))
+                        descriptorPreview), write.TargetRelativePath))
                     .ToArray();
 
                 return plan with
@@ -84,11 +86,7 @@ internal static class SvChangePlanSourceGuard
                 NotSupportedException or
                 CryptographicException)
             {
-                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Scarlet/Violet change-plan source verification could not read the current sources or output preimages.",
-                    "sv.editor",
-                    expected: "Readable current semantic sources and output preimages"));
+                diagnostics.Add(ChangePlanSourceDiagnostics.CreateFailure(exception, session, "sv.editor"));
                 return plan with
                 {
                     Writes = Array.Empty<PlannedFileWrite>(),
@@ -173,7 +171,11 @@ internal static class SvChangePlanSourceGuard
             var sourceKey = new SourceSnapshotKey(source.Layer, sourcePath.CanonicalKey);
             if (!declaredSnapshots.TryGetValue(sourceKey, out var declaredSnapshot))
             {
-                declaredSnapshot = CaptureDeclaredSource(paths, source, fileSource);
+                declaredSnapshot = ChangePlanSourceDiagnostics.WithFileContext(
+                    () => CaptureDeclaredSource(paths, source, fileSource),
+                    source.RelativePath,
+                    source.Layer,
+                    ProjectFileOperation.Read);
                 declaredSnapshots.Add(sourceKey, declaredSnapshot);
             }
 
@@ -199,7 +201,11 @@ internal static class SvChangePlanSourceGuard
         AppendText(hash, "authoritative-target-source");
         AppendSnapshot(hash, CaptureEffectiveSource(paths, target.Value, fileSource));
         AppendText(hash, "output-target-preimage");
-        AppendSnapshot(hash, CaptureOutputTarget(paths, target.Value));
+        AppendSnapshot(hash, ChangePlanSourceDiagnostics.WithFileContext(
+            () => CaptureOutputTarget(paths, target.Value),
+            target.Value,
+            ProjectFileLayer.Layered,
+            ProjectFileOperation.Read));
 
         if (descriptorPreview is not null
             && string.Equals(target.CanonicalKey, descriptorPreview.TargetKey, StringComparison.Ordinal))
