@@ -1330,8 +1330,8 @@ internal sealed class ZaGiftPokemonEditSessionService
             }
         }
 
-        return VerifiedBaseGiftRowsValuePrefix
-            + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+        // Plan fingerprints are raw SHA-256 digests; only restore payloads use the marker prefix.
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
     private static void VerifySerializedOutput(

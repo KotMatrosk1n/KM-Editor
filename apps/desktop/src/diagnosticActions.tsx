@@ -117,6 +117,14 @@ export function resolveDiagnosticNavigationAction(
 }
 
 function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null {
+  if (diagnostic.field === 'changePlanSourceFingerprint' &&
+    diagnostic.code === projectBridgeErrorCodes.dataInvalid && diagnostic.domain) {
+    const normalizedDomain = diagnostic.domain
+      .replace(/([a-z0-9])([A-Z])/gu, '$1-$2')
+      .toLowerCase();
+    const editor = capabilityByDomain.get(normalizedDomain)?.id;
+    if (editor) return editor;
+  }
   if (diagnostic.code && outputCodes.has(diagnostic.code)) {
     return 'changes';
   }

@@ -7,6 +7,16 @@ type DiagnosticKeyTranslator = (key: string) => string;
 
 const identityTranslator: DiagnosticTranslator = (literal) => literal;
 
+const reviewDiagnosticLocalizationKeys: Readonly<Record<string, string>> = {
+  'KM-BRIDGE-ACCESS-DENIED': 'diagnostics.review.accessDenied',
+  'KM-BRIDGE-RESOURCE-MISSING': 'diagnostics.review.resourceMissing',
+  'KM-BRIDGE-DATA-INVALID': 'diagnostics.review.dataInvalid',
+  'KM-BRIDGE-DATA-LAYOUT-INVALID': 'diagnostics.review.dataLayoutInvalid',
+  'KM-BRIDGE-SUPPORT-RUNTIME-UNAVAILABLE': 'diagnostics.review.runtimeUnavailable',
+  'KM-BRIDGE-IO-FAILED': 'diagnostics.review.ioFailed',
+  'KM-BRIDGE-INTERNAL-FAILURE': 'diagnostics.review.internalFailure'
+};
+
 const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-BRIDGE-ACCESS-DENIED': 'outputSafety.diagnostic.accessDenied',
   'KM-BRIDGE-EMPTY-REQUEST': 'outputSafety.diagnostic.dataInvalid',
@@ -156,6 +166,10 @@ export function formatDiagnosticMessage(
   const localizedCodeMessage = localizedDiagnosticCodeMessage(diagnostic, translateKey);
   const message = formatDiagnosticSummary(diagnostic, translateLiteral, translateKey);
 
+  if (isChangePlanReviewDiagnostic(diagnostic)) {
+    return message;
+  }
+
   // Stable output and relocation codes intentionally replace raw backend prose in normal UI.
   // The code itself remains visible in Diagnostics for technical support.
   if (localizedCodeMessage !== null) {
@@ -189,19 +203,60 @@ export function formatDiagnosticSummary(
   translateLiteral: DiagnosticTranslator = identityTranslator,
   translateKey?: DiagnosticKeyTranslator
 ) {
-  return normalizeSentence(
+  const message = normalizeSentence(
     localizedDiagnosticCodeMessage(diagnostic, translateKey) ??
       translateLiteral(diagnostic.message)
   );
+  if (!isChangePlanReviewDiagnostic(diagnostic)) {
+    return message;
+  }
+
+  // Review failures need their safe resource and corrective context in the
+  // visible summary; grouping and a collapsed technical panel must not hide it.
+  const details = [
+    formatDomainDetail(diagnostic.domain, translateLiteral),
+    formatLabeledDetail('File', diagnostic.file, translateLiteral),
+    formatReviewExpectedDetail(diagnostic, translateLiteral)
+  ].filter((detail): detail is string => detail !== null);
+  return details.length === 0 ? message : `${message} ${details.join(' ')}`;
+}
+
+function formatReviewExpectedDetail(
+  diagnostic: ApiDiagnostic,
+  translateLiteral: DiagnosticTranslator
+) {
+  const expected = diagnostic.expected?.trim();
+  if (!expected) return null;
+
+  // The safe file classifier composes recovery, operation and selected-copy
+  // sentences. Translate those stable literals without losing their context.
+  const translated = diagnostic.field === 'changePlanSourceFingerprint'
+    ? translateLiteral(expected)
+    : expected.split(/(?<=\.)\s+/u).map(translateLiteral).join(' ');
+  return `${translateLiteral('Expected')}: ${normalizeSentence(translated)}`;
 }
 
 function localizedDiagnosticCodeMessage(
   diagnostic: ApiDiagnostic,
   translateKey?: DiagnosticKeyTranslator
 ) {
+  if (translateKey && isChangePlanReviewDiagnostic(diagnostic)) {
+    const key = diagnostic.field === 'changePlanSourceFingerprint'
+      ? 'diagnostics.review.sourceFingerprintInvalid'
+      : reviewDiagnosticLocalizationKeys[diagnostic.code!];
+    return translateKey(key!);
+  }
   return translateKey && diagnostic.code
     ? translateDiagnosticCode(diagnostic.code, translateKey)
     : null;
+}
+
+function isChangePlanReviewDiagnostic(diagnostic: ApiDiagnostic) {
+  return (diagnostic.field === 'changePlanReview' ||
+    (diagnostic.field === 'changePlanSourceFingerprint' &&
+      diagnostic.code === 'KM-BRIDGE-DATA-INVALID')) &&
+    diagnostic.code !== null && diagnostic.code !== undefined &&
+    Object.hasOwn(reviewDiagnosticLocalizationKeys, diagnostic.code);
 }
 
 function translateDiagnosticCode(code: string, translateKey: DiagnosticKeyTranslator) {
