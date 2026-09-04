@@ -457,14 +457,16 @@
 }
 
 .km-game-module-record-filters label,
-.km-game-module-chart > header > label {
+.km-game-module-chart > header > label,
+.km-game-module-chart-measure {
   display: grid;
   gap: 0.3rem;
   min-width: 0;
 }
 
 .km-game-module-record-filters label > span:first-child,
-.km-game-module-chart > header > label > span {
+.km-game-module-chart > header > label > span,
+.km-game-module-chart-measure > label {
   color: var(--km-game-module-text-muted);
   font-size: 0.75rem;
   font-weight: 700;
@@ -710,7 +712,8 @@
   margin-top: 0.1rem;
 }
 
-.km-game-module-chart > header > label {
+.km-game-module-chart > header > label,
+.km-game-module-chart-measure {
   flex: 0 1 22rem;
 }
 
@@ -855,7 +858,8 @@
     grid-template-columns: 1fr;
   }
 
-  .km-game-module-chart > header > label {
+  .km-game-module-chart > header > label,
+  .km-game-module-chart-measure {
     flex-basis: auto;
   }
 

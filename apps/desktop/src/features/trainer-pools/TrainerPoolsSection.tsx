@@ -12,6 +12,7 @@ import {
   FocusedEditorWorkspace
 } from '../../components/FocusedEditorWorkspace';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 
@@ -300,11 +301,16 @@ function PoolSelection({
     <fieldset className="trainer-pools-selection-card" disabled={disabled}>
       <legend>{label}</legend>
       <label htmlFor={poolSelectId}>{t('trainerPools.swap.pool')}</label>
-      <select
-        className="km-select-control"
+      <SearchableOptionInput
+        ariaLabel={t('trainerPools.swap.pool')}
+        data-km-source-site="trainer-pools-pool"
+        disabled={disabled}
+        emptyOptionLabel={t('trainerPools.swap.choosePool')}
         id={poolSelectId}
-        onChange={(event) => {
-          const nextPool = findPool(pools, event.target.value);
+        isFiniteCatalog
+        localizeOptions={false}
+        onChange={(value) => {
+          const nextPool = findPool(pools, value);
           onChange(
             nextPool?.members[0]
               ? {
@@ -314,68 +320,57 @@ function PoolSelection({
               : null
           );
         }}
+        options={[
+          ...groups.story.map((candidate) => ({
+            disabled:
+              Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith,
+            groupLabel: t('trainerPools.kind.story'),
+            label: `${formatPoolLabel(candidate)}${
+              compatibleWith && candidate.compatibilityGroup !== compatibleWith
+                ? ` · ${t('trainerPools.swap.incompatible')}`
+                : ''
+            }`,
+            value: candidate.logicalPoolId
+          })),
+          ...groups.infinity.map((candidate) => ({
+            disabled:
+              Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith,
+            groupLabel: t('trainerPools.kind.infinity'),
+            label: `${formatPoolLabel(candidate)}${
+              compatibleWith && candidate.compatibilityGroup !== compatibleWith
+                ? ` · ${t('trainerPools.swap.incompatible')}`
+                : ''
+            }`,
+            value: candidate.logicalPoolId
+          }))
+        ]}
         value={selection?.logicalPoolId ?? ''}
-      >
-        <option value="">{t('trainerPools.swap.choosePool')}</option>
-        {groups.story.length > 0 ? (
-          <optgroup label={t('trainerPools.kind.story')}>
-            {groups.story.map((candidate) => (
-              <option
-                disabled={
-                  Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith
-                }
-                key={candidate.logicalPoolId}
-                value={candidate.logicalPoolId}
-              >
-                {formatPoolLabel(candidate)}
-                {compatibleWith && candidate.compatibilityGroup !== compatibleWith
-                  ? ` · ${t('trainerPools.swap.incompatible')}`
-                  : ''}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-        {groups.infinity.length > 0 ? (
-          <optgroup label={t('trainerPools.kind.infinity')}>
-            {groups.infinity.map((candidate) => (
-              <option
-                disabled={
-                  Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith
-                }
-                key={candidate.logicalPoolId}
-                value={candidate.logicalPoolId}
-              >
-                {formatPoolLabel(candidate)}
-                {compatibleWith && candidate.compatibilityGroup !== compatibleWith
-                  ? ` · ${t('trainerPools.swap.incompatible')}`
-                  : ''}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-      </select>
+      />
 
       <label htmlFor={memberSelectId}>{t('trainerPools.swap.trainer')}</label>
-      <select
-        className="km-select-control"
-        disabled={!pool}
+      <SearchableOptionInput
+        ariaLabel={t('trainerPools.swap.trainer')}
+        data-km-source-site="trainer-pools-member"
+        disabled={disabled || !pool}
+        emptyOptionLabel={t('trainerPools.swap.chooseTrainer')}
         id={memberSelectId}
-        onChange={(event) =>
+        isFiniteCatalog
+        localizeOptions={false}
+        onChange={(value) =>
           onChange(
             pool
-              ? { logicalPoolId: pool.logicalPoolId, rawTrainerId: event.target.value }
+              ? { logicalPoolId: pool.logicalPoolId, rawTrainerId: value }
               : null
           )
         }
+        options={(pool?.members ?? []).map((member) => ({
+          label: `${member.displayName} · ${t('trainerPools.swap.rank', {
+            rank: member.storedRank
+          })} · ${t('trainerPools.swap.teamSize', { count: member.teamSize })}`,
+          value: member.rawTrainerId
+        }))}
         value={selection?.rawTrainerId ?? ''}
-      >
-        <option value="">{t('trainerPools.swap.chooseTrainer')}</option>
-        {pool?.members.map((member) => (
-          <option key={member.rawTrainerId} value={member.rawTrainerId}>
-            {member.displayName} · {t('trainerPools.swap.rank', { rank: member.storedRank })} · {t('trainerPools.swap.teamSize', { count: member.teamSize })}
-          </option>
-        ))}
-      </select>
+      />
       {pool ? (
         <p className="field-hint">
           {t('trainerPools.swap.poolDetails', {

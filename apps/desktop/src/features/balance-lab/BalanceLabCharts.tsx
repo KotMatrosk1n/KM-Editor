@@ -7,6 +7,7 @@ import {
   type BalanceLabPoint,
   type BalanceLabStudy
 } from '../../bridge/balanceLabContracts';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
@@ -111,24 +112,26 @@ export function BalanceLabChart({
         {t('balanceLab.comparison.description')}
       </p>
       <div className="km-balance-comparison-controls">
-        <label>
-          <span>{t('balanceLab.comparison.metric')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => changeMetric(event.currentTarget.value)}
+        <div className="km-searchable-select-field km-balance-select-field">
+          <label htmlFor="balance-lab-comparison-metric">
+            {t('balanceLab.comparison.metric')}
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('balanceLab.comparison.metric')}
+            data-localization-ignore="true"
+            data-km-source-site="balance-lab-comparison-metric"
+            disabled={false}
+            id="balance-lab-comparison-metric"
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={changeMetric}
+            options={metrics.map((candidate) => ({
+              label: `${metricOptionLabel(candidate, metrics, t)} (${candidate.supportCount.toLocaleString()})`,
+              value: candidate.identity
+            }))}
             value={activeMetricIdentity}
-          >
-            {metrics.map((candidate) => (
-              <option
-                data-localization-ignore="true"
-                key={candidate.identity}
-                value={candidate.identity}
-              >
-                {metricOptionLabel(candidate, metrics, t)} ({candidate.supportCount.toLocaleString()})
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
       </div>
 
       <fieldset className="km-balance-record-picker">

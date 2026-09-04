@@ -79,6 +79,14 @@ export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   return [...counts.values()];
 }
 
+export function getDefaultPlacementCategoryId(
+  categories: readonly { id: string; objectCount: number }[]
+) {
+  return categories.find((category) => category.objectCount > 0)?.id ??
+    categories[0]?.id ??
+    null;
+}
+
 export function getPlacementCategoryId(object: PlacedObjectRecord) {
   const categoryId = object.categoryId?.trim();
   return categoryId ? categoryId : getLegacyPlacementCategoryId(object);

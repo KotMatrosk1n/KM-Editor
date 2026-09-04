@@ -21,6 +21,7 @@ import type {
   SearchDynamaxAdventureSeedRequest
 } from '../../bridge/contracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { DiagnosticsSection } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
 import { desktopErrorCodes } from '../../errorCodes';
@@ -337,17 +338,25 @@ export function DynamaxAdventureSeedPlanner({
           />
           {seedError ? <small className="editable-field-error">{seedError}</small> : null}
         </label>
-        <label>
-          <span>{t('routePlanner.npcCount')}</span>
-          <select
-            onChange={(event) => setNpcCount(Number(event.target.value))}
-            value={npcCount}
-          >
-            {[0, 1, 2, 3].map((count) => (
-              <option key={count} value={count}>{count}</option>
-            ))}
-          </select>
-        </label>
+        <div className="km-searchable-select-field dynamax-adventure-route-select-field">
+          <label htmlFor="dynamax-adventure-npc-count">
+            {t('routePlanner.npcCount')}
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('routePlanner.npcCount')}
+            data-km-source-site="dynamax-adventure-npc-count"
+            disabled={false}
+            id="dynamax-adventure-npc-count"
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={(value) => setNpcCount(Number(value))}
+            options={[0, 1, 2, 3].map((count) => ({
+              label: count.toString(),
+              value: count
+            }))}
+            value={npcCount.toString()}
+          />
+        </div>
         <label className="dynamax-adventure-required-rows">
           <span>{t('routePlanner.requiredRows')}</span>
           <input

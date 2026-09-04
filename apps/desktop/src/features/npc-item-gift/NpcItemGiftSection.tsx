@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { ChevronDown, ClipboardCheck, Gift, RotateCcw, Save, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ClipboardCheck, Gift, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type NpcItemGiftItemOptionRecord,
@@ -11,14 +11,13 @@ import {
   type NpcItemGiftWorkflow
 } from '../../bridge/npcItemGiftContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
-import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import {
   Metric,
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { FieldLabel } from '../../components/FieldLabel';
-import { HoverTooltip } from '../../components/HoverTooltip';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
@@ -764,238 +763,36 @@ function NpcItemGiftItemPicker({
   options: NpcItemGiftSelectableItemOption[];
   value: number;
 }) {
-  const { translateLiteral } = useLocalization();
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const pickerId = useId().replace(/:/g, '');
-  const listboxId = `npc-item-gift-options-${pickerId}`;
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeItemId, setActiveItemId] = useState<number | null>(null);
-  const formattedValue = useMemo(
-    () => translateLiteral(formatItemPickerValue(value, options)),
-    [options, translateLiteral, value]
+  const searchableOptions = useMemo(
+    () => options.map((option) => ({
+      disabled: option.isUnavailable,
+      groupLabel: option.category,
+      inputLabel: option.label,
+      label: option.label,
+      searchAliases: [option.name, option.category],
+      value: option.itemId
+    })),
+    [options]
   );
-  const [query, setQuery] = useCoalescedTextInputState(formattedValue);
-  const [hasUserQuery, setHasUserQuery] = useState(false);
-  const filteredOptions = useMemo(
-    () => getSmartItemMatches(hasUserQuery ? query : '', options),
-    [hasUserQuery, options, query]
-  );
-  const selectableOptions = filteredOptions.filter((option) => !option.isUnavailable);
-  const hasMenu = isOpen && !disabled && filteredOptions.length > 0;
-
-  useEffect(() => {
-    if (!isOpen) {
-      setQuery(formattedValue);
-      setHasUserQuery(false);
-      setActiveItemId(null);
-    }
-  }, [formattedValue, isOpen]);
-
-  useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-    }
-  }, [disabled]);
-
-  useEffect(() => {
-    if (!isOpen || activeItemId === null) {
-      return;
-    }
-
-    document
-      .getElementById(`${listboxId}-item-${activeItemId}`)
-      ?.scrollIntoView?.({ block: 'nearest' });
-  }, [activeItemId, isOpen, listboxId]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [isOpen]);
-
-  const selectOption = (option: NpcItemGiftSelectableItemOption) => {
-    if (option.isUnavailable) {
-      return;
-    }
-
-    onChange(option.itemId);
-    setQuery(option.label);
-    setHasUserQuery(false);
-    setActiveItemId(null);
-    setIsOpen(false);
-  };
-
-  const commitTypedOption = (allowActiveOption = false) => {
-    if (!hasUserQuery) {
-      setIsOpen(false);
-      return;
-    }
-
-    const exactMatch = findExactItemOption(query, options);
-    if (exactMatch) {
-      selectOption(exactMatch);
-      return;
-    }
-
-    const activeOption = allowActiveOption
-      ? selectableOptions.find((option) => option.itemId === activeItemId)
-      : null;
-    if (activeOption) {
-      selectOption(activeOption);
-      return;
-    }
-
-    if (selectableOptions.length === 1) {
-      selectOption(selectableOptions[0]!);
-      return;
-    }
-
-    setQuery(formattedValue);
-    setHasUserQuery(false);
-    setIsOpen(false);
-  };
-
-  const handleInputChange = (nextValue: string) => {
-    setQuery(nextValue);
-    setHasUserQuery(true);
-    setActiveItemId(null);
-    setIsOpen(true);
-  };
-
-  const moveActiveOption = (direction: 1 | -1) => {
-    if (selectableOptions.length === 0) {
-      return;
-    }
-
-    const currentIndex = selectableOptions.findIndex(
-      (option) => option.itemId === activeItemId
-    );
-    const nextIndex =
-      currentIndex === -1
-        ? direction === 1
-          ? 0
-          : selectableOptions.length - 1
-        : (currentIndex + direction + selectableOptions.length) % selectableOptions.length;
-    setActiveItemId(selectableOptions[nextIndex]!.itemId);
-    setIsOpen(true);
-  };
 
   return (
-    <HoverTooltip content={hasMenu ? undefined : formattedValue} describe={false} placement="above">
-      <div
-        className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
-        ref={containerRef}
-      >
-        <input
-        aria-activedescendant={
-          activeItemId === null ? undefined : `${listboxId}-item-${activeItemId}`
+    <SearchableOptionInput
+      ariaLabel={ariaLabel}
+      data-km-source-site="npc-item-gift-item-picker"
+      disabled={disabled}
+      id={inputId}
+      isFiniteCatalog
+      localizeOptions={false}
+      maximumVisibleOptions={100}
+      onChange={(nextValue) => {
+        const nextItemId = Number(nextValue);
+        if (Number.isSafeInteger(nextItemId)) {
+          onChange(nextItemId);
         }
-        aria-autocomplete="list"
-        aria-controls={hasMenu ? listboxId : undefined}
-        aria-expanded={hasMenu}
-        aria-haspopup="listbox"
-        aria-label={ariaLabel}
-        autoComplete="off"
-        disabled={disabled}
-        id={inputId}
-        inputMode="search"
-        onBlur={() => commitTypedOption(false)}
-        onChange={(event) => handleInputChange(event.target.value)}
-        onFocus={() => {
-          setQuery(formattedValue);
-          setHasUserQuery(false);
-          setActiveItemId(null);
-          setIsOpen(true);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            setQuery(formattedValue);
-            setHasUserQuery(false);
-            setIsOpen(false);
-            return;
-          }
-
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            moveActiveOption(event.key === 'ArrowDown' ? 1 : -1);
-            return;
-          }
-
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            commitTypedOption(true);
-          }
-        }}
-          role="combobox"
-          type="text"
-          value={query}
-        />
-        <button
-        aria-label={`Show ${ariaLabel} options`}
-        className="searchable-option-toggle"
-        disabled={disabled}
-        onClick={() => {
-          setQuery(formattedValue);
-          setHasUserQuery(false);
-          setActiveItemId(null);
-          setIsOpen((current) => !current);
-        }}
-        onMouseDown={(event) => {
-          event.preventDefault();
-        }}
-        tabIndex={-1}
-        type="button"
-        >
-          <ChevronDown aria-hidden="true" size={16} />
-        </button>
-        {hasMenu ? (
-          <div className="searchable-option-menu" id={listboxId} role="listbox">
-            {filteredOptions.map((option) => (
-              <HoverTooltip
-                content={option.label}
-                describe={false}
-                key={`${ariaLabel}:${option.itemId}`}
-                placement="above"
-              >
-                <button
-                  aria-disabled={option.isUnavailable}
-                  aria-selected={value === option.itemId}
-                  className={`searchable-option-row ${
-                    activeItemId === option.itemId ? 'is-active' : ''
-                  }`}
-                  disabled={option.isUnavailable}
-                  id={`${listboxId}-item-${option.itemId}`}
-                  onMouseEnter={() => {
-                    if (!option.isUnavailable) {
-                      setActiveItemId(option.itemId);
-                    }
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    selectOption(option);
-                  }}
-                  role="option"
-                  tabIndex={-1}
-                  type="button"
-                >
-                  <span>{option.label}</span>
-                  <small>{option.category}</small>
-                </button>
-              </HoverTooltip>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </HoverTooltip>
+      }}
+      options={searchableOptions}
+      value={value.toString()}
+    />
   );
 }
 
@@ -1503,84 +1300,4 @@ function toSelectableItemOption(
     isUnavailable,
     label: `${option.name} (#${option.itemId})${option.isKeyItem ? ' [Key]' : ''}`
   };
-}
-
-function findExactItemOption(
-  value: string,
-  options: NpcItemGiftSelectableItemOption[]
-) {
-  const normalizedValue = value.trim().toLocaleLowerCase();
-  if (normalizedValue.length === 0) {
-    return null;
-  }
-
-  const availableOptions = options.filter((option) => !option.isUnavailable);
-  const canonicalMatch = availableOptions.find(
-    (option) =>
-      option.label.toLocaleLowerCase() === normalizedValue ||
-      option.itemId.toString() === normalizedValue
-  );
-  if (canonicalMatch) {
-    return canonicalMatch;
-  }
-
-  const nameMatches = availableOptions.filter(
-    (option) => option.name.toLocaleLowerCase() === normalizedValue
-  );
-  return nameMatches.length === 1 ? nameMatches[0]! : null;
-}
-
-function formatItemPickerValue(
-  value: number,
-  options: NpcItemGiftSelectableItemOption[]
-) {
-  return options.find((option) => option.itemId === value)?.label ?? `Item ${value}`;
-}
-
-function getSmartItemMatches(
-  value: string,
-  options: NpcItemGiftSelectableItemOption[]
-) {
-  const query = value.trim();
-  if (query.length === 0) {
-    return options.slice(0, 100);
-  }
-
-  const normalizedQuery = query.toLocaleLowerCase();
-  const numericPrefix = normalizedQuery.match(/^\d+/)?.[0] ?? null;
-  if (numericPrefix) {
-    const normalizedNumericPrefix = numericPrefix.replace(/^0+/, '') || '0';
-    return options
-      .filter((option) => {
-        const rawValue = option.itemId.toString();
-        const normalizedValue = rawValue.replace(/^0+/, '') || '0';
-        const labelNumericPrefix =
-          option.label.match(/^\s*\$?\s*0*([\d,]+)/)?.[1]?.replace(/,/g, '') ?? null;
-
-        return (
-          rawValue.startsWith(numericPrefix) ||
-          normalizedValue.startsWith(normalizedNumericPrefix) ||
-          labelNumericPrefix?.startsWith(normalizedNumericPrefix)
-        );
-      })
-      .slice(0, 100);
-  }
-
-  const tokens = normalizedQuery
-    .split(/[^a-z0-9]+/)
-    .filter((token) => token.length > 0);
-  if (tokens.length === 0) {
-    return options
-      .filter((option) => option.label.toLocaleLowerCase().startsWith(normalizedQuery))
-      .slice(0, 100);
-  }
-
-  return options
-    .filter((option) => {
-      const optionTokens = option.label.toLocaleLowerCase().split(/[^a-z0-9]+/);
-      return tokens.every((token) =>
-        optionTokens.some((optionToken) => optionToken.startsWith(token))
-      );
-    })
-    .slice(0, 100);
 }

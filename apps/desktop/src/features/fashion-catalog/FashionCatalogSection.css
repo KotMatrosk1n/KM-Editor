@@ -91,6 +91,10 @@
   padding-inline: 0;
 }
 
+.fashion-catalog-field-editor .searchable-option-input > input {
+  padding-inline-end: 34px;
+}
+
 .fashion-catalog-workspace .search-field input:focus {
   outline: 0;
 }

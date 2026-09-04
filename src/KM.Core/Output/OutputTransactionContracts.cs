@@ -490,10 +490,23 @@ public class OutputCoordinatorException : Exception
     }
 }
 
-public sealed class OutputPathSecurityException : OutputCoordinatorException
+public class OutputPathSecurityException : OutputCoordinatorException
 {
     public OutputPathSecurityException()
         : base("The output path could not be proven safe.")
+    {
+    }
+
+    protected OutputPathSecurityException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+public sealed class OutputMetadataLayoutUnavailableException : OutputPathSecurityException
+{
+    public OutputMetadataLayoutUnavailableException(OutputPathSecurityException innerException)
+        : base(innerException.Message, innerException)
     {
     }
 }

@@ -125,17 +125,23 @@ const fashionUniqueLabelMap = functionBody(fashionSource, 'createUniqueLabelMap'
 assert.match(
   fashionSource,
   /const optionRenderLimit = 500;/,
-  'Fashion Catalog must bound the number of native option elements rendered at once.'
+  'Fashion Catalog must bound the number of KM option rows rendered at once.'
 );
 assert.match(
   fashionSource,
-  /nonSelectedMatches\.slice\([\s\S]*?optionRenderLimit - selected\.length/,
-  'Fashion Catalog must keep the selected value while windowing the remaining matches.'
+  /maximumVisibleOptions=\{optionRenderLimit\}[\s\S]*?options=\{options\.map\(/,
+  'Fashion Catalog must search its complete catalog through one render-capped KM selector.'
 );
-assert.match(
+assert.doesNotMatch(
   fashionSource,
-  /fashionCatalog\.editor\.optionResultsLimited/,
-  'Fashion Catalog must explain how to reach options outside the current rendered window.'
+  /fashion-catalog-option-search|optionWindow/,
+  'Fashion Catalog must not require a second legacy search to reach KM selector options.'
+);
+const searchableOptionSource = read('src/components/SearchableOptionInput.tsx');
+assert.match(
+  searchableOptionSource,
+  /const visibleMatches = matches\.slice\(0, maximumVisibleOptions\);[\s\S]*?visibleMatches\[visibleMatches\.length - 1\] = selectedOption;/,
+  'A render-capped KM selector must retain an out-of-window committed selection.'
 );
 assert.match(
   fashionSearchText,

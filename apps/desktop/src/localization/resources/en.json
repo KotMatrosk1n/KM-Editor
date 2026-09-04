@@ -2577,6 +2577,7 @@
     "moves.bossOwners.afterStunContext": "Context-only entries run in the separate after-stun choreography.",
     "moves.bossOwners.bombRockDeployedContext": "Context-only entries run through the separate deployed Bomb Rock choreography.",
     "moves.timingOccurrence.help": "Accuracy and Cooldown are shared by every occurrence in the exact selected Timing Profile. Changing either updates all those occurrences but no other timing profile. Advanced timing fields belong only to the selected physical occurrence.",
+    "moves.timingOccurrence.option": "Timing row {index}",
     "moves.timingProfile.heading": "Timing Profile",
     "moves.timingProfile.help": "The raw timing move ID identifies one exact profile stored by the game. A runtime variant can have more than one independent timing profile. This selector scopes Accuracy, Cooldown, and the occurrence controls to that exact profile; runtime battle fields still affect every timing profile of the selected variant.",
     "moves.timingProfile.option": "Timing profile {id}",

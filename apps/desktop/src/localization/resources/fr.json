@@ -2577,6 +2577,7 @@
     "moves.bossOwners.afterStunContext": "Les entrées contextuelles s'exécutent dans la chorégraphie séparée après étourdissement.",
     "moves.bossOwners.bombRockDeployedContext": "Les entrées contextuelles s'exécutent dans la chorégraphie séparée du Rocher Bombe déployé.",
     "moves.timingOccurrence.help": "La précision et le temps de recharge sont partagés par chaque occurrence du Profil de temporisation exact sélectionné. Modifier l'un ou l'autre actualise toutes ces occurrences, mais aucun autre profil. Les champs de temporisation avancés appartiennent uniquement à l'occurrence physique sélectionnée.",
+    "moves.timingOccurrence.option": "Ligne de temporisation {index}",
     "moves.timingProfile.heading": "Profil de temporisation",
     "moves.timingProfile.help": "L'ID brut de la capacité de temporisation identifie un profil exact stocké par le jeu. Une variante d'exécution peut posséder plusieurs profils de temporisation indépendants. Ce sélecteur limite Précision, Recharge et les contrôles d'occurrence à ce profil exact; les champs de combat d'exécution affectent toujours tous les profils de temporisation de la variante sélectionnée.",
     "moves.timingProfile.option": "Profil de temporisation {id}",

@@ -27,6 +27,7 @@ import {
   type AuthoringTransform
 } from '../../authoring/advancedAuthoringTypes';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey, type SemanticRecordRef } from '../../workbench/semanticContracts';
@@ -520,18 +521,22 @@ export function AdvancedAuthoringPanel({
             <h3>{t('changeSets.authoring.selection')}</h3>
           </div>
           <label htmlFor="change-set-authoring-adapter">{t('changeSets.authoring.loadedEditor')}</label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.authoring.loadedEditor')}
+            data-km-source-site="change-set-authoring-adapter"
+            disabled={false}
             id="change-set-authoring-adapter"
-            onChange={(event) => handleAdapterChange(event.currentTarget.value)}
+            isFiniteCatalog
+            onChange={handleAdapterChange}
+            options={workspaces.map((candidate) => ({
+              label: t(
+                authoringAdapterLabelKeys[candidate.adapterId]
+                  ?? 'changeSets.authoring.loadedEditor'
+              ),
+              value: candidate.adapterId
+            }))}
             value={workspace.adapterId}
-          >
-            {workspaces.map((candidate) => (
-              <option key={candidate.adapterId} value={candidate.adapterId}>
-                {t(authoringAdapterLabelKeys[candidate.adapterId] ?? 'changeSets.authoring.loadedEditor')}
-              </option>
-            ))}
-          </select>
+          />
           <label htmlFor="change-set-authoring-record-search">
             {t('changeSets.authoring.searchRecords')}
           </label>
@@ -546,15 +551,19 @@ export function AdvancedAuthoringPanel({
           <label htmlFor="change-set-authoring-record-order">
             {t('analysisPresentation.controls.sort')}
           </label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.sort')}
+            data-km-source-site="change-set-authoring-record-order"
+            disabled={false}
             id="change-set-authoring-record-order"
-            onChange={(event) => setRecordOrder(event.currentTarget.value as typeof recordOrder)}
+            isFiniteCatalog
+            onChange={(value) => setRecordOrder(value as typeof recordOrder)}
+            options={[
+              { label: t('analysisPresentation.controls.record'), value: 'name' },
+              { label: t('analysisPresentation.controls.identifier'), value: 'identifier' }
+            ]}
             value={recordOrder}
-          >
-            <option value="name">{t('analysisPresentation.controls.record')}</option>
-            <option value="identifier">{t('analysisPresentation.controls.identifier')}</option>
-          </select>
+          />
           <div className="change-set-authoring-records" role="group" aria-label={t('changeSets.authoring.records')}>
             {filteredRecordResult.records.map((record) => {
               const key = semanticRecordRefKey(record.record);
@@ -628,38 +637,44 @@ export function AdvancedAuthoringPanel({
             <h3>{t('changeSets.authoring.bulkTitle')}</h3>
           </div>
           <label htmlFor="change-set-authoring-field">{t('changeSets.authoring.field')}</label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.authoring.field')}
+            data-localization-ignore="true"
+            data-km-source-site="change-set-authoring-field"
+            disabled={false}
             id="change-set-authoring-field"
-            onChange={(event) => {
-              setFieldKey(event.currentTarget.value);
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={(value) => {
+              setFieldKey(value);
               setStoredPreview(null);
             }}
+            options={workspace.fields.map((candidate) => ({
+              label: candidate.label,
+              value: candidate.fieldKey
+            }))}
             value={field.fieldKey}
-          >
-            {workspace.fields.map((candidate) => (
-              <option data-localization-ignore="true" key={candidate.fieldKey} value={candidate.fieldKey}>
-                {candidate.label}
-              </option>
-            ))}
-          </select>
+          />
           <label htmlFor="change-set-authoring-transform">{t('changeSets.authoring.transform')}</label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.authoring.transform')}
+            data-km-source-site="change-set-authoring-transform"
+            disabled={false}
             id="change-set-authoring-transform"
-            onChange={(event) => {
-              setTransformKind(event.currentTarget.value as typeof transformKind);
+            isFiniteCatalog
+            onChange={(value) => {
+              setTransformKind(value as typeof transformKind);
               setStoredPreview(null);
             }}
+            options={[
+              { label: t('changeSets.authoring.transform.replace'), value: 'replace' },
+              ...field.supportedTransforms.map((transform) => ({
+                label: t(`changeSets.authoring.transform.${transform}`),
+                value: transform
+              }))
+            ]}
             value={transformKind}
-          >
-            <option value="replace">{t('changeSets.authoring.transform.replace')}</option>
-            {field.supportedTransforms.map((transform) => (
-              <option key={transform} value={transform}>
-                {t(`changeSets.authoring.transform.${transform}`)}
-              </option>
-            ))}
-          </select>
+          />
           <TransformInputs
             kind={transformKind}
             onPrimaryChange={(value) => {
@@ -694,25 +709,24 @@ export function AdvancedAuthoringPanel({
             <h3>{t('changeSets.authoring.copyTitle')}</h3>
           </div>
           <label htmlFor="change-set-authoring-source">{t('changeSets.authoring.source')}</label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.authoring.source')}
+            data-localization-ignore="true"
+            data-km-source-site="change-set-authoring-source"
+            disabled={false}
             id="change-set-authoring-source"
-            onChange={(event) => {
-              setSourceRecordKey(event.currentTarget.value);
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={(value) => {
+              setSourceRecordKey(value);
               setStoredPreview(null);
             }}
+            options={sourceRecordOptions.map((record) => ({
+              label: `${record.displayName} - ${formatAuthoringRecordIdentifier(record.record)}`,
+              value: semanticRecordRefKey(record.record)
+            }))}
             value={sourceRecord ? semanticRecordRefKey(sourceRecord.record) : ''}
-          >
-            {sourceRecordOptions.map((record) => (
-              <option
-                data-localization-ignore="true"
-                key={semanticRecordRefKey(record.record)}
-                value={semanticRecordRefKey(record.record)}
-              >
-                {`${record.displayName} - ${formatAuthoringRecordIdentifier(record.record)}`}
-              </option>
-            ))}
-          </select>
+          />
           <div className="change-set-authoring-copy-actions">
             <button
               className="secondary-button compact-button"
@@ -741,21 +755,25 @@ export function AdvancedAuthoringPanel({
               <label htmlFor="change-set-authoring-paste-group">
                 {t('changeSets.authoring.pasteGroup')}
               </label>
-              <select
-                className="km-select-control"
+              <SearchableOptionInput
+                ariaLabel={t('changeSets.authoring.pasteGroup')}
+                data-km-source-site="change-set-authoring-paste-group"
+                disabled={false}
                 id="change-set-authoring-paste-group"
-                onChange={(event) => {
-                  setPasteGroupId(event.currentTarget.value);
+                isFiniteCatalog
+                onChange={(value) => {
+                  setPasteGroupId(value);
                   setStoredPreview(null);
                 }}
+                options={workspace.pasteSpecialGroups.map((group) => ({
+                  label: t(
+                    authoringPasteGroupLabelKeys[group.id]
+                      ?? 'changeSets.authoring.pasteGroup'
+                  ),
+                  value: group.id
+                }))}
                 value={pasteGroup?.id ?? ''}
-              >
-                {workspace.pasteSpecialGroups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {t(authoringPasteGroupLabelKeys[group.id] ?? 'changeSets.authoring.pasteGroup')}
-                  </option>
-                ))}
-              </select>
+              />
               <div className="change-set-authoring-copy-actions">
                 <button
                   className="secondary-button compact-button"
@@ -868,18 +886,25 @@ function TransformInputs({
         />
       </label>
       {kind === 'multiply' ? (
-        <label>
-          <span>{t('changeSets.authoring.rounding')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => onRoundingChange(event.currentTarget.value as typeof rounding)}
+        <div className="km-searchable-select-field change-set-authoring-value-field">
+          <label htmlFor="change-set-authoring-rounding">
+            <span>{t('changeSets.authoring.rounding')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.authoring.rounding')}
+            data-km-source-site="change-set-authoring-rounding"
+            disabled={false}
+            id="change-set-authoring-rounding"
+            isFiniteCatalog
+            onChange={(value) => onRoundingChange(value as typeof rounding)}
+            options={[
+              { label: t('changeSets.authoring.rounding.nearest'), value: 'nearest' },
+              { label: t('changeSets.authoring.rounding.floor'), value: 'floor' },
+              { label: t('changeSets.authoring.rounding.ceil'), value: 'ceil' }
+            ]}
             value={rounding}
-          >
-            <option value="nearest">{t('changeSets.authoring.rounding.nearest')}</option>
-            <option value="floor">{t('changeSets.authoring.rounding.floor')}</option>
-            <option value="ceil">{t('changeSets.authoring.rounding.ceil')}</option>
-          </select>
-        </label>
+          />
+        </div>
       ) : null}
     </div>
   );

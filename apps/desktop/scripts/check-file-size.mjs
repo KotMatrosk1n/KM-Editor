@@ -4,12 +4,18 @@
 // ownership and testability matter more than arbitrary line counts. Static UI
 // contract checks remain attached here so the existing typecheck command runs them.
 import './check-analysis-preparation-contract.mjs';
+import './check-analysis-selector-contract.mjs';
+import './check-editor-field-lock-contract.mjs';
+import './check-editor-interaction-contract.mjs';
+import './check-editor-surface-inventory.mjs';
+import './check-gameplay-input-contracts.mjs';
 import './check-local-editor-draft-contract.mjs';
 import './check-project-async-policy.mjs';
 import './check-performance-diagnostics-contract.mjs';
 import './check-focused-editor-contracts.mjs';
 import './check-record-tab-interaction-contract.mjs';
 import './check-semantic-inspector-contract.mjs';
+import './check-swsh-encounter-area-copy-contract.mjs';
 import './check-trainer-navigation-contract.mjs';
 import './check-trainer-naming-contract.mjs';
 import './check-visual-theme-contract.mjs';

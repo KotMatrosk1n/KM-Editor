@@ -187,7 +187,8 @@
   min-width: 0;
 }
 
-.km-balance-controls label {
+.km-balance-controls > label,
+.km-balance-controls .km-balance-select-field {
   display: grid;
   gap: 0.35rem;
   min-width: 0;
@@ -232,7 +233,8 @@
   margin-top: 0.75rem;
 }
 
-.km-balance-comparison-controls label {
+.km-balance-comparison-controls > label,
+.km-balance-comparison-controls .km-balance-select-field {
   display: grid;
   gap: 0.35rem;
   min-width: 0;

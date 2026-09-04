@@ -17,6 +17,7 @@ import { type ProjectBridge } from '../../bridge/projectBridge';
 import type { DesktopServices } from '../../desktopServices';
 import { FieldLabel } from '../../components/FieldLabel';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
@@ -804,20 +805,22 @@ export function GameDumpSection({
                         htmlFor={formatInputId}
                         label={translateLiteral('Format')}
                       />
-                      <select
-                        aria-label={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
-                        className="km-select-control"
+                      <SearchableOptionInput
+                        ariaLabel={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
+                        data-km-source-site="game-dump-format"
                         disabled={
                           isWriteLocked || !category.isAvailable || !state.selected
                         }
                         id={formatInputId}
-                        onChange={(event) => {
+                        isFiniteCatalog
+                        localizeOptions={false}
+                        onChange={(value) => {
                           if (activeGenerationRef.current !== null) return;
                           invalidateGeneratedState();
                           setSelectionState((current) => ({
                             ...current,
                             [category.id]: {
-                              format: event.target.value as GameDumpFormat,
+                              format: value as GameDumpFormat,
                               languageCodes: resolveLanguageSelection(
                                 category,
                                 current[category.id]?.languageCodes
@@ -826,14 +829,12 @@ export function GameDumpSection({
                             }
                           }));
                         }}
+                        options={category.formats.map((format) => ({
+                          label: formatGameDumpFormat(format, translateLiteral),
+                          value: format
+                        }))}
                         value={state.format}
-                      >
-                        {category.formats.map((format) => (
-                          <option key={format} value={format}>
-                            {formatGameDumpFormat(format, translateLiteral)}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                     {category.languageOptions ? (
                       <div className="path-field game-dump-language-field">
@@ -842,23 +843,25 @@ export function GameDumpSection({
                           htmlFor={languageInputId}
                           label={t('gameDump.language.label')}
                         />
-                        <select
-                          aria-label={`${translateLiteral(category.label)} ${t(
+                        <SearchableOptionInput
+                          ariaLabel={`${translateLiteral(category.label)} ${t(
                             'gameDump.language.label'
                           )}`}
-                          className="km-select-control"
                           data-localization-ignore="true"
+                          data-km-source-site="game-dump-language"
                           disabled={
                             isWriteLocked || !category.isAvailable || !state.selected
                           }
                           id={languageInputId}
-                          onChange={(event) => {
+                          isFiniteCatalog
+                          localizeOptions={false}
+                          onChange={(value) => {
                             if (activeGenerationRef.current !== null) return;
                             invalidateGeneratedState();
                             const languageCodes =
-                              event.target.value === allGameDumpLanguagesValue
+                              value === allGameDumpLanguagesValue
                                 ? category.languageOptions!.options.map((option) => option.code)
-                                : [event.target.value];
+                                : [value];
                             setSelectionState((current) => ({
                               ...current,
                               [category.id]: {
@@ -868,21 +871,22 @@ export function GameDumpSection({
                               }
                             }));
                           }}
+                          options={[
+                            ...(category.languageOptions.supportsAllLanguages
+                              ? [{
+                                  label: t('gameDump.language.all', {
+                                    count: category.languageOptions.options.length
+                                  }),
+                                  value: allGameDumpLanguagesValue
+                                }]
+                              : []),
+                            ...category.languageOptions.options.map((option) => ({
+                              label: option.label,
+                              value: option.code
+                            }))
+                          ]}
                           value={formatLanguageSelection(category, state.languageCodes)}
-                        >
-                          {category.languageOptions.supportsAllLanguages ? (
-                            <option value={allGameDumpLanguagesValue}>
-                              {t('gameDump.language.all', {
-                                count: category.languageOptions.options.length
-                              })}
-                            </option>
-                          ) : null}
-                          {category.languageOptions.options.map((option) => (
-                            <option key={option.code} value={option.code}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                     ) : null}
                   </div>

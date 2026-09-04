@@ -27,6 +27,7 @@ import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FieldLabel } from '../../components/FieldLabel';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useModalDialog } from '../../components/useModalDialog';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
@@ -751,21 +752,24 @@ export function ZaDexLayoutSection({
                         htmlFor="za-dex-layout-destination-dex"
                         label={translateLiteral('Destination Pokédex')}
                       />
-                      <select
-                        className="km-select-control"
+                      <SearchableOptionInput
+                        ariaLabel={translateLiteral('Destination Pokédex')}
+                        data-km-source-site="za-dex-layout-destination-dex"
                         disabled={
                           !hasActiveEditSession ||
                           !dexEditor.canEdit ||
                           resizeDraftIsDirty
                         }
                         id="za-dex-layout-destination-dex"
-                        onChange={(event) => {
+                        isFiniteCatalog
+                        localizeOptions={false}
+                        onChange={(value) => {
                           if (!hasActiveEditSession) {
                             return;
                           }
 
                           const nextDexKind =
-                            event.currentTarget.value === 'hyperspace'
+                            value === 'hyperspace'
                               ? 'hyperspace'
                               : 'regular';
                           setDestinationDexKind(nextDexKind);
@@ -779,15 +783,18 @@ export function ZaDexLayoutSection({
                             Math.min(selectedPlacement.displayedNumber, nextMaximum).toString()
                           );
                         }}
+                        options={[
+                          {
+                            label: `${translateLiteral('Regular Dex')} (${dexEditor.regularCount})`,
+                            value: 'regular'
+                          },
+                          {
+                            label: `${translateLiteral('Hyperspace Dex')} (${dexEditor.hyperspaceCount})`,
+                            value: 'hyperspace'
+                          }
+                        ]}
                         value={destinationDexKind}
-                      >
-                        <option value="regular">
-                          {translateLiteral('Regular Dex')} ({dexEditor.regularCount})
-                        </option>
-                        <option value="hyperspace">
-                          {translateLiteral('Hyperspace Dex')} ({dexEditor.hyperspaceCount})
-                        </option>
-                      </select>
+                      />
                     </div>
 
                     <div className="path-field">

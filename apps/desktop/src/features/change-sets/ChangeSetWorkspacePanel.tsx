@@ -35,6 +35,7 @@ import {
   changeSetMaximumPortablePackageBytes
 } from '../../bridge/changeSetContracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
@@ -1072,35 +1073,40 @@ function BuildVariants({
           <label htmlFor="change-set-variant-output-mode">
             {t('changeSets.variants.outputMode')}
           </label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.variants.outputMode')}
+            data-localization-ignore="true"
+            data-km-source-site="change-set-variant-output-mode"
             disabled={controller.availableOutputModes.length === 0}
             id="change-set-variant-output-mode"
-            onChange={(event) => setOutputMode(event.currentTarget.value)}
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={setOutputMode}
+            options={controller.availableOutputModes.map((mode) => ({
+              label: mode.label,
+              value: mode.id
+            }))}
             value={outputMode}
-          >
-            {controller.availableOutputModes.map((mode) => (
-              <option data-localization-ignore="true" key={mode.id} value={mode.id}>
-                {mode.label}
-              </option>
-            ))}
-          </select>
+          />
           <label htmlFor="change-set-variant-output-profile">
             {t('changeSets.variants.outputProfile')}
           </label>
-          <select
-            className="km-select-control"
+          <SearchableOptionInput
+            ariaLabel={t('changeSets.variants.outputProfile')}
+            data-localization-ignore="true"
+            data-km-source-site="change-set-variant-output-profile"
+            disabled={false}
+            emptyOptionLabel={t('changeSets.variants.currentProfile')}
             id="change-set-variant-output-profile"
-            onChange={(event) => setOutputProfileId(event.currentTarget.value)}
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={setOutputProfileId}
+            options={controller.availableOutputProfiles.map((profile) => ({
+              label: profile.name,
+              value: profile.id
+            }))}
             value={outputProfileId}
-          >
-            <option value="">{t('changeSets.variants.currentProfile')}</option>
-            {controller.availableOutputProfiles.map((profile) => (
-              <option data-localization-ignore="true" key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
+          />
           {enabledChangeSets.length > 0 ? (
             <fieldset className="change-set-dependencies">
               <legend>{t('changeSets.collectionLabel')}</legend>
@@ -1373,31 +1379,46 @@ function ChangeSetComparison({
                   value={resultFilter}
                 />
               </label>
-              <label>
-                <span>{t('analysisPresentation.controls.resultType')}</span>
-                <select
-                  className="km-select-control"
-                  onChange={(event) => setKindFilter(event.currentTarget.value)}
+              <div className="km-searchable-select-field change-set-result-field">
+                <label htmlFor="change-set-comparison-kind-filter">
+                  <span>{t('analysisPresentation.controls.resultType')}</span>
+                </label>
+                <SearchableOptionInput
+                  ariaLabel={t('analysisPresentation.controls.resultType')}
+                  data-km-source-site="change-set-comparison-kind-filter"
+                  disabled={false}
+                  id="change-set-comparison-kind-filter"
+                  isFiniteCatalog
+                  onChange={setKindFilter}
+                  options={[
+                    { label: t('analysisPresentation.controls.allResults'), value: 'all' },
+                    ...kinds.map((kind) => ({
+                      label: t(`changeSets.comparison.kind.${kind}`),
+                      value: kind
+                    }))
+                  ]}
                   value={kindFilter}
-                >
-                  <option value="all">{t('analysisPresentation.controls.allResults')}</option>
-                  {kinds.map((kind) => (
-                    <option key={kind} value={kind}>{t(`changeSets.comparison.kind.${kind}`)}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>{t('analysisPresentation.controls.sort')}</span>
-                <select
-                  className="km-select-control"
-                  onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+                />
+              </div>
+              <div className="km-searchable-select-field change-set-result-field">
+                <label htmlFor="change-set-comparison-sort">
+                  <span>{t('analysisPresentation.controls.sort')}</span>
+                </label>
+                <SearchableOptionInput
+                  ariaLabel={t('analysisPresentation.controls.sort')}
+                  data-km-source-site="change-set-comparison-sort"
+                  disabled={false}
+                  id="change-set-comparison-sort"
+                  isFiniteCatalog
+                  onChange={(value) => setResultOrder(value as typeof resultOrder)}
+                  options={[
+                    { label: t('changeSets.comparison.target'), value: 'target' },
+                    { label: t('analysisPresentation.controls.resultType'), value: 'kind' },
+                    { label: t('changeSets.comparison.owner'), value: 'owner' }
+                  ]}
                   value={resultOrder}
-                >
-                  <option value="target">{t('changeSets.comparison.target')}</option>
-                  <option value="kind">{t('analysisPresentation.controls.resultType')}</option>
-                  <option value="owner">{t('changeSets.comparison.owner')}</option>
-                </select>
-              </label>
+                />
+              </div>
             </div>
             <div className="change-set-comparison-selection">
               <span role="status">{t('analysisPresentation.controls.selectedCount', {

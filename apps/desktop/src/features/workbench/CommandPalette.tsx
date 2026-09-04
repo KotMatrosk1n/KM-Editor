@@ -214,6 +214,7 @@ function OpenCommandPalette({
               entitySearchState === 'idle' ? undefined : `${listboxId}-semantic-status`
             }
             aria-expanded="true"
+            aria-haspopup="listbox"
             autoComplete="off"
             maxLength={maximumWorkspaceEntitySearchTextLength}
             onChange={(event) => {

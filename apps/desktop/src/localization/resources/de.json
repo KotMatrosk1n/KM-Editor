@@ -2577,6 +2577,7 @@
     "moves.bossOwners.afterStunContext": "Kontextgebundene Einträge laufen in der separaten Choreografie nach einer Betäubung.",
     "moves.bossOwners.bombRockDeployedContext": "Kontextgebundene Einträge laufen über die separate Choreografie mit eingesetztem Bombenfelsen.",
     "moves.timingOccurrence.help": "Genauigkeit und Abklingzeit gelten gemeinsam für jedes Vorkommen im exakt ausgewählten Timing-Profil. Eine Änderung aktualisiert alle diese Vorkommen, aber kein anderes Timing-Profil. Erweiterte Timing-Felder gehören nur zum ausgewählten physischen Vorkommen.",
+    "moves.timingOccurrence.option": "Timing-Zeile {index}",
     "moves.timingProfile.heading": "Timing-Profil",
     "moves.timingProfile.help": "Die rohe Timing-Attacken-ID kennzeichnet ein exaktes, vom Spiel gespeichertes Profil. Eine Laufzeitvariante kann mehrere unabhängige Timing-Profile besitzen. Dieser Selektor begrenzt Genauigkeit, Abklingzeit und die Vorkommenssteuerungen auf genau dieses Profil; Laufzeit-Kampffelder wirken sich weiterhin auf jedes Timing-Profil der ausgewählten Variante aus.",
     "moves.timingProfile.option": "Timing-Profil {id}",

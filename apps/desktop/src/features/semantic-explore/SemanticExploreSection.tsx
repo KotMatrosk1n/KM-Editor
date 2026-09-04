@@ -29,6 +29,7 @@ import {
   usePublishCommonEditorError
 } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import { semanticRecordRefKey } from '../../workbench/semanticContracts';
@@ -275,7 +276,12 @@ function ExploreModulePanel({
               />
             </span>
           </label>
-          <LayerSelect layers={layers} onChange={setLayer} value={layer} />
+          <LayerSelect
+            id="semantic-explore-query-layer"
+            layers={layers}
+            onChange={setLayer}
+            value={layer}
+          />
           <button disabled={controller.search.status === 'loading'} type="submit">
             {t('semanticExplore.search.action')}
           </button>
@@ -514,8 +520,20 @@ function CompareModulePanel({
   return (
     <div>
       <div className="km-semantic-query-bar">
-        <LayerSelect labelKey="semanticExplore.compare.left" layers={layers} onChange={setLeft} value={left} />
-        <LayerSelect labelKey="semanticExplore.compare.right" layers={layers} onChange={setRight} value={right} />
+        <LayerSelect
+          id="semantic-explore-compare-left-layer"
+          labelKey="semanticExplore.compare.left"
+          layers={layers}
+          onChange={setLeft}
+          value={left}
+        />
+        <LayerSelect
+          id="semantic-explore-compare-right-layer"
+          labelKey="semanticExplore.compare.right"
+          layers={layers}
+          onChange={setRight}
+          value={right}
+        />
         <RecordSearchPicker
           controller={controller}
           layer={right}
@@ -834,44 +852,65 @@ function DifferenceList({
             value={resultFilter}
           />
         </label>
-        <label>
-          <span>{t('analysisPresentation.controls.record')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setRecordFilter(event.currentTarget.value)}
+        <div className="km-searchable-select-field km-semantic-result-field">
+          <label htmlFor="semantic-explore-comparison-record-filter">
+            <span>{t('analysisPresentation.controls.record')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.record')}
+            data-localization-ignore="true"
+            data-km-source-site="semantic-explore-comparison-record-filter"
+            disabled={false}
+            id="semantic-explore-comparison-record-filter"
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={setRecordFilter}
+            options={[
+              { label: t('analysisPresentation.controls.allRecords'), value: 'all' },
+              ...records.map(([key, label]) => ({ label, value: key }))
+            ]}
             value={recordFilter}
-          >
-            <option value="all">{t('analysisPresentation.controls.allRecords')}</option>
-            {records.map(([key, label]) => (
-              <option data-localization-ignore="true" key={key} value={key}>{label}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t('analysisPresentation.controls.field')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setFieldFilter(event.currentTarget.value)}
+          />
+        </div>
+        <div className="km-searchable-select-field km-semantic-result-field">
+          <label htmlFor="semantic-explore-comparison-field-filter">
+            <span>{t('analysisPresentation.controls.field')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.field')}
+            data-localization-ignore="true"
+            data-km-source-site="semantic-explore-comparison-field-filter"
+            disabled={false}
+            id="semantic-explore-comparison-field-filter"
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={setFieldFilter}
+            options={[
+              { label: t('analysisPresentation.controls.allFields'), value: 'all' },
+              ...fields.map(([key, label]) => ({ label, value: key }))
+            ]}
             value={fieldFilter}
-          >
-            <option value="all">{t('analysisPresentation.controls.allFields')}</option>
-            {fields.map(([key, label]) => (
-              <option data-localization-ignore="true" key={key} value={key}>{label}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t('analysisPresentation.controls.sort')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+          />
+        </div>
+        <div className="km-searchable-select-field km-semantic-result-field">
+          <label htmlFor="semantic-explore-comparison-sort">
+            <span>{t('analysisPresentation.controls.sort')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.sort')}
+            data-km-source-site="semantic-explore-comparison-sort"
+            disabled={false}
+            id="semantic-explore-comparison-sort"
+            isFiniteCatalog
+            onChange={(value) => setResultOrder(value as typeof resultOrder)}
+            options={[
+              { label: t('analysisPresentation.controls.record'), value: 'record' },
+              { label: t('analysisPresentation.controls.field'), value: 'field' },
+              { label: t('analysisPresentation.controls.resultType'), value: 'kind' }
+            ]}
             value={resultOrder}
-          >
-            <option value="record">{t('analysisPresentation.controls.record')}</option>
-            <option value="field">{t('analysisPresentation.controls.field')}</option>
-            <option value="kind">{t('analysisPresentation.controls.resultType')}</option>
-          </select>
-        </label>
+          />
+        </div>
       </div>
       {matchingDifferences.length === 0 ? (
         <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
@@ -1049,9 +1088,17 @@ function ChangesModulePanel({
   const layers = availableQueryableLayers(controller);
   const hasLayered = layers.includes('layered');
   const hasPending = layers.includes('pending');
+  const resolvedTo = layers.includes(to)
+    ? to
+    : hasLayered
+      ? 'layered'
+      : hasPending
+        ? 'pending'
+        : '';
   useEffect(() => {
     if (from === 'layered' && !hasLayered) setFrom('base');
-    if (to === 'pending' && !hasPending) setTo(hasLayered ? 'layered' : 'pending');
+    if (to === 'pending' && !hasPending && hasLayered) setTo('layered');
+    if (to === 'layered' && !hasLayered && hasPending) setTo('pending');
   }, [from, hasLayered, hasPending, to]);
   const changes = controller.changes.data;
   const submittedChangesSpec = controller.submittedChangesSpec;
@@ -1087,39 +1134,66 @@ function ChangesModulePanel({
   return (
     <div>
       <div className="km-semantic-query-bar">
-        <label>
-          <span>{t('semanticExplore.changes.from')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setFrom(event.currentTarget.value as typeof from)}
+        <div className="km-searchable-select-field km-semantic-query-field">
+          <label htmlFor="semantic-explore-changes-from">
+            <span>{t('semanticExplore.changes.from')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('semanticExplore.changes.from')}
+            data-km-source-site="semantic-explore-changes-from"
+            disabled={false}
+            id="semantic-explore-changes-from"
+            isFiniteCatalog
+            onChange={(value) => setFrom(value as typeof from)}
+            options={[
+              { label: t('semanticExplore.layer.base'), value: 'base' },
+              ...(hasLayered
+                ? [{ label: t('semanticExplore.layer.layered'), value: 'layered' }]
+                : [])
+            ]}
             value={from}
-          >
-            <option value="base">{t('semanticExplore.layer.base')}</option>
-            {hasLayered ? <option value="layered">{t('semanticExplore.layer.layered')}</option> : null}
-          </select>
-        </label>
-        <label>
-          <span>{t('semanticExplore.changes.to')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setTo(event.currentTarget.value as typeof to)}
-            value={to}
-          >
-            {hasLayered ? <option value="layered">{t('semanticExplore.layer.layered')}</option> : null}
-            {hasPending ? <option value="pending">{t('semanticExplore.layer.pending')}</option> : null}
-          </select>
-        </label>
-        <label>
-          <span>{t('semanticExplore.changes.format')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setFormat(event.currentTarget.value as typeof format)}
+          />
+        </div>
+        <div className="km-searchable-select-field km-semantic-query-field">
+          <label htmlFor="semantic-explore-changes-to">
+            <span>{t('semanticExplore.changes.to')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('semanticExplore.changes.to')}
+            data-km-source-site="semantic-explore-changes-to"
+            disabled={resolvedTo === ''}
+            id="semantic-explore-changes-to"
+            isFiniteCatalog
+            onChange={(value) => setTo(value as typeof to)}
+            options={[
+              ...(hasLayered
+                ? [{ label: t('semanticExplore.layer.layered'), value: 'layered' }]
+                : []),
+              ...(hasPending
+                ? [{ label: t('semanticExplore.layer.pending'), value: 'pending' }]
+                : [])
+            ]}
+            value={resolvedTo}
+          />
+        </div>
+        <div className="km-searchable-select-field km-semantic-query-field">
+          <label htmlFor="semantic-explore-changes-format">
+            <span>{t('semanticExplore.changes.format')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('semanticExplore.changes.format')}
+            data-km-source-site="semantic-explore-changes-format"
+            disabled={false}
+            id="semantic-explore-changes-format"
+            isFiniteCatalog
+            onChange={(value) => setFormat(value as typeof format)}
+            options={[
+              { label: t('semanticExplore.changes.structured'), value: 'structured' },
+              { label: t('semanticExplore.changes.canonicalText'), value: 'canonicalText' }
+            ]}
             value={format}
-          >
-            <option value="structured">{t('semanticExplore.changes.structured')}</option>
-            <option value="canonicalText">{t('semanticExplore.changes.canonicalText')}</option>
-          </select>
-        </label>
+          />
+        </div>
         <button
           disabled={
             controller.changes.status === 'loading' ||
@@ -1155,33 +1229,48 @@ function ChangesModulePanel({
                 value={resultFilter}
               />
             </label>
-            <label>
-              <span>{t('analysisPresentation.controls.field')}</span>
-              <select
-                className="km-select-control"
-                onChange={(event) => setFieldFilter(event.currentTarget.value)}
+            <div className="km-searchable-select-field km-semantic-result-field">
+              <label htmlFor="semantic-explore-changes-field-filter">
+                <span>{t('analysisPresentation.controls.field')}</span>
+              </label>
+              <SearchableOptionInput
+                ariaLabel={t('analysisPresentation.controls.field')}
+                data-localization-ignore="true"
+                data-km-source-site="semantic-explore-changes-field-filter"
+                disabled={false}
+                id="semantic-explore-changes-field-filter"
+                isFiniteCatalog
+                localizeOptions={false}
+                onChange={setFieldFilter}
+                options={[
+                  { label: t('analysisPresentation.controls.allFields'), value: 'all' },
+                  ...fieldKeys.map((fieldKey) => ({
+                    label: humanizeIdentifier(fieldKey),
+                    value: fieldKey
+                  }))
+                ]}
                 value={fieldFilter}
-              >
-                <option value="all">{t('analysisPresentation.controls.allFields')}</option>
-                {fieldKeys.map((fieldKey) => (
-                  <option data-localization-ignore="true" key={fieldKey} value={fieldKey}>
-                    {humanizeIdentifier(fieldKey)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{t('analysisPresentation.controls.sort')}</span>
-              <select
-                className="km-select-control"
-                onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+              />
+            </div>
+            <div className="km-searchable-select-field km-semantic-result-field">
+              <label htmlFor="semantic-explore-changes-sort">
+                <span>{t('analysisPresentation.controls.sort')}</span>
+              </label>
+              <SearchableOptionInput
+                ariaLabel={t('analysisPresentation.controls.sort')}
+                data-km-source-site="semantic-explore-changes-sort"
+                disabled={false}
+                id="semantic-explore-changes-sort"
+                isFiniteCatalog
+                onChange={(value) => setResultOrder(value as typeof resultOrder)}
+                options={[
+                  { label: t('analysisPresentation.controls.path'), value: 'path' },
+                  { label: t('analysisPresentation.controls.field'), value: 'field' },
+                  { label: t('analysisPresentation.controls.resultType'), value: 'kind' }
+                ]}
                 value={resultOrder}
-              >
-                <option value="path">{t('analysisPresentation.controls.path')}</option>
-                <option value="field">{t('analysisPresentation.controls.field')}</option>
-                <option value="kind">{t('analysisPresentation.controls.resultType')}</option>
-              </select>
-            </label>
+              />
+            </div>
           </div>
         ) : null}
         {changes && submittedChangesSpec?.format === 'canonicalText' ? (
@@ -1351,11 +1440,13 @@ function groupEntityFields<T extends { group: string }>(fields: readonly T[], fa
 }
 
 function LayerSelect({
+  id,
   labelKey = 'semanticExplore.layer.label',
   layers,
   onChange,
   value
 }: {
+  id: string;
   labelKey?: string;
   layers: readonly QueryableLayer[];
   onChange: (layer: QueryableLayer) => void;
@@ -1363,18 +1454,24 @@ function LayerSelect({
 }) {
   const { t } = useLocalization();
   return (
-    <label>
-      <span>{t(labelKey)}</span>
-      <select
-        className="km-select-control"
-        onChange={(event) => onChange(event.currentTarget.value as QueryableLayer)}
+    <div className="km-searchable-select-field km-semantic-query-field">
+      <label htmlFor={id}>
+        <span>{t(labelKey)}</span>
+      </label>
+      <SearchableOptionInput
+        ariaLabel={t(labelKey)}
+        data-km-source-site="semantic-explore-layer"
+        disabled={false}
+        id={id}
+        isFiniteCatalog
+        onChange={(nextValue) => onChange(nextValue as QueryableLayer)}
+        options={layers.map((layer) => ({
+          label: t(`semanticExplore.layer.${layer}`),
+          value: layer
+        }))}
         value={value}
-      >
-        {layers.map((layer) => (
-          <option key={layer} value={layer}>{t(`semanticExplore.layer.${layer}`)}</option>
-        ))}
-      </select>
-    </label>
+      />
+    </div>
   );
 }
 

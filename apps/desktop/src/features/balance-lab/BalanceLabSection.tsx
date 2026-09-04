@@ -14,6 +14,7 @@ import {
 } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
@@ -283,18 +284,23 @@ function SelectControl({
 }) {
   const { t } = useLocalization();
   return (
-    <label>
-      <span>{t(labelKey)}</span>
-      <select
-        className="km-select-control"
-        onChange={(event) => onChange(event.currentTarget.value)}
+    <div className="km-searchable-select-field km-balance-select-field">
+      <label htmlFor="balance-lab-layer">{t(labelKey)}</label>
+      <SearchableOptionInput
+        ariaLabel={t(labelKey)}
+        data-km-source-site="balance-lab-layer"
+        disabled={false}
+        id="balance-lab-layer"
+        isFiniteCatalog
+        localizeOptions={false}
+        onChange={onChange}
+        options={options.map((option) => ({
+          label: t(option.labelKey),
+          value: option.value
+        }))}
         value={value}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-        ))}
-      </select>
-    </label>
+      />
+    </div>
   );
 }
 

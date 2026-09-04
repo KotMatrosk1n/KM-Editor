@@ -9,6 +9,7 @@ import {
   type FairyGymBoostSelection,
   type FairyGymBoostsWorkflow
 } from '../../bridge/fairyGymBoostsContracts';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -419,20 +420,20 @@ function FairyGymBoostCard({
           htmlFor={outcomeInputId}
           label={translateLiteral('Outcome')}
         />
-        <select
-          aria-label={`${boost.answerText} outcome`}
-          className="km-select-control"
+        <SearchableOptionInput
+          ariaLabel={`${boost.answerText} outcome`}
+          data-km-source-site="fairy-gym-outcome"
           disabled={disabled}
           id={outcomeInputId}
-          onChange={(event) => onChange(boost.boostId, event.currentTarget.value)}
+          isFiniteCatalog
+          localizeOptions={false}
+          onChange={(value) => onChange(boost.boostId, value)}
+          options={outcomeOptions.map((option) => ({
+            label: translateLiteral(option.label),
+            value: selectionToValue(option)
+          }))}
           value={selectionToValue(selection)}
-        >
-          {outcomeOptions.map((option) => (
-            <option key={selectionToValue(option)} value={selectionToValue(option)}>
-              {translateLiteral(option.label)}
-            </option>
-          ))}
-        </select>
+        />
       </div>
     </article>
   );

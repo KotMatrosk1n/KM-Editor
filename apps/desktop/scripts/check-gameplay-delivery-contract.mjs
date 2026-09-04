@@ -37,6 +37,11 @@ assert.match(
 );
 assert.match(
   panel,
+  /const installationTargetSelectionBusy = busy !== null;[\s\S]*?aria-busy=\{installationTargetSelectionBusy \|\| undefined\}[\s\S]*?aria-controls="in-game-settings-installation-detail"[\s\S]*?disabled=\{installationTargetSelectionBusy\}/,
+  'Installation targets must be natively disabled and expose busy state while their request context is changing.'
+);
+assert.match(
+  panel,
   /generatedTitleSourcePaths[\s\S]*?atmosphere\/contents\/\$\{titleId\}\/exefs[\s\S]*?atmosphere\/contents\/\$\{titleId\}\/romfs[\s\S]*?generatedSettingsSourcePath/,
   'Native-menu installation guidance must show the two generated title-layer source directories without shell brace shorthand.'
 );

@@ -71,7 +71,7 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            paths.EnsureMetadataLayout();
+            EnsureExclusiveOperationMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
             if (HasBlockingRecoveryMaterial(recovery))
@@ -101,7 +101,7 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            paths.EnsureMetadataLayout();
+            EnsureExclusiveOperationMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
             if (HasBlockingRecoveryMaterial(recovery))
@@ -127,6 +127,16 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            // Recovery status is advisory. When no metadata store exists there can be no
+            // interrupted KM transaction to report, and creating .km merely to say so turns
+            // this read-only query into an output mutation. A concurrent writer is still
+            // protected by the normal recovery gate on every write path.
+            if (!paths.MetadataLayoutExists())
+            {
+                return CreateEmptyRecoveryReport();
+            }
+
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return await InspectRecoveryCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -3041,6 +3051,13 @@ public sealed class OutputTransactionCoordinator
             statuses);
     }
 
+    private static OutputRecoveryReport CreateEmptyRecoveryReport()
+    {
+        return new OutputRecoveryReport(
+            OutputRevisionCalculator.FromTokens("output-recovery-v1", Array.Empty<string?>()),
+            Array.Empty<OutputRecoveryTransactionStatus>());
+    }
+
     private async Task<OutputRecoveryReport> RecoverCoreAsync(
         OutputStateRevision? expectedRevision,
         CancellationToken cancellationToken)
@@ -4599,6 +4616,20 @@ public sealed class OutputTransactionCoordinator
             {
                 throw new OutputRootLockTimeoutException(options.WriterLockTimeout);
             }
+        }
+    }
+
+    private void EnsureExclusiveOperationMetadataLayout()
+    {
+        try
+        {
+            paths.EnsureMetadataLayout();
+        }
+        catch (OutputPathSecurityException exception)
+        {
+            // Distinguish failure to establish the metadata boundary from failures while
+            // inspecting or recovering transactions after that boundary has been established.
+            throw new OutputMetadataLayoutUnavailableException(exception);
         }
     }
 

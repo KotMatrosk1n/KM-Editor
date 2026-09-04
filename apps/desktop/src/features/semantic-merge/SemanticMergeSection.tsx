@@ -57,6 +57,7 @@ import {
 } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
@@ -1056,33 +1057,48 @@ function TargetDiscovery({
       </div>
       {preview.targetWindowCapped ? <p>{t('semanticMerge.targets.windowCapped')}</p> : null}
       <div className="km-semantic-merge-result-controls">
-        <label>
-          <span>{t('analysisPresentation.controls.field')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setFieldFilter(event.currentTarget.value)}
+        <div className="km-searchable-select-field km-semantic-merge-result-field">
+          <label htmlFor="semantic-merge-target-field-filter">
+            <span>{t('analysisPresentation.controls.field')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.field')}
+            data-localization-ignore="true"
+            data-km-source-site="semantic-merge-target-field-filter"
+            disabled={false}
+            id="semantic-merge-target-field-filter"
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={setFieldFilter}
+            options={[
+              { label: t('analysisPresentation.controls.allFields'), value: 'all' },
+              ...fieldKeys.map((fieldKey) => ({
+                label: humanizeIdentifier(fieldKey),
+                value: fieldKey
+              }))
+            ]}
             value={fieldFilter}
-          >
-            <option value="all">{t('analysisPresentation.controls.allFields')}</option>
-            {fieldKeys.map((fieldKey) => (
-              <option data-localization-ignore="true" key={fieldKey} value={fieldKey}>
-                {humanizeIdentifier(fieldKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t('analysisPresentation.controls.sort')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+          />
+        </div>
+        <div className="km-searchable-select-field km-semantic-merge-result-field">
+          <label htmlFor="semantic-merge-target-sort">
+            <span>{t('analysisPresentation.controls.sort')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.sort')}
+            data-km-source-site="semantic-merge-target-sort"
+            disabled={false}
+            id="semantic-merge-target-sort"
+            isFiniteCatalog
+            onChange={(value) => setResultOrder(value as typeof resultOrder)}
+            options={[
+              { label: t('analysisPresentation.controls.record'), value: 'record' },
+              { label: t('analysisPresentation.controls.field'), value: 'field' },
+              { label: t('analysisPresentation.controls.status'), value: 'state' }
+            ]}
             value={resultOrder}
-          >
-            <option value="record">{t('analysisPresentation.controls.record')}</option>
-            <option value="field">{t('analysisPresentation.controls.field')}</option>
-            <option value="state">{t('analysisPresentation.controls.status')}</option>
-          </select>
-        </label>
+          />
+        </div>
       </div>
       {visibleSuggestions.length > 0 ? (
         <ul className="km-semantic-merge-target-list">
@@ -1212,31 +1228,46 @@ function MergeRows({
             value={resultFilter}
           />
         </label>
-        <label>
-          <span>{t('analysisPresentation.controls.status')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setStateFilter(event.currentTarget.value)}
+        <div className="km-searchable-select-field km-semantic-merge-result-field">
+          <label htmlFor="semantic-merge-row-state-filter">
+            <span>{t('analysisPresentation.controls.status')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.status')}
+            data-km-source-site="semantic-merge-row-state-filter"
+            disabled={false}
+            id="semantic-merge-row-state-filter"
+            isFiniteCatalog
+            onChange={setStateFilter}
+            options={[
+              { label: t('analysisPresentation.controls.allResults'), value: 'all' },
+              ...states.map((state) => ({
+                label: t(`semanticMerge.row.state.${state}`),
+                value: state
+              }))
+            ]}
             value={stateFilter}
-          >
-            <option value="all">{t('analysisPresentation.controls.allResults')}</option>
-            {states.map((state) => (
-              <option key={state} value={state}>{t(`semanticMerge.row.state.${state}`)}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t('analysisPresentation.controls.sort')}</span>
-          <select
-            className="km-select-control"
-            onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+          />
+        </div>
+        <div className="km-searchable-select-field km-semantic-merge-result-field">
+          <label htmlFor="semantic-merge-row-sort">
+            <span>{t('analysisPresentation.controls.sort')}</span>
+          </label>
+          <SearchableOptionInput
+            ariaLabel={t('analysisPresentation.controls.sort')}
+            data-km-source-site="semantic-merge-row-sort"
+            disabled={false}
+            id="semantic-merge-row-sort"
+            isFiniteCatalog
+            onChange={(value) => setResultOrder(value as typeof resultOrder)}
+            options={[
+              { label: t('analysisPresentation.controls.record'), value: 'record' },
+              { label: t('analysisPresentation.controls.field'), value: 'field' },
+              { label: t('analysisPresentation.controls.status'), value: 'state' }
+            ]}
             value={resultOrder}
-          >
-            <option value="record">{t('analysisPresentation.controls.record')}</option>
-            <option value="field">{t('analysisPresentation.controls.field')}</option>
-            <option value="state">{t('analysisPresentation.controls.status')}</option>
-          </select>
-        </label>
+          />
+        </div>
       </div>
       {groups.length === 0 ? (
         <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>
@@ -1802,33 +1833,48 @@ function RecipeSurface({
                   value={compatibilitySearch}
                 />
               </label>
-              <label>
-                <span>{t('analysisPresentation.controls.status')}</span>
-                <select
-                  className="km-select-control"
-                  onChange={(event) => setCompatibilityFilter(event.currentTarget.value)}
+              <div className="km-searchable-select-field km-semantic-merge-result-field">
+                <label htmlFor="semantic-merge-recipe-state-filter">
+                  <span>{t('analysisPresentation.controls.status')}</span>
+                </label>
+                <SearchableOptionInput
+                  ariaLabel={t('analysisPresentation.controls.status')}
+                  data-km-source-site="semantic-merge-recipe-state-filter"
+                  disabled={false}
+                  id="semantic-merge-recipe-state-filter"
+                  isFiniteCatalog
+                  onChange={setCompatibilityFilter}
+                  options={[
+                    { label: t('analysisPresentation.controls.allResults'), value: 'all' },
+                    ...compatibleStates.map((state) => ({
+                      label: t(`semanticMerge.recipe.state.${state}`),
+                      value: state
+                    }))
+                  ]}
                   value={compatibilityFilter}
-                >
-                  <option value="all">{t('analysisPresentation.controls.allResults')}</option>
-                  {compatibleStates.map((state) => (
-                    <option key={state} value={state}>{t(`semanticMerge.recipe.state.${state}`)}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>{t('analysisPresentation.controls.sort')}</span>
-                <select
-                  className="km-select-control"
-                  onChange={(event) => setCompatibilityOrder(
-                    event.currentTarget.value as typeof compatibilityOrder
+                />
+              </div>
+              <div className="km-searchable-select-field km-semantic-merge-result-field">
+                <label htmlFor="semantic-merge-recipe-sort">
+                  <span>{t('analysisPresentation.controls.sort')}</span>
+                </label>
+                <SearchableOptionInput
+                  ariaLabel={t('analysisPresentation.controls.sort')}
+                  data-km-source-site="semantic-merge-recipe-sort"
+                  disabled={false}
+                  id="semantic-merge-recipe-sort"
+                  isFiniteCatalog
+                  onChange={(value) => setCompatibilityOrder(
+                    value as typeof compatibilityOrder
                   )}
+                  options={[
+                    { label: t('analysisPresentation.controls.record'), value: 'record' },
+                    { label: t('analysisPresentation.controls.field'), value: 'field' },
+                    { label: t('analysisPresentation.controls.status'), value: 'state' }
+                  ]}
                   value={compatibilityOrder}
-                >
-                  <option value="record">{t('analysisPresentation.controls.record')}</option>
-                  <option value="field">{t('analysisPresentation.controls.field')}</option>
-                  <option value="state">{t('analysisPresentation.controls.status')}</option>
-                </select>
-              </label>
+                />
+              </div>
             </div>
             {visibleCompatibility.length === 0 ? (
               <p className="km-workbench-empty">{t('analysisPresentation.controls.noMatches')}</p>

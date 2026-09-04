@@ -13,6 +13,7 @@ import type {
 } from '../../bridge/fashionCatalogContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { getNextOutstandingEditorDraftKey } from '../../components/localEditorDraftState';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   Metric,
@@ -141,7 +142,6 @@ export function FashionCatalogSection({
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState('itemId');
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
-  const [optionSearch, setOptionSearch] = useCoalescedTextInputState();
   const [feedback, setFeedback] = useState<
     { kind: 'error' | 'success'; message: string } | null
   >(null);
@@ -197,36 +197,6 @@ export function FashionCatalogSection({
     () => getLoadedOptions(workflow, catalogFile, field?.field ?? ''),
     [catalogFile, field?.field, workflow]
   );
-  const optionWindow = useMemo(() => {
-    const query = optionSearch.trim().toLocaleLowerCase();
-    const matches = query.length === 0
-      ? options
-      : options.filter((option) => {
-          const label = getOptionLabel(
-            catalogFile,
-            field?.field ?? '',
-            option,
-            presentation
-          );
-          return option.toLocaleLowerCase().includes(query)
-            || label.toLocaleLowerCase().includes(query);
-        });
-    const selected = draftValue.length > 0 && options.includes(draftValue)
-      ? [draftValue]
-      : [];
-    const selectedMatchesQuery = selected.length > 0 && matches.includes(draftValue);
-    const nonSelectedMatches = matches.filter((option) => option !== draftValue);
-    const visibleMatches = nonSelectedMatches.slice(
-      0,
-      Math.max(0, optionRenderLimit - selected.length)
-    );
-    return {
-      matchingCount: matches.length,
-      options: [...selected, ...visibleMatches],
-      shownMatchingCount: visibleMatches.length + (selectedMatchesQuery ? 1 : 0)
-    };
-  }, [catalogFile, draftValue, field?.field, optionSearch, options, presentation]);
-  const filteredOptions = optionWindow.options;
   const outstandingDraftKeys = Object.keys(draftValues);
   const outstandingDraftCount = outstandingDraftKeys.length;
   const draftTargetsByKey = useMemo(() => {
@@ -301,9 +271,6 @@ export function FashionCatalogSection({
 
   useEffect(() => {
     const isReviewNavigation = reviewFocusPendingRef.current;
-    if (!isReviewNavigation) {
-      setOptionSearch('');
-    }
     setFeedback(null);
     if (!isReviewNavigation) {
       return;
@@ -624,19 +591,22 @@ export function FashionCatalogSection({
                 <label className="field-label" htmlFor="fashion-catalog-field">
                   {t('fashionCatalog.editor.field')}
                 </label>
-                <select
-                  className="km-select-control"
+                <SearchableOptionInput
+                  ariaLabel={t('fashionCatalog.editor.field')}
+                  data-km-source-site="fashion-catalog-field"
+                  disabled={false}
                   id="fashion-catalog-field"
-                  onChange={(event) => setSelectedField(event.target.value)}
+                  isFiniteCatalog
+                  localizeOptions={false}
+                  onChange={setSelectedField}
+                  options={fields.map((candidate) => ({
+                    label: `${candidate.label}${
+                      candidate.readOnly ? ` - ${translateLiteral('Read-only')}` : ''
+                    }`,
+                    value: candidate.field
+                  }))}
                   value={field.field}
-                >
-                  {fields.map((candidate) => (
-                    <option key={candidate.field} value={candidate.field}>
-                      {candidate.label}
-                      {candidate.readOnly ? ` - ${translateLiteral('Read-only')}` : ''}
-                    </option>
-                  ))}
-                </select>
+                />
 
                 <p className="field-hint">{t(field.hintKey)}</p>
 
@@ -659,52 +629,36 @@ export function FashionCatalogSection({
                   </>
                 ) : field.valueKind === 'option' ? (
                   <>
-                    <label className="field-label" htmlFor="fashion-catalog-option-search">
-                      {t('fashionCatalog.editor.optionSearch')}
-                    </label>
-                    <input
-                      id="fashion-catalog-option-search"
-                      onChange={(event) => setOptionSearch(event.target.value)}
-                      placeholder={t('fashionCatalog.editor.optionSearchPlaceholder')}
-                      type="search"
-                      value={optionSearch}
-                    />
                     <label className="field-label" htmlFor="fashion-catalog-value">
                       {t('fashionCatalog.editor.value')}
                     </label>
-                    <select
-                      className="km-select-control"
+                    <SearchableOptionInput
+                      ariaLabel={t('fashionCatalog.editor.value')}
+                      data-km-source-site="fashion-catalog-value"
+                      disabled={false}
+                      emptyOptionDisabled={!field.optional}
+                      emptyOptionLabel={field.optional
+                        ? t('fashionCatalog.editor.clear')
+                        : t('fashionCatalog.editor.chooseOption')}
                       id="fashion-catalog-value"
-                      onChange={(event) => updateDraftValue(event.target.value)}
-                      value={filteredOptions.includes(draftValue) ? draftValue : ''}
-                    >
-                      <option disabled={!field.optional} value="">
-                        {field.optional
-                          ? t('fashionCatalog.editor.clear')
-                          : t('fashionCatalog.editor.chooseOption')}
-                      </option>
-                      {filteredOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {getOptionLabel(
-                            catalogFile,
-                            field.field,
-                            option,
-                            presentation
-                          )}
-                        </option>
-                      ))}
-                    </select>
+                      isFiniteCatalog
+                      localizeOptions={false}
+                      maximumVisibleOptions={optionRenderLimit}
+                      onChange={updateDraftValue}
+                      options={options.map((option) => ({
+                        label: getOptionLabel(
+                          catalogFile,
+                          field.field,
+                          option,
+                          presentation
+                        ),
+                        value: option
+                      }))}
+                      value={options.includes(draftValue) ? draftValue : ''}
+                    />
                     <p className="field-hint">
                       {t('fashionCatalog.editor.provenOptions', { count: options.length })}
                     </p>
-                    {optionWindow.shownMatchingCount < optionWindow.matchingCount ? (
-                      <p className="field-hint">
-                        {t('fashionCatalog.editor.optionResultsLimited', {
-                          count: optionWindow.matchingCount,
-                          shown: optionWindow.shownMatchingCount
-                        })}
-                      </p>
-                    ) : null}
                   </>
                 ) : (
                   <>
