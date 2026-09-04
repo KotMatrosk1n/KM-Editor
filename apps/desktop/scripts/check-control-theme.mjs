@@ -4,6 +4,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import {
+  formatSearchableOptionValue,
+  getSmartOptionMatches,
+  resolveSearchableOptionCommit,
+  transitionSearchableOptionInteraction
+} from '../src/components/searchableOptionInputState.ts';
 
 const stylesPath = fileURLToPath(new URL('../src/styles.css', import.meta.url));
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
@@ -356,6 +362,578 @@ function literalInputTypes(expression) {
   return undefined;
 }
 
+function findFunctionLike(sourceFile, name) {
+  let result;
+  const visit = (node) => {
+    if (
+      (ts.isFunctionDeclaration(node) && node.name?.text === name)
+      || (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.name.text === name
+        && node.initializer
+        && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+      )
+    ) {
+      result = ts.isVariableDeclaration(node) ? node.initializer : node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  if (result === undefined) {
+    throw new Error(`KM control theme contract could not find ${name}.`);
+  }
+  return result;
+}
+
+function descendants(node, predicate) {
+  const matches = [];
+  const visit = (candidate) => {
+    if (predicate(candidate)) matches.push(candidate);
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return matches;
+}
+
+function hasTruthyJsxAttribute(node, sourceFile, attributeName) {
+  const attribute = node.attributes.properties.find(
+    (candidate) =>
+      ts.isJsxAttribute(candidate)
+      && candidate.name.getText(sourceFile) === attributeName
+  );
+  if (!attribute || !ts.isJsxAttribute(attribute)) {
+    return false;
+  }
+  if (attribute.initializer === undefined) {
+    return true;
+  }
+  return (
+    ts.isJsxExpression(attribute.initializer)
+    && attribute.initializer.expression?.kind === ts.SyntaxKind.TrueKeyword
+  );
+}
+
+function findJsxAttribute(node, sourceFile, attributeName) {
+  return node.attributes.properties.find(
+    (candidate) =>
+      ts.isJsxAttribute(candidate)
+      && candidate.name.getText(sourceFile) === attributeName
+  );
+}
+
+function checkMovesCustomSelectMarkup() {
+  const appPath = join(sourceRoot, 'App.tsx');
+  const appSource = ts.createSourceFile(
+    appPath,
+    readFileSync(appPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const selectedMovePanel = findFunctionLike(appSource, 'SelectedMovePanel');
+  const selectedMovePanelSource = selectedMovePanel.getText(appSource);
+  const nativeSelects = descendants(
+    selectedMovePanel,
+    (node) =>
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))
+      && node.tagName.getText(appSource) === 'select'
+  );
+  if (nativeSelects.length !== 0) {
+    throw new Error('The Moves editor must use KM listboxes instead of native select popups.');
+  }
+
+  for (const id of ['move-runtime-variant', 'move-timing-profile', 'move-timing-occurrence']) {
+    const matchingControl = descendants(
+      selectedMovePanel,
+      (node) =>
+        ts.isJsxSelfClosingElement(node)
+        && node.tagName.getText(appSource) === 'SearchableOptionInput'
+        && node.getText(appSource).includes(`id="${id}"`)
+    );
+    if (
+      matchingControl.length !== 1
+      || !hasTruthyJsxAttribute(matchingControl[0], appSource, 'isFiniteCatalog')
+    ) {
+      throw new Error(`${id} must use one finite-catalog KM searchable option control.`);
+    }
+  }
+
+  if (selectedMovePanelSource.includes('useSearchableBooleanInput')) {
+    throw new Error('Move boolean fields must not require a scoped KM selector opt-in.');
+  }
+
+  const draftFieldNode = findFunctionLike(appSource, 'GiftPokemonDraftField');
+  const draftField = draftFieldNode.getText(appSource);
+  const booleanControls = descendants(
+    draftFieldNode,
+    (node) =>
+      ts.isJsxSelfClosingElement(node)
+      && node.tagName.getText(appSource) === 'SearchableOptionInput'
+      && node.getText(appSource).includes('options={searchableBooleanOptions}')
+  );
+  const nativeBooleanControls = descendants(
+    draftFieldNode,
+    (node) =>
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))
+      && node.tagName.getText(appSource) === 'select'
+  );
+  if (
+    !draftField.includes("field.valueKind === 'boolean' ?")
+    || booleanControls.length !== 1
+    || nativeBooleanControls.length !== 0
+    || !hasTruthyJsxAttribute(booleanControls[0], appSource, 'isFiniteCatalog')
+  ) {
+    throw new Error('Every shared Pokemon boolean path must use finite-catalog KM Yes/No options.');
+  }
+}
+
+function checkFiniteSearchableOptionContract() {
+  const options = [
+    { label: 'Yes', value: 1 },
+    { label: 'No', value: 0 }
+  ];
+  if (resolveSearchableOptionCommit('1', options, undefined, true) !== '1') {
+    throw new Error('Finite KM catalogs must accept an exact catalog value.');
+  }
+  if (resolveSearchableOptionCommit('Yes', options, undefined, true) !== '1') {
+    throw new Error('Finite KM catalogs must accept an exact catalog label.');
+  }
+  if (resolveSearchableOptionCommit('2', options, undefined, true) !== null) {
+    throw new Error('Finite KM catalogs must reject an unknown numeric value.');
+  }
+  if (resolveSearchableOptionCommit('2', options) !== '2') {
+    throw new Error('Open KM catalogs must preserve their existing raw numeric fallback.');
+  }
+
+  const stringOptions = [
+    { label: 'Fixed rewards', value: 'fixed' },
+    { label: 'Lottery rewards', value: 'lottery' }
+  ];
+  if (resolveSearchableOptionCommit('lottery', stringOptions, undefined, true) !== 'lottery') {
+    throw new Error('Finite KM catalogs must accept an exact string catalog value.');
+  }
+  if (
+    resolveSearchableOptionCommit('Fixed rewards', stringOptions, undefined, true) !== 'fixed'
+  ) {
+    throw new Error('Finite KM catalogs must resolve a string-valued option by its exact label.');
+  }
+  if (resolveSearchableOptionCommit('unknown', stringOptions, undefined, true) !== null) {
+    throw new Error('Finite KM catalogs must reject an unknown string value.');
+  }
+  if (
+    resolveSearchableOptionCommit('Shared name', [
+      { label: 'Shared name', value: 10 },
+      { inputLabel: 'Shared name', label: 'Different detail', value: 11 }
+    ], undefined, true) !== null
+  ) {
+    throw new Error('KM catalogs must not commit a visible label shared by distinct values.');
+  }
+  if (
+    resolveSearchableOptionCommit('Shared name', [
+      { label: 'Shared name', value: 10 },
+      { inputLabel: 'Shared name', label: 'Different detail', value: 10 }
+    ], undefined, true) !== '10'
+  ) {
+    throw new Error('A duplicated KM label remains valid when it identifies one semantic value.');
+  }
+  if (
+    resolveSearchableOptionCommit('10', [
+      { label: '10', value: 12 },
+      { label: 'Different detail', value: 10 }
+    ], undefined, true) !== '10'
+  ) {
+    throw new Error('An exact KM semantic value must take precedence over a visible label.');
+  }
+
+  const compactOption = { inputLabel: '2×', label: 'Super effective', value: 2 };
+  if (resolveSearchableOptionCommit('2×', [compactOption], undefined, true) !== '2') {
+    throw new Error('Finite KM catalogs must resolve an exact compact input label.');
+  }
+  if (formatSearchableOptionValue('2', [compactOption]) !== '2×') {
+    throw new Error('KM catalogs must display a declared compact input label for their value.');
+  }
+  const aliasedOption = {
+    label: 'Moomoo Milk',
+    searchAliases: ['Medicine'],
+    value: 33
+  };
+  if (getSmartOptionMatches('medicine', [aliasedOption])[0] !== aliasedOption) {
+    throw new Error('KM catalogs must include declared aliases in option search.');
+  }
+  if (
+    resolveSearchableOptionCommit('medicine', [
+      aliasedOption,
+      { label: 'Potion', searchAliases: ['Medicine'], value: 17 }
+    ], undefined, true) !== null
+  ) {
+    throw new Error('KM catalogs must not commit an alias shared by multiple options.');
+  }
+  if (
+    getSmartOptionMatches('moom med', [
+      aliasedOption,
+      { label: 'Potion', searchAliases: ['Medicine'], value: 17 }
+    ])[0] !== aliasedOption
+  ) {
+    throw new Error('KM catalog search must apply every query token across labels and aliases.');
+  }
+
+  const rejectedCommit = transitionSearchableOptionInteraction(
+    { hasUserQuery: true, isOpen: true, query: '2' },
+    {
+      committedValue: '0',
+      formattedValue: 'No',
+      isFiniteCatalog: true,
+      options,
+      type: 'commit'
+    }
+  );
+  if (
+    rejectedCommit.sourceCommit !== null
+    || rejectedCommit.state.hasUserQuery
+    || rejectedCommit.state.isOpen
+    || rejectedCommit.state.query !== 'No'
+  ) {
+    throw new Error('A rejected finite-catalog value must restore the committed KM selection.');
+  }
+}
+
+function checkSearchableOptionComponentContract() {
+  const component = readFileSync(join(sourceRoot, 'components', 'SearchableOptionInput.tsx'), 'utf8');
+  const requirements = [
+    [
+      /const selectOption = [\s\S]*?if \(option\.disabled\) \{[\s\S]*?return;/u,
+      'Disabled KM options must reject direct selection.'
+    ],
+    [
+      /if \(!item \|\| !isEnabledMenuItem\(item\)\) \{[\s\S]*?return;/u,
+      'Disabled KM options must reject menu selection.'
+    ],
+    [
+      /const enabledOptions = localizedOptions\.filter\(\(option\) => !option\.disabled\);/u,
+      'Typed finite-catalog commits must exclude disabled KM options.'
+    ],
+    [
+      /nextEnabledMenuItemIndex\([\s\S]*?isEnabledMenuItem\(items\[candidateIndex\]\)/u,
+      'KM option keyboard navigation must skip disabled options.'
+    ],
+    [
+      /aria-disabled=\{isDisabled \|\| undefined\}[\s\S]*?disabled=\{isDisabled\}/u,
+      'Disabled KM options must expose both semantic and native disabled state.'
+    ],
+    [
+      /item\.option\.groupLabel[\s\S]*?<small>\{item\.option\.groupLabel\}<\/small>/u,
+      'Grouped KM options must render their group label.'
+    ],
+    [
+      /localizationIgnore \?\? \(localizeOptions \? undefined : 'true'\)/u,
+      'Prelocalized or dynamic KM option labels must opt out of observer translation.'
+    ],
+    [
+      /onMouseDown=\{\(event\) => \{\s*event\.preventDefault\(\);\s*\}\}\s*onClick=\{\(\) => \{\s*selectMenuItem\(index\);/u,
+      'KM option rows must preserve input focus on pointer down and activate on semantic click.'
+    ],
+    [
+      /className="searchable-option-toggle"[\s\S]*?onMouseDown=\{\(event\) => \{\s*event\.preventDefault\(\);\s*\}\}\s*onClick=\{\(\) => \{/u,
+      'The KM option toggle must activate on semantic click, not pointer down alone.'
+    ],
+    [
+      /name=\{name\}[\s\S]*?onClick=\{\(\) => \{\s*if \(!isOpen\)[\s\S]*?\{ formattedValue, type: 'focus' \}/u,
+      'A focused KM option input must reopen its menu on semantic click.'
+    ],
+    [
+      /const inputTooltipText = hasUserQuery\s*\? undefined\s*:\s*tooltipContent \?\? \(formattedValue \|\| undefined\);/u,
+      'KM option inputs must preserve an editor-provided field tooltip when idle.'
+    ],
+    [
+      /maximumVisibleOptions\?: number;[\s\S]*?const visibleMatches = matches\.slice\(0, maximumVisibleOptions\);[\s\S]*?if \(!hasUserQuery\)[\s\S]*?visibleMatches\[visibleMatches\.length - 1\] = selectedOption;/u,
+      'Large KM catalogs must cap rendered rows without losing the committed selection.'
+    ],
+    [
+      /portalMenu = true[\s\S]*?position: 'fixed'[\s\S]*?createPortal\(menu, portalHost\)/u,
+      'KM option menus must use viewport-aware portal placement by default while retaining the portalMenu opt-out.'
+    ],
+    [
+      /data-value=\{item\.kind === 'empty' \? '' : item\.option\.value\.toString\(\)\}/u,
+      'KM option rows must expose semantic values independently from rich display text.'
+    ],
+    [
+      /data-value=\{value\}/u,
+      'KM comboboxes must expose their committed semantic value independently from display text.'
+    ]
+  ];
+
+  for (const [pattern, message] of requirements) {
+    if (!pattern.test(component)) {
+      throw new Error(message);
+    }
+  }
+}
+
+function checkMigratedSearchableOptionContracts() {
+  const appPath = join(sourceRoot, 'App.tsx');
+  const appSource = ts.createSourceFile(
+    appPath,
+    readFileSync(appPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const expectedTooltips = new Map([
+    ['trainer-draft-field-boolean-option', 'localizedFieldHoverText'],
+    ['gift-pokemon-draft-boolean-option', 'localizedFieldHoverText'],
+    ['shop-row-field-text-option', 'localizedFieldHoverText'],
+    ['behavior-field-option', 'localizedBehaviorFieldHover'],
+    ['pokemon-personal-field-boolean-option', 'localizedHoverText']
+  ]);
+  const matchedTooltips = new Set();
+
+  for (const node of descendants(
+    appSource,
+    (candidate) =>
+      ts.isJsxSelfClosingElement(candidate)
+      && candidate.tagName.getText(appSource) === 'SearchableOptionInput'
+  )) {
+    const sourceSiteAttribute = findJsxAttribute(node, appSource, 'data-km-source-site');
+    if (
+      !sourceSiteAttribute
+      || sourceSiteAttribute.initializer === undefined
+      || !ts.isStringLiteral(sourceSiteAttribute.initializer)
+    ) continue;
+
+    const sourceSite = sourceSiteAttribute.initializer.text;
+    const expectedTooltip = expectedTooltips.get(sourceSite);
+    if (expectedTooltip === undefined) continue;
+
+    const tooltipAttribute = findJsxAttribute(node, appSource, 'tooltipContent');
+    const tooltipExpression = tooltipAttribute?.initializer;
+    if (
+      tooltipAttribute === undefined
+      || tooltipExpression === undefined
+      || !ts.isJsxExpression(tooltipExpression)
+      || tooltipExpression.expression?.getText(appSource) !== expectedTooltip
+    ) {
+      throw new Error(`${sourceSite} must preserve its contextual field tooltip after KM selector migration.`);
+    }
+    matchedTooltips.add(sourceSite);
+  }
+
+  const missingTooltipSites = [...expectedTooltips.keys()].filter(
+    (sourceSite) => !matchedTooltips.has(sourceSite)
+  );
+  if (missingTooltipSites.length > 0) {
+    throw new Error(
+      `KM selector tooltip coverage is missing source sites: ${missingTooltipSites.join(', ')}`
+    );
+  }
+
+  const npcPath = join(sourceRoot, 'features', 'npc-item-gift', 'NpcItemGiftSection.tsx');
+  const npcSource = ts.createSourceFile(
+    npcPath,
+    readFileSync(npcPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const npcPicker = findFunctionLike(npcSource, 'NpcItemGiftItemPicker');
+  const npcPickerText = npcPicker.getText(npcSource);
+  const npcControls = descendants(
+    npcPicker,
+    (node) =>
+      ts.isJsxSelfClosingElement(node)
+      && node.tagName.getText(npcSource) === 'SearchableOptionInput'
+  );
+  if (
+    npcControls.length !== 1
+    || !hasTruthyJsxAttribute(npcControls[0], npcSource, 'isFiniteCatalog')
+    || !npcPickerText.includes('data-km-source-site="npc-item-gift-item-picker"')
+    || !npcPickerText.includes('localizeOptions={false}')
+    || !npcPickerText.includes('disabled: option.isUnavailable')
+    || !npcPickerText.includes('searchAliases: [option.name, option.category]')
+  ) {
+    throw new Error(
+      'NPC Item Gift must use one finite-catalog KM selector with disabled and searchable option metadata.'
+    );
+  }
+
+  const battleCafePath = join(
+    sourceRoot,
+    'features',
+    'battle-cafe-rewards',
+    'BattleCafeRewardsSection.tsx'
+  );
+  const battleCafeSource = ts.createSourceFile(
+    battleCafePath,
+    readFileSync(battleCafePath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const battleCafePicker = findFunctionLike(
+    battleCafeSource,
+    'BattleCafeItemPicker'
+  );
+  const battleCafePickerText = battleCafePicker.getText(battleCafeSource);
+  const battleCafeControls = descendants(
+    battleCafePicker,
+    (node) =>
+      ts.isJsxSelfClosingElement(node)
+      && node.tagName.getText(battleCafeSource) === 'SearchableOptionInput'
+  );
+  if (
+    battleCafeControls.length !== 1
+    || !hasTruthyJsxAttribute(battleCafeControls[0], battleCafeSource, 'isFiniteCatalog')
+    || !battleCafePickerText.includes('data-km-source-site="battle-cafe-reward-item"')
+    || !battleCafePickerText.includes('localizeOptions={false}')
+    || !battleCafePickerText.includes('searchAliases: [option.category]')
+    || !battleCafePickerText.includes('groupLabel: `${option.category} · #${option.itemId}`')
+  ) {
+    throw new Error(
+      'Battle Cafe items must use one finite-catalog KM selector with searchable category and semantic item metadata.'
+    );
+  }
+
+  const typeChartPath = join(sourceRoot, 'features', 'type-chart', 'TypeChartSection.tsx');
+  const typeChartSource = ts.createSourceFile(
+    typeChartPath,
+    readFileSync(typeChartPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const typeChartCell = findFunctionLike(typeChartSource, 'TypeChartCellControl').getText(
+    typeChartSource
+  );
+  if (
+    !typeChartCell.includes('inputLabel: candidate.display')
+    || typeChartCell.includes('<span aria-hidden="true">{option.display}</span>')
+  ) {
+    throw new Error('Type Chart cells must paint each compact effectiveness value exactly once.');
+  }
+
+  const fashionPath = join(
+    sourceRoot,
+    'features',
+    'fashion-catalog',
+    'FashionCatalogSection.tsx'
+  );
+  const fashionSource = ts.createSourceFile(
+    fashionPath,
+    readFileSync(fashionPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const fashionSection = findFunctionLike(fashionSource, 'FashionCatalogSection');
+  const fashionSectionText = fashionSection.getText(fashionSource);
+  const fashionValueControls = descendants(
+    fashionSection,
+    (node) =>
+      ts.isJsxSelfClosingElement(node)
+      && node.tagName.getText(fashionSource) === 'SearchableOptionInput'
+      && node.getText(fashionSource).includes(
+        'data-km-source-site="fashion-catalog-value"'
+      )
+  );
+  if (fashionValueControls.length !== 1) {
+    throw new Error('Fashion Catalog must expose exactly one KM value selector.');
+  }
+  const fashionValueControl = fashionValueControls[0];
+  const maximumVisibleOptions = findJsxAttribute(
+    fashionValueControl,
+    fashionSource,
+    'maximumVisibleOptions'
+  );
+  const fashionOptions = findJsxAttribute(fashionValueControl, fashionSource, 'options');
+  if (
+    maximumVisibleOptions?.initializer?.getText(fashionSource) !== '{optionRenderLimit}'
+    || !fashionOptions?.initializer?.getText(fashionSource).startsWith('{options.map(')
+    || fashionSectionText.includes('fashion-catalog-option-search')
+    || fashionSectionText.includes('optionWindow')
+  ) {
+    throw new Error(
+      'Fashion Catalog must search the complete option catalog in one capped KM selector.'
+    );
+  }
+}
+
+function checkSearchableOptionAffordanceRules(rules) {
+  for (const [name, selector] of [
+    ['trainer party selector arrow clearance', '.trainer-party-header .searchable-option-input > input'],
+    ['shop inventory selector arrow clearance', '.shop-inventory-header .searchable-option-input > input'],
+    ['fairy gym selector arrow clearance', '.fairy-gym-outcome-control .searchable-option-input > input'],
+    ['encounter selector arrow clearance', '.encounter-slot-header .searchable-option-input > input']
+  ]) {
+    requireRule(rules, name, [selector], ['padding: 0 34px 0 10px']);
+  }
+  requireRule(
+    rules,
+    'fashion catalog selector arrow clearance',
+    ['.fashion-catalog-field-editor .searchable-option-input > input'],
+    ['padding-inline-end: 34px']
+  );
+  if (rules.some((rule) => rule.selector === '.fairy-gym-outcome-control span')) {
+    throw new Error('Fairy Gym field-label styling must not leak into KM option-row spans.');
+  }
+  requireRule(
+    rules,
+    'fairy gym field label scope',
+    ['.fairy-gym-outcome-control > .editable-field-label-row > label'],
+    ['color: var(--color-text-muted)', 'text-transform: uppercase']
+  );
+  for (const selector of [
+    '.game-dump-format-field span',
+    '.learnset-row span, .learnset-row strong',
+    '.exefs-row span',
+    '.npc-item-gift-field small',
+    '.npc-item-gift-field select, .npc-item-gift-field input'
+  ]) {
+    if (rules.some((rule) => rule.selector === selector)) {
+      throw new Error(`${selector} must not leak legacy cell styling into KM option rows.`);
+    }
+  }
+  requireRule(
+    rules,
+    'game dump field label scope',
+    ['.game-dump-format-field > .editable-field-label-row > label'],
+    ['font-size: 0.72rem', 'text-transform: uppercase']
+  );
+  requireRule(
+    rules,
+    'learnset direct-cell scope',
+    ['.learnset-row > span', '.learnset-row > strong'],
+    ['overflow: hidden', 'white-space: nowrap']
+  );
+  requireRule(
+    rules,
+    'ExeFS direct-cell scope',
+    ['.exefs-row > span'],
+    ['overflow: hidden', 'white-space: nowrap']
+  );
+  requireRule(
+    rules,
+    'NPC Item Gift direct-input scope',
+    ['.npc-item-gift-field > input'],
+    ['padding: 0 10px']
+  );
+  requireRule(
+    rules,
+    'NPC Item Gift direct-hint scope',
+    ['.npc-item-gift-field > small'],
+    ['font-size: 0.6875rem']
+  );
+  if (rules.some((rule) => rule.selector.includes('.km-settings-group button'))) {
+    throw new Error('Settings action sizing must not leak into KM toggle and option-row buttons.');
+  }
+  requireRule(
+    rules,
+    'settings selector input sizing',
+    ['.km-settings-grid .searchable-option-input > input'],
+    ['min-height: var(--km-control-min-height)']
+  );
+}
+
 function checkNativeControlMarkup() {
   for (const path of sourceFiles(sourceRoot)) {
     const text = readFileSync(path, 'utf8');
@@ -364,11 +942,32 @@ function checkNativeControlMarkup() {
     function visit(node) {
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
         const tagName = node.tagName.getText(sourceFile);
+        if (tagName === 'SearchableOptionInput') {
+          let ancestor = node.parent;
+          while (ancestor !== undefined) {
+            if (
+              ts.isJsxElement(ancestor)
+              && ancestor.openingElement.tagName.getText(sourceFile) === 'label'
+            ) {
+              const location = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+              throw new Error(
+                `${relative(sourceRoot, path)}:${location.line + 1} nests a compound KM option control inside a wrapping label. Use an explicit label/htmlFor association.`
+              );
+            }
+            ancestor = ancestor.parent;
+          }
+        }
         if (['button', 'input', 'select', 'textarea'].includes(tagName)) {
           const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
           const styleAttribute = attributes.find(({ name }) => name.getText(sourceFile) === 'style');
           const location = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
           const sourceLocation = `${relative(sourceRoot, path)}:${location.line + 1}`;
+
+          if (tagName === 'select') {
+            throw new Error(
+              `${sourceLocation} uses a native select. Use the shared KM option control.`
+            );
+          }
 
           if (styleAttribute !== undefined) {
             throw new Error(
@@ -747,10 +1346,15 @@ export function checkControlTheme() {
   const allRules = cssFiles(sourceRoot).flatMap((path) => readRules(readFileSync(path, 'utf8')));
   const checks = [
     checkCssSafety,
+    checkFiniteSearchableOptionContract,
+    checkSearchableOptionComponentContract,
+    checkMigratedSearchableOptionContracts,
+    checkMovesCustomSelectMarkup,
     checkNativeControlMarkup,
     () => checkRequiredGlobalRules(rules),
     () => checkForcedColorsRules(rules),
-    () => checkProxyControlRules(allRules)
+    () => checkProxyControlRules(allRules),
+    () => checkSearchableOptionAffordanceRules(allRules)
   ];
   const failures = [];
   for (const check of checks) {

@@ -550,9 +550,11 @@ export function InGameSettingsPackagePanel({
       (snapshot.executableInput.source === 'standaloneOutput' ||
         snapshot.executableInput.compatibility !== 'absent')
   );
+  const installationTargetSelectionBusy = busy !== null;
 
   return (
     <section
+      aria-busy={busy !== null || undefined}
       aria-labelledby="in-game-settings-package-title"
       className="in-game-settings-package"
     >
@@ -605,15 +607,17 @@ export function InGameSettingsPackagePanel({
           <p>{t('gameplaySettings.inGamePackage.installationDescription')}</p>
         </div>
         <div
+          aria-busy={installationTargetSelectionBusy || undefined}
           aria-label={t('gameplaySettings.inGamePackage.installationTitle')}
           className="in-game-settings-package__target-options"
           role="group"
         >
           {(['atmosphere', 'ryujinx', 'eden'] as const).map((target) => (
             <button
+              aria-controls="in-game-settings-installation-detail"
               aria-pressed={installationTarget === target}
               className="in-game-settings-package__target-option"
-              disabled={busy === 'apply'}
+              disabled={installationTargetSelectionBusy}
               key={target}
               onClick={() => selectInstallationTarget(target)}
               type="button"

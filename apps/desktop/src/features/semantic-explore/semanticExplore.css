@@ -106,7 +106,8 @@
 }
 
 .km-semantic-search label,
-.km-semantic-query-bar label {
+.km-semantic-query-bar label,
+.km-semantic-query-field {
   display: grid;
   flex: 1 1 10rem;
   gap: var(--km-space-1);
@@ -221,7 +222,8 @@
   padding: var(--km-space-3);
 }
 
-.km-semantic-result-controls label {
+.km-semantic-result-controls label,
+.km-semantic-result-field {
   display: grid;
   gap: var(--km-space-1);
   min-width: 0;

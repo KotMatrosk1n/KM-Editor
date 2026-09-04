@@ -67,6 +67,27 @@ internal sealed class OutputPathSafety
 
     public string CheckpointsRoot { get; }
 
+    public bool MetadataLayoutExists()
+    {
+        ValidateExistingAncestorChain(OutputRoot);
+        ValidatePortableChildIdentity(OutputRoot, ".km");
+
+        var metadataDirectory = new DirectoryInfo(MetadataRoot);
+        metadataDirectory.Refresh();
+        if (!metadataDirectory.Exists)
+        {
+            if (File.Exists(MetadataRoot) || HasLinkTarget(metadataDirectory))
+            {
+                throw new OutputPathSecurityException();
+            }
+
+            return false;
+        }
+
+        ValidateDirectory(MetadataRoot);
+        return true;
+    }
+
     public void EnsureMetadataLayout()
     {
         ValidateExistingAncestorChain(OutputRoot);

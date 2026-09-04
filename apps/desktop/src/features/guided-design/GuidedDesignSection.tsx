@@ -59,6 +59,7 @@ import {
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { ReportableDiagnosticIssuesLink } from '../../components/ReportableErrorScreen';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useDiagnosticNavigation } from '../../diagnosticActions';
 import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
@@ -326,34 +327,36 @@ export function GuidedDesignSection({
               <fieldset>
                 <legend>{t('guidedDesign.inputs.constraints')}</legend>
               <div className="km-guided-control-grid">
-                <label>
-                  <span>{t('guidedDesign.inputs.kind')}</span>
-                  <select
-                    className="km-select-control"
-                    onChange={(event) => {
-                      const nextKind = event.currentTarget.value as GuidedDesignProposalKind;
+                <div className="km-searchable-select-field km-guided-control-field">
+                  <label htmlFor="guided-design-proposal-kind">
+                    <span>{t('guidedDesign.inputs.kind')}</span>
+                  </label>
+                  <SearchableOptionInput
+                    ariaLabel={t('guidedDesign.inputs.kind')}
+                    data-km-source-site="guided-design-proposal-kind"
+                    disabled={false}
+                    id="guided-design-proposal-kind"
+                    isFiniteCatalog
+                    onChange={(value) => {
+                      const nextKind = value as GuidedDesignProposalKind;
                       setKind(nextKind);
                       setFieldKeys(
                         fieldCatalogs.find((catalog) => catalog.kind === nextKind)
                           ?.fieldKeys.join(',') ?? ''
                       );
                     }}
-                    value={kind ?? ''}
-                  >
-                    {proposalKinds.map((value) => (
-                      <option
-                        disabled={!availableKinds.includes(value)}
-                        key={value}
-                        value={value}
-                      >
-                        {t(`guidedDesign.kind.${value}`)}
-                        {!availableKinds.includes(value)
+                    options={proposalKinds.map((value) => ({
+                      disabled: !availableKinds.includes(value),
+                      label: `${t(`guidedDesign.kind.${value}`)}${
+                        !availableKinds.includes(value)
                           ? ` (${t('guidedDesign.coverage.unavailable')})`
-                          : ''}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                          : ''
+                      }`,
+                      value
+                    }))}
+                    value={kind ?? ''}
+                  />
+                </div>
                 {selectedFieldCatalog ? (
                   <GuidedFieldSelector
                     catalog={selectedFieldCatalog}
@@ -392,6 +395,7 @@ export function GuidedDesignSection({
                       value={multiplierBasisPoints}
                     />
                     <SelectControl
+                      id="guided-design-rounding"
                       labelKey="guidedDesign.inputs.rounding"
                       onChange={(value) => setRounding(value as GuidedDesignRounding)}
                       options={['floor', 'nearest', 'ceiling']}
@@ -420,6 +424,7 @@ export function GuidedDesignSection({
                 ) : null}
                 {kind === 'trainerEvArchetype' ? (
                   <SelectControl
+                    id="guided-design-trainer-archetype"
                     labelKey="guidedDesign.inputs.archetype"
                     onChange={(value) => setArchetype(value as GuidedDesignTrainerArchetype)}
                     options={['physicalAttackSpeed', 'specialAttackSpeed', 'balanced']}
@@ -803,17 +808,24 @@ function GuidedDesignTargetSelection({
         <fieldset>
           <legend>{t('guidedDesign.selection.legend')}</legend>
           <div className="km-guided-result-controls">
-            <label>
-              <span>{t('analysisPresentation.controls.sort')}</span>
-              <select
-                className="km-select-control"
-                onChange={(event) => setTargetOrder(event.currentTarget.value as typeof targetOrder)}
+            <div className="km-searchable-select-field km-guided-result-field">
+              <label htmlFor="guided-design-target-sort">
+                <span>{t('analysisPresentation.controls.sort')}</span>
+              </label>
+              <SearchableOptionInput
+                ariaLabel={t('analysisPresentation.controls.sort')}
+                data-km-source-site="guided-design-target-sort"
+                disabled={false}
+                id="guided-design-target-sort"
+                isFiniteCatalog
+                onChange={(value) => setTargetOrder(value as typeof targetOrder)}
+                options={[
+                  { label: t('analysisPresentation.controls.record'), value: 'name' },
+                  { label: t('analysisPresentation.controls.identifier'), value: 'record' }
+                ]}
                 value={targetOrder}
-              >
-                <option value="name">{t('analysisPresentation.controls.record')}</option>
-                <option value="record">{t('analysisPresentation.controls.identifier')}</option>
-              </select>
-            </label>
+              />
+            </div>
           </div>
           {visibleTargetSuggestions.length > 0 ? (
             <div className="km-guided-target-option-list">
@@ -1637,31 +1649,49 @@ function Findings({
       <h4 id="guided-design-findings-title">{t('guidedDesign.findings.title')}</h4>
       {findings.length > 0 ? (
         <div className="km-guided-result-controls">
-          <label>
-            <span>{t('analysisPresentation.controls.status')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setSeverityFilter(event.currentTarget.value)}
+          <div className="km-searchable-select-field km-guided-result-field">
+            <label htmlFor="guided-design-findings-status-filter">
+              <span>{t('analysisPresentation.controls.status')}</span>
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('analysisPresentation.controls.status')}
+              data-km-source-site="guided-design-findings-status-filter"
+              disabled={false}
+              id="guided-design-findings-status-filter"
+              isFiniteCatalog
+              onChange={setSeverityFilter}
+              options={[
+                { label: t('analysisPresentation.controls.allResults'), value: 'all' },
+                ...severities.map((severity) => ({
+                  label: t(`guidedDesign.severity.${severity}`),
+                  value: severity
+                }))
+              ]}
               value={severityFilter}
-            >
-              <option value="all">{t('analysisPresentation.controls.allResults')}</option>
-              {severities.map((severity) => (
-                <option key={severity} value={severity}>{t(`guidedDesign.severity.${severity}`)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>{t('analysisPresentation.controls.sort')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+            />
+          </div>
+          <div className="km-searchable-select-field km-guided-result-field">
+            <label htmlFor="guided-design-findings-sort">
+              <span>{t('analysisPresentation.controls.sort')}</span>
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('analysisPresentation.controls.sort')}
+              data-km-source-site="guided-design-findings-sort"
+              disabled={false}
+              id="guided-design-findings-sort"
+              isFiniteCatalog
+              onChange={(value) => setResultOrder(value as typeof resultOrder)}
+              options={[
+                { label: t('analysisPresentation.controls.status'), value: 'severity' },
+                { label: t('analysisPresentation.controls.record'), value: 'title' },
+                {
+                  label: t('analysisPresentation.controls.confidence'),
+                  value: 'confidence'
+                }
+              ]}
               value={resultOrder}
-            >
-              <option value="severity">{t('analysisPresentation.controls.status')}</option>
-              <option value="title">{t('analysisPresentation.controls.record')}</option>
-              <option value="confidence">{t('analysisPresentation.controls.confidence')}</option>
-            </select>
-          </label>
+            />
+          </div>
         </div>
       ) : null}
       {findings.length > 0 ? (
@@ -1766,56 +1796,84 @@ function MutationDiff({
       <h4 id="guided-design-diff-title">{t('guidedDesign.diff.title')}</h4>
       {mutations.length > 0 ? (
         <div className="km-guided-result-controls">
-          <label>
-            <span>{t('analysisPresentation.controls.record')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setRecordFilter(event.currentTarget.value)}
+          <div className="km-searchable-select-field km-guided-result-field">
+            <label htmlFor="guided-design-diff-record-filter">
+              <span>{t('analysisPresentation.controls.record')}</span>
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('analysisPresentation.controls.record')}
+              data-localization-ignore="true"
+              data-km-source-site="guided-design-diff-record-filter"
+              disabled={false}
+              id="guided-design-diff-record-filter"
+              isFiniteCatalog
+              localizeOptions={false}
+              onChange={setRecordFilter}
+              options={[
+                { label: t('analysisPresentation.controls.allRecords'), value: 'all' },
+                ...records.map(({ key, label }) => ({ label, value: key }))
+              ]}
               value={recordFilter}
-            >
-              <option value="all">{t('analysisPresentation.controls.allRecords')}</option>
-              {records.map(({ key, label }) => (
-                <option data-localization-ignore="true" key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>{t('analysisPresentation.controls.field')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setFieldFilter(event.currentTarget.value)}
+            />
+          </div>
+          <div className="km-searchable-select-field km-guided-result-field">
+            <label htmlFor="guided-design-diff-field-filter">
+              <span>{t('analysisPresentation.controls.field')}</span>
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('analysisPresentation.controls.field')}
+              data-localization-ignore="true"
+              data-km-source-site="guided-design-diff-field-filter"
+              disabled={false}
+              id="guided-design-diff-field-filter"
+              isFiniteCatalog
+              localizeOptions={false}
+              onChange={setFieldFilter}
+              options={[
+                { label: t('analysisPresentation.controls.allFields'), value: 'all' },
+                ...fields.map(([key, label]) => ({ label, value: key }))
+              ]}
               value={fieldFilter}
-            >
-              <option value="all">{t('analysisPresentation.controls.allFields')}</option>
-              {fields.map(([key, label]) => (
-                <option data-localization-ignore="true" key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>{t('analysisPresentation.controls.status')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
+            />
+          </div>
+          <div className="km-searchable-select-field km-guided-result-field">
+            <label htmlFor="guided-design-diff-status-filter">
+              <span>{t('analysisPresentation.controls.status')}</span>
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('analysisPresentation.controls.status')}
+              data-km-source-site="guided-design-diff-status-filter"
+              disabled={false}
+              id="guided-design-diff-status-filter"
+              isFiniteCatalog
+              onChange={(value) => setStatusFilter(value as typeof statusFilter)}
+              options={[
+                { label: t('analysisPresentation.controls.allResults'), value: 'all' },
+                { label: t('guidedDesign.diff.pinned'), value: 'pinned' },
+                { label: t('guidedDesign.diff.proposed'), value: 'proposed' }
+              ]}
               value={statusFilter}
-            >
-              <option value="all">{t('analysisPresentation.controls.allResults')}</option>
-              <option value="pinned">{t('guidedDesign.diff.pinned')}</option>
-              <option value="proposed">{t('guidedDesign.diff.proposed')}</option>
-            </select>
-          </label>
-          <label>
-            <span>{t('analysisPresentation.controls.sort')}</span>
-            <select
-              className="km-select-control"
-              onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+            />
+          </div>
+          <div className="km-searchable-select-field km-guided-result-field">
+            <label htmlFor="guided-design-diff-sort">
+              <span>{t('analysisPresentation.controls.sort')}</span>
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('analysisPresentation.controls.sort')}
+              data-km-source-site="guided-design-diff-sort"
+              disabled={false}
+              id="guided-design-diff-sort"
+              isFiniteCatalog
+              onChange={(value) => setResultOrder(value as typeof resultOrder)}
+              options={[
+                { label: t('analysisPresentation.controls.record'), value: 'record' },
+                { label: t('analysisPresentation.controls.field'), value: 'field' },
+                { label: t('analysisPresentation.controls.status'), value: 'status' }
+              ]}
               value={resultOrder}
-            >
-              <option value="record">{t('analysisPresentation.controls.record')}</option>
-              <option value="field">{t('analysisPresentation.controls.field')}</option>
-              <option value="status">{t('analysisPresentation.controls.status')}</option>
-            </select>
-          </label>
+            />
+          </div>
         </div>
       ) : null}
       {mutations.length > 0 ? (
@@ -2346,12 +2404,14 @@ function GuidedFieldSelector({
 }
 
 function SelectControl({
+  id,
   labelKey,
   onChange,
   options,
   translationPrefix,
   value
 }: {
+  id: string;
   labelKey: string;
   onChange: (value: string) => void;
   options: readonly string[];
@@ -2360,18 +2420,24 @@ function SelectControl({
 }) {
   const { t } = useLocalization();
   return (
-    <label>
-      <span>{t(labelKey)}</span>
-      <select
-        className="km-select-control"
-        onChange={(event) => onChange(event.currentTarget.value)}
+    <div className="km-searchable-select-field km-guided-control-field">
+      <label htmlFor={id}>
+        <span>{t(labelKey)}</span>
+      </label>
+      <SearchableOptionInput
+        ariaLabel={t(labelKey)}
+        data-km-source-site="guided-design-select-control"
+        disabled={false}
+        id={id}
+        isFiniteCatalog
+        onChange={onChange}
+        options={options.map((option) => ({
+          label: t(`${translationPrefix}.${option}`),
+          value: option
+        }))}
         value={value}
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>{t(`${translationPrefix}.${option}`)}</option>
-        ))}
-      </select>
-    </label>
+      />
+    </div>
   );
 }
 

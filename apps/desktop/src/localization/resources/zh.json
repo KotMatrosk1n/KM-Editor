@@ -2577,6 +2577,7 @@
     "moves.bossOwners.afterStunContext": "仅限情境的条目会在受击硬直后的独立演出流程中执行。",
     "moves.bossOwners.bombRockDeployedContext": "仅限情境的条目会通过单独的炸弹岩部署编排运行。",
     "moves.timingOccurrence.help": "命中率和冷却时间由所选精确时序配置中的每个出现项共享。更改任一字段会更新所有这些出现项，但不会更新其他时序配置。高级时序字段只属于所选物理出现项。",
+    "moves.timingOccurrence.option": "时序行 {index}",
     "moves.timingProfile.heading": "时序配置",
     "moves.timingProfile.help": "原始时序招式 ID 用于标识游戏中存储的一个精确配置。一个运行时变体可以包含多个相互独立的时序配置。此选择器会将命中率、冷却时间和出现项控件限制到该精确配置；运行时战斗字段仍会影响所选变体的每个时序配置。",
     "moves.timingProfile.option": "时序配置 {id}",

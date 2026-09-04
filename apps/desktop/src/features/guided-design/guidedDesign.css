@@ -199,7 +199,8 @@
 }
 
 .km-guided-control-grid label,
-.km-guided-import label {
+.km-guided-import label,
+.km-guided-control-field {
   display: grid;
   gap: 0.35rem;
   min-width: 0;
@@ -451,7 +452,8 @@
   padding: 0.65rem;
 }
 
-.km-guided-result-controls label {
+.km-guided-result-controls label,
+.km-guided-result-field {
   display: grid;
   gap: 0.3rem;
   min-width: 0;

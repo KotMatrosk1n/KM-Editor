@@ -284,7 +284,8 @@
   padding: 0.65rem;
 }
 
-.km-semantic-merge-result-controls label {
+.km-semantic-merge-result-controls label,
+.km-semantic-merge-result-field {
   display: grid;
   gap: 0.3rem;
   min-width: 0;

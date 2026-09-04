@@ -1114,6 +1114,15 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     requestId),
                 RequiresDispatcherReset: false);
         }
+        catch (OutputMetadataLayoutUnavailableException exception)
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.OutputUnsafePath,
+                    exception.Message,
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
         catch (OutputPathSecurityException exception)
         {
             return (
@@ -3288,30 +3297,55 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 SemanticExploreFailureKind.StaleRevision);
         }
 
-        (string Fingerprint, string Token) CaptureObservation()
-        {
-            var initialFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
-            var observedFingerprint = CaptureSemanticExploreSourceFingerprint(paths);
-            if (!string.Equals(initialFingerprint, observedFingerprint, StringComparison.Ordinal))
+        var completedObservation = ExecuteSemanticExploreSourceObservation(
+            paths,
+            captureSourceFingerprint =>
             {
-                throw new SemanticExploreValidationException(
-                    "The project sources changed while their revision was being read. Retry the request.",
-                    SemanticExploreFailureKind.StaleRevision);
-            }
+                var sourceObservationStarted = false;
+                (string Fingerprint, string Token) CaptureObservation()
+                {
+                    sourceObservationStarted = true;
+                    var initialFingerprint = captureSourceFingerprint();
+                    var observedFingerprint = captureSourceFingerprint();
+                    if (!string.Equals(initialFingerprint, observedFingerprint, StringComparison.Ordinal))
+                    {
+                        throw new SemanticExploreValidationException(
+                            "The project sources changed while their revision was being read. Retry the request.",
+                            SemanticExploreFailureKind.StaleRevision);
+                    }
 
-            var sourceObservationToken = semanticExploreApplicationService
-                .RegisterVerifiedSourceObservation(
-                    actualProjectId,
-                    request.Payload.Paths,
-                    observedFingerprint);
-            return (Fingerprint: observedFingerprint, Token: sourceObservationToken);
-        }
+                    var sourceObservationToken = semanticExploreApplicationService
+                        .RegisterVerifiedSourceObservation(
+                            actualProjectId,
+                            request.Payload.Paths,
+                            observedFingerprint);
+                    return (Fingerprint: observedFingerprint, Token: sourceObservationToken);
+                }
 
-        var completedObservation = ShouldProtectSourceObservationWithOutputSafetyLock(
-                actualProjectId,
-                request.Payload.Paths)
-            ? ExecuteExclusiveOutputOperation(request.Payload.Paths, CaptureObservation)
-            : CaptureObservation();
+                if (!ShouldProtectSourceObservationWithOutputSafetyLock(
+                        actualProjectId,
+                        request.Payload.Paths))
+                {
+                    return CaptureObservation();
+                }
+
+                try
+                {
+                    return ExecuteExclusiveOutputOperation(
+                        request.Payload.Paths,
+                        CaptureObservation);
+                }
+                catch (Exception exception) when (
+                    !sourceObservationStarted
+                    && IsUnavailableOutputSafetyMetadata(exception))
+                {
+                    // Project analysis is read-only and Output Root is optional for it. If the
+                    // coordinator cannot establish its private metadata boundary, retain the
+                    // independently double-observed source revision without weakening recovery or
+                    // write operations. Failures after source observation begins remain fail closed.
+                    return CaptureObservation();
+                }
+            });
 
         return SerializeSuccess(
             new ReadProjectSourceRevisionResponse(
@@ -3369,6 +3403,30 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             // claiming that this invalid output scope is safe for writes.
             return false;
         }
+    }
+
+    private static bool IsUnavailableOutputSafetyMetadata(Exception exception)
+    {
+        return exception is OutputMetadataLayoutUnavailableException;
+    }
+
+    private (string Fingerprint, string Token) ExecuteSemanticExploreSourceObservation(
+        ProjectPaths paths,
+        Func<Func<string>, (string Fingerprint, string Token)> observation)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(observation);
+        if (IsPokemonLegendsZA(paths))
+        {
+            return zaWorkflowService.ExecuteSemanticExploreSourceObservation(paths, observation);
+        }
+
+        if (IsScarletViolet(paths))
+        {
+            return svWorkflowService.ExecuteSemanticExploreSourceObservation(paths, observation);
+        }
+
+        return observation(() => CaptureSemanticExploreSourceFingerprint(paths));
     }
 
     private string DispatchLoadTrainerPoolsWorkflow(string requestJson)

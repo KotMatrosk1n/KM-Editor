@@ -15,6 +15,7 @@ import {
 } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -224,6 +225,7 @@ export function TypeChartSection({
                           attackTypeLabel={attackType.label}
                           defenseTypeLabel={defenseType.label}
                           disabled={!canEdit}
+                          id={`type-chart-${attackType.typeIndex}-${defenseType.typeIndex}`}
                           key={`${attackType.typeIndex}-${defenseType.typeIndex}`}
                           onChange={(nextValue) =>
                             updateCell(
@@ -387,12 +389,14 @@ function TypeChartCellControl({
   attackTypeLabel,
   defenseTypeLabel,
   disabled,
+  id,
   onChange,
   value
 }: {
   attackTypeLabel: string;
   defenseTypeLabel: string;
   disabled: boolean;
+  id: string;
   onChange: (value: TypeChartEffectivenessValue) => void;
   value: TypeChartEffectivenessValue;
 }) {
@@ -403,29 +407,35 @@ function TypeChartCellControl({
   )}: ${translateLiteral(option.label)}`;
 
   return (
-    <label
-      className={`type-chart-cell type-chart-cell-${option.className}${disabled ? ' type-chart-cell-disabled' : ''}`}
+    <div
+      className={`km-searchable-select-field type-chart-cell type-chart-cell-${option.className}${disabled ? ' type-chart-cell-disabled' : ''}`}
       title={label}
     >
-      <span aria-hidden="true">{option.display}</span>
-      <select
-        aria-label={label}
+      <label className="sr-only" htmlFor={id}>{label}</label>
+      <SearchableOptionInput
+        ariaLabel={label}
+        className="type-chart-cell-selector"
+        data-km-source-site="type-chart-cell-effectiveness"
         disabled={disabled}
-        onChange={(event) => {
-          const nextValue = parseTypeChartEffectivenessValue(event.target.value);
+        id={id}
+        isFiniteCatalog
+        localizeOptions={false}
+        menuMinimumWidth={192}
+        onChange={(value) => {
+          const nextValue = parseTypeChartEffectivenessValue(value);
           if (nextValue !== null) {
             onChange(nextValue);
           }
         }}
-        value={value}
-      >
-        {typeChartEffectivenessOptions.map((candidate) => (
-          <option key={candidate.value} value={candidate.value}>
-            {translateLiteral(candidate.label)}
-          </option>
-        ))}
-      </select>
-    </label>
+        options={typeChartEffectivenessOptions.map((candidate) => ({
+          inputLabel: candidate.display,
+          label: translateLiteral(candidate.label),
+          value: candidate.value
+        }))}
+        portalMenu
+        value={value.toString()}
+      />
+    </div>
   );
 }
 

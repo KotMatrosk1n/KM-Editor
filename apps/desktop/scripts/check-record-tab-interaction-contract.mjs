@@ -120,18 +120,17 @@ assert.doesNotMatch(
   'No ordinary editor may bypass the shared latest-only search guard with a direct store setter.'
 );
 for (const [relativePath, expectedHookCalls] of [
-  ['src/App.tsx', 3],
+  ['src/App.tsx', 2],
+  ['src/components/SearchableOptionInput.tsx', 1],
   ['src/features/balance-lab/BalanceLabCharts.tsx', 1],
-  ['src/features/battle-cafe-rewards/BattleCafeRewardsSection.tsx', 1],
   ['src/features/change-sets/AdvancedAuthoringPanel.tsx', 1],
   ['src/features/change-sets/ChangeSetWorkspacePanel.tsx', 1],
   ['src/features/dex-layout/ZaDexLayoutSection.tsx', 1],
-  ['src/features/fashion-catalog/FashionCatalogSection.tsx', 2],
+  ['src/features/fashion-catalog/FashionCatalogSection.tsx', 1],
   ['src/features/game-dump/GameDumpSection.tsx', 1],
   ['src/features/game-modules/GameModuleComparison.tsx', 1],
   ['src/features/guided-design/GuidedDesignSection.tsx', 1],
   ['src/features/habitat-coordinates/HabitatCoordinatesSection.tsx', 1],
-  ['src/features/npc-item-gift/NpcItemGiftSection.tsx', 1],
   ['src/features/research-lab/ResearchCatalogViews.tsx', 1],
   ['src/features/research-lab/ResearchComparisonView.tsx', 1],
   ['src/features/semantic-explore/SemanticExploreSection.tsx', 4],
@@ -319,83 +318,86 @@ assert.match(
   /setDexSwapDraftsByPokemonId\(\{\}\)/u,
   'Canceling the Pokemon edit session must explicitly clear all retained Pokedex swap drafts.'
 );
+assert.match(
+  selectedPokemonPanel,
+  /const learnsetRowAccessibleLabel = \[[\s\S]*?displayMove\.levelLabel[\s\S]*?displayMove\.masteryLabel[\s\S]*?displayMove\.moveName[\s\S]*?aria-label=\{learnsetRowAccessibleLabel\}/u,
+  'Learnset row menu targets must retain their visible move and level details in the accessible name.'
+);
 
 const selectedTrainerPanel = between(
   app,
   'function SelectedTrainerPanel({',
   'function getPokemonStatTotalState('
 );
-const trainerDraftTargetResolution = between(
+assert.match(
   selectedTrainerPanel,
-  'const trainerDraftReviewTargets = useMemo(',
-  'const nextTrainerDraftTargetKey = useMemo('
-);
-for (const trainerDraftScope of [
-  ['trainerDraftsByTrainerId', 'trainer:'],
-  ['canonicalPokemonDraftsByTrainerSlot', 'party:'],
-  ['trainerIdentityDraftKeys', 'identity:']
-]) {
-  assert.match(
-    trainerDraftTargetResolution,
-    new RegExp(`${trainerDraftScope[0]}[\\s\\S]*?${trainerDraftScope[1]}`, 'u'),
-    `Trainer draft review must map the ${trainerDraftScope[0]} scope.`
-  );
-}
-const nextTrainerDraftResolution = between(
-  selectedTrainerPanel,
-  'const nextTrainerDraftTargetKey = useMemo(',
-  'const nextTrainerDraftTarget ='
+  /isEmptySlot \? \(\s*<span\s+aria-hidden="true"\s+className="trainer-party-sprite trainer-party-sprite-empty"\s*\/>\s*\) : \(\s*<PokemonSprite[\s\S]*?speciesId=\{projectedPokemon\.speciesId\}[\s\S]*?spriteName=\{projectedPokemon\.spriteName \?\? pokemonSpriteLabel\}[\s\S]*?\/>\s*\)/u,
+  'Empty Trainer party slots must reserve blank space without resolving a Pokemon sprite.'
 );
 assert.match(
-  nextTrainerDraftResolution,
-  /target\.trainerId === trainer\?\.trainerId[\s\S]*?!targetKey\.startsWith\('party:'\)[\s\S]*?target\.slot === selectedPokemon\?\.slot/u,
-  'Trainer review must skip the visible trainer, identity, and selected party-slot scopes.'
+  selectedTrainerPanel,
+  /const partyCardAccessibleLabel = \[[\s\S]*?pokemonLabel[\s\S]*?projectedPokemon\.level[\s\S]*?projectedHeldItemLabel[\s\S]*?hasCardDrafts[\s\S]*?aria-label=\{partyCardAccessibleLabel\}/u,
+  'Trainer party targets must retain Pokemon, level, held-item, and draft details in the accessible name.'
 );
 assert.match(
-  nextTrainerDraftResolution,
-  /getNextOutstandingEditorDraftKey\(outstandingTargetKeys, cursor\)[\s\S]*?!visibleTargetKeys\.has\(candidateKey\)/u,
-  'Trainer review must cycle deterministically from the visible target while skipping every visible draft scope.'
+  cssBlock(styles, '.trainer-party-sprite-empty'),
+  /display:\s*block/u,
+  'Empty Trainer party slot artwork must remain visually blank while preserving card alignment.'
+);
+const trainerAggregateStagePlan = between(
+  selectedTrainerPanel,
+  'const trainerStagePlan = useMemo(',
+  'const canStageTrainerChanges ='
+);
+assert.match(
+  trainerAggregateStagePlan,
+  /for \(const targetTrainer of \[\.\.\.trainerRecords\]\.sort\([\s\S]*?trainerDraftsByTrainerId\[trainerKey\][\s\S]*?canonicalPokemonDraftsByTrainerSlot\[partyKey\]/u,
+  'Trainer staging must aggregate retained Trainer and party drafts across every loaded Trainer.'
+);
+assert.match(
+  trainerAggregateStagePlan,
+  /updates: orderTrainerFieldUpdates\(updates\)/u,
+  'Trainer staging must preserve deterministic aggregate update ordering.'
 );
 assert.match(
   selectedTrainerPanel,
   /t\('editorDrafts\.summary\.trainers',[\s\S]*?identityCount: outstandingTrainerIdentityDraftCount[\s\S]*?partyCount: outstandingPartySlotDraftCount[\s\S]*?scopeCount: outstandingTrainerDraftScopeCount[\s\S]*?trainerCount: outstandingTrainerDraftCount/u,
   'Trainer actions must expose exact aggregate counts for all retained draft scopes.'
 );
-const trainerDraftReviewAction = between(
+const trainerAggregateStageAction = between(
   selectedTrainerPanel,
-  '{nextTrainerDraftTarget ? (',
-  ') : null}'
+  'const stageTrainerDrafts = async () => {',
+  'const stageTrainerMaxIvs = async () => {'
 );
-assert.match(trainerDraftReviewAction, /editorDrafts\.reviewNext/u);
 assert.match(
-  trainerDraftReviewAction,
-  /onReviewDraftTarget\([\s\S]*?nextTrainerDraftTarget\.trainerId,[\s\S]*?nextTrainerDraftTarget\.slot/u,
-  'Trainer draft review must select the owning trainer and the exact party slot when needed.'
+  trainerAggregateStageAction,
+  /const submittedPlan = trainerStagePlan;[\s\S]*?onUpdateTrainerFields\(submittedPlan\.updates\)/u,
+  'The single Trainer Stage action must submit the complete aggregate plan.'
 );
 assert.doesNotMatch(
-  trainerDraftReviewAction,
-  /\b(?:set[A-Za-z]*Draft[A-Za-z]*|onUpdate[A-Za-z]*|onStage[A-Za-z]*|cancelActiveEditSession)\s*\(/u,
-  'Trainer draft review must select only; it must not stage, clear, or discard drafts.'
+  selectedTrainerPanel,
+  /nextTrainerDraftTarget|onReviewDraftTarget|editorDrafts\.reviewNext/u,
+  'Trainer actions must not require a separate Review Next Draft step before aggregate staging.'
 );
 assert.match(
   trainerIdentityActions,
   /onDraftKeysChange\?\.\(Object\.keys\(selectedPairIds\)\)/u,
   'Z-A trainer identity drafts must expose their exact retained trainer keys to the parent editor.'
 );
-const trainerDraftLocationReview = between(
+assert.doesNotMatch(
   app,
-  'const handleReviewTrainerDraftLocation = useCallback(',
-  'const handleSelectShopLocation = useCallback('
+  /handleReviewTrainerDraftLocation|onReviewTrainerDraftTarget/u,
+  'The removed Trainer-only Review Next Draft navigation must not remain wired through App.'
+);
+const selectedEncounterClipboardPanel = between(
+  app,
+  'function SelectedEncounterPanel({',
+  'function ZaEncounterPlayerPartnerEditor({'
 );
 assert.match(
-  trainerDraftLocationReview,
-  /setSelectedTrainerId\(trainerId\)[\s\S]*?setSelectedTrainerPartySlot\(slot\)/u,
-  'Trainer draft review must commit the owning trainer and party slot together.'
-);
-assert.match(
-  trainerDraftLocationReview,
-  /preserveSameSectionDraftScope: true/u,
-  'Trainer draft review must preserve all retained same-editor drafts.'
+  selectedEncounterClipboardPanel,
+  /const encounterSlotAccessibleLabel = \[[\s\S]*?slotBadge[\s\S]*?slotLabel[\s\S]*?slot\.isAlpha[\s\S]*?slotCompletionStatus[\s\S]*?slotSummary[\s\S]*?aria-label=\{encounterSlotAccessibleLabel\}/u,
+  'Encounter slot targets must retain species, badge, level, weight, and status details in the accessible name.'
 );
 assert.match(
   app,

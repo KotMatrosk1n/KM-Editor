@@ -2577,6 +2577,7 @@
     "moves.bossOwners.afterStunContext": "Las entradas solo de contexto se ejecutan en la coreografía separada posterior al aturdimiento.",
     "moves.bossOwners.bombRockDeployedContext": "Las entradas solo de contexto se ejecutan en la secuencia separada de Roca Bomba desplegada.",
     "moves.timingOccurrence.help": "La precisión y el tiempo de recarga se comparten entre todas las apariciones del Perfil de temporización exacto seleccionado. Cambiar cualquiera de los dos actualiza todas esas apariciones, pero ningún otro perfil. Los campos avanzados de temporización pertenecen solo a la aparición física seleccionada.",
+    "moves.timingOccurrence.option": "Fila de temporización {index}",
     "moves.timingProfile.heading": "Perfil de temporización",
     "moves.timingProfile.help": "El ID de movimiento de temporización sin procesar identifica un perfil exacto almacenado por el juego. Una variante de ejecución puede tener varios perfiles de temporización independientes. Este selector limita Precisión, Recarga y los controles de aparición a ese perfil exacto; los campos de combate en tiempo real siguen afectando a todos los perfiles de temporización de la variante seleccionada.",
     "moves.timingProfile.option": "Perfil de temporización {id}",

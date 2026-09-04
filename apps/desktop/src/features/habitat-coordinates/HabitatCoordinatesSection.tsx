@@ -24,6 +24,7 @@ import type {
   HabitatRowBinding
 } from '../../bridge/habitatCoordinatesContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import {
   getNextOutstandingEditorDraftKey,
@@ -844,23 +845,24 @@ export function HabitatCoordinatesSection({
                 <label className="field-label" htmlFor="habitat-coordinate-value">
                   {t('habitatCoordinates.editor.coordinate')}
                 </label>
-                <select
-                  aria-describedby="habitat-coordinate-observed-hint"
-                  className="km-select-control"
+                <SearchableOptionInput
+                  ariaDescribedBy="habitat-coordinate-observed-hint"
+                  ariaLabel={t('habitatCoordinates.editor.coordinate')}
+                  data-km-source-site="habitat-coordinate-value"
                   disabled={!selectedRegion.canStage}
                   id="habitat-coordinate-value"
-                  onChange={(event) => updateCoordinateDraft(event.target.value)}
+                  isFiniteCatalog
+                  localizeOptions={false}
+                  onChange={updateCoordinateDraft}
+                  options={coordinateOptions.map((coordinate) => ({
+                    label: t('habitatCoordinates.editor.coordinateOption', {
+                      x: coordinate.x,
+                      y: coordinate.y
+                    }),
+                    value: coordinateKey(coordinate)
+                  }))}
                   value={coordinateDraft}
-                >
-                  {coordinateOptions.map((coordinate) => (
-                    <option key={coordinateKey(coordinate)} value={coordinateKey(coordinate)}>
-                      {t('habitatCoordinates.editor.coordinateOption', {
-                        x: coordinate.x,
-                        y: coordinate.y
-                      })}
-                    </option>
-                  ))}
-                </select>
+                />
                 <p className="field-hint" id="habitat-coordinate-observed-hint">
                   {t('habitatCoordinates.editor.observedOnly', { count: coordinateOptions.length })}
                 </p>

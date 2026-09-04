@@ -21,6 +21,7 @@ import type {
   QueryGameModuleResponse
 } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
@@ -505,28 +506,26 @@ export function GameModuleComparison({
                     <p>{t('gameModules.compare.chart.description')}</p>
                   </div>
                 </div>
-                <label>
-                  <span>{t('gameModules.compare.chart.measure')}</span>
-                  <select
-                    className="km-select-control"
-                    onChange={(event) => setMeasureIdentity(event.currentTarget.value)}
+                <div className="km-searchable-select-field km-game-module-chart-measure">
+                  <label htmlFor="game-module-chart-measure">
+                    {t('gameModules.compare.chart.measure')}
+                  </label>
+                  <SearchableOptionInput
+                    ariaLabel={t('gameModules.compare.chart.measure')}
+                    data-localization-ignore="true"
+                    data-km-source-site="game-module-chart-measure"
+                    disabled={false}
+                    id="game-module-chart-measure"
+                    isFiniteCatalog
+                    localizeOptions={false}
+                    onChange={setMeasureIdentity}
+                    options={numericFields.map((field) => ({
+                      label: fieldDisplayLabel(field, fieldLabels),
+                      value: field.identity
+                    }))}
                     value={measureIdentity}
-                  >
-                    {numericFields.map((field) => {
-                      const localizedLabel = presentGameModuleFactLabel(field, t);
-                      const labelKey = presentationFactLabelKey(field.label);
-                      return (
-                        <option
-                          data-localization-ignore={!localizedLabel && !labelKey || undefined}
-                          key={field.identity}
-                          value={field.identity}
-                        >
-                          {fieldDisplayLabel(field, fieldLabels)}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
+                  />
+                </div>
               </header>
               {measure ? (
                 <NumericComparisonChart

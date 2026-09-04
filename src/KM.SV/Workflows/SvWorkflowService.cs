@@ -285,6 +285,21 @@ public sealed class SvWorkflowService
         return CaptureSemanticExploreSourceFingerprintLocked(paths);
     }
 
+    /// <summary>
+    /// Keeps the game-family output mutex outside any caller-owned durable output boundary.
+    /// The supplied fingerprint callback is valid only while <paramref name="observation"/>
+    /// is running under that mutex.
+    /// </summary>
+    public (string Fingerprint, string Token) ExecuteSemanticExploreSourceObservation(
+        ProjectPaths paths,
+        Func<Func<string>, (string Fingerprint, string Token)> observation)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(observation);
+        using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+        return observation(() => CaptureSemanticExploreSourceFingerprintLocked(paths));
+    }
+
     private string CaptureSemanticExploreSourceFingerprintLocked(ProjectPaths paths)
     {
         var language = SvGameTextLanguage.Resolve(paths);

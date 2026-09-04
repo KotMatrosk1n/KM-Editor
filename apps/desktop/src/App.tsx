@@ -98,7 +98,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -400,11 +399,7 @@ import { FieldLabel } from './components/FieldLabel';
 import { ContextHelp } from './components/ContextHelp';
 import { HoverTooltip } from './components/HoverTooltip';
 import { editorPortalHostId } from './components/editorPortal';
-import {
-  formatSearchableOptionValue,
-  getSmartOptionMatches,
-  transitionSearchableOptionInteraction
-} from './components/searchableOptionInputState';
+import { SearchableOptionInput } from './components/SearchableOptionInput';
 import {
   areStringSetsEqual,
   clearSubmittedKeyedEditorDraft,
@@ -553,6 +548,7 @@ import {
   getPlacementObjectSubgroups,
   getPlacementCategoryId,
   getPlacementCategories,
+  getDefaultPlacementCategoryId,
   getPlacementFieldControls,
   getPlacementFieldValue,
   isZaItemBallPlacementObject,
@@ -6569,51 +6565,6 @@ export function App({
       handleNavigateLocation,
       selectedGame,
       selectedTrainerId,
-      setSelectedTrainerPartySlot
-    ]
-  );
-  const handleReviewTrainerDraftLocation = useCallback(
-    (trainerId: number, slot: number | null) => {
-      if (!activeProjectId || !selectedGame) {
-        setSelectedTrainerId(trainerId);
-        setSelectedTrainerPartySlot(slot);
-        return;
-      }
-
-      const destination = createStableEntityLocation({
-        game: selectedGame,
-        projectId: activeProjectId,
-        section: 'trainers',
-        subrecordId: slot === null ? null : `party-slot:${slot}`,
-        value: trainerId
-      });
-      return handleNavigateLocation(
-        destination,
-        () => {
-          setSelectedTrainerId(trainerId);
-          setSelectedTrainerPartySlot(slot);
-        },
-        'replace',
-        {
-          protectedTabKeys: getProtectedWorkspaceTabKeys(
-            workspaceShellStateRef.current.tabs,
-            editorDraftDirtySectionsRef.current
-          ),
-          rememberRecent: false,
-          tabEligible: isStableLocationTabEligible(
-            destination,
-            sessionLocalEditorSections
-          )
-        },
-        undefined,
-        { preserveSameSectionDraftScope: true }
-      );
-    },
-    [
-      activeProjectId,
-      handleNavigateLocation,
-      selectedGame,
-      setSelectedTrainerId,
       setSelectedTrainerPartySlot
     ]
   );
@@ -21118,7 +21069,6 @@ export function App({
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
                 onTrainerCategoryChange={setSelectedTrainerCategoryId}
-                onReviewTrainerDraftTarget={handleReviewTrainerDraftLocation}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
@@ -21142,7 +21092,6 @@ export function App({
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
                 onTrainerCategoryChange={setSelectedTrainerCategoryId}
-                onReviewTrainerDraftTarget={handleReviewTrainerDraftLocation}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
@@ -21166,7 +21115,6 @@ export function App({
                 onPasteTrainerPartyClipboard={handlePasteTrainerPartyClipboard}
                 onSearchChange={handleTrainerSearchChange}
                 onTrainerCategoryChange={setSelectedTrainerCategoryId}
-                onReviewTrainerDraftTarget={handleReviewTrainerDraftLocation}
                 onSelectTrainer={handleSelectTrainerLocation}
                 onSelectTrainerPartySlot={handleSelectTrainerPartySlotLocation}
                 onStartEditSession={handleStartEditSession}
@@ -25193,29 +25141,35 @@ function ZaPokemonDexPlacementEditor({
                 htmlFor="za-pokemon-destination-dex"
                 label={translateLiteral('Destination Pokédex')}
               />
-              <select
-                className="km-select-control"
+              <SearchableOptionInput
+                ariaLabel={translateLiteral('Destination Pokédex')}
+                data-km-source-site="za-pokemon-destination-dex-option"
                 disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit}
                 id="za-pokemon-destination-dex"
-                onChange={(event) => {
+                isFiniteCatalog
+                localizeOptions={false}
+                onChange={(value) => {
                   if (!editSessionActive) {
                     return;
                   }
 
                   updateSwapDraft(
-                    event.target.value === 'hyperspace' ? 'hyperspace' : 'regular',
+                    value === 'hyperspace' ? 'hyperspace' : 'regular',
                     ''
                   );
                 }}
+                options={[
+                  {
+                    label: `${translateLiteral('Regular Dex')} (${dexEditor.regularCount})`,
+                    value: 'regular'
+                  },
+                  {
+                    label: `${translateLiteral('Hyperspace Dex')} (${dexEditor.hyperspaceCount})`,
+                    value: 'hyperspace'
+                  }
+                ]}
                 value={destinationDexKind}
-              >
-                <option value="regular">
-                  {translateLiteral('Regular Dex')} ({dexEditor.regularCount})
-                </option>
-                <option value="hyperspace">
-                  {translateLiteral('Hyperspace Dex')} ({dexEditor.hyperspaceCount})
-                </option>
-              </select>
+              />
             </div>
 
             <div className="path-field">
@@ -27442,6 +27396,20 @@ function SelectedPokemonPanel({
                       learnsetMoveOptions,
                       editorFamily
                     );
+                    const learnsetRowAccessibleLabel = [
+                      t('rowClipboard.learnset.target', {
+                        pokemon: formatPokemonRecordName(pokemon, editorFamily),
+                        slot: move.slot + 1
+                      }),
+                      displayMove.levelLabel ?? `Lv. ${displayMove.level}`,
+                      displayMove.masteryLabel,
+                      `${displayMove.moveName} (${displayMove.moveId})`
+                    ]
+                      .filter(
+                        (part): part is string =>
+                          typeof part === 'string' && part.length > 0
+                      )
+                      .join('. ');
 
                     return (
                       <li
@@ -27450,7 +27418,10 @@ function SelectedPokemonPanel({
                             ? pokemonLearnsetRowContextMenuId
                             : undefined
                         }
+                        aria-expanded={learnsetClipboardMenu?.move.slot === move.slot}
                         aria-haspopup="menu"
+                        aria-label={learnsetRowAccessibleLabel}
+                        data-km-source-site="pokemon-learnset-row-menu-trigger"
                         className={`learnset-list-item ${
                           learnsetDragState?.sourceSlot === move.slot ? 'learnset-dragging' : ''
                         } ${
@@ -27892,28 +27863,27 @@ function SelectedPokemonPanel({
                       htmlFor="pokemon-compatibility-group"
                       label={translateLiteral('Compatibility group')}
                     />
-                    <select
-                      className="km-select-control"
+                    <SearchableOptionInput
+                      ariaLabel={translateLiteral('Compatibility group')}
+                      data-km-source-site="pokemon-compatibility-group-option"
+                      disabled={false}
                       id="pokemon-compatibility-group"
-                      onChange={(event) => setSelectedCompatibilityGroupId(event.target.value)}
+                      isFiniteCatalog
+                      localizeOptions={false}
+                      onChange={setSelectedCompatibilityGroupId}
+                      options={pokemon.compatibility.map((group) => ({
+                        label: `${translateLiteral(group.label)} (${
+                          group.entries.filter(
+                            (entry) =>
+                              personalDrafts[
+                                createPokemonCompatibilityFieldName(group.groupId, entry.slot)
+                              ] === '1'
+                          ).length
+                        }/${group.entries.length})`,
+                        value: group.groupId
+                      }))}
                       value={selectedCompatibilityGroup?.groupId ?? ''}
-                    >
-                      {pokemon.compatibility.map((group) => (
-                        <option key={group.groupId} value={group.groupId}>
-                          {group.label} ({
-                            group.entries.filter(
-                              (entry) =>
-                                personalDrafts[
-                                  createPokemonCompatibilityFieldName(
-                                    group.groupId,
-                                    entry.slot
-                                  )
-                                ] === '1'
-                            ).length
-                          }/{group.entries.length})
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                   <label className="search-box compatibility-search">
                     <Search aria-hidden="true" size={16} />
@@ -29467,6 +29437,30 @@ function SelectedMovePanel({
     timingRowOptions.some((timing) => timing.occurrence === requestedTimingOccurrence)
       ? requestedTimingOccurrence
       : timingRowOptions[0]?.occurrence ?? 0;
+  const runtimeVariantSelectOptions = useMemo(
+    () =>
+      runtimeVariantOptions.map((variant) => ({
+        label: formatLocalizedMoveRuntimeVariantLabel(variant, t),
+        value: variant
+      })),
+    [runtimeVariantOptions, t]
+  );
+  const timingProfileSelectOptions = useMemo(
+    () =>
+      timingProfileOptions.map((timing) => ({
+        label: t('moves.timingProfile.option', { id: timing.timingMoveId }),
+        value: timing.timingMoveId
+      })),
+    [t, timingProfileOptions]
+  );
+  const timingOccurrenceSelectOptions = useMemo(
+    () =>
+      timingRowOptions.map((timing, index) => ({
+        label: t('moves.timingOccurrence.option', { index: index + 1 }),
+        value: timing.occurrence
+      })),
+    [t, timingRowOptions]
+  );
   const selectedRuntimeView = useMemo(
     () =>
       move
@@ -29893,18 +29887,15 @@ function SelectedMovePanel({
                       htmlFor="move-runtime-variant"
                       label={t('moves.runtimeVariant.label')}
                     />
-                    <select
-                      className="km-select-control"
+                    <SearchableOptionInput
+                      ariaLabel={t('moves.runtimeVariant.label')}
+                      disabled={false}
                       id="move-runtime-variant"
-                      onChange={(event) => onSelectRuntimeVariant(Number(event.target.value))}
-                      value={selectedRuntimeVariant ?? ''}
-                    >
-                      {runtimeVariantOptions.map((variant) => (
-                        <option key={variant} value={variant}>
-                          {formatLocalizedMoveRuntimeVariantLabel(variant, t)}
-                        </option>
-                      ))}
-                    </select>
+                      isFiniteCatalog
+                      onChange={(value) => onSelectRuntimeVariant(Number(value))}
+                      options={runtimeVariantSelectOptions}
+                      value={selectedRuntimeVariant?.toString() ?? ''}
+                    />
                   </div>
                 </fieldset>
               ) : null}
@@ -29925,27 +29916,24 @@ function SelectedMovePanel({
                       htmlFor="move-timing-profile"
                       label={translateLiteral('Profile')}
                     />
-                    <select
-                      className="km-select-control"
+                    <SearchableOptionInput
+                      ariaLabel={translateLiteral('Profile')}
+                      disabled={false}
                       id="move-timing-profile"
-                      onChange={(event) => {
+                      isFiniteCatalog
+                      onChange={(value) => {
                         if (!timingProfileStorageKey) {
                           return;
                         }
 
                         setTimingProfileByMoveVariant((current) => ({
                           ...current,
-                          [timingProfileStorageKey]: Number(event.target.value)
+                          [timingProfileStorageKey]: Number(value)
                         }));
                       }}
-                      value={selectedTimingProfile ?? ''}
-                    >
-                      {timingProfileOptions.map((timing) => (
-                        <option key={timing.timingMoveId} value={timing.timingMoveId}>
-                          {t('moves.timingProfile.option', { id: timing.timingMoveId })}
-                        </option>
-                      ))}
-                    </select>
+                      options={timingProfileSelectOptions}
+                      value={selectedTimingProfile?.toString() ?? ''}
+                    />
                   </div>
                 </fieldset>
               ) : null}
@@ -29963,27 +29951,24 @@ function SelectedMovePanel({
                       htmlFor="move-timing-occurrence"
                       label={translateLiteral('Occurrence')}
                     />
-                    <select
-                      className="km-select-control"
+                    <SearchableOptionInput
+                      ariaLabel={translateLiteral('Occurrence')}
+                      disabled={false}
                       id="move-timing-occurrence"
-                      onChange={(event) => {
+                      isFiniteCatalog
+                      onChange={(value) => {
                         if (!timingOccurrenceStorageKey) {
                           return;
                         }
 
                         setTimingOccurrenceByProfile((current) => ({
                           ...current,
-                          [timingOccurrenceStorageKey]: Number(event.target.value)
+                          [timingOccurrenceStorageKey]: Number(value)
                         }));
                       }}
-                      value={selectedTimingOccurrence}
-                    >
-                      {timingRowOptions.map((timing, index) => (
-                        <option key={timing.occurrence} value={timing.occurrence}>
-                          Timing row {index + 1}
-                        </option>
-                      ))}
-                    </select>
+                      options={timingOccurrenceSelectOptions}
+                      value={selectedTimingOccurrence.toString()}
+                    />
                   </div>
                 </fieldset>
               ) : null}
@@ -30141,10 +30126,10 @@ function SelectedMovePanel({
                             disabledReason={playerDamageDisabledReason}
                             draftState={effectiveDraftState}
                             draftValue={draftValue}
-                              field={field}
-                              helpDomain="moves"
-                              helpGame="za"
-                              helpText={
+                            field={field}
+                            helpDomain="moves"
+                            helpGame="za"
+                            helpText={
                               playerDamageAttackId === null
                                 ? getLocalizedMoveEditableFieldHelp(field, t, move.hasRuntimeData)
                                 : t('moves.playerDamage.fieldHelp', {
@@ -30781,20 +30766,21 @@ function TextSection({
                 htmlFor="text-game-language"
                 label={t('text.language.label')}
               />
-              <select
-                aria-label={t('text.language.ariaLabel')}
-                className="km-select-control"
+              <SearchableOptionInput
+                ariaLabel={t('text.language.ariaLabel')}
+                data-km-source-site="text-game-language-option"
                 data-localization-ignore="true"
+                disabled={false}
                 id="text-game-language"
-                onChange={(event) => onLanguageChange(event.target.value)}
+                isFiniteCatalog
+                localizeOptions={false}
+                onChange={onLanguageChange}
+                options={workflow.languages.map((language) => ({
+                  label: language.label,
+                  value: language.language
+                }))}
                 value={activeLanguage}
-              >
-                {workflow.languages.map((language) => (
-                  <option key={language.language} value={language.language}>
-                    {language.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           ) : null}
           <label className="search-box items-search">
@@ -31585,7 +31571,6 @@ type TrainersSectionProps = {
   onPasteTrainerPartyClipboard: (
     input: TrainerPartyClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
-  onReviewTrainerDraftTarget: (trainerId: number, slot: number | null) => void;
   onSearchChange: (searchText: string) => void;
   onTrainerCategoryChange: (categoryId: TrainerCategoryId) => void;
   onSelectTrainer: (trainerId: number | null) => void;
@@ -31635,7 +31620,6 @@ function TrainersSection({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
-  onReviewTrainerDraftTarget,
   onTrainerCategoryChange,
   onSelectTrainer,
   onSelectTrainerPartySlot,
@@ -32003,7 +31987,6 @@ function TrainersSection({
                 onCopyTrainerPartyClipboard={onCopyTrainerPartyClipboard}
                 onPasteTrainerPartyClipboard={onPasteTrainerPartyClipboard}
                 ordinaryDraftProject={ordinaryDraftProject}
-                onReviewDraftTarget={onReviewTrainerDraftTarget}
                 onSelectSlot={onSelectTrainerPartySlot}
                 onUpdateTrainerField={onUpdateTrainerField}
                 onUpdateTrainerFields={onUpdateTrainerFields}
@@ -32139,7 +32122,6 @@ function SelectedTrainerPanel({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
-  onReviewDraftTarget,
   onSelectSlot,
   onUpdateTrainerField,
   onUpdateTrainerFields,
@@ -32166,7 +32148,6 @@ function SelectedTrainerPanel({
     input: TrainerPartyClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
-  onReviewDraftTarget: (trainerId: number, slot: number | null) => void;
   onSelectSlot: (slot: number | null) => void;
   onUpdateTrainerField: (
     trainerId: number,
@@ -32874,106 +32855,6 @@ function SelectedTrainerPanel({
     outstandingTrainerDraftCount +
     outstandingPartySlotDraftCount +
     outstandingTrainerIdentityDraftCount;
-  const trainerDraftReviewTargets = useMemo(() => {
-    const targets = new Map<string, { slot: number | null; trainerId: number }>();
-    const trainerRecordsById = new Map(
-      trainerRecords.map((candidate) => [candidate.trainerId, candidate] as const)
-    );
-    for (const [trainerDraftKey, fields] of Object.entries(trainerDraftsByTrainerId)) {
-      if (Object.keys(fields).length === 0) {
-        continue;
-      }
-      if (!/^\d+$/u.test(trainerDraftKey)) {
-        continue;
-      }
-      const trainerId = Number.parseInt(trainerDraftKey, 10);
-      if (trainerRecordsById.has(trainerId)) {
-        targets.set(`trainer:${trainerDraftKey}`, { slot: null, trainerId });
-      }
-    }
-    for (const [partyDraftKey, fields] of Object.entries(
-      canonicalPokemonDraftsByTrainerSlot
-    )) {
-      if (Object.keys(fields).length === 0) {
-        continue;
-      }
-      const keyMatch = /^(\d+):(\d+)$/u.exec(partyDraftKey);
-      if (!keyMatch) {
-        continue;
-      }
-      const trainerId = Number.parseInt(keyMatch[1]!, 10);
-      const slot = Number.parseInt(keyMatch[2]!, 10);
-      const targetTrainer = trainerRecordsById.get(trainerId);
-      if (targetTrainer?.team.some((candidate) => candidate.slot === slot)) {
-        targets.set(`party:${partyDraftKey}`, { slot, trainerId });
-      }
-    }
-    for (const identityDraftKey of trainerIdentityDraftKeys) {
-      if (!/^\d+$/u.test(identityDraftKey)) {
-        continue;
-      }
-      const trainerId = Number.parseInt(identityDraftKey, 10);
-      if (trainerRecordsById.has(trainerId)) {
-        targets.set(`identity:${identityDraftKey}`, { slot: null, trainerId });
-      }
-    }
-    return targets;
-  }, [
-    canonicalPokemonDraftsByTrainerSlot,
-    trainerDraftsByTrainerId,
-    trainerIdentityDraftKeys,
-    trainerRecords
-  ]);
-  const nextTrainerDraftTargetKey = useMemo(() => {
-    const outstandingTargetKeys = [...trainerDraftReviewTargets.keys()];
-    const visibleTargetKeys = new Set(
-      [...trainerDraftReviewTargets.entries()]
-        .filter(
-          ([targetKey, target]) =>
-            target.trainerId === trainer?.trainerId &&
-            (!targetKey.startsWith('party:') || target.slot === selectedPokemon?.slot)
-        )
-        .map(([targetKey]) => targetKey)
-    );
-    const selectedPartyTargetKey =
-      trainer === null || selectedPokemon === null
-        ? null
-        : `party:${trainer.trainerId}:${selectedPokemon.slot}`;
-    const selectedTrainerTargetKey =
-      trainer === null ? null : `trainer:${trainer.trainerId}`;
-    const selectedIdentityTargetKey =
-      trainer === null ? null : `identity:${trainer.trainerId}`;
-    let cursor =
-      (selectedPartyTargetKey !== null &&
-      trainerDraftReviewTargets.has(selectedPartyTargetKey)
-        ? selectedPartyTargetKey
-        : null) ??
-      (selectedTrainerTargetKey !== null &&
-      trainerDraftReviewTargets.has(selectedTrainerTargetKey)
-        ? selectedTrainerTargetKey
-        : null) ??
-      (selectedIdentityTargetKey !== null &&
-      trainerDraftReviewTargets.has(selectedIdentityTargetKey)
-        ? selectedIdentityTargetKey
-        : null);
-    const visitedTargetKeys = new Set<string>();
-    while (visitedTargetKeys.size < outstandingTargetKeys.length) {
-      const candidateKey = getNextOutstandingEditorDraftKey(outstandingTargetKeys, cursor);
-      if (candidateKey === null || visitedTargetKeys.has(candidateKey)) {
-        return null;
-      }
-      if (!visibleTargetKeys.has(candidateKey)) {
-        return candidateKey;
-      }
-      visitedTargetKeys.add(candidateKey);
-      cursor = candidateKey;
-    }
-    return null;
-  }, [trainerDraftReviewTargets, selectedPokemon, trainer]);
-  const nextTrainerDraftTarget = nextTrainerDraftTargetKey === null
-    ? null
-    : trainerDraftReviewTargets.get(nextTrainerDraftTargetKey) ?? null;
-
   const closePartySlotContextMenu = useCallback(() => {
     setPartySlotContextMenu(null);
   }, []);
@@ -33320,21 +33201,6 @@ function SelectedTrainerPanel({
                 trainerStagePlan.invalidFields.length === 1 ? '' : 's'
               } need valid values before staging.`}
             </span>
-          ) : null}
-          {nextTrainerDraftTarget ? (
-            <button
-              className="secondary-button"
-              disabled={isTrainerUpdating}
-              onClick={() =>
-                onReviewDraftTarget(
-                  nextTrainerDraftTarget.trainerId,
-                  nextTrainerDraftTarget.slot
-                )
-              }
-              type="button"
-            >
-              {t('editorDrafts.reviewNext')}
-            </button>
           ) : null}
           <button
             className="danger-button"
@@ -33711,14 +33577,32 @@ function SelectedTrainerPanel({
                     partySlotContextMenu?.trainerId === trainer.trainerId &&
                       partySlotContextMenu.slot === pokemon.slot
                   );
+                  const partyCardAccessibleLabel = [
+                    t('trainers.partyClipboard.targetSummary', {
+                      slot: formatTrainerSlotNumber(pokemon.slot, editorFamily),
+                      trainer: trainer.name
+                    }),
+                    isEmptySlot
+                      ? `${slotLabel}: None`
+                      : `${pokemonLabel}, Lv. ${projectedPokemon.level}`,
+                    isEmptySlot ? null : projectedHeldItemLabel,
+                    hasCardDrafts ? translateLiteral('Draft') : null
+                  ]
+                    .filter(
+                      (part): part is string =>
+                        typeof part === 'string' && part.length > 0
+                    )
+                    .join('. ');
 
                   return (
                     <button
                       aria-controls={
                         isContextMenuTarget ? trainerPartySlotContextMenuId : undefined
                       }
-                      aria-expanded={isContextMenuTarget || undefined}
+                      aria-expanded={isContextMenuTarget}
                       aria-haspopup="menu"
+                      aria-label={partyCardAccessibleLabel}
+                      data-km-source-site="trainer-party-slot-menu-trigger"
                       aria-keyshortcuts="Shift+F10"
                       aria-pressed={selectedSlot === pokemon.slot}
                       className={`trainer-party-card ${
@@ -33754,14 +33638,21 @@ function SelectedTrainerPanel({
                       }}
                       type="button"
                     >
-                      <PokemonSprite
-                        editorFamily={editorFamily}
-                        className="trainer-party-sprite"
-                        form={projectedPokemon.form}
-                        name={pokemonLabel}
-                        speciesId={projectedPokemon.speciesId}
-                        spriteName={projectedPokemon.spriteName ?? pokemonSpriteLabel}
-                      />
+                      {isEmptySlot ? (
+                        <span
+                          aria-hidden="true"
+                          className="trainer-party-sprite trainer-party-sprite-empty"
+                        />
+                      ) : (
+                        <PokemonSprite
+                          editorFamily={editorFamily}
+                          className="trainer-party-sprite"
+                          form={projectedPokemon.form}
+                          name={pokemonLabel}
+                          speciesId={projectedPokemon.speciesId}
+                          spriteName={projectedPokemon.spriteName ?? pokemonSpriteLabel}
+                        />
+                      )}
                       <strong data-localization-ignore="true">
                         {isEmptySlot ? slotLabel : pokemonLabel}
                       </strong>
@@ -34309,22 +34200,21 @@ function TrainerDraftField({
         label={localizedFieldLabel}
       />
       {field.valueKind === 'boolean' ? (
-        <HoverTooltip content={localizedFieldHoverText}>
-          <select
-            aria-label={localizedFieldLabel}
-            className="km-select-control"
-            disabled={effectiveDisabled}
-            id={inputId}
-            onChange={(event) => onChange(event.target.value)}
-            value={draftValue === '1' ? '1' : '0'}
-          >
-            <option value="1">{translateLiteral('Yes')}</option>
-            <option value="0">{translateLiteral('No')}</option>
-          </select>
-        </HoverTooltip>
+        <SearchableOptionInput
+          ariaLabel={localizedFieldLabel}
+          data-km-source-site="trainer-draft-field-boolean-option"
+          disabled={effectiveDisabled}
+          id={inputId}
+          isFiniteCatalog
+          onChange={onChange}
+          options={searchableBooleanOptions}
+          tooltipContent={localizedFieldHoverText}
+          value={draftValue === '1' ? '1' : '0'}
+        />
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaLabel={field.label}
+          data-km-source-site="trainer-draft-field-option"
           disabled={effectiveDisabled}
           emptyOptionLabel={emptyOptionLabel}
           id={inputId}
@@ -38400,6 +38290,11 @@ function getDynamaxAdventureFieldDisabledReason(
   return null;
 }
 
+const searchableBooleanOptions: EditableFieldOption[] = [
+  { label: 'Yes', value: 1 },
+  { label: 'No', value: 0 }
+];
+
 function GiftPokemonDraftField({
   ariaDescribedBy,
   currentValue,
@@ -38483,24 +38378,23 @@ function GiftPokemonDraftField({
     >
       <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
-        <HoverTooltip content={localizedFieldHoverText}>
-          <select
-            aria-describedby={ariaDescribedBy}
-            aria-label={localizedFieldLabel}
-            className="km-select-control"
-            disabled={effectiveDisabled}
-            id={inputId}
-            onChange={(event) => onChange(event.target.value)}
-            value={draftValue === '1' ? '1' : '0'}
-          >
-            <option value="1">{translateLiteral('Yes')}</option>
-            <option value="0">{translateLiteral('No')}</option>
-          </select>
-        </HoverTooltip>
+        <SearchableOptionInput
+          ariaDescribedBy={ariaDescribedBy}
+          ariaLabel={localizedFieldLabel}
+          data-km-source-site="gift-pokemon-draft-boolean-option"
+          disabled={effectiveDisabled}
+          id={inputId}
+          isFiniteCatalog
+          onChange={onChange}
+          options={searchableBooleanOptions}
+          tooltipContent={localizedFieldHoverText}
+          value={draftValue === '1' ? '1' : '0'}
+        />
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaDescribedBy={ariaDescribedBy}
           ariaLabel={localizedFieldLabel}
+          data-km-source-site="gift-pokemon-draft-catalog-option"
           disabled={effectiveDisabled}
           id={inputId}
           onChange={onChange}
@@ -43663,6 +43557,7 @@ function SelectedShopPanel({
                             ariaDescribedBy={draftError ? itemDraftErrorId : undefined}
                             ariaInvalid={draftError ? true : undefined}
                             ariaLabel={rowAriaLabel}
+                            data-km-source-site="shop-inventory-item-option"
                             disabled={
                               !canEditShops ||
                               !shop.canEditInventoryOrder ||
@@ -44131,24 +44026,19 @@ function ShopRowFieldInput({
 
   if (textOptions && textOptions.length > 0) {
     return (
-      <HoverTooltip content={localizedFieldHoverText}>
-        <select
-          aria-describedby={ariaDescribedBy}
-          aria-invalid={ariaInvalid}
-          aria-label={localizedFieldLabel}
-          className="km-select-control"
-          disabled={disabled}
-          id={id}
-          onChange={(event) => onChange(event.target.value)}
-          value={draftValue}
-        >
-          {textOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {translateLiteral(option.label)}
-            </option>
-          ))}
-        </select>
-      </HoverTooltip>
+      <SearchableOptionInput
+        ariaDescribedBy={ariaDescribedBy}
+        ariaInvalid={ariaInvalid}
+        ariaLabel={localizedFieldLabel}
+        data-km-source-site="shop-row-field-text-option"
+        disabled={disabled}
+        id={id}
+        isFiniteCatalog
+        onChange={onChange}
+        options={textOptions}
+        tooltipContent={localizedFieldHoverText}
+        value={draftValue}
+      />
     );
   }
 
@@ -44158,6 +44048,7 @@ function ShopRowFieldInput({
         ariaDescribedBy={ariaDescribedBy}
         ariaInvalid={ariaInvalid}
         ariaLabel={localizedFieldLabel}
+        data-km-source-site="shop-row-field-option"
         disabled={disabled}
         id={id}
         onChange={onChange}
@@ -46640,6 +46531,57 @@ function SelectedEncounterPanel({
                       isScarletViolet: isSvEncounterTable,
                       isPokemonLegendsZA: isZaEncounterTable
                     });
+                    const slotCompletionStatus =
+                      isZaEncounterTable &&
+                      typeof slot.contributesToWildZoneCompletion === 'boolean'
+                        ? t(
+                            getZaWildZoneCompletionStatusKey(
+                              slot.contributesToWildZoneCompletion
+                                ? 'contributing'
+                                : 'excluded'
+                            )
+                          )
+                        : null;
+                    const slotSummary = isZaEncounterTable
+                      ? encounterWeightTotal > 0
+                        ? t('za.spawnSettings.slotSummaryWithShare', {
+                            levelMax: slot.levelMax,
+                            levelMin: slot.levelMin,
+                            share:
+                              formatEncounterSharePercent(
+                                slot.weight,
+                                encounterWeightTotal,
+                                formatLocale
+                              ) ?? '',
+                            weight: slot.weight
+                          })
+                        : t('za.spawnSettings.slotSummary', {
+                            levelMax: slot.levelMax,
+                            levelMin: slot.levelMin,
+                            weight: slot.weight
+                          })
+                      : formatEncounterSlotWeightSummary(
+                          slot,
+                          encounterWeightTotal,
+                          isSvEncounterTable,
+                          formatLocale
+                        );
+                    const encounterSlotAccessibleLabel = [
+                      t('rowClipboard.encounter.target', {
+                        slot: slot.slot + 1,
+                        table: table.tableLabel ?? table.location
+                      }),
+                      slotBadge,
+                      slotLabel,
+                      slot.isAlpha ? translateLiteral('Alpha') : null,
+                      slotCompletionStatus,
+                      slotSummary
+                    ]
+                      .filter(
+                        (part): part is string =>
+                          typeof part === 'string' && part.length > 0
+                      )
+                      .join('. ');
 
                     return (
                       <button
@@ -46648,7 +46590,10 @@ function SelectedEncounterPanel({
                             ? encounterSlotContextMenuId
                             : undefined
                         }
+                        aria-expanded={encounterClipboardMenu?.slot.slot === slot.slot}
                         aria-haspopup="menu"
+                        aria-label={encounterSlotAccessibleLabel}
+                        data-km-source-site="encounter-slot-menu-trigger"
                         aria-pressed={slot.slot === selectedSlot}
                         className="slot-tab-button"
                         key={slot.slot}
@@ -46696,43 +46641,12 @@ function SelectedEncounterPanel({
                                     : 'excluded'
                                 }`}
                               >
-                                {t(
-                                  getZaWildZoneCompletionStatusKey(
-                                    slot.contributesToWildZoneCompletion
-                                      ? 'contributing'
-                                      : 'excluded'
-                                  )
-                                )}
+                                {slotCompletionStatus}
                               </span>
                             ) : null}
                           </div>
                         ) : null}
-                        <small>
-                          {isZaEncounterTable
-                            ? encounterWeightTotal > 0
-                              ? t('za.spawnSettings.slotSummaryWithShare', {
-                                  levelMax: slot.levelMax,
-                                  levelMin: slot.levelMin,
-                                  share:
-                                    formatEncounterSharePercent(
-                                      slot.weight,
-                                      encounterWeightTotal,
-                                      formatLocale
-                                    ) ?? '',
-                                  weight: slot.weight
-                                })
-                              : t('za.spawnSettings.slotSummary', {
-                                  levelMax: slot.levelMax,
-                                  levelMin: slot.levelMin,
-                                  weight: slot.weight
-                                })
-                            : formatEncounterSlotWeightSummary(
-                                slot,
-                                encounterWeightTotal,
-                                isSvEncounterTable,
-                                formatLocale
-                              )}
-                        </small>
+                        <small>{slotSummary}</small>
                       </button>
                     );
                   })}
@@ -49292,18 +49206,22 @@ function TeraRaidsSection({
 
                     <div className="encounter-slot-header">
                       <strong>{translateLiteral('Rewards')}</strong>
-                      <select
-                        aria-label={translateLiteral('Tera raid reward kind')}
-                        className="km-select-control"
-                        onChange={(event) => {
-                          setRewardKind(event.target.value === 'lottery' ? 'lottery' : 'fixed');
+                      <SearchableOptionInput
+                        ariaLabel={translateLiteral('Tera raid reward kind')}
+                        data-km-source-site="tera-raid-reward-kind-option"
+                        disabled={false}
+                        isFiniteCatalog
+                        onChange={(value) => {
+                          setRewardKind(value === 'lottery' ? 'lottery' : 'fixed');
                           setSelectedRewardRecordId(null);
                         }}
+                        options={[
+                          { label: translateLiteral('Fixed rewards'), value: 'fixed' },
+                          { label: translateLiteral('Lottery rewards'), value: 'lottery' }
+                        ]}
+                        localizeOptions={false}
                         value={rewardKind}
-                      >
-                        <option value="fixed">{translateLiteral('Fixed rewards')}</option>
-                        <option value="lottery">{translateLiteral('Lottery rewards')}</option>
-                      </select>
+                      />
                     </div>
 
                     {activeRewardTable ? (
@@ -49324,28 +49242,30 @@ function TeraRaidsSection({
                         </dl>
 
                         {editSession && emptyRewardRows.length > 0 ? (
-                          <label className="path-field">
-                            <span>{translateLiteral('Add reward in empty slot')}</span>
-                            <select
-                              aria-label={translateLiteral('Add reward in empty slot')}
-                              className="km-select-control"
-                              onChange={(event) =>
-                                setSelectedRewardRecordId(event.target.value || null)
-                              }
+                          <div className="path-field">
+                            <label htmlFor="tera-raid-empty-reward-slot">
+                              {translateLiteral('Add reward in empty slot')}
+                            </label>
+                            <SearchableOptionInput
+                              ariaLabel={translateLiteral('Add reward in empty slot')}
+                              data-km-source-site="tera-raid-empty-reward-slot-option"
+                              disabled={false}
+                              emptyOptionLabel={translateLiteral('Choose an empty slot')}
+                              id="tera-raid-empty-reward-slot"
+                              isFiniteCatalog
+                              localizeOptions={false}
+                              onChange={(value) => setSelectedRewardRecordId(value || null)}
+                              options={emptyRewardRows.map((reward) => ({
+                                label: `#${reward.slot}: ${translateLiteral('Empty slot')}`,
+                                value: reward.recordId
+                              }))}
                               value={
                                 selectedReward && isEmptyTeraRaidReward(selectedReward)
                                   ? selectedReward.recordId
                                   : ''
                               }
-                            >
-                              <option value="">{translateLiteral('Choose an empty slot')}</option>
-                              {emptyRewardRows.map((reward) => (
-                                <option key={reward.recordId} value={reward.recordId}>
-                                  {`#${reward.slot}: ${translateLiteral('Empty slot')}`}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                            />
+                          </div>
                         ) : null}
 
                         <div
@@ -50178,23 +50098,23 @@ function SelectedRaidBattlePanel({
           <div className="encounter-edit-form">
             <div className="encounter-slot-header">
               <strong>Battle slots</strong>
-              <select
-                aria-label="Raid battle slot"
-                className="km-select-control"
+              <SearchableOptionInput
+                ariaLabel="Raid battle slot"
+                data-km-source-site="raid-battle-slot-option"
                 disabled={table.slots.length === 0}
-                onChange={(event) => onSelectSlot(Number(event.target.value))}
-                value={selectedSlot ?? ''}
-              >
-                {table.slots.map((candidate) => (
-                  <option key={candidate.slot} value={candidate.slot}>
-                    Slot {candidate.slot}: {formatSpeciesFormLabel(
-                      candidate.species,
-                      candidate.form,
-                      candidate.speciesId
-                    )}
-                  </option>
-                ))}
-              </select>
+                isFiniteCatalog
+                localizeOptions={false}
+                onChange={(value) => onSelectSlot(Number(value))}
+                options={table.slots.map((candidate) => ({
+                  label: `Slot ${candidate.slot}: ${formatSpeciesFormLabel(
+                    candidate.species,
+                    candidate.form,
+                    candidate.speciesId
+                  )}`,
+                  value: candidate.slot
+                }))}
+                value={selectedSlot?.toString() ?? ''}
+              />
             </div>
 
             {battleSlot ? (
@@ -50913,20 +50833,21 @@ function SelectedRaidRewardPanel({
           <div className="encounter-edit-form">
             <div className="encounter-slot-header">
               <strong>{translateLiteral('Rewards')}</strong>
-              <select
-                aria-label={translateLiteral('Raid reward slot')}
-                className="km-select-control"
+              <SearchableOptionInput
+                ariaLabel={translateLiteral('Raid reward slot')}
+                data-km-source-site="raid-reward-slot-option"
                 disabled={table.rewards.length === 0}
-                onChange={(event) => onSelectSlot(Number(event.target.value))}
-                value={selectedSlot ?? ''}
-              >
-                {table.rewards.map((candidate) => (
-                  <option key={candidate.slot} value={candidate.slot}>
-                    {translateLiteral('Slot')} {candidate.slot}:{' '}
-                    {translateLiteral(candidate.itemName)}
-                  </option>
-                ))}
-              </select>
+                isFiniteCatalog
+                localizeOptions={false}
+                onChange={(value) => onSelectSlot(Number(value))}
+                options={table.rewards.map((candidate) => ({
+                  label: `${translateLiteral('Slot')} ${candidate.slot}: ${translateLiteral(
+                    candidate.itemName
+                  )}`,
+                  value: candidate.slot
+                }))}
+                value={selectedSlot?.toString() ?? ''}
+              />
             </div>
 
             {reward ? (
@@ -51629,38 +51550,29 @@ function SelectedBehaviorPanel({
                             label={localizedBehaviorFieldLabel}
                           />
                           {fieldOptions && fieldOptions.length > 0 ? (
-                            <HoverTooltip content={localizedBehaviorFieldHover}>
-                              <select
-                                aria-label={translateLiteral(field.label)}
-                                className="km-select-control"
-                                disabled={isDisabled}
-                                id={`behavior-field-${field.field}`}
-                                onChange={(event) =>
-                                  handleBehaviorDraftChange(field, event.target.value)
-                                }
-                                value={draftValue}
-                              >
-                                {addBehaviorDraftFallbackOption(
-                                  fieldOptions,
-                                  draftValue,
-                                  currentValue
-                                ).map((option) => (
-                                  <option
-                                    data-localization-ignore={
-                                      field.field === 'behavior' || field.field === 'form'
-                                        ? undefined
-                                        : 'true'
-                                    }
-                                    key={`${field.field}-${option.value}`}
-                                    value={option.value}
-                                  >
-                                    {field.field === 'behavior' || field.field === 'form'
-                                      ? translateLiteral(option.label)
-                                      : option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </HoverTooltip>
+                            <SearchableOptionInput
+                              ariaLabel={localizedBehaviorFieldLabel}
+                              data-km-source-site="behavior-field-option"
+                              data-localization-ignore={
+                                field.field === 'behavior' || field.field === 'form'
+                                  ? undefined
+                                  : 'true'
+                              }
+                              disabled={isDisabled}
+                              id={`behavior-field-${field.field}`}
+                              isFiniteCatalog
+                              localizeOptions={
+                                field.field === 'behavior' || field.field === 'form'
+                              }
+                              onChange={(value) => handleBehaviorDraftChange(field, value)}
+                              options={addBehaviorDraftFallbackOption(
+                                fieldOptions,
+                                draftValue,
+                                currentValue
+                              )}
+                              tooltipContent={localizedBehaviorFieldHover}
+                              value={draftValue}
+                            />
                           ) : (
                             <HoverTooltip content={localizedBehaviorFieldHover}>
                               <input
@@ -51843,11 +51755,11 @@ function PlacementSection({
     (remotePaging !== undefined ||
       (workflow?.objects.some((placedObject) => placedObject.categoryId?.trim()) ?? false));
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const defaultPlacementCategoryId = getDefaultPlacementCategoryId(placementCategories);
   const activeCategoryId = supportsPlacementCategories
     ? remotePaging?.categoryId ??
       placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
-      placementCategories[0]?.id ??
-      null
+      defaultPlacementCategoryId
     : null;
   const filteredObjects = useMemo(() => {
     const objects = workflow?.objects ?? [];
@@ -56667,31 +56579,39 @@ function FpsPatchSection({
                           {t(`fpsPatch.animationTiming.state.${currentStateKey}`)}
                         </span>
                       </div>
-                      <label htmlFor={`fps-patch-${component.id}-desired`}>
-                        <span>{t('fpsPatch.animationTiming.desired')}</span>
-                        <select
-                          className="km-select-control"
+                      <div>
+                        <span>
+                          <label htmlFor={`fps-patch-${component.id}-desired`}>
+                            {t('fpsPatch.animationTiming.desired')}
+                          </label>
+                        </span>
+                        <SearchableOptionInput
+                          ariaLabel={t('fpsPatch.animationTiming.desired')}
+                          data-km-source-site="fps-patch-animation-timing-desired-option"
                           disabled={status.status === 'unsupported'}
                           id={`fps-patch-${component.id}-desired`}
-                          onChange={(event) =>
+                          isFiniteCatalog
+                          localizeOptions={false}
+                          onChange={(value) =>
                             handleDesiredAnimationTimingChange(
                               component.id,
-                              event.target.value === 'synchronized'
+                              value === 'synchronized'
                             )
                           }
+                          options={[
+                            {
+                              disabled: component.inputState === 'blocked',
+                              label: t('fpsPatch.animationTiming.desiredState.synchronized'),
+                              value: 'synchronized'
+                            },
+                            {
+                              label: t('fpsPatch.animationTiming.desiredState.removeKmTiming'),
+                              value: 'removeKmTiming'
+                            }
+                          ]}
                           value={desiredState}
-                        >
-                          <option
-                            disabled={component.inputState === 'blocked'}
-                            value="synchronized"
-                          >
-                            {t('fpsPatch.animationTiming.desiredState.synchronized')}
-                          </option>
-                          <option value="removeKmTiming">
-                            {t('fpsPatch.animationTiming.desiredState.removeKmTiming')}
-                          </option>
-                        </select>
-                      </label>
+                        />
+                      </div>
                     </div>
                     {component.inputState === 'blocked' ? (
                       <details className="fps-patch-animation-timing-input-warning">
@@ -58958,24 +58878,27 @@ function SettingsSection({
                 htmlFor="settings-cache-limit"
                 label={translateLiteral('Maximum cache size')}
               />
-              <select
-                className="km-select-control"
+              <SearchableOptionInput
+                ariaLabel={translateLiteral('Maximum cache size')}
+                data-km-source-site="settings-cache-limit-option"
                 disabled={isCacheControlBusy || svCacheStatus === null}
+                emptyOptionLabel={
+                  svCacheStatus === null
+                    ? hasSvCacheRequestError
+                      ? 'Retry required'
+                      : 'Checking status'
+                    : undefined
+                }
                 id="settings-cache-limit"
-                onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
-                value={activeCacheLimit}
-              >
-                {svCacheStatus === null ? (
-                  <option value="">
-                    {hasSvCacheRequestError ? 'Retry required' : 'Checking status'}
-                  </option>
-                ) : null}
-                {svCacheLimitOptions.map((option) => (
-                  <option key={option.bytes} value={option.bytes}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                isFiniteCatalog
+                localizeOptions={false}
+                onChange={(value) => onChangeSvCacheLimit(Number(value))}
+                options={svCacheLimitOptions.map((option) => ({
+                  label: option.label,
+                  value: option.bytes
+                }))}
+                value={activeCacheLimit.toString()}
+              />
             </div>
 
             <div aria-live="polite" className="metric sv-cache-size-metric">
@@ -65212,22 +65135,21 @@ function PokemonPersonalFieldInput({
     >
       <FieldLabel help={localizedHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
-        <HoverTooltip content={localizedHoverText}>
-          <select
-            aria-label={localizedFieldLabel}
-            className="km-select-control"
-            disabled={disabled}
-            id={inputId}
-            onChange={(event) => onChange(event.target.value)}
-            value={draftValue === '1' ? '1' : '0'}
-          >
-            <option value="1">{translateLiteral('Yes')}</option>
-            <option value="0">{translateLiteral('No')}</option>
-          </select>
-        </HoverTooltip>
+        <SearchableOptionInput
+          ariaLabel={localizedFieldLabel}
+          data-km-source-site="pokemon-personal-field-boolean-option"
+          disabled={disabled}
+          id={inputId}
+          isFiniteCatalog
+          onChange={onChange}
+          options={searchableBooleanOptions}
+          tooltipContent={localizedHoverText}
+          value={draftValue === '1' ? '1' : '0'}
+        />
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaLabel={field.label}
+          data-km-source-site="pokemon-personal-field-option"
           disabled={disabled}
           id={inputId}
           onChange={onChange}
@@ -65494,353 +65416,6 @@ type DependencyWarningState = {
 
 type PokemonYieldConfirmationKind = 'ev' | 'exp';
 type PokemonYieldConfirmationState = 'remove' | 'restore' | null;
-
-function SearchableOptionInput({
-  ariaLabel,
-  ariaDescribedBy,
-  ariaInvalid,
-  disabled,
-  emptyOptionLabel,
-  id,
-  onChange,
-  onFocus,
-  options,
-  value
-}: {
-  ariaLabel: string;
-  ariaDescribedBy?: string;
-  ariaInvalid?: boolean;
-  disabled: boolean;
-  emptyOptionLabel?: string;
-  id?: string;
-  onChange: (value: string) => void;
-  onFocus?: () => void;
-  options: EditableFieldOption[];
-  value: string;
-}) {
-  const { translateLiteral } = useLocalization();
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const generatedId = `searchable-option-${useId().replace(/:/g, '')}`;
-  const inputId = id ?? generatedId;
-  const listboxId = `${inputId}-listbox`;
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
-  const localizedAriaLabel = translateLiteral(ariaLabel);
-  const localizedEmptyOptionLabel =
-    emptyOptionLabel !== undefined ? translateLiteral(emptyOptionLabel) : undefined;
-  const localizedOptions = useMemo(
-    () => options.map((option) => ({ ...option, label: translateLiteral(option.label) })),
-    [options, translateLiteral]
-  );
-  const formattedValue = useMemo(
-    () => formatSearchableOptionValue(value, localizedOptions, localizedEmptyOptionLabel),
-    [localizedEmptyOptionLabel, localizedOptions, value]
-  );
-  const [query, setQuery] = useCoalescedTextInputState(formattedValue);
-  const [hasUserQuery, setHasUserQuery] = useState(false);
-  const inputTooltipText = hasUserQuery ? undefined : formattedValue || undefined;
-  const optionQuery = hasUserQuery ? query : '';
-  const trimmedOptionQuery = optionQuery.trim().toLocaleLowerCase();
-  const hasEmptyOption = localizedEmptyOptionLabel !== undefined;
-  const emptyOptionMatches =
-    hasEmptyOption &&
-    (trimmedOptionQuery.length === 0 ||
-      localizedEmptyOptionLabel.toLocaleLowerCase().includes(trimmedOptionQuery));
-  const filteredOptions = useMemo(
-    () => getSmartOptionMatches(optionQuery, localizedOptions),
-    [localizedOptions, optionQuery]
-  );
-  const menuItems = useMemo(
-    () => [
-      ...(emptyOptionMatches
-        ? [
-            {
-              key: 'empty',
-              kind: 'empty' as const,
-              label: localizedEmptyOptionLabel ?? ''
-            }
-          ]
-        : []),
-      ...filteredOptions.map((option) => ({
-        key: `option-${option.value}`,
-        kind: 'option' as const,
-        label: option.label,
-        option
-      }))
-    ],
-    [emptyOptionMatches, filteredOptions, localizedEmptyOptionLabel]
-  );
-  const hasMenu = isOpen && !disabled && menuItems.length > 0;
-
-  useEffect(() => {
-    if (!isOpen) {
-      setQuery(formattedValue);
-      setHasUserQuery(false);
-    }
-  }, [formattedValue, isOpen]);
-
-  useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-      setActiveOptionIndex(-1);
-    }
-  }, [disabled]);
-
-  useEffect(() => {
-    if (!hasMenu) {
-      setActiveOptionIndex(-1);
-      return;
-    }
-
-    setActiveOptionIndex((currentIndex) =>
-      currentIndex >= menuItems.length ? menuItems.length - 1 : currentIndex
-    );
-  }, [hasMenu, menuItems.length]);
-
-  useLayoutEffect(() => {
-    if (!hasMenu || activeOptionIndex < 0) {
-      return;
-    }
-
-    const activeOption = menuRef.current?.querySelector<HTMLElement>(
-      `[data-option-index="${activeOptionIndex}"]`
-    );
-    activeOption?.scrollIntoView({ block: 'nearest' });
-  }, [activeOptionIndex, hasMenu]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-        setActiveOptionIndex(-1);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [isOpen]);
-
-  const selectOption = (option: EditableFieldOption) => {
-    const selectedValue = option.value.toString();
-    if (selectedValue !== value.trim()) {
-      onChange(selectedValue);
-    }
-    setQuery(option.label);
-    setHasUserQuery(false);
-    setIsOpen(false);
-  };
-
-  const selectEmptyOption = () => {
-    if (value.trim().length > 0) {
-      onChange('');
-    }
-    setQuery(localizedEmptyOptionLabel ?? '');
-    setHasUserQuery(false);
-    setIsOpen(false);
-  };
-
-  const applyInteractionResult = (
-    result: ReturnType<typeof transitionSearchableOptionInteraction>
-  ) => {
-    setQuery(result.state.query);
-    setHasUserQuery(result.state.hasUserQuery);
-    setIsOpen(result.state.isOpen);
-  };
-
-  const restoreCommittedValue = () => {
-    applyInteractionResult(
-      transitionSearchableOptionInteraction(
-        { hasUserQuery, isOpen, query },
-        { formattedValue, type: 'restore' }
-      )
-    );
-    setActiveOptionIndex(-1);
-  };
-
-  const selectMenuItem = (index: number) => {
-    const item = menuItems[index];
-    if (!item) {
-      return;
-    }
-
-    if (item.kind === 'empty') {
-      selectEmptyOption();
-    } else {
-      selectOption(item.option);
-    }
-  };
-
-  const commitTypedOption = () => {
-    const result = transitionSearchableOptionInteraction(
-      { hasUserQuery, isOpen, query },
-      {
-        committedValue: value,
-        emptyOptionLabel: localizedEmptyOptionLabel,
-        formattedValue,
-        options: localizedOptions,
-        type: 'commit'
-      }
-    );
-    if (result.sourceCommit !== null) {
-      onChange(result.sourceCommit.value);
-    }
-    applyInteractionResult(result);
-    setActiveOptionIndex(-1);
-  };
-
-  const handleInputChange = (nextValue: string) => {
-    applyInteractionResult(
-      transitionSearchableOptionInteraction(
-        { hasUserQuery, isOpen, query },
-        { query: nextValue, type: 'input' }
-      )
-    );
-    setActiveOptionIndex(-1);
-  };
-
-  return (
-    <HoverTooltip
-      content={hasMenu ? undefined : inputTooltipText}
-      describe={false}
-      placement="above"
-    >
-      <div
-        className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
-        ref={containerRef}
-      >
-        <input
-          aria-activedescendant={
-            hasMenu && activeOptionIndex >= 0
-              ? `${listboxId}-option-${activeOptionIndex}`
-              : undefined
-          }
-          aria-autocomplete="list"
-          aria-controls={hasMenu ? listboxId : undefined}
-          aria-describedby={ariaDescribedBy}
-          aria-expanded={hasMenu}
-          aria-label={localizedAriaLabel}
-          aria-haspopup="listbox"
-          aria-invalid={ariaInvalid}
-          autoComplete="off"
-          disabled={disabled}
-          id={inputId}
-          inputMode="search"
-          onBlur={commitTypedOption}
-          onChange={(event) => handleInputChange(event.target.value)}
-          onFocus={() => {
-            applyInteractionResult(
-              transitionSearchableOptionInteraction(
-                { hasUserQuery, isOpen, query },
-                { formattedValue, type: 'focus' }
-              )
-            );
-            setActiveOptionIndex(-1);
-            onFocus?.();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && isOpen) {
-              event.preventDefault();
-              event.stopPropagation();
-              restoreCommittedValue();
-              return;
-            }
-
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              setIsOpen(true);
-              setActiveOptionIndex((currentIndex) => {
-                if (menuItems.length === 0) {
-                  return -1;
-                }
-
-                if (event.key === 'ArrowDown') {
-                  return currentIndex < 0 ? 0 : (currentIndex + 1) % menuItems.length;
-                }
-
-                return currentIndex < 0
-                  ? menuItems.length - 1
-                  : (currentIndex - 1 + menuItems.length) % menuItems.length;
-              });
-              return;
-            }
-
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (hasMenu && activeOptionIndex >= 0) {
-                selectMenuItem(activeOptionIndex);
-                return;
-              }
-
-              commitTypedOption();
-            }
-          }}
-          role="combobox"
-          type="text"
-          value={query}
-        />
-        <button
-          aria-label={translateLiteral(`Show ${ariaLabel} options`)}
-          className="searchable-option-toggle"
-          disabled={disabled}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            setQuery(formattedValue);
-            setHasUserQuery(false);
-            setActiveOptionIndex(-1);
-            setIsOpen((current) => (current && !hasUserQuery ? false : true));
-          }}
-          tabIndex={-1}
-          type="button"
-        >
-          <ChevronDown aria-hidden="true" size={16} />
-        </button>
-        {hasMenu ? (
-          <div
-            aria-label={localizedAriaLabel}
-            className="searchable-option-menu"
-            id={listboxId}
-            ref={menuRef}
-            role="listbox"
-          >
-            {menuItems.map((item, index) => {
-              const isSelected =
-                item.kind === 'empty'
-                  ? value.trim().length === 0
-                  : item.option.value.toString() === value.trim();
-
-              return (
-                <button
-                  aria-selected={isSelected}
-                  className={`searchable-option-row ${
-                    activeOptionIndex === index ? 'is-active' : ''
-                  }`.trim()}
-                  data-option-index={index}
-                  id={`${listboxId}-option-${index}`}
-                  key={`${ariaLabel}:${item.key}`}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    selectMenuItem(index);
-                  }}
-                  onPointerMove={() => setActiveOptionIndex(index)}
-                  role="option"
-                  tabIndex={-1}
-                  type="button"
-                >
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </div>
-    </HoverTooltip>
-  );
-}
 
 function areStringArraysEqual(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);

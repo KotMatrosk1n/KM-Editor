@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { CheckCircle2, ClipboardCheck, Coffee, RotateCcw, Save, Search, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, ClipboardCheck, Coffee, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type BattleCafeRewardItemOption,
@@ -10,24 +10,20 @@ import {
   type BattleCafeRewardsWorkflow
 } from '../../bridge/battleCafeRewardsContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
-import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
-import {
-  filterAndRankSearchableOptions,
-  findExactSearchableOption,
-  parseBoundedWholeNumberDraft
-} from '../gameplayInputDrafts';
+import { parseBoundedWholeNumberDraft } from '../gameplayInputDrafts';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 const battleCafeRewardsDomain = 'workflow.battleCafeRewards';
 const battleCafeRewardsRecordId = 'battle-cafe-rewards';
 const battleCafeRewardsField = 'rows';
-const maximumSuggestions = 20;
+const maximumVisibleItemOptions = 20;
 
 type OwnerKey = 'dwightPercent' | 'bernardPercent' | 'richardPercent';
 
@@ -462,143 +458,40 @@ function BattleCafeItemPicker({
   value: number;
 }) {
   const { t } = useLocalization();
-  const listId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const selected = itemOptions.find((option) => option.itemId === value) ?? null;
-  const [query, setQuery] = useCoalescedTextInputState();
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const suggestions = useMemo(
-    () => filterAndRankSearchableOptions(
-      itemOptions,
-      query,
-      maximumSuggestions,
-      (option) => option.itemId,
-      (option) => option.name,
-      (option) => [option.name, option.category, option.itemId.toString()]
-    ),
-    [itemOptions, query]
+  const options = useMemo(
+    () => itemOptions.map((option) => ({
+      groupLabel: `${option.category} · #${option.itemId}`,
+      inputLabel: option.name,
+      label: option.name,
+      searchAliases: [option.category],
+      value: option.itemId
+    })),
+    [itemOptions]
   );
-
-  useEffect(() => {
-    setQuery(selected?.name ?? '');
-  }, [selected?.itemId, selected?.name]);
-
-  useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-      setActiveIndex(0);
-      setQuery(selected?.name ?? '');
-    }
-  }, [disabled, selected?.name]);
-
-  const select = (option: BattleCafeRewardItemOption) => {
-    if (disabled) {
-      return;
-    }
-    onChange(option.itemId);
-    setQuery(option.name);
-    setIsOpen(false);
-    setActiveIndex(0);
-    inputRef.current?.focus();
-  };
-
-  const resolveExactQuery = () => {
-    if (disabled) {
-      setQuery(selected?.name ?? '');
-      setIsOpen(false);
-      setActiveIndex(0);
-      return;
-    }
-    const exact = findExactSearchableOption(
-      itemOptions,
-      query,
-      (option) => option.itemId,
-      (option) => option.name
-    );
-    if (exact) {
-      onChange(exact.itemId);
-      setQuery(exact.name);
-    } else {
-      setQuery(selected?.name ?? '');
-    }
-    setIsOpen(false);
-    setActiveIndex(0);
-  };
 
   return (
     <div className="battle-cafe-item-picker">
-      <label htmlFor={`${listId}-input`}>{t('battleCafeRewards.row.item')}</label>
-      <div className="battle-cafe-combobox">
-        <Search aria-hidden="true" size={16} />
-        <input
-          aria-activedescendant={isOpen && suggestions[activeIndex] ? `${listId}-${suggestions[activeIndex].itemId}` : undefined}
-          aria-autocomplete="list"
-          aria-controls={isOpen && !disabled ? listId : undefined}
-           aria-expanded={isOpen && !disabled}
-          aria-label={t('battleCafeRewards.row.itemSearch', { row: rowIndex })}
-          disabled={disabled}
-          id={`${listId}-input`}
-          onBlur={resolveExactQuery}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setIsOpen(true);
-            setActiveIndex(0);
-          }}
-           onFocus={() => {
-             if (!disabled) setIsOpen(true);
-           }}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setIsOpen(true);
-              setActiveIndex((current) => Math.min(current + 1, suggestions.length - 1));
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setActiveIndex((current) => Math.max(0, current - 1));
-             } else if (
-               event.key === 'Enter' &&
-               !event.nativeEvent.isComposing &&
-               isOpen &&
-               suggestions[activeIndex]
-             ) {
-              event.preventDefault();
-              select(suggestions[activeIndex]);
-            } else if (event.key === 'Escape') {
-              setIsOpen(false);
-              setQuery(selected?.name ?? '');
-            }
-          }}
-          placeholder={t('battleCafeRewards.row.itemPlaceholder')}
-          ref={inputRef}
-          role="combobox"
-          type="search"
-          value={query}
-        />
-      </div>
-       {isOpen && !disabled ? (
-        <ul aria-label={t('battleCafeRewards.row.itemResults')} className="battle-cafe-item-results" id={listId} role="listbox">
-          {suggestions.length > 0 ? suggestions.map((option, index) => (
-            <li key={option.itemId} role="none">
-              <button
-                aria-selected={index === activeIndex}
-                className={index === activeIndex ? 'is-active' : ''}
-                id={`${listId}-${option.itemId}`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => select(option)}
-                role="option"
-                tabIndex={-1}
-                type="button"
-              >
-                <span data-localization-ignore="true">{option.name}</span>
-                <small data-localization-ignore="true">{option.category} · #{option.itemId}</small>
-              </button>
-            </li>
-          )) : (
-            <li className="empty-copy" role="none">{t('battleCafeRewards.row.noItems')}</li>
-          )}
-        </ul>
-      ) : null}
+      <label htmlFor={`battle-cafe-row-${rowIndex}-item`}>
+        {t('battleCafeRewards.row.item')}
+      </label>
+      <SearchableOptionInput
+        ariaLabel={t('battleCafeRewards.row.itemSearch', { row: rowIndex })}
+        data-km-source-site="battle-cafe-reward-item"
+        disabled={disabled}
+        id={`battle-cafe-row-${rowIndex}-item`}
+        isFiniteCatalog
+        localizeOptions={false}
+        maximumVisibleOptions={maximumVisibleItemOptions}
+        noOptionsLabel={t('battleCafeRewards.row.noItems')}
+        onChange={(nextValue) => {
+          const nextItemId = Number(nextValue);
+          if (Number.isSafeInteger(nextItemId)) {
+            onChange(nextItemId);
+          }
+        }}
+        options={options}
+        value={value.toString()}
+      />
     </div>
   );
 }

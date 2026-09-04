@@ -278,7 +278,8 @@
   padding: 0.7rem;
 }
 
-.km-research-lab-result-controls label,
+.km-research-lab-result-controls > label,
+.km-research-lab-result-select,
 .km-research-lab-filter-input {
   display: grid;
   gap: 0.3rem;

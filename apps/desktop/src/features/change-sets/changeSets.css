@@ -636,7 +636,8 @@
   padding: 0.65rem;
 }
 
-.change-set-result-controls label {
+.change-set-result-controls label,
+.change-set-result-field {
   display: grid;
   gap: 0.3rem;
   min-width: 0;
@@ -825,7 +826,8 @@
   gap: 8px;
 }
 
-.change-set-authoring-values label {
+.change-set-authoring-values label,
+.change-set-authoring-value-field {
   display: grid;
   gap: 5px;
 }

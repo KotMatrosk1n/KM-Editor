@@ -3,6 +3,7 @@
 import { Languages, ShieldAlert, UserRoundCog } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import {
   clearStagedTrainerIdentityDraftValue,
@@ -216,12 +217,14 @@ export function ZaTrainerIdentityActions({
 
       <div className="trainer-class-pair-editor">
         <label htmlFor="za-trainer-class-pair">{t('trainers.identity.classPair')}</label>
-        <select
-          className="km-select-control"
+        <SearchableOptionInput
+          ariaLabel={t('trainers.identity.classPair')}
+          data-km-source-site="za-trainer-class-pair"
           disabled={!canEditChanges || !trainer.canReassignClass}
           id="za-trainer-class-pair"
-          onChange={(event) => {
-            const value = event.target.value;
+          isFiniteCatalog
+          localizeOptions={false}
+          onChange={(value) => {
             setSelectedPairIds((currentDrafts) =>
               setTrainerIdentityDraftValue(
                 currentDrafts,
@@ -232,14 +235,14 @@ export function ZaTrainerIdentityActions({
             );
             setFeedback(null);
           }}
+          options={classPairOptions.map((option) => ({
+            label: `${option.label} · ${t('trainers.identity.classUsage', {
+              count: option.usageCount
+            })}`,
+            value: option.pairId
+          }))}
           value={selectedPairId}
-        >
-          {classPairOptions.map((option) => (
-            <option key={option.pairId} value={option.pairId}>
-              {option.label} · {t('trainers.identity.classUsage', { count: option.usageCount })}
-            </option>
-          ))}
-        </select>
+        />
         <button
           className="primary-button"
           disabled={!canStage}

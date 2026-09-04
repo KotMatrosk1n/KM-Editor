@@ -24,6 +24,7 @@ import {
 import type { SemanticExploreRevision } from '../../bridge/semanticExploreContracts';
 import { PublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { LoadingProgress } from '../../components/LoadingProgress';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
@@ -271,33 +272,50 @@ export function ResearchComparisonView({
                   />
                 </span>
               </label>
-              <label>
-                <span>{t('analysisPresentation.controls.resultType')}</span>
-                <select
-                  className="km-select-control"
-                  onChange={(event) => setDifferenceFilter(
-                    event.currentTarget.value as typeof differenceFilter
-                  )}
+              <div className="km-searchable-select-field km-research-lab-result-select">
+                <label htmlFor="research-comparison-result-type">
+                  {t('analysisPresentation.controls.resultType')}
+                </label>
+                <SearchableOptionInput
+                  ariaLabel={t('analysisPresentation.controls.resultType')}
+                  data-km-source-site="research-comparison-result-type"
+                  disabled={false}
+                  id="research-comparison-result-type"
+                  isFiniteCatalog
+                  localizeOptions={false}
+                  onChange={(value) => setDifferenceFilter(value as typeof differenceFilter)}
+                  options={[
+                    { label: t('analysisPresentation.controls.allResults'), value: 'all' },
+                    { label: t(researchDifferenceKey('added')), value: 'added' },
+                    { label: t(researchDifferenceKey('removed')), value: 'removed' },
+                    { label: t(researchDifferenceKey('changed')), value: 'changed' }
+                  ]}
                   value={differenceFilter}
-                >
-                  <option value="all">{t('analysisPresentation.controls.allResults')}</option>
-                  <option value="added">{t(researchDifferenceKey('added'))}</option>
-                  <option value="removed">{t(researchDifferenceKey('removed'))}</option>
-                  <option value="changed">{t(researchDifferenceKey('changed'))}</option>
-                </select>
-              </label>
-              <label>
-                <span>{t('analysisPresentation.controls.sort')}</span>
-                <select
-                  className="km-select-control"
-                  onChange={(event) => setResultOrder(event.currentTarget.value as typeof resultOrder)}
+                />
+              </div>
+              <div className="km-searchable-select-field km-research-lab-result-select">
+                <label htmlFor="research-comparison-sort">
+                  {t('analysisPresentation.controls.sort')}
+                </label>
+                <SearchableOptionInput
+                  ariaLabel={t('analysisPresentation.controls.sort')}
+                  data-km-source-site="research-comparison-sort"
+                  disabled={false}
+                  id="research-comparison-sort"
+                  isFiniteCatalog
+                  localizeOptions={false}
+                  onChange={(value) => setResultOrder(value as typeof resultOrder)}
+                  options={[
+                    { label: t('analysisPresentation.controls.path'), value: 'path' },
+                    {
+                      label: t('analysisPresentation.controls.resultType'),
+                      value: 'difference'
+                    },
+                    { label: t('analysisPresentation.controls.largestFirst'), value: 'largest' }
+                  ]}
                   value={resultOrder}
-                >
-                  <option value="path">{t('analysisPresentation.controls.path')}</option>
-                  <option value="difference">{t('analysisPresentation.controls.resultType')}</option>
-                  <option value="largest">{t('analysisPresentation.controls.largestFirst')}</option>
-                </select>
-              </label>
+                />
+              </div>
             </div>
           ) : null}
           {normalizedResultFilter ? (

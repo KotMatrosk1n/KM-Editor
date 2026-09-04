@@ -611,13 +611,135 @@ const sourceRevisionDispatch = projectBridgeDispatcher.slice(
 assert.ok(
   sourceRevisionDispatchStart >= 0
     && sourceRevisionDispatchEnd > sourceRevisionDispatchStart
-    && /ShouldProtectSourceObservationWithOutputSafetyLock\([\s\S]*?\? ExecuteExclusiveOutputOperation\(request\.Payload\.Paths, CaptureObservation\)[\s\S]*?: CaptureObservation\(\)/.test(
+    && /ExecuteSemanticExploreSourceObservation\([\s\S]*?captureSourceFingerprint =>[\s\S]*?var sourceObservationStarted = false;[\s\S]*?CaptureObservation\(\)[\s\S]*?sourceObservationStarted = true;[\s\S]*?initialFingerprint = captureSourceFingerprint\(\);[\s\S]*?observedFingerprint = captureSourceFingerprint\(\);/.test(
+      sourceRevisionDispatch
+    )
+    && /if \(!ShouldProtectSourceObservationWithOutputSafetyLock\([\s\S]*?return CaptureObservation\(\);[\s\S]*?try[\s\S]*?return ExecuteExclusiveOutputOperation\([\s\S]*?request\.Payload\.Paths,[\s\S]*?CaptureObservation\);[\s\S]*?catch \(Exception exception\) when \([\s\S]*?!sourceObservationStarted[\s\S]*?IsUnavailableOutputSafetyMetadata\(exception\)[\s\S]*?return CaptureObservation\(\);/.test(
       sourceRevisionDispatch
     )
     && /string\.IsNullOrWhiteSpace\(paths\.OutputRootPath\)[\s\S]*?return false;[\s\S]*?!Path\.IsPathFullyQualified\(paths\.OutputRootPath\)[\s\S]*?return true;[\s\S]*?Path\.GetFullPath\(paths\.OutputRootPath\)[\s\S]*?ArgumentException or[\s\S]*?NotSupportedException or[\s\S]*?PathTooLongException or[\s\S]*?System\.Security\.SecurityException[\s\S]*?return true;[\s\S]*?OutputSafetyApplicationService\.ResolveScope\([\s\S]*?new OutputScopeDto\(projectId, paths\)[\s\S]*?return true;[\s\S]*?catch \(OutputScopeMismatchException\)[\s\S]*?return false;/.test(
       sourceRevisionDispatch
+    )
+    && /IsUnavailableOutputSafetyMetadata\(Exception exception\)[\s\S]*?return exception is OutputMetadataLayoutUnavailableException;/.test(
+      sourceRevisionDispatch
+    )
+    && !/IsUnavailableOutputSafetyMetadata\(Exception exception\)[\s\S]*?(?:OutputPathSecurityException|OutputRootLockTimeoutException|IOException|UnauthorizedAccessException)/.test(
+      sourceRevisionDispatch
     ),
-  'Source revision reads must bypass coordinator locking for unavailable or invalid output scopes while preserving fail-closed locking for verified output roots.'
+  'Source revision reads must bypass unavailable output metadata only before observation, while active writers and source-read failures remain fail closed.'
+);
+const svWorkflowService = read('../../../src/KM.SV/Workflows/SvWorkflowService.cs');
+for (const [label, workflowService, lockOwner] of [
+  ['Scarlet/Violet', svWorkflowService, 'SvWorkflowFileSource'],
+  ['Z-A', zaWorkflowService, 'ZaWorkflowFileSource']
+]) {
+  assert.match(
+    workflowService,
+    new RegExp(
+      `public \\(string Fingerprint, string Token\\) ExecuteSemanticExploreSourceObservation\\([\\s\\S]*?using var outputLock = ${lockOwner}\\.AcquireOutputLock\\(paths\\);[\\s\\S]*?return observation\\(\\(\\) => CaptureSemanticExploreSourceFingerprintLocked\\(paths\\)\\);`
+    ),
+    `${label} source observation must acquire its game-family output mutex before a caller can enter the durable coordinator.`
+  );
+  assert.doesNotMatch(
+    workflowService,
+    /ExecuteSemanticExploreSourceObservation<TResult>/,
+    `${label} source observation must not allow deferred generic work to escape its mutex scope.`
+  );
+}
+assert.match(
+  sourceRevisionDispatch,
+  /private \(string Fingerprint, string Token\) ExecuteSemanticExploreSourceObservation\([\s\S]*?zaWorkflowService\.ExecuteSemanticExploreSourceObservation\(paths, observation\)[\s\S]*?svWorkflowService\.ExecuteSemanticExploreSourceObservation\(paths, observation\)/,
+  'S/V and Z-A source revision must enter the game-family mutex before the durable output boundary.'
+);
+const outputCoordinator = read(
+  '../../../src/KM.Core/Output/OutputTransactionCoordinator.cs'
+);
+const outputContracts = read(
+  '../../../src/KM.Core/Output/OutputTransactionContracts.cs'
+);
+assert.match(
+  outputContracts,
+  /public class OutputPathSecurityException : OutputCoordinatorException[\s\S]*?protected OutputPathSecurityException\(string message, Exception innerException\)[\s\S]*?public sealed class OutputMetadataLayoutUnavailableException : OutputPathSecurityException/,
+  'The metadata-layout classifier must remain catch-compatible with the public output-path security exception contract.'
+);
+assert.equal(
+  [...outputCoordinator.matchAll(/EnsureExclusiveOperationMetadataLayout\(\);/g)].length,
+  2,
+  'Only the two exclusive-operation overloads may classify initial metadata layout failure separately.'
+);
+assert.match(
+  outputCoordinator,
+  /EnsureExclusiveOperationMetadataLayout\(\)[\s\S]*?paths\.EnsureMetadataLayout\(\);[\s\S]*?catch \(OutputPathSecurityException exception\)[\s\S]*?throw new OutputMetadataLayoutUnavailableException\(exception\);/,
+  'Initial metadata-boundary failure must have a distinct type from later recovery failures.'
+);
+const applyCoordinatorStart = outputCoordinator.indexOf(
+  'public async Task<OutputApplyResult> ApplyAsync('
+);
+const firstExclusiveCoordinatorStart = outputCoordinator.indexOf(
+  'public async Task<TResult> ExecuteExclusiveOutputOperationAsync<TResult>(',
+  applyCoordinatorStart
+);
+const secondExclusiveCoordinatorStart = outputCoordinator.indexOf(
+  'public async Task<TResult> ExecuteExclusiveOutputOperationAsync<TResult>(',
+  firstExclusiveCoordinatorStart + 1
+);
+const recoveryCoordinatorStart = outputCoordinator.indexOf(
+  'public async Task<OutputRecoveryReport> InspectRecoveryAsync(',
+  secondExclusiveCoordinatorStart
+);
+const applyCoordinator = outputCoordinator.slice(
+  applyCoordinatorStart,
+  firstExclusiveCoordinatorStart
+);
+const firstExclusiveCoordinator = outputCoordinator.slice(
+  firstExclusiveCoordinatorStart,
+  secondExclusiveCoordinatorStart
+);
+const secondExclusiveCoordinator = outputCoordinator.slice(
+  secondExclusiveCoordinatorStart,
+  recoveryCoordinatorStart
+);
+const recoveryCoordinator = outputCoordinator.slice(
+  recoveryCoordinatorStart,
+  outputCoordinator.indexOf(
+    'public Task<OutputRecoveryReport> GetRecoveryStatusAsync(',
+    recoveryCoordinatorStart
+  )
+);
+assert.ok(
+  applyCoordinatorStart >= 0
+    && firstExclusiveCoordinatorStart > applyCoordinatorStart
+    && secondExclusiveCoordinatorStart > firstExclusiveCoordinatorStart
+    && recoveryCoordinatorStart > secondExclusiveCoordinatorStart
+    && applyCoordinator.includes('paths.EnsureMetadataLayout();')
+    && !applyCoordinator.includes('EnsureExclusiveOperationMetadataLayout();')
+    && firstExclusiveCoordinator.includes('EnsureExclusiveOperationMetadataLayout();')
+    && !firstExclusiveCoordinator.includes('paths.EnsureMetadataLayout();')
+    && secondExclusiveCoordinator.includes('EnsureExclusiveOperationMetadataLayout();')
+    && !secondExclusiveCoordinator.includes('paths.EnsureMetadataLayout();')
+    && recoveryCoordinator.includes('paths.EnsureMetadataLayout();')
+    && !recoveryCoordinator.includes('EnsureExclusiveOperationMetadataLayout();'),
+  'Only read-observation exclusive operations may classify initial metadata unavailability; Apply and recovery must retain raw fail-closed path validation.'
+);
+const applyChangePlanDispatchStart = projectBridgeDispatcher.indexOf(
+  'private string DispatchApplyChangePlan('
+);
+const applyChangePlanDispatchEnd = projectBridgeDispatcher.indexOf(
+  'private static ChangePlanOutputModeDto? GetBoundOutputMode(',
+  applyChangePlanDispatchStart
+);
+const applyChangePlanDispatch = projectBridgeDispatcher.slice(
+  applyChangePlanDispatchStart,
+  applyChangePlanDispatchEnd
+);
+assert.ok(
+  applyChangePlanDispatchStart >= 0
+    && applyChangePlanDispatchEnd > applyChangePlanDispatchStart
+    && !applyChangePlanDispatch.includes('ExecuteExclusiveOutputOperation(')
+    && /isPokemonLegendsZA[\s\S]*?zaWorkflowService\.ApplyChangePlan\([\s\S]*?isScarletViolet[\s\S]*?svWorkflowService\.ApplyChangePlan\([\s\S]*?ApplyVerifiedSwShChangePlan\(/.test(
+      applyChangePlanDispatch
+    ),
+  'Reviewed S/V and Z-A Apply must not nest the bridge output coordinator around workflow-owned transactions.'
 );
 const zaGameModuleBatchStart = projectBridgeDispatcher.indexOf(
   ' LoadGameModuleZaCapabilityBatchFresh('

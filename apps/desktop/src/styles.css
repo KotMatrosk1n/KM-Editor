@@ -1832,6 +1832,14 @@ h2 {
 
 .searchable-option-input {
   position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.km-searchable-select-field {
+  display: grid;
+  gap: var(--km-space-1, 0.375rem);
   min-width: 0;
 }
 
@@ -1849,6 +1857,7 @@ h2 {
   justify-content: center;
   width: 28px;
   height: 28px;
+  min-height: 28px;
   padding: 0;
   color: var(--color-text-soft);
   background: transparent;
@@ -1886,6 +1895,11 @@ h2 {
   border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   box-shadow: 0 18px 45px rgb(0 0 0 / 44%);
+}
+
+.searchable-option-listbox {
+  display: grid;
+  gap: 3px;
 }
 
 .searchable-option-row {
@@ -1933,6 +1947,12 @@ h2 {
   color: var(--color-text-muted);
   font-size: 0.625rem;
   font-weight: 800;
+}
+
+.searchable-option-empty {
+  padding: 10px 12px;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
 }
 
 .action-row {
@@ -3534,15 +3554,17 @@ h2 {
   min-width: 0;
 }
 
-.game-dump-format-field span,
-.game-dump-language-field > span {
+.game-dump-format-field > .editable-field-label-row > label,
+.game-dump-language-field > .editable-field-label-row > label {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0;
 }
 
 .game-dump-format-field select,
-.game-dump-language-field select {
+.game-dump-language-field select,
+.game-dump-format-field .searchable-option-input,
+.game-dump-language-field .searchable-option-input {
   width: 100%;
 }
 
@@ -5394,7 +5416,8 @@ h2 {
   align-items: end;
 }
 
-.dynamax-adventure-route-controls label,
+.dynamax-adventure-route-controls > label,
+.dynamax-adventure-route-select-field,
 .dynamax-adventure-route-search-controls label {
   display: grid;
   gap: 6px;
@@ -6414,8 +6437,8 @@ h2 {
   border-color: var(--color-accent);
 }
 
-.learnset-row span,
-.learnset-row strong {
+.learnset-row > span,
+.learnset-row > strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6479,7 +6502,8 @@ h2 {
   min-width: 0;
 }
 
-.text-language-field select {
+.text-language-field select,
+.text-language-field .searchable-option-input {
   width: 100%;
 }
 
@@ -7410,10 +7434,15 @@ h2 {
   height: 48px;
 }
 
-.trainer-party-header select {
+.trainer-party-sprite-empty {
+  display: block;
+}
+
+.trainer-party-header select,
+.trainer-party-header .searchable-option-input > input {
   min-width: 0;
   min-height: 38px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   color: var(--color-text);
   background-color: var(--color-surface);
   border: 1px solid var(--color-control-border);
@@ -7681,10 +7710,11 @@ h2 {
   font-size: 0.875rem;
 }
 
-.shop-inventory-header select {
+.shop-inventory-header select,
+.shop-inventory-header .searchable-option-input > input {
   min-width: 0;
   min-height: 38px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   color: var(--color-text);
   background-color: var(--color-surface);
   border: 1px solid var(--color-control-border);
@@ -8851,17 +8881,46 @@ h2 {
   outline-offset: -2px;
 }
 
-.type-chart-cell select {
+.type-chart-cell select,
+.type-chart-cell-selector {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0;
-  cursor: pointer;
 }
 
-.type-chart-cell select:disabled {
+.type-chart-cell-selector > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0 14px 0 0;
+  color: inherit;
+  caret-color: currentColor;
+  background-color: inherit;
+  border: 1px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+  font-weight: inherit;
+  text-align: center;
+}
+
+.type-chart-cell-selector > .searchable-option-toggle {
+  right: 1px;
+  width: 14px;
+  height: 100%;
+  min-height: 0;
+  color: inherit;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.type-chart-cell select:disabled,
+.type-chart-cell-selector > input:disabled {
   cursor: not-allowed;
+  opacity: 1;
 }
 
 .type-chart-cell-disabled {
@@ -9400,16 +9459,17 @@ h2 {
   max-width: 360px;
 }
 
-.fairy-gym-outcome-control span {
+.fairy-gym-outcome-control > .editable-field-label-row > label {
   color: var(--color-text-muted);
   font-size: 0.75rem;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.fairy-gym-outcome-control select {
+.fairy-gym-outcome-control select,
+.fairy-gym-outcome-control .searchable-option-input > input {
   min-height: 38px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   color: var(--color-text);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
@@ -9418,7 +9478,8 @@ h2 {
   font-weight: 800;
 }
 
-.fairy-gym-outcome-control select:disabled {
+.fairy-gym-outcome-control select:disabled,
+.fairy-gym-outcome-control .searchable-option-input > input:disabled {
   color: var(--color-text-muted);
   cursor: not-allowed;
   opacity: 0.72;
@@ -9743,7 +9804,7 @@ h2 {
   text-transform: uppercase;
 }
 
-.npc-item-gift-field small {
+.npc-item-gift-field > small {
   color: var(--color-text-muted);
   font-size: 0.6875rem;
   font-weight: 800;
@@ -9753,13 +9814,13 @@ h2 {
   color: var(--color-danger);
 }
 
-.npc-item-gift-field input[aria-invalid='true'] {
+.npc-item-gift-field > input[aria-invalid='true'] {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 2px rgb(var(--color-danger-rgb) / 18%);
 }
 
-.npc-item-gift-field select,
-.npc-item-gift-field input {
+.npc-item-gift-field > select,
+.npc-item-gift-field > input {
   min-width: 0;
   min-height: 38px;
   padding: 0 10px;
@@ -9771,8 +9832,8 @@ h2 {
   font-weight: 800;
 }
 
-.npc-item-gift-field select:disabled,
-.npc-item-gift-field input:disabled {
+.npc-item-gift-field > select:disabled,
+.npc-item-gift-field > input:disabled {
   color: var(--color-text-muted);
   cursor: not-allowed;
   opacity: 0.72;
@@ -10619,7 +10680,7 @@ h2 {
   cursor: default;
 }
 
-.exefs-row span {
+.exefs-row > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11162,7 +11223,8 @@ h2 {
   min-width: 0;
 }
 
-.sv-encounter-selector select:disabled {
+.sv-encounter-selector select:disabled,
+.sv-encounter-selector .searchable-option-input > input:disabled {
   color: var(--color-text-muted);
   border-style: dashed;
   cursor: not-allowed;
@@ -11403,10 +11465,11 @@ h2 {
   font-size: 0.875rem;
 }
 
-.encounter-slot-header select {
+.encounter-slot-header select,
+.encounter-slot-header .searchable-option-input > input {
   min-width: 0;
   min-height: 38px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   color: var(--color-text);
   background-color: var(--color-surface-muted);
   border: 1px solid var(--color-border-strong);
@@ -11416,12 +11479,14 @@ h2 {
   font-weight: 800;
 }
 
-.encounter-slot-header select:focus {
+.encounter-slot-header select:focus,
+.encounter-slot-header .searchable-option-input > input:focus {
   border-color: var(--color-accent-bright);
   box-shadow: 0 0 0 3px rgb(var(--color-accent-bright-rgb) / 24%);
 }
 
-.encounter-slot-header select:disabled {
+.encounter-slot-header select:disabled,
+.encounter-slot-header .searchable-option-input > input:disabled {
   color: var(--color-text-muted);
   cursor: not-allowed;
   opacity: 0.65;
@@ -13626,7 +13691,9 @@ input {
 .checkbox-field,
 .trainer-ai-flag,
 .trainer-party-header select,
+.trainer-party-header .searchable-option-input > input,
 .shop-inventory-header select,
+.shop-inventory-header .searchable-option-input > input,
 .search-box {
   color: var(--color-text);
   background-color: var(--color-surface-muted);
@@ -13638,7 +13705,9 @@ input {
 .path-field textarea:focus,
 .searchable-option-input:focus-within,
 .trainer-party-header select:focus,
+.trainer-party-header .searchable-option-input > input:focus,
 .shop-inventory-header select:focus,
+.shop-inventory-header .searchable-option-input > input:focus,
 .search-box:focus-within {
   border-color: var(--color-accent-bright);
   box-shadow: 0 0 0 3px rgb(var(--color-accent-bright-rgb) / 24%);
@@ -15387,7 +15456,8 @@ select.km-select-control:dir(rtl) {
   gap: 0.75rem;
 }
 
-.km-settings-grid label {
+.km-settings-grid > label,
+.km-settings-select-field {
   display: grid;
   gap: 0.35rem;
   min-width: 0;
@@ -15397,7 +15467,7 @@ select.km-select-control:dir(rtl) {
 }
 
 .km-settings-grid select,
-.km-settings-group button {
+.km-settings-grid .searchable-option-input > input {
   min-height: var(--km-control-min-height);
 }
 
@@ -15641,7 +15711,9 @@ select.km-select-control:dir(rtl) {
 }
 
 .trainer-pools-selection-card select,
-.trainer-class-pair-editor select {
+.trainer-class-pair-editor select,
+.trainer-pools-selection-card .searchable-option-input,
+.trainer-class-pair-editor .searchable-option-input {
   width: 100%;
   min-width: 0;
 }
@@ -15786,6 +15858,10 @@ select.km-select-control:dir(rtl) {
     color: ButtonText;
     background: ButtonFace;
     border-color: ButtonText;
+  }
+
+  .type-chart-cell:focus-within {
+    outline-color: Highlight;
   }
 
   :is(button, input[type='button'], input[type='reset'], input[type='submit']) {
@@ -16033,62 +16109,6 @@ select.km-select-control:dir(rtl) {
   gap: 0.35rem;
   min-width: 0;
   position: relative;
-}
-
-.battle-cafe-combobox {
-  align-items: center;
-  display: flex;
-  position: relative;
-}
-
-.battle-cafe-combobox > svg {
-  left: 0.7rem;
-  pointer-events: none;
-  position: absolute;
-}
-
-.battle-cafe-combobox input {
-  min-width: 0;
-  padding-left: 2.2rem;
-  width: 100%;
-}
-
-.battle-cafe-item-results {
-  background: var(--surface, #0e1729);
-  border: 1px solid var(--border-color, #2c3c5b);
-  border-radius: 0.65rem;
-  box-shadow: 0 0.7rem 2rem rgba(0, 0, 0, 0.32);
-  left: 0;
-  list-style: none;
-  margin: 0;
-  max-height: 15rem;
-  overflow-y: auto;
-  padding: 0.25rem;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.25rem);
-  z-index: 20;
-}
-
-.battle-cafe-item-results button {
-  background: transparent;
-  border: 0;
-  border-radius: 0.45rem;
-  color: inherit;
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.55rem 0.65rem;
-  text-align: left;
-  width: 100%;
-}
-
-.battle-cafe-item-results button:hover,
-.battle-cafe-item-results button.is-active {
-  background: color-mix(in srgb, var(--accent, #7c68ff) 18%, transparent);
-}
-
-.battle-cafe-item-results small {
-  color: var(--muted-text, #9da8bf);
 }
 
 .battle-cafe-percent-grid {
