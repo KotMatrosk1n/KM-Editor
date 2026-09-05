@@ -1,7 +1,14 @@
 {
   "keys": {
+    "settings.memory.showHeader": "RAM-Nutzung in Seitenüberschriften anzeigen",
+    "settings.memory.headerHelp": "Zeigt den gesamten privaten RAM dieser KM Editor-Instanz neben jedem Seitentitel an. Deine Auswahl wird gespeichert.",
+    "settings.memory.headerValue": "RAM: {value}",
+    "settings.memory.systemTotal": "System-RAM",
+    "settings.memory.systemAvailable": "Verfügbarer System-RAM",
+    "settings.memory.adaptiveHelp": "KM Editor hält Spieldaten für eine schnellere Navigation bereit. Er prüft regelmäßig den verfügbaren System-RAM und gibt ungenutzte Leseprozesse bei Speicherknappheit früher frei. Laufende Vorgänge und Sitzungsdaten bleiben geschützt; freigegebene Daten werden bei Bedarf neu geladen. Dies ist keine feste Speicherobergrenze.",
+    "settings.memory.retention": "Aktuelle Wartezeit für ungenutzte Caches: {seconds} Sekunden. Die Bereinigung prüft alle 15 Sekunden.",
     "settings.memory.title": "Gesamter Speicher von KM Editor",
-    "settings.memory.description": "Diese KM Editor-Instanz einschließlich Desktop, Arbeitsprozessen und WebView2. Wird alle fünf Sekunden aktualisiert, solange die Diagnose sichtbar ist.",
+    "settings.memory.description": "Diese KM Editor-Instanz einschließlich Desktop, Arbeitsprozessen und WebView2. Aktualisierung alle fünf Sekunden, solange Diagnose oder RAM-Anzeige sichtbar ist.",
     "settings.memory.ram": "RAM (privater Arbeitssatz)",
     "settings.memory.committed": "Zugesicherter Speicher",
     "settings.memory.metricHelp": "Privater RAM zählt den residenten Speicher, ohne gemeinsam genutzte Seiten mehrfach zu zählen. Zugesicherter Speicher kann ausgelagerten Speicher enthalten. Gemeinsam genutzter Speicher und GPU-Speicher sind nicht enthalten.",

@@ -14,6 +14,7 @@ import {
   X
 } from 'lucide-react';
 import { useLocalization } from '../localization';
+import { HeaderMemoryUsage } from '../features/settings/ProcessMemoryPanel';
 import { TooltipIconVisibilityControl } from './TooltipIconVisibility';
 
 export type WorkspaceHeaderProps = {
@@ -104,7 +105,7 @@ export function WorkspaceHeader({
 
         <div className="title-block">
           <p className="project-state">{activeProjectStateLabel}</p>
-          <h1>{activeSectionLabel}</h1>
+          <div className="km-page-title-row"><h1>{activeSectionLabel}</h1><HeaderMemoryUsage /></div>
         </div>
       </div>
 

@@ -1,7 +1,14 @@
 {
   "keys": {
+    "settings.memory.showHeader": "在页面标题旁显示内存用量",
+    "settings.memory.headerHelp": "在每个页面标题旁显示此 KM Editor 实例的私有内存总用量。你的选择会被保存。",
+    "settings.memory.headerValue": "内存：{value}",
+    "settings.memory.systemTotal": "系统内存",
+    "settings.memory.systemAvailable": "系统可用内存",
+    "settings.memory.adaptiveHelp": "KM Editor 会保留游戏数据以加快页面切换。它会定期检查系统可用内存，在内存不足时更早释放闲置的读取进程。正在进行的操作和会话数据会受到保护；已释放的数据会在需要时重新加载。这不是严格的内存上限。",
+    "settings.memory.retention": "当前闲置缓存超时时间：{seconds} 秒。每 15 秒检查一次是否需要清理。",
     "settings.memory.title": "KM Editor 总内存",
-    "settings.memory.description": "当前 KM Editor 实例，包括桌面、工作进程和 WebView2。诊断页面可见时每五秒更新一次。",
+    "settings.memory.description": "此 KM Editor 实例，包括桌面程序、工作进程和 WebView2。当诊断页面或标题旁的内存用量可见时，每五秒更新一次。",
     "settings.memory.ram": "RAM（专用工作集）",
     "settings.memory.committed": "已提交内存",
     "settings.memory.metricHelp": "专用 RAM 统计驻留内存，避免重复计算共享页面。已提交内存可能包含已换出到磁盘的内存。不包含共享内存和 GPU 内存。",

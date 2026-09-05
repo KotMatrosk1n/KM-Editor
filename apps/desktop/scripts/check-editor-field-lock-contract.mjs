@@ -45,7 +45,7 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  272,
+  273,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
