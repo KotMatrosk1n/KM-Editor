@@ -1,13 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
-  ClipboardCheck,
   Eye,
   EyeOff,
   FileWarning,
   ListChecks,
   LockKeyhole,
-  Save,
   Sparkles,
   type LucideIcon
 } from 'lucide-react';
@@ -96,8 +94,6 @@ export function TmMachineControlsSection({
   hasConflictingEditSession,
   isChangePlanApplying,
   isChangePlanCreating,
-  onApplyChangePlan,
-  onCreateChangePlan,
   onStage,
   panelOutput,
   stagingTarget,
@@ -107,8 +103,6 @@ export function TmMachineControlsSection({
   hasConflictingEditSession: boolean;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
-  onApplyChangePlan: () => void;
-  onCreateChangePlan: () => void;
   onStage: (target: TmMachineControlStagingTarget) => void;
   panelOutput: WorkflowPanelOutput;
   stagingTarget: TmMachineControlStagingTarget | null;
@@ -118,15 +112,6 @@ export function TmMachineControlsSection({
   const pendingControlCount = getTmMachineControlPendingCount(editSession);
   const isBusy =
     stagingTarget !== null || isChangePlanCreating || isChangePlanApplying;
-  const hasReviewableChanges = (editSession?.pendingEdits.length ?? 0) > 0;
-  const canReviewPlan = hasReviewableChanges && !hasConflictingEditSession && !isBusy;
-  const canApplyPlan =
-    hasReviewableChanges &&
-    panelOutput.changePlan !== null &&
-    panelOutput.changePlan.canApply &&
-    panelOutput.changePlan.writes.length > 0 &&
-    !hasConflictingEditSession &&
-    !isBusy;
   usePublishCommonEditorError({
     domain: 'workflow.tmMachineControls',
     field: 'editSession',
@@ -293,35 +278,7 @@ export function TmMachineControlsSection({
           <p className="empty-copy">{t('tmMachineControls.empty')}</p>
         )}
 
-        <div className="tm-machine-controls-review-actions">
-          <button
-            className="secondary-button"
-            disabled={!canReviewPlan}
-            onClick={onCreateChangePlan}
-            type="button"
-          >
-            <ClipboardCheck aria-hidden="true" size={16} />
-            <span>
-              {isChangePlanCreating
-                ? t('tmMachineControls.reviewing')
-                : t('tmMachineControls.review')}
-            </span>
-          </button>
-          <button
-            className="primary-button"
-            disabled={!canApplyPlan}
-            onClick={onApplyChangePlan}
-            type="button"
-          >
-            <Save aria-hidden="true" size={16} />
-            <span>
-              {isChangePlanApplying
-                ? t('tmMachineControls.applying')
-                : t('tmMachineControls.apply')}
-            </span>
-          </button>
-          <p>{t('tmMachineControls.reviewHelp')}</p>
-        </div>
+        <p className="field-note">{t('tmMachineControls.stageHelp')}</p>
       </section>
 
       <WorkflowPanelOutputSections

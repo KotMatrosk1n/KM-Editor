@@ -1295,17 +1295,38 @@ internal sealed class SvWorkflowFileSource
                 fullTargetPath,
                 Math.Min(coordinatorOptions.MaximumFingerprintFileBytes, remainingBackupBytes));
             var context = mutation.ApplyContext ?? applyContext;
+            var isSharedDescriptorWrite = outputMode == SvOutputMode.Standalone
+                && mutation.Bytes is not null
+                && string.Equals(
+                    relativePath.Value,
+                    ToOutputRelativePath(DescriptorVirtualPath, SvOutputMode.Standalone),
+                    StringComparison.OrdinalIgnoreCase);
+            var isSharedControlWrite = mutation.Bytes is not null
+                && (string.Equals(
+                        relativePath.Value,
+                        ToOutputRelativePath(TmMachine.SvTmMachineControlsWorkflowService.RecipeDataPath, outputMode),
+                        StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(
+                        relativePath.Value,
+                        ToOutputRelativePath(TmMachine.SvTmMachineControlsWorkflowService.MaterialTrackingScriptPath, outputMode),
+                        StringComparison.OrdinalIgnoreCase));
             var ownership = new OwnedTarget(
                 GameFamily.ScarletViolet,
                 new OwnedTargetAddress(relativePath),
-                context?.OwnerId ?? defaultOwnerId,
-                context?.PreservationRule ?? defaultPreservationRule);
+                isSharedDescriptorWrite
+                    ? new OwnershipOwnerId("workflow.sv.trinity-descriptor")
+                    : context?.OwnerId ?? defaultOwnerId,
+                isSharedDescriptorWrite
+                    ? new PreservationRuleDescriptor(
+                        "sv.trinity-descriptor-rebuild", 1, preservesUnownedData: true, requiresPreimage: true)
+                    : context?.PreservationRule ?? defaultPreservationRule);
             var ownedRecord = inventory.Files.FirstOrDefault(record => record.Path == relativePath);
             var isComposedExecutable = IsComposedExecutablePath(relativePath);
             var ownershipClaims = new[] { ownership };
-            if (isComposedExecutable && ownedRecord is not null)
+            if ((isComposedExecutable || isSharedDescriptorWrite || isSharedControlWrite)
+                && ownedRecord is not null)
             {
-                ValidateComposedExecutableOwnership(
+                ValidateComposedOutputOwnership(
                     ownedRecord,
                     projectId,
                     GameFamily.ScarletViolet,
@@ -1313,7 +1334,7 @@ internal sealed class SvWorkflowFileSource
                     expectedPreimage,
                     relativePath);
                 ownershipClaims = ownedRecord.Claims
-                    .Where(claim => claim.OwnerId != ownership.OwnerId)
+                    .Where(claim => !isComposedExecutable || claim.OwnerId != ownership.OwnerId)
                     .Append(ownership)
                     .Distinct()
                     .ToArray();
@@ -1574,7 +1595,7 @@ internal sealed class SvWorkflowFileSource
         return bytes;
     }
 
-    private static void ValidateComposedExecutableOwnership(
+    private static void ValidateComposedOutputOwnership(
         OutputOwnershipRecord owned,
         ProjectId projectId,
         GameFamily gameFamily,

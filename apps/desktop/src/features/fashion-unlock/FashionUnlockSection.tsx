@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { AdvancedEditorDetails } from '../../components/AdvancedEditorDetails';
+
 import { ClipboardCheck, Save, Shirt, Trash2, Wrench } from 'lucide-react';
 import {
   Metric,
@@ -86,7 +88,7 @@ export function FashionUnlockSection({
 
   return (
     <>
-      <section aria-labelledby="fashion-unlock-heading" className="panel wide-panel">
+      <section aria-labelledby="fashion-unlock-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Shirt aria-hidden="true" size={18} />
           <h2 id="fashion-unlock-heading">Fashion Unlock</h2>
@@ -177,23 +179,25 @@ export function FashionUnlockSection({
                 <h3>Install Details</h3>
               </div>
 
-              <dl className="item-provenance-list">
-                <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
-                <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd></div>
-                <div><dt>Build ID</dt><dd data-localization-ignore="true">{workflow.buildId}</dd></div>
-                {isScarletViolet ? (
-                  <div><dt>Ownership check</dt><dd data-localization-ignore="true">{workflow.ownershipCheckOffsetHex}</dd></div>
-                ) : (
-                  <>
-                    <div><dt>Direct getter</dt><dd data-localization-ignore="true">{workflow.directGetterOffsetHex}</dd></div>
-                    <div><dt>Mapped getter</dt><dd data-localization-ignore="true">{workflow.mappedGetterOffsetHex}</dd></div>
-                  </>
-                )}
-                <div><dt>Stub</dt><dd>{workflow.stubKind}</dd></div>
-                <div><dt>Source file</dt><dd data-localization-ignore="true">{workflow.provenance.sourceFile}</dd></div>
-                <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
-                <div><dt>File state</dt><dd>{formatFileState(workflow.provenance.fileState)}</dd></div>
-              </dl>
+              <AdvancedEditorDetails>
+                <dl className="item-provenance-list">
+                  <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
+                  <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd></div>
+                  <div><dt>Build ID</dt><dd data-localization-ignore="true">{workflow.buildId}</dd></div>
+                  {isScarletViolet ? (
+                    <div><dt>Ownership check</dt><dd data-localization-ignore="true">{workflow.ownershipCheckOffsetHex}</dd></div>
+                  ) : (
+                    <>
+                      <div><dt>Direct getter</dt><dd data-localization-ignore="true">{workflow.directGetterOffsetHex}</dd></div>
+                      <div><dt>Mapped getter</dt><dd data-localization-ignore="true">{workflow.mappedGetterOffsetHex}</dd></div>
+                    </>
+                  )}
+                  <div><dt>Stub</dt><dd>{workflow.stubKind}</dd></div>
+                  <div><dt>Source file</dt><dd data-localization-ignore="true">{workflow.provenance.sourceFile}</dd></div>
+                  <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
+                  <div><dt>File state</dt><dd>{formatFileState(workflow.provenance.fileState)}</dd></div>
+                </dl>
+              </AdvancedEditorDetails>
 
               <div className="encounter-edit-form">
                 <div className="form-actions">

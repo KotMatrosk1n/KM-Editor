@@ -1,0 +1,43 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.type-chart-cell .type-chart-cell-selector {
+  color: inherit;
+  background-color: inherit;
+}
+
+.type-chart-cell .type-chart-cell-selector > input {
+  padding: 0;
+}
+
+:root[data-km-visual-theme='renegade'] {
+  --type-chart-immune-bg: #25344a;
+  --type-chart-immune-text: #cfdefc;
+  --type-chart-half-bg: #5b351c;
+  --type-chart-half-text: #ffe0b5;
+  --type-chart-double-bg: #12483e;
+  --type-chart-double-text: #a1f2d7;
+}
+
+:root[data-km-visual-theme='royal'] {
+  --type-chart-immune-bg: #e2ddf1;
+  --type-chart-immune-text: #4c346d;
+  --type-chart-half-bg: #f7dbcf;
+  --type-chart-half-text: #7b3020;
+  --type-chart-double-bg: #d9eadb;
+  --type-chart-double-text: #245b38;
+}
+
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-immune {
+  color: var(--type-chart-immune-text);
+  background-color: var(--type-chart-immune-bg);
+}
+
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-not-very {
+  color: var(--type-chart-half-text);
+  background-color: var(--type-chart-half-bg);
+}
+
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-super {
+  color: var(--type-chart-double-text);
+  background-color: var(--type-chart-double-bg);
+}

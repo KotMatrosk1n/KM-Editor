@@ -1362,7 +1362,7 @@ internal sealed class ZaTrainersEditSessionService
             0,
             null,
             [0, 0, 0, 0],
-            ["None", "None", "None", "None"],
+            Enumerable.Repeat(ZaTrainersWorkflowService.FormatMoveName(0, ZaLabels.Move), 4).ToArray(),
             0,
             ZaTrainersWorkflowService.FormatGender(0),
             0,
@@ -1384,11 +1384,11 @@ internal sealed class ZaTrainersEditSessionService
         while (moveIds.Count <= moveIndex)
         {
             moveIds.Add(0);
-            moves.Add("None");
+            moves.Add(ZaTrainersWorkflowService.FormatMoveName(0, ZaLabels.Move));
         }
 
         moveIds[moveIndex] = value;
-        moves[moveIndex] = value == 0 ? "None" : ZaLabels.Move(value);
+        moves[moveIndex] = ZaTrainersWorkflowService.FormatMoveName(value, ZaLabels.Move);
 
         return pokemon with
         {

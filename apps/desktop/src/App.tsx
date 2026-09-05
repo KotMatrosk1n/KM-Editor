@@ -1,5 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { AdvancedEditorDetails } from './components/AdvancedEditorDetails';
+import { BetaEditorsSettings } from './features/settings/BetaEditorsSettings';
+import './components/advancedEditorWorkspace.css';
+import './features/type-chart/typeChartTheme.css';
+import { handleRowClipboardShortcut } from './authoring/rowClipboardShortcuts';
+import { trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
+
 import {
   Activity,
   AlertTriangle,
@@ -438,8 +445,8 @@ import {
   rowClipboardProfileIds
 } from './authoring/rowClipboardAdapters';
 import {
-  readRowClipboardEnvelopeFromSystemClipboard,
-  writeRowClipboardEnvelopeToSystemClipboard,
+  readRowClipboardEnvelopeFromEditorClipboard,
+  writeRowClipboardEnvelopeToEditorClipboard,
   type RowClipboardSystemClipboardFeedbackKey
 } from './authoring/rowClipboardSystemClipboard';
 import {
@@ -1622,7 +1629,6 @@ const zaRankFieldName = 'rank';
 const zaMegaEvolutionFieldName = 'megaEvolution';
 const zaLastHandFieldName = 'lastHand';
 const zaCoreTrainerAiMask = (1 << 0) | (1 << 1) | (1 << 2);
-const zaChangeTrainerAiMask = 1 << 7;
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const supportSearchProgressEvent = 'km-editor://support-file-search-progress';
 
@@ -16837,7 +16843,7 @@ export function App({
           projectRevision: prepared.sourceRevision
         }
       });
-      const writeResult = await writeRowClipboardEnvelopeToSystemClipboard(envelope);
+      const writeResult = await writeRowClipboardEnvelopeToEditorClipboard(envelope);
       return writeResult.kind === 'failure'
         ? rowClipboardActionFailure(writeResult.feedbackKey)
         : { kind: 'success', operationCount: 1 };
@@ -16873,7 +16879,7 @@ export function App({
           projectId: activeProjectId
         }
       );
-      const readResult = await readRowClipboardEnvelopeFromSystemClipboard(controller);
+      const readResult = await readRowClipboardEnvelopeFromEditorClipboard(controller);
       if (readResult.kind === 'failure') {
         return rowClipboardActionFailure(readResult.feedbackKey);
       }
@@ -16939,7 +16945,7 @@ export function App({
           projectRevision: prepared.sourceRevision
         }
       });
-      const writeResult = await writeRowClipboardEnvelopeToSystemClipboard(envelope);
+      const writeResult = await writeRowClipboardEnvelopeToEditorClipboard(envelope);
       return writeResult.kind === 'failure'
         ? rowClipboardActionFailure(writeResult.feedbackKey)
         : { kind: 'success', operationCount: 1 };
@@ -16975,7 +16981,7 @@ export function App({
           projectId: activeProjectId
         }
       );
-      const readResult = await readRowClipboardEnvelopeFromSystemClipboard(controller);
+      const readResult = await readRowClipboardEnvelopeFromEditorClipboard(controller);
       if (readResult.kind === 'failure') {
         return rowClipboardActionFailure(readResult.feedbackKey);
       }
@@ -17042,7 +17048,7 @@ export function App({
           projectRevision: prepared.sourceRevision
         }
       });
-      const writeResult = await writeRowClipboardEnvelopeToSystemClipboard(envelope);
+      const writeResult = await writeRowClipboardEnvelopeToEditorClipboard(envelope);
       return writeResult.kind === 'failure'
         ? rowClipboardActionFailure(writeResult.feedbackKey)
         : { kind: 'success', operationCount: 1 };
@@ -17078,7 +17084,7 @@ export function App({
           projectId: activeProjectId
         }
       );
-      const readResult = await readRowClipboardEnvelopeFromSystemClipboard(controller);
+      const readResult = await readRowClipboardEnvelopeFromEditorClipboard(controller);
       if (readResult.kind === 'failure') {
         return rowClipboardActionFailure(readResult.feedbackKey);
       }
@@ -21368,12 +21374,6 @@ export function App({
                 }
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
-                onApplyChangePlan={() =>
-                  void handleApplyScopedEditorChangePlan('tmMachineControls')
-                }
-                onCreateChangePlan={() =>
-                  void handleCreateScopedEditorChangePlan('tmMachineControls')
-                }
                 onStage={(target) => void handleStageTmMachineControl(target)}
                 panelOutput={getOutputSafeScopedEditorPanelOutput('tmMachineControls')}
                 stagingTarget={tmMachineControlStagingTarget}
@@ -26390,8 +26390,7 @@ function SelectedPokemonPanel({
     }
     return undefined;
   };
-  const handleCopyLearnsetClipboardRow = async () => {
-    const target = learnsetClipboardMenu;
+  const handleCopyLearnsetClipboardRow = async (target = learnsetClipboardMenu) => {
     if (
       !pokemon ||
       !target ||
@@ -26432,8 +26431,7 @@ function SelectedPokemonPanel({
       }
     }
   };
-  const handlePasteLearnsetClipboardRow = async () => {
-    const target = learnsetClipboardMenu;
+  const handlePasteLearnsetClipboardRow = async (target = learnsetClipboardMenu) => {
     if (
       !pokemon ||
       !target ||
@@ -27445,6 +27443,7 @@ function SelectedPokemonPanel({
                         aria-haspopup="menu"
                         aria-label={learnsetRowAccessibleLabel}
                         data-km-source-site="pokemon-learnset-row-menu-trigger"
+                        aria-keyshortcuts="Control+C Control+V Meta+C Meta+V Shift+F10"
                         className={`learnset-list-item ${
                           learnsetDragState?.sourceSlot === move.slot ? 'learnset-dragging' : ''
                         } ${
@@ -27536,6 +27535,9 @@ function SelectedPokemonPanel({
                           );
                         }}
                         onKeyDown={(event) => {
+                          if (handleRowClipboardShortcut(event,
+                            () => void handleCopyLearnsetClipboardRow({ move, left: 0, top: 0, triggerElement: event.currentTarget }),
+                            () => void handlePasteLearnsetClipboardRow({ move, left: 0, top: 0, triggerElement: event.currentTarget }))) return;
                           if (!(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
                             return;
                           }
@@ -31563,7 +31565,7 @@ type TrainerPartySlotContextMenuState = {
   triggerElement: HTMLButtonElement;
 };
 
-type ZaTrainerBulkAction = 'enableChangeAi' | 'enableCoreAi' | 'enableLastHand';
+type ZaTrainerBulkAction = 'enableCoreAi' | 'enableLastHand';
 
 type TrainersSectionProps = {
   editSession: EditSession | null;
@@ -31723,25 +31725,6 @@ function TrainersSection({
         : [],
     [editorFamily, trainers]
   );
-  const zaChangeAiBulkUpdates = useMemo<TrainerFieldUpdate[]>(
-    () =>
-      editorFamily === 'za'
-        ? trainers.flatMap((trainer) => {
-            const nextFlags = trainer.aiFlags | zaChangeTrainerAiMask;
-            return nextFlags === trainer.aiFlags
-              ? []
-              : [
-                  {
-                    field: aiFlagsFieldName,
-                    slot: null,
-                    trainerId: trainer.trainerId,
-                    value: nextFlags.toString()
-                  }
-                ];
-          })
-        : [],
-    [editorFamily, trainers]
-  );
   const canRunZaTrainerBulkAction =
     editorFamily === 'za' &&
     editSession !== null &&
@@ -31757,9 +31740,7 @@ function TrainersSection({
     const updates =
       zaBulkConfirmation === 'enableLastHand'
         ? zaLastHandBulkUpdates
-        : zaBulkConfirmation === 'enableCoreAi'
-          ? zaCoreAiBulkUpdates
-          : zaChangeAiBulkUpdates;
+        : zaCoreAiBulkUpdates;
     setZaBulkConfirmation(null);
     if (updates.length > 0) {
       await onUpdateTrainerFields(updates);
@@ -31892,24 +31873,6 @@ function TrainersSection({
                 <ShieldCheck aria-hidden="true" size={14} />
                 <span>{t('za.trainers.bulk.coreAction')}</span>
               </button>
-              <button
-                className="primary-button compact-button"
-                disabled={!canRunZaTrainerBulkAction || zaChangeAiBulkUpdates.length === 0}
-                onClick={() => setZaBulkConfirmation('enableChangeAi')}
-                title={
-                  editSession === null
-                    ? t('za.trainers.bulk.startSessionHelp')
-                    : zaChangeAiBulkUpdates.length === 0
-                      ? t('za.trainers.bulk.changeAlreadyEnabled')
-                      : t('za.trainers.bulk.changeEnableCount', {
-                          count: zaChangeAiBulkUpdates.length
-                        })
-                }
-                type="button"
-              >
-                <ArrowLeftRight aria-hidden="true" size={14} />
-                <span>{t('za.trainers.bulk.changeAction')}</span>
-              </button>
             </div>
           </div>
         ) : null}
@@ -32022,9 +31985,7 @@ function TrainersSection({
           affectedCount={
             zaBulkConfirmation === 'enableLastHand'
               ? zaLastHandBulkUpdates.length
-              : zaBulkConfirmation === 'enableCoreAi'
-                ? zaCoreAiBulkUpdates.length
-                : zaChangeAiBulkUpdates.length
+              : zaCoreAiBulkUpdates.length
           }
           isUpdating={isTrainerUpdating}
           onCancel={() => setZaBulkConfirmation(null)}
@@ -32054,18 +32015,13 @@ function ZaTrainerBulkConfirmationModal({
   const dialogRef = useModalDialog({ onClose: onCancel });
   const { t, translateLiteral } = useLocalization();
   const enablesLastHand = action === 'enableLastHand';
-  const enablesCoreAi = action === 'enableCoreAi';
   const headingId = `za-trainer-bulk-${action}-heading`;
   const title = enablesLastHand
     ? t('za.trainers.bulk.lastHandConfirmTitle')
-    : enablesCoreAi
-      ? t('za.trainers.bulk.coreConfirmTitle')
-      : t('za.trainers.bulk.changeConfirmTitle');
+    : t('za.trainers.bulk.coreConfirmTitle');
   const description = enablesLastHand
     ? t('za.trainers.bulk.lastHandConfirmDescription', { affectedCount, totalCount })
-    : enablesCoreAi
-      ? t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount })
-      : t('za.trainers.bulk.changeConfirmDescription', { affectedCount, totalCount });
+    : t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount });
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -32080,10 +32036,8 @@ function ZaTrainerBulkConfirmationModal({
         <div className="panel-heading">
           {enablesLastHand ? (
             <ListChecks aria-hidden="true" size={18} />
-          ) : enablesCoreAi ? (
-            <ShieldCheck aria-hidden="true" size={18} />
           ) : (
-            <ArrowLeftRight aria-hidden="true" size={18} />
+            <ShieldCheck aria-hidden="true" size={18} />
           )}
           <h2 id={headingId}>{title}</h2>
         </div>
@@ -32102,10 +32056,8 @@ function ZaTrainerBulkConfirmationModal({
               icon={
                 enablesLastHand ? (
                   <ListChecks aria-hidden="true" size={16} />
-                ) : enablesCoreAi ? (
-                  <ShieldCheck aria-hidden="true" size={16} />
                 ) : (
-                  <ArrowLeftRight aria-hidden="true" size={16} />
+                  <ShieldCheck aria-hidden="true" size={16} />
                 )
               }
               isBusy={isUpdating}
@@ -32580,61 +32532,65 @@ function SelectedTrainerPanel({
     partySlotContextMenu && trainer?.trainerId === partySlotContextMenu.trainerId
       ? trainer.team.find((pokemon) => pokemon.slot === partySlotContextMenu.slot) ?? null
       : null;
-  const contextMenuPokemonDraftKey =
-    trainer && contextMenuPokemon ? `${trainer.trainerId}:${contextMenuPokemon.slot}` : null;
-  const contextMenuPokemonDrafts =
-    contextMenuPokemonDraftKey === null
-      ? undefined
-      : canonicalPokemonDraftsByTrainerSlot[contextMenuPokemonDraftKey];
-  const contextMenuPokemonValues =
-    contextMenuPokemon === null
-      ? null
-      : createTrainerPokemonSlotClipboardValues(
-          contextMenuPokemon,
-          pokemonFields,
-          contextMenuPokemonDrafts
-        );
-  const contextMenuTargetBlockedByPreviousSlot = Boolean(
-    contextMenuPokemon &&
-      isTrainerPartySlotBlockedByEarlierEmptySlot(
-        projectedTrainerPartySlotOccupancy,
-        contextMenuPokemon.slot
-      )
-  );
-  const contextMenuCommonDisabledReason =
-    !canEditTrainers || pokemonFields.length === 0
-      ? t('trainers.partyClipboard.unavailableReason')
-      : editSession === null
-        ? t('trainers.partyClipboard.startSessionReason')
-        : isPartySlotClipboardBusy
-          ? t('trainers.partyClipboard.busyReason')
-          : contextMenuPokemon === null
-            ? t('trainers.partyClipboard.unavailableReason')
-            : undefined;
-  const contextMenuPokemonHasInvalidDrafts = Boolean(
-    contextMenuPokemon &&
+  const getPartySlotClipboardState = (contextMenuPokemon: TrainerPokemonRecord | null) => {
+    const contextMenuPokemonDraftKey =
+      trainer && contextMenuPokemon ? `${trainer.trainerId}:${contextMenuPokemon.slot}` : null;
+    const contextMenuPokemonDrafts =
+      contextMenuPokemonDraftKey === null
+        ? undefined
+        : canonicalPokemonDraftsByTrainerSlot[contextMenuPokemonDraftKey];
+    const contextMenuPokemonValues =
+      contextMenuPokemon === null
+        ? null
+        : createTrainerPokemonSlotClipboardValues(
+            contextMenuPokemon,
+            pokemonFields,
+            contextMenuPokemonDrafts
+          );
+    const contextMenuTargetBlockedByPreviousSlot = Boolean(
+      contextMenuPokemon &&
+        isTrainerPartySlotBlockedByEarlierEmptySlot(
+          projectedTrainerPartySlotOccupancy,
+          contextMenuPokemon.slot
+        )
+    );
+    const contextMenuCommonDisabledReason =
+      !canEditTrainers || pokemonFields.length === 0
+        ? t('trainers.partyClipboard.unavailableReason')
+        : editSession === null
+          ? t('trainers.partyClipboard.startSessionReason')
+          : isPartySlotClipboardBusy
+            ? t('trainers.partyClipboard.busyReason')
+            : contextMenuPokemon === null
+              ? t('trainers.partyClipboard.unavailableReason')
+              : undefined;
+    const contextMenuPokemonHasInvalidDrafts = Boolean(
+      contextMenuPokemon &&
+        contextMenuPokemonValues &&
+        hasInvalidTrainerPokemonDrafts(
+          editorFamily,
+          contextualPokemonFields,
+          contextMenuPokemonValues,
+          (field) => getEditablePokemonFieldValue(contextMenuPokemon, field)
+        )
+    );
+    const contextMenuCopyDisabledReason =
+      contextMenuCommonDisabledReason ??
+      (contextMenuPokemon &&
       contextMenuPokemonValues &&
-      hasInvalidTrainerPokemonDrafts(
-        editorFamily,
-        contextualPokemonFields,
-        contextMenuPokemonValues,
-        (field) => getEditablePokemonFieldValue(contextMenuPokemon, field)
-      )
-  );
-  const contextMenuCopyDisabledReason =
-    contextMenuCommonDisabledReason ??
-    (contextMenuPokemon &&
-    contextMenuPokemonValues &&
-    isTrainerPokemonSlotEmpty(contextMenuPokemon, contextMenuPokemonValues, pokemonFields)
-      ? t('trainers.partyClipboard.emptySourceReason')
-      : contextMenuPokemonHasInvalidDrafts
-        ? t('trainers.partyClipboard.invalidSourceReason')
+      isTrainerPokemonSlotEmpty(contextMenuPokemon, contextMenuPokemonValues, pokemonFields)
+        ? t('trainers.partyClipboard.emptySourceReason')
+        : contextMenuPokemonHasInvalidDrafts
+          ? t('trainers.partyClipboard.invalidSourceReason')
+          : undefined);
+    const contextMenuPasteDisabledReason =
+      contextMenuCommonDisabledReason ??
+      (contextMenuTargetBlockedByPreviousSlot
+        ? t('trainers.partyClipboard.blockedTargetReason')
         : undefined);
-  const contextMenuPasteDisabledReason =
-    contextMenuCommonDisabledReason ??
-    (contextMenuTargetBlockedByPreviousSlot
-      ? t('trainers.partyClipboard.blockedTargetReason')
-      : undefined);
+    return { contextMenuPokemonDraftKey, contextMenuPokemonValues, contextMenuCopyDisabledReason, contextMenuPasteDisabledReason };
+  };
+  const { contextMenuCopyDisabledReason, contextMenuPasteDisabledReason } = getPartySlotClipboardState(contextMenuPokemon);
   const partySlotClipboardSourceLabel = partySlotCopiedSource
     ? t('trainers.partyClipboard.sourceSummary', {
         slot: partySlotCopiedSource.sourceSlotLabel,
@@ -33029,11 +32985,12 @@ function SelectedTrainerPanel({
     });
   };
 
-  const copyPartySlot = async () => {
+  const copyPartySlot = async (targetPokemon = contextMenuPokemon) => {
+    const { contextMenuPokemonValues, contextMenuCopyDisabledReason } = getPartySlotClipboardState(targetPokemon);
     if (
       contextMenuCopyDisabledReason !== undefined ||
       !trainer ||
-      !contextMenuPokemon ||
+      !targetPokemon ||
       !contextMenuPokemonValues ||
       partySlotClipboardOperationRef.current !== null
     ) {
@@ -33041,7 +32998,7 @@ function SelectedTrainerPanel({
     }
 
     const sourceSlotLabel = formatTrainerSlotNumber(
-      contextMenuPokemon.slot,
+      targetPokemon.slot,
       editorFamily
     ).toString();
     const operationToken = Symbol('trainer-party-clipboard-copy');
@@ -33050,7 +33007,7 @@ function SelectedTrainerPanel({
     setPartySlotClipboardFeedback(null);
     try {
       const result = await onCopyTrainerPartyClipboard({
-        member: contextMenuPokemon,
+        member: targetPokemon,
         sourceTrainerId: trainer.trainerId,
         values: contextMenuPokemonValues
       });
@@ -33063,7 +33020,7 @@ function SelectedTrainerPanel({
       setTrainerSourceMutationError(null);
       setPartySlotCopiedSource({
         editorFamily,
-        sourceSlot: contextMenuPokemon.slot,
+        sourceSlot: targetPokemon.slot,
         sourceSlotLabel,
         sourceTrainerId: trainer.trainerId,
         sourceTrainerName: trainer.name
@@ -33080,11 +33037,12 @@ function SelectedTrainerPanel({
     }
   };
 
-  const pastePartySlot = async () => {
+  const pastePartySlot = async (targetPokemon = contextMenuPokemon) => {
+    const { contextMenuPokemonDraftKey, contextMenuPasteDisabledReason } = getPartySlotClipboardState(targetPokemon);
     if (
       contextMenuPasteDisabledReason !== undefined ||
       !trainer ||
-      !contextMenuPokemon ||
+      !targetPokemon ||
       !contextMenuPokemonDraftKey ||
       partySlotClipboardOperationRef.current !== null
     ) {
@@ -33095,13 +33053,13 @@ function SelectedTrainerPanel({
     partySlotClipboardOperationRef.current = operationToken;
     setIsPartySlotClipboardBusy(true);
     setPendingPartySlotPasteTarget({
-      slot: contextMenuPokemon.slot,
+      slot: targetPokemon.slot,
       trainerId: trainer.trainerId
     });
     setPartySlotClipboardFeedback(null);
     try {
       const result = await onPasteTrainerPartyClipboard({
-        targetSlot: contextMenuPokemon.slot,
+        targetSlot: targetPokemon.slot,
         targetTrainerId: trainer.trainerId
       });
       if (result.kind === 'failure') {
@@ -33113,7 +33071,7 @@ function SelectedTrainerPanel({
 
       const destinationRows = result.rows.map((row, offset) => {
         const destination = trainer.team.find(
-          (pokemon) => pokemon.slot === contextMenuPokemon.slot + offset
+          (pokemon) => pokemon.slot === targetPokemon.slot + offset
         );
         return destination ? { destination, row } : null;
       });
@@ -33157,10 +33115,10 @@ function SelectedTrainerPanel({
           );
         }, currentDrafts)
       );
-      onSelectSlot(contextMenuPokemon.slot);
+      onSelectSlot(targetPokemon.slot);
       setPartySlotClipboardFeedback(
         t('trainers.partyClipboard.pastedFeedback', {
-          slot: formatTrainerSlotNumber(contextMenuPokemon.slot, editorFamily),
+          slot: formatTrainerSlotNumber(targetPokemon.slot, editorFamily),
           trainer: trainer.name
         })
       );
@@ -33402,14 +33360,14 @@ function SelectedTrainerPanel({
                         key={flag.bit}
                       >
                         <input
-                          checked={(projectedAiFlags & flag.mask) !== 0}
+                          checked={trainerAiFlagEnabled(editorFamily, projectedAiFlags, flag.mask)}
                           className="km-choice-control"
                           disabled={!canToggleAiFlags || isReserved}
                           id={flagInputId}
                           onChange={(event) => {
-                            const nextValue = event.target.checked
-                              ? projectedAiFlags | flag.mask
-                              : projectedAiFlags & ~flag.mask;
+                            const nextValue = toggleTrainerAiFlag(
+                              editorFamily, projectedAiFlags, flag.mask, event.target.checked
+                            );
                             setTrainerDraftsByTrainerId((currentDrafts) =>
                               setFieldDraftRecord(
                                 currentDrafts,
@@ -33614,7 +33572,7 @@ function SelectedTrainerPanel({
                       aria-haspopup="menu"
                       aria-label={partyCardAccessibleLabel}
                       data-km-source-site="trainer-party-slot-menu-trigger"
-                      aria-keyshortcuts="Shift+F10"
+                      aria-keyshortcuts="Control+C Control+V Meta+C Meta+V Shift+F10"
                       aria-pressed={selectedSlot === pokemon.slot}
                       className={`trainer-party-card ${
                         isCopiedSource ? 'trainer-party-card-copy-source' : ''
@@ -33631,6 +33589,9 @@ function SelectedTrainerPanel({
                         );
                       }}
                       onKeyDown={(event) => {
+                        if (handleRowClipboardShortcut(event,
+                          () => void copyPartySlot(pokemon),
+                          () => void pastePartySlot(pokemon))) return;
                         if (
                           event.key !== 'ContextMenu' &&
                           !(event.shiftKey && event.key === 'F10')
@@ -33907,6 +33868,9 @@ function SelectedTrainerPanel({
                           );
                         })}
                       </div>
+                      {editorFamily === 'za' && group.group === 'Moves' ? (
+                        <p className="field-note">{t('za.trainers.moves.unspecifiedHelp')}</p>
+                      ) : null}
                     </fieldset>
                   ))}
                 </div>
@@ -33926,8 +33890,8 @@ function SelectedTrainerPanel({
           copyDisabledReason={contextMenuCopyDisabledReason}
           left={partySlotContextMenu.left}
           onClose={closePartySlotContextMenu}
-          onCopy={copyPartySlot}
-          onPaste={pastePartySlot}
+          onCopy={() => void copyPartySlot()}
+          onPaste={() => void pastePartySlot()}
           pasteDisabledReason={contextMenuPasteDisabledReason}
           sourceLabel={partySlotClipboardSourceLabel ?? undefined}
           targetLabel={contextMenuTargetLabel}
@@ -46055,8 +46019,7 @@ function SelectedEncounterPanel({
     }
     return undefined;
   };
-  const handleCopyEncounterClipboardSlot = async () => {
-    const target = encounterClipboardMenu;
+  const handleCopyEncounterClipboardSlot = async (target = encounterClipboardMenu) => {
     if (
       !table ||
       !target ||
@@ -46095,8 +46058,7 @@ function SelectedEncounterPanel({
       }
     }
   };
-  const handlePasteEncounterClipboardSlot = async () => {
-    const target = encounterClipboardMenu;
+  const handlePasteEncounterClipboardSlot = async (target = encounterClipboardMenu) => {
     if (
       !table ||
       !target ||
@@ -46605,6 +46567,7 @@ function SelectedEncounterPanel({
                         aria-haspopup="menu"
                         aria-label={encounterSlotAccessibleLabel}
                         data-km-source-site="encounter-slot-menu-trigger"
+                        aria-keyshortcuts="Control+C Control+V Meta+C Meta+V Shift+F10"
                         aria-pressed={slot.slot === selectedSlot}
                         className="slot-tab-button"
                         key={slot.slot}
@@ -46619,6 +46582,9 @@ function SelectedEncounterPanel({
                           });
                         }}
                         onKeyDown={(event) => {
+                          if (handleRowClipboardShortcut(event,
+                            () => void handleCopyEncounterClipboardSlot({ slot, left: 0, top: 0, triggerElement: event.currentTarget }),
+                            () => void handlePasteEncounterClipboardSlot({ slot, left: 0, top: 0, triggerElement: event.currentTarget }))) return;
                           if (!(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
                             return;
                           }
@@ -53173,7 +53139,7 @@ function BagHookSection({
 
   return (
     <>
-      <section aria-labelledby="bag-hook-heading" className="panel wide-panel">
+      <section aria-labelledby="bag-hook-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Wrench aria-hidden="true" size={18} />
           <h2 className="context-help-heading" id="bag-hook-heading">
@@ -53259,40 +53225,42 @@ function BagHookSection({
 
               {selectedRecord ? (
                 <>
-                  <dl className="item-provenance-list">
-                    <div>
-                      <dt>Install status</dt>
-                      <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                    </div>
-                    <div>
-                      <dt>Slot</dt>
-                      <dd>#{selectedRecord.slot}</dd>
-                    </div>
-                    <div>
-                      <dt>Status</dt>
-                      <dd>{formatBagHookStatus(selectedRecord.status)}</dd>
-                    </div>
-                    <div>
-                      <dt>Reserved for</dt>
-                      <dd>{selectedRecord.reservedFor}</dd>
-                    </div>
-                    <div>
-                      <dt>Owner</dt>
-                      <dd>{selectedRecord.owner}</dd>
-                    </div>
-                    <div>
-                      <dt>Source file</dt>
-                      <dd>{selectedRecord.provenance.sourceFile}</dd>
-                    </div>
-                    <div>
-                      <dt>Layer</dt>
-                      <dd>{formatSourceLayer(selectedRecord.provenance.sourceLayer)}</dd>
-                    </div>
-                    <div>
-                      <dt>File state</dt>
-                      <dd>{formatFileState(selectedRecord.provenance.fileState)}</dd>
-                    </div>
-                  </dl>
+                  <AdvancedEditorDetails>
+                    <dl className="item-provenance-list">
+                      <div>
+                        <dt>Install status</dt>
+                        <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                      </div>
+                      <div>
+                        <dt>Slot</dt>
+                        <dd>#{selectedRecord.slot}</dd>
+                      </div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{formatBagHookStatus(selectedRecord.status)}</dd>
+                      </div>
+                      <div>
+                        <dt>Reserved for</dt>
+                        <dd>{selectedRecord.reservedFor}</dd>
+                      </div>
+                      <div>
+                        <dt>Owner</dt>
+                        <dd>{selectedRecord.owner}</dd>
+                      </div>
+                      <div>
+                        <dt>Source file</dt>
+                        <dd>{selectedRecord.provenance.sourceFile}</dd>
+                      </div>
+                      <div>
+                        <dt>Layer</dt>
+                        <dd>{formatSourceLayer(selectedRecord.provenance.sourceLayer)}</dd>
+                      </div>
+                      <div>
+                        <dt>File state</dt>
+                        <dd>{formatFileState(selectedRecord.provenance.fileState)}</dd>
+                      </div>
+                    </dl>
+                  </AdvancedEditorDetails>
 
                   <div className="encounter-edit-form">
                     <div className="form-actions">
@@ -53457,7 +53425,7 @@ function IvScreenSection({
 
   return (
     <>
-      <section aria-labelledby="iv-screen-heading" className="panel wide-panel">
+      <section aria-labelledby="iv-screen-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Dna aria-hidden="true" size={18} />
           <h2 className="context-help-heading" id="iv-screen-heading">
@@ -53524,52 +53492,54 @@ function IvScreenSection({
                 <h3>Install Details</h3>
               </div>
 
-              <dl className="item-provenance-list">
-                <div>
-                  <dt>Install status</dt>
-                  <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                </div>
-                <div>
-                  <dt>Game</dt>
-                  <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
-                </div>
-                <div>
-                  <dt>Build ID</dt>
-                  <dd>{workflow.buildId}</dd>
-                </div>
-                <div>
-                  <dt>Primary value source</dt>
-                  <dd>{workflow.primaryValueSourceOffsetHex}</dd>
-                </div>
-                <div>
-                  <dt>X-toggle refresh</dt>
-                  <dd>{workflow.xToggleRefreshOffsetHex}</dd>
-                </div>
-                <div>
-                  <dt>Raw IV getter</dt>
-                  <dd>{workflow.rawIvGetterOffsetHex}</dd>
-                </div>
-                <div>
-                  <dt>Hyper Training wrapper</dt>
-                  <dd>{workflow.hyperTrainingWrapperOffsetHex}</dd>
-                </div>
-                <div>
-                  <dt>Marker</dt>
-                  <dd>{workflow.marker}</dd>
-                </div>
-                <div>
-                  <dt>Source file</dt>
-                  <dd>{workflow.provenance.sourceFile}</dd>
-                </div>
-                <div>
-                  <dt>Layer</dt>
-                  <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
-                </div>
-                <div>
-                  <dt>File state</dt>
-                  <dd>{formatFileState(workflow.provenance.fileState)}</dd>
-                </div>
-              </dl>
+              <AdvancedEditorDetails>
+                <dl className="item-provenance-list">
+                  <div>
+                    <dt>Install status</dt>
+                    <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                  </div>
+                  <div>
+                    <dt>Game</dt>
+                    <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                  </div>
+                  <div>
+                    <dt>Build ID</dt>
+                    <dd>{workflow.buildId}</dd>
+                  </div>
+                  <div>
+                    <dt>Primary value source</dt>
+                    <dd>{workflow.primaryValueSourceOffsetHex}</dd>
+                  </div>
+                  <div>
+                    <dt>X-toggle refresh</dt>
+                    <dd>{workflow.xToggleRefreshOffsetHex}</dd>
+                  </div>
+                  <div>
+                    <dt>Raw IV getter</dt>
+                    <dd>{workflow.rawIvGetterOffsetHex}</dd>
+                  </div>
+                  <div>
+                    <dt>Hyper Training wrapper</dt>
+                    <dd>{workflow.hyperTrainingWrapperOffsetHex}</dd>
+                  </div>
+                  <div>
+                    <dt>Marker</dt>
+                    <dd>{workflow.marker}</dd>
+                  </div>
+                  <div>
+                    <dt>Source file</dt>
+                    <dd>{workflow.provenance.sourceFile}</dd>
+                  </div>
+                  <div>
+                    <dt>Layer</dt>
+                    <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
+                  </div>
+                  <div>
+                    <dt>File state</dt>
+                    <dd>{formatFileState(workflow.provenance.fileState)}</dd>
+                  </div>
+                </dl>
+              </AdvancedEditorDetails>
 
               <div className="encounter-edit-form">
                 <div className="form-actions">
@@ -53784,7 +53754,7 @@ function HyperTrainingSection({
             : []
         }
       />
-      <section aria-labelledby="hyper-training-heading" className="panel wide-panel">
+      <section aria-labelledby="hyper-training-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Dumbbell aria-hidden="true" size={18} />
           <h2 className="context-help-heading" id="hyper-training-heading">
@@ -53940,56 +53910,58 @@ function HyperTrainingSection({
                 <h3>Cutoff Details</h3>
               </div>
 
-              <dl className="item-provenance-list">
-                <div>
-                  <dt>Script cell</dt>
-                  <dd>{workflow.levelRule.scriptCell}</dd>
-                </div>
-                <div>
-                  <dt>Detected game</dt>
-                  <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
-                </div>
-                <div>
-                  <dt>Build ID</dt>
-                  <dd>{formatHyperTrainingBuildId(workflow.buildId)}</dd>
-                </div>
-                <div>
-                  <dt>NPC script cutoff</dt>
-                  <dd>Lv. {workflow.levelRule.scriptMinimumLevel}</dd>
-                </div>
-                <div>
-                  <dt>Picker runtime cutoff</dt>
-                  <dd>Lv. {workflow.levelRule.runtimeMinimumLevel}</dd>
-                </div>
-                <div>
-                  <dt>English dialogue cutoff</dt>
-                  <dd>
-                    {workflow.levelRule.dialogueMinimumLevel === null
-                      ? 'Unavailable'
-                      : `Lv. ${workflow.levelRule.dialogueMinimumLevel}`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Cutoff sync</dt>
-                  <dd>{formatHyperTrainingSyncState(workflow)}</dd>
-                </div>
-                <div>
-                  <dt>Dialogue</dt>
-                  <dd>{workflow.levelRule.dialogueSummary}</dd>
-                </div>
-                <div>
-                  <dt>Picker runtime</dt>
-                  <dd>{workflow.levelRule.runtimeSummary}</dd>
-                </div>
-                <div>
-                  <dt>Install message</dt>
-                  <dd>{workflow.installMessage}</dd>
-                </div>
-                <div>
-                  <dt>Staged cutoff</dt>
-                  <dd>{stagedMinimumLevel !== null ? `Lv. ${stagedMinimumLevel}` : 'None'}</dd>
-                </div>
-              </dl>
+              <AdvancedEditorDetails>
+                <dl className="item-provenance-list">
+                  <div>
+                    <dt>Script cell</dt>
+                    <dd>{workflow.levelRule.scriptCell}</dd>
+                  </div>
+                  <div>
+                    <dt>Detected game</dt>
+                    <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                  </div>
+                  <div>
+                    <dt>Build ID</dt>
+                    <dd>{formatHyperTrainingBuildId(workflow.buildId)}</dd>
+                  </div>
+                  <div>
+                    <dt>NPC script cutoff</dt>
+                    <dd>Lv. {workflow.levelRule.scriptMinimumLevel}</dd>
+                  </div>
+                  <div>
+                    <dt>Picker runtime cutoff</dt>
+                    <dd>Lv. {workflow.levelRule.runtimeMinimumLevel}</dd>
+                  </div>
+                  <div>
+                    <dt>English dialogue cutoff</dt>
+                    <dd>
+                      {workflow.levelRule.dialogueMinimumLevel === null
+                        ? 'Unavailable'
+                        : `Lv. ${workflow.levelRule.dialogueMinimumLevel}`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Cutoff sync</dt>
+                    <dd>{formatHyperTrainingSyncState(workflow)}</dd>
+                  </div>
+                  <div>
+                    <dt>Dialogue</dt>
+                    <dd>{workflow.levelRule.dialogueSummary}</dd>
+                  </div>
+                  <div>
+                    <dt>Picker runtime</dt>
+                    <dd>{workflow.levelRule.runtimeSummary}</dd>
+                  </div>
+                  <div>
+                    <dt>Install message</dt>
+                    <dd>{workflow.installMessage}</dd>
+                  </div>
+                  <div>
+                    <dt>Staged cutoff</dt>
+                    <dd>{stagedMinimumLevel !== null ? `Lv. ${stagedMinimumLevel}` : 'None'}</dd>
+                  </div>
+                </dl>
+              </AdvancedEditorDetails>
 
               <div className="encounter-edit-form">
                 <div className="form-actions">
@@ -54276,7 +54248,7 @@ function CatchCapSection({
             : []
         )}
       />
-      <section aria-labelledby="catch-cap-heading" className="panel wide-panel">
+      <section aria-labelledby="catch-cap-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
           <h2 className="context-help-heading" id="catch-cap-heading">
@@ -54446,56 +54418,58 @@ function CatchCapSection({
 
               {selectedCap ? (
                 <>
-                  <dl className="item-provenance-list">
-                    <div>
-                      <dt>{translateLiteral('Install status')}</dt>
-                      <dd>{translateLiteral(formatBagHookStatus(workflow.installStatus))}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Badge level')}</dt>
-                      <dd>{translateLiteral(selectedCap.label)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Selected cap')}</dt>
-                      <dd>
-                        {selectedCap.error
-                          ? translateLiteral(selectedCap.error)
-                          : selectedCap.minimumLevelCap === selectedCap.maximumLevelCap
-                            ? translateLiteral(
-                                `Lv. ${selectedCap.selectedLevelCap} (locked: full badges catch any level)`
-                              )
-                            : `Lv. ${selectedCap.selectedLevelCap}`}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Game')}</dt>
-                      <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Build ID')}</dt>
-                      <dd>{workflow.buildId}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Display hook')}</dt>
-                      <dd>{workflow.displayHookOffsetHex}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Runtime hook')}</dt>
-                      <dd>{workflow.runtimeHookOffsetHex}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Source file')}</dt>
-                      <dd>{workflow.provenance.sourceFile}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Layer')}</dt>
-                      <dd>{translateLiteral(formatSourceLayer(workflow.provenance.sourceLayer))}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('File state')}</dt>
-                      <dd>{translateLiteral(formatFileState(workflow.provenance.fileState))}</dd>
-                    </div>
-                  </dl>
+                  <AdvancedEditorDetails>
+                    <dl className="item-provenance-list">
+                      <div>
+                        <dt>{translateLiteral('Install status')}</dt>
+                        <dd>{translateLiteral(formatBagHookStatus(workflow.installStatus))}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Badge level')}</dt>
+                        <dd>{translateLiteral(selectedCap.label)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Selected cap')}</dt>
+                        <dd>
+                          {selectedCap.error
+                            ? translateLiteral(selectedCap.error)
+                            : selectedCap.minimumLevelCap === selectedCap.maximumLevelCap
+                              ? translateLiteral(
+                                  `Lv. ${selectedCap.selectedLevelCap} (locked: full badges catch any level)`
+                                )
+                              : `Lv. ${selectedCap.selectedLevelCap}`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Game')}</dt>
+                        <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Build ID')}</dt>
+                        <dd>{workflow.buildId}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Display hook')}</dt>
+                        <dd>{workflow.displayHookOffsetHex}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Runtime hook')}</dt>
+                        <dd>{workflow.runtimeHookOffsetHex}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Source file')}</dt>
+                        <dd>{workflow.provenance.sourceFile}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Layer')}</dt>
+                        <dd>{translateLiteral(formatSourceLayer(workflow.provenance.sourceLayer))}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('File state')}</dt>
+                        <dd>{translateLiteral(formatFileState(workflow.provenance.fileState))}</dd>
+                      </div>
+                    </dl>
+                  </AdvancedEditorDetails>
 
                   <div className="encounter-edit-form">
                     <div className="form-actions">
@@ -55148,7 +55122,7 @@ function RoyalCandySection({
 
   return (
     <>
-      <section aria-labelledby="royal-candy-heading" className="panel wide-panel">
+      <section aria-labelledby="royal-candy-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <CheckCircle aria-hidden="true" size={18} />
           <h2 className="context-help-heading" id="royal-candy-heading">
@@ -55205,46 +55179,36 @@ function RoyalCandySection({
               <div
                 aria-label={translateLiteral('Royal Candy workflows')}
                 className="exefs-table royal-candy-workflow-table"
-                role="table"
+                role="group"
               >
-                <div className="exefs-row royal-candy-workflow-row exefs-row-heading" role="row">
-                  <span role="columnheader">{translateLiteral('Workflow')}</span>
-                  <span role="columnheader">{translateLiteral('Status')}</span>
-                  <span role="columnheader">{translateLiteral('Mode')}</span>
-                  <span role="columnheader">{translateLiteral('Item')}</span>
-                  <span role="columnheader">{translateLiteral('Target')}</span>
-                </div>
                 {filteredWorkflows.map((candidate) => (
-                  <InteractiveTableRow
-                    aria-selected={selectedWorkflow?.workflowId === candidate.workflowId}
-                    className={`exefs-row royal-candy-workflow-row ${
-                      selectedWorkflow?.workflowId === candidate.workflowId
-                        ? 'exefs-row-selected'
-                        : ''
-                    }`}
+                  <button
+                    aria-pressed={selectedWorkflow?.workflowId === candidate.workflowId}
+                    className="royal-candy-workflow-choice secondary-button"
                     key={candidate.workflowId}
                     onClick={() => onSelectWorkflow(candidate.workflowId)}
-                    role="row"
+                    type="button"
                   >
-                    <span role="cell">
+                    <span className="royal-candy-choice-title">
                       {royalCandyWorkflowNameKeys[candidate.workflowId]
                         ? t(royalCandyWorkflowNameKeys[candidate.workflowId]!)
                         : translateLiteral(candidate.name)}
                     </span>
-                    <span role="cell">
+                    <span>
                       <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
                         {translateLiteral(formatRoyalCandyStatus(candidate.status))}
                       </span>
                     </span>
-                    <span role="cell">{translateLiteral(formatRoyalCandyMode(candidate.mode))}</span>
-                    <span role="cell">
+                    <span>{translateLiteral(formatRoyalCandyMode(candidate.mode))}</span>
+                    <span>
                       {t('royalCandy.itemFromTemplate', {
                         itemId: candidate.itemId,
                         templateItemId: candidate.templateItemId
                       })}
                     </span>
-                    <span role="cell">{translateLiteral(candidate.target)}</span>
-                  </InteractiveTableRow>
+                    <span>{translateLiteral(candidate.target)}</span>
+                    <span className="royal-candy-choice-description">{translateLiteral(candidate.description)}</span>
+                  </button>
                 ))}
               </div>
 
@@ -55527,63 +55491,65 @@ function SelectedRoyalCandyPanel({
 
       {selectedWorkflow ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>{translateLiteral('Workflow')}</dt>
-              <dd>
-                {royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]
-                  ? t(royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]!)
-                  : translateLiteral(selectedWorkflow.name)}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Status')}</dt>
-              <dd>{translateLiteral(formatRoyalCandyStatus(selectedWorkflow.status))}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Mode')}</dt>
-              <dd>{translateLiteral(formatRoyalCandyMode(selectedWorkflow.mode))}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Item')}</dt>
-              <dd>
-                {t('royalCandy.itemFromTemplate', {
-                  itemId: selectedWorkflow.itemId,
-                  templateItemId: selectedWorkflow.templateItemId
-                })}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Target')}</dt>
-              <dd>{translateLiteral(selectedWorkflow.target)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Check')}</dt>
-              <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Check status')}</dt>
-              <dd>{check ? translateLiteral(formatRoyalCandyStatus(check.status)) : 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Source file')}</dt>
-              <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Layer')}</dt>
-              <dd>
-                {provenance
-                  ? translateLiteral(formatSourceLayer(provenance.sourceLayer))
-                  : 'n/a'}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('File state')}</dt>
-              <dd>
-                {provenance ? translateLiteral(formatFileState(provenance.fileState)) : 'n/a'}
-              </dd>
-            </div>
-          </dl>
+          <AdvancedEditorDetails>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>{translateLiteral('Workflow')}</dt>
+                <dd>
+                  {royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]
+                    ? t(royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]!)
+                    : translateLiteral(selectedWorkflow.name)}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Status')}</dt>
+                <dd>{translateLiteral(formatRoyalCandyStatus(selectedWorkflow.status))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Mode')}</dt>
+                <dd>{translateLiteral(formatRoyalCandyMode(selectedWorkflow.mode))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Item')}</dt>
+                <dd>
+                  {t('royalCandy.itemFromTemplate', {
+                    itemId: selectedWorkflow.itemId,
+                    templateItemId: selectedWorkflow.templateItemId
+                  })}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Target')}</dt>
+                <dd>{translateLiteral(selectedWorkflow.target)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Check')}</dt>
+                <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Check status')}</dt>
+                <dd>{check ? translateLiteral(formatRoyalCandyStatus(check.status)) : 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>
+                  {provenance
+                    ? translateLiteral(formatSourceLayer(provenance.sourceLayer))
+                    : 'n/a'}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>
+                  {provenance ? translateLiteral(formatFileState(provenance.fileState)) : 'n/a'}
+                </dd>
+              </div>
+            </dl>
+          </AdvancedEditorDetails>
 
           <div
             className={`encounter-edit-form royal-candy-edit-form ${
@@ -55977,7 +55943,7 @@ function StartingItemsSection({
             : [])
         ])}
       />
-      <section aria-labelledby="starting-items-heading" className="panel wide-panel">
+      <section aria-labelledby="starting-items-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Package aria-hidden="true" size={18} />
           <h2 className="context-help-heading" id="starting-items-heading">
@@ -56125,46 +56091,48 @@ function StartingItemsSection({
 
               {selectedGrant ? (
                 <>
-                  <dl className="item-provenance-list">
-                    <div>
-                      <dt>Starting Items status</dt>
-                      <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                    </div>
-                    <div>
-                      <dt>Slot</dt>
-                      <dd>#{selectedGrant.slot}</dd>
-                    </div>
-                    <div>
-                      <dt>Selected item</dt>
-                      <dd>
-                        {selectedGrant.selectedItem
-                          ? `${selectedGrant.selectedItem.name} (#${selectedGrant.selectedItem.itemId})`
-                          : 'None'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Quantity</dt>
-                      <dd>
-                        {selectedGrant.selectedItem
-                          ? selectedGrant.selectedItem.isKeyItem
-                            ? '1 (key item)'
-                            : selectedGrant.inputQuantity
-                          : 'n/a'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Source file</dt>
-                      <dd>{selectedGrant.provenance.sourceFile}</dd>
-                    </div>
-                    <div>
-                      <dt>Layer</dt>
-                      <dd>{formatSourceLayer(selectedGrant.provenance.sourceLayer)}</dd>
-                    </div>
-                    <div>
-                      <dt>File state</dt>
-                      <dd>{formatFileState(selectedGrant.provenance.fileState)}</dd>
-                    </div>
-                  </dl>
+                  <AdvancedEditorDetails>
+                    <dl className="item-provenance-list">
+                      <div>
+                        <dt>Starting Items status</dt>
+                        <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                      </div>
+                      <div>
+                        <dt>Slot</dt>
+                        <dd>#{selectedGrant.slot}</dd>
+                      </div>
+                      <div>
+                        <dt>Selected item</dt>
+                        <dd>
+                          {selectedGrant.selectedItem
+                            ? `${selectedGrant.selectedItem.name} (#${selectedGrant.selectedItem.itemId})`
+                            : 'None'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Quantity</dt>
+                        <dd>
+                          {selectedGrant.selectedItem
+                            ? selectedGrant.selectedItem.isKeyItem
+                              ? '1 (key item)'
+                              : selectedGrant.inputQuantity
+                            : 'n/a'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Source file</dt>
+                        <dd>{selectedGrant.provenance.sourceFile}</dd>
+                      </div>
+                      <div>
+                        <dt>Layer</dt>
+                        <dd>{formatSourceLayer(selectedGrant.provenance.sourceLayer)}</dd>
+                      </div>
+                      <div>
+                        <dt>File state</dt>
+                        <dd>{formatFileState(selectedGrant.provenance.fileState)}</dd>
+                      </div>
+                    </dl>
+                  </AdvancedEditorDetails>
 
                   <div className="encounter-edit-form">
                     <div className="form-actions">
@@ -58468,6 +58436,7 @@ type PendingEditContext = {
 };
 
 type SettingsTabId =
+  | 'betaEditors'
   | 'updates'
   | 'layout'
   | 'themes'
@@ -58593,6 +58562,7 @@ function SettingsSection({
       : []),
     { id: 'analysis', icon: Activity, label: t('analysisLoading.title') },
     { id: 'diagnostics', icon: Activity, label: t('settings.tabs.diagnostics') },
+    { id: 'betaEditors', icon: Layers, label: t('settings.tabs.betaEditors') },
     { id: 'language', icon: Languages, label: t('settings.language.title') },
     { id: 'personalization', icon: Sparkles, label: t('settings.tabs.personalization') }
   ];
@@ -59041,6 +59011,13 @@ function SettingsSection({
           <PerformanceDiagnosticsPanel />
         </section>
       ) : null}
+      {effectiveActiveSettingsTab === 'betaEditors' ? (
+        <div aria-labelledby="settings-tab-betaEditors" className="settings-tabpanel"
+          id="settings-tabpanel-betaEditors" role="tabpanel">
+          <BetaEditorsSettings />
+        </div>
+      ) : null}
+
       {effectiveActiveSettingsTab === 'personalization' ? (
         <div
           aria-labelledby="settings-tab-personalization"

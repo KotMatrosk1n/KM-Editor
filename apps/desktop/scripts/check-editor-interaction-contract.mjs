@@ -909,6 +909,11 @@ async function checkCompiledRuntimeContracts(outputRoot) {
 
 function checkStaticWiringContract() {
   const app = read('src/App.tsx');
+  assert.doesNotMatch(
+    app,
+    /(?:readRowClipboardEnvelopeFromSystemClipboard|writeRowClipboardEnvelopeToSystemClipboard)/u,
+    'Editor record copy and paste must use the internal clipboard, never external clipboard data.'
+  );
   const appSource = ts.createSourceFile('App.tsx', app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const rowClipboardCanonical = read('src/authoring/rowClipboardCanonical.ts');
   const rowClipboardSystemClipboard = read(
@@ -997,12 +1002,12 @@ function checkStaticWiringContract() {
     } else {
       const readCalls = calledIdentifier(
         handler,
-        'readRowClipboardEnvelopeFromSystemClipboard'
+        'readRowClipboardEnvelopeFromEditorClipboard'
       );
       assert.equal(
         readCalls.length,
         1,
-        `${handlerName} must import exactly one system clipboard envelope.`
+        `${handlerName} must import exactly one internal editor clipboard envelope.`
       );
       assert.equal(
         readCalls[0].arguments[0]?.getText(appSource),

@@ -693,7 +693,7 @@ internal sealed class ZaTrainersWorkflowService
             itemId,
             itemId > 0 ? labels.Item(itemId) : null,
             moveIds,
-            moveIds.Select(move => move <= 0 ? "None" : labels.Move(move)).ToArray(),
+            moveIds.Select(move => FormatMoveName(move, labels.Move)).ToArray(),
             pokemon.Sex,
             FormatGender(pokemon.Sex),
             pokemon.Ability,
@@ -721,6 +721,11 @@ internal sealed class ZaTrainersWorkflowService
             BaseStats = abilities.BaseStats,
             SpriteName = spriteLabels.Pokemon(speciesId),
         };
+    }
+
+    internal static string FormatMoveName(int moveId, Func<int, string> resolveName)
+    {
+        return moveId == 0 ? "Not specified" : resolveName(moveId);
     }
 
     private static IReadOnlyList<int> ReadMoves(ZaTrainerPokemon pokemon)
@@ -768,11 +773,7 @@ internal sealed class ZaTrainersWorkflowService
             (0, "Basic", "Enables baseline move selection and battle decisions."),
             (1, "Strong", "Uses stronger scoring for move choice, targets, and matchup checks."),
             (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions."),
-            (3, "Double", "Uses double-battle-aware partner, target, and spread move logic."),
-            (4, "Raid", "Uses raid-style AI checks for encounters that share raid battle behavior."),
-            (5, "Weak", "Allows weakness-aware choices against the opponent's active Pokemon."),
-            (6, "Item", "Allows the trainer AI to consider configured battle item usage."),
-            (7, "Change", "Allows the trainer AI to consider switching Pokemon during battle."),
+            (7, "Change", "Enables the trainer AI Change behavior."),
         };
 
         return definitions
@@ -796,7 +797,7 @@ internal sealed class ZaTrainersWorkflowService
         var speciesOptions = CreateSpeciesOptions(labels, pokemonAvailability);
         var speciesMaximumValue = Math.Max(labels.PokemonNameCount - 1, MaximumOptionValue(speciesOptions, 0));
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true, zeroLabel: "Not specified");
         var fields = new List<ZaTrainerEditableField>();
 
         foreach (var field in BaseEditableFields)
@@ -862,19 +863,20 @@ internal sealed class ZaTrainersWorkflowService
     private static IReadOnlyList<ZaTrainerEditableFieldOption> CreateIndexedOptions(
         int count,
         Func<int, string> resolveName,
-        bool includeNone)
+        bool includeNone,
+        string zeroLabel = "None")
     {
         var firstValue = includeNone ? 0 : 1;
         if (count <= firstValue)
         {
-            return includeNone ? [new(0, "0 None")] : Array.Empty<ZaTrainerEditableFieldOption>();
+            return includeNone ? [new(0, $"0 {zeroLabel}")] : Array.Empty<ZaTrainerEditableFieldOption>();
         }
 
         return Enumerable
             .Range(firstValue, count - firstValue)
             .Select(value =>
             {
-                var label = value == 0 ? "None" : resolveName(value);
+                var label = value == 0 ? zeroLabel : resolveName(value);
                 return new ZaTrainerEditableFieldOption(
                     value,
                     $"{value.ToString(CultureInfo.InvariantCulture)} {label}");

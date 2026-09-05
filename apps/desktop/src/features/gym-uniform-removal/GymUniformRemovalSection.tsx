@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { AdvancedEditorDetails } from '../../components/AdvancedEditorDetails';
+
 import { ClipboardCheck, Save, Shirt, Trash2, Wrench } from 'lucide-react';
 import {
   type EditSession,
@@ -87,7 +89,7 @@ export function GymUniformRemovalSection({
 
   return (
     <>
-      <section aria-labelledby="gym-uniform-removal-heading" className="panel wide-panel">
+      <section aria-labelledby="gym-uniform-removal-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Shirt aria-hidden="true" size={18} />
           <h2 id="gym-uniform-removal-heading">Gym Uniform Removal</h2>
@@ -192,60 +194,62 @@ export function GymUniformRemovalSection({
                 <h3>Install Details</h3>
               </div>
 
-              <dl className="item-provenance-list">
-                <div>
-                  <dt>Install status</dt>
-                  <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                </div>
-                <div>
-                  <dt>Game</dt>
-                  <dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd>
-                </div>
-                <div>
-                  <dt>Build ID</dt>
-                  <dd data-localization-ignore="true">{workflow.buildId}</dd>
-                </div>
-                <div>
-                  <dt>Patch site</dt>
-                  <dd data-localization-ignore="true">{workflow.patchOffsetHex}</dd>
-                </div>
-                <div>
-                  <dt>Main handler</dt>
-                  <dd>{formatMainHandlerState(workflow.mainHandlerState)}</dd>
-                </div>
-                <div>
-                  <dt>IPS artifact</dt>
-                  <dd>{formatIpsArtifactState(workflow.ipsArtifactState)}</dd>
-                </div>
-                <div>
-                  <dt>IPS file</dt>
-                  <dd data-localization-ignore="true">{ipsRelativePath}</dd>
-                </div>
-                <div>
-                  <dt>Source file</dt>
-                  <dd data-localization-ignore="true">{workflow.provenance.sourceFile}</dd>
-                </div>
-                <div>
-                  <dt>Layer</dt>
-                  <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
-                </div>
-                <div>
-                  <dt>File state</dt>
-                  <dd>{formatFileState(workflow.provenance.fileState)}</dd>
-                </div>
-                <div>
-                  <dt>Owned bytes</dt>
-                  <dd>{workflow.stats.ownedByteCount}</dd>
-                </div>
-                <div>
-                  <dt>Verified sources</dt>
-                  <dd>{workflow.stats.sourceFileCount}</dd>
-                </div>
-                <div>
-                  <dt>Uninstall available</dt>
-                  <dd>{workflow.canUninstall ? 'Available' : 'Unavailable'}</dd>
-                </div>
-              </dl>
+              <AdvancedEditorDetails>
+                <dl className="item-provenance-list">
+                  <div>
+                    <dt>Install status</dt>
+                    <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                  </div>
+                  <div>
+                    <dt>Game</dt>
+                    <dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                  </div>
+                  <div>
+                    <dt>Build ID</dt>
+                    <dd data-localization-ignore="true">{workflow.buildId}</dd>
+                  </div>
+                  <div>
+                    <dt>Patch site</dt>
+                    <dd data-localization-ignore="true">{workflow.patchOffsetHex}</dd>
+                  </div>
+                  <div>
+                    <dt>Main handler</dt>
+                    <dd>{formatMainHandlerState(workflow.mainHandlerState)}</dd>
+                  </div>
+                  <div>
+                    <dt>IPS artifact</dt>
+                    <dd>{formatIpsArtifactState(workflow.ipsArtifactState)}</dd>
+                  </div>
+                  <div>
+                    <dt>IPS file</dt>
+                    <dd data-localization-ignore="true">{ipsRelativePath}</dd>
+                  </div>
+                  <div>
+                    <dt>Source file</dt>
+                    <dd data-localization-ignore="true">{workflow.provenance.sourceFile}</dd>
+                  </div>
+                  <div>
+                    <dt>Layer</dt>
+                    <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
+                  </div>
+                  <div>
+                    <dt>File state</dt>
+                    <dd>{formatFileState(workflow.provenance.fileState)}</dd>
+                  </div>
+                  <div>
+                    <dt>Owned bytes</dt>
+                    <dd>{workflow.stats.ownedByteCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Verified sources</dt>
+                    <dd>{workflow.stats.sourceFileCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Uninstall available</dt>
+                    <dd>{workflow.canUninstall ? 'Available' : 'Unavailable'}</dd>
+                  </div>
+                </dl>
+              </AdvancedEditorDetails>
 
               <div className="encounter-edit-form">
                 <div className="form-actions">
