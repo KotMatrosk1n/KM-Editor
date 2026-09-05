@@ -5391,9 +5391,11 @@ internal static class GameModuleProviders
             .Take(GameModuleContract.MaximumDiagnostics)
             .Select(diagnostic => new ApiDiagnostic(
                 diagnostic.Severity,
-                "The owning workflow reported a diagnostic while preparing this read-only module.",
+                AnalysisDiagnosticPresentation.Text(diagnostic.Message),
+                File: AnalysisDiagnosticPresentation.Optional(diagnostic.File),
                 Domain: ModuleDomain(module),
-                Field: SafeDiagnosticToken(diagnostic.Field))
+                Field: SafeDiagnosticToken(diagnostic.Field),
+                Expected: AnalysisDiagnosticPresentation.Optional(diagnostic.Expected))
             {
                 Code = SafeDiagnosticCode(diagnostic.Code),
             })

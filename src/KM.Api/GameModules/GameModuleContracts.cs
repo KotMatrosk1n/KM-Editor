@@ -110,7 +110,10 @@ public sealed record QueryGameModuleRequest(
     GameModuleDto Module,
     SemanticSourceLayerKindDto Layer,
     int Limit,
-    string? Cursor = null);
+    string? Cursor = null,
+    string? SearchText = null,
+    bool CatalogOnly = false,
+    string? RecordId = null);
 
 public sealed record QueryGameModuleResponse(
     SemanticProjectRevisionDto Revision,

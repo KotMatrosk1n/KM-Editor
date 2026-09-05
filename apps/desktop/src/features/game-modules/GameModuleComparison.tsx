@@ -22,6 +22,8 @@ import type {
 } from '../../bridge/gameModuleContracts';
 import type { SemanticExploreRecordRef } from '../../bridge/semanticExploreContracts';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
+import { AnalysisCatalogPicker } from '../workbench/AnalysisCatalogPicker';
+import type { GameModuleController } from './useGameModuleController';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
 import {
@@ -66,17 +68,29 @@ const identityFieldKeysByRecordKind: Readonly<Record<string, readonly string[]>>
 export function GameModuleComparison({
   canNavigateRecord,
   onNavigateRecord,
-  response
+  response: initialResponse,
+  searchCatalog
 }: {
   canNavigateRecord: (record: SemanticExploreRecordRef) => boolean;
   onNavigateRecord: (record: SemanticExploreRecordRef) => void;
   response: QueryGameModuleResponse;
+  searchCatalog?: GameModuleController['searchCatalog'];
 }) {
   const { formatLocale, t, translateLiteral } = useLocalization();
+  const [catalogRecords, setCatalogRecords] = useState<GameModuleRecord[]>([]);
+  const response = useMemo(() => ({ ...initialResponse,
+    records: [...new Map([...initialResponse.records, ...catalogRecords].map((record) => [record.recordId, record])).values()]
+  }), [initialResponse, catalogRecords]);
   const [fieldIdentities, setFieldIdentities] = useState<string[]>([]);
   const [measureIdentity, setMeasureIdentity] = useState<string>('');
   const [recordSearch, setRecordSearch] = useCoalescedTextInputState();
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
+  useEffect(() => {
+    setCatalogRecords((current) => {
+      const retained = current.filter((record) => selectedRecordIds.includes(record.recordId));
+      return retained.length === current.length ? current : retained;
+    });
+  }, [selectedRecordIds]);
   const initializedFieldsForQuery = useRef<string | null>(null);
   const recordSearchInputRef = useRef<HTMLInputElement | null>(null);
   const comparisonCollator = useMemo(() => new Intl.Collator(formatLocale, {
@@ -238,7 +252,7 @@ export function GameModuleComparison({
           </div>
         </div>
         <p className="km-game-module-compare-boundary">
-          {t('gameModules.compare.loadedBoundary', {
+          {searchCatalog ? t('analysisCatalog.count', { count: initialResponse.totalRecordCount }) : t('gameModules.compare.loadedBoundary', {
             loaded: response.records.length,
             total: response.totalRecordCount
           })}
@@ -263,6 +277,23 @@ export function GameModuleComparison({
               </strong>
             ) : null}
           </header>
+          {searchCatalog ? <AnalysisCatalogPicker
+            label={t('gameModules.compare.records.search')}
+            search={async (query, cursor) => {
+              const result = await searchCatalog(query, cursor);
+              return { nextCursor: result.nextCursor, total: result.totalRecordCount,
+                options: result.records.map((record) => ({ value: record.recordId,
+                  label: `${presentGameModuleRecordTitle(record, t) ?? record.title} (#${record.recordId})`,
+                  disabled: selectedRecordIds.includes(record.recordId) })) };
+            }}
+            onSelect={async (recordId, isCurrent) => {
+              const detail = await searchCatalog('', undefined, recordId);
+              if (!isCurrent()) return;
+              if (!detail.records.some((record) => record.recordId === recordId)) throw new Error('The selected record is no longer available.');
+              setCatalogRecords((current) => [...current.filter((record) => selectedRecordIds.includes(record.recordId)), ...detail.records]);
+              addRecord(recordId);
+            }}
+          /> : <>
           <div className="km-game-module-record-filters">
             <label>
               <span>{t('gameModules.compare.records.search')}</span>
@@ -311,6 +342,7 @@ export function GameModuleComparison({
               </p>
             )
           ) : null}
+          </>}
         </section>
 
         <section aria-labelledby="game-module-selected-records-title">

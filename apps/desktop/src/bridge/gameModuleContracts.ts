@@ -386,6 +386,9 @@ export const gameModuleRecordSchema = z
   });
 
 export const queryGameModuleRequestSchema = z.strictObject({
+  searchText: z.string().max(256).regex(/^[^\u0000-\u001f\u007f-\u009f]*$/u).optional(),
+  catalogOnly: z.boolean().optional(),
+  recordId: z.string().min(1).max(1_024).optional(),
   cursor: cursorSchema.optional(),
   expectedRevision: semanticExploreRevisionSchema,
   layer: gameModuleLayerSchema,

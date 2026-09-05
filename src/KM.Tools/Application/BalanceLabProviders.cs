@@ -946,9 +946,11 @@ internal abstract class BalanceLabFamilyProviderBase : IBalanceLabFamilyProvider
         return diagnostics
             .Select(diagnostic => new ApiDiagnostic(
                 diagnostic.Severity,
-                "The owning workflow reported a diagnostic while preparing this read-only analysis.",
+                AnalysisDiagnosticPresentation.Text(diagnostic.Message),
+                File: AnalysisDiagnosticPresentation.Optional(diagnostic.File),
                 Domain: StudyDomain(study),
-                Field: SafeDiagnosticToken(diagnostic.Field))
+                Field: SafeDiagnosticToken(diagnostic.Field),
+                Expected: AnalysisDiagnosticPresentation.Optional(diagnostic.Expected))
             {
                 Code = SafeDiagnosticCode(diagnostic.Code),
             })

@@ -10,6 +10,8 @@ import {
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
 import { useLocalization } from '../../localization';
+import { AnalysisCatalogPicker } from '../workbench/AnalysisCatalogPicker';
+import type { BalanceLabController } from './useBalanceLabController';
 import {
   humanizeIdentifier,
   presentationFactLabelKey
@@ -30,20 +32,26 @@ export function BalanceLabChart({
   onSelectedPointIdsChange,
   points,
   selectedPointIds,
-  study
+  study,
+  metrics: catalogMetrics,
+  searchCatalog,
+  onCatalogSelect
 }: {
   onSelectedPointIdsChange: (pointIds: readonly string[]) => void;
   points: readonly BalanceLabPoint[];
   selectedPointIds: readonly string[];
   study: BalanceLabStudy;
+  metrics?: readonly BalanceComparisonMetric[];
+  searchCatalog?: BalanceLabController['searchCatalog'];
+  onCatalogSelect?: (pointId: string, isCurrent: () => boolean) => Promise<void>;
 }) {
   const { t, translateLiteral } = useLocalization();
-  const initialMetrics = balanceComparisonMetrics(points);
+  const initialMetrics = catalogMetrics ?? balanceComparisonMetrics(points);
   const initialMetricIdentity = defaultBalanceComparisonMetric(initialMetrics, study);
   const [metricIdentity, setMetricIdentity] = useState(initialMetricIdentity);
   const [recordSearch, setRecordSearch] = useCoalescedTextInputState();
 
-  const metrics = useMemo(() => balanceComparisonMetrics(points), [points]);
+  const metrics = useMemo(() => catalogMetrics ?? balanceComparisonMetrics(points), [catalogMetrics, points]);
   const activeMetricIdentity = metrics.some((metric) => metric.identity === metricIdentity)
     ? metricIdentity
     : defaultBalanceComparisonMetric(metrics, study);
@@ -136,6 +144,18 @@ export function BalanceLabChart({
 
       <fieldset className="km-balance-record-picker">
         <legend>{t('balanceLab.comparison.records')}</legend>
+        {searchCatalog && onCatalogSelect ? <AnalysisCatalogPicker
+          key={activeMetricIdentity}
+          label={t('balanceLab.comparison.search')}
+          onSelect={onCatalogSelect}
+          search={async (query, cursor) => {
+            const response = await searchCatalog(query, activeMetricIdentity, cursor);
+            return { nextCursor: response.nextCursor, total: response.totalPointCount ?? response.points.length,
+              options: response.points.map((point) => ({ value: point.pointId,
+                label: `${point.label} (#${point.record.recordId}${point.record.subrecordId ? ` / ${point.record.subrecordId}` : ''})`,
+                disabled: selectedIds.has(point.pointId) })) };
+          }}
+        /> : <>
         <div className="km-balance-record-picker-toolbar">
           <label className="km-balance-record-search">
             <span className="km-workbench-visually-hidden">
@@ -224,6 +244,7 @@ export function BalanceLabChart({
           </div>
         )}
 
+        </>}
         {selectedPoints.length > 0 ? (
           <div className="km-balance-selected-records">
             <header>

@@ -1902,6 +1902,16 @@ h2 {
   gap: 3px;
 }
 
+.searchable-option-listbox[data-virtual-catalog='true'] {
+  display: block;
+}
+
+.searchable-option-listbox[data-virtual-catalog='true'] .searchable-option-row {
+  height: 48px;
+  min-height: 48px;
+  overflow: hidden;
+}
+
 .searchable-option-row {
   display: block;
   width: 100%;

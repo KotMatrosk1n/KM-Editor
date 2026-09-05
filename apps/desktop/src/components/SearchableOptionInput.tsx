@@ -50,6 +50,8 @@ export type SearchableOptionInputProps = Readonly<{
   noOptionsLabel?: string;
   onChange: (value: string) => void;
   onFocus?: () => void;
+  onSearchQueryChange?: (query: string) => void;
+  onCatalogEndReached?: () => void;
   options: readonly SearchableOptionInputOption[];
   portalMenu?: boolean;
   required?: boolean;
@@ -85,6 +87,8 @@ export function SearchableOptionInput({
   noOptionsLabel,
   onChange,
   onFocus,
+  onSearchQueryChange,
+  onCatalogEndReached,
   options,
   portalMenu = true,
   required,
@@ -99,6 +103,7 @@ export function SearchableOptionInput({
   const listboxId = `${inputId}-listbox`;
   const [isOpen, setIsOpen] = useState(false);
   const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
+  const [catalogScrollTop, setCatalogScrollTop] = useState(0);
   const [portalMenuStyle, setPortalMenuStyle] = useState<CSSProperties | undefined>();
   const effectiveLocalizationIgnore =
     localizationIgnore ?? (localizeOptions ? undefined : 'true');
@@ -139,7 +144,7 @@ export function SearchableOptionInput({
     (trimmedOptionQuery.length === 0 ||
       localizedEmptyOptionLabel.toLocaleLowerCase().includes(trimmedOptionQuery));
   const filteredOptions = useMemo(() => {
-    const matches = getSmartOptionMatches(optionQuery, localizedOptions);
+    const matches = onSearchQueryChange ? localizedOptions : getSmartOptionMatches(optionQuery, localizedOptions);
     if (
       maximumVisibleOptions === undefined
       || !Number.isInteger(maximumVisibleOptions)
@@ -159,7 +164,14 @@ export function SearchableOptionInput({
       }
     }
     return visibleMatches;
-  }, [hasUserQuery, localizedOptions, maximumVisibleOptions, optionQuery, value]);
+  }, [hasUserQuery, localizedOptions, maximumVisibleOptions, onSearchQueryChange, optionQuery, value]);
+  useEffect(() => {
+    if (isOpen) onSearchQueryChange?.(optionQuery);
+    if (onSearchQueryChange) {
+      if (menuRef.current) menuRef.current.scrollTop = 0;
+      setCatalogScrollTop(0);
+    }
+  }, [isOpen, onSearchQueryChange, optionQuery]);
   const menuItems = useMemo<MenuItem[]>(
     () => [
       ...(emptyOptionMatches
@@ -216,11 +228,20 @@ export function SearchableOptionInput({
       return;
     }
 
+    if (onSearchQueryChange && menuRef.current) {
+      const menu = menuRef.current;
+      const top = activeOptionIndex * 48;
+      if (top < menu.scrollTop) menu.scrollTop = top;
+      else if (top + 48 > menu.scrollTop + menu.clientHeight) menu.scrollTop = top + 48 - menu.clientHeight;
+      setCatalogScrollTop(menu.scrollTop);
+      if (activeOptionIndex >= menuItems.length - 3) onCatalogEndReached?.();
+      return;
+    }
     const activeOption = menuRef.current?.querySelector<HTMLElement>(
       `[data-option-index="${activeOptionIndex}"]`
     );
     activeOption?.scrollIntoView({ block: 'nearest' });
-  }, [activeOptionIndex, hasMenu]);
+  }, [activeOptionIndex, hasMenu, menuItems.length, onCatalogEndReached, onSearchQueryChange]);
 
   useLayoutEffect(() => {
     if (!hasMenu || !portalMenu) {
@@ -380,7 +401,10 @@ export function SearchableOptionInput({
     setActiveOptionIndex(-1);
   };
 
-  const optionRows = menuItems.map((item, index) => {
+  const firstVisible = onSearchQueryChange ? Math.max(0, Math.floor(catalogScrollTop / 48) - 5) : 0;
+  const lastVisible = onSearchQueryChange ? firstVisible + 20 : menuItems.length;
+  const visibleRows = menuItems.slice(firstVisible, lastVisible).map((item, offset) => {
+    const index = firstVisible + offset;
     const isSelected =
       item.kind === 'empty'
         ? value.trim().length === 0
@@ -391,6 +415,8 @@ export function SearchableOptionInput({
       <button
         aria-disabled={isDisabled || undefined}
         aria-selected={isSelected}
+        aria-posinset={onSearchQueryChange ? index + 1 : undefined}
+        aria-setsize={onSearchQueryChange ? menuItems.length : undefined}
         className={`searchable-option-row ${
           activeOptionIndex === index ? 'is-active' : ''
         }`.trim()}
@@ -421,6 +447,11 @@ export function SearchableOptionInput({
       </button>
     );
   });
+  const optionRows = <>
+    {firstVisible > 0 ? <div aria-hidden="true" style={{ height: firstVisible * 48 }} /> : null}
+    {visibleRows}
+    {lastVisible < menuItems.length ? <div aria-hidden="true" style={{ height: (menuItems.length - lastVisible) * 48 }} /> : null}
+  </>;
   const noOptionsStatus =
     menuItems.length === 0 && localizedNoOptionsLabel !== undefined ? (
       <div className="searchable-option-empty" role="status">
@@ -432,11 +463,17 @@ export function SearchableOptionInput({
       className="searchable-option-menu"
       data-localization-ignore={effectiveLocalizationIgnore}
       ref={menuRef}
+      onScroll={onSearchQueryChange ? (event) => {
+        const menu = event.currentTarget;
+        setCatalogScrollTop(menu.scrollTop);
+        if (menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 144) onCatalogEndReached?.();
+      } : undefined}
       style={portalMenu ? portalMenuStyle ?? { visibility: 'hidden' } : undefined}
     >
       <div
         aria-label={localizedAriaLabel}
         className="searchable-option-listbox"
+        data-virtual-catalog={onSearchQueryChange ? 'true' : undefined}
         id={listboxId}
         role="listbox"
       >

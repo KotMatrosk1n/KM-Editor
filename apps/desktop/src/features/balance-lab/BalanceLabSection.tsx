@@ -156,8 +156,10 @@ export function BalanceLabSection({
                 onNavigateFinding={onNavigateFinding}
                 points={resultData.points}
                 study={study}
+                metrics={resultData.metrics}
+                searchCatalog={controller.searchCatalog}
               />
-              {resultData.nextCursor ? (
+              {!controller.searchCatalog && resultData.nextCursor ? (
                 resultData.points.length + resultData.findings.length >=
                   balanceLabMaximumContinuationStartCount ? (
                   <p className="km-balance-advisory">{t('balanceLab.results.windowLimit')}</p>

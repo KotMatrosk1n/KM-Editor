@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ArrowRight, Info, TriangleAlert } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   BalanceLabConfidence,
   BalanceLabFact,
@@ -19,6 +19,8 @@ import {
 } from '../workbench/analysisPresentationUtils';
 import { TechnicalDetails } from '../workbench/AnalysisPresentation';
 import { BalanceLabChart } from './BalanceLabCharts';
+import type { BalanceLabQueryResponse } from '../../bridge/balanceLabContracts';
+import type { BalanceLabController } from './useBalanceLabController';
 import {
   balanceRecordGroupIdentity,
   balanceRecordReferenceIdentity
@@ -27,17 +29,32 @@ import {
 const maximumStudyWideFindingTitles = 5;
 
 export function BalanceLabResults({
-  findings,
+  findings: initialFindings,
   onNavigateFinding,
-  points,
-  study
+  points: initialPoints,
+  study,
+  metrics,
+  searchCatalog
 }: {
   findings: readonly BalanceLabFinding[];
   onNavigateFinding: (record: SemanticExploreRecordRef) => void;
   points: readonly BalanceLabPoint[];
   study: BalanceLabStudy;
+  metrics?: BalanceLabQueryResponse['metrics'];
+  searchCatalog?: BalanceLabController['searchCatalog'];
 }) {
   const [selectedPointIds, setSelectedPointIds] = useState<readonly string[]>([]);
+  const [catalogDetails, setCatalogDetails] = useState<BalanceLabQueryResponse[]>([]);
+  useEffect(() => {
+    setCatalogDetails((current) => {
+      const retained = current.filter((detail) => detail.points.some((point) => selectedPointIds.includes(point.pointId)));
+      return retained.length === current.length ? current : retained;
+    });
+  }, [selectedPointIds]);
+  const points = useMemo(() => [...new Map([...initialPoints, ...catalogDetails.flatMap((detail) => detail.points)]
+    .map((point) => [point.pointId, point])).values()], [initialPoints, catalogDetails]);
+  const findings = useMemo(() => [...new Map([...initialFindings, ...catalogDetails.flatMap((detail) => detail.findings)]
+    .map((finding) => [finding.findingId, finding])).values()], [initialFindings, catalogDetails]);
   const selectedPoints = useMemo(
     () => resolveSelectedPoints(points, selectedPointIds),
     [points, selectedPointIds]
@@ -65,6 +82,16 @@ export function BalanceLabResults({
         points={points}
         selectedPointIds={selectedPointIds}
         study={study}
+        metrics={metrics}
+        searchCatalog={searchCatalog}
+        onCatalogSelect={async (pointId, isCurrent) => {
+          if (!searchCatalog) return;
+          const detail = await searchCatalog('', undefined, undefined, pointId);
+          if (!isCurrent()) return;
+          if (!detail.points.some((point) => point.pointId === pointId)) throw new Error('The selected record is no longer available.');
+          setCatalogDetails((current) => [...current.filter((response) => response.points.some((point) => selectedPointIds.includes(point.pointId))), detail]);
+          setSelectedPointIds((current) => [...new Set([...current, pointId])]);
+        }}
       />
       {selectedPoints.length > 0 ? (
         <>
