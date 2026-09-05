@@ -669,6 +669,7 @@ import {
 import { createSemanticMergeLocation } from './workbench/semanticMergeNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
 import { PerformanceDiagnosticsPanel } from './features/settings/PerformanceDiagnosticsPanel';
+import { ProcessMemoryPanel } from './features/settings/ProcessMemoryPanel';
 import { CompatibilityActions } from './features/pokemon/CompatibilityActions';
 import { compatibilityEntryEnabled, compatibilityGroupField, compatibilityGroupValue, compatibilityToggleValues, isMoveListCompatibility } from './features/pokemon/compatibilityDrafts';
 import { ShopPendingRemovals } from './features/shops/ShopPendingRemovals';
@@ -24887,12 +24888,14 @@ function SelectedPokemonSummaryCard({
   dexEditor,
   editorFamily,
   pokemon,
-  variant = 'detailed'
+  variant = 'detailed',
+  showIdentity = true
 }: {
   dexEditor?: PokemonDexEditor | null;
   editorFamily: EditorUiFamily;
   pokemon: PokemonRecord;
   variant?: 'context' | 'detailed';
+  showIdentity?: boolean;
 }) {
   const isContext = variant === 'context';
   const pokemonLabel = formatPokemonRecordName(pokemon, editorFamily);
@@ -24908,20 +24911,24 @@ function SelectedPokemonSummaryCard({
         isContext ? 'pokemon-summary-card-context' : 'pokemon-summary-card-detailed'
       }`}
     >
-      <PokemonSprite
-        className="pokemon-summary-sprite"
-        editorFamily={editorFamily}
-        form={pokemon.form}
-        name={pokemonLabel}
-        speciesId={pokemon.speciesId}
-        spriteName={pokemon.spriteName}
-      />
-      <div className="pokemon-summary-main">
-        <strong data-localization-ignore="true">{pokemonLabel}</strong>
-        <span data-localization-ignore="true">
-          {pokemon.speciesId} / {pokemonFormLabel}
-        </span>
-      </div>
+      {showIdentity ? (
+        <>
+          <PokemonSprite
+            className="pokemon-summary-sprite"
+            editorFamily={editorFamily}
+            form={pokemon.form}
+            name={pokemonLabel}
+            speciesId={pokemon.speciesId}
+            spriteName={pokemon.spriteName}
+          />
+          <div className="pokemon-summary-main">
+            <strong data-localization-ignore="true">{pokemonLabel}</strong>
+            <span data-localization-ignore="true">
+              {pokemon.speciesId} / {pokemonFormLabel}
+            </span>
+          </div>
+        </>
+      ) : null}
       <dl className="item-provenance-list pokemon-summary-metadata">
         <div>
           <dt>Personal ID</dt>
@@ -24958,6 +24965,26 @@ function SelectedPokemonSummaryCard({
 
 function formatPokemonRecordName(pokemon: PokemonRecord, editorFamily: EditorUiFamily) {
   return formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
+}
+
+function SelectedPokemonSessionIdentity({ pokemon, editorFamily }: {
+  pokemon: PokemonRecord;
+  editorFamily: EditorUiFamily;
+}) {
+  const label = formatPokemonRecordName(pokemon, editorFamily);
+  return (
+    <div className="pokemon-session-selection">
+      <PokemonSprite
+        className="pokemon-session-sprite"
+        editorFamily={editorFamily}
+        form={pokemon.form}
+        name={label}
+        speciesId={pokemon.speciesId}
+        spriteName={pokemon.spriteName}
+      />
+      <strong data-localization-ignore="true">{label}</strong>
+    </div>
+  );
 }
 
 function getPokemonSpriteNameForSpecies(
@@ -27039,6 +27066,9 @@ function SelectedPokemonPanel({
         label="Pokemon"
         onStart={onStartEditSession}
         readOnlyReason={pokemon === null ? 'No Pokemon selected.' : undefined}
+        selection={pokemon ? (
+          <SelectedPokemonSessionIdentity pokemon={pokemon} editorFamily={editorFamily} />
+        ) : null}
       />
 
       {editSession ? (
@@ -27109,6 +27139,7 @@ function SelectedPokemonPanel({
               dexEditor={dexEditor}
               editorFamily={editorFamily}
               pokemon={pokemon}
+              showIdentity={false}
             />
 
           <div className={`inspector-block ${editorFamily}-pokemon-stats-block`}>
@@ -59008,6 +59039,7 @@ function SettingsSection({
           role="tabpanel"
           tabIndex={0}
         >
+          <ProcessMemoryPanel />
           <PerformanceDiagnosticsPanel />
         </section>
       ) : null}

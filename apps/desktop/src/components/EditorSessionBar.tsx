@@ -64,6 +64,7 @@ export type EditorSessionBarProps = {
   label: string;
   onStart: () => void | Promise<void>;
   readOnlyReason?: string | null;
+  selection?: ReactNode;
 };
 
 export function EditorSessionBar({
@@ -72,7 +73,8 @@ export function EditorSessionBar({
   isStarting,
   label,
   onStart,
-  readOnlyReason
+  readOnlyReason,
+  selection
 }: EditorSessionBarProps) {
   const { t, translateLiteral } = useLocalization();
   const actionContext = useContext(EditorSessionActionsContext);
@@ -99,6 +101,7 @@ export function EditorSessionBar({
       role="group"
     >
       <div className="editor-session-bar-summary">
+        {selection}
         <span
           aria-live="polite"
           className={`status-pill ${statusClassName}`}

@@ -12,7 +12,7 @@ using KM.Core.Semantics;
 namespace KM.Core.Output;
 
 /// <summary>
-/// Serializes reviewed output mutations through a durable same-volume journal.
+/// Serializes reviewed output mutations with durable journals and same-volume file publication.
 /// Callers retain ownership of game-specific preparation and postimage meaning.
 /// </summary>
 public sealed class OutputTransactionCoordinator
@@ -1962,7 +1962,7 @@ public sealed class OutputTransactionCoordinator
         var backupDirectory = paths.GetContainedMetadataPath(transactionDirectory, "backup");
         var captureDirectory = paths.GetContainedMetadataPath(transactionDirectory, "capture");
         var discardDirectory = paths.GetContainedMetadataPath(transactionDirectory, "discard");
-        var journalPath = paths.GetContainedMetadataPath(transactionDirectory, "journal.json");
+        var journalPath = paths.GetTransactionJournalPath(transactionDirectory);
         var startedAtUtc = DateTimeOffset.UtcNow;
 
         var journalEntries = plan.Mutations
@@ -2063,7 +2063,7 @@ public sealed class OutputTransactionCoordinator
             backupDirectory = paths.GetContainedMetadataPath(transactionDirectory, "backup");
             captureDirectory = paths.GetContainedMetadataPath(transactionDirectory, "capture");
             discardDirectory = paths.GetContainedMetadataPath(transactionDirectory, "discard");
-            journalPath = paths.GetContainedMetadataPath(transactionDirectory, "journal.json");
+            journalPath = paths.GetTransactionJournalPath(transactionDirectory);
         }
         catch
         {
@@ -3169,7 +3169,7 @@ public sealed class OutputTransactionCoordinator
 
             var transaction = item.Transaction;
             var status = item.Classification.Status;
-            var journalPath = paths.GetContainedMetadataPath(transaction.Directory, "journal.json");
+            var journalPath = paths.GetTransactionJournalPath(transaction.Directory);
             switch (status.Disposition)
             {
                 case OutputRecoveryDisposition.FinalizeCommit:
@@ -3450,6 +3450,7 @@ public sealed class OutputTransactionCoordinator
         CancellationToken cancellationToken)
     {
         paths.EnsureMetadataLayout();
+        paths.ValidatePrivateJournalMembership();
         var builder = ImmutableArray.CreateBuilder<DiscoveredTransaction>();
         if (File.Exists(paths.TransactionsRoot)) throw new OutputPathSecurityException();
         if (!Directory.Exists(paths.TransactionsRoot)) return builder.ToImmutable();
@@ -3466,6 +3467,7 @@ public sealed class OutputTransactionCoordinator
             var directoryName = Path.GetFileName(directory);
             if (TryParsePreparingTransactionName(directoryName, out _))
             {
+                await ValidatePortableCleanupAsync(directory, cancellationToken).ConfigureAwait(false);
                 if (scavengeRetiredMaterial)
                 {
                     paths.DeleteMetadataTree(directory);
@@ -3476,6 +3478,7 @@ public sealed class OutputTransactionCoordinator
 
             if (TryParseRetiredTransactionName(directoryName, out _))
             {
+                await ValidatePortableCleanupAsync(directory, cancellationToken).ConfigureAwait(false);
                 if (scavengeRetiredMaterial)
                 {
                     paths.DeleteMetadataTree(directory);
@@ -3499,7 +3502,7 @@ public sealed class OutputTransactionCoordinator
                 throw new OutputPathSecurityException();
             }
 
-            var journalPath = paths.GetContainedMetadataPath(directory, "journal.json");
+            var journalPath = paths.GetTransactionJournalPath(directory);
             OutputTransactionJournal? journal = null;
             try
             {
@@ -3532,6 +3535,24 @@ public sealed class OutputTransactionCoordinator
         return builder
             .OrderBy(transaction => transaction.Id.Value, StringComparer.Ordinal)
             .ToImmutableArray();
+    }
+
+    private async Task ValidatePortableCleanupAsync(string directory, CancellationToken cancellationToken)
+    {
+        if (!paths.UsesPrivateWorkspaceJournal) return;
+        OutputTransactionJournal? journal;
+        try
+        {
+            journal = await metadata.ReadJsonAsync<OutputTransactionJournal>(
+                paths.GetTransactionJournalPath(directory), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException)
+        {
+            throw new OutputPathSecurityException();
+        }
+        if (journal is not null && journal.Phase is not (OutputTransactionPhase.Preparing
+            or OutputTransactionPhase.Prepared or OutputTransactionPhase.Committed or OutputTransactionPhase.RolledBack))
+            throw new OutputPathSecurityException();
     }
 
     private void ValidateJournal(OutputTransactionJournal journal, OutputTransactionId expectedId)
@@ -3745,6 +3766,7 @@ public sealed class OutputTransactionCoordinator
             "capture",
             "discard",
         };
+        if (paths.UsesPrivateWorkspaceJournal) expectedRootNames.Remove("journal.json");
         foreach (var entry in Directory.EnumerateFileSystemEntries(transactionDirectory))
         {
             var name = Path.GetFileName(entry);
@@ -3830,6 +3852,19 @@ public sealed class OutputTransactionCoordinator
         OutputTransactionId transactionId,
         string transactionDirectory)
     {
+        if (paths.UsesPrivateWorkspaceJournal)
+        {
+            var journalPath = paths.GetTransactionJournalPath(transactionDirectory);
+            var journal = metadata.ReadJsonAsync<OutputTransactionJournal>(journalPath, CancellationToken.None).GetAwaiter().GetResult();
+            if (journal?.Phase == OutputTransactionPhase.Committing)
+            {
+                // The only retirement of a committing transaction is preparation failure,
+                // before any target mutation. Persist that fact before renaming working files.
+                metadata.WriteJsonAtomicAsync(journalPath, journal with { Phase = OutputTransactionPhase.RolledBack },
+                    CancellationToken.None).GetAwaiter().GetResult();
+            }
+            ValidatePortableCleanupAsync(transactionDirectory, CancellationToken.None).GetAwaiter().GetResult();
+        }
         var tombstone = paths.ResolveTransactionTombstoneDirectory(transactionId);
         if (Directory.Exists(tombstone))
         {

@@ -141,27 +141,6 @@ export function GymUniformRemovalSection({
           <div className="flagwork-layout">
             <div className="flagwork-stack">
               <div
-                aria-label="Gym Uniform Removal behavior summary"
-                className="exefs-table iv-screen-range-table"
-                role="table"
-              >
-                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
-                  <span role="columnheader">Mode</span>
-                  <span role="columnheader">What happens</span>
-                </div>
-                <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" role="row">
-                  <span role="cell">Not installed</span>
-                  <span role="cell">Gym scripts call the normal uniform-change handler.</span>
-                </div>
-                <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" role="row">
-                  <span role="cell">Installed</span>
-                  <span role="cell">
-                    The IPS patch makes the handler return success, and the outfit does not change.
-                  </span>
-                </div>
-              </div>
-
-              <div
                 aria-label="Gym Uniform Removal reserved ranges"
                 className="exefs-table iv-screen-range-table"
                 role="table"

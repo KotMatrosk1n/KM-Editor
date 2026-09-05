@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  271,
+  272,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  88,
+  89,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 

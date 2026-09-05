@@ -9937,6 +9937,36 @@ h2 {
   min-width: 594px;
 }
 
+.starting-items-table,
+.catch-cap-table {
+  grid-auto-rows: auto;
+  max-height: calc(64px + 10 * 76px + 2px);
+}
+
+.starting-items-table .exefs-row:not(.exefs-row-heading),
+.catch-cap-table .exefs-row:not(.exefs-row-heading) {
+  min-height: 76px;
+  padding-block: 10px;
+}
+
+.pokemon-session-selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pokemon-session-selection strong {
+  overflow-wrap: anywhere;
+}
+
+.pokemon-session-sprite {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  flex: 0 0 48px;
+}
+
 .workflow-description {
   max-width: 980px;
   margin: 8px 0 0;
