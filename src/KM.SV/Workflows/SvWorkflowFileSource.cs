@@ -967,7 +967,7 @@ internal sealed class SvWorkflowFileSource
         }
 
         using var outputLock = AcquireOutputLock(paths);
-        var coordinator = new OutputTransactionCoordinator(paths.OutputRootPath);
+        var coordinator = OutputTransactionCoordinator.ForProject(paths);
         var projectId = ProjectIdentity.FromPaths(paths);
         var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
         const string romFsPrefix = "romfs/";
@@ -1253,7 +1253,7 @@ internal sealed class SvWorkflowFileSource
             : OutputFileState.Existing(
                 Convert.ToHexStringLower(SHA256.HashData(verifiedBaseMain)),
                 verifiedBaseMain.LongLength);
-        var coordinator = new OutputTransactionCoordinator(outputRoot, coordinatorOptions);
+        var coordinator = OutputTransactionCoordinator.ForProject(paths, coordinatorOptions);
         var projectId = ProjectIdentity.FromPaths(paths);
         var outputModeKey = ToOutputModeKey(outputMode);
         var ownershipSnapshot = coordinator
@@ -1490,7 +1490,10 @@ internal sealed class SvWorkflowFileSource
             origins,
             outputMutations,
             directoryMembershipDependencies: membershipDependencies,
-            ownershipInventoryRevision: ownershipSnapshot.Revision);
+            ownershipInventoryRevision: ownershipSnapshot.Revision)
+        {
+            HistoryDetails = contextForPlan.HistoryDetails,
+        };
         var result = coordinator.ApplyAsync(plan).GetAwaiter().GetResult();
         if (result.Outcome != OutputApplyOutcome.Committed)
         {
@@ -2826,7 +2829,10 @@ internal sealed record SvOutputApplyContext(
     string SemanticReviewHash,
     OwnershipOwnerId OwnerId,
     IReadOnlyList<OutputApplyOrigin> Origins,
-    PreservationRuleDescriptor? PreservationRule = null);
+    PreservationRuleDescriptor? PreservationRule = null)
+{
+    public OutputHistoryDetails? HistoryDetails { get; init; }
+}
 
 public sealed class SvOutputApplyNotCommittedException : IOException
 {

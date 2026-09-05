@@ -981,7 +981,7 @@ public static class SwShChangePlanSourceGuard
             };
 
             var projectId = ProjectIdentity.FromPaths(SourcePaths);
-            var outputCoordinator = new OutputTransactionCoordinator(SourcePaths.OutputRootPath!);
+            var outputCoordinator = OutputTransactionCoordinator.ForProject(SourcePaths);
             OutputOwnershipInventorySnapshot? ownershipSnapshot = null;
             if (changedTargets.Any(IsComposedExeFsMainPath))
             {
@@ -1293,7 +1293,10 @@ public static class SwShChangePlanSourceGuard
                     OutputReviewFingerprint.FromChangePlan(CurrentPlan),
                     origins,
                     mutations,
-                    ownershipInventoryRevision: ownershipSnapshot?.Revision);
+                    ownershipInventoryRevision: ownershipSnapshot?.Revision)
+                {
+                    HistoryDetails = OutputHistoryDetails.Capture(CurrentPlan.EffectivePendingEdits),
+                };
                 var outputResult = outputCoordinator
                     .ApplyAsync(plan)
                     .GetAwaiter()

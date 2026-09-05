@@ -2834,6 +2834,38 @@ internal sealed class ZaPokemonEditSessionService
             diagnostics);
     }
 
+    private static bool TryParseCompatibilityGroupField(string? field, out string groupId)
+    {
+        groupId = field is "compatibilityGroup:egg" ? "egg" : field is "compatibilityGroup:reminder" ? "reminder" : string.Empty;
+        return groupId.Length > 0;
+    }
+
+    private static ushort[]? ParseCompatibilityGroup(
+        string? value, ZaPokemonCompatibilityGroup? group,
+        ICollection<ValidationDiagnostic> diagnostics, string? field, bool requireLoadedGroup = true)
+    {
+        var parts = string.IsNullOrWhiteSpace(value) ? [] : value.Split(',');
+        var moves = new List<ushort>();
+        if (value is null || parts.Length > 4096 || (requireLoadedGroup && group is null))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(field ?? string.Empty));
+            return null;
+        }
+        foreach (var part in parts)
+        {
+            if (!ushort.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var move) || move == 0
+                || moves.Contains(move) || (group is not null && group.Entries.All(entry => entry.MoveId != move)))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error, "Pokemon compatibility group contains an invalid move.",
+                    ZaEditSessionSupport.PokemonDomain, field: field, expected: "Unique moves from the loaded compatibility group"));
+                return null;
+            }
+            moves.Add(move);
+        }
+        return moves.ToArray();
+    }
+
     private static PendingEdit? CreateFieldPendingEdit(
         ZaPokemonWorkflow workflow,
         ZaPokemonRecord pokemon,
@@ -2905,6 +2937,16 @@ internal sealed class ZaPokemonEditSessionService
                 CreateAlphaMoveRecordId(pokemon.SpeciesId, pokemon.Form),
                 normalizedField,
                 parsedMoveId.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (TryParseCompatibilityGroupField(normalizedField, out var replacementGroupId))
+        {
+            var group = pokemon.Compatibility.FirstOrDefault(candidate => candidate.GroupId == replacementGroupId);
+            var moves = ParseCompatibilityGroup(value, group, diagnostics, normalizedField);
+            return moves is null ? null : ZaEditSessionSupport.CreatePendingEdit(
+                ZaEditSessionSupport.PokemonDomain, $"Set {pokemon.Name} {group!.Label} compatibility.",
+                new ProjectFileReference(pokemon.Provenance.SourceLayer, pokemon.Provenance.SourceFile),
+                pokemon.PersonalId.ToString(CultureInfo.InvariantCulture), normalizedField, string.Join(",", moves));
         }
 
         if (TryParseCompatibilityField(normalizedField, out var groupId, out var slot))
@@ -3281,6 +3323,12 @@ internal sealed class ZaPokemonEditSessionService
         if (TryParseEvolutionField(edit.Field, out _, out _))
         {
             _ = ParseEvolutionOperation(edit, pokemon, diagnostics);
+            return;
+        }
+
+        if (TryParseCompatibilityGroupField(edit.Field, out var replacementGroupId))
+        {
+            ParseCompatibilityGroup(edit.NewValue, pokemon.Compatibility.FirstOrDefault(group => group.GroupId == replacementGroupId), diagnostics, edit.Field);
             return;
         }
 
@@ -4374,7 +4422,14 @@ internal sealed class ZaPokemonEditSessionService
         PendingEdit pendingEdit)
     {
         var matchesLoadedSource = false;
-        if (IsAlphaMoveEdit(pendingEdit)
+        if (TryParseCompatibilityGroupField(pendingEdit.Field, out var replacementGroupId)
+            && int.TryParse(pendingEdit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var replacementPersonalId))
+        {
+            var original = loadedWorkflow.Pokemon.FirstOrDefault(row => row.PersonalId == replacementPersonalId)
+                ?.Compatibility.FirstOrDefault(group => group.GroupId == replacementGroupId);
+            matchesLoadedSource = original is not null && pendingEdit.NewValue == string.Join(",", original.Entries.Where(entry => entry.CanLearn).Select(entry => entry.MoveId));
+        }
+        else if (IsAlphaMoveEdit(pendingEdit)
             && TryParseAlphaMoveRecordId(
                 pendingEdit.RecordId,
                 out var speciesId,
@@ -4421,6 +4476,9 @@ internal sealed class ZaPokemonEditSessionService
         {
             return ReplacePendingPokemonEdit(session, pendingEdit);
         }
+
+        if (TryParseCompatibilityGroupField(pendingEdit.Field, out _))
+            return session with { PendingEdits = session.PendingEdits.Where(edit => !ShouldReplacePendingEdit(edit, pendingEdit)).ToArray() };
 
         return session with
         {
@@ -4894,6 +4952,17 @@ internal sealed class ZaPokemonEditSessionService
             return ApplyEvolutionOperation(workflow, pokemon, evolutionOperation);
         }
 
+        if (TryParseCompatibilityGroupField(edit.Field, out var replacementGroupId)
+            && ParseCompatibilityGroup(edit.NewValue, pokemon.Compatibility.FirstOrDefault(group => group.GroupId == replacementGroupId), new List<ValidationDiagnostic>(), edit.Field) is { } replacementMoves)
+        {
+            return pokemon with { Compatibility = pokemon.Compatibility.Select(group => group.GroupId != replacementGroupId ? group : group with
+            {
+                Entries = replacementMoves.Select(move => group.Entries.First(entry => entry.MoveId == move) with { CanLearn = true })
+                    .Concat(group.Entries.Where(entry => !replacementMoves.Contains((ushort)entry.MoveId)).Select(entry => entry with { CanLearn = false })).ToArray(),
+                EnabledCount = replacementMoves.Length,
+            }).ToArray() };
+        }
+
         if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
             && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var compatibilityEnabled))
         {
@@ -5051,6 +5120,11 @@ internal sealed class ZaPokemonEditSessionService
         {
             return false;
         }
+
+        if (candidate.RecordId == pendingEdit.RecordId
+            && TryParseCompatibilityGroupField(pendingEdit.Field, out var replacementGroupId)
+            && TryParseCompatibilityField(candidate.Field, out var previousGroupId, out _)
+            && previousGroupId == replacementGroupId) return true;
 
         if (IsGlobalYieldEdit(pendingEdit))
         {
@@ -5442,6 +5516,19 @@ internal sealed class ZaPokemonEditSessionService
                 ApplyEvolutionOperation(row.Evolutions, operation);
             }
 
+            return;
+        }
+
+        if (TryParseCompatibilityGroupField(edit.Field, out var replacementGroupId))
+        {
+            if (ParseCompatibilityGroup(edit.NewValue, null, diagnostics, edit.Field, requireLoadedGroup: false) is { } moves)
+            {
+                var target = replacementGroupId == "egg" ? row.EggMoves : row.ReminderMoves;
+                target.Clear();
+                target.AddRange(moves);
+                if (replacementGroupId == "egg") row.HasEggMoves = true;
+                else row.HasReminderMoves = true;
+            }
             return;
         }
 
@@ -6084,6 +6171,8 @@ internal sealed class ZaPokemonEditSessionService
                 learnsetLengths[personalId] = ApplyVectorLengthOverlay(length, learnsetAction, learnsetSlot);
                 continue;
             }
+
+            if (TryParseCompatibilityGroupField(edit.Field, out _)) return true;
 
             if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
                 && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var compatibilityValue))

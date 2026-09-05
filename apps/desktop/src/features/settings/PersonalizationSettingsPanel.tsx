@@ -14,7 +14,6 @@ import {
   type TypeScalePreference,
   type VisualTheme
 } from './AppearancePreferencesProvider';
-import { PerformanceDiagnosticsPanel } from './PerformanceDiagnosticsPanel';
 
 const visualThemeOptions = ['classic', 'renegade', 'royal'] as const satisfies readonly VisualTheme[];
 
@@ -226,7 +225,6 @@ export function PersonalizationSettingsPanel({
         </div>
       </details>
 
-      <PerformanceDiagnosticsPanel />
 
       <details aria-labelledby="what-changed-settings-heading" className="km-settings-group">
         <summary>

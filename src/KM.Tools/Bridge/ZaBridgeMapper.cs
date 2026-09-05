@@ -1813,7 +1813,10 @@ public static class ZaBridgeMapper
             group.GroupId,
             group.Label,
             group.EnabledCount,
-            group.Entries.Select(ToDto).ToArray());
+            group.Entries.Select(ToDto).ToArray())
+        {
+            VanillaMoveIds = group.VanillaMoveIds,
+        };
     }
 
     private static PokemonCompatibilityEntryDto ToDto(ZaPokemonCompatibilityEntry entry)
@@ -1823,7 +1826,10 @@ public static class ZaBridgeMapper
             entry.MoveId,
             entry.MoveName,
             entry.Label,
-            entry.CanLearn);
+            entry.CanLearn)
+        {
+            VanillaCanLearn = entry.VanillaCanLearn,
+        };
     }
 
     private static MoveRecordDto ToDto(ZaMoveRecord move)
@@ -2118,6 +2124,7 @@ public static class ZaBridgeMapper
         {
             EditorFamily = "za",
             CanEditInventoryOrder = shop.CanEditInventoryOrder,
+            SourceInventory = shop.SourceInventory.Select(ToDto).ToArray(),
             GlobalPriceField = shop.GlobalPriceField,
             GlobalPriceMinimumValue = shop.GlobalPriceMinimumValue,
             GlobalPriceMaximumValue = shop.GlobalPriceMaximumValue,

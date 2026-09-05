@@ -12,6 +12,7 @@ using KM.Api.Projects;
 using KM.Api.Research;
 using KM.Api.Workspace;
 using KM.Core.Projects;
+using KM.Core.Output;
 using KM.Core.Workspace;
 using KM.Tools.Bridge;
 
@@ -952,6 +953,9 @@ public sealed class ProjectRelocationApplicationService
             {
                 return RelocationOutputStoreState.OccupiedOrUnverifiable;
             }
+
+            if (OutputWorkspaceStorage.HasStoredOutput(outputRoot.FullName))
+                return RelocationOutputStoreState.OccupiedOrUnverifiable;
 
             using var candidates = outputRoot
                 .EnumerateFileSystemInfos(".km", MetadataEntryEnumeration)

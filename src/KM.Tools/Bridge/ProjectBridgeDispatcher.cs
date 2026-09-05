@@ -1162,6 +1162,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     requestId),
                 RequiresDispatcherReset: false);
         }
+        catch (OutputWorkspaceMigrationException exception)
+        {
+            return (SerializeFailure(BridgeErrorCodes.OutputMigrationBlocked, exception.Message, requestId), RequiresDispatcherReset: false);
+        }
         catch (OutputCoordinatorException exception)
         {
             return (
@@ -5758,7 +5762,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         lock (SwShApplySyncRoot)
         {
             ClearCriticalSwShApplyCaches();
-            var currentPlan = CreateSwShChangePlan(paths, session);
+            var currentPlan = CreateSwShChangePlan(paths, session) with { EffectivePendingEdits = session.PendingEdits };
             var preserveExplicitSourceLayers =
                 SwShGymUniformRemovalEditSessionService.IsCanonicalUninstallSession(session);
             if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(

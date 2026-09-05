@@ -39,7 +39,10 @@ public sealed record SvShopRecord(
     string Currency,
     IReadOnlyList<SvShopInventoryRecord> Inventory,
     SvShopProvenance Provenance,
-    bool CanEditInventoryOrder);
+    bool CanEditInventoryOrder)
+{
+    public IReadOnlyList<SvShopInventoryRecord> SourceInventory { get; init; } = Inventory;
+}
 
 public sealed record SvShopEditableFieldOption(
     int Value,

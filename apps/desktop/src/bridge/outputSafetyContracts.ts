@@ -317,6 +317,16 @@ export const outputApplyOriginSchema = z.strictObject({
   kind: boundedIdentifierSchema
 });
 export const outputHistoryReceiptSchema = z.strictObject({
+  historyDetails: z.strictObject({
+    totalChangeCount: z.number().int().nonnegative(),
+    changes: z.array(z.strictObject({
+      domain: z.string().max(2048), summary: z.string().max(2048),
+      recordId: z.string().max(2048).nullable(), field: z.string().max(2048).nullable(),
+      newValue: z.string().max(2048).nullable()
+    })).max(4096),
+    truncated: z.boolean()
+  }).nullable().optional(),
+  targets: z.array(z.strictObject({ relativePath: relativeOutputPathSchema, kind: z.enum(['Write', 'Delete']) })).max(2048).optional(),
   completedAtUtc: dateTimeOffsetSchema,
   origins: z.array(outputApplyOriginSchema).max(64),
   outcome: z.enum(['committed', 'rolledBack', 'recoveryRequired']),

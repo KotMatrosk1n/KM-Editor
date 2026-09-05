@@ -2,12 +2,13 @@
 
 using System.Security;
 using KM.Core.Projects;
+using KM.Core.Output;
 
 namespace KM.Core.Files;
 
 public sealed class ProjectFileGraphBuilder
 {
-    private const string OutputMetadataDirectoryName = ".km";
+
 
     private static readonly EnumerationOptions ShallowEnumeration = new()
     {
@@ -233,10 +234,7 @@ public sealed class ProjectFileGraphBuilder
 
                     if (excludeOutputMetadata
                         && pending.Depth == 0
-                        && string.Equals(
-                            entry.Name,
-                            OutputMetadataDirectoryName,
-                            StringComparison.OrdinalIgnoreCase))
+                        && OutputMetadataNamespace.ContainsReservedSegment(entry.Name))
                     {
                         continue;
                     }

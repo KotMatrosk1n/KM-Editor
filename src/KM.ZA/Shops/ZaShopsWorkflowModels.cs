@@ -41,6 +41,8 @@ public sealed record ZaShopRecord(
     ZaShopProvenance Provenance,
     bool CanEditInventoryOrder)
 {
+    public IReadOnlyList<ZaShopInventoryRecord> SourceInventory { get; init; } = Inventory;
+
     public string? GlobalPriceField { get; init; }
 
     public int GlobalPriceMinimumValue { get; init; }

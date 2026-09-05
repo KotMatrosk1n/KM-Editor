@@ -21,6 +21,7 @@ using KM.Core.Concurrency;
 using KM.Core.Files;
 using KM.Core.Indexing;
 using KM.Core.Projects;
+using KM.Core.Output;
 using KM.Core.Semantics;
 
 namespace KM.Tools.Application;
@@ -3330,7 +3331,7 @@ public sealed class SemanticExploreApplicationService
             .Split(
                 [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                 StringSplitOptions.RemoveEmptyEntries)
-            .Any(segment => string.Equals(segment, ".km", StringComparison.OrdinalIgnoreCase));
+            .Any(segment => OutputMetadataNamespace.ContainsReservedSegment(segment));
     }
 
     private static void ValidateExternalOverlayTree(string rootPath)
@@ -3391,7 +3392,7 @@ public sealed class SemanticExploreApplicationService
                             SemanticExploreFailureKind.LimitExceeded);
                     }
 
-                    if (string.Equals(entry.Name, ".km", StringComparison.OrdinalIgnoreCase))
+                    if (OutputMetadataNamespace.ContainsReservedSegment(entry.Name))
                     {
                         throw new SemanticExploreValidationException(
                             "The selected external overlay contains a reserved metadata namespace.",

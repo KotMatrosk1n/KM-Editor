@@ -104,14 +104,20 @@ public sealed record ZaPokemonCompatibilityGroup(
     string GroupId,
     string Label,
     int EnabledCount,
-    IReadOnlyList<ZaPokemonCompatibilityEntry> Entries);
+    IReadOnlyList<ZaPokemonCompatibilityEntry> Entries)
+{
+    public IReadOnlyList<int>? VanillaMoveIds { get; init; }
+}
 
 public sealed record ZaPokemonCompatibilityEntry(
     int Slot,
     int MoveId,
     string MoveName,
     string Label,
-    bool CanLearn);
+    bool CanLearn)
+{
+    public bool? VanillaCanLearn { get; init; }
+}
 
 public sealed record ZaPokemonAlphaMove(
     bool HasMapping,

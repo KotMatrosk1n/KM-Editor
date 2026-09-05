@@ -35,6 +35,7 @@ internal sealed record OutputTransactionJournal(
     string? OutcomeCode)
 {
     public const int CurrentSchemaVersion = 3;
+    public OutputHistoryDetails? HistoryDetails { get; init; }
 }
 
 internal sealed record OutputApplyHistoryDocument(

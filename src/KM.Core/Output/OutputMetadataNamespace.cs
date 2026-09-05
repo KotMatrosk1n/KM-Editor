@@ -13,6 +13,16 @@ public static class OutputMetadataNamespace
 {
     public const string DirectoryName = ".km";
 
+    internal static string NormalizeOutputRoot(string path)
+    {
+        var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        if (!OperatingSystem.IsWindows() || !Directory.Exists(normalized)) return normalized;
+        var expanded = new StringBuilder(32768);
+        var length = GetLongPathName(normalized, expanded, (uint)expanded.Capacity);
+        if (length == 0 || length >= expanded.Capacity) throw new OutputPathSecurityException();
+        return Path.TrimEndingDirectorySeparator(expanded.ToString());
+    }
+
     public static bool ContainsReservedSegment(string? path)
     {
         if (string.IsNullOrEmpty(path))
@@ -102,7 +112,8 @@ public static class OutputMetadataNamespace
     private static bool IsReservedSegment(string segment)
     {
         var portableSegment = segment.Trim().TrimEnd(' ', '.');
-        return string.Equals(portableSegment, DirectoryName, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(portableSegment, DirectoryName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(portableSegment, OutputWorkspaceStorage.WorkingDirectoryName, StringComparison.OrdinalIgnoreCase);
     }
 
     [DllImport("kernel32.dll", EntryPoint = "GetLongPathNameW", CharSet = CharSet.Unicode, SetLastError = true)]

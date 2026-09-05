@@ -102,14 +102,20 @@ public sealed record SwShPokemonCompatibilityGroup(
     string GroupId,
     string Label,
     int EnabledCount,
-    IReadOnlyList<SwShPokemonCompatibilityEntry> Entries);
+    IReadOnlyList<SwShPokemonCompatibilityEntry> Entries)
+{
+    public IReadOnlyList<int>? VanillaMoveIds { get; init; }
+}
 
 public sealed record SwShPokemonCompatibilityEntry(
     int Slot,
     int MoveId,
     string MoveName,
     string Label,
-    bool CanLearn);
+    bool CanLearn)
+{
+    public bool? VanillaCanLearn { get; init; }
+}
 
 public sealed record SwShPokemonRecord(
     int PersonalId,

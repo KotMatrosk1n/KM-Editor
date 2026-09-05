@@ -40,10 +40,8 @@ export function PerformanceDiagnosticsPanel() {
   };
 
   return (
-    <details aria-labelledby="performance-diagnostics-heading" className="km-settings-group">
-      <summary>
-        <h3 id="performance-diagnostics-heading">{t('settings.performance.title')}</h3>
-      </summary>
+    <section aria-labelledby="performance-diagnostics-heading" className="km-settings-group">
+      <h3 id="performance-diagnostics-heading">{t('settings.performance.title')}</h3>
       <div className="km-settings-group-body">
         <p>{t('settings.performance.description')}</p>
         <label className="km-settings-toggle">
@@ -149,6 +147,6 @@ export function PerformanceDiagnosticsPanel() {
               : ''}
         </p>
       </div>
-    </details>
+    </section>
   );
 }

@@ -826,6 +826,8 @@ public sealed record OutputDirectoryMembershipSnapshot
 
 public sealed record OutputApplyPlan
 {
+    public OutputHistoryDetails? HistoryDetails { get; init; }
+
     public OutputApplyPlan(
         ProjectId projectId,
         GameFamily gameFamily,

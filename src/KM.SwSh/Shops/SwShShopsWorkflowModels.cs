@@ -33,6 +33,8 @@ public sealed record SwShShopRecord(
     IReadOnlyList<SwShShopInventoryRecord> Inventory,
     SwShShopProvenance Provenance)
 {
+    public IReadOnlyList<SwShShopInventoryRecord> SourceInventory { get; init; } = Inventory;
+
     public string? GlobalPriceField { get; init; }
 
     public int SourceIndex { get; init; }

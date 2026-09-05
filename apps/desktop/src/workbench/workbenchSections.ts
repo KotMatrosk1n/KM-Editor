@@ -52,6 +52,7 @@ export const workbenchSections = [
   'gameDump',
   'gameplaySettings',
   'changes',
+  'history',
   'settings'
 ] as const;
 

@@ -2017,7 +2017,10 @@ public sealed class ZaWorkflowService
                         : "workflow.za.output"),
                     [new OutputApplyOrigin(
                         OutputApplyOriginKind.Workflow,
-                        GetDomainName(domain))]));
+                        GetDomainName(domain))])
+                {
+                    HistoryDetails = OutputHistoryDetails.Capture(reviewedPlan.EffectivePendingEdits ?? session.PendingEdits),
+                });
             var result = ApplySingleDomainChangePlan(
                 paths,
                 session,
@@ -2263,7 +2266,10 @@ public sealed class ZaWorkflowService
                             OutputApplyOriginKind.Workflow,
                             GetDomainName(domain)))
                         .Distinct()
-                        .ToArray()));
+                        .ToArray())
+                {
+                    HistoryDetails = OutputHistoryDetails.Capture(currentSnapshot.EffectiveSession.PendingEdits),
+                });
             foreach (var domain in currentSnapshot.EffectiveDomains)
             {
                 var domainSession = SliceSession(currentSnapshot.EffectiveSession, domain);

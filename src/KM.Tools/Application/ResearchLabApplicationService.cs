@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Output;
+
 using System.Buffers;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -422,7 +424,7 @@ public sealed class ResearchLabApplicationService : IDisposable
             || segment.Any(character => character is '"' or ':' or '<' or '>' or '|' or '?' or '*'
                 || char.IsControl(character))
             || IsWindowsReservedDeviceAlias(segment)
-            || string.Equals(segment, ".km", StringComparison.OrdinalIgnoreCase)))
+            || OutputMetadataNamespace.ContainsReservedSegment(segment)))
         {
             throw Invalid("A research relative path is invalid.");
         }
@@ -944,7 +946,7 @@ public sealed class ResearchLabApplicationService : IDisposable
 
                     entry.Refresh();
                     EnsureUnlinked(entry);
-                    if (string.Equals(entry.Name, ".km", StringComparison.OrdinalIgnoreCase))
+                    if (OutputMetadataNamespace.ContainsReservedSegment(entry.Name))
                     {
                         throw ExternalRejected("A research source contains a reserved metadata namespace.");
                     }
@@ -1984,7 +1986,7 @@ public sealed class ResearchLabApplicationService : IDisposable
     private static bool ContainsReservedMetadataSegment(string path) => path.Split(
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries)
-        .Any(segment => string.Equals(segment, ".km", StringComparison.OrdinalIgnoreCase));
+        .Any(segment => OutputMetadataNamespace.ContainsReservedSegment(segment));
 
     private static bool PathsOverlap(string left, string right) =>
         IsSameOrDescendant(left, right) || IsSameOrDescendant(right, left);

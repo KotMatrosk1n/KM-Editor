@@ -266,9 +266,12 @@ assert.equal(
   [...appSource.matchAll(
     /setPersonalDraftsByPokemonId\(\(currentDrafts\) =>\s*setSparseFieldDraftValue\(\s*currentDrafts,/gu
   )].length,
-  2,
-  'Pokemon personal fields and compatibility toggles must both accumulate from the functional state snapshot.'
+  1,
+  'Pokemon personal fields must accumulate from the functional state snapshot.'
 );
+assert.match(appSource,
+  /setPersonalDraftsByPokemonId\(current => Object\.entries\(values\)\.reduce\(\(next, \[field, value\]\) =>\s*setSparseFieldDraftValue\(next, pokemon\.personalId, field, value, personalDraftDefaults\), current\)\)/u,
+  'Compatibility actions must accumulate the entire group from one functional state snapshot.');
 assert.doesNotMatch(
   appSource,
   /setPersonalDraftsByPokemonId\(\(currentDrafts\) =>\s*setSparseFieldDraftRecord\(\s*currentDrafts,[\s\S]{0,400}?\.\.\.personalDrafts/gu,

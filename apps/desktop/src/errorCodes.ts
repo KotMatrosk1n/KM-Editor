@@ -38,6 +38,7 @@ export const projectBridgeErrorCodes = {
   outputRecoveryRequired: "KM-OUTPUT-RECOVERY-REQUIRED",
   outputRootBusy: "KM-OUTPUT-ROOT-BUSY",
   outputUnsafePath: "KM-OUTPUT-UNSAFE-PATH",
+  projectOutputMigrationBlocked: "KM-PROJECT-OUTPUT-MIGRATION-BLOCKED",
   projectOutputMissing: "KM-PROJECT-OUTPUT-MISSING",
   projectOutputNotConfigured: "KM-PROJECT-OUTPUT-NOT-CONFIGURED",
   projectRelocationConflict: "KM-PROJECT-RELOCATION-CONFLICT",

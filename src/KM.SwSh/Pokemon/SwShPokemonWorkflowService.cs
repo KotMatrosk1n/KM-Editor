@@ -486,6 +486,17 @@ public sealed class SwShPokemonWorkflowService
             var personalTable = SwShPersonalTable.Parse(
                 readAllBytes(personalSource.AbsolutePath),
                 maximumRecordCount);
+            SwShPersonalTable? vanillaTable = null;
+            try
+            {
+                var vanillaSource = ResolveBasePersonalDataSource(project);
+                if (vanillaSource is not null)
+                    vanillaTable = SwShPersonalTable.Parse(readAllBytes(vanillaSource.AbsolutePath), maximumRecordCount);
+            }
+            catch (Exception exception) when (IsReadFailure(exception) || IsDecodeFailure(exception))
+            {
+                // Compatibility remains editable when clean base defaults are unavailable.
+            }
             if (learnsets.Count > 0 && learnsets.Count != personalTable.Records.Count)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -509,6 +520,7 @@ public sealed class SwShPokemonWorkflowService
             var pokemon = personalTable.Records
                 .Select(record => ToPokemonRecord(
                     record,
+                    vanillaTable?.Records.ElementAtOrDefault(record.PersonalId) is { } vanilla && vanilla.Form == record.Form ? vanilla : null,
                     displaySpeciesNames,
                     spriteSpeciesNames.Count > 0 ? spriteSpeciesNames : displaySpeciesNames,
                     abilityNames,
@@ -870,6 +882,7 @@ public sealed class SwShPokemonWorkflowService
 
     private static SwShPokemonRecord ToPokemonRecord(
         SwShPersonalRecord personal,
+        SwShPersonalRecord? vanillaPersonal,
         IReadOnlyList<string> speciesNames,
         IReadOnlyList<string> spriteSpeciesNames,
         IReadOnlyList<string> abilityNames,
@@ -902,6 +915,18 @@ public sealed class SwShPokemonWorkflowService
             moveNames,
             technicalMachineMoveIds,
             technicalRecordMoveIds);
+        if (vanillaPersonal is not null)
+        {
+            var vanillaGroups = CreateCompatibilityGroups(vanillaPersonal, moveNames, technicalMachineMoveIds, technicalRecordMoveIds);
+            compatibility = compatibility.Select(group => group with
+            {
+                Entries = group.Entries.Select(entry => entry with
+                {
+                    VanillaCanLearn = vanillaGroups.First(original => original.GroupId == group.GroupId)
+                        .Entries.First(original => original.Slot == entry.Slot).CanLearn,
+                }).ToArray(),
+            }).ToArray();
+        }
 
         return new SwShPokemonRecord(
             personal.PersonalId,

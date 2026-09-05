@@ -107,6 +107,7 @@ const relativePathSchema = z
       !segment.endsWith('.') &&
       !segment.endsWith(' ') &&
       researchPortableCaseFold(segment) !== '.km' &&
+      researchPortableCaseFold(segment) !== '.km-working' &&
       !windowsReservedDeviceAlias.test(segment)
     ))
   ));

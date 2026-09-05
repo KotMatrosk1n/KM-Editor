@@ -145,7 +145,7 @@ public sealed class SvModMergerWorkflowService
             project.Paths,
             ownerId);
         ValidateLegacyCleanupBoundary(
-            outputRoot,
+            project.Paths,
             desiredVirtualPaths,
             ownedVirtualPaths,
             diagnostics);
@@ -866,12 +866,12 @@ public sealed class SvModMergerWorkflowService
     }
 
     private static void ValidateLegacyCleanupBoundary(
-        string outputRoot,
+        ProjectPaths projectPaths,
         IReadOnlySet<string> desiredVirtualPaths,
         IReadOnlyList<string> ownedVirtualPaths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var manifest = LoadManifest(outputRoot, diagnostics);
+        var manifest = LoadManifest(projectPaths, diagnostics);
         if (manifest is null)
         {
             return;
@@ -885,7 +885,7 @@ public sealed class SvModMergerWorkflowService
                 continue;
             }
 
-            var targetPath = ResolveOutputPath(outputRoot, entry.RelativePath, diagnostics);
+            var targetPath = ResolveOutputPath(projectPaths.OutputRootPath!, entry.RelativePath, diagnostics);
             if (targetPath is null || !File.Exists(targetPath))
             {
                 continue;
@@ -991,10 +991,10 @@ public sealed class SvModMergerWorkflowService
     }
 
     private static SvModMergerManifest? LoadManifest(
-        string outputRoot,
+        ProjectPaths projectPaths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var manifestPath = Path.Combine(outputRoot, ManifestRelativePath);
+        var manifestPath = Path.Combine(new OutputWorkspaceStorage(projectPaths).MetadataRoot, Path.GetFileName(ManifestRelativePath));
         if (!File.Exists(manifestPath))
         {
             return null;

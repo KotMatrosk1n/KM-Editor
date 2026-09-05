@@ -370,10 +370,7 @@ internal sealed class SvPokemonWorkflowService
             SvWorkflowFile? baseSource = null;
             try
             {
-                if (conversionState is null)
-                {
-                    baseSource = fileSource.ReadBase(project, SvDataPaths.PersonalArray);
-                }
+                baseSource = fileSource.ReadBase(project, SvDataPaths.PersonalArray);
             }
             catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
             {
@@ -690,7 +687,9 @@ internal sealed class SvPokemonWorkflowService
             weight,
             ReadEvolutions(entry, baseEntry, conversionState, labels, evolutionItemArgumentLabels),
             ReadLearnset(entry, labels),
-            ReadCompatibility(entry, labels, tmCatalog),
+            baseEntry is { } vanillaCompatibility && vanillaCompatibility.Species?.Species == entry.Species?.Species && vanillaCompatibility.Species?.Form == entry.Species?.Form
+                ? AttachVanillaCompatibility(ReadCompatibility(entry, labels, tmCatalog), ReadCompatibility(vanillaCompatibility, labels, tmCatalog))
+                : ReadCompatibility(entry, labels, tmCatalog),
             new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState),
             spriteLabels.Pokemon(speciesId));
     }
@@ -822,6 +821,29 @@ internal sealed class SvPokemonWorkflowService
         }
 
         return moves;
+    }
+
+    private static IReadOnlyList<SvPokemonCompatibilityGroup> AttachVanillaCompatibility(
+        IReadOnlyList<SvPokemonCompatibilityGroup> current,
+        IReadOnlyList<SvPokemonCompatibilityGroup> vanilla)
+    {
+        return current.Concat(vanilla.Where(group => current.All(existing => existing.GroupId != group.GroupId))
+                .Select(group => group with { Entries = [], EnabledCount = 0 }))
+            .Select(group =>
+            {
+                var original = vanilla.FirstOrDefault(candidate => candidate.GroupId == group.GroupId);
+                var vanillaMoves = original?.Entries.Where(entry => entry.CanLearn).Select(entry => entry.MoveId).ToArray() ?? [];
+                var entries = group.Entries.Concat((original?.Entries ?? [])
+                    .Where(entry => group.Entries.All(existing => existing.MoveId != entry.MoveId))
+                    .Select((entry, index) => entry with
+                    {
+                        Slot = group.GroupId == "tm" ? entry.MoveId : group.Entries.Count + index,
+                        CanLearn = false,
+                    }))
+                    .Select(entry => entry with { VanillaCanLearn = vanillaMoves.Contains(entry.MoveId) })
+                    .ToArray();
+                return group with { Entries = entries, VanillaMoveIds = vanillaMoves };
+            }).ToArray();
     }
 
     private static IReadOnlyList<SvPokemonCompatibilityGroup> ReadCompatibility(

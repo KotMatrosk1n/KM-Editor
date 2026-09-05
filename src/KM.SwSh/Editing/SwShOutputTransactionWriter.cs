@@ -184,8 +184,8 @@ internal static class SwShOutputTransactionWriter
                 ? null
                 : ReadBoundedContents(baseMainLease, "Base ExeFS main");
 
-            var coordinator = new OutputTransactionCoordinator(
-                stablePaths.OutputRootPath,
+            var coordinator = OutputTransactionCoordinator.ForProject(
+                stablePaths,
                 coordinatorOptions);
             var hasComposedMutation = materialized.Any(requested =>
                 requested?.ComposesEffectivePreimage == true);
