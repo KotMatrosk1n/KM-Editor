@@ -52,8 +52,8 @@ const styles = read('../src/styles.css');
 
 assert.match(
   appearance,
-  /export type VisualTheme = 'classic' \| 'renegade' \| 'royal';/,
-  'The visual-theme model must expose only Classic, Renegade, and Royal in stable order.'
+  /export type VisualTheme = 'classic' \| 'renegade' \| 'royal' \| 'sovereign' \| 'arcane' \| 'relic';/,
+  'The visual-theme model must expose all six supported identities in stable order.'
 );
 assert.match(
   appearance,
@@ -92,13 +92,13 @@ assert.match(
 );
 assert.match(
   appearance,
-  /return stored === 'renegade' \|\| stored === 'royal' \? stored : defaultVisualTheme;/,
-  'Missing, Classic, and unknown stored values must safely resolve to Classic while both optional themes restore.'
+  /return stored === 'renegade' \|\| stored === 'royal' \|\| stored === 'sovereign' \|\| stored === 'arcane' \|\| stored === 'relic' \? stored : defaultVisualTheme;/,
+  'Unknown stored values must safely resolve to Classic while all optional themes restore.'
 );
 assert.match(
   appearance,
-  /setVisualTheme: \(theme\) => \{[\s\S]*?theme === 'classic' \|\| theme === 'renegade' \|\| theme === 'royal'/,
-  'The live visual-theme setter must accept exactly the three supported identities.'
+  /setVisualTheme: \(theme\) => \{[\s\S]*?theme === 'classic' \|\| theme === 'renegade' \|\| theme === 'royal' \|\| theme === 'sovereign' \|\| theme === 'arcane' \|\| theme === 'relic'/,
+  'The live visual-theme setter must accept exactly the six supported identities.'
 );
 assert.match(
   main,
@@ -108,13 +108,16 @@ assert.match(
 
 assert.match(
   themePanel,
-  /visualThemeOptions = \['classic', 'renegade', 'royal'\]/,
-  'The Themes chooser must present Classic, Renegade, and Royal in stable order.'
+  /visualThemeOptions = \['classic', 'renegade', 'royal', 'sovereign', 'arcane', 'relic'\]/,
+  'The Themes chooser must preserve the original row and append the three new themes.'
 );
 for (const [theme, assetName] of [
   ['classic', 'km-logo.png'],
   ['renegade', 'renegade-logo.png'],
-  ['royal', 'royal-logo.png']
+  ['royal', 'royal-logo.png'],
+  ['sovereign', 'sovereign-logo.png'],
+  ['arcane', 'arcane-logo.png'],
+  ['relic', 'relic-logo.png']
 ]) {
   assert.match(
     themePanel,
@@ -435,7 +438,7 @@ requireContrast('Royal color-safe danger', '#a33e00', '#fffaf0');
 
 assert.match(
   styles,
-  /:root\[data-km-visual-theme='renegade'\]:not\(\[data-km-theme='highContrast'\]\) body/,
+  /:root:is\(\[data-km-visual-theme='renegade'\][^)]*\):not\(\[data-km-theme='highContrast'\]\) body/,
   'Renegade decorative presentation must yield to high-contrast mode.'
 );
 assert.match(
@@ -490,6 +493,12 @@ const themeLocaleKeys = [
   'settings.themes.renegade.description',
   'settings.themes.royal',
   'settings.themes.royal.description',
+  'settings.themes.sovereign',
+  'settings.themes.sovereign.description',
+  'settings.themes.arcane',
+  'settings.themes.arcane.description',
+  'settings.themes.relic',
+  'settings.themes.relic.description',
   'settings.themes.liveNote'
 ];
 for (const localeCode of localeCodes) {
@@ -505,6 +514,41 @@ for (const localeCode of localeCodes) {
   assert.equal(locale.keys['settings.themes.classic'], 'Classic');
   assert.equal(locale.keys['settings.themes.renegade'], 'Renegade');
   assert.equal(locale.keys['settings.themes.royal'], 'Royal');
+}
+
+for (const [theme, hash, size] of [
+  ['sovereign', '058ff60309b9c67e802be2e19bdd50fed424f70900904129439e4744f4199670', 2605828],
+  ['arcane', '4ea0eb322142c1ea006886e69d356a19ad4c1955359bd54381da70631c816665', 2700584],
+  ['relic', 'a74a6f0e766cc63ab89067485bc138cebaa6cfcd7234685a0184ea0f0bf0aaa9', 2744547]
+]) {
+  requireExactPngAsset(theme, `../src/assets/${theme}-logo.png`, hash, 1254, 1254, size);
+}
+
+assert.match(styles, /\.visual-theme-options\s*\{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/u);
+const typeChartStyles = read('../src/features/type-chart/typeChartTheme.css');
+for (const theme of ['sovereign', 'arcane', 'relic']) {
+  const index = styles.indexOf(`:root[data-km-visual-theme='${theme}'] {`);
+  assert.ok(index > royalPaletteIndex && index < highContrastPaletteIndex);
+  const palette = styles.slice(index, styles.indexOf('\n}', index));
+  const hex = (token) => {
+    const value = palette.match(new RegExp(`--color-${token}: (#[0-9a-f]{6});`, 'u'))?.[1];
+    assert.ok(value, `${theme} must own ${token}.`);
+    return value;
+  };
+  for (const token of ['text', 'text-muted', 'text-soft', 'text-subtle', 'accent-bright', 'gold', 'success', 'warning', 'danger']) {
+    requireContrast(`${theme} ${token}`, hex(token), hex('surface'));
+  }
+  requireContrast(`${theme} action`, '#ffffff', hex('accent'));
+  requireContrast(`${theme} action hover`, '#ffffff', hex('accent-hover'));
+  requireContrast(`${theme} focus`, hex('focus'), hex('control'), 3);
+  assert.ok(renegadeTreatment.includes(`[data-km-visual-theme='${theme}']`));
+  assert.ok(styles.includes(`content: url('./assets/${theme}-logo.png')`));
+  const chartIndex = typeChartStyles.indexOf(`:root[data-km-visual-theme='${theme}'] {`);
+  const chartPalette = typeChartStyles.slice(chartIndex, typeChartStyles.indexOf('\n}', chartIndex));
+  for (const state of ['immune', 'half', 'double']) {
+    const value = (kind) => chartPalette.match(new RegExp(`--type-chart-${state}-${kind}: (#[0-9a-f]{6})`, 'u'))?.[1];
+    requireContrast(`${theme} type chart ${state}`, value('text'), value('bg'));
+  }
 }
 
 console.log('Visual-theme contract passed.');

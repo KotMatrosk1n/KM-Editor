@@ -4,6 +4,9 @@ import { Palette } from 'lucide-react';
 import classicThemeIcon from '../../assets/km-logo.png';
 import renegadeThemeIcon from '../../assets/renegade-logo.png';
 import royalThemeIcon from '../../assets/royal-logo.png';
+import sovereignThemeIcon from '../../assets/sovereign-logo.png';
+import arcaneThemeIcon from '../../assets/arcane-logo.png';
+import relicThemeIcon from '../../assets/relic-logo.png';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import {
@@ -15,12 +18,15 @@ import {
   type VisualTheme
 } from './AppearancePreferencesProvider';
 
-const visualThemeOptions = ['classic', 'renegade', 'royal'] as const satisfies readonly VisualTheme[];
+const visualThemeOptions = ['classic', 'renegade', 'royal', 'sovereign', 'arcane', 'relic'] as const satisfies readonly VisualTheme[];
 
 const visualThemeIcons: Record<VisualTheme, string> = {
   classic: classicThemeIcon,
   renegade: renegadeThemeIcon,
-  royal: royalThemeIcon
+  royal: royalThemeIcon,
+  sovereign: sovereignThemeIcon,
+  arcane: arcaneThemeIcon,
+  relic: relicThemeIcon
 };
 
 export function ThemeSettingsPanel() {

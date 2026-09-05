@@ -27,17 +27,43 @@
   --type-chart-double-text: #245b38;
 }
 
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-immune {
+
+:root[data-km-visual-theme='sovereign'] {
+  --type-chart-immune-bg: #303341;
+  --type-chart-immune-text: #dce1f5;
+  --type-chart-half-bg: #533116;
+  --type-chart-half-text: #ffdbac;
+  --type-chart-double-bg: #173d30;
+  --type-chart-double-text: #a9efc8;
+}
+:root[data-km-visual-theme='arcane'] {
+  --type-chart-immune-bg: #362b4b;
+  --type-chart-immune-text: #e3d6ff;
+  --type-chart-half-bg: #4a3022;
+  --type-chart-half-text: #ffd6af;
+  --type-chart-double-bg: #123d3b;
+  --type-chart-double-text: #9fece2;
+}
+:root[data-km-visual-theme='relic'] {
+  --type-chart-immune-bg: #2e3249;
+  --type-chart-immune-text: #d8ddff;
+  --type-chart-half-bg: #4b3020;
+  --type-chart-half-text: #ffd4b0;
+  --type-chart-double-bg: #263d1d;
+  --type-chart-double-text: #c8efac;
+}
+
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-immune {
   color: var(--type-chart-immune-text);
   background-color: var(--type-chart-immune-bg);
 }
 
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-not-very {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-not-very {
   color: var(--type-chart-half-text);
   background-color: var(--type-chart-half-bg);
 }
 
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-super {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-super {
   color: var(--type-chart-double-text);
   background-color: var(--type-chart-double-bg);
 }
