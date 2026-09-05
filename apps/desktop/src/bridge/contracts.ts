@@ -1391,6 +1391,7 @@ export const pokemonLearnsetMoveSchema = z.strictObject({
   slot: z.number().int().nonnegative(),
 });
 export const pokemonCompatibilityEntrySchema = z.strictObject({
+  vanillaCanLearn: z.boolean().nullable().optional(),
   canLearn: z.boolean(),
   label: z.string(),
   moveId: z.number().int().nonnegative(),
@@ -1399,6 +1400,7 @@ export const pokemonCompatibilityEntrySchema = z.strictObject({
 });
 
 export const pokemonCompatibilityGroupSchema = z.strictObject({
+  vanillaMoveIds: z.array(z.number().int().positive().max(65535)).nullable().optional(),
   enabledCount: z.number().int().nonnegative(),
   entries: z.array(pokemonCompatibilityEntrySchema),
   groupId: z.string(),
@@ -4299,6 +4301,7 @@ export const shopRecordSchema = z.strictObject({
   globalStockMaximumValue: z.number().int().positive().nullable().default(null),
   globalStockMinimumValue: z.number().int().positive().nullable().default(null),
   inventory: z.array(shopInventoryRecordSchema),
+  sourceInventory: z.array(shopInventoryRecordSchema).optional(),
   inventoryCount: z.number().int().positive().default(1),
   inventoryIndex: z.number().int().positive().default(1),
   inventoryLabel: z.string().default("Inventory"),

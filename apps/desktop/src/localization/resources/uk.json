@@ -1,5 +1,6 @@
 {
   "keys": {
+    "outputSafety.diagnostic.migrationBlocked": "Перенесення метаданих виводу потребує уваги. Закрийте інші версії KM Editor і повторіть перевірку. Конфліктні копії збережено в робочій області; файли гри не змінено.",
     "diagnostics.review.accessDenied": "Під час перевірки не вдалося отримати доступ до потрібного ресурсу проєкту.",
     "diagnostics.review.resourceMissing": "Ресурс проєкту, потрібний для перевірки, недоступний.",
     "diagnostics.review.dataInvalid": "Ресурс проєкту, потрібний для перевірки, містить недійсні або непідтримувані дані.",
@@ -3684,9 +3685,38 @@
     "battleCafeRewards.diagnostic.sourceUnavailable": "Перевірене джерело нагород Бойового кафе недоступне.",
     "battleCafeRewards.diagnostic.sourceUnsupported": "Джерело нагород Бойового кафе не відповідає підтримуваній структурі з 23 рядків.",
     "battleCafeRewards.diagnostic.targetResolutionFailed": "Цільовий файл Бойового кафе не міститься безпечно у вихідній теці.",
-    "battleCafeRewards.diagnostic.totalsInvalid": "Суми Двайта, Бернарда та Річарда мають дорівнювати рівно 100% кожна перед перевіркою."
+    "battleCafeRewards.diagnostic.totalsInvalid": "Суми Двайта, Бернарда та Річарда мають дорівнювати рівно 100% кожна перед перевіркою.",
+    "history.title": "Історія",
+    "history.description": "Виберіть дату, щоб переглянути збережені операції виведення та зміни.",
+    "history.unavailable": "Відкрийте проєкт із папкою виведення, щоб переглянути його історію.",
+    "history.loading": "Завантаження історії...",
+    "history.loadFailed": "Не вдалося завантажити історію. Спробуйте ще раз.",
+    "history.days": "Дати операцій",
+    "history.transactions": "Операцій: {count}",
+    "history.outputSummary": "Цільових файлів: {count} · {mode}",
+    "history.changeCount": "Записаних змін: {count}",
+    "history.record": "Запис",
+    "history.field": "Поле",
+    "history.value": "Нове значення",
+    "history.limitedDetails": "Деякі відомості скорочено, щоб історія не перевищувала обмеження сховища.",
+    "history.olderReceipt": "Окремі зміни для цієї операції не було збережено. Відомості про файли виведення наведено нижче.",
+    "history.files": "Файли виведення",
+    "history.deleted": "Видалено",
+    "history.written": "Записано",
+    "settings.tabs.diagnostics": "Діагностика",
+    "pokemon.compatibility.actions": "Дії з групою сумісності",
+    "pokemon.compatibility.enable": "Увімкнути все",
+    "pokemon.compatibility.disable": "Вимкнути все",
+    "pokemon.compatibility.vanilla": "Відновити оригінал",
+    "pokemon.compatibility.vanillaUnavailable": "Дані сумісності з чистої бази недоступні.",
+    "shops.pending.removedTitle": "Видалені предмети магазину",
+    "shops.pending.removedItem": "{item} (початкова позиція {slot})",
+    "shops.pending.undoRemoval": "Скасувати видалення {item}"
   },
   "literals": {
+    "Output metadata could not be migrated safely. Close other KM Editor versions and validate again. Preserved workspace copies must be resolved if the conflict remains.": "Перенесення метаданих виводу потребує уваги. Закрийте інші версії KM Editor і повторіть перевірку. Конфліктні копії збережено в робочій області; файли гри не змінено.",
+    "Output metadata migration needs attention. Preserved copies are available in the output workspace; no game files were changed.": "Перенесення метаданих виводу потребує уваги. Закрийте інші версії KM Editor і повторіть перевірку. Конфліктні копії збережено в робочій області; файли гри не змінено.",
+    "Available workspace storage and consistent output metadata": "Доступне сховище робочої області та узгоджені метадані виводу",
     "Verify the configured data support folder is compatible and retry the operation.": "Перевірте сумісність налаштованої папки підтримки даних і повторіть операцію.",
     "Confirm the selected project folders are accessible and retry the operation.": "Переконайтеся, що вибрані папки проєкту доступні, і повторіть операцію.",
     "Verify the selected project folders are complete and retry the operation.": "Переконайтеся, що вибрані папки проєкту містять усі потрібні файли, і повторіть операцію.",
@@ -7680,6 +7710,8 @@
     "Reward rows": "Рядки нагород",
     "Staged reward rows": "Підготовлені рядки нагород",
     "23 reward rows": "23 рядки нагород",
-    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "Застосувати перевірені рядки нагород Бойового кафе, зберігаючи всі некеровані комірки AMX."
+    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "Застосувати перевірені рядки нагород Бойового кафе, зберігаючи всі некеровані комірки AMX.",
+    "History": "Історія",
+    "Browse dated output transactions and their recorded changes.": "Виберіть дату, щоб переглянути збережені операції виведення та зміни."
   }
 }

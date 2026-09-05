@@ -1,5 +1,6 @@
 {
   "keys": {
+    "outputSafety.diagnostic.migrationBlocked": "La migration des métadonnées de sortie nécessite une intervention. Fermez les autres versions de KM Editor et validez à nouveau. Les copies en conflit sont conservées dans l’espace de travail ; aucun fichier du jeu n’a été modifié.",
     "diagnostics.review.accessDenied": "La vérification n’a pas pu accéder à une ressource requise du projet.",
     "diagnostics.review.resourceMissing": "Une ressource du projet requise pour la vérification est indisponible.",
     "diagnostics.review.dataInvalid": "Une ressource du projet requise pour la vérification contient des données invalides ou non prises en charge.",
@@ -3684,9 +3685,38 @@
     "battleCafeRewards.diagnostic.sourceUnavailable": "La source vérifiée des récompenses du Café Combat est indisponible.",
     "battleCafeRewards.diagnostic.sourceUnsupported": "La source des récompenses du Café Combat ne correspond pas à la disposition prise en charge de 23 lignes.",
     "battleCafeRewards.diagnostic.targetResolutionFailed": "La cible de sortie du Café Combat n'est pas contenue en toute sécurité dans le dossier de sortie.",
-    "battleCafeRewards.diagnostic.totalsInvalid": "Dwight, Bernard et Richard doivent chacun totaliser exactement 100% avant la vérification."
+    "battleCafeRewards.diagnostic.totalsInvalid": "Dwight, Bernard et Richard doivent chacun totaliser exactement 100% avant la vérification.",
+    "history.title": "Historique",
+    "history.description": "Choisissez une date pour voir les opérations de sortie et les modifications enregistrées.",
+    "history.unavailable": "Ouvrez un projet avec un dossier de sortie pour consulter son historique.",
+    "history.loading": "Chargement de l’historique...",
+    "history.loadFailed": "Impossible de charger l’historique. Réessayez.",
+    "history.days": "Dates des opérations",
+    "history.transactions": "{count} opération(s)",
+    "history.outputSummary": "{count} fichier(s) cible(s) · {mode}",
+    "history.changeCount": "{count} modification(s) enregistrée(s)",
+    "history.record": "Entrée",
+    "history.field": "Champ",
+    "history.value": "Nouvelle valeur",
+    "history.limitedDetails": "Certains détails ont été abrégés pour respecter les limites de stockage de l’historique.",
+    "history.olderReceipt": "Les modifications individuelles de cette opération n’ont pas été enregistrées. Les détails des fichiers de sortie figurent ci-dessous.",
+    "history.files": "Fichiers de sortie",
+    "history.deleted": "Supprimé",
+    "history.written": "Écrit",
+    "settings.tabs.diagnostics": "Diagnostics",
+    "pokemon.compatibility.actions": "Actions du groupe de compatibilité",
+    "pokemon.compatibility.enable": "Tout activer",
+    "pokemon.compatibility.disable": "Tout désactiver",
+    "pokemon.compatibility.vanilla": "Restaurer l’original",
+    "pokemon.compatibility.vanillaUnavailable": "Les données de compatibilité de la base d’origine sont indisponibles.",
+    "shops.pending.removedTitle": "Objets retirés de la boutique",
+    "shops.pending.removedItem": "{item} (emplacement d’origine {slot})",
+    "shops.pending.undoRemoval": "Annuler le retrait de {item}"
   },
   "literals": {
+    "Output metadata could not be migrated safely. Close other KM Editor versions and validate again. Preserved workspace copies must be resolved if the conflict remains.": "La migration des métadonnées de sortie nécessite une intervention. Fermez les autres versions de KM Editor et validez à nouveau. Les copies en conflit sont conservées dans l’espace de travail ; aucun fichier du jeu n’a été modifié.",
+    "Output metadata migration needs attention. Preserved copies are available in the output workspace; no game files were changed.": "La migration des métadonnées de sortie nécessite une intervention. Fermez les autres versions de KM Editor et validez à nouveau. Les copies en conflit sont conservées dans l’espace de travail ; aucun fichier du jeu n’a été modifié.",
+    "Available workspace storage and consistent output metadata": "Stockage de l’espace de travail disponible et métadonnées de sortie cohérentes",
     "Verify the configured data support folder is compatible and retry the operation.": "Vérifiez que le dossier de support de données configuré est compatible, puis réessayez l’opération.",
     "Confirm the selected project folders are accessible and retry the operation.": "Vérifiez que les dossiers du projet sélectionnés sont accessibles, puis réessayez l’opération.",
     "Verify the selected project folders are complete and retry the operation.": "Vérifiez que les dossiers du projet sélectionnés sont complets, puis réessayez l’opération.",
@@ -7680,6 +7710,8 @@
     "Reward rows": "Lignes de récompense",
     "Staged reward rows": "Lignes de récompense préparées",
     "23 reward rows": "23 lignes de récompense",
-    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "Appliquez les lignes de récompenses vérifiées du Café Combat en préservant chaque cellule AMX non gérée."
+    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "Appliquez les lignes de récompenses vérifiées du Café Combat en préservant chaque cellule AMX non gérée.",
+    "History": "Historique",
+    "Browse dated output transactions and their recorded changes.": "Choisissez une date pour voir les opérations de sortie et les modifications enregistrées."
   }
 }

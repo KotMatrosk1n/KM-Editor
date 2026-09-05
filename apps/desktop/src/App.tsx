@@ -661,6 +661,12 @@ import {
 } from './workbench/guidedDesignNavigation';
 import { createSemanticMergeLocation } from './workbench/semanticMergeNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
+import { PerformanceDiagnosticsPanel } from './features/settings/PerformanceDiagnosticsPanel';
+import { CompatibilityActions } from './features/pokemon/CompatibilityActions';
+import { compatibilityEntryEnabled, compatibilityGroupField, compatibilityGroupValue, compatibilityToggleValues, isMoveListCompatibility } from './features/pokemon/compatibilityDrafts';
+import { ShopPendingRemovals } from './features/shops/ShopPendingRemovals';
+import { OutputHistoryPage } from './features/output-safety/OutputHistoryPage';
+import { restorePendingShopInventoryRow } from './features/shops/shopPendingInventory';
 import {
   PersonalizationSettingsPanel,
   ThemeSettingsPanel
@@ -14731,7 +14737,7 @@ export function App({
   };
 
   const handleRemovePendingEdit = useCallback(
-    (editIndex: number) => {
+    (editIndex: number, restoreShopSourceIndex?: number) => {
       if (
         editSessionApplyInFlightRef.current ||
         editSessionReviewOperationRef.current !== null ||
@@ -14747,6 +14753,7 @@ export function App({
       }
 
       const pendingEdit = editSession.pendingEdits[editIndex];
+      if (restoreShopSourceIndex !== undefined && pendingEdit?.association) return;
       if (pendingEdit?.association && userFacingFeatureVisibility.namedChangeSets) {
         const mutationToken = editSessionMutationTokenRef.current + 1;
         editSessionMutationTokenRef.current = mutationToken;
@@ -14769,7 +14776,14 @@ export function App({
         return;
       }
 
-      const nextPendingEdits = removeTrainerPendingEditWithDependencies(
+      const shop = shopsWorkflow?.shops.find(row => row.shopId === pendingEdit?.recordId?.split('#')[0]);
+      const restoredShopEdit = restoreShopSourceIndex !== undefined && pendingEdit && shop
+        ? restorePendingShopInventoryRow(pendingEdit, shop, restoreShopSourceIndex)
+        : undefined;
+      if (restoreShopSourceIndex !== undefined && restoredShopEdit === undefined) return;
+      const nextPendingEdits = restoreShopSourceIndex !== undefined
+        ? editSession.pendingEdits.flatMap((edit, index) => index !== editIndex ? [edit] : restoredShopEdit ? [restoredShopEdit] : [])
+        : removeTrainerPendingEditWithDependencies(
         editSession.pendingEdits,
         editIndex,
         trainerEditBaselineRef.current?.sessionId === editSession.sessionId
@@ -14831,6 +14845,7 @@ export function App({
       clearVisibleChangePlanRefs,
       changeSetWorkspace,
       editSession,
+      shopsWorkflow,
       invalidateEditSessionReview,
       rematerializeSessionLocalChange,
       setBridgeDiagnostics,
@@ -20419,7 +20434,7 @@ export function App({
           onForward={handleNavigateForward}
           onOpenCommandPalette={openCommandPalette}
           onOpenMore={
-            activeSection === 'workbench' || activeSection === 'settings'
+            activeSection === 'workbench' || activeSection === 'settings' || activeSection === 'history'
               ? () => setIsCapabilityDiscoveryOpen(true)
               : undefined
           }
@@ -22201,6 +22216,10 @@ export function App({
               onValidateEditSession={handleValidateEditSession}
               outputSafety={outputSafety}
             />
+          ) : null}
+          {activeSection === 'history' ? (
+            <OutputHistoryPage controller={outputSafety}
+              key={`${outputSafetyScope?.projectId ?? ''}:${outputSafetyScope?.paths.outputRootPath ?? ''}`} />
           ) : null}
           {activeSection === 'settings' ? (
             <SettingsSection
@@ -25395,6 +25414,7 @@ function SelectedPokemonPanel({
   const personalDraftDefaults = useMemo(
     () => ({
       ...createPokemonPersonalDrafts(pokemon, editableFields),
+      ...Object.fromEntries((pokemon?.compatibility ?? []).filter(isMoveListCompatibility).map(group => [compatibilityGroupField(group), compatibilityGroupValue(group)])),
       ...Object.fromEntries(
         (pokemon?.compatibility ?? []).flatMap((group) =>
           group.entries.map((entry) => [
@@ -26242,13 +26262,7 @@ function SelectedPokemonPanel({
               ...selectedCompatibilityGroup,
               entries: selectedCompatibilityGroup.entries.map((entry) => ({
                 ...entry,
-                canLearn:
-                  personalDrafts[
-                    createPokemonCompatibilityFieldName(
-                      selectedCompatibilityGroup.groupId,
-                      entry.slot
-                    )
-                  ] === '1'
+                canLearn: compatibilityEntryEnabled(selectedCompatibilityGroup, entry.slot, personalDrafts)
               }))
             },
             compatibilitySearchText
@@ -26261,6 +26275,12 @@ function SelectedPokemonPanel({
     let invalidCount = 0;
 
     for (const group of pokemon?.compatibility ?? []) {
+      if (isMoveListCompatibility(group)) {
+        const field = compatibilityGroupField(group);
+        const value = sparsePersonalDrafts[field];
+        if (value !== undefined && value !== compatibilityGroupValue(group)) changes.push({ field, value });
+        continue;
+      }
       for (const entry of group.entries) {
         const field = createPokemonCompatibilityFieldName(group.groupId, entry.slot);
         const value = sparsePersonalDrafts[field];
@@ -26310,6 +26330,11 @@ function SelectedPokemonPanel({
       editSession !== null
   );
   const canToggleCompatibility = canEditPokemon && editSession !== null;
+  const updateCompatibilityDrafts = (values: Record<string, string>) => {
+    if (!pokemon || !canToggleCompatibility) return;
+    setPersonalDraftsByPokemonId(current => Object.entries(values).reduce((next, [field, value]) =>
+      setSparseFieldDraftValue(next, pokemon.personalId, field, value, personalDraftDefaults), current));
+  };
   const canEditEvolution = canEditPokemon && editSession !== null;
   const canEditLearnset = canEditPokemon && editSession !== null;
   const learnsetMaximumLevel = getPokemonLearnsetMaximumLevel(editorFamily);
@@ -27853,7 +27878,10 @@ function SelectedPokemonPanel({
           </div>
 
           <div className={`inspector-block ${editorFamily}-pokemon-compatibility-block`}>
-            <h4>Compatibility</h4>
+            <div className="compatibility-heading">
+              <h4>Compatibility</h4>
+              <CompatibilityActions group={selectedCompatibilityGroup} disabled={!canToggleCompatibility} onChange={updateCompatibilityDrafts} />
+            </div>
             {pokemon.compatibility.length > 0 ? (
               <div className="compatibility-editor">
                 <div className="compatibility-controls">
@@ -27875,9 +27903,7 @@ function SelectedPokemonPanel({
                         label: `${translateLiteral(group.label)} (${
                           group.entries.filter(
                             (entry) =>
-                              personalDrafts[
-                                createPokemonCompatibilityFieldName(group.groupId, entry.slot)
-                              ] === '1'
+                              compatibilityEntryEnabled(group, entry.slot, personalDrafts)
                           ).length
                         }/${group.entries.length})`,
                         value: group.groupId
@@ -27906,20 +27932,7 @@ function SelectedPokemonPanel({
                           disabled={!canToggleCompatibility}
                           onChange={(event) => {
                             if (pokemon && selectedCompatibilityGroup) {
-                              const field = createPokemonCompatibilityFieldName(
-                                selectedCompatibilityGroup.groupId,
-                                entry.slot
-                              );
-                              const value = event.target.checked ? '1' : '0';
-                              setPersonalDraftsByPokemonId((currentDrafts) =>
-                                setSparseFieldDraftValue(
-                                  currentDrafts,
-                                  pokemon.personalId,
-                                  field,
-                                  value,
-                                  personalDraftDefaults
-                                )
-                              );
+                              updateCompatibilityDrafts(compatibilityToggleValues(selectedCompatibilityGroup, entry.slot, event.target.checked, personalDrafts));
                             }
                           }}
                           type="checkbox"
@@ -37257,7 +37270,7 @@ function getShopPendingEditDisplayDetails(
         : formatPendingEditValue(edit.newValue, field),
     recordLabel: shop
       ? `${shop.name} (${shop.location})${
-          slotItem ? ` slot #${slotItem.slot}: ${slotItem.itemName}` : ''
+          edit.field !== shopSetInventoryFieldName && slotItem ? ` slot #${slotItem.slot}: ${slotItem.itemName}` : ''
         }`
       : undefined
   });
@@ -58462,6 +58475,7 @@ type SettingsTabId =
   | 'themes'
   | 'cache'
   | 'analysis'
+  | 'diagnostics'
   | 'language'
   | 'personalization';
 
@@ -58580,6 +58594,7 @@ function SettingsSection({
       ? [{ id: 'cache' as const, icon: Layers, label: cacheTitle }]
       : []),
     { id: 'analysis', icon: Activity, label: t('analysisLoading.title') },
+    { id: 'diagnostics', icon: Activity, label: t('settings.tabs.diagnostics') },
     { id: 'language', icon: Languages, label: t('settings.language.title') },
     { id: 'personalization', icon: Sparkles, label: t('settings.tabs.personalization') }
   ];
@@ -59017,6 +59032,17 @@ function SettingsSection({
       </section>
         </div>
       ) : null}
+      {effectiveActiveSettingsTab === 'diagnostics' ? (
+        <section
+          aria-labelledby="settings-tab-diagnostics"
+          className="settings-tab-panel"
+          id="settings-tabpanel-diagnostics"
+          role="tabpanel"
+          tabIndex={0}
+        >
+          <PerformanceDiagnosticsPanel />
+        </section>
+      ) : null}
       {effectiveActiveSettingsTab === 'personalization' ? (
         <div
           aria-labelledby="settings-tab-personalization"
@@ -59103,7 +59129,7 @@ function ChangesSection({
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
   onOpenEditor: (section: WorkbenchSection) => void;
-  onRemovePendingEdit: (editIndex: number) => void;
+  onRemovePendingEdit: (editIndex: number, restoreShopSourceIndex?: number) => void;
   onRequestTrinityOutput: (mode: ChangePlanOutputMode) => void;
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
@@ -59427,6 +59453,9 @@ function ChangesSection({
                               <dd>{localizePendingEditNewValue(details, t)}</dd>
                             </div>
                           </dl>
+                          <ShopPendingRemovals edit={edit} workflow={pendingEditContext.shopsWorkflow}
+                            disabled={isEditSessionMutating || isSessionValidating || isChangePlanCreating || isChangePlanApplying}
+                            onRemove={(sourceIndex) => onRemovePendingEdit(index, sourceIndex)} />
                           <details className="pending-edit-technical-details">
                             <summary>{translateLiteral('Technical details')}</summary>
                             <dl className="pending-edit-meta">

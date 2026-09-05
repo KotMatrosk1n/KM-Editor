@@ -58,6 +58,7 @@ export type OutputSafetyController = {
   integrity: ScanOutputIntegrityResponse | null;
   isAvailable: boolean;
   loadActivity: () => Promise<void>;
+  loadHistory: () => Promise<void>;
   loadMoreHistory: () => Promise<void>;
   notifyOutputFailure: (error: unknown) => Promise<OutputRecoveryStatus | null>;
   notifyOutputMutation: () => Promise<OutputRecoveryStatus | null>;
@@ -376,6 +377,12 @@ export function useOutputSafetyController({
     }, t('outputSafety.error.cleanupPreview'));
   }, [bridge, integrity, runScopedAction, t]);
 
+  const loadHistory = useCallback(async () => {
+    await runScopedAction('loadActivity', activeScope =>
+      bridge.listOutputHistory({ cursor: null, limit: 20, scope: activeScope }),
+      setHistory, t('outputSafety.error.activityLoad'));
+  }, [bridge, runScopedAction, t]);
+
   const loadActivity = useCallback(async () => {
     await runScopedAction('loadActivity', (activeScope) => Promise.all([
         bridge.listOutputHistory({ cursor: null, limit: 20, scope: activeScope }),
@@ -605,6 +612,7 @@ export function useOutputSafetyController({
     integrity,
     isAvailable: scope !== null,
     loadActivity,
+    loadHistory,
     loadMoreHistory,
     notifyOutputFailure,
     notifyOutputMutation,

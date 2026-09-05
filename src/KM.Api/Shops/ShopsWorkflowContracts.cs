@@ -51,6 +51,8 @@ public sealed record ShopRecordDto(
     IReadOnlyList<ShopInventoryRecordDto> Inventory,
     ShopProvenanceDto Provenance)
 {
+    public IReadOnlyList<ShopInventoryRecordDto> SourceInventory { get; init; } = Inventory;
+
     public string EditorFamily { get; init; } = "swsh";
 
     public bool CanEditInventoryOrder { get; init; } = true;

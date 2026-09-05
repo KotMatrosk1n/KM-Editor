@@ -1721,7 +1721,10 @@ public sealed class SvWorkflowService
             var context = new SvOutputApplyContext(
                 OutputReviewFingerprint.FromChangePlan(reviewedPlan),
                 GetSingleDomainOutputOwnerId(domain),
-                [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, GetDomainName(domain))]);
+                [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, GetDomainName(domain))])
+            {
+                HistoryDetails = OutputHistoryDetails.Capture(reviewedPlan.EffectivePendingEdits ?? session.PendingEdits),
+            };
             using var outputBatch = SvWorkflowFileSource.BeginDeferredOutputBatch(
                 paths,
                 outputMode,
@@ -1968,7 +1971,10 @@ public sealed class SvWorkflowService
                     .Select(domain => new OutputApplyOrigin(
                         OutputApplyOriginKind.Workflow,
                         GetDomainName(domain)))
-                    .ToArray());
+                    .ToArray())
+            {
+                HistoryDetails = OutputHistoryDetails.Capture(currentSnapshot.EffectiveSession.PendingEdits),
+            };
             using var outputBatch = SvWorkflowFileSource.BeginDeferredOutputBatch(
                 paths,
                 outputMode,

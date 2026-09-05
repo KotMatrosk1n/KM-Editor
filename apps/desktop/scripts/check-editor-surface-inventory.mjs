@@ -162,6 +162,7 @@ const editorSurfaceInventory = {
   gameDump: ['src/features/game-dump/GameDumpSection.tsx', 'GameDumpSection', 'utility-input'],
   gameplaySettings: ['src/features/gameplay-settings/GameplaySettingsSection.tsx', 'GameplaySettingsSection', 'choice-local-draft'],
   changes: ['src/App.tsx', 'ChangesSection', 'utility-input'],
+  history: ['src/features/output-safety/OutputHistoryPage.tsx', 'OutputHistoryPage', 'utility-input'],
   settings: ['src/App.tsx', 'SettingsSection', 'utility-input']
 };
 

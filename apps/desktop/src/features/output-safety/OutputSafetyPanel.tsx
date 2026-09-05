@@ -329,39 +329,6 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
               </button>
             </div>
 
-            {controller.history ? (
-              <div className="output-safety-subgroup">
-                <h4>{t('outputSafety.history.title')}</h4>
-                {controller.history.receipts.length === 0 ? (
-                  <p className="empty-copy">{t('outputSafety.history.empty')}</p>
-                ) : (
-                  <ol className="output-history-list">
-                    {controller.history.receipts.map((receipt) => (
-                      <li key={receipt.transactionId}>
-                        <strong>{t(`outputSafety.transaction.outcome.${receipt.outcome}`)}</strong>
-                        <span>{t('outputSafety.history.summary', {
-                          count: receipt.targetCount,
-                          mode: receipt.outputMode,
-                          time: formatDate(receipt.completedAtUtc, formatLocale)
-                        })}</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-                {controller.history.nextCursor ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={controller.busyAction !== null}
-                    onClick={() => void controller.loadMoreHistory()}
-                    type="button"
-                  >
-                    <History aria-hidden="true" size={15} />
-                    <span>{t('outputSafety.history.loadMore')}</span>
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
             {controller.checkpoints ? (
               <div className="output-safety-subgroup">
                 <div className="output-checkpoint-create">

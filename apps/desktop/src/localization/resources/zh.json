@@ -1,5 +1,6 @@
 {
   "keys": {
+    "outputSafety.diagnostic.migrationBlocked": "输出元数据迁移需要处理。请关闭其他 KM Editor 版本并重新验证。冲突副本已保存在工作区存储中；游戏文件未更改。",
     "diagnostics.review.accessDenied": "检查无法访问所需的项目资源。",
     "diagnostics.review.resourceMissing": "检查所需的项目资源不可用。",
     "diagnostics.review.dataInvalid": "检查所需的项目资源包含无效或不受支持的数据。",
@@ -3684,9 +3685,38 @@
     "battleCafeRewards.diagnostic.sourceUnavailable": "已验证的对战咖啡馆奖励源不可用。",
     "battleCafeRewards.diagnostic.sourceUnsupported": "对战咖啡馆奖励源与受支持的 23 行布局不匹配。",
     "battleCafeRewards.diagnostic.targetResolutionFailed": "对战咖啡馆输出目标未安全包含在输出根目录中。",
-    "battleCafeRewards.diagnostic.totalsInvalid": "审查前，德怀特、伯纳德和理查德的合计都必须恰好为 100%。"
+    "battleCafeRewards.diagnostic.totalsInvalid": "审查前，德怀特、伯纳德和理查德的合计都必须恰好为 100%。",
+    "history.title": "历史记录",
+    "history.description": "选择日期，查看已记录的输出操作和更改。",
+    "history.unavailable": "打开设有输出文件夹的项目以查看历史记录。",
+    "history.loading": "正在加载历史记录...",
+    "history.loadFailed": "无法加载历史记录。请重试。",
+    "history.days": "操作日期",
+    "history.transactions": "{count} 次操作",
+    "history.outputSummary": "{count} 个目标文件 · {mode}",
+    "history.changeCount": "{count} 项已记录更改",
+    "history.record": "记录",
+    "history.field": "字段",
+    "history.value": "新值",
+    "history.limitedDetails": "部分详情已缩短，以免历史记录超出存储限制。",
+    "history.olderReceipt": "此操作未记录单项更改。其输出文件详情如下。",
+    "history.files": "输出文件",
+    "history.deleted": "已删除",
+    "history.written": "已写入",
+    "settings.tabs.diagnostics": "诊断",
+    "pokemon.compatibility.actions": "兼容性分组操作",
+    "pokemon.compatibility.enable": "全部启用",
+    "pokemon.compatibility.disable": "全部禁用",
+    "pokemon.compatibility.vanilla": "恢复原版",
+    "pokemon.compatibility.vanillaUnavailable": "无法获取原始基础数据中的兼容性信息。",
+    "shops.pending.removedTitle": "已移除的商店物品",
+    "shops.pending.removedItem": "{item}（原位置 {slot}）",
+    "shops.pending.undoRemoval": "撤销移除 {item}"
   },
   "literals": {
+    "Output metadata could not be migrated safely. Close other KM Editor versions and validate again. Preserved workspace copies must be resolved if the conflict remains.": "输出元数据迁移需要处理。请关闭其他 KM Editor 版本并重新验证。冲突副本已保存在工作区存储中；游戏文件未更改。",
+    "Output metadata migration needs attention. Preserved copies are available in the output workspace; no game files were changed.": "输出元数据迁移需要处理。请关闭其他 KM Editor 版本并重新验证。冲突副本已保存在工作区存储中；游戏文件未更改。",
+    "Available workspace storage and consistent output metadata": "可用的工作区存储和一致的输出元数据",
     "Verify the configured data support folder is compatible and retry the operation.": "请确认已配置的数据支持文件夹兼容，然后重试操作。",
     "Confirm the selected project folders are accessible and retry the operation.": "请确认可以访问所选项目文件夹，然后重试操作。",
     "Verify the selected project folders are complete and retry the operation.": "请确认所选项目文件夹中的文件完整，然后重试操作。",
@@ -7680,6 +7710,8 @@
     "Reward rows": "奖励行",
     "Staged reward rows": "已暂存的奖励行",
     "23 reward rows": "23 行奖励",
-    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "应用已审查的对战咖啡馆奖励行，同时保留每个未管理的 AMX 单元。"
+    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "应用已审查的对战咖啡馆奖励行，同时保留每个未管理的 AMX 单元。",
+    "History": "历史记录",
+    "Browse dated output transactions and their recorded changes.": "选择日期，查看已记录的输出操作和更改。"
   }
 }

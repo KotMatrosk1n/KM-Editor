@@ -147,6 +147,10 @@ public sealed record ListOutputHistoryRequest(OutputScopeDto Scope, string? Curs
 
 public sealed record OutputApplyOriginDto(string Kind, string Id);
 
+public sealed record OutputHistoryChangeDto(string Domain, string Summary, string? RecordId, string? Field, string? NewValue);
+public sealed record OutputHistoryDetailsDto(int TotalChangeCount, IReadOnlyList<OutputHistoryChangeDto> Changes, bool Truncated);
+public sealed record OutputHistoryTargetDto(string RelativePath, string Kind);
+
 public sealed record OutputHistoryReceiptDto(
     string TransactionId,
     OutputApplyOutcomeDto Outcome,
@@ -155,7 +159,11 @@ public sealed record OutputHistoryReceiptDto(
     string SemanticReviewHash,
     int TargetCount,
     IReadOnlyList<OutputApplyOriginDto> Origins,
-    string? OutcomeCode);
+    string? OutcomeCode)
+{
+    public OutputHistoryDetailsDto? HistoryDetails { get; init; }
+    public IReadOnlyList<OutputHistoryTargetDto> Targets { get; init; } = [];
+}
 
 public sealed record ListOutputHistoryResponse(
     IReadOnlyList<OutputHistoryReceiptDto> Receipts,

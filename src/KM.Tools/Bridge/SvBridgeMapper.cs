@@ -1231,7 +1231,10 @@ public static class SvBridgeMapper
             group.GroupId,
             group.Label,
             group.EnabledCount,
-            group.Entries.Select(ToDto).ToArray());
+            group.Entries.Select(ToDto).ToArray())
+        {
+            VanillaMoveIds = group.VanillaMoveIds,
+        };
     }
 
     private static PokemonCompatibilityEntryDto ToDto(SvPokemonCompatibilityEntry entry)
@@ -1241,7 +1244,10 @@ public static class SvBridgeMapper
             entry.MoveId,
             entry.MoveName,
             entry.Label,
-            entry.CanLearn);
+            entry.CanLearn)
+        {
+            VanillaCanLearn = entry.VanillaCanLearn,
+        };
     }
 
     private static MoveRecordDto ToDto(SvMoveRecord move)
@@ -1679,6 +1685,7 @@ public static class SvBridgeMapper
         {
             EditorFamily = "sv",
             CanEditInventoryOrder = shop.CanEditInventoryOrder,
+            SourceInventory = shop.SourceInventory.Select(ToDto).ToArray(),
             GlobalPriceField = shop.Inventory.Any(item =>
                 item.PriceField is null && item.CanEditPrice)
                     ? "buyPrice"

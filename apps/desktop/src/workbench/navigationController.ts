@@ -85,6 +85,14 @@ export function evaluateWorkbenchNavigation(
 
   const activeSection = state.activeLocation.section;
   const destinationSection = destination.section;
+  if (destinationSection === 'history') {
+    return state.activeEditorHasLocalDrafts
+      ? { kind: 'prompt', prompt: { destination, kind: 'editorSwitch', mode: 'confirm' } }
+      : { clearPendingState: false, kind: 'commit', location: destination };
+  }
+  if (activeSection === 'history' && destinationSection === state.editSessionSection) {
+    return { clearPendingState: false, kind: 'commit', location: destination };
+  }
   if (preservesDraftScope) {
     return { clearPendingState: false, kind: 'commit', location: destination };
   }

@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Output;
 
 namespace KM.Core.Projects;
 
@@ -80,6 +81,18 @@ public sealed class ProjectValidator
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
         AddSelectedGameDiagnostics(baseRomFs, baseExeFs, outputRoot, paths.SelectedGame);
+
+        if (outputRoot.IsValid && !outputRoot.HasBlockingError && paths.SelectedGame is not null)
+        {
+            try { new OutputWorkspaceStorage(paths).MigrateAsync().GetAwaiter().GetResult(); }
+            catch (Exception exception) when (exception is OutputCoordinatorException or IOException or UnauthorizedAccessException)
+            {
+                outputRoot.AddDiagnostic(DiagnosticSeverity.Error,
+                    "Output metadata could not be migrated safely. Close other KM Editor versions and validate again. Preserved workspace copies must be resolved if the conflict remains.",
+                    expected: "Available workspace storage and consistent output metadata",
+                    code: OutputWorkspaceStorage.MigrationDiagnosticCode);
+            }
+        }
 
         var pathResults = new[]
         {

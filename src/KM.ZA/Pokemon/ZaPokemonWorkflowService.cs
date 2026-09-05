@@ -443,7 +443,7 @@ internal sealed class ZaPokemonWorkflowService
                     state: null,
                     innerException: exception);
             }
-            pokemon = AttachVanillaYieldDefaults(project, pokemon);
+            pokemon = AttachVanillaYieldDefaults(project, pokemon, labels, tmCatalog);
 
             try
             {
@@ -1469,13 +1469,16 @@ internal sealed class ZaPokemonWorkflowService
 
     private ZaPokemonRecord[] AttachVanillaYieldDefaults(
         OpenedProject project,
-        IReadOnlyList<ZaPokemonRecord> pokemon)
+        IReadOnlyList<ZaPokemonRecord> pokemon,
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
     {
         try
         {
             var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
             var baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
             fileSource.EnsureBoundedTableCount(baseTable.EntryLength, "The base Z-A yield table");
+            var nestedCount = 0;
             return pokemon.Select(record =>
             {
                 if (record.PersonalId < 0
@@ -1488,6 +1491,8 @@ internal sealed class ZaPokemonWorkflowService
                     return record;
                 }
 
+                nestedCount = checked(nestedCount + EnsureBoundedPersonalVectors(baseEntry, "The base Z-A compatibility row"));
+                fileSource.EnsureBoundedNestedCount(nestedCount, "The base Z-A compatibility vectors");
                 var baseStats = baseEntry.BaseStats;
                 var baseTotal = baseStats is null
                     ? 0
@@ -1500,6 +1505,7 @@ internal sealed class ZaPokemonWorkflowService
                 var baseEvYield = baseEntry.EvYield;
                 return record with
                 {
+                    Compatibility = AttachVanillaCompatibility(record.Compatibility, ReadCompatibility(baseEntry, labels, tmCatalog)),
                     VanillaYieldDefaults = new ZaPokemonVanillaYieldDefaults(
                         ZaPokemonExperience.CalculateBaseExperience(
                             baseTotal,
@@ -1679,6 +1685,29 @@ internal sealed class ZaPokemonWorkflowService
                 CultureInfo.InvariantCulture,
                 $"Lv. {DecodeLearnsetDisplayLevel(rawLevel)} / Mastery Lv. {masteryLevel}")
             : null;
+    }
+
+    private static IReadOnlyList<ZaPokemonCompatibilityGroup> AttachVanillaCompatibility(
+        IReadOnlyList<ZaPokemonCompatibilityGroup> current,
+        IReadOnlyList<ZaPokemonCompatibilityGroup> vanilla)
+    {
+        return current.Concat(vanilla.Where(group => current.All(existing => existing.GroupId != group.GroupId))
+                .Select(group => group with { Entries = [], EnabledCount = 0 }))
+            .Select(group =>
+            {
+                var original = vanilla.FirstOrDefault(candidate => candidate.GroupId == group.GroupId);
+                var vanillaMoves = original?.Entries.Where(entry => entry.CanLearn).Select(entry => entry.MoveId).ToArray() ?? [];
+                var entries = group.Entries.Concat((original?.Entries ?? [])
+                    .Where(entry => group.Entries.All(existing => existing.MoveId != entry.MoveId))
+                    .Select((entry, index) => entry with
+                    {
+                        Slot = group.GroupId == "tm" ? entry.MoveId : group.Entries.Count + index,
+                        CanLearn = false,
+                    }))
+                    .Select(entry => entry with { VanillaCanLearn = vanillaMoves.Contains(entry.MoveId) })
+                    .ToArray();
+                return group with { Entries = entries, VanillaMoveIds = vanillaMoves };
+            }).ToArray();
     }
 
     private static IReadOnlyList<ZaPokemonCompatibilityGroup> ReadCompatibility(

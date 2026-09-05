@@ -80,6 +80,7 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-OUTPUT-SUPPORT-REPORT-REDACTED': 'outputSafety.diagnostic.supportRedacted',
   'KM-OUTPUT-UNKNOWN-TARGET-STATE': 'outputSafety.diagnostic.unknownTarget',
   'KM-OUTPUT-UNSAFE-PATH': 'outputSafety.diagnostic.unsafePath',
+  'KM-PROJECT-OUTPUT-MIGRATION-BLOCKED': 'outputSafety.diagnostic.migrationBlocked',
   'KM-PROJECT-OUTPUT-MISSING': 'outputSafety.diagnostic.outputRootMissing',
   'KM-PROJECT-OUTPUT-NOT-CONFIGURED': 'outputSafety.diagnostic.outputRootNotConfigured',
   'KM-PROJECT-RELOCATION-CONFLICT': 'outputSafety.diagnostic.relocationConflict',

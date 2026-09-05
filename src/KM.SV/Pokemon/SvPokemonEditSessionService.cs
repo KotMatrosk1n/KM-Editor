@@ -132,7 +132,7 @@ internal sealed class SvPokemonEditSessionService
             return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
+        var updatedSession = ReplaceCompatibilityGroupOrRemoveNoOp(loadedWorkflow, currentSession, pendingEdit);
         return new SvPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -206,7 +206,7 @@ internal sealed class SvPokemonEditSessionService
             }
 
             var previousSession = updatedSession;
-            updatedSession = ReplacePendingPokemonEdit(previousSession, pendingEdit);
+            updatedSession = ReplaceCompatibilityGroupOrRemoveNoOp(loadedWorkflow, previousSession, pendingEdit);
             effectiveWorkflow = RequiresYieldReplay(previousSession, pendingEdit)
                 ? OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits)
                 : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
@@ -300,7 +300,7 @@ internal sealed class SvPokemonEditSessionService
             }
 
             var previousSession = workingSession;
-            workingSession = ReplacePendingPokemonEdit(previousSession, pendingEdit);
+            workingSession = ReplaceCompatibilityGroupOrRemoveNoOp(loadedWorkflow, previousSession, pendingEdit);
             effectiveWorkflow = RequiresYieldReplay(previousSession, pendingEdit)
                 ? OverlayPendingEdits(loadedWorkflow, workingSession.PendingEdits)
                 : OverlayPendingEdit(effectiveWorkflow, pendingEdit);
@@ -794,6 +794,38 @@ internal sealed class SvPokemonEditSessionService
         return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
+    private static bool TryParseCompatibilityGroupField(string? field, out string groupId)
+    {
+        groupId = field is "compatibilityGroup:egg" ? "egg" : field is "compatibilityGroup:reminder" ? "reminder" : string.Empty;
+        return groupId.Length > 0;
+    }
+
+    private static ushort[]? ParseCompatibilityGroup(
+        string? value, SvPokemonCompatibilityGroup? group,
+        ICollection<ValidationDiagnostic> diagnostics, string? field, bool requireLoadedGroup = true)
+    {
+        var parts = string.IsNullOrWhiteSpace(value) ? [] : value.Split(',');
+        var moves = new List<ushort>();
+        if (value is null || parts.Length > 4096 || (requireLoadedGroup && group is null))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(field ?? string.Empty));
+            return null;
+        }
+        foreach (var part in parts)
+        {
+            if (!ushort.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var move) || move == 0
+                || moves.Contains(move) || (group is not null && group.Entries.All(entry => entry.MoveId != move)))
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error, "Pokemon compatibility group contains an invalid move.",
+                    SvEditSessionSupport.PokemonDomain, field: field, expected: "Unique moves from the loaded compatibility group"));
+                return null;
+            }
+            moves.Add(move);
+        }
+        return moves.ToArray();
+    }
+
     private static PendingEdit? CreateFieldPendingEdit(
         SvPokemonWorkflow workflow,
         SvPokemonRecord pokemon,
@@ -802,6 +834,16 @@ internal sealed class SvPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
+        if (TryParseCompatibilityGroupField(normalizedField, out var replacementGroupId))
+        {
+            var group = pokemon.Compatibility.FirstOrDefault(candidate => candidate.GroupId == replacementGroupId);
+            var moves = ParseCompatibilityGroup(value, group, diagnostics, normalizedField);
+            return moves is null ? null : SvEditSessionSupport.CreatePendingEdit(
+                SvEditSessionSupport.PokemonDomain, $"Set {pokemon.Name} {group!.Label} compatibility.",
+                new ProjectFileReference(pokemon.Provenance.SourceLayer, pokemon.Provenance.SourceFile),
+                pokemon.PersonalId.ToString(CultureInfo.InvariantCulture), normalizedField, string.Join(",", moves));
+        }
+
         if (TryParseCompatibilityField(normalizedField, out var groupId, out var slot))
         {
             var group = pokemon.Compatibility.FirstOrDefault(candidate => candidate.GroupId == groupId);
@@ -1013,6 +1055,12 @@ internal sealed class SvPokemonEditSessionService
             return;
         }
 
+        if (TryParseCompatibilityGroupField(edit.Field, out var replacementGroupId))
+        {
+            ParseCompatibilityGroup(edit.NewValue, pokemon.Compatibility.FirstOrDefault(group => group.GroupId == replacementGroupId), diagnostics, edit.Field);
+            return;
+        }
+
         if (TryParseCompatibilityField(edit.Field, out var groupId, out var compatibilitySlot))
         {
             if (pokemon.Compatibility
@@ -1091,12 +1139,29 @@ internal sealed class SvPokemonEditSessionService
         return session with { PendingEdits = pendingEdits };
     }
 
+    private static EditSession ReplaceCompatibilityGroupOrRemoveNoOp(SvPokemonWorkflow loadedWorkflow, EditSession session, PendingEdit pendingEdit)
+    {
+        if (TryParseCompatibilityGroupField(pendingEdit.Field, out var groupId)
+            && int.TryParse(pendingEdit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+        {
+            var original = loadedWorkflow.Pokemon.FirstOrDefault(row => row.PersonalId == personalId)?.Compatibility.FirstOrDefault(group => group.GroupId == groupId);
+            if (original is not null && pendingEdit.NewValue == string.Join(",", original.Entries.Where(entry => entry.CanLearn).Select(entry => entry.MoveId)))
+                return session with { PendingEdits = session.PendingEdits.Where(edit => !ShouldReplacePendingEdit(edit, pendingEdit)).ToArray() };
+        }
+        return ReplacePendingPokemonEdit(session, pendingEdit);
+    }
+
     private static bool ShouldReplacePendingEdit(PendingEdit candidate, PendingEdit pendingEdit)
     {
         if (!string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal))
         {
             return false;
         }
+
+        if (candidate.RecordId == pendingEdit.RecordId
+            && TryParseCompatibilityGroupField(pendingEdit.Field, out var replacementGroupId)
+            && TryParseCompatibilityField(candidate.Field, out var previousGroupId, out _)
+            && previousGroupId == replacementGroupId) return true;
 
         if (IsGlobalYieldEdit(pendingEdit))
         {
@@ -1183,6 +1248,17 @@ internal sealed class SvPokemonEditSessionService
             && ParseEvolutionOperation(edit, pokemon, new List<ValidationDiagnostic>()) is { } evolutionOperation)
         {
             return ApplyEvolutionOperation(workflow, pokemon, evolutionOperation);
+        }
+
+        if (TryParseCompatibilityGroupField(edit.Field, out var replacementGroupId)
+            && ParseCompatibilityGroup(edit.NewValue, pokemon.Compatibility.FirstOrDefault(group => group.GroupId == replacementGroupId), new List<ValidationDiagnostic>(), edit.Field) is { } replacementMoves)
+        {
+            return pokemon with { Compatibility = pokemon.Compatibility.Select(group => group.GroupId != replacementGroupId ? group : group with
+            {
+                Entries = replacementMoves.Select(move => group.Entries.First(entry => entry.MoveId == move) with { CanLearn = true })
+                    .Concat(group.Entries.Where(entry => !replacementMoves.Contains((ushort)entry.MoveId)).Select(entry => entry with { CanLearn = false })).ToArray(),
+                EnabledCount = replacementMoves.Length,
+            }).ToArray() };
         }
 
         if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
@@ -1567,6 +1643,17 @@ internal sealed class SvPokemonEditSessionService
         {
             evolutionOperation = EncodeEvolutionOperation(evolutionOperation, conversionState);
             ApplyEvolutionEdit(row, evolutionOperation);
+            return;
+        }
+
+        if (TryParseCompatibilityGroupField(edit.Field, out var replacementGroupId))
+        {
+            if (ParseCompatibilityGroup(edit.NewValue, null, diagnostics, edit.Field, requireLoadedGroup: false) is { } moves)
+            {
+                var target = replacementGroupId == "egg" ? row.EggMoves : row.ReminderMoves;
+                target.Clear();
+                target.AddRange(moves);
+            }
             return;
         }
 

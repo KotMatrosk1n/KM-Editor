@@ -20,7 +20,7 @@ namespace KM.Tools.Application;
 
 /// <summary>
 /// Owns bounded bridge review state for output recovery, cleanup, history, and checkpoints.
-/// Durable truth remains in the coordinator under the selected output root.
+/// Durable records belong to the game's output workspace; recovery uses the output drive.
 /// </summary>
 public sealed class OutputSafetyApplicationService
 {
@@ -889,7 +889,7 @@ public sealed class OutputSafetyApplicationService
             projectId,
             selectedGame.ToGameFamily(),
             paths,
-            new OutputTransactionCoordinator(outputRoot, CoordinatorOptions));
+            OutputTransactionCoordinator.ForProject(paths, CoordinatorOptions));
     }
 
     private static bool HasBoundedProjectPathStrings(ProjectPaths paths)
@@ -1096,7 +1096,14 @@ public sealed class OutputSafetyApplicationService
             receipt.Origins.Select(origin => new OutputApplyOriginDto(
                 origin.Kind.ToString(),
                 origin.Id)).ToArray(),
-            receipt.OutcomeCode);
+            receipt.OutcomeCode)
+        {
+            HistoryDetails = receipt.HistoryDetails is { } details
+                ? new OutputHistoryDetailsDto(details.TotalChangeCount, details.Changes.Select(change =>
+                    new OutputHistoryChangeDto(change.Domain, change.Summary, change.RecordId, change.Field, change.NewValue)).ToArray(), details.Truncated)
+                : null,
+            Targets = receipt.Targets.Select(target => new OutputHistoryTargetDto(target.Path.Value, target.Kind.ToString())).ToArray(),
+        };
     }
 
     private static OutputTransactionResultDto ToDto(OutputApplyResult result)

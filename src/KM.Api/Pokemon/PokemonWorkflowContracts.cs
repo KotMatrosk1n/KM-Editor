@@ -192,14 +192,20 @@ public sealed record PokemonCompatibilityGroupDto(
     string GroupId,
     string Label,
     int EnabledCount,
-    IReadOnlyList<PokemonCompatibilityEntryDto> Entries);
+    IReadOnlyList<PokemonCompatibilityEntryDto> Entries)
+{
+    public IReadOnlyList<int>? VanillaMoveIds { get; init; }
+}
 
 public sealed record PokemonCompatibilityEntryDto(
     int Slot,
     int MoveId,
     string MoveName,
     string Label,
-    bool CanLearn);
+    bool CanLearn)
+{
+    public bool? VanillaCanLearn { get; init; }
+}
 
 public sealed record PokemonAlphaMoveDto(
     bool HasMapping,

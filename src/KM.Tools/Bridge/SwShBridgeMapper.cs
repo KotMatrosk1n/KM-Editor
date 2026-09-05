@@ -2446,7 +2446,10 @@ public static class SwShBridgeMapper
             group.GroupId,
             group.Label,
             group.EnabledCount,
-            group.Entries.Select(ToDto).ToArray());
+            group.Entries.Select(ToDto).ToArray())
+        {
+            VanillaMoveIds = group.VanillaMoveIds,
+        };
     }
 
     private static PokemonCompatibilityEntryDto ToDto(SwShPokemonCompatibilityEntry entry)
@@ -2456,7 +2459,10 @@ public static class SwShBridgeMapper
             entry.MoveId,
             entry.MoveName,
             entry.Label,
-            entry.CanLearn);
+            entry.CanLearn)
+        {
+            VanillaCanLearn = entry.VanillaCanLearn,
+        };
     }
 
     private static MoveRecordDto ToDto(SwShMoveRecord move)
@@ -2714,6 +2720,7 @@ public static class SwShBridgeMapper
             ToDto(shop.Provenance))
         {
             GlobalPriceField = shop.GlobalPriceField,
+            SourceInventory = shop.SourceInventory.Select(ToDto).ToArray(),
         };
     }
 

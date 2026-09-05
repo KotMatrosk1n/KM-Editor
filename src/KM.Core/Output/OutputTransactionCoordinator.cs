@@ -20,16 +20,29 @@ public sealed class OutputTransactionCoordinator
     private readonly OutputPathSafety paths;
     private readonly OutputMetadataStore metadata;
     private readonly OutputTransactionCoordinatorOptions options;
+    private readonly OutputWorkspaceStorage? workspace;
     private readonly SemaphoreSlim operationGate = new(1, 1);
 
     public OutputTransactionCoordinator(
         string outputRoot,
-        OutputTransactionCoordinatorOptions? options = null)
+        OutputTransactionCoordinatorOptions? options = null,
+        OutputWorkspaceStorage? workspace = null)
     {
         this.options = options ?? new OutputTransactionCoordinatorOptions();
         this.options.Validate();
-        paths = new OutputPathSafety(outputRoot);
+        if (workspace is not null && !string.Equals(
+                OutputMetadataNamespace.NormalizeOutputRoot(outputRoot), workspace.OutputRoot,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new OutputPathSecurityException();
+        this.workspace = workspace;
+        paths = new OutputPathSafety(workspace?.OutputRoot ?? outputRoot, workspace?.MetadataRoot, workspace?.WorkingRoot);
         metadata = new OutputMetadataStore(paths);
+    }
+
+    public static OutputTransactionCoordinator ForProject(ProjectPaths paths, OutputTransactionCoordinatorOptions? options = null)
+    {
+        var workspace = new OutputWorkspaceStorage(paths);
+        return new OutputTransactionCoordinator(workspace.OutputRoot, options, workspace);
     }
 
     public async Task<OutputApplyResult> ApplyAsync(
@@ -37,11 +50,14 @@ public sealed class OutputTransactionCoordinator
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        workspace?.ValidatePlanScope(plan);
         ValidatePlanLimits(plan);
 
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
@@ -71,6 +87,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             EnsureExclusiveOperationMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
@@ -101,6 +119,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             EnsureExclusiveOperationMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
@@ -127,6 +147,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             // Recovery status is advisory. When no metadata store exists there can be no
             // interrupted KM transaction to report, and creating .km merely to say so turns
@@ -177,6 +199,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return await RecoverCoreAsync(expectedRevision, cancellationToken).ConfigureAwait(false);
@@ -193,6 +217,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return (await ReadHistoryAsync(cancellationToken).ConfigureAwait(false)).Receipts;
@@ -209,6 +235,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var history = await ReadHistoryAsync(cancellationToken).ConfigureAwait(false);
@@ -226,6 +254,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return await ReadInventoryAsync(cancellationToken).ConfigureAwait(false);
@@ -242,6 +272,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var inventory = await ReadInventoryAsync(cancellationToken).ConfigureAwait(false);
@@ -261,6 +293,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return await ScanIntegrityCoreAsync(baselineByPath, cancellationToken).ConfigureAwait(false);
@@ -279,6 +313,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return CaptureDirectoryMembershipCore(directory);
@@ -461,6 +497,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
@@ -644,6 +682,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
@@ -684,6 +724,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             return await ListCheckpointsCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -723,6 +765,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var manifest = await ReadCheckpointManifestAsync(checkpointId, cancellationToken).ConfigureAwait(false);
@@ -746,6 +790,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None).ConfigureAwait(false);
@@ -794,6 +840,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var recovery = await RecoverCoreAsync(expectedRevision: null, CancellationToken.None)
@@ -848,6 +896,8 @@ public sealed class OutputTransactionCoordinator
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
             paths.EnsureMetadataLayout();
             await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
             var scopedRecoveryPhases = ImmutableArray.CreateBuilder<OutputTransactionPhase>();
@@ -1942,10 +1992,14 @@ public sealed class OutputTransactionCoordinator
             ImmutableArray<RelativeOutputPath>.Empty,
             PublishedEntryCount: 0,
             startedAtUtc,
-            OutcomeCode: null);
+            OutcomeCode: null)
+        {
+            HistoryDetails = plan.HistoryDetails,
+        };
 
         EnsureFinalizationMetadataCapacity(inventoryAtStart, journal);
 
+        workspace?.EnsureWorkingLayout();
         paths.CreateMetadataDirectory(transactionDirectory, paths.TransactionsRoot);
         try
         {
@@ -3397,6 +3451,8 @@ public sealed class OutputTransactionCoordinator
     {
         paths.EnsureMetadataLayout();
         var builder = ImmutableArray.CreateBuilder<DiscoveredTransaction>();
+        if (File.Exists(paths.TransactionsRoot)) throw new OutputPathSecurityException();
+        if (!Directory.Exists(paths.TransactionsRoot)) return builder.ToImmutable();
         var inspectedDirectories = 0;
         foreach (var directory in Directory.EnumerateDirectories(paths.TransactionsRoot, "*", SearchOption.TopDirectoryOnly))
         {
@@ -3504,6 +3560,7 @@ public sealed class OutputTransactionCoordinator
         _ = SemanticContractGuards.DefinedEnum(journal.GameFamily, nameof(journal));
         _ = SemanticContractGuards.ContractKey(journal.OutputMode, nameof(journal));
         _ = SemanticContractGuards.Sha256Fingerprint(journal.SemanticReviewHash, nameof(journal));
+        journal.HistoryDetails?.Validate();
         if (journal.OutcomeCode is not null && !IsKnownOutcomeCode(journal.OutcomeCode))
         {
             throw new ArgumentException("The output transaction outcome code is invalid.", nameof(journal));
@@ -4198,6 +4255,7 @@ public sealed class OutputTransactionCoordinator
             throw new OutputCoordinatorException("The output apply history is invalid or unsupported.");
         }
 
+        foreach (var receipt in history.Receipts) receipt.HistoryDetails?.Validate();
         return history;
     }
 
@@ -4437,6 +4495,19 @@ public sealed class OutputTransactionCoordinator
         yield return journal.SemanticReviewHash;
         yield return journal.StartedAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         yield return journal.OutcomeCode;
+        if (journal.HistoryDetails is { } details)
+        {
+            yield return details.TotalChangeCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            yield return details.Truncated.ToString();
+            foreach (var change in details.Changes)
+            {
+                yield return change.Domain;
+                yield return change.Summary;
+                yield return change.RecordId;
+                yield return change.Field;
+                yield return change.NewValue;
+            }
+        }
         yield return journal.PublishedEntryCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
         foreach (var origin in journal.Origins)
         {
@@ -4584,7 +4655,10 @@ public sealed class OutputTransactionCoordinator
                 entry.Postimage,
                 entry.OwnershipClaims,
                 entry.RuntimeMutableDescriptor)),
-            outcomeCode);
+            outcomeCode)
+        {
+            HistoryDetails = journal.HistoryDetails,
+        };
     }
 
     private async Task<FileStream> AcquireOutputRootLockAsync(CancellationToken cancellationToken)
@@ -4635,6 +4709,7 @@ public sealed class OutputTransactionCoordinator
 
     private void ValidatePlanLimits(OutputApplyPlan plan)
     {
+        plan.HistoryDetails?.Validate();
         if (plan.Mutations.Length > options.MaximumMutationsPerApply
             || plan.ReadDependencies.Length > options.MaximumIntegrityEntries
             || plan.DirectoryMembershipDependencies.Length > options.MaximumIntegrityEntries

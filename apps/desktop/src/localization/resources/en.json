@@ -1,5 +1,6 @@
 {
   "keys": {
+    "outputSafety.diagnostic.migrationBlocked": "Output metadata migration needs attention. Close other KM Editor versions and validate again. Conflicting copies are preserved in workspace storage; no game files were changed.",
     "diagnostics.review.accessDenied": "Review could not access a required project resource.",
     "diagnostics.review.resourceMissing": "A project resource required for review is unavailable.",
     "diagnostics.review.dataInvalid": "A project resource required for review contains invalid or unsupported data.",
@@ -25,7 +26,7 @@
     "analysisPreparation.state.ready": "Ready",
     "analysisPreparation.state.error": "Could not prepare",
     "analysisPreparation.state.onDemand": "Loads when opened",
-    "analysisLoading.title": "Analysis loading",
+    "analysisLoading.title": "Analysis Loading",
     "analysisLoading.description": "Choose how analysis tools are prepared after you open a project.",
     "analysisLoading.groupLabel": "Analysis loading mode",
     "analysisLoading.recommended": "Recommended",
@@ -3684,9 +3685,38 @@
     "battleCafeRewards.diagnostic.sourceUnavailable": "The verified Battle Cafe reward source is unavailable.",
     "battleCafeRewards.diagnostic.sourceUnsupported": "The Battle Cafe reward source does not match the supported 23 row layout.",
     "battleCafeRewards.diagnostic.targetResolutionFailed": "The Battle Cafe output target is not safely contained by Output Root.",
-    "battleCafeRewards.diagnostic.totalsInvalid": "Dwight, Bernard, and Richard must each total exactly 100% before review."
+    "battleCafeRewards.diagnostic.totalsInvalid": "Dwight, Bernard, and Richard must each total exactly 100% before review.",
+    "history.title": "History",
+    "history.description": "Choose a date to see recorded output transactions and changes.",
+    "history.unavailable": "Open a project with an output folder to view its history.",
+    "history.loading": "Loading history...",
+    "history.loadFailed": "History could not be loaded. Try checking again.",
+    "history.days": "Transaction dates",
+    "history.transactions": "{count} transaction(s)",
+    "history.outputSummary": "{count} target file(s) · {mode}",
+    "history.changeCount": "{count} recorded change(s)",
+    "history.record": "Record",
+    "history.field": "Field",
+    "history.value": "New value",
+    "history.limitedDetails": "Some details were shortened to keep history within its storage limits.",
+    "history.olderReceipt": "Individual edits were not recorded for this transaction. Its output file details are available below.",
+    "history.files": "Output files",
+    "history.deleted": "Deleted",
+    "history.written": "Written",
+    "settings.tabs.diagnostics": "Diagnostics",
+    "pokemon.compatibility.actions": "Compatibility group actions",
+    "pokemon.compatibility.enable": "Enable All",
+    "pokemon.compatibility.disable": "Disable All",
+    "pokemon.compatibility.vanilla": "Restore Vanilla",
+    "pokemon.compatibility.vanillaUnavailable": "Clean base compatibility data is unavailable.",
+    "shops.pending.removedTitle": "Removed shop items",
+    "shops.pending.removedItem": "{item} (original slot {slot})",
+    "shops.pending.undoRemoval": "Undo removal of {item}"
   },
   "literals": {
+    "Output metadata could not be migrated safely. Close other KM Editor versions and validate again. Preserved workspace copies must be resolved if the conflict remains.": "Output metadata migration needs attention. Close other KM Editor versions and validate again. Conflicting copies are preserved in workspace storage; no game files were changed.",
+    "Output metadata migration needs attention. Preserved copies are available in the output workspace; no game files were changed.": "Output metadata migration needs attention. Close other KM Editor versions and validate again. Conflicting copies are preserved in workspace storage; no game files were changed.",
+    "Available workspace storage and consistent output metadata": "Available workspace storage and consistent output metadata",
     "Verify the configured data support folder is compatible and retry the operation.": "Verify the configured data support folder is compatible and retry the operation.",
     "Confirm the selected project folders are accessible and retry the operation.": "Confirm the selected project folders are accessible and retry the operation.",
     "Verify the selected project folders are complete and retry the operation.": "Verify the selected project folders are complete and retry the operation.",
@@ -7680,6 +7710,8 @@
     "Reward rows": "Reward rows",
     "Staged reward rows": "Staged reward rows",
     "23 reward rows": "23 reward rows",
-    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell."
+    "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.": "Apply the reviewed Battle Cafe reward rows while preserving every unowned AMX cell.",
+    "History": "History",
+    "Browse dated output transactions and their recorded changes.": "Choose a date to see recorded output transactions and changes."
   }
 }

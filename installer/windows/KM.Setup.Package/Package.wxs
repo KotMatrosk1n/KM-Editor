@@ -58,6 +58,10 @@
       The two Tauri roots match the directories removed by Tauri's published
       NSIS "Delete app data" option for bundle id app.kmeditor.desktop. They are
       reached only by an explicit uninstall choice.
+
+      Workspaces contains durable output history, checkpoints, and recovery
+      data. It must survive every setup action, including settings removal.
+      Never recursively remove the shared KM Editor parent or INSTALLFOLDER.
     -->
     <Property Id="KmSvCacheProjectsPath" Value="%LOCALAPPDATA%\KM Editor\ScarletVioletCache\projects" />
     <Property Id="KmSvCacheTempPath" Value="%LOCALAPPDATA%\KM Editor\ScarletVioletCache\tmp" />

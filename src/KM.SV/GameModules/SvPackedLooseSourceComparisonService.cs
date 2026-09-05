@@ -80,7 +80,7 @@ public sealed class SvPackedLooseSourceComparisonService
 
         var managerLoosePaths = outputRoot is null
             ? []
-            : EnumerateLooseRoot(outputRoot, excludedTopLevelNames: [".km", "romfs"]);
+            : EnumerateLooseRoot(outputRoot, excludedTopLevelNames: [".km", ".km-working", "romfs"]);
         var standaloneRoot = outputRoot is null
             ? null
             : Path.Combine(outputRoot, "romfs");

@@ -12,6 +12,7 @@ public static class BridgeErrorCodes
     public const string OutputRecoveryRequired = "KM-OUTPUT-RECOVERY-REQUIRED";
     public const string OutputOwnershipUnproven = "KM-OUTPUT-OWNERSHIP-UNPROVEN";
     public const string OutputRootBusy = "KM-OUTPUT-ROOT-BUSY";
+    public const string OutputMigrationBlocked = "KM-PROJECT-OUTPUT-MIGRATION-BLOCKED";
     public const string OutputUnsafePath = "KM-OUTPUT-UNSAFE-PATH";
     public const string OutputLimitExceeded = "KM-OUTPUT-LIMIT-EXCEEDED";
     public const string OutputCheckpointNotFound = "KM-OUTPUT-CHECKPOINT-NOT-FOUND";

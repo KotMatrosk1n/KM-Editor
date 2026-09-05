@@ -7,6 +7,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using KM.Core.Semantics;
+using KM.Core.Files;
 
 namespace KM.Core.Output;
 
@@ -39,8 +40,9 @@ internal sealed class OutputPathSafety
         : StringComparison.Ordinal;
     private readonly SecurityIdentifier? currentUserSid;
     private bool metadataClaimVerified;
+    private readonly OutputPathSafety? workingPaths;
 
-    public OutputPathSafety(string outputRoot)
+    public OutputPathSafety(string outputRoot, string? metadataRoot = null, string? workingRoot = null)
     {
         if (string.IsNullOrWhiteSpace(outputRoot) || !Path.IsPathFullyQualified(outputRoot))
         {
@@ -54,9 +56,28 @@ internal sealed class OutputPathSafety
             currentUserSid = GetCurrentWindowsUserSid();
         }
 
-        MetadataRoot = GetContainedPath(OutputRoot, ".km");
-        TransactionsRoot = GetContainedPath(MetadataRoot, "transactions");
+        MetadataRoot = metadataRoot is null ? GetContainedPath(OutputRoot, ".km") : Path.GetFullPath(metadataRoot);
+        if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(MetadataRoot)) throw new OutputPathSecurityException();
+        workingPaths = workingRoot is null ? null : new OutputPathSafety(outputRoot, workingRoot);
+        TransactionsRoot = workingPaths?.TransactionsRoot ?? GetContainedPath(MetadataRoot, "transactions");
         CheckpointsRoot = GetContainedPath(MetadataRoot, "checkpoints");
+    }
+
+    private bool IsWorkingPath(string path) => workingPaths is not null
+        && (string.Equals(path, workingPaths.MetadataRoot, pathComparison)
+            || path.StartsWith(workingPaths.MetadataRoot + Path.DirectorySeparatorChar, pathComparison));
+
+    internal static void CreatePrivateStorageDirectory(string path)
+    {
+        if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(path)) throw new OutputPathSecurityException();
+        if (!Directory.Exists(path))
+        {
+            var parent = Path.GetDirectoryName(path)!;
+            if (!Directory.Exists(parent)) CreatePrivateStorageDirectory(parent);
+            if (OperatingSystem.IsWindows()) new OutputPathSafety(Path.GetDirectoryName(path)!).CreatePrivateWindowsDirectory(path);
+            else Directory.CreateDirectory(path, PrivateDirectoryUnixMode);
+        }
+        ValidateExistingAncestorChain(path);
     }
 
     public string OutputRoot { get; }
@@ -70,7 +91,8 @@ internal sealed class OutputPathSafety
     public bool MetadataLayoutExists()
     {
         ValidateExistingAncestorChain(OutputRoot);
-        ValidatePortableChildIdentity(OutputRoot, ".km");
+        if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(MetadataRoot)) throw new OutputPathSecurityException();
+        ValidatePortableChildIdentity(Path.GetDirectoryName(MetadataRoot)!, Path.GetFileName(MetadataRoot));
 
         var metadataDirectory = new DirectoryInfo(MetadataRoot);
         metadataDirectory.Refresh();
@@ -91,9 +113,10 @@ internal sealed class OutputPathSafety
     public void EnsureMetadataLayout()
     {
         ValidateExistingAncestorChain(OutputRoot);
-        ValidatePortableChildIdentity(OutputRoot, ".km");
+        if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(MetadataRoot)) throw new OutputPathSecurityException();
+        ValidatePortableChildIdentity(Path.GetDirectoryName(MetadataRoot)!, Path.GetFileName(MetadataRoot));
         EnsureMetadataRootClaimed();
-        EnsurePrivateMetadataDirectory(TransactionsRoot, MetadataRoot);
+        if (workingPaths is null) EnsurePrivateMetadataDirectory(TransactionsRoot, MetadataRoot);
         EnsurePrivateMetadataDirectory(CheckpointsRoot, MetadataRoot);
         metadataClaimVerified = true;
     }
@@ -109,7 +132,7 @@ internal sealed class OutputPathSafety
 
         var firstSeparator = path.Value.IndexOf('/');
         var firstSegment = firstSeparator < 0 ? path.Value : path.Value[..firstSeparator];
-        if (string.Equals(firstSegment, ".km", StringComparison.OrdinalIgnoreCase))
+        if (OutputMetadataNamespace.ContainsReservedSegment(firstSegment))
         {
             throw new OutputPathSecurityException();
         }
@@ -148,6 +171,7 @@ internal sealed class OutputPathSafety
 
     public string GetContainedMetadataPath(string parent, string child)
     {
+        if (IsWorkingPath(parent)) { return workingPaths!.GetContainedMetadataPath(parent, child); }
         EnsureContained(parent, MetadataRoot, allowRoot: true);
         if (string.IsNullOrWhiteSpace(child)
             || child is "." or ".."
@@ -162,6 +186,7 @@ internal sealed class OutputPathSafety
 
     public void EnsureMetadataDirectory(string path, string parent)
     {
+        if (IsWorkingPath(path)) { workingPaths!.EnsureMetadataLayout(); workingPaths.EnsureMetadataDirectory(path, parent); return; }
         EnsureContained(path, MetadataRoot, allowRoot: false);
         EnsureContained(parent, MetadataRoot, allowRoot: true);
         EnsurePrivateMetadataDirectory(path, parent);
@@ -169,6 +194,7 @@ internal sealed class OutputPathSafety
 
     public void CreateMetadataDirectory(string path, string parent)
     {
+        if (IsWorkingPath(path)) { workingPaths!.EnsureMetadataLayout(); workingPaths.CreateMetadataDirectory(path, parent); return; }
         EnsureContained(path, MetadataRoot, allowRoot: false);
         EnsureContained(parent, MetadataRoot, allowRoot: true);
         var directory = new DirectoryInfo(path);
@@ -206,6 +232,7 @@ internal sealed class OutputPathSafety
 
     public void ValidateMetadataFile(string path)
     {
+        if (IsWorkingPath(path)) { workingPaths!.ValidateMetadataFile(path); return; }
         EnsureContained(path, MetadataRoot, allowRoot: false);
         ValidateDirectoryChain(Path.GetDirectoryName(path)!, MetadataRoot);
         ValidateFileDestination(path);
@@ -213,6 +240,7 @@ internal sealed class OutputPathSafety
 
     public void ValidateMetadataDirectory(string path)
     {
+        if (IsWorkingPath(path)) { workingPaths!.ValidateMetadataDirectory(path); return; }
         EnsureContained(path, MetadataRoot, allowRoot: true);
         ValidateDirectoryChain(path, MetadataRoot);
         ValidateDirectory(path);
@@ -220,6 +248,7 @@ internal sealed class OutputPathSafety
 
     public void EnsurePrivateMetadataFile(FileStream stream)
     {
+        if (IsWorkingPath(stream.Name)) { workingPaths!.EnsurePrivateMetadataFile(stream); return; }
         ArgumentNullException.ThrowIfNull(stream);
         ValidateMetadataFile(stream.Name);
         if (OperatingSystem.IsWindows())
@@ -234,6 +263,7 @@ internal sealed class OutputPathSafety
 
     private void EnsurePrivateMetadataFile(string path)
     {
+        if (IsWorkingPath(path)) { workingPaths!.EnsurePrivateMetadataFile(path); return; }
         ValidateMetadataFile(path);
         if (OperatingSystem.IsWindows())
         {
@@ -306,7 +336,7 @@ internal sealed class OutputPathSafety
             {
                 var name = Path.GetFileName(child);
                 if (string.Equals(directory, OutputRoot, pathComparison)
-                    && string.Equals(name, ".km", StringComparison.OrdinalIgnoreCase))
+                    && OutputMetadataNamespace.ContainsReservedSegment(name))
                 {
                     continue;
                 }
@@ -460,6 +490,7 @@ internal sealed class OutputPathSafety
 
     public void DeleteMetadataTree(string directory)
     {
+        if (IsWorkingPath(directory)) { workingPaths!.DeleteMetadataTree(directory); return; }
         EnsureContained(directory, MetadataRoot, allowRoot: false);
         if (!Directory.Exists(directory))
         {
@@ -512,7 +543,7 @@ internal sealed class OutputPathSafety
 
     private void EnsurePrivateMetadataDirectory(string path, string parent)
     {
-        ValidateDirectoryChain(parent, OutputRoot);
+        ValidateExistingAncestorChain(parent);
         var directory = new DirectoryInfo(path);
         directory.Refresh();
         if (HasLinkTarget(directory) || (File.Exists(path) && !directory.Exists))
@@ -561,7 +592,7 @@ internal sealed class OutputPathSafety
                 CreatePrivateWindowsDirectory(MetadataRoot);
             }
 
-            OutputFileSystemDurability.FlushDirectory(OutputRoot);
+            OutputFileSystemDurability.FlushDirectory(Path.GetDirectoryName(MetadataRoot)!);
         }
 
         ValidateDirectory(MetadataRoot);
@@ -999,7 +1030,7 @@ internal sealed class OutputPathSafety
     private string GetContainedPath(string parent, string child)
     {
         var result = Path.GetFullPath(Path.Combine(parent, child));
-        EnsureContained(result, OutputRoot, allowRoot: false);
+        EnsureContained(result, parent, allowRoot: false);
         return result;
     }
 

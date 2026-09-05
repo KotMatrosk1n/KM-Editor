@@ -179,6 +179,8 @@ public sealed record OutputApplyReceiptTarget
 
 public sealed record OutputApplyReceipt
 {
+    public OutputHistoryDetails? HistoryDetails { get; init; }
+
     public OutputApplyReceipt(
         OutputTransactionId transactionId,
         ProjectId projectId,
