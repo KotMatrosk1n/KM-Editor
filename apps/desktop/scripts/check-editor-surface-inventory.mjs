@@ -191,6 +191,7 @@ const embeddedEditableSurfaceInventory = {
   personalizationSettings: ['src/features/settings/PersonalizationSettingsPanel.tsx', 'PersonalizationSettingsPanel', 'choice-local-draft'],
   performanceDiagnostics: ['src/features/settings/PerformanceDiagnosticsPanel.tsx', 'PerformanceDiagnosticsPanel', 'choice-local-draft'],
   betaEditorsSettings: ['src/features/settings/BetaEditorsSettings.tsx', 'BetaEditorsSettings', 'choice-local-draft'],
+  processMemorySettings: ['src/features/settings/ProcessMemoryPanel.tsx', 'ProcessMemoryPanel', 'choice-local-draft'],
   trainerIdentity: ['src/features/trainers/ZaTrainerIdentityActions.tsx', 'ZaTrainerIdentityActions', 'choice-local-draft'],
   commandPalette: ['src/features/workbench/CommandPalette.tsx', 'CommandPalette', 'utility-input'],
   shortcutOverlay: ['src/features/workbench/ShortcutOverlay.tsx', 'ShortcutOverlay', 'utility-input'],
@@ -266,6 +267,7 @@ const editorDraftContractInventory = {
   semanticMerge: 'captured-snapshot',
   personalizationSettings: 'immediate-choice',
   betaEditorsSettings: 'immediate-choice',
+  processMemorySettings: 'immediate-choice',
   performanceDiagnostics: 'immediate-choice',
   trainerIdentity: 'keyed-exact-submit'
 };

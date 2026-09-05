@@ -1,7 +1,14 @@
 {
   "keys": {
+    "settings.memory.showHeader": "Afficher la RAM utilisée dans les en-têtes de page",
+    "settings.memory.headerHelp": "Affiche la RAM privée totale de cette instance de KM Editor à côté de chaque titre de page. Votre choix est enregistré.",
+    "settings.memory.headerValue": "RAM : {value}",
+    "settings.memory.systemTotal": "RAM du système",
+    "settings.memory.systemAvailable": "RAM disponible du système",
+    "settings.memory.adaptiveHelp": "KM Editor conserve les données du jeu pour accélérer la navigation. Il vérifie régulièrement la RAM disponible et libère plus tôt les processus de lecture inutilisés lorsque la mémoire manque. Les opérations en cours et les données de session restent protégées ; les données libérées sont rechargées au besoin. Il ne s’agit pas d’une limite stricte de mémoire.",
+    "settings.memory.retention": "Délai actuel du cache inactif : {seconds} secondes. Le nettoyage est vérifié toutes les 15 secondes.",
     "settings.memory.title": "Mémoire totale de KM Editor",
-    "settings.memory.description": "Cette instance de KM Editor, avec le bureau, les processus de travail et WebView2. Actualisation toutes les cinq secondes lorsque les diagnostics sont visibles.",
+    "settings.memory.description": "Cette instance de KM Editor, y compris le bureau, les processus de travail et WebView2. Actualisation toutes les cinq secondes lorsque Diagnostics ou l’indicateur de l’en-tête est visible.",
     "settings.memory.ram": "RAM (ensemble de travail privé)",
     "settings.memory.committed": "Mémoire engagée",
     "settings.memory.metricHelp": "La RAM privée compte la mémoire résidente sans compter plusieurs fois les pages partagées. La mémoire engagée peut inclure de la mémoire paginée sur disque. La mémoire partagée et celle du GPU sont exclues.",

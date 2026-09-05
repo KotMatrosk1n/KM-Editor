@@ -18,6 +18,88 @@ pub struct MemorySnapshot {
     workers: MemoryGroup,
     web_view: MemoryGroup,
     total: MemoryGroup,
+    system: Option<SystemMemory>,
+    idle_worker_retention_seconds: u64,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemMemory {
+    pub total_bytes: u64,
+    pub available_bytes: u64,
+}
+
+// Retain useful caches longer when there is room. This is an idle-cache policy,
+// not an allocation ceiling: active work and process-local session handles survive.
+pub fn idle_worker_retention(system: Option<&SystemMemory>) -> std::time::Duration {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    let seconds = match system {
+        Some(memory) if memory.available_bytes <= (memory.total_bytes / 10).max(GIB) => 30,
+        Some(memory) if memory.available_bytes > (memory.total_bytes / 5).max(2 * GIB) => 600,
+        _ => 120,
+    };
+    std::time::Duration::from_secs(seconds)
+}
+
+#[cfg(windows)]
+pub fn system_memory() -> Option<SystemMemory> {
+    #[repr(C)]
+    #[derive(Default)]
+    struct MemoryStatus {
+        length: u32,
+        memory_load: u32,
+        total_physical: u64,
+        available_physical: u64,
+        total_page_file: u64,
+        available_page_file: u64,
+        total_virtual: u64,
+        available_virtual: u64,
+        available_extended_virtual: u64,
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalMemoryStatusEx(status: *mut MemoryStatus) -> i32;
+    }
+    let mut status = MemoryStatus {
+        length: std::mem::size_of::<MemoryStatus>() as u32,
+        ..MemoryStatus::default()
+    };
+    let succeeded = unsafe { GlobalMemoryStatusEx(&mut status) };
+    // Zero available RAM is a valid pressure reading, not a query failure.
+    (succeeded != 0
+        && status.total_physical > 0
+        && status.available_physical <= status.total_physical)
+        .then_some(SystemMemory {
+            total_bytes: status.total_physical,
+            available_bytes: status.available_physical,
+        })
+}
+
+#[cfg(target_os = "linux")]
+pub fn system_memory() -> Option<SystemMemory> {
+    let contents = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let bytes = |key: &str| {
+        contents.lines().find_map(|line| {
+            line.strip_prefix(key)?
+                .trim()
+                .strip_suffix("kB")?
+                .trim()
+                .parse::<u64>()
+                .ok()?
+                .checked_mul(1024)
+        })
+    };
+    let total_bytes = bytes("MemTotal:")?;
+    let available_bytes = bytes("MemAvailable:")?;
+    (total_bytes > 0 && available_bytes <= total_bytes).then_some(SystemMemory {
+        total_bytes,
+        available_bytes,
+    })
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn system_memory() -> Option<SystemMemory> {
+    None
 }
 
 impl MemoryGroup {
@@ -245,11 +327,14 @@ mod windows {
                 role: Role::Desktop,
             },
         )]);
+        let system = super::system_memory();
         let mut result = MemorySnapshot {
             desktop: MemoryGroup::empty(),
             workers: MemoryGroup::empty(),
             web_view: MemoryGroup::empty(),
             total: MemoryGroup::empty(),
+            idle_worker_retention_seconds: super::idle_worker_retention(system.as_ref()).as_secs(),
+            system,
         };
         for _ in 0..MAX_DEPTH {
             let mut changed = false;

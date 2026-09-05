@@ -1,7 +1,14 @@
 {
   "keys": {
+    "settings.memory.showHeader": "Show RAM usage in page headers",
+    "settings.memory.headerHelp": "Shows total private RAM for this KM Editor instance beside each page title. Your choice is saved.",
+    "settings.memory.headerValue": "RAM: {value}",
+    "settings.memory.systemTotal": "System RAM",
+    "settings.memory.systemAvailable": "Available system RAM",
+    "settings.memory.adaptiveHelp": "KM Editor keeps game data ready for faster navigation. It checks available system RAM regularly and releases unused read workers sooner when memory is tight. Active work and session data stay protected; released data reloads when needed. This is not a hard memory limit.",
+    "settings.memory.retention": "Current idle cache timeout: {seconds} seconds. Cleanup checks every 15 seconds.",
     "settings.memory.title": "Total KM Editor Memory",
-    "settings.memory.description": "This KM Editor instance, including its desktop, workers and WebView2. Updates every five seconds while Diagnostics is visible.",
+    "settings.memory.description": "This KM Editor instance, including its desktop, workers and WebView2. Updates every five seconds while Diagnostics or the header readout is visible.",
     "settings.memory.ram": "RAM (private working set)",
     "settings.memory.committed": "Committed memory",
     "settings.memory.metricHelp": "Private RAM counts resident memory without counting shared pages repeatedly. Committed memory can include paged-out memory. Shared and GPU memory are not included.",

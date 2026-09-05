@@ -397,36 +397,8 @@ fn project_bridge_worker_host_budgets(worker_count: usize) -> (usize, u64) {
     (cpu_budget, memory_budget)
 }
 
-#[cfg(windows)]
 fn available_project_bridge_memory_bytes() -> Option<u64> {
-    let mut status = ProjectBridgeMemoryStatus {
-        length: std::mem::size_of::<ProjectBridgeMemoryStatus>() as u32,
-        memory_load: 0,
-        total_physical: 0,
-        available_physical: 0,
-        total_page_file: 0,
-        available_page_file: 0,
-        total_virtual: 0,
-        available_virtual: 0,
-        available_extended_virtual: 0,
-    };
-    let succeeded = unsafe { global_memory_status_ex(&mut status) };
-    (succeeded != 0 && status.available_physical > 0).then_some(status.available_physical)
-}
-
-#[cfg(target_os = "linux")]
-fn available_project_bridge_memory_bytes() -> Option<u64> {
-    let contents = std::fs::read_to_string("/proc/meminfo").ok()?;
-    let kibibytes = contents.lines().find_map(|line| {
-        let value = line.strip_prefix("MemAvailable:")?.trim();
-        value.strip_suffix("kB")?.trim().parse::<u64>().ok()
-    })?;
-    kibibytes.checked_mul(1024)
-}
-
-#[cfg(not(any(windows, target_os = "linux")))]
-fn available_project_bridge_memory_bytes() -> Option<u64> {
-    None
+    process_memory::system_memory().map(|memory| memory.available_bytes)
 }
 
 struct CloseGuardState {
@@ -1037,6 +1009,8 @@ impl Drop for ProjectBridgePendingRequestGuard {
 }
 
 struct ProjectBridgeProcess {
+    last_used: Mutex<Instant>,
+    retains_session_state: AtomicBool,
     active_request_token: AtomicUsize,
     active_preemptible_request: AtomicBool,
     next_request_token: AtomicUsize,
@@ -1097,6 +1071,7 @@ enum ProjectBridgeAdmissionFailure {
 
 #[derive(Clone, Copy)]
 struct ProjectBridgeRequestPolicy {
+    retains_session_handles: bool,
     execution_timeout: Option<Duration>,
     retry_after_transport_failure: bool,
     concurrency: ProjectBridgeCommandConcurrency,
@@ -1572,6 +1547,12 @@ where
             process_slot,
             &mut start_process,
         )?;
+        // Source opens and ordered work can hold handles between requests. Once
+        // used, preserve the whole worker until the existing explicit recycle path.
+        // Holding this Arc also excludes queued and executing work from idle cleanup.
+        if project_bridge_request_retains_session_state(request_policy) {
+            process.retains_session_state.store(true, Ordering::Release);
+        }
         let request_result = process.request(
             bridge_state,
             request_generation,
@@ -1582,6 +1563,9 @@ where
             lane,
             scheduler_attempt,
         );
+        if let Ok(mut last_used) = process.last_used.lock() {
+            *last_used = Instant::now();
+        }
         match request_result {
             Ok(response) => {
                 ensure_project_bridge_request_epoch_is_current(
@@ -1669,6 +1653,8 @@ fn remove_failed_project_bridge_process(
 impl ProjectBridgeProcess {
     fn new(child: Child, stdin: ChildStdin, stdout: ChildStdout) -> Self {
         Self {
+            last_used: Mutex::new(Instant::now()),
+            retains_session_state: AtomicBool::new(false),
             active_request_token: AtomicUsize::new(PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN),
             active_preemptible_request: AtomicBool::new(false),
             next_request_token: AtomicUsize::new(1),
@@ -2293,23 +2279,6 @@ unsafe extern "system" {
         total_bytes_available: *mut u32,
         bytes_left_this_message: *mut u32,
     ) -> i32;
-
-    #[link_name = "GlobalMemoryStatusEx"]
-    fn global_memory_status_ex(status: *mut ProjectBridgeMemoryStatus) -> i32;
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct ProjectBridgeMemoryStatus {
-    length: u32,
-    memory_load: u32,
-    total_physical: u64,
-    available_physical: u64,
-    total_page_file: u64,
-    available_page_file: u64,
-    total_virtual: u64,
-    available_virtual: u64,
-    available_extended_virtual: u64,
 }
 
 #[cfg(unix)]
@@ -2586,6 +2555,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
         };
 
     Some(ProjectBridgeRequestPolicy {
+        retains_session_handles: matches!(command, "semanticMerge.source.open" | "researchLab.source.open"),
         execution_timeout,
         retry_after_transport_failure,
         concurrency,
@@ -2597,6 +2567,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
 
 fn resolved_project_bridge_request_policy(request_json: &str) -> ProjectBridgeRequestPolicy {
     project_bridge_request_policy(request_json).unwrap_or(ProjectBridgeRequestPolicy {
+        retains_session_handles: true,
         execution_timeout: Some(PROJECT_BRIDGE_DEFAULT_OPERATION_TIMEOUT),
         retry_after_transport_failure: false,
         concurrency: ProjectBridgeCommandConcurrency::Exclusive,
@@ -3642,6 +3613,63 @@ fn terminate_project_bridge_processes(
     first_error.map_or(Ok(()), Err)
 }
 
+fn project_bridge_request_retains_session_state(policy: ProjectBridgeRequestPolicy) -> bool {
+    policy.retains_session_handles
+        || !matches!(policy.concurrency,
+            ProjectBridgeCommandConcurrency::IndependentRead(_) if policy.retry_after_transport_failure)
+}
+
+fn trim_idle_project_bridge_read_workers(
+    slots: &[Mutex<Option<Arc<ProjectBridgeProcess>>>],
+    lifecycle: &Mutex<()>,
+    retention: Duration,
+) {
+    // Never queue memory maintenance ahead of a spawn, recovery or write barrier.
+    let Ok(_lifecycle) = lifecycle.try_lock() else {
+        return;
+    };
+    for slot in slots {
+        let Ok(mut current) = slot.try_lock() else {
+            continue;
+        };
+        let disposable = current.as_ref().is_some_and(|process| {
+            Arc::strong_count(process) == 1
+                && !process.retains_session_state.load(Ordering::Acquire)
+                && process
+                    .last_used
+                    .try_lock()
+                    .is_ok_and(|last| last.elapsed() >= retention)
+        });
+        if disposable {
+            if let Some(process) = current.take() {
+                // Keep the lifecycle lock through exit so a replacement cannot overlap
+                // the old worker. No active request, owner or durable state is touched.
+                let _ = process.terminate();
+            }
+        }
+    }
+}
+
+fn start_project_bridge_memory_maintenance(state: &ProjectBridgeState) -> std::io::Result<()> {
+    let slots = Arc::downgrade(&state.read_processes);
+    let lifecycle = Arc::downgrade(&state.process_lifecycle);
+    std::thread::Builder::new()
+        .name("km-memory-maintenance".into())
+        .spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(15));
+            let (Some(slots), Some(lifecycle)) = (slots.upgrade(), lifecycle.upgrade()) else {
+                break;
+            };
+            let system = process_memory::system_memory();
+            trim_idle_project_bridge_read_workers(
+                &slots,
+                &lifecycle,
+                process_memory::idle_worker_retention(system.as_ref()),
+            );
+        })?;
+    Ok(())
+}
+
 #[cfg(windows)]
 fn create_open_path_command(path: &Path) -> Command {
     let mut command = Command::new("explorer.exe");
@@ -3686,6 +3714,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             cleanup_stale_updater_temp_directories();
+            start_project_bridge_memory_maintenance(&app.state::<ProjectBridgeState>())?;
 
             #[cfg(desktop)]
             app.handle()
@@ -4033,6 +4062,7 @@ mod tests {
         ));
 
         let non_replayable_read = ProjectBridgeRequestPolicy {
+            retains_session_handles: false,
             execution_timeout: Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
             retry_after_transport_failure: false,
             concurrency: ProjectBridgeCommandConcurrency::IndependentRead(
@@ -4529,6 +4559,7 @@ mod tests {
         let request_generation = bridge_state.generation.load(Ordering::Acquire);
         let request = r#"{"request":"recover-after-crash"}"#;
         let policy = ProjectBridgeRequestPolicy {
+            retains_session_handles: false,
             execution_timeout: Some(Duration::from_secs(5)),
             retry_after_transport_failure: true,
             concurrency: ProjectBridgeCommandConcurrency::IndependentRead(
