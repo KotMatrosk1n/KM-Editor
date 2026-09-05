@@ -25,6 +25,15 @@ use tauri_plugin_shell::ShellExt;
 #[cfg(windows)]
 mod windows_app_identity;
 
+mod process_memory;
+
+#[tauri::command]
+async fn get_app_memory() -> Result<process_memory::MemorySnapshot, String> {
+    tauri::async_runtime::spawn_blocking(process_memory::collect)
+        .await
+        .map_err(|_| "unavailable".to_owned())?
+}
+
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 // The bridge wire protocol is stateful and line-oriented. Keep mutations on the owning
 // sidecar while proven immutable reads use a small, resource-bounded pool of long-lived
@@ -3685,6 +3694,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_app_memory,
             project_bridge,
             recycle_project_bridge,
             create_directory,

@@ -20,6 +20,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyTitle>KM Editor Worker</AssemblyTitle>
+    <Product>KM Editor</Product>
+    <ApplicationIcon>..\..\apps\desktop\src-tauri\icons\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

@@ -1,0 +1,31 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.km-memory-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.km-memory-totals > div {
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+.km-memory-totals dt { color: var(--color-text-muted); }
+.km-memory-totals dd {
+  margin: 8px 0 0;
+  color: var(--color-text);
+  font-size: 1.5rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.km-memory-table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.km-memory-table-wrap table { width: 100%; border-collapse: collapse; }
+.km-memory-table-wrap th, .km-memory-table-wrap td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+}
+.km-memory-table-wrap td { white-space: nowrap; }

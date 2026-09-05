@@ -41,8 +41,10 @@ internal sealed class OutputPathSafety
     private readonly SecurityIdentifier? currentUserSid;
     private bool metadataClaimVerified;
     private readonly OutputPathSafety? workingPaths;
+    private readonly bool portableMetadata;
 
-    public OutputPathSafety(string outputRoot, string? metadataRoot = null, string? workingRoot = null)
+    public OutputPathSafety(string outputRoot, string? metadataRoot = null, string? workingRoot = null,
+        bool allowPortableMetadata = false)
     {
         if (string.IsNullOrWhiteSpace(outputRoot) || !Path.IsPathFullyQualified(outputRoot))
         {
@@ -58,7 +60,8 @@ internal sealed class OutputPathSafety
 
         MetadataRoot = metadataRoot is null ? GetContainedPath(OutputRoot, ".km") : Path.GetFullPath(metadataRoot);
         if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(MetadataRoot)) throw new OutputPathSecurityException();
-        workingPaths = workingRoot is null ? null : new OutputPathSafety(outputRoot, workingRoot);
+        portableMetadata = allowPortableMetadata && OutputVolumeCapabilities.RequiresPrivateWorkspaceJournal(MetadataRoot);
+        workingPaths = workingRoot is null ? null : new OutputPathSafety(outputRoot, workingRoot, allowPortableMetadata: true);
         TransactionsRoot = workingPaths?.TransactionsRoot ?? GetContainedPath(MetadataRoot, "transactions");
         CheckpointsRoot = GetContainedPath(MetadataRoot, "checkpoints");
     }
@@ -87,6 +90,47 @@ internal sealed class OutputPathSafety
     public string TransactionsRoot { get; }
 
     public string CheckpointsRoot { get; }
+
+    public bool UsesPrivateWorkspaceJournal => workingPaths is not null
+        && (workingPaths.portableMetadata || Directory.Exists(PrivateJournalsRoot));
+
+    internal bool HasPortableMetadata => portableMetadata;
+
+    private string PrivateJournalsRoot => GetContainedPath(MetadataRoot, "transaction-journals");
+
+    public string GetTransactionJournalPath(string transactionDirectory)
+    {
+        if (!UsesPrivateWorkspaceJournal) return GetContainedMetadataPath(transactionDirectory, "journal.json");
+        EnsureContained(transactionDirectory, TransactionsRoot, allowRoot: false);
+        var name = Path.GetFileName(transactionDirectory);
+        if (name.StartsWith("preparing-", StringComparison.Ordinal)) name = name[10..];
+        else if (name.StartsWith("retired-", StringComparison.Ordinal)) name = name[8..];
+        var id = new OutputTransactionId(name);
+        return GetContainedMetadataPath(PrivateJournalsRoot, id.Value + ".json");
+    }
+
+    public void ValidatePrivateJournalMembership()
+    {
+        if (!UsesPrivateWorkspaceJournal) return;
+        ValidateMetadataDirectory(PrivateJournalsRoot);
+        var count = 0;
+        foreach (var entry in Directory.EnumerateFileSystemEntries(PrivateJournalsRoot))
+        {
+            if (++count > OutputLimits.MaximumRecoveryTransactions * 2 + 4)
+                throw new OutputLimitExceededException("Too many interrupted output transaction journals were discovered.");
+            ValidateMetadataFile(entry);
+            var name = Path.GetFileName(entry);
+            if (name.StartsWith('.') && name.EndsWith(".json.pending.tmp", StringComparison.Ordinal))
+                name = name[1..^12];
+            if (!name.EndsWith(".json", StringComparison.Ordinal)) throw new OutputPathSecurityException();
+            OutputTransactionId id;
+            try { id = new OutputTransactionId(name[..^5]); }
+            catch (ArgumentException) { throw new OutputPathSecurityException(); }
+            if (!Directory.Exists(ResolveTransactionDirectory(id))
+                && !Directory.Exists(ResolveTransactionPreparationDirectory(id))
+                && !Directory.Exists(ResolveTransactionTombstoneDirectory(id))) throw new OutputPathSecurityException();
+        }
+    }
 
     public bool MetadataLayoutExists()
     {
@@ -118,6 +162,7 @@ internal sealed class OutputPathSafety
         EnsureMetadataRootClaimed();
         if (workingPaths is null) EnsurePrivateMetadataDirectory(TransactionsRoot, MetadataRoot);
         EnsurePrivateMetadataDirectory(CheckpointsRoot, MetadataRoot);
+        if (UsesPrivateWorkspaceJournal) EnsurePrivateMetadataDirectory(PrivateJournalsRoot, MetadataRoot);
         metadataClaimVerified = true;
     }
 
@@ -490,7 +535,21 @@ internal sealed class OutputPathSafety
 
     public void DeleteMetadataTree(string directory)
     {
-        if (IsWorkingPath(directory)) { workingPaths!.DeleteMetadataTree(directory); return; }
+        if (IsWorkingPath(directory))
+        {
+            if (UsesPrivateWorkspaceJournal && string.Equals(Path.GetDirectoryName(directory), TransactionsRoot, pathComparison))
+            {
+                var journal = GetTransactionJournalPath(directory);
+                ValidateMetadataFile(journal);
+                File.Delete(journal);
+                var temporary = GetContainedMetadataPath(PrivateJournalsRoot, "." + Path.GetFileName(journal) + ".pending.tmp");
+                ValidateMetadataFile(temporary);
+                File.Delete(temporary);
+                OutputFileSystemDurability.FlushDirectory(PrivateJournalsRoot);
+            }
+            workingPaths!.DeleteMetadataTree(directory);
+            return;
+        }
         EnsureContained(directory, MetadataRoot, allowRoot: false);
         if (!Directory.Exists(directory))
         {
@@ -1201,6 +1260,7 @@ internal sealed class OutputPathSafety
     [SupportedOSPlatform("windows")]
     private void EnsurePrivateWindowsDirectory(string path)
     {
+        if (portableMetadata) { ValidateDirectory(path); return; }
         try
         {
             var directory = new DirectoryInfo(path);
@@ -1220,6 +1280,7 @@ internal sealed class OutputPathSafety
     [SupportedOSPlatform("windows")]
     private void CreatePrivateWindowsDirectory(string path)
     {
+        if (portableMetadata) { Directory.CreateDirectory(path); ValidateDirectory(path); return; }
         try
         {
             var directory = new DirectoryInfo(path);
@@ -1255,6 +1316,7 @@ internal sealed class OutputPathSafety
     [SupportedOSPlatform("windows")]
     private void EnsurePrivateWindowsFile(string path)
     {
+        if (portableMetadata) { ValidateMetadataFile(path); return; }
         try
         {
             var file = new FileInfo(path);

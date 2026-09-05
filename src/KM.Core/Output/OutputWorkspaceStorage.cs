@@ -96,7 +96,11 @@ public sealed class OutputWorkspaceStorage
         FileStream? legacyGate = null;
         try
         {
-            var legacySafety = new OutputPathSafety(OutputRoot);
+            var legacySafety = new OutputPathSafety(OutputRoot, allowPortableMetadata: true);
+            // Legacy journals on a volume without ownership cannot establish write authority.
+            // Preserve them for resolution instead of importing them as trusted workspace state.
+            if (legacySafety.HasPortableMetadata && Directory.Exists(legacyRoot) && HasLegacyData())
+                throw new OutputWorkspaceMigrationException();
             legacySafety.EnsureMetadataLayout();
             legacyGate = new FileStream(Path.Combine(legacyRoot, "output.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Delete);
             OutputPathSafety.CreatePrivateStorageDirectory(gameRoot);
@@ -117,6 +121,10 @@ public sealed class OutputWorkspaceStorage
                 var transactions = Path.Combine(other.MetadataRoot, "transactions");
                 RequireSafe(transactions);
                 if (Directory.Exists(transactions) && Directory.EnumerateFileSystemEntries(transactions).Any())
+                    throw new OutputWorkspaceMigrationException();
+                var journals = Path.Combine(other.MetadataRoot, "transaction-journals");
+                RequireSafe(journals);
+                if (Directory.Exists(journals) && Directory.EnumerateFileSystemEntries(journals).Any())
                     throw new OutputWorkspaceMigrationException();
             }
             PrepareWorkingTransactions(cancellationToken);
@@ -315,6 +323,8 @@ public sealed class OutputWorkspaceStorage
     {
         var pending = Path.Combine(store, "transactions");
         var hasPending = Directory.Exists(pending) && Directory.EnumerateFileSystemEntries(pending).Any();
+        var privateJournals = Path.Combine(store, "transaction-journals");
+        hasPending |= Directory.Exists(privateJournals) && Directory.EnumerateFileSystemEntries(privateJournals).Any();
         var matches = true;
         var valid = true;
         var latest = DateTimeOffset.MinValue;
@@ -369,7 +379,7 @@ public sealed class OutputWorkspaceStorage
             RequireSafe(binding);
             if (!File.Exists(binding))
             {
-                new OutputPathSafety(OutputRoot, WorkingRoot).EnsureMetadataLayout();
+                new OutputPathSafety(OutputRoot, WorkingRoot, allowPortableMetadata: true).EnsureMetadataLayout();
                 var unbound = Inventory(WorkingRoot);
                 if (unbound.Keys.Any(name => name is not ("output-store.marker" or "transactions" or "checkpoints")))
                     throw new OutputWorkspaceMigrationException();
@@ -384,6 +394,8 @@ public sealed class OutputWorkspaceStorage
         var storedTransactions = Path.Combine(MetadataRoot, "transactions");
         if (!Directory.Exists(storedTransactions) || !Directory.EnumerateFileSystemEntries(storedTransactions).Any()) return;
         EnsureWorkingLayout();
+        var safety = new OutputPathSafety(OutputRoot, MetadataRoot, WorkingRoot);
+        safety.EnsureMetadataLayout();
         var destination = Path.Combine(WorkingRoot, "transactions");
         foreach (var entry in Directory.EnumerateDirectories(storedTransactions))
         {
@@ -392,10 +404,43 @@ public sealed class OutputWorkspaceStorage
             {
                 var preparing = target + ".importing";
                 if (Directory.Exists(preparing)) DeleteTree(preparing);
-                CopyTree(entry, preparing, cancellationToken);
+                CopyTree(entry, preparing, cancellationToken, portableDestination: safety.UsesPrivateWorkspaceJournal);
                 OutputFileSystemDurability.MoveDirectory(preparing, target);
             }
-            if (Signature(Inventory(entry)) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException();
+            if (safety.UsesPrivateWorkspaceJournal)
+            {
+                var sourceJournal = Path.Combine(entry, "journal.json");
+                RequireSafe(sourceJournal);
+                var journal = safety.GetTransactionJournalPath(target);
+                safety.ValidateMetadataFile(journal);
+                if (!File.Exists(journal))
+                {
+                    var temporary = safety.GetContainedMetadataPath(Path.GetDirectoryName(journal)!, "." + Path.GetFileName(journal) + ".pending.tmp");
+                    safety.ValidateMetadataFile(temporary);
+                    File.Delete(temporary);
+                    using (var input = new FileStream(sourceJournal, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var output = new OutputMetadataStore(safety).OpenPrivateFile(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, FileOptions.WriteThrough))
+                    {
+                        if (input.Length > OutputLimits.MaximumMetadataDocumentBytes) throw new OutputWorkspaceMigrationException();
+                        input.CopyTo(output);
+                        output.Flush(true);
+                    }
+                    OutputFileSystemDurability.Move(temporary, journal, overwrite: false);
+                }
+                if (HashFile(sourceJournal) != HashFile(journal)) throw new OutputWorkspaceMigrationException();
+                var workingJournal = Path.Combine(target, "journal.json");
+                RequireSafe(workingJournal);
+                if (File.Exists(workingJournal))
+                {
+                    if (HashFile(sourceJournal) != HashFile(workingJournal)) throw new OutputWorkspaceMigrationException();
+                    File.Delete(workingJournal);
+                    OutputFileSystemDurability.FlushParent(workingJournal);
+                }
+                var expected = Inventory(entry);
+                expected.Remove("journal.json");
+                if (Signature(expected) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException();
+            }
+            else if (Signature(Inventory(entry)) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException();
         }
         if (Directory.EnumerateFiles(storedTransactions).Any()) throw new OutputWorkspaceMigrationException();
         var transferred = Path.Combine(MetadataRoot, "transactions.transferred");
@@ -406,7 +451,7 @@ public sealed class OutputWorkspaceStorage
 
     internal void EnsureWorkingLayout()
     {
-        var safety = new OutputPathSafety(OutputRoot, WorkingRoot);
+        var safety = new OutputPathSafety(OutputRoot, WorkingRoot, allowPortableMetadata: true);
         safety.EnsureMetadataLayout();
         var binding = Path.Combine(WorkingRoot, "workspace.id");
         if (!File.Exists(binding)) WriteDurable(binding, workspaceKey);
@@ -443,7 +488,7 @@ public sealed class OutputWorkspaceStorage
         var checkpoints = Path.Combine(WorkingRoot, "checkpoints");
         if (File.Exists(checkpoints)) return;
         if (Directory.Exists(checkpoints) && Directory.EnumerateFileSystemEntries(checkpoints).Any()) return;
-        new OutputPathSafety(OutputRoot, WorkingRoot).EnsureMetadataLayout();
+        new OutputPathSafety(OutputRoot, WorkingRoot, allowPortableMetadata: true).EnsureMetadataLayout();
         DeleteTree(WorkingRoot);
     }
 
@@ -498,20 +543,25 @@ public sealed class OutputWorkspaceStorage
         return Convert.ToHexStringLower(SHA256.HashData(stream));
     }
 
-    private static void CopyTree(string source, string destination, CancellationToken cancellationToken)
+    private static void CopyTree(string source, string destination, CancellationToken cancellationToken, bool portableDestination = false)
     {
         var inventory = Inventory(source);
         RequireSafe(destination);
         if (Directory.Exists(destination) || File.Exists(destination)) throw new OutputWorkspaceMigrationException();
-        OutputPathSafety.CreatePrivateStorageDirectory(destination);
+        void CreateDestinationDirectory(string path)
+        {
+            if (portableDestination) { RequireSafe(path); Directory.CreateDirectory(path); RequireSafe(path); }
+            else OutputPathSafety.CreatePrivateStorageDirectory(path);
+        }
+        CreateDestinationDirectory(destination);
         foreach (var (relative, fingerprint) in inventory)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var target = Path.Combine(destination, relative);
-            if (fingerprint == "directory") { OutputPathSafety.CreatePrivateStorageDirectory(target); continue; }
+            if (fingerprint == "directory") { CreateDestinationDirectory(target); continue; }
             var original = Path.Combine(source, relative);
             RequireSafe(original);
-            OutputPathSafety.CreatePrivateStorageDirectory(Path.GetDirectoryName(target)!);
+            CreateDestinationDirectory(Path.GetDirectoryName(target)!);
             using (var input = new FileStream(original, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { input.CopyTo(output); output.Flush(true); }
