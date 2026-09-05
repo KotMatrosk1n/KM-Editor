@@ -372,17 +372,27 @@ public sealed class GameModuleApplicationService
                 SemanticExploreFailureKind.LimitExceeded);
         }
 
-        if (offset > data.Records.Count
-            || request.Cursor is not null && (offset == 0 || offset >= data.Records.Count))
+        var terms = AnalysisCatalog.SearchTerms(request.SearchText);
+        var matches = data.Records.Where(record =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return (request.RecordId is null || record.RecordId == request.RecordId)
+                && (terms.Length == 0 || AnalysisCatalog.Matches(terms, new[] { record.Title, record.RecordId, record.RecordKind,
+                    record.GroupId, record.ParentRecordId, record.Target?.RecordId, record.Summary }
+                .Concat(record.Facts.SelectMany(fact => new[] { fact.Label, fact.Value.DisplayValue, fact.Value.CanonicalValue }))));
+        }).ToArray();
+        if (offset > matches.Length
+            || request.Cursor is not null && (offset == 0 || offset >= matches.Length))
         {
             throw new SemanticExploreValidationException(
                 "The game-specific module continuation cursor is outside the current result set.",
                 SemanticExploreFailureKind.InvalidCursor);
         }
 
-        var records = data.Records.Skip(offset).Take(request.Limit).ToArray();
+        var records = matches.Skip(offset).Take(request.Limit)
+            .Select(record => request.CatalogOnly ? record with { Facts = [], Summary = string.Empty } : record).ToArray();
         var nextOffset = checked(offset + records.Length);
-        var nextCursor = nextOffset < data.Records.Count
+        var nextCursor = nextOffset < matches.Length
             ? EncodeCursor(queryFingerprint, nextOffset)
             : null;
         return new QueryGameModuleResponse(
@@ -390,7 +400,7 @@ public sealed class GameModuleApplicationService
             queryFingerprint,
             completedSnapshot,
             data.Capability,
-            data.Records.Count,
+            matches.Length,
             records,
             data.Diagnostics,
             nextCursor);
@@ -830,7 +840,10 @@ public sealed class GameModuleApplicationService
             snapshot.Fingerprint,
             request.Module.ToString(),
             request.Layer.ToString(),
-            request.Limit.ToString(CultureInfo.InvariantCulture));
+            request.Limit.ToString(CultureInfo.InvariantCulture),
+            request.SearchText ?? string.Empty,
+            request.CatalogOnly.ToString(),
+            request.RecordId ?? string.Empty);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
@@ -881,6 +894,8 @@ public sealed class GameModuleApplicationService
 
     private static void ValidateRequest(QueryGameModuleRequest request)
     {
+        AnalysisCatalog.Validate(request.SearchText);
+        AnalysisCatalog.Validate(null, request.RecordId);
         if (request.Scope?.Paths is null || request.ExpectedRevision is null)
         {
             throw new SemanticExploreValidationException(

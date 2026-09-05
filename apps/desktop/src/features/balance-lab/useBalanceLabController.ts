@@ -61,6 +61,7 @@ export type BalanceLabController = BalanceLabControllerSnapshot & {
   loadMore: () => Promise<void>;
   query: (options: BalanceLabQueryOptions) => Promise<void>;
   refresh: () => Promise<void>;
+  searchCatalog?: (searchText: string, metric?: string, cursor?: string, pointId?: string) => Promise<BalanceLabQueryResponse>;
 };
 
 type RequestToken = ProjectQueryTicket<'query'> & { id: number };
@@ -207,6 +208,7 @@ class BalanceLabControllerStore {
         layer: options.layer,
         limit,
         scope: context.scope,
+        catalogOnly: true,
         study: options.study
       };
       const response = await runIndependentProjectRead(
@@ -242,6 +244,29 @@ class BalanceLabControllerStore {
     assertRevisionScope(this.revision, this.scope);
     return { revision: this.revision, scope: this.scope };
   }
+
+  public readonly searchCatalog = async (searchText: string, metric?: string, cursor?: string, pointId?: string) => {
+    const context = this.requireContext();
+    const options = this.snapshot.activeQuery;
+    if (!options) throw new Error('Choose an analysis before searching its catalog.');
+    const ticket = this.freshness.capture('query');
+    const request = { ...options, expectedRevision: context.revision, scope: context.scope,
+      limit: balanceLabDefaultPageSize, searchText, catalogOnly: !pointId,
+      ...(pointId ? { pointId } : {}), ...(metric ? { metric } : {}), ...(cursor ? { cursor } : {}) };
+    try {
+      const response = await runIndependentProjectRead('queryBalanceLab', this.bridge, request,
+        () => this.bridge.queryBalanceLab(request));
+      if (!this.freshness.isCurrent(ticket)) throw new Error('The analysis catalog changed.');
+      assertBalanceLabResponse(response, options, context.revision);
+      return response;
+    } catch (error) {
+      if (this.freshness.isCurrent(ticket) && semanticErrorCode(error) === semanticExploreErrorCodes.staleRevision) {
+        this.onStaleRevision?.();
+        this.invalidate();
+      }
+      throw error;
+    }
+  };
 
   private begin(options: BalanceLabQueryOptions, append: boolean): RequestToken {
     this.supersedeRequests();
@@ -510,7 +535,8 @@ export function useBalanceLabController(options: {
     invalidate: () => store.invalidate(),
     loadMore: () => store.loadMore(),
     query: (value: BalanceLabQueryOptions) => store.query(value),
-    refresh: () => store.refresh()
+    refresh: () => store.refresh(),
+    searchCatalog: store.searchCatalog
   }), [store]);
   const invalidate = useCallback(actions.invalidate, [actions.invalidate]);
   return useMemo(() => ({ ...snapshot, ...actions, invalidate }), [actions, invalidate, snapshot]);

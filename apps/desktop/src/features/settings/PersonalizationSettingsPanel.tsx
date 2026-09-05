@@ -116,13 +116,7 @@ export function ThemeSettingsPanel() {
   );
 }
 
-export type PersonalizationSettingsPanelProps = {
-  onReplayWhatChanged: () => void;
-};
-
-export function PersonalizationSettingsPanel({
-  onReplayWhatChanged
-}: PersonalizationSettingsPanelProps) {
+export function PersonalizationSettingsPanel() {
   const { t } = useLocalization();
   const {
     preferences,
@@ -222,19 +216,6 @@ export function PersonalizationSettingsPanel({
               />
             </div>
           </div>
-        </div>
-      </details>
-
-
-      <details aria-labelledby="what-changed-settings-heading" className="km-settings-group">
-        <summary>
-          <h3 id="what-changed-settings-heading">{t('settings.whatChanged.title')}</h3>
-        </summary>
-        <div className="km-settings-group-body">
-          <p>{t('settings.whatChanged.description')}</p>
-          <button onClick={onReplayWhatChanged} type="button">
-            {t('settings.whatChanged.replay')}
-          </button>
         </div>
       </details>
     </div>

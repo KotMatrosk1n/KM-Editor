@@ -22232,9 +22232,7 @@ export function App({
               appVersion={appVersion}
               availableUpdateKind={availableUpdate?.kind ?? null}
               personalizationSettings={
-                <PersonalizationSettingsPanel
-                  onReplayWhatChanged={() => setIsWhatChangedTourOpen(true)}
-                />
+                <PersonalizationSettingsPanel />
               }
               themeSettings={<ThemeSettingsPanel />}
               editorLayout={editorLayout}

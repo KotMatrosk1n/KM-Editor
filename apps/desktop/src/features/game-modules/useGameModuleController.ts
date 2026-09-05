@@ -71,6 +71,7 @@ export type GameModuleController = GameModuleControllerSnapshot & {
   cancel: () => void;
   loadCapabilities: () => Promise<void>;
   loadMore: () => Promise<void>;
+  searchCatalog?: (searchText: string, cursor?: string, recordId?: string) => Promise<QueryGameModuleResponse>;
   query: (options: GameModuleQueryOptions) => Promise<void>;
   refresh: () => Promise<void>;
   refreshCapabilities: () => Promise<void>;
@@ -264,6 +265,7 @@ class GameModuleControllerStore {
         layer: options.layer,
         limit,
         module: options.module,
+        catalogOnly: true,
         scope: context.scope
       };
       const response = await runIndependentProjectRead(
@@ -307,6 +309,31 @@ class GameModuleControllerStore {
     assertRevisionScope(this.revision, this.scope);
     return { revision: this.revision, scope: this.scope };
   }
+
+  public readonly searchCatalog = async (searchText: string, cursor?: string, recordId?: string) => {
+    const context = this.requireContext();
+    const options = this.snapshot.activeQuery;
+    if (!options) throw new Error('Choose a game tool before searching its catalog.');
+    const ticket = this.freshness.capture('query');
+    const capability = this.requireQueryableCapability(options);
+    const snapshot = this.requireCapabilitySnapshot(options.layer);
+    const request = { ...options, expectedRevision: context.revision, scope: context.scope,
+      limit: gameModuleDefaultPageSize, searchText, catalogOnly: !recordId,
+      ...(recordId ? { recordId } : {}), ...(cursor ? { cursor } : {}) };
+    try {
+      const response = await runIndependentProjectRead('queryGameModule', this.bridge, request,
+        () => this.bridge.queryGameModule(request));
+      if (!this.freshness.isCurrent(ticket)) throw new Error('The game tool catalog changed.');
+      assertQueryResponse(response, options, context.revision, capability, snapshot, request.limit, 0, true);
+      return response;
+    } catch (error) {
+      if (this.freshness.isCurrent(ticket) && isStaleError(error)) {
+        this.onStaleRevision?.();
+        this.reset();
+      }
+      throw error;
+    }
+  };
 
   private requireQueryableCapability(options: GameModuleQueryOptions) {
     const capability = this.snapshot.capabilities.data?.capabilities.find(
@@ -495,7 +522,8 @@ function assertQueryResponse(
   expectedCapability: GameModuleCapability,
   expectedSnapshot: SemanticExploreSourceSnapshot,
   requestedLimit: number,
-  previousRecordCount: number
+  previousRecordCount: number,
+  catalogQuery = false
 ) {
   assertRevision(response.revision, expectedRevision);
   if (
@@ -511,7 +539,7 @@ function assertQueryResponse(
   if (
     response.records.length > requestedLimit ||
     loadedRecordCount > response.totalRecordCount ||
-    (loadedRecordCount < response.totalRecordCount) !== (response.nextCursor !== null) ||
+    (!catalogQuery && (loadedRecordCount < response.totalRecordCount) !== (response.nextCursor !== null)) ||
     (response.nextCursor !== null && response.records.length === 0)
   ) {
     throw new Error('The game module page did not make bounded cursor progress.');
@@ -526,7 +554,7 @@ function assertQueryResponse(
     if (
       record.coverage !== response.capability.state ||
       record.confidence !== response.capability.confidence ||
-      record.sortOrder !== previousRecordCount + index ||
+      (!catalogQuery && record.sortOrder !== previousRecordCount + index) ||
       record.facts.some((fact) => (
         fact.providerId !== response.capability.providerId ||
         fact.value.kind === 'null' && fact.confidence !== 'unknown'
@@ -720,6 +748,7 @@ export function useGameModuleController(options: {
     loadMore: () => store.loadMore(),
     query: (value: GameModuleQueryOptions) => store.query(value),
     refresh: () => store.refresh(),
-    refreshCapabilities: () => store.refreshCapabilities()
+    refreshCapabilities: () => store.refreshCapabilities(),
+    searchCatalog: store.searchCatalog
   }), [snapshot, store]);
 }

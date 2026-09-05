@@ -94,6 +94,10 @@ export const balanceLabFindingSchema = z.strictObject({
 });
 
 export const balanceLabQueryRequestSchema = z.strictObject({
+  searchText: displayTextSchema.max(256).optional(),
+  metric: displayTextSchema.max(1_024).optional(),
+  catalogOnly: z.boolean().optional(),
+  pointId: stableIdSchema.optional(),
   cursor: cursorSchema.optional(),
   expectedRevision: semanticExploreRevisionSchema,
   layer: z.enum(['base', 'layered', 'pending']),
@@ -103,6 +107,15 @@ export const balanceLabQueryRequestSchema = z.strictObject({
 });
 
 export const balanceLabQueryResponseSchema = z.strictObject({
+  metrics: z.array(z.strictObject({
+    identity: displayTextSchema.max(1_024),
+    key: stableIdSchema,
+    label: displayTextSchema,
+    providerId: contractKeySchema,
+    supportCount: z.number().int().nonnegative().max(400_000),
+    unit: displayTextSchema.max(128).nullable()
+  })).max(512).optional(),
+  totalPointCount: z.number().int().nonnegative().max(400_000).optional(),
   capabilities: z.array(balanceLabCapabilitySchema).max(5),
   diagnostics: z.array(apiDiagnosticSchema).max(512),
   findings: z.array(balanceLabFindingSchema).max(balanceLabMaximumFindingsPerPage),

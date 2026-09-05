@@ -432,7 +432,19 @@ public sealed record QueryBalanceLabRequest(
     BalanceLabStudyDto Study,
     SemanticSourceLayerKindDto Layer,
     int Limit,
-    string? Cursor = null);
+    string? Cursor = null,
+    string? SearchText = null,
+    string? Metric = null,
+    bool CatalogOnly = false,
+    string? PointId = null);
+
+public sealed record BalanceLabMetricDto(
+    string Identity,
+    string Key,
+    string Label,
+    string ProviderId,
+    int SupportCount,
+    string? Unit);
 
 public sealed record QueryBalanceLabResponse(
     SemanticProjectRevisionDto Revision,
@@ -442,4 +454,8 @@ public sealed record QueryBalanceLabResponse(
     IReadOnlyList<BalanceLabChartPointDto> Points,
     IReadOnlyList<BalanceLabFindingDto> Findings,
     IReadOnlyList<ApiDiagnostic> Diagnostics,
-    string? NextCursor);
+    string? NextCursor)
+{
+    public IReadOnlyList<BalanceLabMetricDto> Metrics { get; init; } = [];
+    public int TotalPointCount { get; init; }
+}

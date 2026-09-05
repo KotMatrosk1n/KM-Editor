@@ -344,9 +344,10 @@ function GameModuleDetail({
               key={result.queryFingerprint}
               onNavigateRecord={onNavigateRecord}
               response={result}
+              searchCatalog={controller.searchCatalog}
             />
           ) : null}
-          {result.nextCursor ? (
+          {!controller.searchCatalog && result.nextCursor ? (
             result.records.length >= gameModuleMaximumAccumulatedRecords ? (
               <p className="km-game-module-window-limit">
                 {t('gameModules.results.windowLimit')}

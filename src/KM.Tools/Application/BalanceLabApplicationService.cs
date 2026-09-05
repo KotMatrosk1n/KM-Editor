@@ -157,19 +157,37 @@ public sealed class BalanceLabApplicationService
         var (completedRevision, completedSnapshot) = verifiedCompletion
             ?? ReadCompletedSnapshot(request, snapshot);
 
-        if (offset > study.Points.Count)
+        var metrics = AnalysisCatalog.Metrics(study, cancellationToken);
+        var selectedMetric = request.Metric is null ? null : metrics.SingleOrDefault(metric => metric.Identity == request.Metric);
+        if (request.Metric is not null && selectedMetric is null)
+        {
+            throw new SemanticExploreValidationException("The selected analysis metric is unavailable.", SemanticExploreFailureKind.InvalidData);
+        }
+        var terms = AnalysisCatalog.SearchTerms(request.SearchText);
+        var matchingPoints = study.Points.Where(point =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return (request.PointId is null || point.PointId == request.PointId)
+                && (selectedMetric is null || point.Facts.Any(fact => AnalysisCatalog.IsNumeric(fact)
+                    && fact.ProviderId == selectedMetric.ProviderId && AnalysisCatalog.FactKey(fact) == selectedMetric.Key
+                    && fact.Unit == selectedMetric.Unit))
+                && (terms.Length == 0 || AnalysisCatalog.Matches(terms, new[] { point.Label, point.Record.RecordId, point.Record.SubrecordId }
+                    .Concat(point.Facts.SelectMany(fact => new[] { fact.Label, fact.Value.DisplayValue, fact.Value.CanonicalValue }))));
+        }).ToArray();
+        if (offset > matchingPoints.Length)
         {
             throw new SemanticExploreValidationException(
                 "The Balance Lab continuation cursor is outside the current result set.",
                 SemanticExploreFailureKind.InvalidCursor);
         }
 
-        var exactPointRecords = study.Points.Select(point => point.Record).ToHashSet();
-        var aggregatePointRecords = study.Points
+        var detailPoints = request.CatalogOnly ? [] : study.Points;
+        var exactPointRecords = detailPoints.Select(point => point.Record).ToHashSet();
+        var aggregatePointRecords = detailPoints
             .Where(point => point.Record.SubrecordId is null)
             .Select(point => point.Record)
             .ToHashSet();
-        var findingsByRecord = study.Findings
+        var findingsByRecord = (request.CatalogOnly ? [] : study.Findings)
             .GroupBy(finding => ResolveFindingOwner(
                 finding.Record,
                 exactPointRecords,
@@ -178,10 +196,10 @@ public sealed class BalanceLabApplicationService
         var pagePoints = new List<BalanceLabChartPointDto>(request.Limit);
         var pageFindings = new List<BalanceLabFindingDto>();
         var pageFindingIds = new HashSet<string>(StringComparer.Ordinal);
-        for (var index = offset; index < study.Points.Count && pagePoints.Count < request.Limit; index++)
+        for (var index = offset; index < matchingPoints.Length && pagePoints.Count < request.Limit; index++)
         {
-            var candidate = study.Points[index];
-            var candidateFindings = findingsByRecord.GetValueOrDefault(candidate.Record) ?? [];
+            var candidate = matchingPoints[index];
+            var candidateFindings = request.CatalogOnly ? [] : findingsByRecord.GetValueOrDefault(candidate.Record) ?? [];
             var additionalCount = candidateFindings.Count(finding => !pageFindingIds.Contains(finding.FindingId));
             if (pagePoints.Count > 0 && pageFindings.Count + additionalCount > MaximumFindingsPerResponse)
             {
@@ -195,7 +213,7 @@ public sealed class BalanceLabApplicationService
                     SemanticExploreFailureKind.LimitExceeded);
             }
 
-            pagePoints.Add(candidate);
+            pagePoints.Add(request.CatalogOnly ? candidate with { Facts = [] } : candidate);
             foreach (var finding in candidateFindings)
             {
                 if (pageFindingIds.Add(finding.FindingId))
@@ -208,7 +226,7 @@ public sealed class BalanceLabApplicationService
         var points = pagePoints.ToArray();
         var findings = pageFindings.ToArray();
         var nextOffset = checked(offset + points.Length);
-        var nextCursor = nextOffset < study.Points.Count
+        var nextCursor = nextOffset < matchingPoints.Length
             ? EncodeCursor(queryFingerprint, nextOffset)
             : null;
         return new QueryBalanceLabResponse(
@@ -219,7 +237,11 @@ public sealed class BalanceLabApplicationService
             points,
             findings,
             study.Diagnostics,
-            nextCursor);
+            nextCursor)
+        {
+            Metrics = metrics,
+            TotalPointCount = matchingPoints.Length,
+        };
     }
 
     private SemaphoreSlim StudyBuildLock(DerivedIndexCacheKey key)
@@ -480,7 +502,11 @@ public sealed class BalanceLabApplicationService
             request.ExpectedRevision.Fingerprint,
             snapshot.Fingerprint,
             request.Study.ToString(),
-            request.Layer.ToString());
+            request.Layer.ToString(),
+            request.SearchText ?? string.Empty,
+            request.Metric ?? string.Empty,
+            request.CatalogOnly.ToString(),
+            request.PointId ?? string.Empty);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
@@ -527,6 +553,8 @@ public sealed class BalanceLabApplicationService
 
     private static void ValidateRequest(QueryBalanceLabRequest request)
     {
+        AnalysisCatalog.Validate(request.SearchText, request.Metric);
+        AnalysisCatalog.Validate(null, request.PointId);
         if (request.Scope is null
             || request.Scope.Paths is null
             || request.ExpectedRevision is null)
