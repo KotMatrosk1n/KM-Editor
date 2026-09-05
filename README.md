@@ -17,6 +17,9 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 - Edit with controls built for each game's verified data instead of treating every title as the same format.
 - Review normal changes in one staged plan, with dedicated previews for advanced workflows that need their own write boundary.
 - Keep unfinished work organized through project navigation, record tabs, recents, pins, bookmarks, saved views, notes, and read-only analysis tools.
+- Build Trainer teams across multiple records, reuse copied party members, and stage the complete retained draft with one **Stage Trainer Changes** action.
+
+Legends Z-A also includes Fashion Catalog editing and searchable, read-only Game Tools for static map markers, named flags and work variables, and Pokemon resources. These tools help identify existing game data; browsing a catalog does not create a mod. See [Game Tools](https://github.com/KotMatrosk1n/KM-Editor/wiki/Game-Tools) and the [Legends Z-A guide](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) for coverage and limits.
 
 Beta Gameplay Settings provides reviewed native in-game controls on the exact builds listed below. Native packages are update-specific, preserve compatible KM-managed executable output, and block unverified conflicts. See [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings) for supported paths, installation, removal, and important limits.
 
@@ -51,6 +54,8 @@ Data models, supported editors, and output rules differ by game. Depending on th
 
 Normal editor changes are staged before they are applied. Open **Changes** to inspect pending targets and remove anything you do not want. Advanced workflows provide their own review and apply plans when they cannot safely share the normal edit session.
 
+Unstaged drafts and staged changes are separate. Moving to Changes preserves staged work; if a local draft still needs attention, the warning identifies that draft before you discard it. Review checks the combined session against current source and output files, and a failed final review blocks output even when the individual edits passed validation.
+
 Clean Base RomFS and Base ExeFS inputs remain untouched. KM Editor writes to a separate Output Root, tracks KM-managed output separately from foreign or uncertain files, and stops when ownership, source state, or a write target cannot be verified.
 
 ## Learn More
@@ -61,6 +66,7 @@ Clean Base RomFS and Base ExeFS inputs remain untouched. KM Editor writes to a s
 | Learn the editing workflow     | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow)                       |
 | Use Beta Gameplay Settings     | [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings)                     |
 | Explore Workbench tools        | [Workbench](https://github.com/KotMatrosk1n/KM-Editor/wiki/Workbench)                                    |
+| Inspect output or recover a write | [Output Safety and Recovery](https://github.com/KotMatrosk1n/KM-Editor/wiki/Output-Safety-And-Recovery) |
 | Browse every supported feature | [Wiki Home](https://github.com/KotMatrosk1n/KM-Editor/wiki)                                               |
 | Install or update the editor   | [Installing and Updating](https://github.com/KotMatrosk1n/KM-Editor/wiki/Installing-and-Updating)         |
 | Diagnose a problem             | [Error Codes and Diagnostics](https://github.com/KotMatrosk1n/KM-Editor/wiki/Error-Codes-And-Diagnostics) |
