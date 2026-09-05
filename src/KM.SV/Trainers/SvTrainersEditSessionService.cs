@@ -851,7 +851,7 @@ internal sealed class SvTrainersEditSessionService
             SvTrainersWorkflowService.AiFlagsField => trainer with
             {
                 AiFlags = value,
-                AiFlagStates = CreateAiStates(value),
+                AiFlagStates = SvTrainersWorkflowService.CreateAiStates(value),
             },
             IsStrongField => trainer with { IsStrong = value != 0 },
             ChangeGemField => WithTeraTarget(trainer with { CanTerastallize = value != 0 }),
@@ -1331,34 +1331,6 @@ internal sealed class SvTrainersEditSessionService
             SvEditSessionSupport.TrainersDomain,
             field: "field",
             expected: "Supported S/V trainer or trainer Pokemon field");
-    }
-
-    private static IReadOnlyList<SvTrainerAiFlagState> CreateAiStates(int flags)
-    {
-        var definitions = new[]
-        {
-            (0, "Basic", "Enables baseline move selection and battle decisions."),
-            (1, "High", "Uses stronger scoring for move choice, targets, and matchup checks."),
-            (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions."),
-            (3, "Double", "Uses double-battle-aware partner, target, and spread move logic."),
-            (4, "Raid", "Uses raid-style AI checks for encounters that share raid battle behavior."),
-            (5, "Weak", "Allows weakness-aware choices against the opponent's active Pokemon."),
-            (6, "Item", "Allows the trainer AI to consider configured battle item usage."),
-            (7, "Change", "Allows the trainer AI to consider switching Pokemon during battle."),
-        };
-
-        return definitions
-            .Select(definition =>
-            {
-                var mask = 1 << definition.Item1;
-                return new SvTrainerAiFlagState(
-                    definition.Item1,
-                    mask,
-                    definition.Item2,
-                    definition.Item3,
-                    (flags & mask) != 0);
-            })
-            .ToArray();
     }
 
     private sealed class TrainerRow

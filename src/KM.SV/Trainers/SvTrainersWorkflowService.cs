@@ -455,20 +455,31 @@ internal sealed class SvTrainersWorkflowService
 
     private static IReadOnlyList<SvTrainerAiFlagState> CreateAiStates(global::trainer.TrdataMain trainer)
     {
-        var flags = new[]
+        return CreateAiStates(PackAiFlags(trainer));
+    }
+
+    internal static IReadOnlyList<SvTrainerAiFlagState> CreateAiStates(int flags)
+    {
+        var definitions = new[]
         {
-            (0, "Basic", "Enables baseline move selection and battle decisions.", trainer.AiBasic),
-            (1, "High", "Uses stronger scoring for move choice, targets, and matchup checks.", trainer.AiHigh),
-            (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions.", trainer.AiExpert),
-            (3, "Double", "Uses double-battle-aware partner, target, and spread move logic.", trainer.AiDouble),
-            (4, "Raid", "Uses raid-style AI checks for encounters that share raid battle behavior.", trainer.AiRaid),
-            (5, "Weak", "Allows weakness-aware choices against the opponent's active Pokemon.", trainer.AiWeak),
-            (6, "Item", "Allows the trainer AI to consider configured battle item usage.", trainer.AiItem),
-            (7, "Change", "Allows the trainer AI to consider switching Pokemon during battle.", trainer.AiChange),
+            (0, "Basic", "Enables baseline move selection and battle decisions."),
+            (1, "High", "Uses stronger scoring for move choice, targets, and matchup checks."),
+            (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions."),
+            (3, "Double", "Uses double-battle-aware partner, target, and spread move logic."),
+            (5, "Weak", "Enables the weak trainer AI option."),
+            (6, "Item", "Allows the trainer AI to consider configured battle item usage."),
+            (7, "Change", "Allows the trainer AI to consider switching Pokemon during battle."),
         };
 
-        return flags
-            .Select(flag => new SvTrainerAiFlagState(flag.Item1, 1 << flag.Item1, flag.Item2, flag.Item3, flag.Item4))
+        return definitions
+            .Select(definition =>
+            {
+                var mask = 1 << definition.Item1;
+                var selectionMask = definition.Item1 == 3 ? 0x18 : mask;
+                return new SvTrainerAiFlagState(
+                    definition.Item1, mask, definition.Item2, definition.Item3,
+                    (flags & selectionMask) != 0);
+            })
             .ToArray();
     }
 

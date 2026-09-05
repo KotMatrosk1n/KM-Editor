@@ -1656,12 +1656,13 @@ h2 {
 }
 
 .workspace-content {
+  --workspace-content-padding: 24px;
   display: grid;
   grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 16px;
   align-content: start;
   min-height: 0;
-  padding: 24px;
+  padding: var(--workspace-content-padding);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -3257,7 +3258,7 @@ h2 {
 .editor-session-bar {
   position: sticky;
   z-index: 5;
-  top: 12px;
+  top: calc(-1 * var(--workspace-content-padding, 0px));
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
@@ -13972,8 +13973,9 @@ input {
   }
 
   .workspace-content {
+    --workspace-content-padding: 16px;
     grid-template-columns: 1fr;
-    padding: 16px;
+    padding: var(--workspace-content-padding);
   }
 
   .path-form,
@@ -15015,24 +15017,6 @@ input {
   transform: none;
 }
 
-.tm-machine-controls-review-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  align-items: center;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--color-border);
-}
-
-.tm-machine-controls-review-actions > p {
-  flex: 1 1 24rem;
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  line-height: 1.45;
-}
-
 @container workspace (max-width: 880px) {
   .tm-machine-controls-metrics {
     grid-template-columns: 1fr 1fr;
@@ -15059,10 +15043,6 @@ input {
     justify-self: start;
   }
 
-  .tm-machine-controls-review-actions > button {
-    flex: 1 1 100%;
-    justify-content: center;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -15096,6 +15076,16 @@ input {
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 3px solid var(--color-focus) !important;
   outline-offset: 2px !important;
+}
+
+.search-box:has(input:focus-visible) {
+  outline: 3px solid var(--color-focus) !important;
+  outline-offset: 2px !important;
+}
+
+.search-box input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .diagnostic-open-action {
@@ -15976,6 +15966,10 @@ select.km-select-control:dir(rtl) {
   }
 
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline-color: Highlight !important;
+  }
+
+  .search-box:has(input:focus-visible) {
     outline-color: Highlight !important;
   }
 

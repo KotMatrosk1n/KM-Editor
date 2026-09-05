@@ -55,6 +55,7 @@ export type SearchableOptionInputProps = Readonly<{
   options: readonly SearchableOptionInputOption[];
   portalMenu?: boolean;
   required?: boolean;
+  showToggle?: boolean;
   tooltipContent?: ReactNode;
   value: string;
 }>;
@@ -92,6 +93,7 @@ export function SearchableOptionInput({
   options,
   portalMenu = true,
   required,
+  showToggle = true,
   tooltipContent,
   value
 }: SearchableOptionInputProps) {
@@ -578,7 +580,7 @@ export function SearchableOptionInput({
           type="text"
           value={query}
         />
-        <button
+        {showToggle ? <button
           aria-label={translateLiteral(`Show ${ariaLabel} options`)}
           className="searchable-option-toggle"
           disabled={disabled}
@@ -595,7 +597,7 @@ export function SearchableOptionInput({
           type="button"
         >
           <ChevronDown aria-hidden="true" size={16} />
-        </button>
+        </button> : null}
         {portalHost && menu ? createPortal(menu, portalHost) : menu}
       </div>
     </HoverTooltip>

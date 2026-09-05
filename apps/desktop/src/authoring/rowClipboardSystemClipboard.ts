@@ -20,6 +20,20 @@ export type RowClipboardTextClipboard = Readonly<{
   writeText: (value: string) => Promise<void>;
 }>;
 
+let editorClipboardText = '';
+const editorClipboard: RowClipboardTextClipboard = Object.freeze({
+  readText: async () => editorClipboardText,
+  writeText: async (value: string) => { editorClipboardText = value; }
+});
+
+export function writeRowClipboardEnvelopeToEditorClipboard(envelope: RowClipboardEnvelopeV1) {
+  return writeRowClipboardEnvelopeToSystemClipboard(envelope, editorClipboard);
+}
+
+export function readRowClipboardEnvelopeFromEditorClipboard(controller: RowClipboardController) {
+  return readRowClipboardEnvelopeFromSystemClipboard(controller, editorClipboard);
+}
+
 const tauriSystemClipboard: RowClipboardTextClipboard = Object.freeze({
   readText: readTauriClipboardText,
   writeText: writeTauriClipboardText

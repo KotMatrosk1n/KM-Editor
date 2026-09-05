@@ -433,6 +433,7 @@ function TypeChartCellControl({
           value: candidate.value
         }))}
         portalMenu
+        showToggle={false}
         value={value.toString()}
       />
     </div>

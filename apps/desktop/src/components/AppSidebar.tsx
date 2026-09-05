@@ -5,6 +5,7 @@ import type { RefObject } from 'react';
 import kmLogoUrl from '../assets/km-logo.png';
 import type { ProjectGame } from '../bridge/contracts';
 import { useLocalization } from '../localization';
+import { useBetaEditorsEnabled } from '../features/settings/BetaEditorsSettings';
 import {
   canAccessWorkflowSectionForHealth,
   isWorkflowNavigationVisibleForGame,
@@ -64,6 +65,7 @@ export function AppSidebar({
   suppressedActiveWorkflowGroup,
   toggleRef
 }: AppSidebarProps) {
+  const showBetaEditors = useBetaEditorsEnabled();
   const { t, translateLiteral } = useLocalization();
   const toggleLabel = translateLiteral(
     isSidebarCompact ? 'Expand sidebar' : 'Collapse sidebar'
@@ -132,6 +134,7 @@ export function AppSidebar({
 
           {canShowWorkflowNavigation || canShowGameplaySettingsNavigation
             ? workflowNavigationGroups.map((group) => {
+                if (group.id === 'betaEditors' && !showBetaEditors) return null;
                 const visibleSectionIds = group.sectionIds.filter(
                   (sectionId) =>
                     (sectionId === 'gameplaySettings'

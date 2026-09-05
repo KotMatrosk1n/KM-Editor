@@ -7,6 +7,7 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
+import { AdvancedEditorDetails } from '../../components/AdvancedEditorDetails';
 import {
   type EditSession,
   type ProjectGame
@@ -56,7 +57,7 @@ export function HyperspaceBypassSection({
 
   return (
     <>
-      <section aria-labelledby="hyperspace-bypass-heading" className="panel wide-panel">
+      <section aria-labelledby="hyperspace-bypass-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Sparkle aria-hidden="true" size={18} />
           <h2 id="hyperspace-bypass-heading">Hyperspace Bypass</h2>
@@ -134,16 +135,18 @@ export function HyperspaceBypassSection({
                 <h3>Install Details</h3>
               </div>
 
-              <dl className="item-provenance-list">
-                <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
-                <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame)}</dd></div>
-                <div><dt>Build ID</dt><dd>{workflow.buildId}</dd></div>
-                <div><dt>Patch site</dt><dd>{workflow.patchOffsetHex}</dd></div>
-                <div><dt>Stub</dt><dd>{workflow.stubKind}</dd></div>
-                <div><dt>Source file</dt><dd>{workflow.provenance.sourceFile}</dd></div>
-                <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
-                <div><dt>File state</dt><dd>{formatFileState(workflow.provenance.fileState)}</dd></div>
-              </dl>
+              <AdvancedEditorDetails>
+                <dl className="item-provenance-list">
+                  <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
+                  <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame)}</dd></div>
+                  <div><dt>Build ID</dt><dd>{workflow.buildId}</dd></div>
+                  <div><dt>Patch site</dt><dd>{workflow.patchOffsetHex}</dd></div>
+                  <div><dt>Stub</dt><dd>{workflow.stubKind}</dd></div>
+                  <div><dt>Source file</dt><dd>{workflow.provenance.sourceFile}</dd></div>
+                  <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
+                  <div><dt>File state</dt><dd>{formatFileState(workflow.provenance.fileState)}</dd></div>
+                </dl>
+              </AdvancedEditorDetails>
 
               <div className="encounter-edit-form">
                 <div className="form-actions">
