@@ -222,6 +222,208 @@
   --warning: var(--color-warning);
 }
 
+/* Dark visual palettes yield to the accessibility overrides below. */
+:root[data-km-visual-theme='sovereign'] {
+  color: #fff6e5;
+  background: #0c0a06;
+  --color-bg: #0c0a06;
+  --color-bg-deep: #050403;
+  --color-canvas: #100e09;
+  --color-sidebar: #0b0905;
+  --color-surface: #1b1710;
+  --color-surface-strong: #292216;
+  --color-surface-muted: #120f0a;
+  --color-surface-soft: #211b12;
+  --color-border: #453922;
+  --color-border-strong: #7c6540;
+  --color-control-border: #715c38;
+  --color-control: #15110b;
+  --color-control-hover: #282014;
+  --color-popover: #17130d;
+  --color-text: #fff6e5;
+  --color-text-muted: #c0b39a;
+  --color-text-soft: #e8d8b8;
+  --color-text-subtle: #cebea0;
+  --color-accent: #805000;
+  --color-accent-rgb: 128 80 0;
+  --color-accent-bright: #f5c451;
+  --color-accent-bright-rgb: 245 196 81;
+  --color-accent-dark: #4c3005;
+  --color-accent-hover: #704500;
+  --color-primary: var(--color-accent-bright);
+  --color-gold: #f5c451;
+  --color-gold-rgb: 245 196 81;
+  --color-gold-dark: #926b21;
+  --color-success: #7cdbac;
+  --color-success-rgb: 124 219 172;
+  --color-success-soft: #7cdbac;
+  --color-warning: #ffbd82;
+  --color-warning-rgb: 255 189 130;
+  --color-warning-soft: #ffbd82;
+  --color-warning-surface: #292216;
+  --color-danger: #ff9993;
+  --color-danger-rgb: 255 153 147;
+  --color-danger-border: #a64f49;
+  --color-focus: #ffe09a;
+  --color-focus-ring: var(--color-focus);
+  --color-on-accent: #fff;
+  --color-overlay: rgb(2 3 4 / 82%);
+  --color-tooltip: #17130d;
+  --color-tooltip-border: #7c6540;
+  --shadow-panel:
+    0 22px 64px rgb(0 0 0 / 46%),
+    0 0 30px rgb(var(--color-accent-rgb) / 5%);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 5%);
+  --shadow-tooltip: 0 16px 42px rgb(0 0 0 / 68%);
+  --theme-panel-background: linear-gradient(155deg, var(--color-surface-strong), var(--color-surface-muted));
+  --theme-sidebar-background: linear-gradient(180deg, var(--color-surface-muted), var(--color-sidebar));
+  --theme-toolbar-background: linear-gradient(180deg, var(--color-surface-strong), var(--color-popover));
+  --theme-picker-background: linear-gradient(135deg, var(--color-bg-deep), var(--color-canvas));
+  --theme-body-end: var(--color-canvas);
+  /* Compatibility aliases used by a few bounded workflow surfaces. */
+  --surface: var(--color-surface);
+  --surface-raised: color-mix(in srgb, var(--color-surface-strong) 82%, transparent);
+  --border-color: var(--color-border);
+  --accent: var(--color-accent-bright);
+  --muted-text: var(--color-text-muted);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+}
+
+:root[data-km-visual-theme='arcane'] {
+  color: #f6f1ff;
+  background: #0c0811;
+  --color-bg: #0c0811;
+  --color-bg-deep: #050308;
+  --color-canvas: #100b18;
+  --color-sidebar: #0a0610;
+  --color-surface: #191321;
+  --color-surface-strong: #271d34;
+  --color-surface-muted: #110c19;
+  --color-surface-soft: #21182d;
+  --color-border: #40344e;
+  --color-border-strong: #79688c;
+  --color-control-border: #685676;
+  --color-control: #150e1e;
+  --color-control-hover: #281c38;
+  --color-popover: #170f22;
+  --color-text: #f6f1ff;
+  --color-text-muted: #bcb0cb;
+  --color-text-soft: #ded4ee;
+  --color-text-subtle: #cec1dd;
+  --color-accent: #7131a8;
+  --color-accent-rgb: 113 49 168;
+  --color-accent-bright: #cf91ff;
+  --color-accent-bright-rgb: 207 145 255;
+  --color-accent-dark: #43175f;
+  --color-accent-hover: #68269b;
+  --color-primary: var(--color-accent-bright);
+  --color-gold: #c9c5d8;
+  --color-gold-rgb: 201 197 216;
+  --color-gold-dark: #79708e;
+  --color-success: #80dbbd;
+  --color-success-rgb: 128 219 189;
+  --color-success-soft: #80dbbd;
+  --color-warning: #f3ca80;
+  --color-warning-rgb: 243 202 128;
+  --color-warning-soft: #f3ca80;
+  --color-warning-surface: #271d34;
+  --color-danger: #ff9eae;
+  --color-danger-rgb: 255 158 174;
+  --color-danger-border: #a35367;
+  --color-focus: #deb4ff;
+  --color-focus-ring: var(--color-focus);
+  --color-on-accent: #fff;
+  --color-overlay: rgb(2 3 4 / 82%);
+  --color-tooltip: #170f22;
+  --color-tooltip-border: #79688c;
+  --shadow-panel:
+    0 22px 64px rgb(0 0 0 / 46%),
+    0 0 30px rgb(var(--color-accent-rgb) / 5%);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 5%);
+  --shadow-tooltip: 0 16px 42px rgb(0 0 0 / 68%);
+  --theme-panel-background: linear-gradient(155deg, var(--color-surface-strong), var(--color-surface-muted));
+  --theme-sidebar-background: linear-gradient(180deg, var(--color-surface-muted), var(--color-sidebar));
+  --theme-toolbar-background: linear-gradient(180deg, var(--color-surface-strong), var(--color-popover));
+  --theme-picker-background: linear-gradient(135deg, var(--color-bg-deep), var(--color-canvas));
+  --theme-body-end: var(--color-canvas);
+  /* Compatibility aliases used by a few bounded workflow surfaces. */
+  --surface: var(--color-surface);
+  --surface-raised: color-mix(in srgb, var(--color-surface-strong) 82%, transparent);
+  --border-color: var(--color-border);
+  --accent: var(--color-accent-bright);
+  --muted-text: var(--color-text-muted);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+}
+
+:root[data-km-visual-theme='relic'] {
+  color: #effbf5;
+  background: #050e0d;
+  --color-bg: #050e0d;
+  --color-bg-deep: #020706;
+  --color-canvas: #091512;
+  --color-sidebar: #050d0b;
+  --color-surface: #10221e;
+  --color-surface-strong: #1b322b;
+  --color-surface-muted: #0a1814;
+  --color-surface-soft: #162a23;
+  --color-border: #34483e;
+  --color-border-strong: #79664c;
+  --color-control-border: #5b7768;
+  --color-control: #0c1c17;
+  --color-control-hover: #20392e;
+  --color-popover: #0e201a;
+  --color-text: #effbf5;
+  --color-text-muted: #a6c1b6;
+  --color-text-soft: #cce3d8;
+  --color-text-subtle: #b6d0c4;
+  --color-accent: #00695e;
+  --color-accent-rgb: 0 105 94;
+  --color-accent-bright: #5ee6ce;
+  --color-accent-bright-rgb: 94 230 206;
+  --color-accent-dark: #063d35;
+  --color-accent-hover: #005c51;
+  --color-primary: var(--color-accent-bright);
+  --color-gold: #e9ac73;
+  --color-gold-rgb: 233 172 115;
+  --color-gold-dark: #95613b;
+  --color-success: #a9db8b;
+  --color-success-rgb: 169 219 139;
+  --color-success-soft: #a9db8b;
+  --color-warning: #f5c87d;
+  --color-warning-rgb: 245 200 125;
+  --color-warning-soft: #f5c87d;
+  --color-warning-surface: #1b322b;
+  --color-danger: #ff9b8d;
+  --color-danger-rgb: 255 155 141;
+  --color-danger-border: #a65145;
+  --color-focus: #8cf6e0;
+  --color-focus-ring: var(--color-focus);
+  --color-on-accent: #fff;
+  --color-overlay: rgb(2 3 4 / 82%);
+  --color-tooltip: #0e201a;
+  --color-tooltip-border: #79664c;
+  --shadow-panel:
+    0 22px 64px rgb(0 0 0 / 46%),
+    0 0 30px rgb(var(--color-accent-rgb) / 5%);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 5%);
+  --shadow-tooltip: 0 16px 42px rgb(0 0 0 / 68%);
+  --theme-panel-background: linear-gradient(155deg, var(--color-surface-strong), var(--color-surface-muted));
+  --theme-sidebar-background: linear-gradient(180deg, var(--color-surface-muted), var(--color-sidebar));
+  --theme-toolbar-background: linear-gradient(180deg, var(--color-surface-strong), var(--color-popover));
+  --theme-picker-background: linear-gradient(135deg, var(--color-bg-deep), var(--color-canvas));
+  --theme-body-end: var(--color-canvas);
+  /* Compatibility aliases used by a few bounded workflow surfaces. */
+  --surface: var(--color-surface);
+  --surface-raised: color-mix(in srgb, var(--color-surface-strong) 82%, transparent);
+  --border-color: var(--color-border);
+  --accent: var(--color-accent-bright);
+  --muted-text: var(--color-text-muted);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+}
+
 :root[data-km-theme='highContrast'] {
   --color-bg: #000;
   --color-bg-deep: #000;
@@ -16245,9 +16447,13 @@ select.km-select-control:dir(rtl) {
   min-width: 0;
 }
 
+.theme-settings {
+  container-type: inline-size;
+}
+
 .visual-theme-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -16500,7 +16706,20 @@ select.km-select-control:dir(rtl) {
   filter: grayscale(1) contrast(1.35);
 }
 
-@media (max-width: 620px) {
+@container (max-width: 1050px) {
+  .visual-theme-option {
+    grid-template-columns: 1fr;
+  }
+  .visual-theme-option-preview {
+    grid-row: auto;
+  }
+}
+
+@container (max-width: 620px) {
+  .visual-theme-options {
+    grid-template-columns: 1fr;
+  }
+
   .visual-theme-option {
     grid-template-columns: 1fr;
   }
@@ -16510,17 +16729,17 @@ select.km-select-control:dir(rtl) {
   }
 }
 
-/* Renegade visual treatment -------------------------------------------------
+/* Renegade visual treatment shared by the other dark visual themes -----------
  * All presentation overrides are guarded from high contrast. Color-safe mode
- * intentionally retains the graphite geometry while its later token values
- * replace the Renegade accent and semantic hues.
+ * retains the selected surfaces while accessibility tokens replace accent and
+ * semantic hues. Older editor surfaces follow these same theme-owned tokens.
  */
 :root[data-km-visual-theme='renegade'] .brand-logo,
 :root[data-km-visual-theme='renegade'] .game-selection-logo {
   content: url('./assets/renegade-logo.png');
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) body {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) body {
   background:
     radial-gradient(
       ellipse at 76% 8%,
@@ -16536,16 +16755,16 @@ select.km-select-control:dir(rtl) {
     ),
     linear-gradient(146deg, transparent 0 24%, rgb(255 255 255 / 2.5%) 24% 40%, transparent 40%),
     linear-gradient(34deg, transparent 0 58%, rgb(255 255 255 / 2%) 58% 74%, transparent 74%),
-    linear-gradient(145deg, var(--color-bg-deep), var(--color-bg) 48%, #0d0e10);
+    linear-gradient(145deg, var(--color-bg-deep), var(--color-bg) 48%, var(--theme-body-end, #0d0e10));
   background-attachment: fixed;
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) ::selection {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) ::selection {
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-accent-bright) 46%, var(--color-control));
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .app-shell {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .app-shell {
   background:
     linear-gradient(90deg, rgb(2 3 4 / 90%), transparent 24rem),
     radial-gradient(
@@ -16555,9 +16774,9 @@ select.km-select-control:dir(rtl) {
     );
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .game-selection-shell {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .game-selection-shell {
   background:
-    linear-gradient(135deg, rgb(3 4 5 / 86%), rgb(12 13 15 / 92%)),
+    var(--theme-picker-background, linear-gradient(135deg, rgb(3 4 5 / 86%), rgb(12 13 15 / 92%))),
     radial-gradient(
       circle at 50% 10%,
       rgb(var(--color-accent-bright-rgb) / 12%),
@@ -16565,18 +16784,18 @@ select.km-select-control:dir(rtl) {
     );
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.game-selection-panel, .panel, .modal-panel, .km-modal, .km-settings-group) {
   background:
-    linear-gradient(155deg, rgb(29 31 35 / 97%), rgb(13 14 17 / 98%)),
+    var(--theme-panel-background, linear-gradient(155deg, rgb(29 31 35 / 97%), rgb(13 14 17 / 98%))),
     var(--color-surface);
   border-color: color-mix(in srgb, var(--color-border-strong) 78%, var(--color-accent) 22%);
   box-shadow: var(--shadow-panel), var(--shadow-inset);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .sidebar {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .sidebar {
   background:
-    linear-gradient(180deg, rgb(13 14 16 / 97%), rgb(4 5 6 / 99%)),
+    var(--theme-sidebar-background, linear-gradient(180deg, rgb(13 14 16 / 97%), rgb(4 5 6 / 99%))),
     var(--color-sidebar);
   border-right-color: rgb(var(--color-accent-bright-rgb) / 22%);
   box-shadow:
@@ -16584,13 +16803,13 @@ select.km-select-control:dir(rtl) {
     1px 0 0 rgb(var(--color-accent-bright-rgb) / 7%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .toolbar {
-  background: linear-gradient(180deg, rgb(24 25 29 / 96%), rgb(12 13 16 / 97%));
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .toolbar {
+  background: var(--theme-toolbar-background, linear-gradient(180deg, rgb(24 25 29 / 96%), rgb(12 13 16 / 97%)));
   border-bottom-color: rgb(var(--color-accent-bright-rgb) / 18%);
   box-shadow: 0 16px 44px rgb(0 0 0 / 32%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.brand-logo, .game-selection-logo) {
   border-color: rgb(var(--color-accent-bright-rgb) / 70%);
   box-shadow:
@@ -16598,14 +16817,14 @@ select.km-select-control:dir(rtl) {
     0 0 0 1px rgb(255 255 255 / 8%) inset;
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.game-choice-button, .sidebar-toggle, .secondary-button) {
   color: var(--color-text-soft);
   background: linear-gradient(180deg, var(--color-surface-strong), var(--color-surface));
   border-color: var(--color-control-border);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.game-choice-button, .sidebar-toggle, .secondary-button):hover:not(
     :disabled,
     [aria-disabled='true']
@@ -16619,7 +16838,7 @@ select.km-select-control:dir(rtl) {
   border-color: rgb(var(--color-accent-bright-rgb) / 58%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.primary-button, .purple-button) {
   color: var(--color-on-accent);
   background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent));
@@ -16629,7 +16848,7 @@ select.km-select-control:dir(rtl) {
     var(--shadow-inset);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
   background: linear-gradient(
     135deg,
@@ -16639,26 +16858,26 @@ select.km-select-control:dir(rtl) {
   border-color: var(--color-accent-bright);
 }
 
-:root[data-km-visual-theme='renegade'][data-km-theme='colorSafe']
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'])[data-km-theme='colorSafe']
   :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
   background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent-hover));
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .danger-button,
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .danger-button,
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .danger-icon-button {
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 11%, var(--color-control));
   border-color: var(--color-danger-border);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.danger-button, .danger-icon-button):hover:not(:disabled, [aria-disabled='true']) {
   background: color-mix(in srgb, var(--color-danger) 19%, var(--color-control));
   border-color: var(--color-danger);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .items-row-heading,
     .moves-row-heading,
@@ -16677,7 +16896,7 @@ select.km-select-control:dir(rtl) {
   );
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .items-row:not(.items-row-heading):hover,
     .items-row-selected,
@@ -16712,13 +16931,13 @@ select.km-select-control:dir(rtl) {
     0 12px 30px rgb(0 0 0 / 30%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(.item-inspector, .text-inspector, .trainer-inspector, .shop-inspector, .encounter-inspector) {
   background: linear-gradient(180deg, var(--color-popover), var(--color-surface-muted));
   border-color: var(--color-border-strong);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .diagnostic-count,
     .diagnostic-code,
@@ -16755,7 +16974,7 @@ select.km-select-control:dir(rtl) {
   border-color: var(--color-border);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .technical-tool-component-header,
     .editor-session-bar,
@@ -16766,7 +16985,7 @@ select.km-select-control:dir(rtl) {
   border-color: var(--color-border-strong);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .swsh-pokemon-selected-stack > .panel-heading,
     .sv-pokemon-selected-stack > .panel-heading,
@@ -16804,10 +17023,10 @@ select.km-select-control:dir(rtl) {
 
 /*
  * Older editor cards were authored with literal Classic navy surfaces. Keep
- * Classic unchanged while giving every Renegade editor the same graphite card
- * treatment with a restrained crimson cast.
+ * Classic unchanged while giving each dark visual theme its own card surfaces
+ * and accent treatment.
  */
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .diagnostic-group,
     .game-dump-review-bar,
@@ -16880,7 +17099,7 @@ select.km-select-control:dir(rtl) {
   border-color: color-mix(in srgb, var(--color-accent) 24%, var(--color-border));
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .za-scripted-boss-action-list
   li:not(.is-runtime-variant-normal):not(.is-runtime-variant-plus):not(.is-runtime-variant-boss) {
   background: linear-gradient(
@@ -16890,30 +17109,30 @@ select.km-select-control:dir(rtl) {
   );
 }
 
-/* Fieldset legends already use Renegade red, so keep their frame equally clear. */
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+/* Fieldset legends and frames use the same theme accent. */
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .editable-field-group {
   border-color: rgb(var(--color-accent-bright-rgb) / 38%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .move-player-damage-launch-condition.is-when-reached
   .move-player-damage-launch-condition-badge {
   color: var(--color-text-soft);
   background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-strong));
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .move-player-damage-controller-availability-heading > svg {
   color: var(--color-accent-bright);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .move-scripted-boss-owner-list svg {
   color: var(--color-text-muted);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .sidebar-utility-nav,
     .za-dex-layout-dex-heading,
@@ -16924,26 +17143,26 @@ select.km-select-control:dir(rtl) {
   border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .text-category-tabs button {
   color: var(--color-text-soft);
   background: var(--color-control-hover);
   border-color: var(--color-control-border);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .text-category-tabs button small {
   color: var(--color-text-muted);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .npc-item-gift-tab:hover {
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-accent) 13%, var(--color-surface-strong));
   border-color: rgb(var(--color-accent-bright-rgb) / 48%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .npc-item-gift-tab.is-selected {
   color: var(--color-text);
   background: linear-gradient(
@@ -16957,7 +17176,7 @@ select.km-select-control:dir(rtl) {
     inset 0 1px 0 rgb(255 255 255 / 6%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .game-dump-category.is-selected,
     .game-dump-category-filters [aria-pressed='true'],
@@ -16976,12 +17195,12 @@ select.km-select-control:dir(rtl) {
   border-color: rgb(var(--color-accent-bright-rgb) / 62%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .za-player-partner-title > svg {
   color: var(--color-accent-bright);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   :is(
     .za-dex-layout-row:hover:not(:disabled),
     .text-category-tabs button:hover:not(:disabled),
@@ -16994,59 +17213,131 @@ select.km-select-control:dir(rtl) {
   border-color: rgb(var(--color-accent-bright-rgb) / 48%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   .text-category-tabs button.is-active {
   box-shadow: inset 3px 0 0 var(--color-accent-bright);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-pill-info {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .status-pill-info {
   color: var(--color-text-soft);
   background: rgb(var(--color-accent-rgb) / 22%);
   border-color: rgb(var(--color-accent-bright-rgb) / 42%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .fatal-error-screen {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .fatal-error-screen {
   background: var(--color-bg-deep);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-ready {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .status-ready {
   color: var(--color-success);
   background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface-muted));
   border-color: rgb(var(--color-success-rgb) / 45%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-warning {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .status-warning {
   color: var(--color-warning);
   background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface-muted));
   border-color: rgb(var(--color-warning-rgb) / 48%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) .status-blocked {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .status-blocked {
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-muted));
   border-color: rgb(var(--color-danger-rgb) / 48%);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) ::-webkit-scrollbar-track,
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) ::-webkit-scrollbar-track,
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   ::-webkit-scrollbar-corner {
   background: var(--color-bg-deep);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   ::-webkit-scrollbar-thumb {
   background: var(--color-control-border);
   border-color: var(--color-bg-deep);
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast'])
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
   ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--color-accent-bright) 58%, var(--color-control-border));
 }
 
-:root[data-km-visual-theme='renegade']:not([data-km-theme='highContrast']) {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) {
   scrollbar-color: var(--color-control-border) var(--color-bg-deep);
 }
+
+:root[data-km-visual-theme='sovereign'] .brand-logo,
+:root[data-km-visual-theme='sovereign'] .game-selection-logo {
+  content: url('./assets/sovereign-logo.png');
+}
+
+.visual-theme-option-preview-sovereign {
+  --preview-canvas: #100e09;
+  --preview-surface: #292216;
+  --preview-accent: #f5c451;
+  --preview-metal: #f5c451;
+  background: radial-gradient(ellipse at 75% 25%, #805000, #100e09 75%);
+}
+
+:root[data-km-visual-theme='arcane'] .brand-logo,
+:root[data-km-visual-theme='arcane'] .game-selection-logo {
+  content: url('./assets/arcane-logo.png');
+}
+
+.visual-theme-option-preview-arcane {
+  --preview-canvas: #100b18;
+  --preview-surface: #271d34;
+  --preview-accent: #cf91ff;
+  --preview-metal: #c9c5d8;
+  background: radial-gradient(ellipse at 75% 25%, #7131a8, #100b18 75%);
+}
+
+:root[data-km-visual-theme='relic'] .brand-logo,
+:root[data-km-visual-theme='relic'] .game-selection-logo {
+  content: url('./assets/relic-logo.png');
+}
+
+.visual-theme-option-preview-relic {
+  --preview-canvas: #091512;
+  --preview-surface: #1b322b;
+  --preview-accent: #5ee6ce;
+  --preview-metal: #e9ac73;
+  background: radial-gradient(ellipse at 75% 25%, #00695e, #091512 75%);
+}
+
+.visual-theme-option-preview:is(.visual-theme-option-preview-sovereign, .visual-theme-option-preview-arcane, .visual-theme-option-preview-relic)::before {
+  inset: 12px 10px;
+  border: 1px solid var(--preview-metal);
+  border-radius: 6px;
+}
+.visual-theme-option-preview:is(.visual-theme-option-preview-sovereign, .visual-theme-option-preview-arcane, .visual-theme-option-preview-relic) .visual-theme-option-preview-surface {
+  inset: 26px 18px 22px 35%;
+  background: var(--preview-surface);
+  border: 1px solid var(--preview-metal);
+  border-radius: 4px;
+}
+.visual-theme-option-preview:is(.visual-theme-option-preview-sovereign, .visual-theme-option-preview-arcane, .visual-theme-option-preview-relic) .visual-theme-option-preview-accent {
+  inset: auto 24px 29px 45%;
+  height: 5px;
+  background: var(--preview-accent);
+  border-radius: 3px;
+}
+.visual-theme-option-preview:is(.visual-theme-option-preview-sovereign, .visual-theme-option-preview-arcane, .visual-theme-option-preview-relic) .visual-theme-option-preview-emblem {
+  top: 30px;
+  left: 17%;
+  width: 18px;
+  height: 30px;
+  background: var(--preview-metal);
+  clip-path: polygon(50% 0, 100% 35%, 65% 55%, 50% 100%, 35% 55%, 0 35%);
+}
+
+/* Keep light action text readable throughout the new dark themes' hover states. */
+:root:is([data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast'])
+  :is(.primary-button, .purple-button):hover:not(:disabled, [aria-disabled='true']) {
+  background: linear-gradient(135deg, var(--color-accent-dark), var(--color-accent-hover));
+}
+
 
 /* Royal visual treatment ----------------------------------------------------
  * Royal uses a luminous ivory canvas with warm metal structure. The selectors
@@ -17678,19 +17969,19 @@ select.km-select-control:dir(rtl) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'])
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'])
     :is(.brand-logo, .game-selection-logo, .visual-theme-option-icon) {
     transition: none;
   }
 }
 
 @media (forced-colors: active) {
-  :root[data-km-visual-theme='renegade'] body,
-  :root[data-km-visual-theme='renegade'] .app-shell,
-  :root[data-km-visual-theme='renegade'] .game-selection-shell,
-  :root[data-km-visual-theme='renegade'] .sidebar,
-  :root[data-km-visual-theme='renegade'] .toolbar,
-  :root[data-km-visual-theme='renegade']
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']) body,
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']) .app-shell,
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']) .game-selection-shell,
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']) .sidebar,
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']) .toolbar,
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'])
     :is(.game-selection-panel, .panel, .modal-panel, .km-modal, .km-settings-group) {
     color: CanvasText;
     background: Canvas;
@@ -17698,7 +17989,7 @@ select.km-select-control:dir(rtl) {
     box-shadow: none;
   }
 
-  :root[data-km-visual-theme='renegade'] :is(.brand-logo, .game-selection-logo) {
+  :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']) :is(.brand-logo, .game-selection-logo) {
     border-color: CanvasText;
     box-shadow: none;
   }
