@@ -1322,8 +1322,20 @@ internal sealed class SvWorkflowFileSource
                     : context?.PreservationRule ?? defaultPreservationRule);
             var ownedRecord = inventory.Files.FirstOrDefault(record => record.Path == relativePath);
             var isComposedExecutable = IsComposedExecutablePath(relativePath);
+            // Older combined batches claimed ordinary data under a different owner.
+            // Retain that verified claim so existing output remains editable without
+            // discarding its history or granting authority over unrelated ownership.
+            var isLegacyDataOwnership = !isComposedExecutable
+                && ownership.OwnerId.Value == "workflow.sv.output"
+                && ownedRecord is not null
+                && ownedRecord.Claims.Length > 0
+                && ownedRecord.Claims.All(claim =>
+                    claim.GameFamily == ownership.GameFamily
+                    && claim.Address == ownership.Address
+                    && claim.PreservationRule == ownership.PreservationRule
+                    && claim.OwnerId.Value is "workflow.sv.output" or "workflow.sv.mixed");
             var ownershipClaims = new[] { ownership };
-            if ((isComposedExecutable || isSharedDescriptorWrite || isSharedControlWrite)
+            if ((isComposedExecutable || isSharedDescriptorWrite || isSharedControlWrite || isLegacyDataOwnership)
                 && ownedRecord is not null)
             {
                 ValidateComposedOutputOwnership(
@@ -1333,11 +1345,13 @@ internal sealed class SvWorkflowFileSource
                     outputModeKey,
                     expectedPreimage,
                     relativePath);
-                ownershipClaims = ownedRecord.Claims
-                    .Where(claim => !isComposedExecutable || claim.OwnerId != ownership.OwnerId)
-                    .Append(ownership)
-                    .Distinct()
-                    .ToArray();
+                ownershipClaims = isLegacyDataOwnership
+                    ? ownedRecord.Claims.ToArray()
+                    : ownedRecord.Claims
+                        .Where(claim => !isComposedExecutable || claim.OwnerId != ownership.OwnerId)
+                        .Append(ownership)
+                        .Distinct()
+                        .ToArray();
             }
 
             var bytes = mutation.Bytes;
@@ -1367,7 +1381,7 @@ internal sealed class SvWorkflowFileSource
                     outputMutations.Add(OutputMutation.Delete(
                         relativePath,
                         expectedPreimage,
-                        isComposedExecutable ? owned!.Claims : [ownership],
+                        isComposedExecutable ? owned!.Claims : ownershipClaims,
                         outputModeKey));
                     EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
                     continue;

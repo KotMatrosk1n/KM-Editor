@@ -1966,7 +1966,7 @@ public sealed class SvWorkflowService
         {
             var context = new SvOutputApplyContext(
                 OutputReviewFingerprint.FromChangePlan(currentPlan),
-                new OwnershipOwnerId("workflow.sv.mixed"),
+                new OwnershipOwnerId("workflow.sv.output"),
                 currentSnapshot.EffectiveDomains
                     .Select(domain => new OutputApplyOrigin(
                         OutputApplyOriginKind.Workflow,
