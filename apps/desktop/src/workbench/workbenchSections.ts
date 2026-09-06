@@ -51,6 +51,7 @@ export const workbenchSections = [
   'randomizer',
   'gameDump',
   'gameplaySettings',
+  'modelViewer',
   'changes',
   'history',
   'settings'

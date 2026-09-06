@@ -4,6 +4,10 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string ModelUnsupported = "KM-MODEL-UNSUPPORTED";
+    public const string ModelGpuUnavailable = "KM-MODEL-GPU-UNAVAILABLE";
+    public const string ModelCancelled = "KM-MODEL-CANCELLED";
+    public const string ModelBusy = "KM-MODEL-BUSY";
     public const string EmptyRequest = "KM-BRIDGE-EMPTY-REQUEST";
     public const string RequestTooLarge = "KM-BRIDGE-REQUEST-TOO-LARGE";
     public const string ResponseTooLarge = "KM-BRIDGE-RESPONSE-TOO-LARGE";

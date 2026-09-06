@@ -757,6 +757,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.QueryBalanceLab => DispatchQueryBalanceLab(requestJson),
                 KmCommandNames.ReadGameModuleCapabilities => DispatchReadGameModuleCapabilities(requestJson),
                 KmCommandNames.QueryGameModule => DispatchQueryGameModule(requestJson),
+                KmCommandNames.ModelCatalog => DispatchModelPreview(requestJson, prepare: false),
+                KmCommandNames.ModelPrepare => DispatchModelPreview(requestJson, prepare: true),
                 KmCommandNames.ReadGuidedDesignCapabilities => DispatchReadGuidedDesignCapabilities(requestJson),
                 KmCommandNames.PreviewGuidedDesign => DispatchPreviewGuidedDesign(requestJson),
                 KmCommandNames.ImportGuidedDesignProposal => DispatchImportGuidedDesignProposal(requestJson),
@@ -1328,6 +1330,25 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(
             gameModuleApplicationService.Query(request.Payload),
             request.RequestId);
+    }
+
+    private string DispatchModelPreview(string requestJson, bool prepare)
+    {
+        try
+        {
+            if (prepare)
+            {
+                var request = DeserializeRequest<KM.Api.Models.ModelPrepareRequest>(requestJson);
+                return SerializeSuccess(ModelPreviewBridge.Prepare(request.Payload), request.RequestId);
+            }
+            var catalog = DeserializeRequest<KM.Api.Models.ModelCatalogRequest>(requestJson);
+            return SerializeSuccess(ModelPreviewBridge.Catalog(catalog.Payload), catalog.RequestId);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or OverflowException or ArgumentException or InvalidOperationException)
+        {
+            throw new BridgeRequestException("This model or catalog is not supported by the Beta preview, or its sources changed. Reload and select a supported model.",
+                exception, BridgeErrorCodes.ModelUnsupported);
+        }
     }
 
     private string DispatchReadGuidedDesignCapabilities(string requestJson)
@@ -8070,6 +8091,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.QueryBalanceLab or
             KmCommandNames.ReadGameModuleCapabilities or
             KmCommandNames.QueryGameModule or
+            KmCommandNames.ModelCatalog or
+            KmCommandNames.ModelPrepare or
             KmCommandNames.ReadGuidedDesignCapabilities or
             KmCommandNames.PreviewGuidedDesign or
             KmCommandNames.ImportGuidedDesignProposal or

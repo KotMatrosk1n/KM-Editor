@@ -27,4 +27,11 @@ tauri-plugin-shell = "2.3.5"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
+
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "26.0.1", default-features = false, features = ["std", "dx12", "wgsl"] }
+winit = "0.30.12"
+pollster = "0.4"
+glam = "0.30"
+bytemuck = { version = "1", features = ["derive"] }

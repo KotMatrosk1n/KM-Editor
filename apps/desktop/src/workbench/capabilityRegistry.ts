@@ -505,6 +505,16 @@ export const workbenchCapabilityRegistry = [
     standalone: true
   }),
   workflow({
+    description: 'Preview static models and base-color textures in a DX12 window.',
+    games: scarletVioletGames,
+    icon: ScanLine,
+    id: 'modelViewer',
+    label: '3D Model Viewer',
+    maturity: 'readOnly',
+    showInWorkflowDashboard: false,
+    standalone: true
+  }),
+  workflow({
     description: 'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
     games: allGames,
     icon: Upload,
