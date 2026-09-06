@@ -25,7 +25,9 @@ use tauri_plugin_shell::ShellExt;
 #[cfg(windows)]
 mod windows_app_identity;
 
+mod model_preview;
 mod process_memory;
+use model_preview::{model_preview_activate, model_preview_close, model_preview_open};
 
 #[tauri::command]
 async fn get_app_memory() -> Result<process_memory::MemorySnapshot, String> {
@@ -207,6 +209,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "modMerger.apply",
     "modMerger.load",
     "modMerger.stage",
+    "models.catalog",
+    "models.prepare",
     "moves.field.update",
     "moves.fields.update",
     "moves.load",
@@ -2452,7 +2456,9 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
         );
 
     let (bounded_execution_timeout, bounded_retry_after_transport_failure) =
-        if is_replay_safe_edit_session_command(command) {
+        if command == "models.prepare" {
+            (PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT, false)
+        } else if is_replay_safe_edit_session_command(command) {
             (PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT, true)
         } else if matches!(
             command,
@@ -2522,6 +2528,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
                     | "semanticMerge.source.open"
                     | "gameModules.capabilities"
                     | "gameModules.query"
+                    | "models.catalog"
                     | "modMerger.stage"
                     | "svModMerger.stage"
                     | "zaModMerger.stage"
@@ -2555,7 +2562,10 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
         };
 
     Some(ProjectBridgeRequestPolicy {
-        retains_session_handles: matches!(command, "semanticMerge.source.open" | "researchLab.source.open"),
+        retains_session_handles: matches!(
+            command,
+            "semanticMerge.source.open" | "researchLab.source.open"
+        ),
         execution_timeout,
         retry_after_transport_failure,
         concurrency,
@@ -2662,7 +2672,10 @@ fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeComm
         Some(ProjectBridgeReadAffinity::SemanticExplore)
     } else if command == "semantic.balance-lab" {
         Some(ProjectBridgeReadAffinity::BalanceLab)
-    } else if matches!(command, "gameModules.capabilities" | "gameModules.query") {
+    } else if matches!(
+        command,
+        "gameModules.capabilities" | "gameModules.query" | "models.catalog" | "models.prepare"
+    ) {
         Some(ProjectBridgeReadAffinity::GameModules)
     } else if matches!(
         command,
@@ -3706,6 +3719,7 @@ pub fn run() {
             shutdown_started: AtomicBool::new(false),
         })
         .manage(SupportSearchState::default())
+        .manage(model_preview::PreviewState::default())
         .manage(ProjectBridgeState::default())
         .manage(project_bridge_trace)
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -3724,6 +3738,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_app_memory,
+            model_preview_activate,
+            model_preview_open,
+            model_preview_close,
             project_bridge,
             recycle_project_bridge,
             create_directory,

@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.model-viewer { display: flex; flex-direction: column; gap: 1rem; }
+.model-viewer__header, .model-viewer__toolbar, .model-viewer__actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.model-viewer__header h2, .model-viewer__header p { margin: 0 0 .4rem; }
+.model-viewer__note, .model-viewer__error { padding: .8rem; border: 1px solid currentColor; border-radius: .5rem; }
+.model-viewer__error code { white-space: nowrap; }

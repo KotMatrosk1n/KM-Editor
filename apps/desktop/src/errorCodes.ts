@@ -16,6 +16,10 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  modelUnsupported: "KM-MODEL-UNSUPPORTED",
+  modelGpuUnavailable: "KM-MODEL-GPU-UNAVAILABLE",
+  modelCancelled: "KM-MODEL-CANCELLED",
+  modelBusy: "KM-MODEL-BUSY",
   accessDenied: "KM-BRIDGE-ACCESS-DENIED",
   dataInvalid: "KM-BRIDGE-DATA-INVALID",
   dataLayoutInvalid: "KM-BRIDGE-DATA-LAYOUT-INVALID",

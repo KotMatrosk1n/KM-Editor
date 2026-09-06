@@ -788,6 +788,7 @@ import {
 
 const GameModulesRuntime = lazy(() => import('./features/game-modules/GameModulesRuntime'));
 const ResearchLabRuntime = lazy(() => import('./features/research-lab/ResearchLabRuntime'));
+const ModelViewerSection = lazy(() => import('./features/model-viewer/ModelViewerSection'));
 
 const appVersion = tauriConfig.version;
 const legacyWorkspaceProjectIdPlaceholder = `km1_${'0'.repeat(64)}`;
@@ -22142,6 +22143,11 @@ export function App({
               onRecoveryRequired={handleGameplaySettingsRecoveryRequired}
               scope={outputSafetyScope}
             />
+          ) : null}
+          {activeSection === 'modelViewer' ? (
+            <Suspense fallback={<section className="panel wide-panel" role="status">{t('modelViewer.loading')}</section>}>
+              <ModelViewerSection key={activeProjectId ?? 'unselected'} paths={gameDumpPaths} />
+            </Suspense>
           ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection

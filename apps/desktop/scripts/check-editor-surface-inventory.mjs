@@ -161,6 +161,7 @@ const editorSurfaceInventory = {
   randomizer: ['src/features/randomizer/RandomizerSection.tsx', 'RandomizerSection', 'utility-input'],
   gameDump: ['src/features/game-dump/GameDumpSection.tsx', 'GameDumpSection', 'utility-input'],
   gameplaySettings: ['src/features/gameplay-settings/GameplaySettingsSection.tsx', 'GameplaySettingsSection', 'choice-local-draft'],
+  modelViewer: ['src/features/model-viewer/ModelViewerSection.tsx', 'ModelViewerSection', 'utility-input'],
   changes: ['src/App.tsx', 'ChangesSection', 'utility-input'],
   history: ['src/features/output-safety/OutputHistoryPage.tsx', 'OutputHistoryPage', 'utility-input'],
   settings: ['src/App.tsx', 'SettingsSection', 'utility-input']

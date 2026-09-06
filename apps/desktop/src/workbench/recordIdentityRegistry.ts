@@ -122,6 +122,7 @@ const registrations = {
   randomizer: operationScoped('randomizer'),
   gameDump: operationScoped('gameDump'),
   gameplaySettings: operationScoped('gameplaySettings'),
+  modelViewer: operationScoped('modelViewer'),
   changes: notRecordScoped('changes'),
   history: notRecordScoped('history'),
   settings: operationScoped('settings')
