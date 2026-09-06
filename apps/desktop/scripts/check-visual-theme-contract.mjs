@@ -177,7 +177,7 @@ assert.match(
 );
 assert.match(
   app,
-  /\{ id: 'themes', icon: Palette, label: t\('settings\.themes\.title'\) \}/,
+  /\{ id: 'themes', icon: Palette, label: t\('settings\.tabs\.layoutThemes'\) \}/,
   'The Themes tab must use the existing palette icon and localized title.'
 );
 assert.match(

@@ -8,6 +8,7 @@ type MemoryGroup = {
   unreadableCount: number;
   privateRamBytes: number | null;
   committedBytes: number | null;
+  gpuLocalBytes?: number | null;
 };
 export type MemorySnapshot = Record<'desktop' | 'workers' | 'webView' | 'total', MemoryGroup> & {
   system: { totalBytes: number; availableBytes: number } | null;
@@ -108,8 +109,23 @@ export function setHeaderMemoryEnabled(enabled: boolean) {
   window.dispatchEvent(new Event(preferenceEvent));
 }
 
-export function formatCompactMemory(bytes: number | null, locale: string, unavailable: string) {
-  if (bytes === null) return unavailable;
+export function formatCompactMemory(bytes: number | null | undefined, locale: string, unavailable: string) {
+  if (bytes == null) return unavailable;
   const gib = bytes >= 1024 ** 3;
   return `${(bytes / 1024 ** (gib ? 3 : 2)).toLocaleString(locale, { maximumFractionDigits: gib ? 1 : 0 })} ${gib ? 'GiB' : 'MiB'}`;
+}
+
+export const headerVramStorageKey = 'km-editor.header-vram.enabled';
+let sessionVramPreference: boolean | undefined;
+function readVramPreference() {
+  if (sessionVramPreference !== undefined) return sessionVramPreference;
+  try { return localStorage.getItem(headerVramStorageKey) === 'true'; } catch { return false; }
+}
+export function useHeaderVramEnabled() {
+  return useSyncExternalStore(subscribePreference, readVramPreference, () => false);
+}
+export function setHeaderVramEnabled(enabled: boolean) {
+  try { localStorage.setItem(headerVramStorageKey, String(enabled)); sessionVramPreference = undefined; }
+  catch { sessionVramPreference = enabled; }
+  window.dispatchEvent(new Event(preferenceEvent));
 }
