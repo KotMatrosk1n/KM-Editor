@@ -336,6 +336,7 @@ import {
   type LocalizationContextValue
 } from './localization';
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
+import { getItemMachineCompatibilityRows, itemMachineCompatibilityGroup, setItemMachineCompatibilityDrafts, type ItemMachineCompatibilityRow } from './features/items/itemMachineCompatibility';
 import { getContextualItemEditableFields } from './itemsEditor';
 import {
   evaluateMoveFieldsUpdate,
@@ -12609,7 +12610,7 @@ export function App({
         case 'items':
           await Promise.all([
             !currentState.itemsWorkflow ? handleOpenItemsWorkflow() : Promise.resolve(),
-            isPokemonLegendsZAGame(location.game) && !currentState.pokemonWorkflow
+            !currentState.pokemonWorkflow
               ? handleOpenPokemonWorkflow()
               : Promise.resolve()
           ]);
@@ -12948,14 +12949,13 @@ export function App({
       case 'items':
         if (
           (!itemsWorkflow && !isItemsLoading) ||
-          (isPokemonLegendsZAGame(selectedGame) && !pokemonWorkflow && !isPokemonLoading)
+          (!pokemonWorkflow && !isPokemonLoading)
         ) {
           markLazyLoadStarted();
           if (!itemsWorkflow && !isItemsLoading) {
             void handleOpenItemsWorkflow();
           }
           if (
-            isPokemonLegendsZAGame(selectedGame) &&
             !pokemonWorkflow &&
             !isPokemonLoading
           ) {
@@ -15831,7 +15831,7 @@ export function App({
     }
   };
 
-  const handleStageZaItemDrafts = async (
+  const handleStageItemDrafts = async (
     itemId: number,
     itemChanges: Array<{ field: string; value: string }>,
     pokemonChanges: Array<{ field: string; personalId: number; value: string }>
@@ -20886,7 +20886,7 @@ export function App({
                 isItemUpdating={isItemUpdating}
                 isPokemonLoading={isPokemonLoading}
                 isPokemonUpdating={isPokemonUpdating}
-                onStageItemDrafts={handleStageZaItemDrafts}
+                onStageItemDrafts={handleStageItemDrafts}
                 pokemonWorkflow={pokemonWorkflow}
                 workflow={itemsWorkflow}
               />
@@ -20904,6 +20904,10 @@ export function App({
                 editSession={getEditSessionForSection('items')}
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
+                isPokemonLoading={isPokemonLoading}
+                isPokemonUpdating={isPokemonUpdating}
+                onStageItemDrafts={handleStageItemDrafts}
+                pokemonWorkflow={pokemonWorkflow}
                 workflow={itemsWorkflow}
               />
             ) : (
@@ -20920,6 +20924,10 @@ export function App({
                 editSession={getEditSessionForSection('items')}
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
+                isPokemonLoading={isPokemonLoading}
+                isPokemonUpdating={isPokemonUpdating}
+                onStageItemDrafts={handleStageItemDrafts}
+                pokemonWorkflow={pokemonWorkflow}
                 workflow={itemsWorkflow}
               />
             )
@@ -23735,8 +23743,8 @@ function SelectedItemPanel({
   );
   const itemDraftKey = item ? getItemStorageDraftKey(item) : null;
   const technicalMachineCompatibilityRows = useMemo(
-    () => getZaTechnicalMachinePokemonCompatibilityRows(item, pokemonWorkflow),
-    [item, pokemonWorkflow]
+    () => getItemMachineCompatibilityRows(item, pokemonWorkflow, editorFamily),
+    [item, pokemonWorkflow, editorFamily]
   );
   const technicalMachineCompatibilityDraftDefaults = useMemo(
     () =>
@@ -23775,7 +23783,7 @@ function SelectedItemPanel({
           return row
             ? [
                 {
-                  field: createPokemonCompatibilityFieldName('tm', row.entry.slot),
+                  field: createPokemonCompatibilityFieldName(row.groupId, row.entry.slot),
                   personalId,
                   value
                 }
@@ -23931,8 +23939,8 @@ function SelectedItemPanel({
   const selectedTechnicalMachineCompatibilityFields = useMemo(
     () =>
       new Set(
-        technicalMachineCompatibilityRows.map(({ entry }) =>
-          createPokemonCompatibilityFieldName('tm', entry.slot)
+        technicalMachineCompatibilityRows.map(({ entry, groupId }) =>
+          createPokemonCompatibilityFieldName(groupId, entry.slot)
         )
       ),
     [technicalMachineCompatibilityRows]
@@ -23950,7 +23958,7 @@ function SelectedItemPanel({
             (isPokemonLoading ||
               !pokemonWorkflow ||
               pokemonWorkflow.summary.availability !== 'available') &&
-            edit.field.startsWith('compatibility:tm:')))
+            edit.field.startsWith(`compatibility:${itemMachineCompatibilityGroup(item, editorFamily) ?? 'tm'}:`)))
     ) ??
       false);
   const technicalMachineMoveDraftBlockedReason =
@@ -23984,6 +23992,8 @@ function SelectedItemPanel({
     canEditItems &&
     !isItemUpdating &&
     !isPokemonUpdating &&
+    !(isPokemonLoading && localTechnicalMachineCompatibilityDraftCount > 0) &&
+    !(hasProtectedPokemonDrafts && localTechnicalMachineCompatibilityDraftCount > 0) &&
     !hasConflictingTechnicalMachineDrafts &&
     !hasUnavailableTechnicalMachineCompatibilityDrafts &&
     stagedItemDraftCount > 0 &&
@@ -24001,11 +24011,12 @@ function SelectedItemPanel({
   );
   const filteredTechnicalMachineCompatibilityRows = useMemo(
     () =>
-      filterZaTechnicalMachinePokemonCompatibilityRows(
+      filterItemMachinePokemonCompatibilityRows(
         visibleTechnicalMachineCompatibilityRows,
-        compatibilitySearchText
+        compatibilitySearchText,
+        editorFamily
       ),
-    [compatibilitySearchText, visibleTechnicalMachineCompatibilityRows]
+    [compatibilitySearchText, editorFamily, visibleTechnicalMachineCompatibilityRows]
   );
   const enabledTechnicalMachineCompatibilityCount =
     visibleTechnicalMachineCompatibilityRows.filter(
@@ -24013,10 +24024,9 @@ function SelectedItemPanel({
         technicalMachineCompatibilityDrafts[pokemon.personalId.toString()] === '1'
     ).length;
   const showTechnicalMachineCompatibility =
-    editorFamily === 'za' &&
     item !== null &&
-    (item.metadata.isOwnedTechnicalMachineSlot ||
-      (item.metadata.machineSlot !== null && item.metadata.machineMoveId !== null));
+    ((editorFamily === 'za' && item.metadata.isOwnedTechnicalMachineSlot) ||
+      itemMachineCompatibilityGroup(item, editorFamily) !== null);
   const canEditTechnicalMachineCompatibility =
     item !== null &&
     item.metadata.machineMoveId !== null &&
@@ -24029,7 +24039,8 @@ function SelectedItemPanel({
     !hasProtectedPokemonDrafts &&
     !isEditStarting &&
     !isItemUpdating &&
-    !isPokemonUpdating;
+    !isPokemonUpdating &&
+    !isPokemonLoading;
 
   useEffect(() => {
     if (!item) {
@@ -24449,6 +24460,28 @@ function SelectedItemPanel({
                       total: visibleTechnicalMachineCompatibilityRows.length
                     })}
                   </p>
+                  <div className="compatibility-actions" role="group" aria-label={t('pokemon.compatibility.actions')}>
+                    {([true, false] as const).map((enabled) => (
+                      <button
+                        key={String(enabled)}
+                        className={enabled ? 'primary-button' : 'danger-button'}
+                        disabled={!canEditTechnicalMachineCompatibility || visibleTechnicalMachineCompatibilityRows.length === 0 ||
+                          (enabled ? enabledTechnicalMachineCompatibilityCount === visibleTechnicalMachineCompatibilityRows.length : enabledTechnicalMachineCompatibilityCount === 0)}
+                        onClick={() => {
+                          if (!canEditTechnicalMachineCompatibility) return;
+                          setCompatibilityDraftsByItemId((currentDrafts) => {
+                            const recordKey = getItemStorageDraftKey(item);
+                            const nextDrafts = setItemMachineCompatibilityDrafts(
+                              { ...technicalMachineCompatibilityDraftDefaults, ...(currentDrafts[recordKey] ?? {}) },
+                              visibleTechnicalMachineCompatibilityRows.map(({ pokemon }) => pokemon.personalId), enabled);
+                            return setSparseFieldDraftRecord(currentDrafts, recordKey, nextDrafts, technicalMachineCompatibilityDraftDefaults);
+                          });
+                        }}
+                        type="button"
+                      >{t(enabled ? 'pokemon.compatibility.enable' : 'pokemon.compatibility.disable')}</button>
+                    ))}
+                  </div>
+                  <small className="field-note">{t('items.compatibility.bulkScope')}</small>
                   <div className="za-tm-compatibility-toolbar">
                     <label className="search-box compatibility-search">
                       <Search aria-hidden="true" size={16} />
@@ -24503,7 +24536,7 @@ function SelectedItemPanel({
                             type="checkbox"
                           />
                           <span data-localization-ignore="true">
-                            {formatPokemonRecordName(pokemon, 'za')}
+                            {formatPokemonRecordName(pokemon, editorFamily)}
                           </span>
                           <small>
                             {t('za.items.compatibility.personalId', {
@@ -60228,39 +60261,10 @@ function isUnusedProjectedTechnicalMachineSlot(item: ItemRecord) {
   );
 }
 
-type ZaTechnicalMachinePokemonCompatibilityRow = {
-  entry: PokemonCompatibilityGroup['entries'][number];
-  pokemon: PokemonRecord;
-};
-
-function getZaTechnicalMachinePokemonCompatibilityRows(
-  item: ItemRecord | null,
-  workflow: PokemonWorkflow | null
-): ZaTechnicalMachinePokemonCompatibilityRow[] {
-  const moveId = item?.metadata.machineMoveId;
-  if (moveId === null || moveId === undefined || !workflow) {
-    return [];
-  }
-
-  return workflow.pokemon
-    .filter((pokemon) => !isPlaceholderPokemonRecord(pokemon))
-    .flatMap((pokemon) => {
-      const entry = pokemon.compatibility
-        .find((group) => group.groupId === 'tm')
-        ?.entries.find((candidate) => candidate.moveId === moveId);
-      return entry ? [{ entry, pokemon }] : [];
-    })
-    .sort(
-      (left, right) =>
-        left.pokemon.speciesId - right.pokemon.speciesId ||
-        left.pokemon.form - right.pokemon.form ||
-        left.pokemon.personalId - right.pokemon.personalId
-    );
-}
-
-function filterZaTechnicalMachinePokemonCompatibilityRows(
-  rows: ZaTechnicalMachinePokemonCompatibilityRow[],
-  searchText: string
+function filterItemMachinePokemonCompatibilityRows(
+  rows: ItemMachineCompatibilityRow[],
+  searchText: string,
+  editorFamily: 'swsh' | 'sv' | 'za'
 ) {
   const normalizedSearch = normalizeItemSearchValue(searchText);
   if (normalizedSearch.length === 0) {
@@ -60273,7 +60277,7 @@ function filterZaTechnicalMachinePokemonCompatibilityRows(
       pokemon.speciesId.toString(),
       pokemon.name,
       pokemon.formLabel,
-      formatPokemonRecordName(pokemon, 'za'),
+      formatPokemonRecordName(pokemon, editorFamily),
       pokemon.type1,
       pokemon.type2,
       pokemon.personal.isPresentInGame ? 'present' : 'not present',

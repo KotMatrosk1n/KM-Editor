@@ -24,7 +24,7 @@ const appSource = read('src/App.tsx');
 const featureVisibilitySource = read('src/workbench/featureVisibility.ts');
 const zaItemsStageHandler = sourceSection(
   appSource,
-  'const handleStageZaItemDrafts = async (',
+  'const handleStageItemDrafts = async (',
   'const handleStageItemVanilla = async ('
 );
 const editSessionMutation = sourceSection(

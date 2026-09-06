@@ -225,21 +225,21 @@
 /* Dark visual palettes yield to the accessibility overrides below. */
 :root[data-km-visual-theme='sovereign'] {
   color: #fff6e5;
-  background: #0c0a06;
-  --color-bg: #0c0a06;
-  --color-bg-deep: #050403;
-  --color-canvas: #100e09;
-  --color-sidebar: #0b0905;
-  --color-surface: #1b1710;
-  --color-surface-strong: #292216;
-  --color-surface-muted: #120f0a;
-  --color-surface-soft: #211b12;
-  --color-border: #453922;
-  --color-border-strong: #7c6540;
-  --color-control-border: #715c38;
-  --color-control: #15110b;
-  --color-control-hover: #282014;
-  --color-popover: #17130d;
+  background: #0d0d0c;
+  --color-bg: #0d0d0c;
+  --color-bg-deep: #070809;
+  --color-canvas: #0d0d0c;
+  --color-sidebar: #0d0d0c;
+  --color-surface: #191918;
+  --color-surface-strong: #242320;
+  --color-surface-muted: #111110;
+  --color-surface-soft: #1f1e1b;
+  --color-border: #414039;
+  --color-border-strong: #777365;
+  --color-control-border: #6d695d;
+  --color-control: #151513;
+  --color-control-hover: #2b2924;
+  --color-popover: #171714;
   --color-text: #fff6e5;
   --color-text-muted: #c0b39a;
   --color-text-soft: #e8d8b8;
@@ -268,7 +268,7 @@
   --color-focus-ring: var(--color-focus);
   --color-on-accent: #fff;
   --color-overlay: rgb(2 3 4 / 82%);
-  --color-tooltip: #17130d;
+  --color-tooltip: #171714;
   --color-tooltip-border: #7c6540;
   --shadow-panel:
     0 22px 64px rgb(0 0 0 / 46%),
@@ -279,6 +279,9 @@
   --theme-sidebar-background: linear-gradient(180deg, var(--color-surface-muted), var(--color-sidebar));
   --theme-toolbar-background: linear-gradient(180deg, var(--color-surface-strong), var(--color-popover));
   --theme-picker-background: linear-gradient(135deg, var(--color-bg-deep), var(--color-canvas));
+  --theme-secondary: #e1d7c0;
+  --theme-secondary-rgb: 225 215 192;
+  --theme-secondary-dark: #403b31;
   --theme-body-end: var(--color-canvas);
   /* Compatibility aliases used by a few bounded workflow surfaces. */
   --surface: var(--color-surface);
@@ -292,21 +295,21 @@
 
 :root[data-km-visual-theme='arcane'] {
   color: #f6f1ff;
-  background: #0c0811;
-  --color-bg: #0c0811;
-  --color-bg-deep: #050308;
-  --color-canvas: #100b18;
-  --color-sidebar: #0a0610;
-  --color-surface: #191321;
-  --color-surface-strong: #271d34;
-  --color-surface-muted: #110c19;
-  --color-surface-soft: #21182d;
-  --color-border: #40344e;
-  --color-border-strong: #79688c;
-  --color-control-border: #685676;
-  --color-control: #150e1e;
-  --color-control-hover: #281c38;
-  --color-popover: #170f22;
+  background: #0e0d10;
+  --color-bg: #0e0d10;
+  --color-bg-deep: #070809;
+  --color-canvas: #0e0d10;
+  --color-sidebar: #0e0d10;
+  --color-surface: #1a191e;
+  --color-surface-strong: #25232b;
+  --color-surface-muted: #121115;
+  --color-surface-soft: #201e26;
+  --color-border: #423e4b;
+  --color-border-strong: #797383;
+  --color-control-border: #6c6576;
+  --color-control: #16151a;
+  --color-control-hover: #2c2933;
+  --color-popover: #18171d;
   --color-text: #f6f1ff;
   --color-text-muted: #bcb0cb;
   --color-text-soft: #ded4ee;
@@ -335,7 +338,7 @@
   --color-focus-ring: var(--color-focus);
   --color-on-accent: #fff;
   --color-overlay: rgb(2 3 4 / 82%);
-  --color-tooltip: #170f22;
+  --color-tooltip: #18171d;
   --color-tooltip-border: #79688c;
   --shadow-panel:
     0 22px 64px rgb(0 0 0 / 46%),
@@ -346,6 +349,9 @@
   --theme-sidebar-background: linear-gradient(180deg, var(--color-surface-muted), var(--color-sidebar));
   --theme-toolbar-background: linear-gradient(180deg, var(--color-surface-strong), var(--color-popover));
   --theme-picker-background: linear-gradient(135deg, var(--color-bg-deep), var(--color-canvas));
+  --theme-secondary: #c9c5d8;
+  --theme-secondary-rgb: 201 197 216;
+  --theme-secondary-dark: #3a3744;
   --theme-body-end: var(--color-canvas);
   /* Compatibility aliases used by a few bounded workflow surfaces. */
   --surface: var(--color-surface);
@@ -359,21 +365,21 @@
 
 :root[data-km-visual-theme='relic'] {
   color: #effbf5;
-  background: #050e0d;
-  --color-bg: #050e0d;
-  --color-bg-deep: #020706;
-  --color-canvas: #091512;
-  --color-sidebar: #050d0b;
-  --color-surface: #10221e;
-  --color-surface-strong: #1b322b;
-  --color-surface-muted: #0a1814;
-  --color-surface-soft: #162a23;
-  --color-border: #34483e;
-  --color-border-strong: #79664c;
-  --color-control-border: #5b7768;
-  --color-control: #0c1c17;
-  --color-control-hover: #20392e;
-  --color-popover: #0e201a;
+  background: #0c0f0e;
+  --color-bg: #0c0f0e;
+  --color-bg-deep: #070809;
+  --color-canvas: #0c0f0e;
+  --color-sidebar: #0c0f0e;
+  --color-surface: #181d1b;
+  --color-surface-strong: #222a27;
+  --color-surface-muted: #101513;
+  --color-surface-soft: #1e2522;
+  --color-border: #3e4943;
+  --color-border-strong: #768279;
+  --color-control-border: #64746a;
+  --color-control: #141a17;
+  --color-control-hover: #29322e;
+  --color-popover: #161c19;
   --color-text: #effbf5;
   --color-text-muted: #a6c1b6;
   --color-text-soft: #cce3d8;
@@ -402,7 +408,7 @@
   --color-focus-ring: var(--color-focus);
   --color-on-accent: #fff;
   --color-overlay: rgb(2 3 4 / 82%);
-  --color-tooltip: #0e201a;
+  --color-tooltip: #161c19;
   --color-tooltip-border: #79664c;
   --shadow-panel:
     0 22px 64px rgb(0 0 0 / 46%),
@@ -413,6 +419,9 @@
   --theme-sidebar-background: linear-gradient(180deg, var(--color-surface-muted), var(--color-sidebar));
   --theme-toolbar-background: linear-gradient(180deg, var(--color-surface-strong), var(--color-popover));
   --theme-picker-background: linear-gradient(135deg, var(--color-bg-deep), var(--color-canvas));
+  --theme-secondary: #e9ac73;
+  --theme-secondary-rgb: 233 172 115;
+  --theme-secondary-dark: #523c2d;
   --theme-body-end: var(--color-canvas);
   /* Compatibility aliases used by a few bounded workflow surfaces. */
   --surface: var(--color-surface);
@@ -426,21 +435,21 @@
 
 :root[data-km-visual-theme='sword-shield'] {
   color: #f0f7ff;
-  background: #070d16;
-  --color-bg: #070d16;
-  --color-bg-deep: #03060b;
-  --color-canvas: #0b1422;
-  --color-sidebar: #060b14;
-  --color-surface: #121f31;
-  --color-surface-strong: #20334a;
-  --color-surface-muted: #0c1523;
-  --color-surface-soft: #192b40;
-  --color-border: #364a64;
-  --color-border-strong: #8799b1;
-  --color-control-border: #596f8b;
-  --color-control: #0e192a;
-  --color-control-hover: #223953;
-  --color-popover: #101c2e;
+  background: #0d0e12;
+  --color-bg: #0d0e12;
+  --color-bg-deep: #070809;
+  --color-canvas: #0d0e12;
+  --color-sidebar: #0d0e12;
+  --color-surface: #191b22;
+  --color-surface-strong: #252831;
+  --color-surface-muted: #111319;
+  --color-surface-soft: #20232b;
+  --color-border: #414653;
+  --color-border-strong: #7b8294;
+  --color-control-border: #687184;
+  --color-control: #15171e;
+  --color-control-hover: #2c303b;
+  --color-popover: #171a21;
   --color-text: #f0f7ff;
   --color-text-muted: #b2c3db;
   --color-text-soft: #d7e5f7;
@@ -469,7 +478,7 @@
   --color-focus-ring: var(--color-focus);
   --color-on-accent: #fff;
   --color-overlay: rgb(2 3 4 / 82%);
-  --color-tooltip: #101c2e;
+  --color-tooltip: #171a21;
   --color-tooltip-border: #8799b1;
   --shadow-panel:
     0 22px 64px rgb(0 0 0 / 46%),
@@ -496,21 +505,21 @@
 
 :root[data-km-visual-theme='scarlet-violet'] {
   color: #fff3f5;
-  background: #13090f;
-  --color-bg: #13090f;
-  --color-bg-deep: #080308;
-  --color-canvas: #1a0d18;
-  --color-sidebar: #10070e;
-  --color-surface: #251321;
-  --color-surface-strong: #392034;
-  --color-surface-muted: #190d17;
-  --color-surface-soft: #301a2b;
-  --color-border: #58354b;
-  --color-border-strong: #b58c66;
-  --color-control-border: #80536c;
-  --color-control: #1d0f1b;
-  --color-control-hover: #402139;
-  --color-popover: #22111f;
+  background: #110d11;
+  --color-bg: #110d11;
+  --color-bg-deep: #070809;
+  --color-canvas: #110d11;
+  --color-sidebar: #110d11;
+  --color-surface: #20191f;
+  --color-surface-strong: #2c232b;
+  --color-surface-muted: #161116;
+  --color-surface-soft: #261e25;
+  --color-border: #4d3f4a;
+  --color-border-strong: #8d7686;
+  --color-control-border: #7a6272;
+  --color-control: #1b151a;
+  --color-control-hover: #352932;
+  --color-popover: #1d171c;
   --color-text: #fff3f5;
   --color-text-muted: #d2b4c7;
   --color-text-soft: #efdae7;
@@ -539,7 +548,7 @@
   --color-focus-ring: var(--color-focus);
   --color-on-accent: #fff;
   --color-overlay: rgb(2 3 4 / 82%);
-  --color-tooltip: #22111f;
+  --color-tooltip: #1d171c;
   --color-tooltip-border: #b58c66;
   --shadow-panel:
     0 22px 64px rgb(0 0 0 / 46%),
@@ -566,21 +575,21 @@
 
 :root[data-km-visual-theme='legends-za'] {
   color: #f0fff4;
-  background: #070e0b;
-  --color-bg: #070e0b;
-  --color-bg-deep: #030805;
-  --color-canvas: #0c1911;
-  --color-sidebar: #060d09;
-  --color-surface: #14271c;
-  --color-surface-strong: #223e2c;
-  --color-surface-muted: #0e1d14;
-  --color-surface-soft: #1b3223;
-  --color-border: #385743;
-  --color-border-strong: #8b9e91;
-  --color-control-border: #587663;
-  --color-control: #102218;
-  --color-control-hover: #294a34;
-  --color-popover: #12261b;
+  background: #0d100f;
+  --color-bg: #0d100f;
+  --color-bg-deep: #070809;
+  --color-canvas: #0d100f;
+  --color-sidebar: #0d100f;
+  --color-surface: #191e1c;
+  --color-surface-strong: #252c29;
+  --color-surface-muted: #111614;
+  --color-surface-soft: #202723;
+  --color-border: #414d46;
+  --color-border-strong: #7b8c80;
+  --color-control-border: #687c6f;
+  --color-control: #151b18;
+  --color-control-hover: #2d3731;
+  --color-popover: #171e1a;
   --color-text: #f0fff4;
   --color-text-muted: #b3cbb9;
   --color-text-soft: #d9eedf;
@@ -609,7 +618,7 @@
   --color-focus-ring: var(--color-focus);
   --color-on-accent: #fff;
   --color-overlay: rgb(2 3 4 / 82%);
-  --color-tooltip: #12261b;
+  --color-tooltip: #171e1a;
   --color-tooltip-border: #8b9e91;
   --shadow-panel:
     0 22px 64px rgb(0 0 0 / 46%),
@@ -17480,11 +17489,11 @@ select.km-select-control:dir(rtl) {
 }
 
 .visual-theme-option-preview-sovereign {
-  --preview-canvas: #100e09;
-  --preview-surface: #292216;
+  --preview-canvas: #0d0d0c;
+  --preview-surface: #242320;
   --preview-accent: #f5c451;
   --preview-metal: #f5c451;
-  background: radial-gradient(ellipse at 75% 25%, #805000, #100e09 75%);
+  background: linear-gradient(110deg, rgb(245 196 81 / 16%), transparent 48%, rgb(225 215 192 / 18%)), var(--preview-canvas);
 }
 
 :root[data-km-visual-theme='arcane'] .brand-logo,
@@ -17493,11 +17502,11 @@ select.km-select-control:dir(rtl) {
 }
 
 .visual-theme-option-preview-arcane {
-  --preview-canvas: #100b18;
-  --preview-surface: #271d34;
+  --preview-canvas: #0e0d10;
+  --preview-surface: #25232b;
   --preview-accent: #cf91ff;
   --preview-metal: #c9c5d8;
-  background: radial-gradient(ellipse at 75% 25%, #7131a8, #100b18 75%);
+  background: linear-gradient(110deg, rgb(207 145 255 / 16%), transparent 48%, rgb(201 197 216 / 18%)), var(--preview-canvas);
 }
 
 :root[data-km-visual-theme='relic'] .brand-logo,
@@ -17506,11 +17515,11 @@ select.km-select-control:dir(rtl) {
 }
 
 .visual-theme-option-preview-relic {
-  --preview-canvas: #091512;
-  --preview-surface: #1b322b;
+  --preview-canvas: #0c0f0e;
+  --preview-surface: #222a27;
   --preview-accent: #5ee6ce;
   --preview-metal: #e9ac73;
-  background: radial-gradient(ellipse at 75% 25%, #00695e, #091512 75%);
+  background: linear-gradient(110deg, rgb(94 230 206 / 16%), transparent 48%, rgb(233 172 115 / 18%)), var(--preview-canvas);
 }
 
 .visual-theme-option-preview:is(.visual-theme-option-preview-sovereign, .visual-theme-option-preview-arcane, .visual-theme-option-preview-relic, .visual-theme-option-preview-sword-shield, .visual-theme-option-preview-scarlet-violet, .visual-theme-option-preview-legends-za)::before {
@@ -17552,11 +17561,11 @@ select.km-select-control:dir(rtl) {
 }
 
 .visual-theme-option-preview-sword-shield {
-  --preview-canvas: #0b1422;
-  --preview-surface: #20334a;
+  --preview-canvas: #0d0e12;
+  --preview-surface: #252831;
   --preview-accent: #71c9ff;
   --preview-metal: #d7e1f0;
-  background: radial-gradient(ellipse at 10% 15%, #155c9c, transparent 70%), radial-gradient(ellipse at 95% 85%, #68234e, #0b1422 80%);
+  background: linear-gradient(110deg, rgb(113 201 255 / 16%), transparent 48%, rgb(255 121 196 / 18%)), var(--preview-canvas);
 }
 
 :root[data-km-visual-theme='scarlet-violet'] .brand-logo,
@@ -17565,11 +17574,11 @@ select.km-select-control:dir(rtl) {
 }
 
 .visual-theme-option-preview-scarlet-violet {
-  --preview-canvas: #1a0d18;
-  --preview-surface: #392034;
+  --preview-canvas: #110d11;
+  --preview-surface: #2c232b;
   --preview-accent: #ff929e;
   --preview-metal: #f5cb77;
-  background: radial-gradient(ellipse at 10% 15%, #a32b43, transparent 70%), radial-gradient(ellipse at 95% 85%, #472769, #1a0d18 80%);
+  background: linear-gradient(110deg, rgb(255 146 158 / 16%), transparent 48%, rgb(197 140 255 / 18%)), var(--preview-canvas);
 }
 
 :root[data-km-visual-theme='legends-za'] .brand-logo,
@@ -17578,11 +17587,11 @@ select.km-select-control:dir(rtl) {
 }
 
 .visual-theme-option-preview-legends-za {
-  --preview-canvas: #0c1911;
-  --preview-surface: #223e2c;
+  --preview-canvas: #0d100f;
+  --preview-surface: #252c29;
   --preview-accent: #8cec9e;
   --preview-metal: #d8e3db;
-  background: radial-gradient(ellipse at 10% 15%, #24683b, transparent 70%), radial-gradient(ellipse at 95% 85%, #51284a, #0c1911 80%);
+  background: linear-gradient(110deg, rgb(140 236 158 / 16%), transparent 48%, rgb(239 141 221 / 18%)), var(--preview-canvas);
 }
 
 /* Game identities pair their primary accent with the emblem's second color. */
@@ -18283,5 +18292,48 @@ select.km-select-control:dir(rtl) {
     background: Canvas;
     border-color: CanvasText;
     box-shadow: none;
+  }
+}
+
+/* Quiet surfaces leave the emblem colors to actions, selection and small highlights. */
+@media (forced-colors: none) {
+  :root:is([data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast'], [data-km-theme='colorSafe']) {
+    --theme-toolbar-background: linear-gradient(110deg,
+      color-mix(in srgb, var(--color-accent-bright) 8%, var(--color-surface)),
+      var(--color-surface-muted) 45%,
+      color-mix(in srgb, var(--theme-secondary) 10%, var(--color-surface)));
+    --color-focus: var(--theme-secondary);
+  }
+
+  :root:is([data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast'], [data-km-theme='colorSafe'])
+    :is(.panel-heading, .section-heading) > svg {
+    color: var(--theme-secondary);
+  }
+
+  :root:is([data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast'], [data-km-theme='colorSafe'])
+    :is(
+      .nav-button[aria-current='page'], .nav-button:hover,
+      .items-row:not(.items-row-heading):hover, .moves-row:not(.moves-row-heading):hover,
+      .text-row:not(.text-row-heading):hover, .trainers-row:not(.trainers-row-heading):hover,
+      .shops-row:not(.shops-row-heading):hover, .encounters-row:not(.encounters-row-heading):hover,
+      .raid-rewards-row:not(.raid-rewards-row-heading):hover,
+      .flagwork-row:not(.flagwork-row-heading):hover, .exefs-row:not(.exefs-row-heading):hover,
+      .learnset-row:hover, .searchable-option-row:hover, .trainer-party-card:hover,
+      .items-row-selected, .moves-row-selected, .text-row-selected,
+      .trainers-row-selected, .shops-row-selected, .encounters-row-selected,
+      .raid-rewards-row-selected, .flagwork-row-selected, .exefs-row-selected,
+      .learnset-row-selected, .searchable-option-row.is-active,
+      .trainer-party-card[aria-pressed='true'], .npc-item-gift-tab.is-selected,
+      .placement-object-picker-row[aria-selected='true'],
+      .sv-encounter-condition-row-selected, .za-encounter-group-row-selected,
+      .za-encounter-placement-row-selected, .condition-tab-button[aria-selected='true'],
+      .slot-tab-button[aria-pressed='true']
+    ) {
+    color: var(--color-text);
+    background: linear-gradient(110deg,
+      color-mix(in srgb, var(--theme-secondary-dark) 65%, var(--color-surface)),
+      color-mix(in srgb, var(--theme-secondary-dark) 30%, var(--color-surface)));
+    border-color: color-mix(in srgb, var(--theme-secondary) 60%, var(--color-border));
+    box-shadow: inset 3px 0 0 var(--theme-secondary), var(--shadow-inset);
   }
 }
