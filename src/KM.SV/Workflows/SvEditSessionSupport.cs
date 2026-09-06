@@ -224,7 +224,7 @@ internal static class SvEditSessionSupport
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
             diagnostics,
-            outputTransaction);
+            outputTransaction).Complete(currentPlan);
     }
 
     public static ProjectFileReference GeneratedReference(

@@ -128,7 +128,7 @@ public sealed class OutputSafetyApplicationService
                 cancellationToken)
             .ConfigureAwait(false);
         var scopedOwnershipByPath = inventory.Inventory.Files
-            .Where(file => file.ProjectId == context.ProjectId && file.GameFamily == context.GameFamily)
+            .Where(file => context.Coordinator.ProjectScopeMatches(file.ProjectId, context.ProjectId) && file.GameFamily == context.GameFamily)
             .ToDictionary(
             file => file.Path.CanonicalKey,
             file => file,
@@ -325,7 +325,7 @@ public sealed class OutputSafetyApplicationService
 
         var history = await context.Coordinator.GetHistorySnapshotAsync(cancellationToken).ConfigureAwait(false);
         var receipts = history.Receipts
-            .Where(receipt => receipt.ProjectId == context.ProjectId && receipt.GameFamily == context.GameFamily)
+            .Where(receipt => context.Coordinator.ProjectScopeMatches(receipt.ProjectId, context.ProjectId) && receipt.GameFamily == context.GameFamily)
             .OrderByDescending(receipt => receipt.CompletedAtUtc)
             .ThenByDescending(receipt => receipt.TransactionId.Value, StringComparer.Ordinal)
             .ToArray();
@@ -366,7 +366,7 @@ public sealed class OutputSafetyApplicationService
             list.Revision.Value,
             integrity.Revision.Value,
             list.Checkpoints
-                .Where(checkpoint => checkpoint.ProjectId == context.ProjectId
+                .Where(checkpoint => context.Coordinator.ProjectScopeMatches(checkpoint.ProjectId, context.ProjectId)
                     && checkpoint.GameFamily == context.GameFamily)
                 .OrderByDescending(checkpoint => checkpoint.CreatedAtUtc)
                 .Select(ToDto)
@@ -392,7 +392,7 @@ public sealed class OutputSafetyApplicationService
             .ConfigureAwait(false);
         var list = await context.Coordinator.ListCheckpointsAsync(cancellationToken).ConfigureAwait(false);
         var scopedCheckpoints = list.Checkpoints
-            .Where(existing => existing.ProjectId == context.ProjectId
+            .Where(existing => context.Coordinator.ProjectScopeMatches(existing.ProjectId, context.ProjectId)
                 && existing.GameFamily == context.GameFamily)
             .OrderByDescending(existing => existing.CreatedAtUtc)
             .Select(ToDto)
@@ -808,7 +808,7 @@ public sealed class OutputSafetyApplicationService
         var list = await context.Coordinator.ListCheckpointsAsync(cancellationToken).ConfigureAwait(false);
         var match = list.Checkpoints.FirstOrDefault(checkpoint => checkpoint.Id == checkpointId);
         if (match is null
-            || match.ProjectId != context.ProjectId
+            || !context.Coordinator.ProjectScopeMatches(match.ProjectId, context.ProjectId)
             || match.GameFamily != context.GameFamily)
         {
             throw new OutputCheckpointNotFoundException(checkpointId);
@@ -829,7 +829,7 @@ public sealed class OutputSafetyApplicationService
     {
         var history = await context.Coordinator.GetHistoryAsync(cancellationToken).ConfigureAwait(false);
         return history
-            .Where(receipt => receipt.ProjectId == context.ProjectId && receipt.GameFamily == context.GameFamily)
+            .Where(receipt => context.Coordinator.ProjectScopeMatches(receipt.ProjectId, context.ProjectId) && receipt.GameFamily == context.GameFamily)
             .Where(IsCurrentOutputModeReceipt)
             .OrderByDescending(receipt => receipt.CompletedAtUtc)
             .Select(receipt => receipt.OutputMode)

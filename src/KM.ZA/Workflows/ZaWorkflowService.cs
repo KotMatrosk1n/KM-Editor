@@ -2292,7 +2292,7 @@ public sealed class ZaWorkflowService
                     domainPlan,
                     domain,
                     outputMode);
-                diagnostics.AddRange(result.Diagnostics);
+                diagnostics.AddRange(result.Complete(domainPlan).Diagnostics);
                 writtenFiles.AddRange(result.WrittenFiles);
 
                 if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))

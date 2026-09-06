@@ -1186,8 +1186,7 @@ internal sealed class ZaWorkflowFileSource
         var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
         const string romFsPrefix = "romfs/";
         return inventory.Files
-            .Where(record => record.ProjectId == projectId
-                && record.GameFamily == GameFamily.LegendsZA
+            .Where(record => coordinator.OwnershipScopeMatches(record, projectId, GameFamily.LegendsZA)
                 && string.Equals(record.OutputMode, ToOutputModeKey(ZaOutputMode.Standalone), StringComparison.Ordinal)
                 && record.Path.Value.StartsWith(romFsPrefix, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(record.Path.Value, $"romfs/{DescriptorVirtualPath}", StringComparison.OrdinalIgnoreCase)
@@ -2022,6 +2021,7 @@ internal sealed class ZaWorkflowFileSource
             if (isComposedExecutable && ownedRecord is not null)
             {
                 ValidateComposedExecutableOwnership(
+                    coordinator,
                     ownedRecord,
                     projectId,
                     GameFamily.LegendsZA,
@@ -2301,6 +2301,7 @@ internal sealed class ZaWorkflowFileSource
     }
 
     private static void ValidateComposedExecutableOwnership(
+        OutputTransactionCoordinator coordinator,
         OutputOwnershipRecord owned,
         ProjectId projectId,
         GameFamily gameFamily,
@@ -2308,8 +2309,7 @@ internal sealed class ZaWorkflowFileSource
         OutputFileState expectedPreimage,
         RelativeOutputPath relativePath)
     {
-        if (owned.ProjectId != projectId
-            || owned.GameFamily != gameFamily
+        if (!coordinator.OwnershipScopeMatches(owned, projectId, gameFamily)
             || owned.CurrentState != expectedPreimage
             || !AreComposedExecutableOutputModesCompatible(
                 owned.OutputMode,

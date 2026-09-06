@@ -18,21 +18,20 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 - Review normal changes in one staged plan, with dedicated previews for advanced workflows that need their own write boundary.
 - Keep unfinished work organized through project navigation, record tabs, recents, pins, bookmarks, saved views, notes, and read-only analysis tools.
 - Build Trainer teams across multiple records, reuse copied party members, and stage the complete retained draft with one **Stage Trainer Changes** action.
-
-Legends Z-A also includes Fashion Catalog editing and searchable, read-only Game Tools for static map markers, named flags and work variables, and Pokemon resources. These tools help identify existing game data; browsing a catalog does not create a mod. See [Game Tools](https://github.com/KotMatrosk1n/KM-Editor/wiki/Game-Tools) and the [Legends Z-A guide](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) for coverage and limits.
-
-Beta Gameplay Settings provides reviewed native in-game controls on the exact builds listed below. Native packages are update-specific, preserve compatible KM-managed executable output, and block unverified conflicts. See [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings) for supported paths, installation, removal, and important limits.
+- Browse Scarlet and Violet models and animations in the read-only [3D Model Viewer](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Viewer) under Beta Editors.
 
 Exact editor and advanced-tool coverage differs by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) is the authoritative feature guide for the latest public release.
 
 ## Start Building
 
 1. Install the latest Windows release.
-2. Open KM Editor and choose the exact game you want to edit.
+2. Choose your game in the welcome hub, then select **Open** for that game.
 3. Open **Project Setup** and select clean Base RomFS and Base ExeFS folders.
 4. Choose a separate, non-overlapping Output Root for the generated mod.
 5. Select **Validate Paths**.
 6. Open an editor, save or stage your changes, then review the output plan before applying it.
+
+The welcome hub shows game-filtered release notes and restores saved project paths. Loading game data and preparing caches wait until you select **Validate Paths**.
 
 Optional Scarlet/Violet data support requires an external user-selected dependency folder. Legends Z-A archive-backed editors also require a user-selected support folder. See [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) for the complete path requirements.
 
@@ -42,11 +41,11 @@ Regular users do not need .NET, Node.js, Rust, Git, or a separate backend instal
 
 ## Three Games, Three Dedicated Toolsets
 
-| Game family                | Beta Gameplay Settings build | Complete guide                                                                                            |
-| -------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Pokémon Sword and Shield   | 1.3.2                        | [Sword and Shield Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview)     |
-| Pokémon Scarlet and Violet | 4.0.0                        | [Scarlet and Violet Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
-| Pokémon Legends Z-A        | 2.0.2                        | [Legends Z-A Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview)               |
+| Game family | Complete guide |
+| --- | --- |
+| Pokémon Sword and Shield | [Sword and Shield Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview) |
+| Pokémon Scarlet and Violet | [Scarlet and Violet Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
+| Pokémon Legends Z-A | [Legends Z-A Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) |
 
 Data models, supported editors, and output rules differ by game. Depending on the workflow, KM Editor can produce standard LayeredFS output or layouts for supported Trinity Mod Manager setups. Keep a separate Output Root for each game.
 
@@ -56,7 +55,7 @@ Normal editor changes are staged before they are applied. Open **Changes** to in
 
 Unstaged drafts and staged changes are separate. Moving to Changes preserves staged work; if a local draft still needs attention, the warning identifies that draft before you discard it. Review checks the combined session against current source and output files, and a failed final review blocks output even when the individual edits passed validation.
 
-Clean Base RomFS and Base ExeFS inputs remain untouched. KM Editor writes to a separate Output Root, tracks KM-managed output separately from foreign or uncertain files, and stops when ownership, source state, or a write target cannot be verified.
+Clean Base RomFS and Base ExeFS inputs remain untouched. KM Editor writes to a separate Output Root and provides output history, checkpoints, and recovery tools. Existing output stays editable after configuration changes, including changes to support folders; current file checks still protect reviewed writes.
 
 ## Learn More
 

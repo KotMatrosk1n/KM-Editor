@@ -913,7 +913,7 @@ public sealed class OutputTransactionCoordinator
                     continue;
                 }
 
-                if (journal.ProjectId != projectId
+                if (!ProjectScopeMatches(journal.ProjectId, projectId)
                     || journal.GameFamily != gameFamily)
                 {
                     continue;
@@ -972,9 +972,9 @@ public sealed class OutputTransactionCoordinator
                 integrityCounts,
                 inventory.Files.Count(record => OwnershipScopeMatches(record, projectId, gameFamily)),
                 checkpoints.Checkpoints.Count(checkpoint =>
-                    checkpoint.ProjectId == projectId && checkpoint.GameFamily == gameFamily),
+                    ProjectScopeMatches(checkpoint.ProjectId, projectId) && checkpoint.GameFamily == gameFamily),
                 history.Receipts.Count(receipt =>
-                    receipt.ProjectId == projectId && receipt.GameFamily == gameFamily),
+                    ProjectScopeMatches(receipt.ProjectId, projectId) && receipt.GameFamily == gameFamily),
                 DateTimeOffset.UtcNow);
         }
         finally
@@ -1049,7 +1049,7 @@ public sealed class OutputTransactionCoordinator
         }
 
         var existingInScope = existing
-            .Where(manifest => manifest.Summary.ProjectId == projectId
+            .Where(manifest => ProjectScopeMatches(manifest.Summary.ProjectId, projectId)
                                && manifest.Summary.GameFamily == gameFamily)
             .OrderBy(manifest => manifest.Summary.CreatedAtUtc)
             .ThenBy(manifest => manifest.Summary.Id.Value, StringComparer.Ordinal)
@@ -4192,7 +4192,7 @@ public sealed class OutputTransactionCoordinator
 
         var inventory = await ReadInventoryAsync(cancellationToken).ConfigureAwait(false);
         var scoped = inventory.CreatedDirectories
-            .Where(record => record.ProjectId == projectId
+            .Where(record => ProjectScopeMatches(record.ProjectId, projectId)
                              && record.GameFamily == gameFamily
                              && provenKeys.Contains(record.AuthorizationTarget.CanonicalKey))
             .ToImmutableArray();
@@ -4838,13 +4838,21 @@ public sealed class OutputTransactionCoordinator
         return builder.ToImmutable();
     }
 
-    private static bool OwnershipScopeMatches(
+    public bool OwnershipScopeMatches(
         OutputOwnershipRecord record,
         ProjectId projectId,
         GameFamily gameFamily)
     {
-        return record.ProjectId == projectId
+        return ProjectScopeMatches(record.ProjectId, projectId)
                && record.GameFamily == gameFamily;
+    }
+
+    public bool ProjectScopeMatches(ProjectId recordedProjectId, ProjectId requestedProjectId)
+    {
+        // The private workspace already binds metadata to the exact game and
+        // physical output folder. Configuration ids are provenance, not a lock
+        // on files that the user has selected to continue editing.
+        return workspace is not null || recordedProjectId == requestedProjectId;
     }
 
     private static bool IsFatal(Exception exception)

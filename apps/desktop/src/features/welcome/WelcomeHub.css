@@ -50,7 +50,7 @@
 .welcome-filters button[aria-pressed='true'] { border-color: var(--color-accent-bright); background: rgb(var(--color-accent-rgb) / 17%); color: var(--color-text); }
 .welcome-panel .welcome-filter-help { color: var(--color-text-muted); font-size: .8rem; margin: .25rem 0 1.25rem; }
 .welcome-release-summary { color: var(--color-text-soft); font-size: 1.03rem; line-height: 1.65; }
-.welcome-release-section, .welcome-announcement { border-top: 1px solid var(--color-border); margin-top: 1.6rem; padding-top: 1.4rem; }
+.welcome-release-section { border-top: 1px solid var(--color-border); margin-top: 1.6rem; padding-top: 1.4rem; }
 .welcome-panel h3, .welcome-featured h3 { font-size: 1.13rem; line-height: 1.4; margin-bottom: .65rem; }
 .welcome-release-section ul { padding-left: 1.15rem; margin: .6rem 0 0; }
 .welcome-release-section li { padding-left: .3rem; margin-bottom: .65rem; color: var(--color-text-muted); line-height: 1.7; }
@@ -58,8 +58,7 @@
 .welcome-expand { margin-top: 1.2rem; }
 .welcome-content-links { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.3rem; }
 .welcome-content-links a { display: inline-flex; align-items: center; gap: .5rem; color: var(--color-text-soft); }
-.welcome-announcement p, .welcome-featured p { color: var(--color-text-muted); line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
-.welcome-announcement time { display: block; color: var(--color-text-muted); font-size: .8rem; margin-bottom: .5rem; }
+.welcome-featured p { color: var(--color-text-muted); line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
 .welcome-featured { display: flex; gap: 1.5rem; align-items: flex-start; padding: 1.4rem; margin-top: 1.2rem; }
 .welcome-featured img { width: 3.8rem; height: 3.8rem; border-radius: .5rem; }
 .welcome-featured > div { min-width: 0; overflow-wrap: anywhere; }

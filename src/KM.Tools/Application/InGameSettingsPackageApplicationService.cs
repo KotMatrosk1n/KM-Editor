@@ -593,7 +593,8 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
                 context.GameFamily,
                 targetReviews,
                 loaded.Ownership,
-                GameplayBundleSettingsRemoval.Remove)
+                GameplayBundleSettingsRemoval.Remove,
+                context.Coordinator)
             .ApplyPlan;
     }
 
@@ -1305,7 +1306,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         {
             if (!records.TryGetValue(path.CanonicalKey, out var record)
                 || !string.Equals(record.Path.Value, path.Value, StringComparison.Ordinal)
-                || record.ProjectId != context.ProjectId
+                || !context.Coordinator.ProjectScopeMatches(record.ProjectId, context.ProjectId)
                 || record.GameFamily != context.GameFamily
                 || !string.Equals(
                     record.OutputMode,
@@ -1460,7 +1461,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             candidate.Path.CanonicalKey == path.CanonicalKey);
         if (record is not null
             && (dependency is null
-                || record.ProjectId != context.ProjectId
+                || !context.Coordinator.ProjectScopeMatches(record.ProjectId, context.ProjectId)
                 || record.GameFamily != context.GameFamily
                 || record.CurrentState != dependency.ExpectedState
                 || record.RuntimeMutableDescriptor is not null))

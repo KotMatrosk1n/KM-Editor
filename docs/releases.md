@@ -47,10 +47,19 @@ Use the GitHub Actions UI when a release should be created from the final pull r
 5. Leave `prerelease` unchecked for normal releases.
 6. Review the generated draft assets and replace the generated notes with the final changelog and comparison link.
 7. Publish the completed draft release from GitHub.
+8. Verify the live release body. Replace any generated notes with the reviewed `docs/release-notes/<version>.md` changelog and confirm its comparison link.
 
 For a manual run, `gh release create` creates the requested tag at the workflow SHA if it does not already exist. A tag-push run uses the tag that triggered it.
 
 The tag must match the desktop app version and point to a pull request merge whose tree matches its build-checked head. For example, `v0.1.0` requires the app version to be `0.1.0`.
+
+## Bundled Welcome Notes
+
+Finalize the welcome hub content before merging the release candidate and starting packaging. In `apps/desktop/src/features/welcome/content.json`, check the exact release version, summary, game-family audiences, shared changes, developer message, and comparison link against the final changelog. Follow the [welcome content guide](../apps/desktop/src/features/welcome/README.md) and run `pnpm --filter @km-editor/desktop check:welcome`.
+
+Check the notes under all five game selections and the all-games filter. Shared changes must remain visible under each game filter. Confirm the installed version selects the intended entry and that the developer card contains the approved message.
+
+Welcome content is embedded in the desktop build. Editing GitHub release notes after publication does not update an installed application's welcome hub. A correction to bundled content requires another application build. GitHub release notes remain separately editable and should contain the curated changelog and version comparison link.
 
 ## Tag Release
 

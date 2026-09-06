@@ -6115,7 +6115,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     NormalSwShApplyMutationHook?.Invoke(index, GetEditSessionDomainName(domain));
                     var domainSession = SliceSession(session, domain);
                     var domainPlan = CreateSingleSwShChangePlan(paths, domainSession, domain);
-                    var result = ApplySingleSwShChangePlan(paths, domainSession, domainPlan, domain);
+                    var result = ApplySingleSwShChangePlan(paths, domainSession, domainPlan, domain).Complete(domainPlan);
                     diagnostics.AddRange(result.Diagnostics);
                     writtenFiles.AddRange(result.WrittenFiles);
 
@@ -6207,7 +6207,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             appliedAt,
             writtenFiles,
             new WriteManifest(applyId, appliedAt, currentPlan.Writes),
-            diagnostics);
+            diagnostics).Complete(currentPlan);
     }
 
     private static bool TryGetNormalSwShDomains(

@@ -13,4 +13,27 @@ if (!result.success) {
   process.exitCode = 1;
 } else {
   console.log(`Welcome content valid: ${result.data.releases.length} releases, ${result.data.announcements.length} announcements.`);
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const release = result.data.releases.find(entry => entry.version === version);
+  if (!release) {
+    console.error(`Welcome content: missing notes for application version ${version}.`);
+    process.exitCode = 1;
+  } else {
+    const comparison = release.links.find(link => link.label.en === 'Full changelog');
+    const expected = ['## Highlights', '', release.summary.en, ''];
+    for (const section of release.sections) {
+      expected.push(`## ${section.title.en}`, '', ...section.items.map(item => `* ${item.body.en}`), '');
+    }
+    expected.push(`**Full Changelog**: ${comparison?.url ?? ''}`, '');
+    try {
+      const notes = readFileSync(new URL(`../../../docs/release-notes/${version}.md`, import.meta.url), 'utf8');
+      if (!comparison || notes.replaceAll('\r\n', '\n').trim() !== expected.join('\n').trim()) {
+        throw new Error('The bundled English notes and curated release changelog must match.');
+      }
+      console.log(`Welcome release notes match the ${version} changelog.`);
+    } catch {
+      console.error(`Welcome content: missing or mismatched docs/release-notes/${version}.md.`);
+      process.exitCode = 1;
+    }
+  }
 }

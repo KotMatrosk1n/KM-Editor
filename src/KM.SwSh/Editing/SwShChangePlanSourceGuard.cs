@@ -1303,7 +1303,7 @@ public static class SwShChangePlanSourceGuard
                     .GetResult();
                 if (outputResult.Outcome == OutputApplyOutcome.Committed)
                 {
-                    return result with { OutputTransaction = outputResult };
+                    return (result with { OutputTransaction = outputResult }).Complete(CurrentPlan);
                 }
 
                 diagnostics.Add(CreateReadDiagnostic(

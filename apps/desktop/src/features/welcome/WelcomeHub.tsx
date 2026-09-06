@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowRight, BookOpen, ChevronRight, FileText, GitFork, Megaphone, Play, Settings, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BookOpen, ChevronRight, FileText, GitFork, Play, Settings, TriangleAlert, type LucideIcon } from 'lucide-react';
 import type { ProjectGame } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
@@ -9,7 +9,7 @@ import { getSectionWikiUrl } from '../../wikiLinks';
 import { appliesToGame, contentText, gameFamily, readWelcomeGame, rememberWelcomeGame, welcomeContent, type WelcomeContent } from './welcomeContent';
 import './WelcomeHub.css';
 
-type HubTab = 'news' | 'announcements' | 'start';
+type HubTab = 'news' | 'start';
 type GameDefinition = { icon: LucideIcon; label: string };
 export type WelcomeHubProps = {
   games: readonly ProjectGame[]; definitions: Record<ProjectGame, GameDefinition>; logo: string; version: string;
@@ -40,7 +40,7 @@ export default function WelcomeHub({ games, definitions, logo, version, configur
   const release = content.releases.find(item => item.version === version);
   const announcements = content.announcements.filter(item => appliesToGame(item.audience, game));
   const featured = announcements.find(item => item.featured);
-  const tabs = [{ id: 'news', icon: FileText }, { id: 'announcements', icon: Megaphone }, { id: 'start', icon: BookOpen }] as const;
+  const tabs = [{ id: 'news', icon: FileText }, { id: 'start', icon: BookOpen }] as const;
   const text = (value: Parameters<typeof contentText>[0]) => contentText(value, interfaceLocale);
   const selectGame = (value: ProjectGame) => { setGame(value); rememberWelcomeGame(value); setActionError(null); };
   async function open() {
@@ -118,10 +118,6 @@ export default function WelcomeHub({ games, definitions, logo, version, configur
                   <button className="secondary-button welcome-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{t(expanded ? 'welcome.less' : 'welcome.complete')}</button>
                   {links(release.links)}
                 </> : <p className="welcome-empty">{t('welcome.noRelease')}</p>}
-              </> : tab === 'announcements' ? <>
-                <span className="welcome-eyebrow">{t('welcome.sharedIncluded')}</span><h2>{t('welcome.tab.announcements')}</h2>
-                {announcements.length ? announcements.map(item => <article className="welcome-announcement" key={item.id} data-localization-ignore="true">
-                  {item.published ? <time dateTime={item.published}>{item.published}</time> : null}<h3>{text(item.title)}</h3><p>{text(item.body)}</p>{links(item.links)}</article>) : <p className="welcome-empty">{t('welcome.noAnnouncements')}</p>}
               </> : <>
                 <span className="welcome-eyebrow">{gameName}</span><h2>{t('welcome.tab.start')}</h2><p>{t('welcome.startIntro')}</p>
                 <ol className="welcome-steps"><li><h3>{t('welcome.step.setup')}</h3><p>{t(`welcome.start.${gameFamily(game)}`)}</p></li>
