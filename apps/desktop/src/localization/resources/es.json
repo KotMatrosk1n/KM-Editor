@@ -54,6 +54,7 @@
     "modelViewer.category.environment": "Entorno",
     "modelViewer.category.other": "Otros o sin clasificar",
     "modelViewer.variant": "Forma {form}, variante {gender}",
+    "modelViewer.shiny": "Variocolor",
     "modelViewer.selectModel": "Selecciona un modelo",
     "modelViewer.resetCamera": "Restablecer cámara",
     "modelViewer.frame": "Encuadrar modelo",
@@ -77,8 +78,8 @@
     "modelViewer.warning.sharedSkeletonUnavailable": "Esta parte del personaje necesita un esqueleto compartido. Se muestra en su pose guardada sin animación esquelética.",
     "modelViewer.title": "Visor de modelos 3D",
     "modelViewer.description": "Explora modelos y anímalos directamente en la vista DX12 integrada.",
-    "modelViewer.scope": "Beta: animación esquelética, pistas de visibilidad y materiales con capas de color. La iluminación y la interpolación son aproximadas. Los efectos, las deformaciones y algunas animaciones de materiales aún no son compatibles.",
-    "modelViewer.unsupportedGame": "Esta Beta admite actualmente proyectos de Escarlata y Púrpura.",
+    "modelViewer.scope": "Animación esquelética, pistas de visibilidad y materiales con capas de color. La iluminación y la interpolación son aproximadas. Los efectos, las deformaciones y algunas animaciones de materiales no son compatibles.",
+    "modelViewer.unsupportedGame": "Selecciona un proyecto de Sword, Shield, Scarlet, Violet o Legends Z-A para explorar modelos.",
     "modelViewer.desktopRequired": "Abre KM Editor en Windows para usar el visor de modelos DX12.",
     "modelViewer.search": "Buscar nombre, número o modelo",
     "modelViewer.reload": "Recargar catálogo",
@@ -3872,6 +3873,8 @@
     "modelViewer.backgroundStyle": "Estilo del fondo",
     "modelViewer.backgroundSolid": "Sólido",
     "modelViewer.backgroundGrid": "Cuadrícula de estudio",
+    "modelViewer.hue": "Tono",
+    "modelViewer.saturationBrightness": "Saturación y brillo",
     "modelViewer.backgroundColor": "Color del fondo"
   },
   "literals": {

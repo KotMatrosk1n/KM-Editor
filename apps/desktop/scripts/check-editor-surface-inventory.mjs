@@ -174,6 +174,7 @@ const editorSurfaceInventory = {
  * makes an unclassified input-bearing TSX file a test failure.
  */
 const embeddedEditableSurfaceInventory = {
+  modelViewerPalette: ['src/features/model-viewer/ViewerColorPicker.tsx', 'ViewerColorPicker', 'utility-input'],
   balanceLab: ['src/features/balance-lab/BalanceLabSection.tsx', 'BalanceLabSection', 'utility-input'],
   balanceLabCharts: ['src/features/balance-lab/BalanceLabCharts.tsx', 'BalanceLabChart', 'utility-input'],
   dynamaxAdventureSeedPlanner: ['src/features/dynamax-adventures/DynamaxAdventureSeedPlanner.tsx', 'DynamaxAdventureSeedPlanner', 'raw-local-draft'],

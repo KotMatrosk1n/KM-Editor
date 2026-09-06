@@ -73,7 +73,8 @@ public static class PreviewRigReader
         if (frames is < 1 or > 18000 || rate is < 1 or > 240) throw new InvalidDataException("Animation timing is unsupported.");
         var tracks = new List<PreviewBoneTrack>();
         var seen = new HashSet<int>();
-        foreach (var entry in data.Tables(data.Table(data.Root, 1), 0, 512))
+        var skeletal = data.Table(data.Root, 1);
+        foreach (var entry in skeletal == 0 ? [] : data.Tables(skeletal, 0, 512))
         {
             var index = Array.FindIndex(bones, b => b.Name == data.Text(entry, 0));
             if (index < 0) continue;

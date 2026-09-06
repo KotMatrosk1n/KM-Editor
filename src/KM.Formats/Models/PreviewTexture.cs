@@ -15,7 +15,12 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         var info = Pointer(Pointer(40));
         if (!data.Slice(info, 4).SequenceEqual("BRTI"u8)) throw new InvalidDataException("Texture information is missing.");
         var format = data.U32(info + 28);
-        var blockBytes = format switch { 0x1d01 => 8, 0x1e01 or 0x2001 or 0x2006 => 16, _ => throw new InvalidDataException("Texture compression is not supported by this preview.") };
+        var blockBytes = format switch
+        {
+            0x1a01 or 0x1a06 or 0x1d01 => 8,
+            0x1b01 or 0x1b06 or 0x1c01 or 0x1c06 or 0x1e01 or 0x2001 or 0x2006 => 16,
+            _ => throw new InvalidDataException("Texture compression is not supported by this preview.")
+        };
         var width = checked((int)data.U32(info + 36)); var height = checked((int)data.U32(info + 40));
         if (width is < 1 or > 4096 || height is < 1 or > 4096
             || data.U32(info + 44) != 1 || data.U32(info + 48) != 1)

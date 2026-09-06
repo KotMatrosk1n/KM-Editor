@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ScanLine } from 'lucide-react';
+import { Box } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { kmCommandNames, projectPathsSchema, type ProjectPaths } from '../../bridge/contracts';
@@ -9,11 +9,12 @@ import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditor
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import { modelError, useModelViewport, type ModelBackground } from './useModelViewport';
+import { ViewerColorPicker } from './ViewerColorPicker';
 import './ModelViewerSection.css';
 
 const catalogSchema = z.array(z.object({
   id: z.string().max(1024), species: z.number().int(), form: z.number().int(), gender: z.number().int(), name: z.string(),
-  category: z.enum(['pokemon', 'trainers', 'npcs', 'objects', 'environment', 'other']).default('pokemon')
+  category: z.enum(['pokemon', 'trainers', 'npcs', 'objects', 'environment', 'other']).default('pokemon'), shiny: z.boolean().default(false)
 })).max(8192);
 type Entry = z.infer<typeof catalogSchema>[number];
 const backgroundKey = 'km-editor.model-viewer.background';
@@ -21,19 +22,6 @@ const backgroundSchema = z.object({ color: z.string().regex(/^#[0-9a-f]{6}$/i), 
 function readBackground(): ModelBackground {
   try { return backgroundSchema.parse(JSON.parse(localStorage.getItem(backgroundKey) ?? 'null')); }
   catch { return { color: '#343b44', grid: false }; }
-}
-function RgbChannel({ channel, value, onChange }: { channel: string; value: number; onChange: (value: number) => void }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => { setDraft(String(value)); }, [value]);
-  const edit = (raw: string) => {
-    setDraft(raw);
-    const parsed = Number(raw);
-    if (/^\d{1,3}$/.test(raw) && parsed <= 255) onChange(parsed);
-  };
-  return <label data-localization-ignore="true">{channel}
-    <input type="number" min="0" max="255" step="1" aria-label={`RGB ${channel}`} value={draft}
-      onChange={event => edit(event.target.value)} onBlur={() => setDraft(String(value))} />
-  </label>;
 }
 export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
   const { t } = useLocalization();
@@ -52,11 +40,11 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
     try { localStorage.setItem(backgroundKey, JSON.stringify(background)); } catch { /* Session controls remain usable when storage is unavailable. */ }
   }, [background]);
   const pathKey = JSON.stringify(paths);
-  const supported = paths.selectedGame === 'scarlet' || paths.selectedGame === 'violet';
+  const supported = ['sword', 'shield', 'scarlet', 'violet', 'za'].some(game => game === paths.selectedGame);
   const viewer = useModelViewport(paths, selected, animation, revision, false, background);
   const error = catalogError ?? viewer.error;
   useEffect(() => {
-    setCatalog([]); setSelected(''); setAnimation(null); setCatalogError(null);
+    setCatalog([]); setSelected(''); setAnimation(null); setCatalogError(null); setLoading(false);
     if (!supported || !isTauri()) return;
     let active = true; setLoading(true);
     void (async () => {
@@ -71,6 +59,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
     })();
     return () => { active = false; };
   }, [pathKey, supported, revision]);
+  useEffect(() => { setQuery(''); setCategory('all'); }, [pathKey]);
   useEffect(() => { setLoop(viewer.info?.looped ?? false); setSpeed('1'); }, [viewer.info]);
   const categories = useMemo(() => [...new Set(catalog.map(entry => entry.category))], [catalog]);
   const groups = useMemo(() => {
@@ -90,7 +79,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
     (viewer.info?.warnings ?? []).map(warning => ({ code: 'KM-MODEL-PARTIAL', domain: 'workflow.modelViewer', message: t(`modelViewer.warning.${warning}`), severity: 'warning' })));
   const select = (id: string) => { setSelected(id); setAnimation(null); };
   return <section className="panel wide-panel model-viewer" aria-labelledby="model-viewer-title">
-    <header className="model-viewer__header"><ScanLine aria-hidden="true" size={22} />
+    <header className="model-viewer__header"><Box aria-hidden="true" size={22} />
       <div><h2 id="model-viewer-title">{t('modelViewer.title')}</h2><p>{t('modelViewer.description')}</p></div>
     </header>
     <p className="model-viewer__note">{t('modelViewer.scope')}</p>
@@ -112,6 +101,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
                 <summary data-localization-ignore="true">{group[0].species > 0 ? `#${group[0].species} ` : ''}{group[0].name} <span>({group.length})</span></summary>
                 {group.map(item => <button key={item.id} type="button" aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>
                   {item.species > 0 ? t('modelViewer.variant', { form: item.form, gender: item.gender }) : item.name}
+                  {item.shiny ? ` · ${t('modelViewer.shiny')}` : ''}
                 </button>)}
               </details>)}
             </div>
@@ -130,12 +120,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
               value={background.grid ? 'grid' : 'solid'} onChange={value => setBackground(current => ({ ...current, grid: value === 'grid' }))}
               options={[{ value: 'solid', label: t('modelViewer.backgroundSolid') }, { value: 'grid', label: t('modelViewer.backgroundGrid') }]} />
             <label htmlFor="model-background-color">{t('modelViewer.backgroundColor')}</label>
-            <input id="model-background-color" type="color" value={background.color} onChange={event => setBackground(current => ({ ...current, color: event.target.value }))} />
-            <div className="model-viewer__rgb">
-              {(['R', 'G', 'B'] as const).map((channel, index) => <RgbChannel key={channel} channel={channel}
-                value={parseInt(background.color.slice(1 + index * 2, 3 + index * 2), 16)}
-                onChange={value => setBackground(current => ({ ...current, color: current.color.slice(0, 1 + index * 2) + value.toString(16).padStart(2, '0') + current.color.slice(3 + index * 2) }))} />)}
-            </div>
+            <ViewerColorPicker color={background.color} onChange={color => setBackground(current => ({ ...current, color }))} />
           </div>
           <div ref={viewer.viewport} className="model-viewer__viewport" tabIndex={0} role="region" aria-label={t('modelViewer.viewport')}
             style={{ backgroundColor: background.color }}

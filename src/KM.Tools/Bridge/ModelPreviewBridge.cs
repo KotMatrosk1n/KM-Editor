@@ -2,18 +2,34 @@
 using KM.Api.Models;
 using KM.Core.Projects;
 using KM.SV.Models;
+using KM.SwSh.Models;
+using KM.ZA.Models;
 namespace KM.Tools.Bridge;
 
 internal static class ModelPreviewBridge
 {
-    internal static object Catalog(ModelCatalogRequest request) =>
-        new SvModelPreviewService().Catalog(Open(request.Paths));
+    internal static object Catalog(ModelCatalogRequest request)
+    {
+        var project = Open(request.Paths);
+        return project.Paths.SelectedGame switch
+        {
+            ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Catalog(project),
+            ProjectGame.ZA => new ZaModelPreviewService().Catalog(project),
+            _ => new SvModelPreviewService().Catalog(project)
+        };
+    }
 
     internal static object Prepare(ModelPrepareRequest request)
     {
         if (request.TransferId is not { Length: 32 } || !request.TransferId.All(char.IsAsciiHexDigit))
             throw new InvalidDataException("Invalid model transfer identifier.");
-        var scene = new SvModelPreviewService().Prepare(Open(request.Paths), request.Id, request.Animation);
+        var project = Open(request.Paths);
+        var scene = project.Paths.SelectedGame switch
+        {
+            ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Prepare(project, request.Id, request.Animation),
+            ProjectGame.ZA => new ZaModelPreviewService().Prepare(project, request.Id, request.Animation),
+            _ => new SvModelPreviewService().Prepare(project, request.Id, request.Animation)
+        };
         var folder = Path.Combine(Path.GetTempPath(), "km-editor-model-preview");
         var path = Path.Combine(folder, request.TransferId + ".kmv");
         // The native host owns a delete-on-close handle. Even a cancelled worker or host
@@ -28,8 +44,8 @@ internal static class ModelPreviewBridge
     private static OpenedProject Open(KM.Api.Projects.ProjectPathsDto paths)
     {
         var core = ProjectBridgeMapper.ToCore(paths);
-        if (core.SelectedGame is not (ProjectGame.Scarlet or ProjectGame.Violet))
-            throw new InvalidDataException("The Beta model viewer currently supports Scarlet and Violet.");
+        if (core.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield or ProjectGame.Scarlet or ProjectGame.Violet or ProjectGame.ZA))
+            throw new InvalidDataException("Select a supported game for the model viewer.");
         return new ProjectWorkspaceService().ValidateAndOpen(core);
     }
 }

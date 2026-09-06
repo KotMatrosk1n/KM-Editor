@@ -12,7 +12,7 @@ public sealed class SvModelPreviewService
 {
     private const string CatalogPath = "pokemon/catalog/catalog/poke_resource_table.trpmcatalog";
     private readonly SvWorkflowFileSource source = new(bypassReusableBaseCache: true,
-        maximumReadBytes: 32 * 1024 * 1024, maximumReadCount: 256, maximumAggregateReadBytes: 128L * 1024 * 1024);
+        maximumReadBytes: 32 * 1024 * 1024, maximumReadCount: 512, maximumAggregateReadBytes: 128L * 1024 * 1024);
 
     public IReadOnlyList<SvModelCatalogEntry> Catalog(OpenedProject project)
     {
@@ -39,7 +39,12 @@ public sealed class SvModelPreviewService
             if (species != 0 && seen.Add(path)) results.Add(new(path, species, form, gender, labels.Pokemon(species)));
         }
         if (project.Paths.BaseRomFsPath is { } root)
-            foreach (var model in SvModelDiscovery.Discover(root)) if (seen.Add(model.Id)) results.Add(model);
+        {
+            var reader = new TrinityPreviewReader(path => source.Read(project, path).Bytes);
+            foreach (var model in SvModelDiscovery.Discover(root))
+                if (seen.Add(model.Id)) results.Add(model.Category == "trainers" && !reader.HasCharacterSurface(model.Id)
+                    ? model with { Category = "other" } : model);
+        }
         return results.OrderBy(x => x.Species == 0 ? 1 : 0).ThenBy(x => x.Species).ThenBy(x => x.Form).ThenBy(x => x.Gender).ToArray();
     }
 
@@ -91,7 +96,7 @@ public sealed class SvModelPreviewService
         var entry = catalog.Tables(catalog.Root, 1, 8192).FirstOrDefault(x => catalog.Text(x, 1) is { } path
             && TrinityPreviewReader.Resolve("pokemon/data/catalog", path) == id);
         var clips = new Dictionary<string, PreviewClipReference>(StringComparer.Ordinal);
-        var paths = entry == 0 ? new[] { id[..^6] + ".tracn" } : catalog.Tables(entry, 4, 32)
+        var paths = entry == 0 ? SvModelDiscovery.AnimationCatalogs(project.Paths.BaseRomFsPath!, id) : catalog.Tables(entry, 4, 32)
             .Select(animation => catalog.Text(animation, 1)).OfType<string>()
             .Select(relative => TrinityPreviewReader.Resolve("pokemon/data/catalog", relative)).ToArray();
         foreach (var catalogPath in paths)
