@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "Clean base compatibility data is unavailable.",
     "shops.pending.removedTitle": "Removed shop items",
     "shops.pending.removedItem": "{item} (original slot {slot})",
-    "shops.pending.undoRemoval": "Undo removal of {item}"
+    "shops.pending.undoRemoval": "Undo removal of {item}",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "Blue and magenta energy with silver edges on midnight surfaces.",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "Scarlet and violet accents with gold edges on dark plum surfaces.",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "Bright green and magenta energy with silver edges on forest surfaces.",
+    "workbench.section.history.label": "History",
+    "workbench.section.history.description": "Browse dated output transactions and their recorded changes.",
+    "za.trainers.bulk.changeAction": "Enable Change for All",
+    "za.trainers.bulk.changeAlreadyEnabled": "Change is already enabled for every loaded trainer.",
+    "za.trainers.bulk.changeEnableCount": "Enable Change for {count} loaded trainers.",
+    "za.trainers.bulk.changeConfirmTitle": "Enable Change for all loaded trainers?",
+    "za.trainers.bulk.changeConfirmDescription": "This will stage Change AI for {affectedCount} of {totalCount} loaded Z-A trainers. Other stored flags and party settings are preserved."
   },
   "literals": {
     "Not specified": "Not specified",

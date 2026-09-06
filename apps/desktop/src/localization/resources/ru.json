@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "Данные совместимости из чистой базы недоступны.",
     "shops.pending.removedTitle": "Удалённые предметы магазина",
     "shops.pending.removedItem": "{item} (исходная позиция {slot})",
-    "shops.pending.undoRemoval": "Отменить удаление {item}"
+    "shops.pending.undoRemoval": "Отменить удаление {item}",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "Синяя и пурпурная энергия, серебряные грани и поверхности цвета полуночного неба.",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "Алые и фиолетовые акценты, золотые грани и тёмные сливовые поверхности.",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "Яркая зелёная и пурпурная энергия, серебряные грани и лесные оттенки.",
+    "workbench.section.history.label": "История",
+    "workbench.section.history.description": "Просматривайте операции вывода по датам и записанные изменения.",
+    "za.trainers.bulk.changeAction": "Включить Change для всех",
+    "za.trainers.bulk.changeAlreadyEnabled": "Change уже включён у всех загруженных тренеров.",
+    "za.trainers.bulk.changeEnableCount": "Включить Change у {count} загруженных тренеров.",
+    "za.trainers.bulk.changeConfirmTitle": "Включить Change у всех загруженных тренеров?",
+    "za.trainers.bulk.changeConfirmDescription": "Флаг ИИ Change будет подготовлен для {affectedCount} из {totalCount} загруженных тренеров Z-A. Остальные флаги и настройки команды сохранятся."
   },
   "literals": {
     "Not specified": "Не задано",

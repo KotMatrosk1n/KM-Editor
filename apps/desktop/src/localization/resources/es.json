@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "Los datos de compatibilidad de la base original no están disponibles.",
     "shops.pending.removedTitle": "Objetos eliminados de la tienda",
     "shops.pending.removedItem": "{item} (posición original {slot})",
-    "shops.pending.undoRemoval": "Deshacer la eliminación de {item}"
+    "shops.pending.undoRemoval": "Deshacer la eliminación de {item}",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "Energía azul y magenta con bordes plateados sobre fondos azul noche.",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "Acentos escarlata y violeta con bordes dorados sobre fondos ciruela oscuros.",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "Energía verde brillante y magenta con bordes plateados sobre fondos verde bosque.",
+    "workbench.section.history.label": "Historial",
+    "workbench.section.history.description": "Explora las operaciones de salida por fecha y sus cambios registrados.",
+    "za.trainers.bulk.changeAction": "Activar Change para todos",
+    "za.trainers.bulk.changeAlreadyEnabled": "Change ya está activado para todos los entrenadores cargados.",
+    "za.trainers.bulk.changeEnableCount": "Activar Change para {count} entrenadores cargados.",
+    "za.trainers.bulk.changeConfirmTitle": "¿Activar Change para todos los entrenadores cargados?",
+    "za.trainers.bulk.changeConfirmDescription": "Esto prepara Change de la IA para {affectedCount} de {totalCount} entrenadores de Z-A cargados. Se conservan los demás indicadores y ajustes del equipo."
   },
   "literals": {
     "Not specified": "Sin especificar",

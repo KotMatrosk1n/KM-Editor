@@ -5,7 +5,8 @@ import { BetaEditorsSettings } from './features/settings/BetaEditorsSettings';
 import './components/advancedEditorWorkspace.css';
 import './features/type-chart/typeChartTheme.css';
 import { handleRowClipboardShortcut } from './authoring/rowClipboardShortcuts';
-import { trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
+import { buildZaTrainerChangeUpdates, trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
+import { ItemIcon } from './features/items/ItemIcon';
 
 import {
   Activity,
@@ -26,6 +27,8 @@ import {
   GripVertical,
   Languages,
   Layers,
+  Leaf,
+  Scale,
   ListChecks,
   MapPinned,
   MapPin,
@@ -355,7 +358,7 @@ import {
   resolveMoveRuntimeVariant,
   resolveMoveTimingEditableField
 } from './movesEditor';
-import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, resolveWorkflowDataSection, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, resolveWorkflowDataSection, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
   WorkflowLoadGeneration,
   createWorkflowRetentionSizeHint,
@@ -3230,7 +3233,6 @@ export function App({
     [gameScopedWorkflows]
   );
   const activeSectionLabel = t(getWorkbenchSectionLabelKey(activeSection));
-  const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const activeWikiUrl = getSectionWikiUrl(activeSection, selectedGame);
   const [isProjectScopeTransitioning, setIsProjectScopeTransitioning] = useState(false);
   const isBusy =
@@ -20417,7 +20419,7 @@ export function App({
         inert={isSidebarConstrained && isSidebarOverlayOpen ? true : undefined}
       >
         <WorkspaceHeader
-          activeProjectStateLabel={activeProjectStateLabel}
+          activeGameLabel={selectedGame ? gameDefinitions[selectedGame].label : null}
           activeSectionIsEditor={activeSectionIsEditor}
           activeSectionLabel={activeSectionLabel}
           activeWikiUrl={activeWikiUrl}
@@ -24697,20 +24699,9 @@ function PokemonSection({
 
     setEvYieldConfirmation(null);
   }, [evYieldConfirmation, onUpdatePokemonField]);
-  const pokemonDiagnostics =
-    workflow && selectedPokemon ? (
-      <div className={`${editorFamily}-pokemon-diagnostics-row`}>
-        <DiagnosticsSection diagnostics={workflow.diagnostics} />
-        <SelectedPokemonSummaryCard
-          dexEditor={workflow.dexEditor}
-          editorFamily={editorFamily}
-          pokemon={selectedPokemon}
-          variant="context"
-        />
-      </div>
-    ) : (
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
-    );
+  const pokemonDiagnostics = (
+    <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+  );
 
   return (
     <>
@@ -31596,7 +31587,7 @@ type TrainerPartySlotContextMenuState = {
   triggerElement: HTMLButtonElement;
 };
 
-type ZaTrainerBulkAction = 'enableCoreAi' | 'enableLastHand';
+type ZaTrainerBulkAction = 'enableCoreAi' | 'enableLastHand' | 'enableChange';
 
 type TrainersSectionProps = {
   editSession: EditSession | null;
@@ -31723,6 +31714,10 @@ function TrainersSection({
   );
   const [zaBulkConfirmation, setZaBulkConfirmation] =
     useState<ZaTrainerBulkAction | null>(null);
+  const zaChangeBulkUpdates = useMemo<TrainerFieldUpdate[]>(
+    () => editorFamily === 'za' ? buildZaTrainerChangeUpdates(trainers) : [],
+    [editorFamily, trainers]
+  );
   const zaLastHandBulkUpdates = useMemo<TrainerFieldUpdate[]>(
     () =>
       editorFamily === 'za'
@@ -31764,14 +31759,16 @@ function TrainersSection({
     !isTrainerUpdating;
 
   const confirmZaTrainerBulkAction = async () => {
-    if (!zaBulkConfirmation) {
+    if (!zaBulkConfirmation || !canRunZaTrainerBulkAction) {
       return;
     }
 
     const updates =
       zaBulkConfirmation === 'enableLastHand'
         ? zaLastHandBulkUpdates
-        : zaCoreAiBulkUpdates;
+        : zaBulkConfirmation === 'enableChange'
+          ? zaChangeBulkUpdates
+          : zaCoreAiBulkUpdates;
     setZaBulkConfirmation(null);
     if (updates.length > 0) {
       await onUpdateTrainerFields(updates);
@@ -31868,6 +31865,22 @@ function TrainersSection({
               <small>{t('za.trainers.bulk.scopeHelp')}</small>
             </div>
             <div className="za-trainer-bulk-actions-buttons">
+              <button
+                className="primary-button compact-button"
+                disabled={!canRunZaTrainerBulkAction || zaChangeBulkUpdates.length === 0}
+                onClick={() => setZaBulkConfirmation('enableChange')}
+                title={
+                  editSession === null
+                    ? t('za.trainers.bulk.startSessionHelp')
+                    : zaChangeBulkUpdates.length === 0
+                      ? t('za.trainers.bulk.changeAlreadyEnabled')
+                      : t('za.trainers.bulk.changeEnableCount', { count: zaChangeBulkUpdates.length })
+                }
+                type="button"
+              >
+                <ShieldCheck aria-hidden="true" size={14} />
+                <span>{t('za.trainers.bulk.changeAction')}</span>
+              </button>
               <button
                 className="primary-button compact-button"
                 disabled={!canRunZaTrainerBulkAction || zaLastHandBulkUpdates.length === 0}
@@ -32016,9 +32029,11 @@ function TrainersSection({
           affectedCount={
             zaBulkConfirmation === 'enableLastHand'
               ? zaLastHandBulkUpdates.length
-              : zaCoreAiBulkUpdates.length
+              : zaBulkConfirmation === 'enableChange'
+                ? zaChangeBulkUpdates.length
+                : zaCoreAiBulkUpdates.length
           }
-          isUpdating={isTrainerUpdating}
+          isUpdating={!canRunZaTrainerBulkAction}
           onCancel={() => setZaBulkConfirmation(null)}
           onConfirm={confirmZaTrainerBulkAction}
           totalCount={trainers.length}
@@ -32049,10 +32064,14 @@ function ZaTrainerBulkConfirmationModal({
   const headingId = `za-trainer-bulk-${action}-heading`;
   const title = enablesLastHand
     ? t('za.trainers.bulk.lastHandConfirmTitle')
-    : t('za.trainers.bulk.coreConfirmTitle');
+    : action === 'enableChange'
+      ? t('za.trainers.bulk.changeConfirmTitle')
+      : t('za.trainers.bulk.coreConfirmTitle');
   const description = enablesLastHand
     ? t('za.trainers.bulk.lastHandConfirmDescription', { affectedCount, totalCount })
-    : t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount });
+    : action === 'enableChange'
+      ? t('za.trainers.bulk.changeConfirmDescription', { affectedCount, totalCount })
+      : t('za.trainers.bulk.coreConfirmDescription', { affectedCount, totalCount });
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -33669,10 +33688,7 @@ function SelectedTrainerPanel({
                           className="trainer-party-held-item-bag"
                           title={projectedHeldItemLabel}
                         >
-                          <HeldItemSprite
-                            editorFamily={editorFamily}
-                            itemId={projectedHeldItemId}
-                          />
+                          <ItemIcon itemId={projectedHeldItemId} />
                         </span>
                       ) : null}
                       <span className="trainer-party-held-item-accessibility">
@@ -58855,6 +58871,7 @@ function SettingsSection({
           <div className="sv-cache-mode-options" role="radiogroup" aria-label={cacheModeLabel}>
             {svCacheModeOptions.map((option) => {
               const isSelected = option.id === activeCacheMode;
+              const Icon = { minimal: Leaf, balanced: Scale, performance: Zap }[option.id];
 
               return (
                 <button
@@ -58867,6 +58884,7 @@ function SettingsSection({
                   type="button"
                 >
                   <span>
+                    <Icon aria-hidden="true" className="settings-mode-icon" size={20} />
                     {translateLiteral(option.label)}
                     {option.recommended ? <small>{t('analysisLoading.recommended')}</small> : null}
                     {isSelected ? (
@@ -65739,76 +65757,6 @@ function PokemonSprite({
   );
 }
 
-function HeldItemSprite({
-  editorFamily,
-  itemId
-}: {
-  editorFamily: EditorUiFamily;
-  itemId: number;
-}) {
-  const urls = useMemo(
-    () => getHeldItemSpriteUrls(itemId, editorFamily),
-    [editorFamily, itemId]
-  );
-  const [urlIndex, setUrlIndex] = useState(0);
-
-  useEffect(() => {
-    setUrlIndex(0);
-  }, [urls]);
-
-  const url = urls[urlIndex];
-  if (!url) {
-    return null;
-  }
-
-  const usesPixelArt = url.includes('/items/big/') || url.includes('/overlays/');
-
-  return (
-    <img
-      alt=""
-      className={usesPixelArt ? 'trainer-party-held-item-pixel-art' : ''}
-      draggable={false}
-      onError={() => setUrlIndex((currentIndex) => currentIndex + 1)}
-      src={url}
-    />
-  );
-}
-
-function getHeldItemSpriteUrls(itemId: number, editorFamily: EditorUiFamily) {
-  const artworkItem = getPublicAssetUrl(`sprites/items/artwork/aitem_${itemId}.png`);
-  const classicItem = getPublicAssetUrl(`sprites/items/big/bitem_${itemId}.png`);
-  const fallbackBag = getPublicAssetUrl('sprites/overlays/helditem.png');
-
-  if (isTechnicalMachineItemId(itemId)) {
-    const artworkMachine = getPublicAssetUrl('sprites/items/artwork/aitem_tm.png');
-    const classicMachine = getPublicAssetUrl('sprites/items/big/bitem_tm.png');
-    return editorFamily === 'swsh'
-      ? [classicMachine, artworkMachine, fallbackBag]
-      : [artworkMachine, classicMachine, fallbackBag];
-  }
-
-  if (editorFamily === 'swsh' && itemId >= 1130 && itemId <= 1229) {
-    return [getPublicAssetUrl('sprites/items/big/bitem_tr.png'), fallbackBag];
-  }
-
-  return editorFamily === 'swsh'
-    ? [classicItem, artworkItem, fallbackBag]
-    : [artworkItem, classicItem, fallbackBag];
-}
-
-function isTechnicalMachineItemId(itemId: number) {
-  // PKHeX uses shared TM artwork for these global item-ID ranges. TM00 is included
-  // here as a safe fallback even though it is not a normally obtainable held item.
-  return (
-    (itemId >= 328 && itemId <= 425) ||
-    (itemId >= 618 && itemId <= 620) ||
-    (itemId >= 690 && itemId <= 694) ||
-    itemId === 737 ||
-    itemId === 1230 ||
-    (itemId >= 2160 && itemId <= 2289)
-  );
-}
-
 type PokemonSpriteIdentity = {
   editorFamily?: EditorUiFamily;
   form?: number;
@@ -69044,26 +68992,6 @@ function formatParsedVersion(version: ParsedVersion) {
   return `${version.major}.${version.minor}.${version.patch}${
     version.prerelease ? `-${version.prerelease}` : ''
   }`;
-}
-
-function getProjectStateLabel(
-  health: ProjectHealth | null,
-  projectStatus: 'idle' | 'validating' | 'opening' | 'open',
-  activeSection: WorkbenchSection
-) {
-  if (projectStatus === 'opening') {
-    return 'Opening project';
-  }
-
-  if (projectStatus === 'validating') {
-    return 'Validating paths';
-  }
-
-  if (health && readOnlyViewerSectionIds.has(activeSection)) {
-    return 'View Only';
-  }
-
-  return health ? healthLabels[health.state] : 'No project open';
 }
 
 function getRoyalCandyDependencyWarning(

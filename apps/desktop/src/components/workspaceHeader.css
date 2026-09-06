@@ -1,0 +1,70 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.toolbar.workspace-header {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem) minmax(0, 1fr);
+  grid-template-areas: 'leading game actions';
+}
+
+.workspace-header .workspace-header-leading {
+  grid-area: leading;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workspace-header .workspace-history-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.workspace-header .title-block,
+.workspace-header h1 {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.workspace-header-game {
+  grid-area: game;
+  min-width: 0;
+  color: var(--color-text-soft);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.workspace-header .toolbar-actions {
+  grid-area: actions;
+  align-items: center;
+}
+
+.workspace-header .toolbar-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Keep the title centered on the entire bar, not the unequal space between controls. */
+@container workspace (max-width: 1280px) {
+  .toolbar.workspace-header {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: 'leading actions' 'game game';
+    gap: 10px 16px;
+  }
+}
+
+@container workspace (max-width: 760px) {
+  .toolbar.workspace-header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'leading' 'game' 'actions';
+    padding-inline: 16px;
+  }
+
+  .workspace-header .toolbar-actions {
+    justify-content: flex-start;
+  }
+}

@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "Дані сумісності з чистої бази недоступні.",
     "shops.pending.removedTitle": "Видалені предмети магазину",
     "shops.pending.removedItem": "{item} (початкова позиція {slot})",
-    "shops.pending.undoRemoval": "Скасувати видалення {item}"
+    "shops.pending.undoRemoval": "Скасувати видалення {item}",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "Синя й пурпурова енергія, срібні грані та поверхні кольору нічного неба.",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "Червоні й фіолетові акценти, золоті грані та темні сливові поверхні.",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "Яскрава зелена й пурпурова енергія, срібні грані та лісові відтінки.",
+    "workbench.section.history.label": "Історія",
+    "workbench.section.history.description": "Переглядайте операції виведення за датами та записані зміни.",
+    "za.trainers.bulk.changeAction": "Увімкнути Change для всіх",
+    "za.trainers.bulk.changeAlreadyEnabled": "Change уже ввімкнено для всіх завантажених тренерів.",
+    "za.trainers.bulk.changeEnableCount": "Увімкнути Change для {count} завантажених тренерів.",
+    "za.trainers.bulk.changeConfirmTitle": "Увімкнути Change для всіх завантажених тренерів?",
+    "za.trainers.bulk.changeConfirmDescription": "Прапорець ШІ Change буде підготовлено для {affectedCount} із {totalCount} завантажених тренерів Z-A. Решта прапорців і налаштування команди збережуться."
   },
   "literals": {
     "Not specified": "Не задано",

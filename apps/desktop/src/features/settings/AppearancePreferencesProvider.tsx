@@ -14,7 +14,7 @@ export const appearancePreferencesVersion = 1 as const;
 export const visualThemeStorageKey = 'km-editor.visual-theme.v1';
 
 export type AppearanceTheme = 'default' | 'highContrast' | 'colorSafe';
-export type VisualTheme = 'classic' | 'renegade' | 'royal' | 'sovereign' | 'arcane' | 'relic';
+export type VisualTheme = 'classic' | 'renegade' | 'royal' | 'sovereign' | 'arcane' | 'relic' | 'sword-shield' | 'scarlet-violet' | 'legends-za';
 export type MotionPreference = 'system' | 'reduce';
 export type TypeScalePreference = 'default' | 'large' | 'larger';
 export type DensityPreference = 'comfortable' | 'compact';
@@ -117,7 +117,7 @@ export function AppearancePreferencesProvider({ children }: { children: ReactNod
         }
       },
       setVisualTheme: (theme) => {
-        if (theme === 'classic' || theme === 'renegade' || theme === 'royal' || theme === 'sovereign' || theme === 'arcane' || theme === 'relic') {
+        if (theme === 'classic' || theme === 'renegade' || theme === 'royal' || theme === 'sovereign' || theme === 'arcane' || theme === 'relic' || theme === 'sword-shield' || theme === 'scarlet-violet' || theme === 'legends-za') {
           setVisualThemeState(theme);
           applyVisualTheme(theme);
           writeVisualTheme(theme);
@@ -162,7 +162,7 @@ export function readVisualTheme(): VisualTheme {
   }
   try {
     const stored = window.localStorage.getItem(visualThemeStorageKey);
-    return stored === 'renegade' || stored === 'royal' || stored === 'sovereign' || stored === 'arcane' || stored === 'relic' ? stored : defaultVisualTheme;
+    return stored === 'renegade' || stored === 'royal' || stored === 'sovereign' || stored === 'arcane' || stored === 'relic' || stored === 'sword-shield' || stored === 'scarlet-violet' || stored === 'legends-za' ? stored : defaultVisualTheme;
   } catch {
     return defaultVisualTheme;
   }

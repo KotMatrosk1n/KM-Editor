@@ -100,21 +100,6 @@ export function HyperspaceBypassSection({
         {workflow ? (
           <div className="flagwork-layout">
             <div className="flagwork-stack">
-              <div className="exefs-table iv-screen-range-table" role="table" aria-label="Hyperspace Bypass behavior summary">
-                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
-                  <span role="columnheader">Mode</span>
-                  <span role="columnheader">What happens</span>
-                </div>
-                <div className="exefs-row iv-screen-range-row" role="row">
-                  <span role="cell">Not installed</span>
-                  <span role="cell">The battle runtime rejects non-Hoopa and wrong-form users.</span>
-                </div>
-                <div className="exefs-row iv-screen-range-row" role="row">
-                  <span role="cell">Installed</span>
-                  <span role="cell">The checked path branches to the existing success return.</span>
-                </div>
-              </div>
-
               <div className="exefs-table iv-screen-range-table" role="table" aria-label="Hyperspace Bypass reserved ranges">
                 <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
                   <span role="columnheader">Region</span>

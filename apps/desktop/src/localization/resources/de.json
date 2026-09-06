@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "Unveränderte Kompatibilitätsdaten sind nicht verfügbar.",
     "shops.pending.removedTitle": "Entfernte Shop-Items",
     "shops.pending.removedItem": "{item} (ursprünglicher Platz {slot})",
-    "shops.pending.undoRemoval": "Entfernen von {item} rückgängig machen"
+    "shops.pending.undoRemoval": "Entfernen von {item} rückgängig machen",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "Blaue und magentafarbene Energie mit silbernen Rändern auf nachtblauen Flächen.",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "Scharlachrote und violette Akzente mit goldenen Rändern auf dunklen Pflaumentönen.",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "Leuchtend grüne und magentafarbene Energie mit silbernen Rändern auf waldgrünen Flächen.",
+    "workbench.section.history.label": "Verlauf",
+    "workbench.section.history.description": "Ausgabetransaktionen und ihre aufgezeichneten Änderungen nach Datum durchsuchen.",
+    "za.trainers.bulk.changeAction": "Change für alle aktivieren",
+    "za.trainers.bulk.changeAlreadyEnabled": "Change ist bereits für alle geladenen Trainer aktiviert.",
+    "za.trainers.bulk.changeEnableCount": "Change für {count} geladene Trainer aktivieren.",
+    "za.trainers.bulk.changeConfirmTitle": "Change für alle geladenen Trainer aktivieren?",
+    "za.trainers.bulk.changeConfirmDescription": "Dies merkt die Change-KI für {affectedCount} von {totalCount} geladenen Z-A-Trainern vor. Andere gespeicherte Flags und Teameinstellungen bleiben erhalten."
   },
   "literals": {
     "Not specified": "Nicht festgelegt",
