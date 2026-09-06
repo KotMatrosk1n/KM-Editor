@@ -6126,6 +6126,7 @@ internal sealed class ZaPokemonEditSessionService
     {
         var evolutionLengths = new Dictionary<int, int>();
         var learnsetLengths = new Dictionary<int, int>();
+        var tmMoveStates = new Dictionary<int, List<ushort>>();
         foreach (var edit in edits)
         {
             if (IsGlobalYieldEdit(edit))
@@ -6177,7 +6178,13 @@ internal sealed class ZaPokemonEditSessionService
             if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
                 && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var compatibilityValue))
             {
-                if (!RequiresCompatibilityRebuild(row, groupId, slot, compatibilityValue != 0))
+                if (!tmMoveStates.TryGetValue(personalId, out var tmMoves))
+                {
+                    tmMoves = row.TmMoves.ToList();
+                    tmMoveStates.Add(personalId, tmMoves);
+                }
+
+                if (!RequiresCompatibilityRebuild(row, groupId, slot, compatibilityValue != 0, tmMoves))
                 {
                     continue;
                 }
@@ -6204,7 +6211,12 @@ internal sealed class ZaPokemonEditSessionService
         };
     }
 
-    private static bool RequiresCompatibilityRebuild(PersonalRow row, string groupId, int slot, bool enabled)
+    private static bool RequiresCompatibilityRebuild(
+        PersonalRow row,
+        string groupId,
+        int slot,
+        bool enabled,
+        List<ushort> tmMoves)
     {
         if (string.Equals(groupId, ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId, StringComparison.Ordinal))
         {
@@ -6219,7 +6231,24 @@ internal sealed class ZaPokemonEditSessionService
             }
 
             var move = (ushort)slot;
-            return enabled && !row.TmMoves.Contains(move) && !row.TmMoves.Contains(0);
+            var existingIndex = tmMoves.IndexOf(move);
+            if (enabled && existingIndex < 0)
+            {
+                var emptyIndex = tmMoves.IndexOf(0);
+                if (emptyIndex < 0)
+                {
+                    return true;
+                }
+
+                // Reserve capacity in patch order so later edits cannot reuse this slot.
+                tmMoves[emptyIndex] = move;
+            }
+            else if (!enabled && existingIndex >= 0)
+            {
+                tmMoves[existingIndex] = 0;
+            }
+
+            return false;
         }
 
         if (string.Equals(groupId, ZaPokemonWorkflowService.EggMoveCompatibilityGroupId, StringComparison.Ordinal))
