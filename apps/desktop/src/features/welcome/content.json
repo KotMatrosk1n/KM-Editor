@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "version": "2.5.9",
+      "summary": {
+        "en": "KM Editor 2.5.9 improves draft preservation, shared staging, Trainer team editing, and output reliability across the supported games. It fixes Legends Z-A Gift Review failures, expands Z-A Fashion Catalog and read-only Game Tools, and brings consistent searchable controls and keyboard navigation to more editor surfaces."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Drafts, Navigation, And Controls"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Record drafts stay associated with their owning records while users change searches, filters, categories, pages, and child selections. Retained input outside the visible row still receives draft protection."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Moving from a fully staged editor to Changes no longer asks users to revert their work. When unstaged input remains, the warning distinguishes that local draft from the staged session and preserves the staged changes after a deliberate draft discard."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Failed staging keeps the user's input available. Successful staging clears only the submitted values, so later typing or a newly selected draft is not cleared by an older completion."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer categories persist while users navigate to other editors and return. Recent records remain ordered, identify the active destination, and keep scrolling inside their own rail."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Interactive editor rows support Enter and Space, compatibility lists accept keyboard focus, and tooltips and context menus expose consistent assistive relationships. Classic tables keep their first column reachable in narrow panes."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Finite option fields use KM's searchable listbox with localized choices, disabled and grouped entries, and bounded selection. Rapid search and compatibility input no longer triggers repeated intermediate state changes."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Renegade uses graphite and crimson across the remaining neutral surfaces. Primary actions retain readable hover contrast across supported themes and accessibility palettes."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Trainer Teams And Shared Staging"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "One Stage Trainer Changes action submits ordinary trainer fields and party drafts retained across multiple trainers in an ordered batch. MAX IV and dedicated Z-A trainer identity actions keep their separate scope."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Copied party members remain reusable. Users can paste into consecutive empty slots without staging between each paste; a valid preceding draft counts, while genuine gaps and invalid predecessors remain blocked."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Empty species-zero party slots stay visually empty instead of displaying Egg artwork."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Shared-session validation and overlays operate on each editor's own changes while preserving other editors' work for Review and Apply. Pokemon compatibility, Items, and encounter edits no longer misinterpret unrelated pending fields."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Multi-record staging validates the complete batch and restores the original pending session on failure instead of leaving partial staged progress."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Review, Output, And Long Operations"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Legends Z-A Gift Pokemon now passes final Review on its own and in combined sessions. The fix preserves verified vanilla restoration and all source, output preimage, and final Apply checks in every output mode."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Failed source verification in Scarlet and Violet and Legends Z-A shows the classified reason, affected relative resource, and recovery guidance before technical details are expanded. Internal review metadata errors are distinguished from unreadable game data, with guidance in all seven interface languages."
+              },
+              "audience": [
+                "sv",
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Changes shows Needs fixes when final Review blocks output, even if earlier editor validation succeeded."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Reviewed Scarlet and Violet and Legends Z-A writes commit as one coordinated output transaction, including multi-file and deletion-only plans, with durable success or failure evidence for recovery."
+              },
+              "audience": [
+                "sv",
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Output locking and cache preparation no longer contend through conflicting lock order. Read-only analysis can continue when an optional Output Root is unavailable before observation, while Apply, recovery, active locks, and source-read failures keep their safety checks."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Long complete bridge requests return without waiting for more input. Request scheduling bounds queued work and preserves ordered state changes and output ownership."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Repeated clicks and rapid navigation no longer start contradictory duplicate operations or let stale results replace the active project, selection, or draft."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Archive-backed staging, Review, and export reuse fresh data within each operation to reduce repeated archive work. Final revalidation still reads current source data independently."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A Catalogs"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Fashion Catalog distinguishes clothing purchase price from category menu position. Category allocation and position remain read only, while supported footwear rows expose source-proven subtype choices."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Unsafe older Fashion pending edits fail safely instead of targeting newly identified fields. Existing lineup edits preserve shop identity, activation metadata, entry count, conditions, and unexposed data."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Game Tools adds read-only Static Map Markers, Named Flag and Work Catalog, and Pokemon Resource Catalog views with searchable source records and explicit coverage limits."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "A missing or invalid catalog does not disable unrelated tools. These views do not edit progression, read live save values, replace models, or prove runtime visibility."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Release Metadata"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Application package, Tauri, Cargo, lockfile, setup, and window title metadata identify KM Editor 2.5.9 consistently."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The Windows release contains the custom x64 setup executable, its updater signature, the updater manifest, and checksums."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.5.8...v2.5.9"
+        }
+      ]
+    }
+  ],
+  "announcements": [
+    {
+      "id": "welcome-project-setup",
+      "title": {
+        "en": "Start when you are ready",
+        "de": "Starten, wenn du bereit bist",
+        "es": "Empieza cuando quieras",
+        "fr": "Commencez quand vous êtes prêt",
+        "ru": "Начните, когда будете готовы",
+        "uk": "Почніть, коли будете готові",
+        "zh": "准备好后再开始"
+      },
+      "body": {
+        "en": "Choose your game, review your project paths, and press Validate Paths when you are ready to load game data. You can browse the welcome hub first.",
+        "de": "Wähle dein Spiel, prüfe die Projektpfade und klicke auf Pfade prüfen, sobald du die Spieldaten laden möchtest. Du kannst zuerst die Startseite durchsehen.",
+        "es": "Elige tu juego, revisa las rutas del proyecto y pulsa Validar rutas cuando quieras cargar los datos. Puedes explorar primero la pantalla de bienvenida.",
+        "fr": "Choisissez votre jeu, vérifiez les chemins du projet, puis validez les chemins pour charger les données. Vous pouvez d’abord parcourir l’accueil.",
+        "ru": "Выберите игру, проверьте пути проекта и нажмите «Проверить пути», когда будете готовы загрузить данные игры. Сначала можно просмотреть стартовую страницу.",
+        "uk": "Виберіть гру, перевірте шляхи проєкту та натисніть «Перевірити шляхи», коли будете готові завантажити дані гри. Спершу можна переглянути стартову сторінку.",
+        "zh": "选择游戏，检查项目路径，准备好加载游戏数据后再点击验证路径。您可以先浏览欢迎页面。"
+      },
+      "audience": [
+        "all"
+      ],
+      "featured": true,
+      "links": []
+    }
+  ]
+}

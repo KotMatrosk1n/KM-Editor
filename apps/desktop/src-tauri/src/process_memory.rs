@@ -9,6 +9,7 @@ pub struct MemoryGroup {
     unreadable_count: u32,
     private_ram_bytes: Option<u64>,
     committed_bytes: Option<u64>,
+    gpu_local_bytes: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -107,11 +108,16 @@ impl MemoryGroup {
         Self {
             private_ram_bytes: Some(0),
             committed_bytes: Some(0),
+            gpu_local_bytes: Some(0),
             ..Self::default()
         }
     }
 
-    fn add(&mut self, ram: Option<u64>, committed: Option<u64>) {
+    fn add(&mut self, ram: Option<u64>, committed: Option<u64>, gpu: Option<u64>) {
+        self.gpu_local_bytes = self
+            .gpu_local_bytes
+            .zip(gpu)
+            .and_then(|(a, b)| a.checked_add(b));
         self.process_count += 1;
         self.unreadable_count += u32::from(committed.is_none());
         self.private_ram_bytes = self
@@ -227,7 +233,11 @@ mod windows {
 
     fn open(pid: u32) -> Option<(Handle, u64)> {
         // Query-only access; no process memory reads, writes or lifecycle operations.
-        let handle = unsafe { OpenProcess(0x1000, 0, pid) };
+        // GPU accounting requires QUERY_INFORMATION; retain limited RAM access if denied.
+        let mut handle = unsafe { OpenProcess(0x1400, 0, pid) };
+        if handle.is_null() {
+            handle = unsafe { OpenProcess(0x1000, 0, pid) };
+        }
         if handle.is_null() {
             return None;
         }
@@ -369,12 +379,12 @@ mod windows {
                         changed = true;
                     }
                     Some(_) => {
-                        group.add(None, None);
-                        result.total.add(None, None);
+                        group.add(None, None, None);
+                        result.total.add(None, None, None);
                     }
                     None => {
-                        group.add(None, None);
-                        result.total.add(None, None);
+                        group.add(None, None, None);
+                        result.total.add(None, None, None);
                     }
                 }
                 false
@@ -391,15 +401,19 @@ mod windows {
             return Err("unavailable".into());
         }
         // Keep parent handles alive through collection to prevent PID reuse during sampling.
+        let adapters = crate::process_gpu_memory::Adapters::open();
         for process in owned.values() {
+            let gpu = adapters
+                .as_ref()
+                .and_then(|adapters| adapters.usage(process.handle.0));
             let (ram, committed) = memory(&process.handle);
             let group = match process.role {
                 Role::Desktop => &mut result.desktop,
                 Role::Worker => &mut result.workers,
                 Role::WebView => &mut result.web_view,
             };
-            group.add(ram, committed);
-            result.total.add(ram, committed);
+            group.add(ram, committed, gpu);
+            result.total.add(ram, committed, gpu);
         }
         Ok(result)
     }

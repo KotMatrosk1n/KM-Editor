@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-virtual';
 import { listen } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
 import {
   formatEncounterLotShare,
   formatEncounterSharePercent,
@@ -379,6 +380,9 @@ import {
   type DynamaxAdventureSeedPlannerProps
 } from './features/dynamax-adventures/DynamaxAdventureSeedPlanner';
 import kmLogoUrl from './assets/km-logo.png';
+import WelcomeHub from './features/welcome/WelcomeHub';
+import { readWelcomeGame } from './features/welcome/welcomeContent';
+import { useWelcomeCacheSettings } from './features/welcome/useWelcomeCacheSettings';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
   ApplyResultSection,
@@ -790,7 +794,7 @@ const GameModulesRuntime = lazy(() => import('./features/game-modules/GameModule
 const ResearchLabRuntime = lazy(() => import('./features/research-lab/ResearchLabRuntime'));
 const ModelViewerSection = lazy(() => import('./features/model-viewer/ModelViewerSection'));
 
-const appVersion = tauriConfig.version;
+const bundledAppVersion = tauriConfig.version;
 const legacyWorkspaceProjectIdPlaceholder = `km1_${'0'.repeat(64)}`;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 export type EditorUiFamily = 'swsh' | 'sv' | 'za';
@@ -2177,6 +2181,13 @@ export function App({
   bridge?: ProjectBridge;
   desktopServices?: DesktopServices;
 } = {}) {
+  const [appVersion, setAppVersion] = useState(bundledAppVersion);
+  useEffect(() => {
+    if (!desktopServices.isAvailable) return;
+    let disposed = false;
+    void getVersion().then(version => { if (!disposed && version) setAppVersion(version); }).catch(() => {});
+    return () => { disposed = true; };
+  }, [desktopServices.isAvailable]);
   useSelectEditableFieldContents();
   const {
     clearIgnoredCommunityLocalePreference,
@@ -20345,21 +20356,110 @@ export function App({
     hasLatestLocalDraftProtection
   ]);
 
+  const [welcomeGame, setWelcomeGame] = useState<ProjectGame>(readWelcomeGame);
+  const showingWelcome = !selectedGame || isGamePickerOpen;
+  const welcomeCache = useWelcomeCacheSettings(unscopedBridge, welcomeGame, showingWelcome && !hasCriticalWriteOperation, error => setBridgeDiagnostics(toBridgeDiagnostics(error)));
+  const settingsSection = (
+    <SettingsSection
+      analysisLoadingSettings={(
+        <AnalysisLoadingSettings
+          mode={analysisLoadingMode}
+          onChange={handleChangeAnalysisLoadingMode}
+        />
+      )}
+      appVersion={appVersion}
+      availableUpdateKind={availableUpdate?.kind ?? null}
+      personalizationSettings={
+        <PersonalizationSettingsPanel />
+      }
+      themeSettings={<ThemeSettingsPanel />}
+      editorLayout={editorLayout}
+      hasBlockingProjectOperation={hasCriticalWriteOperation}
+      hasSvCacheRequestError={showingWelcome ? welcomeCache.error : currentSvCacheRequestError}
+      isSvCacheClearing={isSvCacheClearing}
+      isSvCacheRefreshing={showingWelcome ? welcomeCache.busy : isSvCacheRefreshing}
+      isSvCacheSettingsUpdating={showingWelcome ? welcomeCache.busy : isSvCacheSettingsUpdating}
+      isSvCacheWarming={isSvCacheWarming}
+      onChangeEditorLayout={handleChangeEditorLayout}
+      onChangeLanguage={handleInterfaceLanguageChange}
+      onChangeSvCacheLimit={showingWelcome ? welcomeCache.changeLimit : handleChangeSvCacheLimit}
+      onChangeSvCacheMode={showingWelcome ? welcomeCache.changeMode : handleChangeSvCacheMode}
+      onCheckForUpdates={handleCheckForUpdates}
+      onOpenAvailableUpdate={handleOpenAvailableUpdate}
+      onRestartAfterUpdate={handleRestartAfterUpdate}
+      onClearSvCache={() => setIsSvCacheClearConfirmOpen(true)}
+      onRefreshSvCacheStatus={showingWelcome ? welcomeCache.refresh : () => void handleRefreshSvCacheStatus()}
+      selectedGame={showingWelcome ? welcomeGame : selectedGame}
+      isWelcome={showingWelcome}
+      status={updateCheckStatus}
+      svCacheRefreshTick={svCacheRefreshTick}
+      svCacheStatus={showingWelcome ? welcomeCache.status : currentSvCacheStatus}
+    />
+  );
+
+  const cacheClearConfirmation = isSvCacheClearConfirmOpen ? (
+        <SvCacheClearConfirmationModal
+          cacheSizeLabel={
+            formatCacheSizeLabel(
+              (showingWelcome ? welcomeCache.status : currentSvCacheStatus)?.cacheSizeBytes,
+              formatLocale,
+              t('settings.cache.size.none'),
+              translateLiteral('Unavailable')
+            )
+          }
+          cacheTitle={
+            isSwordShieldGame(showingWelcome ? welcomeGame : selectedGame)
+              ? t('settings.cache.swsh.title')
+              : isPokemonLegendsZAGame(showingWelcome ? welcomeGame : selectedGame)
+                ? 'Z-A Cache'
+                : 'S/V Cache'
+          }
+          description={
+            isSwordShieldGame(showingWelcome ? welcomeGame : selectedGame)
+              ? t('settings.cache.swsh.clearDescription')
+              : isPokemonLegendsZAGame(showingWelcome ? welcomeGame : selectedGame)
+                ? 'This removes the Pokemon Legends Z-A Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
+                : 'This removes the Scarlet/Violet Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
+          }
+          isClearing={showingWelcome ? welcomeCache.busy : isSvCacheClearing}
+          onCancel={() => setIsSvCacheClearConfirmOpen(false)}
+          onConfirm={showingWelcome ? () => { void welcomeCache.clear().then(() => setIsSvCacheClearConfirmOpen(false)); } : () => void handleConfirmClearSvCache()}
+        />
+      ) : null;
+
   if (!selectedGame || isGamePickerOpen) {
     return (
-      <GameSelectionPage
-        configuredGames={applicationWorkspaceSnapshot.document?.recentProjects.map(
-          (profile) => profile.game
-        ) ?? []}
-        currentGame={selectedGame}
-        isLoading={
-          isApplicationWorkspaceLoading ||
-          isLegacyWorkspaceMigrationRunning ||
-          isProjectScopeTransitioning
-        }
-        onCancel={selectedGame ? () => setIsGamePickerOpen(false) : undefined}
-        onSelectGame={handleSelectGame}
-      />
+      <CommonEditorDiagnosticsProvider>
+        <WelcomeHub
+          games={visibleGameSelectionGames}
+          definitions={gameDefinitions}
+          logo={kmLogoUrl}
+          version={appVersion}
+          configuredGames={applicationWorkspaceSnapshot.document?.recentProjects.map(
+            (profile) => profile.game
+          ) ?? []}
+          currentGame={selectedGame}
+          isLoading={
+            welcomeCache.busy ||
+            isApplicationWorkspaceLoading ||
+            isLegacyWorkspaceMigrationRunning ||
+            isProjectScopeTransitioning
+          }
+          onCancel={selectedGame ? () => setIsGamePickerOpen(false) : undefined}
+          onSelectionChange={setWelcomeGame}
+          onOpenGame={handleSelectGame}
+          onOpenLink={async (url) => {
+            if (desktopServices.isAvailable) await desktopServices.openExternalUrl(url);
+            else window.open(url, '_blank', 'noopener,noreferrer');
+          }}
+          diagnostics={<>
+            {cacheClearConfirmation}
+            <CommonBottomDiagnosticsSection diagnostics={bridgeDiagnostics} />
+            {personalWorkspaceError ? <p role="alert">{t('workbench.personalState.loadError')}</p> : null}
+          </>}
+          settings={settingsSection}
+        />
+      </CommonEditorDiagnosticsProvider>
     );
   }
 
@@ -22239,40 +22339,7 @@ export function App({
               key={`${outputSafetyScope?.projectId ?? ''}:${outputSafetyScope?.paths.outputRootPath ?? ''}`} />
           ) : null}
           {activeSection === 'settings' ? (
-            <SettingsSection
-              analysisLoadingSettings={(
-                <AnalysisLoadingSettings
-                  mode={analysisLoadingMode}
-                  onChange={handleChangeAnalysisLoadingMode}
-                />
-              )}
-              appVersion={appVersion}
-              availableUpdateKind={availableUpdate?.kind ?? null}
-              personalizationSettings={
-                <PersonalizationSettingsPanel />
-              }
-              themeSettings={<ThemeSettingsPanel />}
-              editorLayout={editorLayout}
-              hasBlockingProjectOperation={hasCriticalWriteOperation}
-              hasSvCacheRequestError={currentSvCacheRequestError}
-              isSvCacheClearing={isSvCacheClearing}
-              isSvCacheRefreshing={isSvCacheRefreshing}
-              isSvCacheSettingsUpdating={isSvCacheSettingsUpdating}
-              isSvCacheWarming={isSvCacheWarming}
-              onChangeEditorLayout={handleChangeEditorLayout}
-              onChangeLanguage={handleInterfaceLanguageChange}
-              onChangeSvCacheLimit={handleChangeSvCacheLimit}
-              onChangeSvCacheMode={handleChangeSvCacheMode}
-              onCheckForUpdates={handleCheckForUpdates}
-              onOpenAvailableUpdate={handleOpenAvailableUpdate}
-              onRestartAfterUpdate={handleRestartAfterUpdate}
-              onClearSvCache={() => setIsSvCacheClearConfirmOpen(true)}
-              onRefreshSvCacheStatus={() => void handleRefreshSvCacheStatus()}
-              selectedGame={selectedGame}
-              status={updateCheckStatus}
-              svCacheRefreshTick={svCacheRefreshTick}
-              svCacheStatus={currentSvCacheStatus}
-            />
+            settingsSection
           ) : null}
           {personalWorkspaceError && activeSection === 'workbench' ? (
             <PublishCommonEditorError
@@ -22323,35 +22390,7 @@ export function App({
           selectedGame={selectedGame}
         />
       ) : null}
-      {isSvCacheClearConfirmOpen ? (
-        <SvCacheClearConfirmationModal
-          cacheSizeLabel={
-            formatCacheSizeLabel(
-              currentSvCacheStatus?.cacheSizeBytes,
-              formatLocale,
-              t('settings.cache.size.none'),
-              translateLiteral('Unavailable')
-            )
-          }
-          cacheTitle={
-            isSwordShieldGame(selectedGame)
-              ? t('settings.cache.swsh.title')
-              : isPokemonLegendsZAGame(selectedGame)
-                ? 'Z-A Cache'
-                : 'S/V Cache'
-          }
-          description={
-            isSwordShieldGame(selectedGame)
-              ? t('settings.cache.swsh.clearDescription')
-              : isPokemonLegendsZAGame(selectedGame)
-                ? 'This removes the Pokemon Legends Z-A Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
-                : 'This removes the Scarlet/Violet Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
-          }
-          isClearing={isSvCacheClearing}
-          onCancel={() => setIsSvCacheClearConfirmOpen(false)}
-          onConfirm={() => void handleConfirmClearSvCache()}
-        />
-      ) : null}
+      {cacheClearConfirmation}
       {trinityOutputConfirmation ? (
         <TrinityOutputConfirmationModal
           includesExeFsOutput={getExeFsPlanWrite(visibleChangePlan) !== null}
@@ -22473,95 +22512,6 @@ export function App({
     </CancelEditSessionContext.Provider>
     </CommonEditorDiagnosticsProvider>
     </DiagnosticNavigationProvider>
-  );
-}
-
-function GameSelectionPage({
-  configuredGames,
-  currentGame,
-  isLoading,
-  onCancel,
-  onSelectGame
-}: {
-  configuredGames: readonly ProjectGame[];
-  currentGame: ProjectGame | null;
-  isLoading: boolean;
-  onCancel?: () => void;
-  onSelectGame: (selectedGame: ProjectGame) => void;
-}) {
-  const { t, translateLiteral } = useLocalization();
-  const rememberedGames = new Set(configuredGames);
-
-  return (
-    <main className="game-selection-shell">
-      <section
-        aria-busy={isLoading || undefined}
-        aria-labelledby="game-selection-heading"
-        className="game-selection-panel"
-      >
-        <img alt="" aria-hidden="true" className="game-selection-logo" src={kmLogoUrl} />
-        <h1 id="game-selection-heading">
-          {translateLiteral('Which game are you using?')}
-        </h1>
-        {isLoading ? (
-          <LoadingProgress
-            className="is-compact"
-            label={t('workbench.personalState.loading')}
-          />
-        ) : null}
-        <div className="game-choice-actions">
-          {visibleGameSelectionGames.map((game) => {
-            const definition = gameDefinitions[game];
-            const Icon = definition.icon;
-            const status = game === currentGame
-              ? 'Current'
-              : rememberedGames.has(game)
-                ? 'Configured'
-                : null;
-
-            return (
-              <button
-                aria-label={
-                  status
-                    ? `${definition.label}, ${translateLiteral(status)}`
-                    : definition.label
-                }
-                className={`game-choice-button${
-                  game === 'za' ? ' game-choice-button-full-row' : ''
-                }`}
-                key={game}
-                disabled={isLoading}
-                onClick={() => onSelectGame(game)}
-                type="button"
-              >
-                <Icon aria-hidden="true" size={24} />
-                <span className="game-choice-copy">
-                  <strong>{definition.label}</strong>
-                  {status ? (
-                    <small aria-hidden="true" className="status-pill status-ready">
-                      {translateLiteral(status)}
-                    </small>
-                  ) : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {onCancel ? (
-          <div className="game-selection-actions">
-            <button
-              className="secondary-button"
-              disabled={isLoading}
-              onClick={onCancel}
-              type="button"
-            >
-              <X aria-hidden="true" size={16} />
-              <span>{translateLiteral('Cancel')}</span>
-            </button>
-          </div>
-        ) : null}
-      </section>
-    </main>
   );
 }
 
@@ -58524,15 +58474,13 @@ type PendingEditContext = {
 type SettingsTabId =
   | 'betaEditors'
   | 'updates'
-  | 'layout'
   | 'themes'
   | 'cache'
-  | 'analysis'
   | 'diagnostics'
-  | 'language'
-  | 'personalization';
+  | 'language';
 
 function SettingsSection({
+  isWelcome = false,
   analysisLoadingSettings,
   appVersion,
   availableUpdateKind,
@@ -58559,6 +58507,7 @@ function SettingsSection({
   svCacheRefreshTick,
   svCacheStatus
 }: {
+  isWelcome?: boolean;
   analysisLoadingSettings: ReactNode;
   appVersion: string;
   availableUpdateKind: AvailableUpdate['kind'] | null;
@@ -58580,7 +58529,7 @@ function SettingsSection({
   onRestartAfterUpdate: () => void;
   onClearSvCache: () => void;
   onRefreshSvCacheStatus: () => void;
-  selectedGame: ProjectGame;
+  selectedGame: ProjectGame | null;
   status: UpdateCheckStatus;
   svCacheRefreshTick: number;
   svCacheStatus: TrinityCacheStatus | null;
@@ -58632,31 +58581,15 @@ function SettingsSection({
     : isPokemonLegendsZAGame(selectedGame)
       ? translateLiteral('Controls how aggressively Z-A Trinity data is cached between editor loads.')
       : translateLiteral('Controls how aggressively S/V Trinity data is cached between editor loads.');
-  const effectiveActiveSettingsTab = activeSettingsTab === 'cache' && !canShowSvCacheSettings
-    ? 'updates'
-    : activeSettingsTab;
-  const settingsTabs: readonly {
-    id: SettingsTabId;
-    icon: LucideIcon;
-    label: string;
-  }[] = [
+  const effectiveActiveSettingsTab = activeSettingsTab;
+  const settingsTabs: readonly { id: SettingsTabId; icon: LucideIcon; label: string }[] = [
     { id: 'updates', icon: RefreshCw, label: t('settings.tabs.updates') },
-    { id: 'layout', icon: Table2, label: t('settings.layout.title') },
-    { id: 'themes', icon: Palette, label: t('settings.themes.title') },
-    ...(canShowSvCacheSettings
-      ? [{ id: 'cache' as const, icon: Layers, label: cacheTitle }]
-      : []),
-    { id: 'analysis', icon: Activity, label: t('analysisLoading.title') },
-    { id: 'diagnostics', icon: Activity, label: t('settings.tabs.diagnostics') },
-    { id: 'betaEditors', icon: Layers, label: t('settings.tabs.betaEditors') },
     { id: 'language', icon: Languages, label: t('settings.language.title') },
-    { id: 'personalization', icon: Sparkles, label: t('settings.tabs.personalization') }
+    { id: 'themes', icon: Palette, label: t('settings.tabs.layoutThemes') },
+    { id: 'cache', icon: Layers, label: t('settings.tabs.dataCache') },
+    { id: 'diagnostics', icon: Activity, label: t('settings.tabs.diagnostics') },
+    { id: 'betaEditors', icon: Layers, label: t('settings.tabs.betaEditors') }
   ];
-  useEffect(() => {
-    if (activeSettingsTab === 'cache' && !canShowSvCacheSettings) {
-      setActiveSettingsTab('updates');
-    }
-  }, [activeSettingsTab, canShowSvCacheSettings]);
   const swShCacheModeDescriptionById: Record<TrinityCacheMode, string> = {
     balanced: t('settings.cache.swsh.mode.balanced.description'),
     minimal: t('settings.cache.swsh.mode.minimal.description'),
@@ -58814,11 +58747,11 @@ function SettingsSection({
         </div>
       ) : null}
 
-      {effectiveActiveSettingsTab === 'layout' ? (
+      {effectiveActiveSettingsTab === 'themes' ? (
         <div
-          aria-labelledby="settings-tab-layout"
+          aria-labelledby="settings-tab-themes"
           className="settings-tab-panel"
-          id="settings-tabpanel-layout"
+          id="settings-tabpanel-themes"
           role="tabpanel"
         >
       <section aria-labelledby="layout-settings-heading" className="settings-subsection">
@@ -58869,28 +58802,19 @@ function SettingsSection({
           })}
         </div>
       </section>
-        </div>
-      ) : null}
-
-      {effectiveActiveSettingsTab === 'themes' ? (
-        <div
-          aria-labelledby="settings-tab-themes"
-          className="settings-tab-panel"
-          id="settings-tabpanel-themes"
-          role="tabpanel"
-        >
           {themeSettings}
+          {personalizationSettings}
         </div>
       ) : null}
 
-      {canShowSvCacheSettings && effectiveActiveSettingsTab === 'cache' ? (
+      {effectiveActiveSettingsTab === 'cache' ? (
         <div
           aria-labelledby="settings-tab-cache"
           className="settings-tab-panel"
           id="settings-tabpanel-cache"
           role="tabpanel"
         >
-          <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
+          {canShowSvCacheSettings ? <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
           <div className="settings-subsection-heading">
             <Layers aria-hidden="true" size={18} />
             <div>
@@ -58957,7 +58881,7 @@ function SettingsSection({
                   svCacheStatus === null
                     ? hasSvCacheRequestError
                       ? 'Retry required'
-                      : 'Checking status'
+                      : isWelcome ? t('settings.cache.loadSettings') : 'Checking status'
                     : undefined
                 }
                 id="settings-cache-limit"
@@ -59000,7 +58924,7 @@ function SettingsSection({
                 busyLabel="Refreshing"
                 icon={<RefreshCw aria-hidden="true" size={18} />}
                 isBusy={isSvCacheRefreshing}
-                label={hasSvCacheRequestError ? 'Retry Cache Status' : 'Refresh Cache Size'}
+                label={hasSvCacheRequestError ? 'Retry Cache Status' : isWelcome && !svCacheStatus ? t('settings.cache.loadSettings') : 'Refresh Cache Size'}
                 size={18}
               />
             </button>
@@ -59020,17 +58944,7 @@ function SettingsSection({
               />
             </button>
           </div>
-        </section>
-        </div>
-      ) : null}
-
-      {effectiveActiveSettingsTab === 'analysis' ? (
-        <div
-          aria-labelledby="settings-tab-analysis"
-          className="settings-tab-panel"
-          id="settings-tabpanel-analysis"
-          role="tabpanel"
-        >
+        </section> : null}
           {analysisLoadingSettings}
         </div>
       ) : null}
@@ -59107,16 +59021,7 @@ function SettingsSection({
         </div>
       ) : null}
 
-      {effectiveActiveSettingsTab === 'personalization' ? (
-        <div
-          aria-labelledby="settings-tab-personalization"
-          className="settings-tab-panel"
-          id="settings-tabpanel-personalization"
-          role="tabpanel"
-        >
-          {personalizationSettings}
-        </div>
-      ) : null}
+
     </section>
   );
 }

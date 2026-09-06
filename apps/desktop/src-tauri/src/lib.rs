@@ -26,6 +26,8 @@ use tauri_plugin_shell::ShellExt;
 mod windows_app_identity;
 
 mod model_preview;
+#[cfg(windows)]
+mod process_gpu_memory;
 mod process_memory;
 use model_preview::{
     model_preview_activate, model_preview_camera, model_preview_close, model_preview_open,

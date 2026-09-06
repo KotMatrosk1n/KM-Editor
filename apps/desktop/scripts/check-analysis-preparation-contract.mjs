@@ -142,8 +142,8 @@ assert.match(
 );
 assert.match(
   app,
-  /effectiveActiveSettingsTab === 'analysis'[\s\S]*?role="tabpanel"[\s\S]*?\{analysisLoadingSettings\}/,
-  'Analysis loading settings must remain contained inside their own settings tab.'
+  /effectiveActiveSettingsTab === 'cache'[\s\S]*?role="tabpanel"[\s\S]*?\{analysisLoadingSettings\}/,
+  'Analysis loading settings must remain a separate section inside Data Cache.'
 );
 assert.match(
   app,
@@ -384,7 +384,7 @@ assert.match(
   'Project Setup cache progress must use the current project scope and surface request failure.'
 );
 assert.ok(
-  [...app.matchAll(/svCacheStatus=\{currentSvCacheStatus\}/g)].length >= 2,
+  [...app.matchAll(/svCacheStatus=\{(?:showingWelcome \? welcomeCache.status : )?currentSvCacheStatus\}/g)].length >= 2,
   'Project Setup and Settings must not render cache status from a stale project scope.'
 );
 assert.match(

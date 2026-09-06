@@ -37,3 +37,5 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+
+.km-header-memory-stack { display: inline-flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; min-width: 0; line-height: 1.25; }
