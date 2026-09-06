@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   BadgePlus,
+  Box,
   Cable,
   Candy,
   ClipboardCheck,
@@ -505,9 +506,9 @@ export const workbenchCapabilityRegistry = [
     standalone: true
   }),
   workflow({
-    description: 'Preview static models and base-color textures in a DX12 window.',
-    games: scarletVioletGames,
-    icon: ScanLine,
+    description: 'Browse 3D models and play animations in the embedded DX12 viewport.',
+    games: allGames,
+    icon: Box,
     id: 'modelViewer',
     label: '3D Model Viewer',
     maturity: 'readOnly',

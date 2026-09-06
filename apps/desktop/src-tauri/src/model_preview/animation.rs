@@ -52,9 +52,36 @@ pub struct MaterialTrack {
     channels: [Vec<Key>; 4],
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MeshInfo {
     pub name: String,
     pub material: String,
+    #[serde(default)]
+    pub top_origin_uv: bool,
+    #[serde(default)]
+    pub mask_uv: Option<[f32; 4]>,
+    #[serde(default)]
+    pub highlight: Option<usize>,
+    #[serde(default)]
+    pub highlight_color: [f32; 4],
+    #[serde(default = "unit_uv")]
+    pub highlight_uv: [f32; 4],
+    #[serde(default)]
+    pub underlay: Option<usize>,
+    #[serde(default = "unit_uv")]
+    pub underlay_uv: [f32; 4],
+    #[serde(default)]
+    pub underlay_wrap: [f32; 4],
+    #[serde(default = "all_channels")]
+    pub mask_channels: [f32; 4],
+    #[serde(default)]
+    pub uv_origins: [f32; 4],
+}
+fn all_channels() -> [f32; 4] {
+    [1.0; 4]
+}
+fn unit_uv() -> [f32; 4] {
+    [1.0, 1.0, 0.0, 0.0]
 }
 #[derive(Deserialize)]
 pub struct Rig {
@@ -85,12 +112,25 @@ impl Rig {
     }
     pub fn material(&self, index: usize, frame: f32, base: &[f32]) -> Vec<f32> {
         let mut values = base.to_vec();
+        let mut origins = self.meshes[index].uv_origins;
+        if values.len() >= 48 && self.meshes[index].mask_uv.is_none() {
+            let uv = [values[20], values[21], values[22], values[23]];
+            values[32..36].copy_from_slice(&uv);
+        }
         if let Some(clip) = &self.clip {
             for track in clip
                 .materials
                 .iter()
                 .filter(|track| track.material == self.meshes[index].material)
             {
+                if track.parameter == "UvOrigins" {
+                    for (channel, keys) in track.channels.iter().enumerate() {
+                        if let Some(value) = scalar(keys, frame) {
+                            origins[channel] = value;
+                        }
+                    }
+                    continue;
+                }
                 let offset = match track.parameter.as_str() {
                     "BaseColor" => 0,
                     "BaseColorLayer1" => 4,
@@ -98,14 +138,34 @@ impl Rig {
                     "BaseColorLayer3" => 12,
                     "BaseColorLayer4" => 16,
                     "UVScaleOffset" => 20,
+                    "UVScaleOffset1" if values.len() >= 44 => 40,
+                    "UnderlayUV" if values.len() >= 60 => 48,
                     _ => continue,
                 };
                 for (channel, keys) in track.channels.iter().enumerate() {
                     if let Some(value) = scalar(keys, frame) {
                         values[offset + channel] = value;
+                        if offset == 20
+                            && values.len() >= 48
+                            && self.meshes[index].mask_uv.is_none()
+                        {
+                            values[32 + channel] = value;
+                        }
                     }
                 }
             }
+        }
+        // Asset origins remain independent of animated translations. Apply them
+        // once after evaluating the channels so rest and animated poses agree.
+        values[22] += origins[0];
+        values[23] += origins[1];
+        if values.len() >= 48 && self.meshes[index].mask_uv.is_none() {
+            values[34] += origins[0];
+            values[35] += origins[1];
+        }
+        if values.len() >= 60 {
+            values[50] += origins[2];
+            values[51] += origins[3];
         }
         values
     }

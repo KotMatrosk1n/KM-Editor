@@ -18,7 +18,7 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 - Review normal changes in one staged plan, with dedicated previews for advanced workflows that need their own write boundary.
 - Keep unfinished work organized through project navigation, record tabs, recents, pins, bookmarks, saved views, notes, and read-only analysis tools.
 - Build Trainer teams across multiple records, reuse copied party members, and stage the complete retained draft with one **Stage Trainer Changes** action.
-- Browse Scarlet and Violet models and animations in the read-only [3D Model Viewer](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Viewer) under Beta Editors.
+- Browse Sword, Shield, Scarlet, Violet, and Legends Z-A models and animations in the read-only [3D Model Viewer](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Viewer) under Tools.
 
 Exact editor and advanced-tool coverage differs by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) is the authoritative feature guide for the latest public release.
 

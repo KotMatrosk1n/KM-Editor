@@ -54,6 +54,7 @@
     "modelViewer.category.environment": "Environment",
     "modelViewer.category.other": "Other or unclassified",
     "modelViewer.variant": "Form {form}, variant {gender}",
+    "modelViewer.shiny": "Shiny",
     "modelViewer.selectModel": "Select a model",
     "modelViewer.resetCamera": "Reset camera",
     "modelViewer.frame": "Frame model",
@@ -77,8 +78,8 @@
     "modelViewer.warning.sharedSkeletonUnavailable": "This character part needs a shared skeleton. It is shown in its stored pose without skeletal animation.",
     "modelViewer.title": "3D Model Viewer",
     "modelViewer.description": "Browse models and animate them directly in the embedded DX12 viewport.",
-    "modelViewer.scope": "Beta: skeletal animation, visibility tracks and layered color materials. Lighting and curve interpolation are approximate. Effects, morph targets and some material animation features remain unsupported.",
-    "modelViewer.unsupportedGame": "This Beta currently supports Scarlet and Violet projects.",
+    "modelViewer.scope": "Skeletal animation, visibility tracks, and layered color materials. Lighting and curve interpolation are approximations. Effects, morph targets, and some material animation features are unsupported.",
+    "modelViewer.unsupportedGame": "Select a Sword, Shield, Scarlet, Violet, or Legends Z-A project to browse models.",
     "modelViewer.desktopRequired": "Open KM Editor on Windows to use the DX12 model viewer.",
     "modelViewer.search": "Search name, number, or model",
     "modelViewer.reload": "Reload catalog",
@@ -3872,6 +3873,8 @@
     "modelViewer.backgroundStyle": "Background style",
     "modelViewer.backgroundSolid": "Solid",
     "modelViewer.backgroundGrid": "Studio grid",
+    "modelViewer.hue": "Hue",
+    "modelViewer.saturationBrightness": "Saturation and brightness",
     "modelViewer.backgroundColor": "Background color"
   },
   "literals": {

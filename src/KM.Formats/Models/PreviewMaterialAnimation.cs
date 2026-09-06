@@ -3,7 +3,7 @@ namespace KM.Formats.Models;
 
 public static class PreviewMaterialAnimation
 {
-    public static PreviewClip Read(ModelBuffer data, PreviewClip clip, ICollection<string> warnings)
+    public static PreviewClip Read(ModelBuffer data, PreviewClip clip, ICollection<string> warnings, bool highlightAnimation = false)
     {
         var visibility = new List<PreviewVisibility>();
         var materials = new List<PreviewMaterialTrack>();
@@ -27,7 +27,8 @@ public static class PreviewMaterialAnimation
                     var (frames, frameCount) = kind == 2 ? (0, count) : data.Vector(values, 0, kind == 3 ? 2 : 1, 18000);
                     if (frameCount != count) throw new InvalidDataException("Visibility keys are incomplete.");
                     var keys = new PreviewKey[count];
-                    for (var i = 0; i < count; i++) {
+                    for (var i = 0; i < count; i++)
+                    {
                         var frame = (kind == 2 ? i : kind == 3 ? data.U16(frames + i * 2) : data.U8(frames + i)) * ratio;
                         keys[i] = new(frame, [data.U8(start + i) == 0 ? 0 : 1]);
                     }
@@ -42,7 +43,9 @@ public static class PreviewMaterialAnimation
                 foreach (var parameter in data.Tables(material, 2, 256))
                 {
                     var parameterName = data.Text(parameter, 0) ?? "";
-                    if (parameterName is not ("UVScaleOffset" or "BaseColor" or "BaseColorLayer1" or "BaseColorLayer2" or "BaseColorLayer3" or "BaseColorLayer4")) {
+                    if (parameterName is not ("UVScaleOffset" or "BaseColor" or "BaseColorLayer1" or "BaseColorLayer2" or "BaseColorLayer3" or "BaseColorLayer4")
+                        && !(highlightAnimation && parameterName == "UVScaleOffset1"))
+                    {
                         warnings.Add("materialAnimationUnsupported"); continue;
                     }
                     var channels = data.Table(parameter, 1);
@@ -50,7 +53,8 @@ public static class PreviewMaterialAnimation
                     for (var c = 0; c < 4; c++)
                     {
                         var list = data.Table(channels, c);
-                        result[c] = list == 0 ? [] : data.Tables(list, 0, 18000).Select(key => {
+                        result[c] = list == 0 ? [] : data.Tables(list, 0, 18000).Select(key =>
+                        {
                             float Scalar(int field) => data.Field(key, field) is var at && at != 0 ? data.Float(at) : 0;
                             return new PreviewKey(Scalar(0) * ratio, [Scalar(1)]);
                         }).ToArray();

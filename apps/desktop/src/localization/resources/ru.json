@@ -54,6 +54,7 @@
     "modelViewer.category.environment": "Окружение",
     "modelViewer.category.other": "Прочее или без категории",
     "modelViewer.variant": "Форма {form}, вариант {gender}",
+    "modelViewer.shiny": "Блестящий",
     "modelViewer.selectModel": "Выберите модель",
     "modelViewer.resetCamera": "Сбросить камеру",
     "modelViewer.frame": "Модель целиком",
@@ -77,8 +78,8 @@
     "modelViewer.warning.sharedSkeletonUnavailable": "Этой части персонажа нужен общий скелет. Она показана в сохранённой позе без скелетной анимации.",
     "modelViewer.title": "Просмотр 3D-моделей",
     "modelViewer.description": "Просматривайте модели и анимации во встроенной области DX12.",
-    "modelViewer.scope": "Бета: скелетная анимация, дорожки видимости и слои цвета материалов. Освещение и интерполяция приближённые. Эффекты, морфинг и часть анимаций материалов пока не поддерживаются.",
-    "modelViewer.unsupportedGame": "Эта бета-версия пока поддерживает проекты Scarlet и Violet.",
+    "modelViewer.scope": "Скелетная анимация, дорожки видимости и цветовые слои материалов. Освещение и интерполяция приближённые. Эффекты, морфинг и некоторые анимации материалов не поддерживаются.",
+    "modelViewer.unsupportedGame": "Выберите проект Sword, Shield, Scarlet, Violet или Legends Z-A для просмотра моделей.",
     "modelViewer.desktopRequired": "Откройте KM Editor в Windows для просмотра моделей через DX12.",
     "modelViewer.search": "Поиск по имени, номеру или модели",
     "modelViewer.reload": "Обновить каталог",
@@ -3872,6 +3873,8 @@
     "modelViewer.backgroundStyle": "Стиль фона",
     "modelViewer.backgroundSolid": "Сплошной",
     "modelViewer.backgroundGrid": "Студийная сетка",
+    "modelViewer.hue": "Цветовой тон",
+    "modelViewer.saturationBrightness": "Насыщенность и яркость",
     "modelViewer.backgroundColor": "Цвет фона"
   },
   "literals": {

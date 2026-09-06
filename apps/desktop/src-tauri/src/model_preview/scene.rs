@@ -20,6 +20,7 @@ pub struct Scene {
     pub primitives: Vec<Primitive>,
     pub center: Vec3,
     pub radius: f32,
+    pub floor: f32,
     pub rig: super::animation::Rig,
 }
 struct Reader<'a> {
@@ -71,6 +72,12 @@ impl Scene {
             let width = r.count(4096)? as u32;
             let height = r.count(4096)? as u32;
             let (format, block) = match r.u32()? {
+                0x1a01 => (wgpu::TextureFormat::Bc1RgbaUnorm, 8),
+                0x1a06 => (wgpu::TextureFormat::Bc1RgbaUnormSrgb, 8),
+                0x1b01 => (wgpu::TextureFormat::Bc2RgbaUnorm, 16),
+                0x1b06 => (wgpu::TextureFormat::Bc2RgbaUnormSrgb, 16),
+                0x1c01 => (wgpu::TextureFormat::Bc3RgbaUnorm, 16),
+                0x1c06 => (wgpu::TextureFormat::Bc3RgbaUnormSrgb, 16),
                 0x1d01 => (wgpu::TextureFormat::Bc4RUnorm, 8),
                 0x1e01 => (wgpu::TextureFormat::Bc5RgUnorm, 16),
                 0x2001 => (wgpu::TextureFormat::Bc7RgbaUnorm, 16),
@@ -177,6 +184,24 @@ impl Scene {
         let rig: super::animation::Rig =
             serde_json::from_slice(r.take(metadata_size)?).map_err(|_| "KM-MODEL-UNSUPPORTED")?;
         rig.validate(mesh_count)?;
+        for mesh in &rig.meshes {
+            if mesh.highlight.is_some_and(|index| index >= texture_count)
+                || mesh.underlay.is_some_and(|index| index >= texture_count)
+                || mesh
+                    .mask_uv
+                    .iter()
+                    .flatten()
+                    .chain(&mesh.highlight_uv)
+                    .chain(&mesh.highlight_color)
+                    .chain(&mesh.underlay_uv)
+                    .chain(&mesh.underlay_wrap)
+                    .chain(&mesh.mask_channels)
+                    .chain(&mesh.uv_origins)
+                    .any(|v| !v.is_finite() || v.abs() > 1_000_000.0)
+            {
+                return Err("KM-MODEL-UNSUPPORTED".into());
+            }
+        }
         let joints = rig.matrices(0.0);
         let stored_bounds = (min, max);
         min = Vec3::splat(f32::MAX);
@@ -185,7 +210,8 @@ impl Scene {
             if !rig.visible(i, 0.0) {
                 continue;
             }
-            for vertex in primitive.vertices.chunks_exact(16) {
+            for index in &primitive.indices {
+                let vertex = &primitive.vertices[*index as usize * 16..][..16];
                 let position = Vec3::new(vertex[0], vertex[1], vertex[2]);
                 let mut transformed = Vec3::ZERO;
                 let mut weight = 0.0;
@@ -217,6 +243,7 @@ impl Scene {
             primitives,
             center: (min + max) * 0.5,
             radius,
+            floor: min.y,
             rig,
         })
     }

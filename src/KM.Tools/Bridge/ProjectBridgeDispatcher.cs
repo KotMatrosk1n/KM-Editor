@@ -1346,7 +1346,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         }
         catch (Exception exception) when (exception is InvalidDataException or OverflowException or ArgumentException or InvalidOperationException)
         {
-            throw new BridgeRequestException("This model or catalog is not supported by the Beta preview, or its sources changed. Reload and select a supported model.",
+            throw new BridgeRequestException("This model or catalog is not supported by the preview, or its sources changed. Reload and select a supported model.",
                 exception, BridgeErrorCodes.ModelUnsupported);
         }
     }

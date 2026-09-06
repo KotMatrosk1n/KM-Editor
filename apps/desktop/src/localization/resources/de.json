@@ -54,6 +54,7 @@
     "modelViewer.category.environment": "Umgebung",
     "modelViewer.category.other": "Andere oder nicht zugeordnet",
     "modelViewer.variant": "Form {form}, Variante {gender}",
+    "modelViewer.shiny": "Schillernd",
     "modelViewer.selectModel": "Modell auswählen",
     "modelViewer.resetCamera": "Kamera zurücksetzen",
     "modelViewer.frame": "Modell einpassen",
@@ -77,8 +78,8 @@
     "modelViewer.warning.sharedSkeletonUnavailable": "Dieses Charakterteil benötigt ein gemeinsames Skelett. Es wird in der gespeicherten Pose ohne Skelettanimation angezeigt.",
     "modelViewer.title": "3D-Modellbetrachter",
     "modelViewer.description": "Modelle durchsuchen und direkt im eingebetteten DX12-Ansichtsfenster animieren.",
-    "modelViewer.scope": "Beta: Skelettanimation, Sichtbarkeitsspuren und geschichtete Farbmaterialien. Beleuchtung und Kurveninterpolation sind Näherungen. Effekte, Morph-Ziele und einige Materialanimationen werden noch nicht unterstützt.",
-    "modelViewer.unsupportedGame": "Diese Beta unterstützt derzeit Projekte für Karmesin und Purpur.",
+    "modelViewer.scope": "Skelettanimationen, Sichtbarkeitsspuren und Materialien mit Farbebenen. Beleuchtung und Kurveninterpolation sind Annäherungen. Effekte, Morph-Ziele und einige Materialanimationen werden nicht unterstützt.",
+    "modelViewer.unsupportedGame": "Wähle ein Projekt für Sword, Shield, Scarlet, Violet oder Legends Z-A, um Modelle zu durchsuchen.",
     "modelViewer.desktopRequired": "Öffne KM Editor unter Windows, um den DX12-Modellbetrachter zu verwenden.",
     "modelViewer.search": "Name, Nummer oder Modell suchen",
     "modelViewer.reload": "Katalog neu laden",
@@ -3872,6 +3873,8 @@
     "modelViewer.backgroundStyle": "Hintergrundstil",
     "modelViewer.backgroundSolid": "Einfarbig",
     "modelViewer.backgroundGrid": "Studioraster",
+    "modelViewer.hue": "Farbton",
+    "modelViewer.saturationBrightness": "Sättigung und Helligkeit",
     "modelViewer.backgroundColor": "Hintergrundfarbe"
   },
   "literals": {

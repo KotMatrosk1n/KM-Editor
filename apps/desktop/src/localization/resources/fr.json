@@ -54,6 +54,7 @@
     "modelViewer.category.environment": "Environnement",
     "modelViewer.category.other": "Autres ou non classés",
     "modelViewer.variant": "Forme {form}, variante {gender}",
+    "modelViewer.shiny": "Chromatique",
     "modelViewer.selectModel": "Sélectionner un modèle",
     "modelViewer.resetCamera": "Réinitialiser la caméra",
     "modelViewer.frame": "Cadrer le modèle",
@@ -77,8 +78,8 @@
     "modelViewer.warning.sharedSkeletonUnavailable": "Cette partie du personnage nécessite un squelette partagé. Elle apparaît dans sa pose enregistrée sans animation du squelette.",
     "modelViewer.title": "Visionneuse de modèles 3D",
     "modelViewer.description": "Parcourez les modèles et animez-les directement dans la vue DX12 intégrée.",
-    "modelViewer.scope": "Bêta : animation du squelette, pistes de visibilité et matériaux à couches de couleur. Éclairage et interpolation approximatifs. Les effets, les morphes et certaines animations de matériaux restent non pris en charge.",
-    "modelViewer.unsupportedGame": "Cette bêta prend actuellement en charge les projets Écarlate et Violet.",
+    "modelViewer.scope": "Animation du squelette, pistes de visibilité et matériaux à couches de couleur. L’éclairage et l’interpolation sont approximatifs. Les effets, les morphs et certaines animations de matériaux ne sont pas pris en charge.",
+    "modelViewer.unsupportedGame": "Sélectionnez un projet Sword, Shield, Scarlet, Violet ou Legends Z-A pour parcourir les modèles.",
     "modelViewer.desktopRequired": "Ouvrez KM Editor sous Windows pour utiliser la visionneuse DX12.",
     "modelViewer.search": "Rechercher un nom, un numéro ou un modèle",
     "modelViewer.reload": "Recharger le catalogue",
@@ -3872,6 +3873,8 @@
     "modelViewer.backgroundStyle": "Style du fond",
     "modelViewer.backgroundSolid": "Uni",
     "modelViewer.backgroundGrid": "Grille de studio",
+    "modelViewer.hue": "Teinte",
+    "modelViewer.saturationBrightness": "Saturation et luminosité",
     "modelViewer.backgroundColor": "Couleur du fond"
   },
   "literals": {

@@ -46,6 +46,7 @@ pub struct Renderer {
     viewport_visible: bool,
     center: Vec3,
     radius: f32,
+    floor: f32,
     yaw: f32,
     pitch: f32,
     distance: f32,
@@ -190,12 +191,32 @@ impl Renderer {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(128),
+                        min_binding_size: wgpu::BufferSize::new(256),
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -242,7 +263,7 @@ impl Renderer {
             &[0; 4],
         );
         let mut meshes = Vec::new();
-        for primitive in scene.primitives {
+        for (index, primitive) in scene.primitives.into_iter().enumerate() {
             let mut values = primitive.material.to_vec();
             let ratio = |index: Option<usize>| {
                 index
@@ -257,6 +278,21 @@ impl Renderer {
             };
             values.extend_from_slice(&ratio(primitive.texture));
             values.extend_from_slice(&ratio(primitive.mask));
+            let appearance = &scene.rig.meshes[index];
+            values.extend_from_slice(
+                &appearance
+                    .mask_uv
+                    .unwrap_or(primitive.material[20..24].try_into().unwrap()),
+            );
+            values.extend_from_slice(&appearance.highlight_color);
+            values.extend_from_slice(&appearance.highlight_uv);
+            values.extend_from_slice(&ratio(appearance.highlight));
+            values.extend_from_slice(&[if appearance.top_origin_uv { 1.0 } else { 0.0 }, 0.0]);
+            values.extend_from_slice(&appearance.underlay_uv);
+            values.extend_from_slice(&appearance.underlay_wrap);
+            values.extend_from_slice(&ratio(appearance.underlay));
+            values.extend_from_slice(&[0.0, 0.0]);
+            values.extend_from_slice(&appearance.mask_channels);
             let color = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Material color"),
                 contents: bytemuck::cast_slice(&values),
@@ -284,6 +320,18 @@ impl Renderer {
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(
                             primitive.mask.map(|i| &textures[i]).unwrap_or(&black),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(
+                            appearance.highlight.map(|i| &textures[i]).unwrap_or(&black),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(
+                            appearance.underlay.map(|i| &textures[i]).unwrap_or(&black),
                         ),
                     },
                 ],
@@ -360,6 +408,7 @@ impl Renderer {
             viewport_visible: true,
             center: scene.center,
             radius: scene.radius,
+            floor: scene.floor,
             yaw: 0.0,
             pitch: 0.0,
             distance: 0.0,
@@ -645,7 +694,7 @@ impl Renderer {
         self.background.update(
             &self.queue,
             projection * view,
-            self.center,
+            Vec3::new(self.center.x, self.floor + self.radius, self.center.z),
             self.radius,
             self.background_color,
             self.grid,

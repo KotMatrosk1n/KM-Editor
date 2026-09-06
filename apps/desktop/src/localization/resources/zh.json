@@ -54,6 +54,7 @@
     "modelViewer.category.environment": "环境",
     "modelViewer.category.other": "其他或未分类",
     "modelViewer.variant": "形态 {form}，变体 {gender}",
+    "modelViewer.shiny": "异色",
     "modelViewer.selectModel": "选择模型",
     "modelViewer.resetCamera": "重置相机",
     "modelViewer.frame": "适应模型",
@@ -77,8 +78,8 @@
     "modelViewer.warning.sharedSkeletonUnavailable": "此角色部件需要共享骨骼，目前仅显示存储的姿态，不播放骨骼动画。",
     "modelViewer.title": "3D 模型查看器",
     "modelViewer.description": "直接在嵌入式 DX12 视口中浏览模型和播放动画。",
-    "modelViewer.scope": "测试版：支持骨骼动画、可见性轨道和分层颜色材质。光照和曲线插值为近似效果。特效、形变目标和部分材质动画功能尚不支持。",
-    "modelViewer.unsupportedGame": "此测试版目前支持《朱／紫》项目。",
+    "modelViewer.scope": "支持骨骼动画、可见性轨道和分层颜色材质。光照和曲线插值为近似效果。特效、形变目标和部分材质动画功能尚不支持。",
+    "modelViewer.unsupportedGame": "选择 Sword、Shield、Scarlet、Violet 或 Legends Z-A 项目以浏览模型。",
     "modelViewer.desktopRequired": "请在 Windows 上打开 KM Editor，以使用 DX12 模型查看器。",
     "modelViewer.search": "搜索名称、编号或模型",
     "modelViewer.reload": "重新加载目录",
@@ -3872,6 +3873,8 @@
     "modelViewer.backgroundStyle": "背景样式",
     "modelViewer.backgroundSolid": "纯色",
     "modelViewer.backgroundGrid": "工作室网格",
+    "modelViewer.hue": "色相",
+    "modelViewer.saturationBrightness": "饱和度和亮度",
     "modelViewer.backgroundColor": "背景颜色"
   },
   "literals": {
