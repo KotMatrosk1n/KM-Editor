@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 .toolbar.workspace-header {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem) minmax(0, 1fr);
+  /* Equal side tracks center the game on the whole bar; its text sets the middle width. */
+  grid-template-columns: minmax(0, 1fr) fit-content(22rem) minmax(0, 1fr);
   grid-template-areas: 'leading game actions';
 }
 
@@ -48,19 +49,11 @@
   overflow-wrap: anywhere;
 }
 
-/* Keep the title centered on the entire bar, not the unequal space between controls. */
-@container workspace (max-width: 1280px) {
-  .toolbar.workspace-header {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas: 'leading actions' 'game game';
-    gap: 10px 16px;
-  }
-}
-
 @container workspace (max-width: 760px) {
   .toolbar.workspace-header {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: 'leading' 'game' 'actions';
+    gap: 10px 16px;
     padding-inline: 16px;
   }
 
