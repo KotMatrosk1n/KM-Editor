@@ -293,7 +293,6 @@ public sealed class OutputWorkspaceStorage
     {
         if ((File.Exists(Path.Combine(store, "sv-mod-merger-manifest.json")) && projectPaths.SelectedGame is not (ProjectGame.Scarlet or ProjectGame.Violet))
             || (File.Exists(Path.Combine(store, "za-mod-merger-manifest.json")) && projectPaths.SelectedGame != ProjectGame.ZA)) return false;
-        var expected = ProjectIdentity.FromPaths(projectPaths).Value;
         var opposite = Enum.GetValues<ProjectGame>().Where(game => game != projectPaths.SelectedGame)
             .Select(game => ProjectIdentity.FromPaths(projectPaths with { SelectedGame = game }).Value).ToHashSet(StringComparer.Ordinal);
         foreach (var file in Inventory(store).Keys.Where(name => name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
@@ -308,7 +307,9 @@ public sealed class OutputWorkspaceStorage
                     if (property.NameEquals("projectId") && property.Value.ValueKind == JsonValueKind.String)
                     {
                         var id = property.Value.GetString();
-                        if (opposite.Contains(id!) || id != expected) return false;
+                        // Older configurations can have different project ids even for
+                        // the same output. Preserve their metadata when importing it.
+                        if (opposite.Contains(id!)) return false;
                     }
                     if (property.NameEquals("gameFamily") && property.Value.ValueKind == JsonValueKind.Number
                         && property.Value.GetInt32() != (int)projectPaths.SelectedGame!.Value.ToGameFamily()) return false;

@@ -23,18 +23,11 @@ export function completeSuccessfulApplyResult<
     return applyResult;
   }
 
-  const remainingReviewedDiagnostics = [...reviewedPlan.diagnostics];
-  const diagnostics = applyResult.diagnostics.filter((diagnostic) => {
-    const reviewedIndex = remainingReviewedDiagnostics.findIndex((reviewedDiagnostic) =>
+  const diagnostics = applyResult.diagnostics.filter((diagnostic) =>
+    diagnostic.severity !== 'info' || !reviewedPlan.diagnostics.some((reviewedDiagnostic) =>
       areDiagnosticsEquivalent(diagnostic, reviewedDiagnostic)
-    );
-    if (reviewedIndex < 0) {
-      return true;
-    }
-
-    remainingReviewedDiagnostics.splice(reviewedIndex, 1);
-    return false;
-  });
+    )
+  );
 
   return diagnostics.length === applyResult.diagnostics.length
     ? applyResult

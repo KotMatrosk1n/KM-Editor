@@ -2,6 +2,333 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.6.0",
+      "summary": {
+        "en": "KM Editor 2.6.0 adds an animated 3D Model Viewer for Scarlet and Violet, a new welcome hub, six additional themes, and app-specific RAM and VRAM diagnostics. It also expands compatibility editing, improves History and portable output support, and fixes shared output and Z-A TM batch handling."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Welcome Hub And Settings"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "The new welcome hub brings all five games into a persistent sidebar with saved project status, remembered game selection, release notes, and Getting started guidance. Release notes can show all games or the selected game family, always including shared app changes."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Opening a game through the hub restores its saved paths in Project Setup. Game-data loading and cache preparation wait until you press Validate Paths. You can browse the hub and choose a game without starting that work."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Settings follows the game selected in the hub. Data Cache groups the family cache controls and Analysis Loading as separate sections. Layout and Themes places layout controls above themes and appearance options below them. Language and Localization follows Updates."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The hub shows the installed app version and Made by Matroskin credit, plus a From the developer message below the notes. Documentation, GitHub, Full changelog, and Report an issue each open one browser tab. Welcome content is bundled with the app and remains available offline."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scarlet And Violet"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "The new 3D Model Viewer under Beta Editors displays models inside the editor through DX12 with automatic graphics adapter selection. Browse Pokemon, forms, environment assets, objects, props, and other verified models, then orbit, pan, zoom, reset, or frame the view."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Animation controls include play, pause, restart, looping, play once, seeking, playback speed, and rest pose. The viewer supports skeletal animation and supported visibility, color, and texture-coordinate tracks, with layered colors and small compressed textures."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "The viewer is read only: it does not edit or export models or write game output. Lighting and curve interpolation are approximate; effects, morph targets, some material channels, and complete shared character assembly remain unsupported. Missing optional animation data leaves supported geometry viewable with a warning. Enable Show Beta Editors in Settings to access it."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Output remains editable when switching between a single editor and combined editor batches. Shared descriptor and TM control updates preserve compatible ownership records, history, and checkpoints while checking the current files and each editor’s write scope."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Items now provides individual and bulk Pokemon compatibility controls for TMs. Trainer AI controls consistently handle the shared Double flag, remove the duplicate Raid choice, and correct the Weak description. TM Machine Controls sends staged policy choices through Changes for review and output."
+              },
+              "audience": [
+                "sv"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Items now provides individual and bulk Pokemon compatibility controls for TMs and TRs. TM and TR groups keep their exact machine assignments and bit positions, including machines that teach the same move."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Advanced editors use clearer status, selection, and action areas with expandable technical details. Starting Items and Catch Cap have roomier scrollable rows, Royal Candy uses descriptive workflow cards, and Fashion Unlock and Gym Uniform Removal remove redundant explanatory tables while retaining their actions and safeguards."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Items now provides individual and bulk Pokemon compatibility controls for TMs. Batches that enable several moves correctly reserve empty slots per Pokemon and expand the personal table when needed, preserving every requested move and accompanying edit across all three output modes."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer AI controls expose Basic, Strong, Expert, and Change while preserving other stored flags. Enable Change for All includes loaded trainers hidden by filters and retains its confirmation, staging, and draft safeguards."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Zero Trainer move assignments display as Not specified. The editor explains that these are stored assignments rather than a resolved battle moveset; explicit moves and zero values keep their existing storage meaning."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Editing And Comparisons"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Pokemon compatibility groups offer Enable All, Disable All, and Restore Vanilla, including entries hidden by search. Items bulk compatibility actions follow Show all Pokemon and include entries hidden by search. Compatibility changes remain drafts until staged, Cancel discards them, and failed staging preserves the input."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Focused learnset rows, encounter slots, and Trainer party slots support Ctrl+C and Ctrl+V through the existing internal editor clipboard. Normal text editing, game compatibility checks, and context menus remain available; external clipboard text cannot become editor records."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Changes identifies staged shop removals individually, allowing one removal to be restored while keeping other removals, additions, replacements, and ordering. Duplicate items are handled by occurrence, and associated operations keep their atomic removal rules."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Workbench comparison catalogs search the complete prepared study across all five games, report complete metric counts, and load record details only when selected. Searchable paged choices retain selections, reject stale responses, and let failed reads be retried."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "History And Output"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "History has its own page between Changes and Settings. It groups transactions by local date and editor, pages transactions and recorded changes, and keeps long lists within a scrollable area. Older file-only receipts remain readable without inventing individual edit details."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Existing output stays editable after app updates and configuration changes, including relocated source or support folders. Output history, checkpoints, restore, and supported gameplay package operations remain available for the selected game and output folder."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Durable output history, ownership, checkpoints, and legacy Mod Merger metadata use separate workspaces for each exact game and output location. Verified migration preserves existing records and resumes interrupted work; unprovable conflicts stay blocked with their copies preserved."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "FAT, FAT32, and exFAT output locations use protected workspace recovery journals while temporary working files stay on the output volume. Existing NTFS protections, project isolation, review checks, and pending recovery safeguards remain in place. Filesystem limits, including FAT32 single-file limits, still apply."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Themes And Presentation"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Six new themes join Classic, Renegade, and Royal: Sovereign, Arcane, Relic, Sword and Shield, Scarlet and Violet, and Legends Z-A. Their matching emblems and palettes extend across editor controls, tables, selections, diagnostics, and type effectiveness cells while preserving accessibility preferences."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Page headers center the selected game and align the page title with navigation and optional memory readings. The sticky Pokemon editing bar keeps the selected sprite and name visible, and advanced editor layouts provide more space for controls. Type Chart cells distinguish immunity, resistance, and weakness across themes."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer item icons use a bundled catalog with dedicated sprites or representative KM category symbols. Unknown items and failed artwork keep numbered fallbacks, None stays empty, and spacing prevents item and Pokemon sprites from colliding."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Memory And Diagnostics"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Diagnostics shows private RAM, committed memory, and GPU-local VRAM for this KM Editor instance, its workers, and the interface renderer. Independent options show RAM and VRAM beside page titles, with VRAM below RAM. Unsupported readings show unavailable values; integrated graphics may count shared system memory as GPU-local memory."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Idle disposable worker caches are released sooner when system memory is tight and reload on demand. Active and queued work, session state, and source handles remain protected. Diagnostics and header readings share one sampler that pauses while hidden."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Source diagnostics retain the useful workflow explanation, severity, and recovery context while keeping technical details bounded. New controls and guidance are available in all seven interface languages, including a saved Show Beta Editors setting that defaults to off."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Successful output clears repeated pending-validation and preview messages across all five games. Warnings, errors, and current apply instructions remain visible."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Release Metadata"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Application package, Tauri, Cargo, lockfile, setup, and window title metadata identify KM Editor 2.6.0 consistently."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The Windows release contains the custom x64 setup executable, its updater signature, the updater manifest, and checksums."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.5.9...v2.6.0"
+        }
+      ]
+    },
+    {
       "version": "2.5.9",
       "summary": {
         "en": "KM Editor 2.5.9 improves draft preservation, shared staging, Trainer team editing, and output reliability across the supported games. It fixes Legends Z-A Gift Review failures, expands Z-A Fashion Catalog and read-only Game Tools, and brings consistent searchable controls and keyboard navigation to more editor surfaces."
@@ -265,24 +592,24 @@
   ],
   "announcements": [
     {
-      "id": "welcome-project-setup",
+      "id": "model-viewer-2-6-0",
       "title": {
-        "en": "Start when you are ready",
-        "de": "Starten, wenn du bereit bist",
-        "es": "Empieza cuando quieras",
-        "fr": "Commencez quand vous êtes prêt",
-        "ru": "Начните, когда будете готовы",
-        "uk": "Почніть, коли будете готові",
-        "zh": "准备好后再开始"
+        "en": "3D Model Viewer",
+        "de": "3D-Modellbetrachter",
+        "es": "Visor de modelos 3D",
+        "fr": "Visionneuse de modèles 3D",
+        "ru": "Просмотр 3D-моделей",
+        "uk": "Перегляд 3D-моделей",
+        "zh": "3D 模型查看器"
       },
       "body": {
-        "en": "Choose your game, review your project paths, and press Validate Paths when you are ready to load game data. You can browse the welcome hub first.",
-        "de": "Wähle dein Spiel, prüfe die Projektpfade und klicke auf Pfade prüfen, sobald du die Spieldaten laden möchtest. Du kannst zuerst die Startseite durchsehen.",
-        "es": "Elige tu juego, revisa las rutas del proyecto y pulsa Validar rutas cuando quieras cargar los datos. Puedes explorar primero la pantalla de bienvenida.",
-        "fr": "Choisissez votre jeu, vérifiez les chemins du projet, puis validez les chemins pour charger les données. Vous pouvez d’abord parcourir l’accueil.",
-        "ru": "Выберите игру, проверьте пути проекта и нажмите «Проверить пути», когда будете готовы загрузить данные игры. Сначала можно просмотреть стартовую страницу.",
-        "uk": "Виберіть гру, перевірте шляхи проєкту та натисніть «Перевірити шляхи», коли будете готові завантажити дані гри. Спершу можна переглянути стартову сторінку.",
-        "zh": "选择游戏，检查项目路径，准备好加载游戏数据后再点击验证路径。您可以先浏览欢迎页面。"
+        "en": "Check out the new 3D Model Viewer for Scarlet and Violet!",
+        "de": "Entdecke den neuen 3D-Modellbetrachter für Karmesin und Purpur!",
+        "es": "¡Descubre el nuevo visor de modelos 3D para Escarlata y Púrpura!",
+        "fr": "Découvrez la nouvelle visionneuse de modèles 3D pour Écarlate et Violet !",
+        "ru": "Попробуйте новый просмотрщик 3D-моделей для Scarlet и Violet!",
+        "uk": "Спробуйте новий переглядач 3D-моделей для Scarlet і Violet!",
+        "zh": "快来体验朱和紫的全新 3D 模型查看器！"
       },
       "audience": [
         "all"

@@ -4,15 +4,17 @@ Edit `content.json` to maintain the welcome hub without changing its React layou
 
 Run `pnpm --filter @km-editor/desktop check:welcome` after editing. The same validation runs during the desktop typecheck and build. `welcomeContentSchema.ts` defines the format; invalid optional content falls back to empty content at runtime so project selection remains usable.
 
+Before every release, finalize this content against the complete release changelog before packaging. Verify all five game selections, shared changes, version matching, links, and the developer card. Published GitHub notes cannot change the content already embedded in an installed build.
+
 ## Releases
 
-Add a `releases` entry with an exact `version`, `summary`, and `sections`. The hub selects only the entry matching the installed application version reported by the native app, with Tauri configuration as the browser fallback. Missing versions display an empty state. Do not put unreleased changes in an older version's notes. The bundled 2.5.9 content comes from that version's published GitHub release.
+Add a `releases` entry with an exact `version`, `summary`, and `sections`. The hub selects only the entry matching the installed application version reported by the native app, with Tauri configuration as the browser fallback. Missing versions display an empty state. Do not put unreleased changes in an older version's notes. The bundled 2.5.9 content comes from that version's published GitHub release. The 2.6.0 entry supplies the matching [release notes](../../../../../docs/release-notes/2.6.0.md); keep its English summary, sections, items, and comparison link identical to that document when revising the release.
 
 Each section has a `title` and `items`. Each item has a `body` and `audience`. Supported audiences are `all`, `swsh`, `sv`, `za`, `sword`, `shield`, `scarlet`, and `violet`. Use `all` for application-wide changes; it remains visible under every game filter. Use multiple audiences for changes shared by selected families. Empty filtered sections are hidden. The complete-notes control expands all matching items inside the app.
 
-## Announcements
+## From the developer
 
-Add entries to `announcements` with a unique `id`, `title`, `body`, and `audience`. Optional fields are `published` (YYYY-MM-DD), `featured` (defaults to false), and `links`. Announcements display in file order. The first applicable featured announcement also supplies the developer note below the panel. Keep its body brief. Remove an announcement from the array when it should no longer appear. An empty array shows the announcement empty state and hides the developer card.
+The hub currently has only What's new and Getting started tabs. Developer notes still use the `announcements` content array, but there is no Announcements tab. Add entries with a unique `id`, `title`, `body`, and `audience`. Optional fields are `published` (YYYY-MM-DD), `featured` (defaults to false), and `links`. The first applicable featured entry supplies the developer note below the panel. Keep its body brief. Remove an entry when it should no longer appear. An empty array hides the developer card; entries without `featured` are not displayed.
 
 ```json
 {

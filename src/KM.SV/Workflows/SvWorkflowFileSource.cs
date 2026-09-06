@@ -972,8 +972,7 @@ internal sealed class SvWorkflowFileSource
         var inventory = coordinator.GetOwnershipInventoryAsync().GetAwaiter().GetResult();
         const string romFsPrefix = "romfs/";
         return inventory.Files
-            .Where(record => record.ProjectId == projectId
-                && record.GameFamily == GameFamily.ScarletViolet
+            .Where(record => coordinator.OwnershipScopeMatches(record, projectId, GameFamily.ScarletViolet)
                 && string.Equals(record.OutputMode, ToOutputModeKey(SvOutputMode.Standalone), StringComparison.Ordinal)
                 && record.Path.Value.StartsWith(romFsPrefix, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(record.Path.Value, ToRelativePath(DescriptorVirtualPath), StringComparison.OrdinalIgnoreCase)
@@ -1339,6 +1338,7 @@ internal sealed class SvWorkflowFileSource
                 && ownedRecord is not null)
             {
                 ValidateComposedOutputOwnership(
+                    coordinator,
                     ownedRecord,
                     projectId,
                     GameFamily.ScarletViolet,
@@ -1361,8 +1361,7 @@ internal sealed class SvWorkflowFileSource
                     ? ownedRecord
                     : inventory.Files.FirstOrDefault(record =>
                         record.Path == relativePath
-                        && record.ProjectId == projectId
-                        && record.GameFamily == GameFamily.ScarletViolet);
+                        && coordinator.OwnershipScopeMatches(record, projectId, GameFamily.ScarletViolet));
                 var remainingClaims = isComposedExecutable && owned is not null
                     ? owned.Claims.Where(claim => claim.OwnerId != ownership.OwnerId).ToArray()
                     : [];
@@ -1610,6 +1609,7 @@ internal sealed class SvWorkflowFileSource
     }
 
     private static void ValidateComposedOutputOwnership(
+        OutputTransactionCoordinator coordinator,
         OutputOwnershipRecord owned,
         ProjectId projectId,
         GameFamily gameFamily,
@@ -1617,8 +1617,7 @@ internal sealed class SvWorkflowFileSource
         OutputFileState expectedPreimage,
         RelativeOutputPath relativePath)
     {
-        if (owned.ProjectId != projectId
-            || owned.GameFamily != gameFamily
+        if (!coordinator.OwnershipScopeMatches(owned, projectId, gameFamily)
             || owned.CurrentState != expectedPreimage
             || !string.Equals(owned.OutputMode, outputMode, StringComparison.Ordinal))
         {

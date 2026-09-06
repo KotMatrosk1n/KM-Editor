@@ -93,7 +93,8 @@ public static class GameplayBundleRemovalPlanner
         GameFamily gameFamily,
         IEnumerable<GameplayBundleRemovalTargetReview> reviewedTargets,
         OutputOwnershipInventorySnapshot ownershipSnapshot,
-        GameplayBundleSettingsRemoval settingsRemoval = GameplayBundleSettingsRemoval.Retain)
+        GameplayBundleSettingsRemoval settingsRemoval = GameplayBundleSettingsRemoval.Retain,
+        OutputTransactionCoordinator? coordinator = null)
     {
         _ = SemanticContractGuards.StableId(projectId.Value, nameof(projectId));
         ArgumentNullException.ThrowIfNull(ownershipSnapshot);
@@ -114,7 +115,8 @@ public static class GameplayBundleRemovalPlanner
             ownershipSnapshot,
             expectedPaths,
             projectId,
-            gameFamily);
+            gameFamily,
+            coordinator);
 
         var settingsPath = new RelativeOutputPath(
             $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin");
@@ -264,7 +266,8 @@ public static class GameplayBundleRemovalPlanner
         OutputOwnershipInventorySnapshot ownershipSnapshot,
         ImmutableArray<RelativeOutputPath> expectedPaths,
         ProjectId projectId,
-        GameFamily gameFamily)
+        GameFamily gameFamily,
+        OutputTransactionCoordinator? coordinator)
     {
         var records = ownershipSnapshot.Inventory.Files.ToDictionary(
             record => record.Path.CanonicalKey,
@@ -274,7 +277,7 @@ public static class GameplayBundleRemovalPlanner
         {
             if (!records.TryGetValue(path.CanonicalKey, out var record)
                 || !string.Equals(record.Path.Value, path.Value, StringComparison.Ordinal)
-                || record.ProjectId != projectId
+                || !(coordinator?.ProjectScopeMatches(record.ProjectId, projectId) ?? record.ProjectId == projectId)
                 || record.GameFamily != gameFamily
                 || !string.Equals(
                     record.OutputMode,
