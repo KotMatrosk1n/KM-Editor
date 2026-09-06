@@ -101,7 +101,6 @@ export function EditorSessionBar({
       role="group"
     >
       <div className="editor-session-bar-summary">
-        {selection}
         <span
           aria-live="polite"
           className={`status-pill ${statusClassName}`}
@@ -118,6 +117,7 @@ export function EditorSessionBar({
           </span>
           {readOnlyExplanation ? <p>{translateLiteral(readOnlyExplanation)}</p> : null}
         </div>
+        {selection}
       </div>
 
       {isEditing ? (

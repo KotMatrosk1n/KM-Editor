@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "无法获取原始基础数据中的兼容性信息。",
     "shops.pending.removedTitle": "已移除的商店物品",
     "shops.pending.removedItem": "{item}（原位置 {slot}）",
-    "shops.pending.undoRemoval": "撤销移除 {item}"
+    "shops.pending.undoRemoval": "撤销移除 {item}",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "午夜蓝底色，搭配蓝色与品红光芒及银色边框。",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "深梅紫底色，搭配朱红与紫色点缀及金色边框。",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "森林绿底色，搭配亮绿与品红光芒及银色边框。",
+    "workbench.section.history.label": "历史记录",
+    "workbench.section.history.description": "按日期浏览输出操作及其记录的更改。",
+    "za.trainers.bulk.changeAction": "为所有训练家启用 Change",
+    "za.trainers.bulk.changeAlreadyEnabled": "所有已加载的训练家均已启用 Change。",
+    "za.trainers.bulk.changeEnableCount": "为 {count} 位已加载的训练家启用 Change。",
+    "za.trainers.bulk.changeConfirmTitle": "为所有已加载的训练家启用 Change？",
+    "za.trainers.bulk.changeConfirmDescription": "这将为 {totalCount} 位已加载的 Z-A 训练家中的 {affectedCount} 位暂存 Change AI 标志更改。其他已存储的标志和队伍设置将保留。"
   },
   "literals": {
     "Not specified": "未指定",

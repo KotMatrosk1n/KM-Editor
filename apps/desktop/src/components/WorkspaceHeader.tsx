@@ -16,9 +16,10 @@ import {
 import { useLocalization } from '../localization';
 import { HeaderMemoryUsage } from '../features/settings/ProcessMemoryPanel';
 import { TooltipIconVisibilityControl } from './TooltipIconVisibility';
+import './workspaceHeader.css';
 
 export type WorkspaceHeaderProps = {
-  activeProjectStateLabel: string;
+  activeGameLabel?: string | null;
   activeSectionIsEditor: boolean;
   activeSectionLabel: string;
   activeTargetIsPinned?: boolean;
@@ -45,7 +46,7 @@ export type WorkspaceHeaderProps = {
 };
 
 export function WorkspaceHeader({
-  activeProjectStateLabel,
+  activeGameLabel,
   activeSectionIsEditor,
   activeSectionLabel,
   activeTargetIsPinned = false,
@@ -70,10 +71,10 @@ export function WorkspaceHeader({
   onToggleInspector,
   onTogglePin
 }: WorkspaceHeaderProps) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
 
   return (
-    <header className="toolbar">
+    <header className="toolbar workspace-header">
       <div className="workspace-header-leading">
         {onBack || onForward ? (
           <nav
@@ -104,10 +105,13 @@ export function WorkspaceHeader({
         ) : null}
 
         <div className="title-block">
-          <p className="project-state">{activeProjectStateLabel}</p>
           <div className="km-page-title-row"><h1>{activeSectionLabel}</h1><HeaderMemoryUsage /></div>
         </div>
       </div>
+
+      {activeGameLabel ? (
+        <div className="workspace-header-game">{translateLiteral(activeGameLabel)}</div>
+      ) : null}
 
       <div className="toolbar-actions">
         {canSaveView && onToggleSavedView ? (

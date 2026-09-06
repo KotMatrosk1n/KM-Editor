@@ -53,17 +53,44 @@
   --type-chart-double-text: #c8efac;
 }
 
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-immune {
+:root[data-km-visual-theme='sword-shield'] {
+  --type-chart-immune-bg: #303b50;
+  --type-chart-immune-text: #dce8ff;
+  --type-chart-half-bg: #512541;
+  --type-chart-half-text: #ffc6e9;
+  --type-chart-double-bg: #164139;
+  --type-chart-double-text: #a4efdc;
+}
+
+:root[data-km-visual-theme='scarlet-violet'] {
+  --type-chart-immune-bg: #362c4e;
+  --type-chart-immune-text: #e8d6ff;
+  --type-chart-half-bg: #542e1c;
+  --type-chart-half-text: #ffdab2;
+  --type-chart-double-bg: #203f31;
+  --type-chart-double-text: #b5edc7;
+}
+
+:root[data-km-visual-theme='legends-za'] {
+  --type-chart-immune-bg: #3f2b47;
+  --type-chart-immune-text: #f1d3ff;
+  --type-chart-half-bg: #4c371d;
+  --type-chart-half-text: #ffe2af;
+  --type-chart-double-bg: #184831;
+  --type-chart-double-text: #b2f2cb;
+}
+
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-immune {
   color: var(--type-chart-immune-text);
   background-color: var(--type-chart-immune-bg);
 }
 
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-not-very {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-not-very {
   color: var(--type-chart-half-text);
   background-color: var(--type-chart-half-bg);
 }
 
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-super {
+:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='royal'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast']) .type-chart-cell.type-chart-cell-super {
   color: var(--type-chart-double-text);
   background-color: var(--type-chart-double-bg);
 }

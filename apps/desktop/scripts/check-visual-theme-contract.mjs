@@ -52,8 +52,8 @@ const styles = read('../src/styles.css');
 
 assert.match(
   appearance,
-  /export type VisualTheme = 'classic' \| 'renegade' \| 'royal' \| 'sovereign' \| 'arcane' \| 'relic';/,
-  'The visual-theme model must expose all six supported identities in stable order.'
+  /export type VisualTheme = 'classic' \| 'renegade' \| 'royal' \| 'sovereign' \| 'arcane' \| 'relic' \| 'sword-shield' \| 'scarlet-violet' \| 'legends-za';/,
+  'The visual-theme model must expose all nine supported identities in stable order.'
 );
 assert.match(
   appearance,
@@ -92,13 +92,13 @@ assert.match(
 );
 assert.match(
   appearance,
-  /return stored === 'renegade' \|\| stored === 'royal' \|\| stored === 'sovereign' \|\| stored === 'arcane' \|\| stored === 'relic' \? stored : defaultVisualTheme;/,
+  /return stored === 'renegade' \|\| stored === 'royal' \|\| stored === 'sovereign' \|\| stored === 'arcane' \|\| stored === 'relic' \|\| stored === 'sword-shield' \|\| stored === 'scarlet-violet' \|\| stored === 'legends-za' \? stored : defaultVisualTheme;/,
   'Unknown stored values must safely resolve to Classic while all optional themes restore.'
 );
 assert.match(
   appearance,
-  /setVisualTheme: \(theme\) => \{[\s\S]*?theme === 'classic' \|\| theme === 'renegade' \|\| theme === 'royal' \|\| theme === 'sovereign' \|\| theme === 'arcane' \|\| theme === 'relic'/,
-  'The live visual-theme setter must accept exactly the six supported identities.'
+  /setVisualTheme: \(theme\) => \{[\s\S]*?theme === 'classic' \|\| theme === 'renegade' \|\| theme === 'royal' \|\| theme === 'sovereign' \|\| theme === 'arcane' \|\| theme === 'relic' \|\| theme === 'sword-shield' \|\| theme === 'scarlet-violet' \|\| theme === 'legends-za'/,
+  'The live visual-theme setter must accept exactly the nine supported identities.'
 );
 assert.match(
   main,
@@ -108,8 +108,8 @@ assert.match(
 
 assert.match(
   themePanel,
-  /visualThemeOptions = \['classic', 'renegade', 'royal', 'sovereign', 'arcane', 'relic'\]/,
-  'The Themes chooser must preserve the original row and append the three new themes.'
+  /visualThemeOptions = \['classic', 'renegade', 'royal', 'sovereign', 'arcane', 'relic', 'sword-shield', 'scarlet-violet', 'legends-za'\]/,
+  'The Themes chooser must preserve the first two rows and append the three game themes.'
 );
 for (const [theme, assetName] of [
   ['classic', 'km-logo.png'],
@@ -499,6 +499,12 @@ const themeLocaleKeys = [
   'settings.themes.arcane.description',
   'settings.themes.relic',
   'settings.themes.relic.description',
+  'settings.themes.sword-shield',
+  'settings.themes.sword-shield.description',
+  'settings.themes.scarlet-violet',
+  'settings.themes.scarlet-violet.description',
+  'settings.themes.legends-za',
+  'settings.themes.legends-za.description',
   'settings.themes.liveNote'
 ];
 for (const localeCode of localeCodes) {
@@ -519,14 +525,17 @@ for (const localeCode of localeCodes) {
 for (const [theme, hash, size] of [
   ['sovereign', '058ff60309b9c67e802be2e19bdd50fed424f70900904129439e4744f4199670', 2605828],
   ['arcane', '4ea0eb322142c1ea006886e69d356a19ad4c1955359bd54381da70631c816665', 2700584],
-  ['relic', 'a74a6f0e766cc63ab89067485bc138cebaa6cfcd7234685a0184ea0f0bf0aaa9', 2744547]
+  ['relic', 'a74a6f0e766cc63ab89067485bc138cebaa6cfcd7234685a0184ea0f0bf0aaa9', 2744547],
+  ['sword-shield', '8476b483ce787c022924bbf669b7e831d98b41bfdbf67fbc6779c753c3d7e7af', 2755146],
+  ['scarlet-violet', 'ed303c6427da08b0c05875403f126acb90c2a1d46e23af094ce2b4788700ee9b', 2697036],
+  ['legends-za', '6ce11b65673013684848ee786f40f7f636c529e43aee8a87e7fe60a68ad321a9', 2697932]
 ]) {
   requireExactPngAsset(theme, `../src/assets/${theme}-logo.png`, hash, 1254, 1254, size);
 }
 
 assert.match(styles, /\.visual-theme-options\s*\{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/u);
 const typeChartStyles = read('../src/features/type-chart/typeChartTheme.css');
-for (const theme of ['sovereign', 'arcane', 'relic']) {
+for (const theme of ['sovereign', 'arcane', 'relic', 'sword-shield', 'scarlet-violet', 'legends-za']) {
   const index = styles.indexOf(`:root[data-km-visual-theme='${theme}'] {`);
   assert.ok(index > royalPaletteIndex && index < highContrastPaletteIndex);
   const palette = styles.slice(index, styles.indexOf('\n}', index));
@@ -550,5 +559,23 @@ for (const theme of ['sovereign', 'arcane', 'relic']) {
     requireContrast(`${theme} type chart ${state}`, value('text'), value('bg'));
   }
 }
+
+for (const [theme, icon] of [
+  ['sword-shield', 'swordShieldThemeIcon'],
+  ['scarlet-violet', 'scarletVioletThemeIcon'],
+  ['legends-za', 'legendsZaThemeIcon']
+]) {
+  assert.ok(themePanel.includes(`import ${icon} from '../../assets/${theme}-logo.png';`));
+  assert.ok(themePanel.includes(`'${theme}': ${icon}`));
+}
+
+// Pokemon diagnostics must not repeat the editable inspector's identity card.
+assert.match(
+  app,
+  /const pokemonDiagnostics = \(\s*<DiagnosticsSection diagnostics=\{workflow\?\.diagnostics \?\? \[\]\} \/>\s*\);/u,
+  'Pokemon diagnostics must contain only diagnostics, without a duplicate summary card.'
+);
+assert.match(app, /<SelectedPokemonSummaryCard\s+dexEditor=\{dexEditor\}\s+editorFamily=\{editorFamily\}\s+pokemon=\{pokemon\}\s+showIdentity=\{false\}/u);
+assert.match(app, /<SelectedPokemonSessionIdentity/u);
 
 console.log('Visual-theme contract passed.');

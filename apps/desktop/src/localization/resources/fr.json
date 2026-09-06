@@ -3751,7 +3751,20 @@
     "pokemon.compatibility.vanillaUnavailable": "Les données de compatibilité de la base d’origine sont indisponibles.",
     "shops.pending.removedTitle": "Objets retirés de la boutique",
     "shops.pending.removedItem": "{item} (emplacement d’origine {slot})",
-    "shops.pending.undoRemoval": "Annuler le retrait de {item}"
+    "shops.pending.undoRemoval": "Annuler le retrait de {item}",
+    "settings.themes.sword-shield": "Sword and Shield",
+    "settings.themes.sword-shield.description": "Une énergie bleue et magenta aux contours argentés sur des surfaces bleu nuit.",
+    "settings.themes.scarlet-violet": "Scarlet and Violet",
+    "settings.themes.scarlet-violet.description": "Des accents écarlates et violets aux contours dorés sur des surfaces prune foncé.",
+    "settings.themes.legends-za": "Legends Z-A",
+    "settings.themes.legends-za.description": "Une énergie verte et magenta aux contours argentés sur des surfaces vert forêt.",
+    "workbench.section.history.label": "Historique",
+    "workbench.section.history.description": "Parcourir les opérations de sortie par date et leurs modifications enregistrées.",
+    "za.trainers.bulk.changeAction": "Activer Change pour tous",
+    "za.trainers.bulk.changeAlreadyEnabled": "Change est déjà activé pour tous les Dresseurs chargés.",
+    "za.trainers.bulk.changeEnableCount": "Activer Change pour {count} Dresseurs chargés.",
+    "za.trainers.bulk.changeConfirmTitle": "Activer Change pour tous les Dresseurs chargés ?",
+    "za.trainers.bulk.changeConfirmDescription": "Cette action prépare le drapeau Change de l’IA pour {affectedCount} des {totalCount} Dresseurs de Z-A chargés. Les autres drapeaux et paramètres d’équipe sont conservés."
   },
   "literals": {
     "Not specified": "Non spécifié",

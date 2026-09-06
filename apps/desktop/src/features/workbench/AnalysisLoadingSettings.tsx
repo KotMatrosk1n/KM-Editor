@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Gauge } from 'lucide-react';
+import { Gauge, Leaf, Scale, Zap } from 'lucide-react';
 import { useLocalization } from '../../localization';
 import {
   analysisLoadingModes,
@@ -31,6 +31,7 @@ export function AnalysisLoadingSettings({
       >
         {analysisLoadingModes.map((option) => {
           const isSelected = option === mode;
+          const Icon = { minimal: Leaf, balanced: Scale, performance: Zap }[option];
           return (
             <button
               aria-checked={isSelected}
@@ -42,6 +43,7 @@ export function AnalysisLoadingSettings({
               type="button"
             >
               <span>
+                <Icon aria-hidden="true" className="settings-mode-icon" size={20} />
                 <strong>{t(`analysisLoading.mode.${option}.label`)}</strong>
                 {option === 'balanced' ? <small>{t('analysisLoading.recommended')}</small> : null}
               </span>

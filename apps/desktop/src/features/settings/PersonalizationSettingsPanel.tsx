@@ -7,6 +7,9 @@ import royalThemeIcon from '../../assets/royal-logo.png';
 import sovereignThemeIcon from '../../assets/sovereign-logo.png';
 import arcaneThemeIcon from '../../assets/arcane-logo.png';
 import relicThemeIcon from '../../assets/relic-logo.png';
+import swordShieldThemeIcon from '../../assets/sword-shield-logo.png';
+import scarletVioletThemeIcon from '../../assets/scarlet-violet-logo.png';
+import legendsZaThemeIcon from '../../assets/legends-za-logo.png';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import {
@@ -18,7 +21,7 @@ import {
   type VisualTheme
 } from './AppearancePreferencesProvider';
 
-const visualThemeOptions = ['classic', 'renegade', 'royal', 'sovereign', 'arcane', 'relic'] as const satisfies readonly VisualTheme[];
+const visualThemeOptions = ['classic', 'renegade', 'royal', 'sovereign', 'arcane', 'relic', 'sword-shield', 'scarlet-violet', 'legends-za'] as const satisfies readonly VisualTheme[];
 
 const visualThemeIcons: Record<VisualTheme, string> = {
   classic: classicThemeIcon,
@@ -26,7 +29,10 @@ const visualThemeIcons: Record<VisualTheme, string> = {
   royal: royalThemeIcon,
   sovereign: sovereignThemeIcon,
   arcane: arcaneThemeIcon,
-  relic: relicThemeIcon
+  relic: relicThemeIcon,
+  'sword-shield': swordShieldThemeIcon,
+  'scarlet-violet': scarletVioletThemeIcon,
+  'legends-za': legendsZaThemeIcon
 };
 
 export function ThemeSettingsPanel() {

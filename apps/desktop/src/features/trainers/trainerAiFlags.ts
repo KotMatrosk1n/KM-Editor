@@ -2,6 +2,18 @@
 
 type TrainerFamily = 'swsh' | 'sv' | 'za';
 
+export function buildZaTrainerChangeUpdates(trainers: readonly { trainerId: number; aiFlags: number }[]) {
+  return trainers.flatMap(({ trainerId, aiFlags }) => {
+    const enabled = aiFlags | (1 << 7);
+    return enabled === aiFlags ? [] : [{
+      trainerId,
+      slot: null,
+      field: 'aiFlags',
+      value: enabled.toString()
+    }];
+  });
+}
+
 function selectionMask(family: TrainerFamily, mask: number): number {
   // Both stored S/V doubles flags select the same trainer AI option.
   return family === 'sv' && mask === 0x08 ? 0x18 : mask;
