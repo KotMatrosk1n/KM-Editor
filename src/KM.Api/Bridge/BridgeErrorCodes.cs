@@ -5,6 +5,7 @@ namespace KM.Api.Bridge;
 public static class BridgeErrorCodes
 {
     public const string ModelUnsupported = "KM-MODEL-UNSUPPORTED";
+    public const string ModelPartial = "KM-MODEL-PARTIAL";
     public const string ModelGpuUnavailable = "KM-MODEL-GPU-UNAVAILABLE";
     public const string ModelCancelled = "KM-MODEL-CANCELLED";
     public const string ModelBusy = "KM-MODEL-BUSY";

@@ -27,7 +27,10 @@ mod windows_app_identity;
 
 mod model_preview;
 mod process_memory;
-use model_preview::{model_preview_activate, model_preview_close, model_preview_open};
+use model_preview::{
+    model_preview_activate, model_preview_camera, model_preview_close, model_preview_open,
+    model_preview_playback, model_preview_viewport,
+};
 
 #[tauri::command]
 async fn get_app_memory() -> Result<process_memory::MemorySnapshot, String> {
@@ -3741,6 +3744,9 @@ pub fn run() {
             model_preview_activate,
             model_preview_open,
             model_preview_close,
+            model_preview_viewport,
+            model_preview_camera,
+            model_preview_playback,
             project_bridge,
             recycle_project_bridge,
             create_directory,

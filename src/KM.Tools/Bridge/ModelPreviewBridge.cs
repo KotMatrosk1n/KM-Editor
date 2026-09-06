@@ -13,7 +13,7 @@ internal static class ModelPreviewBridge
     {
         if (request.TransferId is not { Length: 32 } || !request.TransferId.All(char.IsAsciiHexDigit))
             throw new InvalidDataException("Invalid model transfer identifier.");
-        var scene = new SvModelPreviewService().Prepare(Open(request.Paths), request.Id);
+        var scene = new SvModelPreviewService().Prepare(Open(request.Paths), request.Id, request.Animation);
         var folder = Path.Combine(Path.GetTempPath(), "km-editor-model-preview");
         var path = Path.Combine(folder, request.TransferId + ".kmv");
         // The native host owns a delete-on-close handle. Even a cancelled worker or host

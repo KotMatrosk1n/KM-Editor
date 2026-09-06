@@ -4,3 +4,18 @@
 .model-viewer__header h2, .model-viewer__header p { margin: 0 0 .4rem; }
 .model-viewer__note, .model-viewer__error { padding: .8rem; border: 1px solid currentColor; border-radius: .5rem; }
 .model-viewer__error code { white-space: nowrap; }
+.model-viewer__workspace { display: grid; grid-template-columns: minmax(14rem, 21rem) minmax(0, 1fr); gap: 1.25rem; }
+.model-viewer__browser, .model-viewer__stage, .model-viewer__animation { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.model-viewer__catalog { overflow: auto; max-height: min(65vh, 48rem); overscroll-behavior: contain; }
+.model-viewer__catalog details { padding: .4rem 0; border-bottom: 1px solid var(--border-color, #5555); }
+.model-viewer__catalog summary { cursor: pointer; padding: .45rem; }
+.model-viewer__catalog button { display: block; margin: .35rem 0 .35rem 1rem; width: calc(100% - 1.5rem); text-align: start; }
+.model-viewer__catalog button[aria-pressed="true"] { outline: 2px solid currentColor; }
+.model-viewer__viewport { position: relative; width: 100%; height: clamp(16rem, 46vh, 42rem); background: #343b44; overflow: hidden; touch-action: none; overscroll-behavior: contain; display: grid; place-items: center; }
+.model-viewer__viewport p { padding: 1rem; color: #fff; }
+.model-viewer__identifier { overflow-wrap: anywhere; opacity: .8; }
+.model-viewer__controls { margin: 0; font-size: .85rem; }
+.model-viewer__animation { border-top: 1px solid var(--border-color, #5555); padding-top: .8rem; }
+.model-viewer__animation input[type="range"] { width: 100%; }
+.model-viewer__toolbar .searchable-option-input { flex: 0 1 7rem; width: 7rem; }
+@media (max-width: 950px) { .model-viewer__workspace { grid-template-columns: 1fr; } .model-viewer__catalog { max-height: 15rem; } }

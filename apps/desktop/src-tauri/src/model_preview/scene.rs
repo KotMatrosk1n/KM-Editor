@@ -11,13 +11,16 @@ pub struct Primitive {
     pub vertices: Vec<f32>,
     pub indices: Vec<u32>,
     pub texture: Option<usize>,
-    pub color: [f32; 4],
+    pub mask: Option<usize>,
+    pub material: [f32; 28],
+    pub blend: bool,
 }
 pub struct Scene {
     pub textures: Vec<Texture>,
     pub primitives: Vec<Primitive>,
     pub center: Vec3,
     pub radius: f32,
+    pub rig: super::animation::Rig,
 }
 struct Reader<'a> {
     bytes: &'a [u8],
@@ -54,7 +57,7 @@ impl Scene {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
         let mut r = Reader { bytes, at: 0 };
-        if r.take(4)? != b"KMV1" {
+        if r.take(4)? != b"KMV2" {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
         let mesh_count = r.count(256)?;
@@ -76,11 +79,9 @@ impl Scene {
             };
             let count = r.count(16 * 1024 * 1024)?;
             texture_bytes += count;
-            if width < 4
-                || height < 4
-                || width % 4 != 0
-                || height % 4 != 0
-                || count != (width * height / 16 * block) as usize
+            if width == 0
+                || height == 0
+                || count != (width.div_ceil(4) * height.div_ceil(4) * block) as usize
                 || texture_bytes > 48 * 1024 * 1024
             {
                 return Err("KM-MODEL-UNSUPPORTED".into());
@@ -118,11 +119,20 @@ impl Scene {
             } else {
                 return Err("KM-MODEL-UNSUPPORTED".into());
             };
-            let mut color = [0.0; 4];
-            for value in &mut color {
-                *value = r.float()?.clamp(0.0, 1.0);
+            let mask = r.u32()?;
+            let mask = if mask == u32::MAX {
+                None
+            } else if mask < texture_count as u32 {
+                Some(mask as usize)
+            } else {
+                return Err("KM-MODEL-UNSUPPORTED".into());
+            };
+            let mut material = [0.0; 28];
+            for value in &mut material {
+                *value = r.float()?;
             }
-            let mut vertices = Vec::with_capacity(vertex_count * 8);
+            let blend = r.u32()? != 0;
+            let mut vertices = Vec::with_capacity(vertex_count * 16);
             for _ in 0..vertex_count {
                 let pos = Vec3::new(r.float()?, r.float()?, r.float()?);
                 min = min.min(pos);
@@ -130,6 +140,20 @@ impl Scene {
                 vertices.extend_from_slice(&pos.to_array());
                 for _ in 0..5 {
                     vertices.push(r.float()?);
+                }
+                for _ in 0..4 {
+                    let joint = r.float()?;
+                    if !(0.0..512.0).contains(&joint) || joint.fract() != 0.0 {
+                        return Err("KM-MODEL-UNSUPPORTED".into());
+                    }
+                    vertices.push(joint);
+                }
+                for _ in 0..4 {
+                    let weight = r.float()?;
+                    if !(0.0..=1.0).contains(&weight) {
+                        return Err("KM-MODEL-UNSUPPORTED".into());
+                    }
+                    vertices.push(weight);
                 }
             }
             let mut indices = Vec::with_capacity(index_count);
@@ -144,8 +168,42 @@ impl Scene {
                 vertices,
                 indices,
                 texture,
-                color,
+                mask,
+                material,
+                blend,
             });
+        }
+        let metadata_size = r.count(16 * 1024 * 1024)?;
+        let rig: super::animation::Rig =
+            serde_json::from_slice(r.take(metadata_size)?).map_err(|_| "KM-MODEL-UNSUPPORTED")?;
+        rig.validate(mesh_count)?;
+        let joints = rig.matrices(0.0);
+        let stored_bounds = (min, max);
+        min = Vec3::splat(f32::MAX);
+        max = Vec3::splat(f32::MIN);
+        for (i, primitive) in primitives.iter().enumerate() {
+            if !rig.visible(i, 0.0) {
+                continue;
+            }
+            for vertex in primitive.vertices.chunks_exact(16) {
+                let position = Vec3::new(vertex[0], vertex[1], vertex[2]);
+                let mut transformed = Vec3::ZERO;
+                let mut weight = 0.0;
+                for j in 0..4 {
+                    if vertex[12 + j] > 0.0 {
+                        transformed += glam::Mat4::from_cols_array(&joints[vertex[8 + j] as usize])
+                            .transform_point3(position)
+                            * vertex[12 + j];
+                        weight += vertex[12 + j];
+                    }
+                }
+                let point = if weight > 0.0 { transformed } else { position };
+                min = min.min(point);
+                max = max.max(point);
+            }
+        }
+        if min.cmpgt(max).any() {
+            (min, max) = stored_bounds;
         }
         if r.at != bytes.len() {
             return Err("KM-MODEL-UNSUPPORTED".into());
@@ -159,6 +217,7 @@ impl Scene {
             primitives,
             center: (min + max) * 0.5,
             radius,
+            rig,
         })
     }
 }
