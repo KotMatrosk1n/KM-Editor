@@ -49,6 +49,26 @@
   overflow-wrap: anywhere;
 }
 
+/* Use the available workspace width, which already accounts for display scaling and the sidebar. */
+@container workspace (max-width: 1800px) {
+  .workspace-header .workspace-header-toggle-copy,
+  .workspace-header .workspace-command-button span,
+  .workspace-header .workspace-command-button kbd,
+  .workspace-header .toolbar-wiki-button span {
+    display: none;
+  }
+
+  .workspace-header .tooltip-icon-visibility-control,
+  .workspace-header .workspace-command-button,
+  .workspace-header .toolbar-wiki-button {
+    flex: 0 0 40px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+}
+
 @container workspace (max-width: 760px) {
   .toolbar.workspace-header {
     grid-template-columns: minmax(0, 1fr);

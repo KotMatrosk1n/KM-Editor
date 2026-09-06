@@ -2,6 +2,8 @@
 #[cfg(windows)]
 mod animation;
 #[cfg(windows)]
+mod background;
+#[cfg(windows)]
 mod gpu;
 #[cfg(windows)]
 mod scene;
@@ -30,6 +32,13 @@ pub struct Viewport {
     pub height: u32,
     pub visible: bool,
     pub clip: Option<ViewportClip>,
+    #[serde(default = "default_background")]
+    pub background: [u8; 3],
+    #[serde(default)]
+    pub grid: bool,
+}
+fn default_background() -> [u8; 3] {
+    [52, 59, 68]
 }
 #[derive(Clone, Copy, serde::Deserialize)]
 pub struct ViewportClip {

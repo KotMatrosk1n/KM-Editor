@@ -3868,7 +3868,11 @@
     "settings.memory.vram": "VRAM",
     "settings.memory.vramHeaderValue": "VRAM: {value}",
     "settings.memory.showVramHeader": "Mostrar el uso de VRAM en la cabecera",
-    "settings.memory.vramHelp": "Memoria local de GPU de esta instancia de KM Editor y sus procesos, incluida la interfaz. En gráficos integrados puede incluir memoria compartida del sistema. Las lecturas no disponibles muestran {unavailable}."
+    "settings.memory.vramHelp": "Memoria local de GPU de esta instancia de KM Editor y sus procesos, incluida la interfaz. En gráficos integrados puede incluir memoria compartida del sistema. Las lecturas no disponibles muestran {unavailable}.",
+    "modelViewer.backgroundStyle": "Estilo del fondo",
+    "modelViewer.backgroundSolid": "Sólido",
+    "modelViewer.backgroundGrid": "Cuadrícula de estudio",
+    "modelViewer.backgroundColor": "Color del fondo"
   },
   "literals": {
     "Not specified": "Sin especificar",

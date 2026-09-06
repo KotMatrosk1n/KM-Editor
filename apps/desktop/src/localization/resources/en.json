@@ -3868,7 +3868,11 @@
     "settings.memory.vram": "VRAM",
     "settings.memory.vramHeaderValue": "VRAM: {value}",
     "settings.memory.showVramHeader": "Show VRAM usage in the header",
-    "settings.memory.vramHelp": "GPU-local memory used by this KM Editor instance and its workers, including the interface renderer. Shared system memory on integrated graphics may count as local GPU memory. Unsupported readings show {unavailable}."
+    "settings.memory.vramHelp": "GPU-local memory used by this KM Editor instance and its workers, including the interface renderer. Shared system memory on integrated graphics may count as local GPU memory. Unsupported readings show {unavailable}.",
+    "modelViewer.backgroundStyle": "Background style",
+    "modelViewer.backgroundSolid": "Solid",
+    "modelViewer.backgroundGrid": "Studio grid",
+    "modelViewer.backgroundColor": "Background color"
   },
   "literals": {
     "Not specified": "Not specified",

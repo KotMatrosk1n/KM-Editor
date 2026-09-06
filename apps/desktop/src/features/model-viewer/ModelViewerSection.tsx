@@ -8,7 +8,7 @@ import { sendProjectBridgeRequest } from '../../bridge/projectBridgeRequest';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
-import { modelError, useModelViewport } from './useModelViewport';
+import { modelError, useModelViewport, type ModelBackground } from './useModelViewport';
 import './ModelViewerSection.css';
 
 const catalogSchema = z.array(z.object({
@@ -16,6 +16,25 @@ const catalogSchema = z.array(z.object({
   category: z.enum(['pokemon', 'trainers', 'npcs', 'objects', 'environment', 'other']).default('pokemon')
 })).max(8192);
 type Entry = z.infer<typeof catalogSchema>[number];
+const backgroundKey = 'km-editor.model-viewer.background';
+const backgroundSchema = z.object({ color: z.string().regex(/^#[0-9a-f]{6}$/i), grid: z.boolean() });
+function readBackground(): ModelBackground {
+  try { return backgroundSchema.parse(JSON.parse(localStorage.getItem(backgroundKey) ?? 'null')); }
+  catch { return { color: '#343b44', grid: false }; }
+}
+function RgbChannel({ channel, value, onChange }: { channel: string; value: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => { setDraft(String(value)); }, [value]);
+  const edit = (raw: string) => {
+    setDraft(raw);
+    const parsed = Number(raw);
+    if (/^\d{1,3}$/.test(raw) && parsed <= 255) onChange(parsed);
+  };
+  return <label data-localization-ignore="true">{channel}
+    <input type="number" min="0" max="255" step="1" aria-label={`RGB ${channel}`} value={draft}
+      onChange={event => edit(event.target.value)} onBlur={() => setDraft(String(value))} />
+  </label>;
+}
 export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
   const { t } = useLocalization();
   const [catalog, setCatalog] = useState<Entry[]>([]);
@@ -28,9 +47,13 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
   const [category, setCategory] = useState('all');
   const [loop, setLoop] = useState(false);
   const [speed, setSpeed] = useState('1');
+  const [background, setBackground] = useState(readBackground);
+  useEffect(() => {
+    try { localStorage.setItem(backgroundKey, JSON.stringify(background)); } catch { /* Session controls remain usable when storage is unavailable. */ }
+  }, [background]);
   const pathKey = JSON.stringify(paths);
   const supported = paths.selectedGame === 'scarlet' || paths.selectedGame === 'violet';
-  const viewer = useModelViewport(paths, selected, animation, revision, false);
+  const viewer = useModelViewport(paths, selected, animation, revision, false, background);
   const error = catalogError ?? viewer.error;
   useEffect(() => {
     setCatalog([]); setSelected(''); setAnimation(null); setCatalogError(null);
@@ -83,6 +106,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
           <label htmlFor="model-search">{t('modelViewer.search')}</label>
           <input id="model-search" type="search" value={query} onChange={event => setQuery(event.target.value)} />
           <div className="model-viewer__catalog" aria-busy={loading}>
+            <div className="model-viewer__catalog-content">
             {loading ? <p role="status">{t('modelViewer.loading')}</p> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
               groups.map(group => <details key={group[0].id} open={group.some(item => item.id === selected) || undefined}>
                 <summary data-localization-ignore="true">{group[0].species > 0 ? `#${group[0].species} ` : ''}{group[0].name} <span>({group.length})</span></summary>
@@ -90,6 +114,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
                   {item.species > 0 ? t('modelViewer.variant', { form: item.form, gender: item.gender }) : item.name}
                 </button>)}
               </details>)}
+            </div>
           </div>
         </aside>
         <div className="model-viewer__stage">
@@ -99,7 +124,21 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('frame')}>{t('modelViewer.frame')}</button>
             {viewer.loading ? <button type="button" onClick={() => setSelected('')}>{t('modelViewer.cancel')}</button> : null}
           </div>
+          <div className="model-viewer__background">
+            <label htmlFor="model-background-style">{t('modelViewer.backgroundStyle')}</label>
+            <SearchableOptionInput id="model-background-style" ariaLabel={t('modelViewer.backgroundStyle')} disabled={false} isFiniteCatalog localizeOptions={false}
+              value={background.grid ? 'grid' : 'solid'} onChange={value => setBackground(current => ({ ...current, grid: value === 'grid' }))}
+              options={[{ value: 'solid', label: t('modelViewer.backgroundSolid') }, { value: 'grid', label: t('modelViewer.backgroundGrid') }]} />
+            <label htmlFor="model-background-color">{t('modelViewer.backgroundColor')}</label>
+            <input id="model-background-color" type="color" value={background.color} onChange={event => setBackground(current => ({ ...current, color: event.target.value }))} />
+            <div className="model-viewer__rgb">
+              {(['R', 'G', 'B'] as const).map((channel, index) => <RgbChannel key={channel} channel={channel}
+                value={parseInt(background.color.slice(1 + index * 2, 3 + index * 2), 16)}
+                onChange={value => setBackground(current => ({ ...current, color: current.color.slice(0, 1 + index * 2) + value.toString(16).padStart(2, '0') + current.color.slice(3 + index * 2) }))} />)}
+            </div>
+          </div>
           <div ref={viewer.viewport} className="model-viewer__viewport" tabIndex={0} role="region" aria-label={t('modelViewer.viewport')}
+            style={{ backgroundColor: background.color }}
             onFocus={() => { if (viewer.info) void viewer.camera('focus'); }} onContextMenu={event => event.preventDefault()}>
             <p role="status">{viewer.loading ? t('modelViewer.opening') : !selected ? t('modelViewer.selectModel') : error ? t(message) : ''}</p>
           </div>

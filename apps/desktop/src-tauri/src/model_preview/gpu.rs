@@ -26,6 +26,9 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     blend_pipeline: wgpu::RenderPipeline,
+    background: super::background::Background,
+    background_color: [u8; 3],
+    grid: bool,
     depth: wgpu::TextureView,
     camera: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
@@ -40,6 +43,7 @@ pub struct Renderer {
     pub adapter: String,
     failed: Arc<AtomicBool>,
     minimized: bool,
+    viewport_visible: bool,
     center: Vec3,
     radius: f32,
     yaw: f32,
@@ -327,6 +331,7 @@ impl Renderer {
         };
         let pipeline = create_pipeline(false);
         let blend_pipeline = create_pipeline(true);
+        let background = super::background::Background::new(&device, config.format);
         let mut result = Self {
             surface,
             window,
@@ -335,6 +340,9 @@ impl Renderer {
             config,
             pipeline,
             blend_pipeline,
+            background,
+            background_color: super::default_background(),
+            grid: false,
             depth,
             camera,
             camera_group,
@@ -349,6 +357,7 @@ impl Renderer {
             adapter: info.name,
             failed,
             minimized: false,
+            viewport_visible: true,
             center: scene.center,
             radius: scene.radius,
             yaw: 0.0,
@@ -419,8 +428,11 @@ impl Renderer {
             .create_view(&Default::default())
     }
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.minimized = width == 0 || height == 0;
+        self.minimized = !self.viewport_visible || width == 0 || height == 0;
         if self.minimized {
+            return;
+        }
+        if self.config.width == width.min(4096) && self.config.height == height.min(4096) {
             return;
         }
         self.config.width = width.min(4096);
@@ -444,16 +456,14 @@ impl Renderer {
     }
     pub fn viewport(&mut self, viewport: super::Viewport) {
         let visible = viewport.visible && viewport.width > 0 && viewport.height > 0;
-        self.window.set_visible(visible);
-        self.window
-            .set_outer_position(winit::dpi::PhysicalPosition::new(viewport.x, viewport.y));
+        self.viewport_visible = visible;
+        self.background_color = viewport.background;
+        self.grid = viewport.grid;
+        let was_hidden = self.minimized;
+        if !visible {
+            self.window.set_visible(false);
+        }
         if visible {
-            let _ = self
-                .window
-                .request_inner_size(winit::dpi::PhysicalSize::new(
-                    viewport.width.min(4096),
-                    viewport.height.min(4096),
-                ));
             use winit::raw_window_handle::HasWindowHandle;
             if let Ok(handle) = self.window.window_handle() {
                 if let winit::raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw() {
@@ -466,11 +476,11 @@ impl Renderer {
                                 (clip.x + clip.width) as i32,
                                 (clip.y + clip.height) as i32,
                             );
-                            if region != 0 && SetWindowRgn(handle.hwnd.get(), region, 1) == 0 {
+                            if region != 0 && SetWindowRgn(handle.hwnd.get(), region, 0) == 0 {
                                 DeleteObject(region);
                             }
                         } else {
-                            SetWindowRgn(handle.hwnd.get(), 0, 1);
+                            SetWindowRgn(handle.hwnd.get(), 0, 0);
                         }
                         SetWindowPos(
                             handle.hwnd.get(),
@@ -479,16 +489,21 @@ impl Renderer {
                             viewport.y,
                             viewport.width.min(4096) as i32,
                             viewport.height.min(4096) as i32,
-                            0x0010,
+                            // NOACTIVATE | NOCOPYBITS: never copy stale pixels while moving.
+                            0x0010 | 0x0100,
                         );
                     }
                 }
             }
             self.resize(viewport.width, viewport.height);
+            self.window.set_visible(true);
+            self.window.request_redraw();
         } else {
             self.minimized = true;
         }
-        self.tick = std::time::Instant::now();
+        if was_hidden != self.minimized {
+            self.tick = std::time::Instant::now();
+        }
     }
     pub fn duration(&self) -> f32 {
         self.rig
@@ -627,6 +642,14 @@ impl Renderer {
             0,
             bytemuck::cast_slice(&(projection * view).to_cols_array()),
         );
+        self.background.update(
+            &self.queue,
+            projection * view,
+            self.center,
+            self.radius,
+            self.background_color,
+            self.grid,
+        );
         let color = frame.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
@@ -657,6 +680,7 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            self.background.draw(&mut pass);
             pass.set_bind_group(0, &self.camera_group, &[]);
             for blend in [false, true] {
                 pass.set_pipeline(if blend {

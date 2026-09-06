@@ -7,6 +7,14 @@
 .model-viewer__workspace { display: grid; grid-template-columns: minmax(14rem, 21rem) minmax(0, 1fr); gap: 1.25rem; }
 .model-viewer__browser, .model-viewer__stage, .model-viewer__animation { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
 .model-viewer__catalog { overflow: auto; max-height: min(65vh, 48rem); overscroll-behavior: contain; }
+.model-viewer__catalog-content { width: max-content; min-width: 100%; }
+.model-viewer__catalog summary { white-space: nowrap; }
+.model-viewer__background { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; }
+.model-viewer__background .searchable-option-input { width: 12rem; max-width: 100%; }
+.model-viewer__background input[type="color"] { width: 3rem; height: 2.5rem; padding: .2rem; cursor: pointer; }
+.model-viewer__rgb { display: flex; flex-wrap: wrap; gap: .6rem; }
+.model-viewer__rgb label { display: flex; align-items: center; gap: .35rem; }
+.model-viewer__rgb input { width: 4.5rem; }
 .model-viewer__catalog details { padding: .4rem 0; border-bottom: 1px solid var(--border-color, #5555); }
 .model-viewer__catalog summary { cursor: pointer; padding: .45rem; }
 .model-viewer__catalog button { display: block; margin: .35rem 0 .35rem 1rem; width: calc(100% - 1.5rem); text-align: start; }

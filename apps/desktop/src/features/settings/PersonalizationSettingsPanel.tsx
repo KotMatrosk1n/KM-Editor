@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Palette } from 'lucide-react';
+import { Accessibility, Palette } from 'lucide-react';
 import classicThemeIcon from '../../assets/km-logo.png';
 import renegadeThemeIcon from '../../assets/renegade-logo.png';
 import royalThemeIcon from '../../assets/royal-logo.png';
@@ -139,97 +139,98 @@ export function PersonalizationSettingsPanel() {
   } = useAppearancePreferences();
   return (
     <div className="personalization-settings">
-      <details aria-labelledby="appearance-settings-heading" className="km-settings-group" open>
-        <summary>
-          <h3 id="appearance-settings-heading">{t('settings.appearance.title')}</h3>
-        </summary>
-        <div className="km-settings-group-body">
-          <p>{t('settings.appearance.description')}</p>
-          <div className="km-settings-grid">
-            <div className="km-searchable-select-field km-settings-select-field">
-              <label htmlFor="personalization-appearance-theme">
-                {t('settings.appearance.theme')}
-              </label>
-              <SearchableOptionInput
-                ariaLabel={t('settings.appearance.theme')}
-                data-km-source-site="personalization-appearance-theme"
-                disabled={false}
-                id="personalization-appearance-theme"
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={(value) => setTheme(value as AppearanceTheme)}
-                options={[
-                  { label: t('settings.appearance.theme.default'), value: 'default' },
-                  { label: t('settings.appearance.theme.highContrast'), value: 'highContrast' },
-                  { label: t('settings.appearance.theme.colorSafe'), value: 'colorSafe' }
-                ]}
-                value={preferences.theme}
-              />
-            </div>
-            <div className="km-searchable-select-field km-settings-select-field">
-              <label htmlFor="personalization-motion">
-                {t('settings.appearance.motion')}
-              </label>
-              <SearchableOptionInput
-                ariaLabel={t('settings.appearance.motion')}
-                data-km-source-site="personalization-motion"
-                disabled={false}
-                id="personalization-motion"
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={(value) => setMotion(value as MotionPreference)}
-                options={[
-                  { label: t('settings.appearance.motion.system'), value: 'system' },
-                  { label: t('settings.appearance.motion.reduce'), value: 'reduce' }
-                ]}
-                value={preferences.motion}
-              />
-            </div>
-            <div className="km-searchable-select-field km-settings-select-field">
-              <label htmlFor="personalization-type-scale">
-                {t('settings.appearance.typeScale')}
-              </label>
-              <SearchableOptionInput
-                ariaLabel={t('settings.appearance.typeScale')}
-                data-km-source-site="personalization-type-scale"
-                disabled={false}
-                id="personalization-type-scale"
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={(value) => setTypeScale(value as TypeScalePreference)}
-                options={[
-                  { label: t('settings.appearance.typeScale.default'), value: 'default' },
-                  { label: t('settings.appearance.typeScale.large'), value: 'large' },
-                  { label: t('settings.appearance.typeScale.larger'), value: 'larger' }
-                ]}
-                value={preferences.typeScale}
-              />
-            </div>
-            <div className="km-searchable-select-field km-settings-select-field">
-              <label htmlFor="personalization-density">
-                {t('settings.appearance.density')}
-              </label>
-              <SearchableOptionInput
-                ariaLabel={t('settings.appearance.density')}
-                data-km-source-site="personalization-density"
-                disabled={false}
-                id="personalization-density"
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={(value) => setDensity(value as DensityPreference)}
-                options={[
-                  {
-                    label: t('settings.appearance.density.comfortable'),
-                    value: 'comfortable'
-                  },
-                  { label: t('settings.appearance.density.compact'), value: 'compact' }
-                ]}
-                value={preferences.density}
-              />
-            </div>
+      <section aria-labelledby="appearance-settings-heading" className="settings-subsection">
+        <div className="settings-subsection-heading">
+          <Accessibility aria-hidden="true" size={18} />
+          <div>
+            <h3 id="appearance-settings-heading">{t('settings.appearance.title')}</h3>
+            <p>{t('settings.appearance.description')}</p>
           </div>
         </div>
-      </details>
+        <div className="km-settings-grid">
+          <div className="km-searchable-select-field km-settings-select-field">
+            <label htmlFor="personalization-appearance-theme">
+              {t('settings.appearance.theme')}
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('settings.appearance.theme')}
+              data-km-source-site="personalization-appearance-theme"
+              disabled={false}
+              id="personalization-appearance-theme"
+              isFiniteCatalog
+              localizeOptions={false}
+              onChange={(value) => setTheme(value as AppearanceTheme)}
+              options={[
+                { label: t('settings.appearance.theme.default'), value: 'default' },
+                { label: t('settings.appearance.theme.highContrast'), value: 'highContrast' },
+                { label: t('settings.appearance.theme.colorSafe'), value: 'colorSafe' }
+              ]}
+              value={preferences.theme}
+            />
+          </div>
+          <div className="km-searchable-select-field km-settings-select-field">
+            <label htmlFor="personalization-motion">
+              {t('settings.appearance.motion')}
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('settings.appearance.motion')}
+              data-km-source-site="personalization-motion"
+              disabled={false}
+              id="personalization-motion"
+              isFiniteCatalog
+              localizeOptions={false}
+              onChange={(value) => setMotion(value as MotionPreference)}
+              options={[
+                { label: t('settings.appearance.motion.system'), value: 'system' },
+                { label: t('settings.appearance.motion.reduce'), value: 'reduce' }
+              ]}
+              value={preferences.motion}
+            />
+          </div>
+          <div className="km-searchable-select-field km-settings-select-field">
+            <label htmlFor="personalization-type-scale">
+              {t('settings.appearance.typeScale')}
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('settings.appearance.typeScale')}
+              data-km-source-site="personalization-type-scale"
+              disabled={false}
+              id="personalization-type-scale"
+              isFiniteCatalog
+              localizeOptions={false}
+              onChange={(value) => setTypeScale(value as TypeScalePreference)}
+              options={[
+                { label: t('settings.appearance.typeScale.default'), value: 'default' },
+                { label: t('settings.appearance.typeScale.large'), value: 'large' },
+                { label: t('settings.appearance.typeScale.larger'), value: 'larger' }
+              ]}
+              value={preferences.typeScale}
+            />
+          </div>
+          <div className="km-searchable-select-field km-settings-select-field">
+            <label htmlFor="personalization-density">
+              {t('settings.appearance.density')}
+            </label>
+            <SearchableOptionInput
+              ariaLabel={t('settings.appearance.density')}
+              data-km-source-site="personalization-density"
+              disabled={false}
+              id="personalization-density"
+              isFiniteCatalog
+              localizeOptions={false}
+              onChange={(value) => setDensity(value as DensityPreference)}
+              options={[
+                {
+                  label: t('settings.appearance.density.comfortable'),
+                  value: 'comfortable'
+                },
+                { label: t('settings.appearance.density.compact'), value: 'compact' }
+              ]}
+              value={preferences.density}
+            />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
