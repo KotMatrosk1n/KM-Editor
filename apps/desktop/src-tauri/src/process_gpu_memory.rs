@@ -46,6 +46,31 @@ extern "system" {
     fn D3DKMTCloseAdapter(handle: *const u32) -> i32;
 }
 
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetProcessMitigationPolicy(
+        process: *mut c_void,
+        policy: u32,
+        buffer: *mut c_void,
+        size: usize,
+    ) -> i32;
+}
+
+fn graphics_system_calls_disabled(process: *mut c_void) -> bool {
+    const PROCESS_SYSTEM_CALL_DISABLE_POLICY: u32 = 4;
+    const DISALLOW_WIN32K_SYSTEM_CALLS: u32 = 1;
+    let mut flags = 0u32;
+    unsafe {
+        GetProcessMitigationPolicy(
+            process,
+            PROCESS_SYSTEM_CALL_DISABLE_POLICY,
+            (&mut flags as *mut u32).cast(),
+            size_of::<u32>(),
+        ) != 0
+            && flags & DISALLOW_WIN32K_SYSTEM_CALLS != 0
+    }
+}
+
 pub(super) struct Adapters {
     handles: Vec<AdapterInfo>,
     physical: Vec<(u32, u32)>,
@@ -120,7 +145,15 @@ impl Adapters {
                 reservation: 0,
                 available: 0,
             };
-            if unsafe { D3DKMTQueryVideoMemoryInfo(&mut query) } < 0 {
+            let status = unsafe { D3DKMTQueryVideoMemoryInfo(&mut query) };
+            if status < 0 {
+                const STATUS_INVALID_PARAMETER: i32 = 0xc000000du32 as i32;
+                // Win32k-locked processes cannot own a graphics device. Windows returns
+                // INVALID_PARAMETER for their absent graphics accounting context; the
+                // separate GPU process owns their graphics allocations instead.
+                if status == STATUS_INVALID_PARAMETER && graphics_system_calls_disabled(process) {
+                    continue;
+                }
                 return None;
             }
             total = total.checked_add(query.usage)?;

@@ -3868,7 +3868,11 @@
     "settings.memory.vram": "显存",
     "settings.memory.vramHeaderValue": "显存：{value}",
     "settings.memory.showVramHeader": "在标题栏显示显存用量",
-    "settings.memory.vramHelp": "此 KM Editor 实例及其工作进程（包括界面渲染器）使用的 GPU 本地内存。集成显卡的共享系统内存可能计入 GPU 本地内存。不支持的读数显示为 {unavailable}。"
+    "settings.memory.vramHelp": "此 KM Editor 实例及其工作进程（包括界面渲染器）使用的 GPU 本地内存。集成显卡的共享系统内存可能计入 GPU 本地内存。不支持的读数显示为 {unavailable}。",
+    "modelViewer.backgroundStyle": "背景样式",
+    "modelViewer.backgroundSolid": "纯色",
+    "modelViewer.backgroundGrid": "工作室网格",
+    "modelViewer.backgroundColor": "背景颜色"
   },
   "literals": {
     "Not specified": "未指定",

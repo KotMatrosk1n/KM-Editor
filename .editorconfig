@@ -13,3 +13,7 @@ file_header_template = SPDX-License-Identifier: GPL-3.0-only
 [*.{csproj,props,targets,slnx}]
 indent_style = space
 indent_size = 2
+
+# Preserve generated FlatBuffers type names without hiding other compiler warnings.
+[src/KM.Formats/SV/Generated/GameData/{personal,bandtype}.cs]
+dotnet_diagnostic.CS8981.severity = none

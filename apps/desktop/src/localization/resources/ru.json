@@ -3868,7 +3868,11 @@
     "settings.memory.vram": "VRAM",
     "settings.memory.vramHeaderValue": "VRAM: {value}",
     "settings.memory.showVramHeader": "Показывать VRAM в заголовке",
-    "settings.memory.vramHelp": "Локальная память GPU этого экземпляра KM Editor и его процессов, включая интерфейс. На встроенной графике сюда может входить общая оперативная память. Недоступные показания отображаются как {unavailable}."
+    "settings.memory.vramHelp": "Локальная память GPU этого экземпляра KM Editor и его процессов, включая интерфейс. На встроенной графике сюда может входить общая оперативная память. Недоступные показания отображаются как {unavailable}.",
+    "modelViewer.backgroundStyle": "Стиль фона",
+    "modelViewer.backgroundSolid": "Сплошной",
+    "modelViewer.backgroundGrid": "Студийная сетка",
+    "modelViewer.backgroundColor": "Цвет фона"
   },
   "literals": {
     "Not specified": "Не задано",

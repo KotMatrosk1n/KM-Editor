@@ -3868,7 +3868,11 @@
     "settings.memory.vram": "VRAM",
     "settings.memory.vramHeaderValue": "VRAM : {value}",
     "settings.memory.showVramHeader": "Afficher la VRAM dans l’en-tête",
-    "settings.memory.vramHelp": "Mémoire locale GPU de cette instance de KM Editor et de ses processus, interface comprise. Une puce graphique intégrée peut utiliser la mémoire système partagée. Les mesures indisponibles affichent {unavailable}."
+    "settings.memory.vramHelp": "Mémoire locale GPU de cette instance de KM Editor et de ses processus, interface comprise. Une puce graphique intégrée peut utiliser la mémoire système partagée. Les mesures indisponibles affichent {unavailable}.",
+    "modelViewer.backgroundStyle": "Style du fond",
+    "modelViewer.backgroundSolid": "Uni",
+    "modelViewer.backgroundGrid": "Grille de studio",
+    "modelViewer.backgroundColor": "Couleur du fond"
   },
   "literals": {
     "Not specified": "Non spécifié",

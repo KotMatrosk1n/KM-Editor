@@ -3868,7 +3868,11 @@
     "settings.memory.vram": "VRAM",
     "settings.memory.vramHeaderValue": "VRAM: {value}",
     "settings.memory.showVramHeader": "VRAM-Nutzung in der Kopfzeile anzeigen",
-    "settings.memory.vramHelp": "GPU-lokaler Speicher dieser KM Editor-Instanz und ihrer Prozesse, einschließlich der Oberfläche. Bei integrierter Grafik kann gemeinsam genutzter Arbeitsspeicher dazugehören. Nicht unterstützte Werte erscheinen als {unavailable}."
+    "settings.memory.vramHelp": "GPU-lokaler Speicher dieser KM Editor-Instanz und ihrer Prozesse, einschließlich der Oberfläche. Bei integrierter Grafik kann gemeinsam genutzter Arbeitsspeicher dazugehören. Nicht unterstützte Werte erscheinen als {unavailable}.",
+    "modelViewer.backgroundStyle": "Hintergrundstil",
+    "modelViewer.backgroundSolid": "Einfarbig",
+    "modelViewer.backgroundGrid": "Studioraster",
+    "modelViewer.backgroundColor": "Hintergrundfarbe"
   },
   "literals": {
     "Not specified": "Nicht festgelegt",
