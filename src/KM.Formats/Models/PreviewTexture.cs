@@ -17,10 +17,10 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         var format = data.U32(info + 28);
         var blockBytes = format switch { 0x1d01 => 8, 0x1e01 or 0x2001 or 0x2006 => 16, _ => throw new InvalidDataException("Texture compression is not supported by this preview.") };
         var width = checked((int)data.U32(info + 36)); var height = checked((int)data.U32(info + 40));
-        if (width is < 4 or > 4096 || height is < 4 or > 4096 || width % 4 != 0 || height % 4 != 0
+        if (width is < 1 or > 4096 || height is < 1 or > 4096
             || data.U32(info + 44) != 1 || data.U32(info + 48) != 1)
             throw new InvalidDataException("Texture dimensions are unsupported.");
-        var blocksWide = width / 4; var blocksHigh = height / 4;
+        var blocksWide = (width + 3) / 4; var blocksHigh = (height + 3) / 4;
         var stride = checked(blocksWide * blockBytes);
         var result = new byte[checked(stride * blocksHigh)];
         var source = Pointer(Pointer(info + 112));
@@ -29,9 +29,11 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         var tile = data.U16(info + 18);
         if (tile == 1)
         {
-            if (imageSize < result.Length || stride % 32 != 0)
+            var pitch = (stride + 31) / 32 * 32;
+            if (imageSize < checked(pitch * (blocksHigh - 1) + stride))
                 throw new InvalidDataException("Linear texture pitch is unsupported.");
-            data.Slice(source, result.Length).CopyTo(result);
+            for (var row = 0; row < blocksHigh; row++)
+                data.Slice(source + row * pitch, stride).CopyTo(result.AsSpan(row * stride, stride));
         }
         else if (tile == 0)
         {

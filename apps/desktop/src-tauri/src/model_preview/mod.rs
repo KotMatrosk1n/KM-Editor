@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #[cfg(windows)]
+mod animation;
+#[cfg(windows)]
 mod gpu;
 #[cfg(windows)]
 mod scene;
@@ -16,8 +18,100 @@ pub struct PreviewState {
     session: Mutex<Option<String>>,
     generation: Arc<AtomicU64>,
     busy: AtomicBool,
+    viewport: Mutex<Viewport>,
     #[cfg(windows)]
     proxy: std::sync::OnceLock<Result<winit::event_loop::EventLoopProxy<window::Event>, String>>,
+}
+#[derive(Clone, Copy, Default, serde::Deserialize)]
+pub struct Viewport {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub visible: bool,
+    pub clip: Option<ViewportClip>,
+}
+#[derive(Clone, Copy, serde::Deserialize)]
+pub struct ViewportClip {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+#[tauri::command]
+pub fn model_preview_viewport(
+    state: tauri::State<'_, PreviewState>,
+    session: String,
+    viewport: Viewport,
+) -> Result<(), String> {
+    if !state.current(&session) {
+        return Ok(());
+    }
+    if viewport.x.unsigned_abs() > 32768
+        || viewport.y.unsigned_abs() > 32768
+        || viewport.width > 8192
+        || viewport.height > 8192
+        || viewport.clip.is_some_and(|clip| {
+            clip.x > 8192 || clip.y > 8192 || clip.width > 8192 || clip.height > 8192
+        })
+    {
+        return Err("KM-MODEL-UNSUPPORTED".into());
+    }
+    *state.viewport.lock().map_err(|_| "KM-MODEL-CANCELLED")? = viewport;
+    #[cfg(windows)]
+    if let Some(Ok(proxy)) = state.proxy.get() {
+        let _ = proxy.send_event(window::Event::Viewport { session, viewport });
+    }
+    Ok(())
+}
+#[tauri::command]
+pub fn model_preview_camera(
+    state: tauri::State<'_, PreviewState>,
+    session: String,
+    action: String,
+) -> Result<(), String> {
+    if !state.current(&session) {
+        return Ok(());
+    }
+    if !matches!(
+        action.as_str(),
+        "reset" | "frame" | "left" | "right" | "up" | "down" | "in" | "out" | "focus"
+    ) {
+        return Err("KM-MODEL-UNSUPPORTED".into());
+    }
+    #[cfg(windows)]
+    if let Some(Ok(proxy)) = state.proxy.get() {
+        let _ = proxy.send_event(window::Event::Camera { session, action });
+    }
+    Ok(())
+}
+#[tauri::command]
+pub fn model_preview_playback(
+    state: tauri::State<'_, PreviewState>,
+    session: String,
+    action: String,
+    value: f32,
+) -> Result<(), String> {
+    if !state.current(&session) {
+        return Ok(());
+    }
+    if !value.is_finite()
+        || !matches!(
+            action.as_str(),
+            "play" | "pause" | "restart" | "seek" | "speed" | "loop"
+        )
+    {
+        return Err("KM-MODEL-UNSUPPORTED".into());
+    }
+    #[cfg(windows)]
+    if let Some(Ok(proxy)) = state.proxy.get() {
+        let _ = proxy.send_event(window::Event::Playback {
+            session,
+            action,
+            value,
+        });
+    }
+    Ok(())
 }
 impl PreviewState {
     fn current(&self, session: &str) -> bool {
@@ -65,6 +159,11 @@ pub struct PreviewInfo {
     adapter: String,
     backend: &'static str,
     selection: &'static str,
+    clips: Vec<String>,
+    clip: Option<String>,
+    duration: f32,
+    looped: bool,
+    warnings: Vec<String>,
 }
 
 #[tauri::command]
@@ -77,10 +176,13 @@ pub async fn model_preview_open(
     id: String,
     title: String,
     session: String,
+    animation: Option<String>,
 ) -> Result<PreviewInfo, String> {
     #[cfg(not(windows))]
     {
-        let _ = (app, state, bridge, trace, paths, id, title, session);
+        let _ = (
+            app, state, bridge, trace, paths, id, title, session, animation,
+        );
         Err("KM-MODEL-GPU-UNAVAILABLE".into())
     }
     #[cfg(windows)]
@@ -122,7 +224,7 @@ pub async fn model_preview_open(
             .map_err(|_| "KM-MODEL-UNSUPPORTED")?;
         let request =
             serde_json::json!({ "command": "models.prepare", "requestId": token, "payload": {
-            "paths": paths, "id": id, "transferId": token
+            "paths": paths, "id": id, "transferId": token, "animation": animation
         } })
             .to_string();
         let response = super::project_bridge(app.clone(), bridge, trace, request).await?;
@@ -174,6 +276,7 @@ pub async fn model_preview_open(
                 scene,
                 title,
                 owner,
+                viewport: *state.viewport.lock().map_err(|_| "KM-MODEL-CANCELLED")?,
                 session,
                 generation,
                 result: send,

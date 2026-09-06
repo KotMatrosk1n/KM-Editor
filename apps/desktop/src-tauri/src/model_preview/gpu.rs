@@ -13,6 +13,9 @@ struct Mesh {
     indices: wgpu::Buffer,
     count: u32,
     material: wgpu::BindGroup,
+    blend: bool,
+    colors: wgpu::Buffer,
+    values: Vec<f32>,
 }
 pub struct Renderer {
     // The surface owns a window reference; it must be dropped before the window.
@@ -22,9 +25,17 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    blend_pipeline: wgpu::RenderPipeline,
     depth: wgpu::TextureView,
     camera: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
+    joints: wgpu::Buffer,
+    pub rig: super::animation::Rig,
+    pub position: f32,
+    pub playing: bool,
+    pub looping: bool,
+    pub speed: f32,
+    tick: std::time::Instant,
     meshes: Vec<Mesh>,
     pub adapter: String,
     failed: Arc<AtomicBool>,
@@ -108,24 +119,47 @@ impl Renderer {
         });
         let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Camera"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(64),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(64),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(512 * 64),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let joints = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Skeleton transforms"),
+            contents: bytemuck::cast_slice(&scene.rig.matrices(0.0)),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
         let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Camera"),
             layout: &camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: joints.as_entire_binding(),
+                },
+            ],
         });
         let material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Base color"),
@@ -152,7 +186,17 @@ impl Renderer {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(16),
+                        min_binding_size: wgpu::BufferSize::new(128),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -160,8 +204,8 @@ impl Renderer {
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Base color"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -171,8 +215,8 @@ impl Renderer {
             textures.push(Self::texture(
                 &device,
                 &queue,
-                texture.width,
-                texture.height,
+                texture.width.div_ceil(4) * 4,
+                texture.height.div_ceil(4) * 4,
                 texture.format,
                 &texture.bytes,
             ));
@@ -185,12 +229,34 @@ impl Renderer {
             wgpu::TextureFormat::Rgba8UnormSrgb,
             &[255; 4],
         );
+        let black = Self::texture(
+            &device,
+            &queue,
+            1,
+            1,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &[0; 4],
+        );
         let mut meshes = Vec::new();
         for primitive in scene.primitives {
+            let mut values = primitive.material.to_vec();
+            let ratio = |index: Option<usize>| {
+                index
+                    .map(|i| {
+                        let t = &scene.textures[i];
+                        [
+                            t.width as f32 / (t.width.div_ceil(4) * 4) as f32,
+                            t.height as f32 / (t.height.div_ceil(4) * 4) as f32,
+                        ]
+                    })
+                    .unwrap_or([1.0, 1.0])
+            };
+            values.extend_from_slice(&ratio(primitive.texture));
+            values.extend_from_slice(&ratio(primitive.mask));
             let color = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Material color"),
-                contents: bytemuck::cast_slice(&primitive.color),
-                usage: wgpu::BufferUsages::UNIFORM,
+                contents: bytemuck::cast_slice(&values),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
             let material = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Material"),
@@ -210,6 +276,12 @@ impl Renderer {
                         binding: 2,
                         resource: color.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(
+                            primitive.mask.map(|i| &textures[i]).unwrap_or(&black),
+                        ),
+                    },
                 ],
             });
             meshes.push(Mesh {
@@ -225,6 +297,9 @@ impl Renderer {
                 }),
                 count: primitive.indices.len() as u32,
                 material,
+                blend: primitive.blend,
+                colors: color,
+                values,
             });
         }
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -236,18 +311,22 @@ impl Renderer {
             bind_group_layouts: &[&camera_layout, &material_layout],
             push_constant_ranges: &[],
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let create_pipeline = |blend: bool| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Static model"), layout: Some(&layout),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(),
-                buffers: &[wgpu::VertexBufferLayout { array_stride: 32, step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2] }] },
+                buffers: &[wgpu::VertexBufferLayout { array_stride: 64, step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4, 4 => Float32x4] }] },
             fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some("fs_main"), compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: None, write_mask: wgpu::ColorWrites::ALL })] }),
+                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: if blend { Some(wgpu::BlendState::ALPHA_BLENDING) } else { None }, write_mask: wgpu::ColorWrites::ALL })] }),
             primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true,
+            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: !blend,
                 depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: Default::default() }),
             multisample: Default::default(), multiview: None, cache: None
-        });
+        })
+        };
+        let pipeline = create_pipeline(false);
+        let blend_pipeline = create_pipeline(true);
         let mut result = Self {
             surface,
             window,
@@ -255,9 +334,17 @@ impl Renderer {
             queue,
             config,
             pipeline,
+            blend_pipeline,
             depth,
             camera,
             camera_group,
+            joints,
+            looping: scene.rig.clip.as_ref().is_some_and(|c| c.r#loop),
+            playing: false,
+            position: 0.0,
+            speed: 1.0,
+            tick: std::time::Instant::now(),
+            rig: scene.rig,
             meshes,
             adapter: info.name,
             failed,
@@ -349,6 +436,121 @@ impl Renderer {
         self.pan = Vec3::ZERO;
         self.window.request_redraw();
     }
+    pub fn frame(&mut self) {
+        self.pan = Vec3::ZERO;
+        let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
+        self.distance = self.radius * 1.1 / (22.5_f32.to_radians().sin() * aspect.min(1.0));
+        self.window.request_redraw();
+    }
+    pub fn viewport(&mut self, viewport: super::Viewport) {
+        let visible = viewport.visible && viewport.width > 0 && viewport.height > 0;
+        self.window.set_visible(visible);
+        self.window
+            .set_outer_position(winit::dpi::PhysicalPosition::new(viewport.x, viewport.y));
+        if visible {
+            let _ = self
+                .window
+                .request_inner_size(winit::dpi::PhysicalSize::new(
+                    viewport.width.min(4096),
+                    viewport.height.min(4096),
+                ));
+            use winit::raw_window_handle::HasWindowHandle;
+            if let Ok(handle) = self.window.window_handle() {
+                if let winit::raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw() {
+                    // Keep the viewport above the sibling webview without activating it.
+                    unsafe {
+                        if let Some(clip) = viewport.clip {
+                            let region = CreateRectRgn(
+                                clip.x as i32,
+                                clip.y as i32,
+                                (clip.x + clip.width) as i32,
+                                (clip.y + clip.height) as i32,
+                            );
+                            if region != 0 && SetWindowRgn(handle.hwnd.get(), region, 1) == 0 {
+                                DeleteObject(region);
+                            }
+                        } else {
+                            SetWindowRgn(handle.hwnd.get(), 0, 1);
+                        }
+                        SetWindowPos(
+                            handle.hwnd.get(),
+                            0,
+                            viewport.x,
+                            viewport.y,
+                            viewport.width.min(4096) as i32,
+                            viewport.height.min(4096) as i32,
+                            0x0010,
+                        );
+                    }
+                }
+            }
+            self.resize(viewport.width, viewport.height);
+        } else {
+            self.minimized = true;
+        }
+        self.tick = std::time::Instant::now();
+    }
+    pub fn duration(&self) -> f32 {
+        self.rig
+            .clip
+            .as_ref()
+            .map(|c| c.frames.saturating_sub(1) as f32 / c.rate as f32)
+            .unwrap_or(0.0)
+    }
+    pub fn animate(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.tick).as_secs_f32();
+        self.tick = now;
+        let visible = !self.minimized && self.parent_visible();
+        if self.playing && visible {
+            self.position += elapsed * self.speed;
+            let duration = self.duration();
+            if self.position >= duration {
+                if self.looping && duration > 0.0 {
+                    self.position %= duration;
+                } else {
+                    self.position = duration;
+                    self.playing = false;
+                }
+            }
+            self.window.request_redraw();
+        }
+        self.playing && visible
+    }
+    fn parent_visible(&self) -> bool {
+        use winit::raw_window_handle::HasWindowHandle;
+        let Ok(handle) = self.window.window_handle() else {
+            return false;
+        };
+        let winit::raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return false;
+        };
+        unsafe {
+            let parent = GetAncestor(handle.hwnd.get(), 2);
+            IsIconic(parent) == 0 && IsWindowVisible(parent) != 0
+        }
+    }
+    pub fn playback(&mut self, action: &str, value: f32) {
+        match action {
+            "play" => {
+                if self.position >= self.duration() {
+                    self.position = 0.0;
+                }
+                self.playing = self.rig.clip.is_some();
+            }
+            "pause" => self.playing = false,
+            "restart" => {
+                self.position = 0.0;
+                self.playing = self.rig.clip.is_some();
+            }
+            "seek" => self.position = value.clamp(0.0, self.duration()),
+            "speed" => self.speed = value.clamp(0.1, 4.0),
+            "loop" => self.looping = value != 0.0,
+            _ => {}
+        }
+        self.tick = std::time::Instant::now();
+        self.window.request_redraw();
+    }
     pub fn orbit(&mut self, dx: f32, dy: f32) {
         self.yaw -= dx * 0.008;
         self.pitch = (self.pitch + dy * 0.008).clamp(-1.45, 1.45);
@@ -378,8 +580,22 @@ impl Renderer {
         if self.failed.load(Ordering::Acquire) {
             return Err("KM-MODEL-GPU-UNAVAILABLE".into());
         }
-        if self.minimized {
+        if self.minimized || !self.parent_visible() {
             return Ok(());
+        }
+        let frame_position =
+            self.position * self.rig.clip.as_ref().map(|c| c.rate).unwrap_or(1) as f32;
+        self.queue.write_buffer(
+            &self.joints,
+            0,
+            bytemuck::cast_slice(&self.rig.matrices(frame_position)),
+        );
+        for (i, mesh) in self.meshes.iter().enumerate() {
+            self.queue.write_buffer(
+                &mesh.colors,
+                0,
+                bytemuck::cast_slice(&self.rig.material(i, frame_position, &mesh.values)),
+            );
         }
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
@@ -441,17 +657,52 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_group, &[]);
-            for mesh in &self.meshes {
-                pass.set_bind_group(1, &mesh.material, &[]);
-                pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-                pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.count, 0, 0..1);
+            for blend in [false, true] {
+                pass.set_pipeline(if blend {
+                    &self.blend_pipeline
+                } else {
+                    &self.pipeline
+                });
+                for (i, mesh) in self
+                    .meshes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, mesh)| mesh.blend == blend)
+                {
+                    if !self.rig.visible(i, frame_position) {
+                        continue;
+                    }
+                    pass.set_bind_group(1, &mesh.material, &[]);
+                    pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                    pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..mesh.count, 0, 0..1);
+                }
             }
         }
         self.queue.submit(Some(encoder.finish()));
         frame.present();
         Ok(())
     }
+}
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn SetWindowRgn(window: isize, region: isize, redraw: i32) -> i32;
+    fn GetAncestor(window: isize, flags: u32) -> isize;
+    fn IsIconic(window: isize) -> i32;
+    fn IsWindowVisible(window: isize) -> i32;
+    fn SetWindowPos(
+        window: isize,
+        after: isize,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        flags: u32,
+    ) -> i32;
+}
+#[link(name = "gdi32")]
+unsafe extern "system" {
+    fn CreateRectRgn(left: i32, top: i32, right: i32, bottom: i32) -> isize;
+    fn DeleteObject(object: isize) -> i32;
 }

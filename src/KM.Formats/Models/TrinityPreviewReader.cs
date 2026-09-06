@@ -5,12 +5,14 @@ using System.Numerics;
 
 namespace KM.Formats.Models;
 
-/// <summary>Projects supported static model geometry and base-color materials into a preview.</summary>
+/// <summary>Reads bounded model geometry, skinning and layered color materials.</summary>
 public sealed class TrinityPreviewReader(Func<string, byte[]> read)
 {
     private readonly List<PreviewTexture> textures = [];
     private readonly Dictionary<string, int> textureIndices = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (int Texture, Vector4 Color)> materials = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PreviewMaterial> materials = new(StringComparer.Ordinal);
+    private PreviewBone[] bones = [];
+    private readonly HashSet<string> warnings = new(StringComparer.Ordinal);
     private int totalVertices;
     private int totalIndices;
 
@@ -22,18 +24,28 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read)
         var (materialStart, materialCount) = model.Vector(model.Root, 3, 4, 16);
         for (var i = 0; i < materialCount; i++) ReadMaterials(Resolve(modelPath, model.StringAt(materialStart + i * 4)));
         var skeleton = model.Table(model.Root, 2);
-        if (skeleton != 0 && model.Text(skeleton, 0) is { } skeletonName) _ = Metadata(Resolve(modelPath, skeletonName));
-        var meshPath = Resolve(modelPath, Required(model.Text(meshes[0], 0)));
-        var meshData = Metadata(meshPath);
-        var buffer = Metadata(Resolve(meshPath, Required(meshData.Text(meshData.Root, 2))));
-        var shapes = meshData.Tables(meshData.Root, 1, 128);
-        var groups = buffer.Tables(buffer.Root, 1, 128);
-        if (shapes.Length != groups.Length) throw new InvalidDataException("Mesh and buffer groups do not match.");
+        if (skeleton != 0 && model.Text(skeleton, 0) is { } skeletonName)
+            bones = PreviewRigReader.Skeleton(Metadata(Resolve(modelPath, skeletonName)));
         var primitives = new List<PreviewPrimitive>();
-        for (var i = 0; i < shapes.Length; i++)
-            primitives.AddRange(ReadShape(meshData, shapes[i], buffer, groups[i]));
+        var lods = model.Tables(model.Root, 4, 16);
+        var selected = lods.Length == 0 ? new[] { 0 }
+            : lods.Select(lod => model.Tables(lod, 0, 16).FirstOrDefault())
+                .Where(table => table != 0).Select(table => checked((int)model.Value(table, 0))).Distinct().ToArray();
+        if (selected.Length == 0) throw new InvalidDataException("Model has no primary detail meshes.");
+        foreach (var index in selected)
+        {
+            if (index < 0 || index >= meshes.Length) throw new InvalidDataException("Model detail mesh index is invalid.");
+            var meshPath = Resolve(modelPath, Required(model.Text(meshes[index], 0)));
+            var meshData = Metadata(meshPath);
+            var buffer = Metadata(Resolve(meshPath, Required(meshData.Text(meshData.Root, 2))));
+            var shapes = meshData.Tables(meshData.Root, 1, 128);
+            var groups = buffer.Tables(buffer.Root, 1, 128);
+            if (shapes.Length != groups.Length) throw new InvalidDataException("Mesh and buffer groups do not match.");
+            for (var i = 0; i < shapes.Length; i++)
+                primitives.AddRange(ReadShape(meshData, shapes[i], buffer, groups[i]));
+        }
         if (primitives.Count == 0 || primitives.Count > 256) throw new InvalidDataException("Model primitive count is unsupported.");
-        return new PreviewScene(primitives, textures);
+        return new PreviewScene(primitives, textures) { Rig = new(bones, [], null, warnings.ToArray()) };
     }
 
     private ModelBuffer Metadata(string path) => new(read(path));
@@ -64,27 +76,51 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read)
         {
             var name = Required(data.Text(material, 0));
             var color = Vector4.One;
+            var layers = new[] { Vector4.One, Vector4.One, Vector4.One, Vector4.One };
+            var uv = new Vector4(1, 1, 0, 0);
             foreach (var parameter in data.Tables(material, 7, 256))
             {
-                if (data.Text(parameter, 0) != "BaseColor") continue;
                 var at = data.Field(parameter, 1);
-                if (at != 0) color = new(data.Float(at), data.Float(at + 4), data.Float(at + 8), data.Float(at + 12));
+                if (at == 0) continue;
+                var value = new Vector4(data.Float(at), data.Float(at + 4), data.Float(at + 8), data.Float(at + 12));
+                switch (data.Text(parameter, 0)) {
+                    case "BaseColor": color = value; break;
+                    case "BaseColorLayer1": layers[0] = value; break;
+                    case "BaseColorLayer2": layers[1] = value; break;
+                    case "BaseColorLayer3": layers[2] = value; break;
+                    case "BaseColorLayer4": layers[3] = value; break;
+                    case "UVScaleOffset": uv = value; break;
+                }
             }
             if (!float.IsFinite(color.X + color.Y + color.Z + color.W)) throw new InvalidDataException("Invalid material color.");
             var texture = -1;
+            var mask = -1;
+            var wrap = Vector4.Zero;
+            var samplers = data.Tables(material, 3, 32);
             foreach (var entry in data.Tables(material, 2, 32))
             {
-                if (data.Text(entry, 0) != "BaseColorMap") continue;
+                var role = data.Text(entry, 0);
+                if (role is not ("BaseColorMap" or "LayerMaskMap")) continue;
+                var slot = checked((int)data.Value(entry, 2));
+                if (samplers.Length > 0 && slot >= samplers.Length) { warnings.Add("textureUnavailable"); continue; }
+                var wrapU = samplers.Length == 0 ? 0 : data.Value(samplers[slot], 9);
+                var wrapV = samplers.Length == 0 ? 0 : data.Value(samplers[slot], 10);
+                if (wrapU is not (0 or 1 or 6 or 7) || wrapV is not (0 or 1 or 6 or 7)) { warnings.Add("textureUnavailable"); continue; }
+                if (role == "BaseColorMap") { wrap.X = wrapU; wrap.Y = wrapV; }
+                else { wrap.Z = wrapU; wrap.W = wrapV; }
                 var texturePath = Resolve(path, Required(data.Text(entry, 1)));
-                if (!textureIndices.TryGetValue(texturePath, out texture))
+                if (!textureIndices.TryGetValue(texturePath, out var textureIndex))
                 {
                     if (textures.Count >= 32) throw new InvalidDataException("Preview texture limit exceeded.");
-                    texture = textures.Count;
-                    textures.Add(PreviewTexture.Read(read(texturePath)));
-                    textureIndices.Add(texturePath, texture);
+                    textureIndex = textures.Count;
+                    try { textures.Add(PreviewTexture.Read(read(texturePath))); }
+                    catch (IOException) { warnings.Add("textureUnavailable"); textureIndices.TryAdd(texturePath, -1); continue; }
+                    textureIndices.Add(texturePath, textureIndex);
                 }
+                if (role == "BaseColorMap") texture = textureIndex; else mask = textureIndex;
             }
-            if (!materials.TryAdd(name, (texture, color))) throw new InvalidDataException("Ambiguous model material.");
+            if (!materials.TryAdd(name, new(name, texture, mask, color, layers, uv, data.Text(material, 15) ?? "Opaque") { Wrap = wrap }))
+                throw new InvalidDataException("Ambiguous model material.");
         }
     }
 
@@ -114,22 +150,35 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read)
         {
             var type = metadata.Value(attribute, 3);
             var offset = checked((int)metadata.Value(attribute, 4));
-            var componentBytes = type == 43 ? 2 : 4;
-            if (type is not (43 or 48 or 51 or 54) || offset < 0 || offset + (component + 1) * componentBytes > stride)
+            var componentBytes = type is 20 or 22 ? 1 : type is 39 or 43 ? 2 : 4;
+            if (type is not (20 or 22 or 39 or 43 or 48 or 51 or 54) || offset < 0 || offset + (component + 1) * componentBytes > stride)
                 throw new InvalidDataException("Vertex attribute is unsupported.");
             var at = checked(vertex * stride + offset + component * componentBytes);
-            var value = componentBytes == 2
+            var value = type == 22 ? vertices[at] : type == 20 ? vertices[at] / 255f : type == 39 ? BinaryPrimitives.ReadUInt16LittleEndian(vertices.AsSpan(at, 2)) / 65535f : componentBytes == 2
                 ? (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16LittleEndian(vertices.AsSpan(at, 2)))
                 : BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(vertices.AsSpan(at, 4)));
             if (!float.IsFinite(value) || Math.Abs(value) > 1_000_000) throw new InvalidDataException("Invalid vertex component.");
             return value;
         }
-        var output = new float[checked(count * 8)];
+        var jointAttribute = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 7);
+        var weightAttribute = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 8);
+        if (bones.Length == 0 && weightAttribute != 0) warnings.Add("sharedSkeletonUnavailable");
+        var output = new float[checked(count * 16)];
         for (var v = 0; v < count; v++)
         {
-            for (var c = 0; c < 3; c++) output[v * 8 + c] = Component(position, v, c);
-            for (var c = 0; c < 3; c++) output[v * 8 + c + 3] = normal == 0 ? (c == 1 ? 1 : 0) : Component(normal, v, c);
-            for (var c = 0; c < 2; c++) output[v * 8 + c + 6] = uv == 0 ? 0 : Component(uv, v, c);
+            for (var c = 0; c < 3; c++) output[v * 16 + c] = Component(position, v, c);
+            for (var c = 0; c < 3; c++) output[v * 16 + c + 3] = normal == 0 ? (c == 1 ? 1 : 0) : Component(normal, v, c);
+            for (var c = 0; c < 2; c++) output[v * 16 + c + 6] = uv == 0 ? 0 : Component(uv, v, c);
+            var total = 0f;
+            for (var c = 0; c < 4; c++) {
+                var weight = weightAttribute == 0 || bones.Length == 0 ? 0 : Component(weightAttribute, v, c);
+                var joint = jointAttribute == 0 ? 0 : Component(jointAttribute, v, c);
+                if (weight < 0 || weight > 1 || (weight > 0 && !bones.Any(b => b.Joint == joint)))
+                    throw new InvalidDataException("Vertex skinning references an unsupported joint.");
+                output[v * 16 + 8 + c] = weight > 0 ? joint : 0;
+                output[v * 16 + 12 + c] = weight; total += weight;
+            }
+            if (total > 0) for (var c = 0; c < 4; c++) output[v * 16 + 12 + c] /= total;
         }
         var indexSize = metadata.Value(shape, 2) switch { 1 => 2, 2 => 4, _ => throw new InvalidDataException("Mesh index format is unsupported.") };
         foreach (var part in metadata.Tables(shape, 4, 128))
@@ -146,7 +195,7 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read)
                 if (indices[n] >= count) throw new InvalidDataException("Triangle refers to a missing vertex.");
             }
             if (!materials.TryGetValue(Required(metadata.Text(part, 3)), out var material)) throw new InvalidDataException("Mesh material is missing.");
-            yield return new PreviewPrimitive(output, indices, material.Texture, material.Color);
+            yield return new PreviewPrimitive(output, indices, material, metadata.Text(shape, 0) ?? "");
         }
     }
 }
