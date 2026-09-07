@@ -9,6 +9,49 @@ namespace KM.Tools.Bridge;
 
 internal static class ModelPreviewBridge
 {
+    internal static object Properties(ModelTexturesRequest request)
+    {
+        var project = Open(request.Paths);
+        var assets = Assets(project, request.Id);
+        return new {
+            Assets = assets.Select(a => new { a.Id, Size = a.Bytes.Length, SourceHash = ModelTextureIntent.Hash(a.Bytes), a.Archive }),
+            Materials = assets.Where(a => Path.GetExtension(a.Id) is ".trmtr" or ".gfbmdl")
+                .Select(a => new { a.Id, SourceHash = ModelTextureIntent.Hash(a.Bytes), Fields = new ModelMaterialDocument(a.Bytes, a.Id.EndsWith(".gfbmdl", StringComparison.Ordinal)).Fields })
+        };
+    }
+
+    internal static object StageAsset(ModelAssetStageRequest request)
+    {
+        var project = Open(request.Paths);
+        var session = request.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Session);
+        ModelTextureIntent? intent = request.RestoreVanilla ? null : AssetIntent(project, request.Id,
+            request.Change ?? throw new InvalidDataException("Model change is missing."));
+        var updated = project.Paths.SelectedGame switch {
+            ProjectGame.Sword or ProjectGame.Shield => request.RestoreVanilla
+                ? new SwShModelTextureEditSessionService().RestoreVanilla(project.Paths, session, request.Id)
+                : new SwShModelTextureEditSessionService().Stage(project.Paths, session, intent!),
+            ProjectGame.ZA => request.RestoreVanilla
+                ? new ZaModelTextureEditSessionService().RestoreVanilla(project.Paths, session, request.Id)
+                : new ZaModelTextureEditSessionService().Stage(project.Paths, session, intent!),
+            _ => request.RestoreVanilla ? new SvModelTextureEditSessionService().RestoreVanilla(project.Paths, session, request.Id)
+                : new SvModelTextureEditSessionService().Stage(project.Paths, session, intent!)
+        };
+        return new { Session = EditSessionBridgeMapper.ToDto(updated) };
+    }
+
+    private static ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false) => project.Paths.SelectedGame switch {
+        ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Assets(project, id, vanilla),
+        ProjectGame.ZA => new ZaModelPreviewService().Assets(project, id, vanilla),
+        _ => new SvModelPreviewService().Assets(project, id, vanilla)
+    };
+    private static ModelTextureIntent AssetIntent(OpenedProject project, string id, ModelAssetChangeDto change)
+    {
+        if (change.Changes is null || change.Changes.Length > 512 || change.Changes.Any(c => c is null)) throw new InvalidDataException("Model properties are invalid.");
+        var intent = new ModelTextureIntent(project.Paths.SelectedGame.ToString()!, id, change.Asset, change.SourceHash, [],
+            Kind: change.Restore ? "restore" : "material", MaterialChanges: change.Changes.Select(c => new ModelMaterialChange(c.Key, c.Values, c.Text)).ToArray());
+        intent.Validate(); return intent;
+    }
+
     internal static object Textures(ModelTexturesRequest request)
     {
         var project = Open(request.Paths);
@@ -85,11 +128,26 @@ internal static class ModelPreviewBridge
         if (request.TransferId is not { Length: 32 } || !request.TransferId.All(char.IsAsciiHexDigit))
             throw new InvalidDataException("Invalid model transfer identifier.");
         var project = Open(request.Paths);
+        var replacements = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        if (request.AssetChanges is { Length: > 0 } assetChanges)
+        {
+            if (assetChanges.Length > 2048 || assetChanges.Any(c => c is null) || assetChanges.Select(c => c.Asset).Distinct().Count() != assetChanges.Length)
+                throw new InvalidDataException("Model preview changes are invalid.");
+            var assets = Assets(project, request.Id).ToDictionary(a => a.Id, StringComparer.Ordinal);
+            var vanilla = assetChanges.Any(c => c.Restore) ? Assets(project, request.Id, true).ToDictionary(a => a.Id, StringComparer.Ordinal) : null;
+            foreach (var change in assetChanges)
+            {
+                var intent = AssetIntent(project, request.Id, change);
+                if (!assets.TryGetValue(change.Asset, out var asset)) throw new InvalidDataException("Model asset association changed.");
+                replacements.Add(asset.Id, ModelTextureEncodingCache.Encode(asset.Bytes, intent, vanilla?.GetValueOrDefault(asset.Id)?.Bytes).Bytes);
+            }
+        }
+        byte[] Transform(string path, byte[] bytes) => replacements.GetValueOrDefault(path) ?? bytes;
         var scene = project.Paths.SelectedGame switch
         {
-            ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Prepare(project, request.Id, request.Animation),
-            ProjectGame.ZA => new ZaModelPreviewService().Prepare(project, request.Id, request.Animation),
-            _ => new SvModelPreviewService().Prepare(project, request.Id, request.Animation)
+            ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Prepare(project, request.Id, request.Animation, transform: Transform),
+            ProjectGame.ZA => new ZaModelPreviewService().Prepare(project, request.Id, request.Animation, transform: Transform),
+            _ => new SvModelPreviewService().Prepare(project, request.Id, request.Animation, transform: Transform)
         };
         if (request.TextureChanges is { Length: > 0 } changes)
         {

@@ -6,7 +6,7 @@ using KM.Formats.SwSh;
 
 namespace KM.SwSh.Models;
 
-internal sealed class SwShModelSource(OpenedProject project)
+internal sealed class SwShModelSource(OpenedProject project, long maximumBytes = 128L * 1024 * 1024, int maximumReads = 1024)
 {
     private readonly Dictionary<string, byte[]?> observed = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SwShGfPackFile> packs = new(StringComparer.Ordinal);
@@ -54,7 +54,7 @@ internal sealed class SwShModelSource(OpenedProject project)
 
     private byte[]? ReadPhysical(string path)
     {
-        if (++reads > 1024) throw new InvalidDataException("Model dependency count exceeds the preview budget.");
+        if (++reads > maximumReads) throw new InvalidDataException("Model dependency count exceeds the preview budget.");
         FileSystemInfo? current = new FileInfo(path);
         while (current is not null)
         {
@@ -79,7 +79,7 @@ internal sealed class SwShModelSource(OpenedProject project)
     private void Admit(long size)
     {
         bytesRead = checked(bytesRead + size);
-        if (bytesRead > 128L * 1024 * 1024) throw new InvalidDataException("Model resources exceed the preview budget.");
+        if (bytesRead > maximumBytes) throw new InvalidDataException("Model resources exceed the preview budget.");
     }
 
     internal static string Canonical(string relative)

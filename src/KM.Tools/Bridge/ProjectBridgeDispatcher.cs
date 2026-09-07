@@ -761,6 +761,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.ModelPrepare => DispatchModelPreview(requestJson, prepare: true),
                 KmCommandNames.ModelTextures => DispatchModelTextures(requestJson, stage: false),
                 KmCommandNames.ModelTextureStage => DispatchModelTextures(requestJson, stage: true),
+                KmCommandNames.ModelProperties => DispatchModelAssets(requestJson, stage: false),
+                KmCommandNames.ModelAssetStage => DispatchModelAssets(requestJson, stage: true),
                 KmCommandNames.ReadGuidedDesignCapabilities => DispatchReadGuidedDesignCapabilities(requestJson),
                 KmCommandNames.PreviewGuidedDesign => DispatchPreviewGuidedDesign(requestJson),
                 KmCommandNames.ImportGuidedDesignProposal => DispatchImportGuidedDesignProposal(requestJson),
@@ -1350,6 +1352,25 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             throw new BridgeRequestException("Texture colors could not be prepared. Reload the model, check the selected color texture, and stage the edit again.",
                 exception, BridgeErrorCodes.ModelTextureEditInvalid);
+        }
+    }
+
+    private string DispatchModelAssets(string requestJson, bool stage)
+    {
+        try
+        {
+            if (stage)
+            {
+                var request = DeserializeRequest<KM.Api.Models.ModelAssetStageRequest>(requestJson);
+                return SerializeSuccess(ModelPreviewBridge.StageAsset(request.Payload), request.RequestId);
+            }
+            var load = DeserializeRequest<KM.Api.Models.ModelTexturesRequest>(requestJson);
+            return SerializeSuccess(ModelPreviewBridge.Properties(load.Payload), load.RequestId);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or OverflowException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            throw new BridgeRequestException("Model properties could not be prepared. Reload the model and check its source files.",
+                exception, BridgeErrorCodes.ModelAssetEditInvalid);
         }
     }
 
@@ -8123,6 +8144,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.ModelPrepare or
             KmCommandNames.ModelTextures or
             KmCommandNames.ModelTextureStage or
+            KmCommandNames.ModelProperties or
+            KmCommandNames.ModelAssetStage or
             KmCommandNames.ReadGuidedDesignCapabilities or
             KmCommandNames.PreviewGuidedDesign or
             KmCommandNames.ImportGuidedDesignProposal or

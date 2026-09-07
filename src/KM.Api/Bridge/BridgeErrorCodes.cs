@@ -6,6 +6,7 @@ public static class BridgeErrorCodes
 {
     public const string ModelUnsupported = "KM-MODEL-UNSUPPORTED";
     public const string ModelTextureEditInvalid = "KM-MODEL-TEXTURE-EDIT-INVALID";
+    public const string ModelAssetEditInvalid = "KM-MODEL-ASSET-EDIT-INVALID";
     public const string ModelPartial = "KM-MODEL-PARTIAL";
     public const string ModelGpuUnavailable = "KM-MODEL-GPU-UNAVAILABLE";
     public const string ModelCancelled = "KM-MODEL-CANCELLED";

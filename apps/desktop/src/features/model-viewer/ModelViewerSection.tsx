@@ -7,11 +7,13 @@ import { kmCommandNames, projectPathsSchema, type EditSession, type ProjectPaths
 import { sendProjectBridgeRequest } from '../../bridge/projectBridgeRequest';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
+import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 import { modelError, useModelViewport, type ModelBackground } from './useModelViewport';
 import { ViewerColorPicker } from './ViewerColorPicker';
 import { ModelTextureEditor } from './ModelTextureEditor';
-import type { TextureChange } from './modelTextureBridge';
+import { ModelMaterialEditor } from './ModelMaterialEditor';
+import { stagedAssetChanges, type AssetChange, type TextureChange } from './modelTextureBridge';
 import './ModelViewerSection.css';
 
 const catalogSchema = z.array(z.object({
@@ -25,9 +27,10 @@ function readBackground(): ModelBackground {
   try { return backgroundSchema.parse(JSON.parse(localStorage.getItem(backgroundKey) ?? 'null')); }
   catch { return { color: '#343b44', grid: false }; }
 }
-export default function ModelViewerSection({ paths, session, disabled, onStage, onDirtyChange }: {
+export default function ModelViewerSection({ paths, session, disabled, onStage, onStageAsset, onDirtyChange }: {
   paths: ProjectPaths; session: EditSession | null; disabled: boolean;
   onStage: (model: string, change: TextureChange) => Promise<boolean>;
+  onStageAsset: (model: string, change: AssetChange | null, restore?: boolean) => Promise<boolean>;
   onDirtyChange: (section: 'modelViewer', dirty: boolean) => void;
 }) {
   const { t } = useLocalization();
@@ -44,13 +47,25 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const [background, setBackground] = useState(readBackground);
   const [textureChanges, setTextureChanges] = useState<TextureChange[]>([]);
   const [textureDirty, setTextureDirty] = useState(false);
-  const dirtyChange = useCallback((dirty: boolean) => { setTextureDirty(dirty); onDirtyChange('modelViewer', dirty); }, [onDirtyChange]);
+  const [materialDirty, setMaterialDirty] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [assetChanges, setAssetChanges] = useState<AssetChange[] | null>(null);
+  const [restoreRevision, setRestoreRevision] = useState(0);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState(false);
+  const dirty = textureDirty || materialDirty;
+  const pendingRestore = stagedAssetChanges(session, selected).some(change => change.restore);
+  const dirtyChange = useCallback((value: boolean) => setTextureDirty(value), []);
+  const materialDirtyChange = useCallback((value: boolean) => setMaterialDirty(value), []);
+  const dialog = useModalDialog<HTMLElement>({ enabled: editing, canClose: !dirty && !restoring, onClose: () => setEditing(false) });
+  useEffect(() => { onDirtyChange('modelViewer', dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange('modelViewer', false), [onDirtyChange]);
   useEffect(() => {
     try { localStorage.setItem(backgroundKey, JSON.stringify(background)); } catch { /* Session controls remain usable when storage is unavailable. */ }
   }, [background]);
   const pathKey = JSON.stringify(paths);
   const supported = ['sword', 'shield', 'scarlet', 'violet', 'za'].some(game => game === paths.selectedGame);
-  const viewer = useModelViewport(paths, selected, animation, revision, false, background, textureChanges);
+  const viewer = useModelViewport(paths, selected, animation, revision, false, background, textureChanges, assetChanges ?? stagedAssetChanges(session, selected));
   const error = catalogError ?? viewer.error;
   useEffect(() => {
     setCatalog([]); setSelected(''); setAnimation(null); setCatalogError(null); setLoading(false);
@@ -84,19 +99,28 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   }, [catalog, category, query]);
   const entry = catalog.find(value => value.id === selected);
   const message = error === 'KM-MODEL-GPU-UNAVAILABLE' ? 'modelViewer.gpuError' : error === 'KM-MODEL-BUSY' ? 'modelViewer.busyError' : 'modelViewer.loadError';
-  usePublishCommonEditorDiagnostics(error ? [{ code: error, domain: 'workflow.modelViewer', message: t(message), severity: 'error' }] :
+  usePublishCommonEditorDiagnostics(restoreError ? [{ code: 'KM-MODEL-ASSET-EDIT-INVALID', domain: 'workflow.modelTextures', message: t('modelEditor.error'), severity: 'error' }] : error ? [{ code: error, domain: 'workflow.modelViewer', message: t(message), severity: 'error' }] :
     (viewer.info?.warnings ?? []).map(warning => ({ code: 'KM-MODEL-PARTIAL', domain: 'workflow.modelViewer', message: t(`modelViewer.warning.${warning}`), severity: 'warning' })));
-  const select = (id: string) => { setTextureChanges([]); setSelected(id); setAnimation(null); };
-  return <section className="panel wide-panel model-viewer" aria-labelledby="model-viewer-title">
+  const select = (id: string) => { setTextureChanges([]); setAssetChanges(null); setSelected(id); setAnimation(null); };
+  const restore = async () => {
+    setRestoring(true); setRestoreError(false);
+    try {
+      if (await onStageAsset(selected, null, true)) { setTextureChanges([]); setAssetChanges(null); setRestoreRevision(value => value + 1); }
+      else setRestoreError(true);
+    } catch { setRestoreError(true); } finally { setRestoring(false); }
+  };
+  return <section ref={dialog} className={`panel wide-panel model-viewer${editing ? ' model-viewer--editing' : ''}`} role={editing ? 'dialog' : undefined} aria-modal={editing || undefined} aria-labelledby="model-viewer-title" tabIndex={editing ? -1 : undefined}>
     <header className="model-viewer__header"><Box aria-hidden="true" size={22} />
-      <div><h2 id="model-viewer-title">{t('modelViewer.title')}</h2><p>{t('modelViewer.description')}</p></div>
+      <div><h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2><p>{editing ? entry?.name : t('modelViewer.description')}</p></div>
+      {editing ? <button type="button" disabled={dirty || restoring} onClick={() => setEditing(false)}>{t('modelEditor.close')}</button>
+        : <button type="button" disabled={!selected || disabled} onClick={() => setEditing(true)}>{t('modelEditor.edit')}</button>}
     </header>
     <p className="model-viewer__note">{t('modelViewer.scope')}</p>
     {!supported ? <p role="status">{t('modelViewer.unsupportedGame')}</p> : !isTauri() ? <p role="status">{t('modelViewer.desktopRequired')}</p> :
       <div className="model-viewer__workspace">
         <aside className="model-viewer__browser" aria-label={t('modelViewer.models', { count: catalog.length })}>
           <div className="model-viewer__toolbar"><strong>{t('modelViewer.models', { count: catalog.length })}</strong>
-            <button type="button" onClick={() => { setTextureChanges([]); setRevision(value => value + 1); }} disabled={loading || textureDirty || disabled}>{t('modelViewer.reload')}</button>
+            <button type="button" onClick={() => { setTextureChanges([]); setAssetChanges(null); setRevision(value => value + 1); }} disabled={loading || dirty || disabled}>{t('modelViewer.reload')}</button>
           </div>
           <label htmlFor="model-category">{t('modelViewer.category')}</label>
           <SearchableOptionInput id="model-category" ariaLabel={t('modelViewer.category')} disabled={false} isFiniteCatalog localizeOptions={false}
@@ -108,7 +132,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             {loading ? <p role="status">{t('modelViewer.loading')}</p> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
               groups.map(group => <details key={group[0].id} open={group.some(item => item.id === selected) || undefined}>
                 <summary data-localization-ignore="true">{group[0].species > 0 ? `#${group[0].species} ` : ''}{group[0].name} <span>({group.length})</span></summary>
-                {group.map(item => <button key={item.id} type="button" disabled={textureDirty || disabled} aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>
+                {group.map(item => <button key={item.id} type="button" disabled={dirty || disabled} aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>
                   {item.species > 0 ? t('modelViewer.variant', { form: item.form, gender: item.gender }) : item.name}
                   {item.shiny ? ` · ${t('modelViewer.shiny')}` : ''}
                 </button>)}
@@ -117,11 +141,12 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
           </div>
         </aside>
         <div className="model-viewer__stage">
+          <div className="model-viewer__properties model-viewer__properties--primary">
           <div className="model-viewer__toolbar">
             <strong data-localization-ignore="true">{entry?.name ?? t('modelViewer.selectModel')}</strong>
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('reset')}>{t('modelViewer.resetCamera')}</button>
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('frame')}>{t('modelViewer.frame')}</button>
-            {viewer.loading ? <button type="button" disabled={textureDirty} onClick={() => select('')}>{t('modelViewer.cancel')}</button> : null}
+            {viewer.loading && !editing ? <button type="button" disabled={dirty} onClick={() => select('')}>{t('modelViewer.cancel')}</button> : null}
           </div>
           <div className="model-viewer__background">
             <label htmlFor="model-background-style">{t('modelViewer.backgroundStyle')}</label>
@@ -131,6 +156,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             <label htmlFor="model-background-color">{t('modelViewer.backgroundColor')}</label>
             <ViewerColorPicker color={background.color} onChange={color => setBackground(current => ({ ...current, color }))} />
           </div>
+          </div>
           <div ref={viewer.viewport} className="model-viewer__viewport" tabIndex={0} role="region" aria-label={t('modelViewer.viewport')}
             style={{ backgroundColor: background.color }}
             onFocus={() => { if (viewer.info) void viewer.camera('focus'); }} onContextMenu={event => event.preventDefault()}>
@@ -139,7 +165,10 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
           <p className="model-viewer__controls">{t('modelViewer.controls')}</p>
           <span role="status">{viewer.info ? t('modelViewer.adapter', { adapter: viewer.info.adapter }) : ''}</span>
           {entry ? <small className="model-viewer__identifier" data-localization-ignore="true">{entry.id}</small> : null}
-          {viewer.info ? <div className="model-viewer__animation">
+          <div className="model-viewer__properties model-viewer__properties--secondary">
+          {viewer.info ? <details className="model-viewer__animation-group" open={!editing}>
+            <summary>{t('modelViewer.animation')}</summary>
+            <div className="model-viewer__animation">
             <label htmlFor="model-animation">{t('modelViewer.animation')}</label>
             <SearchableOptionInput id="model-animation" ariaLabel={t('modelViewer.animation')} disabled={false} isFiniteCatalog localizeOptions={false}
               value={viewer.info.clip ?? 'rest'} onChange={setAnimation} options={[{ value: 'rest', label: t('modelViewer.rest') }, ...viewer.info.clips.map(id => ({ value: id, label: id }))]} />
@@ -156,9 +185,21 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             <label htmlFor="model-seek">{t('modelViewer.position')} {viewer.position.toFixed(2)} / {viewer.info.duration.toFixed(2)} s</label>
             <input id="model-seek" type="range" min="0" max={viewer.info.duration || 1} step="0.01" value={viewer.position} disabled={!viewer.info.clip} onChange={event => void viewer.playback('seek', Number(event.target.value))} />
             {viewer.info.warnings.map(warning => <p key={warning} role="status">{t(`modelViewer.warning.${warning}`)}</p>)}
+          </div></details> : null}
+          {selected ? <div hidden={!editing}>
+            {editing ? <>
+              <p>{t('modelEditor.restoreHelp')}</p>
+              <button type="button" disabled={disabled || restoring} onClick={() => void restore()}>{t(restoring ? 'modelEditor.restoring' : 'modelEditor.restore')}</button>
+              {restoreError ? <p role="alert">{t('modelEditor.error')}</p> : null}
+              {dirty ? <p role="status">{t('modelEditor.dirty')}</p> : null}
+              {pendingRestore ? <p role="status">{t('modelEditor.pendingRestore')}</p> : null}
+              <ModelMaterialEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore}
+                onDirtyChange={materialDirtyChange} onStage={onStageAsset} onPreview={setAssetChanges} />
+            </> : null}
+            <ModelTextureEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore}
+              onPreview={setTextureChanges} onStage={onStage} onDirtyChange={dirtyChange} />
           </div> : null}
-          {selected ? <ModelTextureEditor key={selected} paths={paths} model={selected} session={session} disabled={disabled}
-            onPreview={setTextureChanges} onStage={onStage} onDirtyChange={dirtyChange} /> : null}
+          </div>
         </div>
       </div>}
     {error ? <p className="model-viewer__error" role="alert">{t(message)} <code>{error}</code></p> : null}

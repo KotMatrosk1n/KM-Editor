@@ -214,8 +214,10 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "modMerger.apply",
     "modMerger.load",
     "modMerger.stage",
+    "models.assets.stage",
     "models.catalog",
     "models.prepare",
+    "models.properties",
     "models.textures",
     "models.textures.stage",
     "moves.field.update",
@@ -2537,6 +2539,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
                     | "gameModules.query"
                     | "models.catalog"
                     | "models.textures"
+                    | "models.properties"
                     | "modMerger.stage"
                     | "svModMerger.stage"
                     | "zaModMerger.stage"
@@ -2687,6 +2690,7 @@ fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeComm
             | "models.catalog"
             | "models.prepare"
             | "models.textures"
+            | "models.properties"
     ) {
         Some(ProjectBridgeReadAffinity::GameModules)
     } else if matches!(
@@ -2954,6 +2958,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "hyperspaceBypass.uninstall.stage"
             | "items.field.update"
             | "models.textures.stage"
+            | "models.assets.stage"
             | "items.fields.update"
             | "items.item.vanilla.stage"
             | "ivScreen.install.stage"

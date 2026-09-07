@@ -187,6 +187,7 @@ pub async fn model_preview_open(
     session: String,
     animation: Option<String>,
     texture_changes: Option<serde_json::Value>,
+    asset_changes: Option<serde_json::Value>,
 ) -> Result<PreviewInfo, String> {
     #[cfg(not(windows))]
     {
@@ -201,6 +202,7 @@ pub async fn model_preview_open(
             session,
             animation,
             texture_changes,
+            asset_changes,
         );
         Err("KM-MODEL-GPU-UNAVAILABLE".into())
     }
@@ -243,7 +245,7 @@ pub async fn model_preview_open(
             .map_err(|_| "KM-MODEL-UNSUPPORTED")?;
         let request =
             serde_json::json!({ "command": "models.prepare", "requestId": token, "payload": {
-            "paths": paths, "id": id, "transferId": token, "animation": animation, "textureChanges": texture_changes
+            "paths": paths, "id": id, "transferId": token, "animation": animation, "textureChanges": texture_changes, "assetChanges": asset_changes
         } })
             .to_string();
         let response = super::project_bridge(app.clone(), bridge, trace, request).await?;

@@ -28,7 +28,22 @@ public sealed class SwShModelPreviewService
 
     public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
 
-    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null)
+    public ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false)
+    {
+        var baseProject = project with { Paths = project.Paths with { OutputRootPath = null } };
+        var source = new SwShModelSource(baseProject, 512L * 1024 * 1024, 16384);
+        var resource = Resources(baseProject, source).SingleOrDefault(r => r.Entry.Id == id)
+            ?? throw new InvalidDataException("Select a model from the vanilla catalog.");
+        var roots = resource.Animations.Select(a => (a.Path, a.Archive)).Prepend((id, resource.Archive));
+        var graph = ModelAssetGraph.Read(roots, source.Read);
+        source.Verify();
+        if (vanilla) return graph;
+        var layered = new SwShModelSource(project, 512L * 1024 * 1024, 16384);
+        var result = graph.Select(asset => asset with { Bytes = layered.Read(asset.Id, asset.Archive) }).ToArray();
+        layered.Verify(); return result;
+    }
+
+    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null, Func<string, byte[], byte[]>? transform = null)
     {
         var source = new SwShModelSource(project);
         var resource = Resources(project, source).FirstOrDefault(item => item.Entry.Id == id)
@@ -40,7 +55,7 @@ public sealed class SwShModelPreviewService
                 : TrinityPreviewReader.Resolve(modelFolder + "resource", "../tex/" + dependency);
             var bytes = source.Read(path, resource.Archive);
             observe?.Invoke(path, bytes, resource.Archive);
-            return bytes;
+            return transform?.Invoke(path, bytes) ?? bytes;
         }
         var scene = new SwShPreviewReader(Read).Load(id);
         var warnings = scene.Rig.Warnings.ToList();
@@ -50,7 +65,7 @@ public sealed class SwShModelPreviewService
         {
             var configPath = animationSource.Path;
             ModelBuffer config;
-            try { config = new(source.Read(configPath, animationSource.Archive)); }
+            try { var bytes = source.Read(configPath, animationSource.Archive); config = new(transform?.Invoke(configPath, bytes) ?? bytes); }
             catch (FileNotFoundException) { continue; }
             var group = config.Table(config.Root, 6);
             if (group == 0) continue;
@@ -77,7 +92,8 @@ public sealed class SwShModelPreviewService
         {
             try
             {
-                var data = new ModelBuffer(source.Read(skeletal, clipArchives[chosen.Id]));
+                var bytes = source.Read(skeletal, clipArchives[chosen.Id]);
+                var data = new ModelBuffer(transform?.Invoke(skeletal, bytes) ?? bytes);
                 clip = PreviewRigReader.Animation(data, chosen.Id, scene.Rig.Bones);
                 clip = SwShPreviewAnimation.Read(data, clip, warnings);
             }

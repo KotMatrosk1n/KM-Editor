@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  286,
+  287,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  94,
+  95,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -118,6 +118,22 @@ const knownFieldComponents = new Set([
  * detected value control exactly; stale permits fail the gate.
  */
 const permittedTransientFieldLocks = new Map([
+  [
+    'src/features/model-viewer/ModelViewerSection.tsx#ModelMaterialEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelMaterialEditor.tsx#SearchableOptionInput:id="model-material-select"[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
+    'Material staging owns the selected file and its exact values until encoding completes. A staged vanilla restoration owns the replacement source until it is applied or discarded.'
+  ],
+  [
+    'src/features/model-viewer/ModelViewerSection.tsx#ModelMaterialEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelMaterialEditor.tsx#fieldset[1][disabled]',
+    'Material fields freeze only during their serialized staging operation or while vanilla restoration owns their source. Invalid draft numbers remain editable.'
+  ],
+  [
+    'src/features/model-viewer/ModelViewerSection.tsx#ModelTextureEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelTextureEditor.tsx#SearchableOptionInput:id="model-texture-select"[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
+    'Texture staging owns its exact source snapshot. A staged model restoration replaces that source and must finish or be discarded before further recoloring.'
+  ],
+  [
+    'src/features/model-viewer/ModelViewerSection.tsx#ModelTextureEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelTextureEditor.tsx#fieldset[1][disabled]',
+    'The encoder owns the palette snapshot during staging; staged vanilla restoration owns its replacement source until applied or discarded.'
+  ],
   [
     'src/features/model-viewer/ModelTextureEditor.tsx#input:id="model-texture-tolerance"[disabled]',
     'The texture encoder owns the exact color rule snapshot while staging. The enclosing palette fieldset and texture selector freeze the same snapshot until verification finishes.'

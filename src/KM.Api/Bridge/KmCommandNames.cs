@@ -199,6 +199,8 @@ public static class KmCommandNames
     public const string ModelPrepare = "models.prepare";
     public const string ModelTextures = "models.textures";
     public const string ModelTextureStage = "models.textures.stage";
+    public const string ModelProperties = "models.properties";
+    public const string ModelAssetStage = "models.assets.stage";
     public const string ReadGuidedDesignCapabilities = "guidedDesign.capabilities";
     public const string PreviewGuidedDesign = "guidedDesign.preview";
     public const string ImportGuidedDesignProposal = "guidedDesign.import";
