@@ -11,6 +11,7 @@ import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 import { modelError, useModelViewport, type ModelBackground } from './useModelViewport';
 import { ViewerColorPicker } from './ViewerColorPicker';
+import { ModelLightControls, useModelLight } from './ModelLightControls';
 import { ModelTextureEditor } from './ModelTextureEditor';
 import { ModelMaterialEditor } from './ModelMaterialEditor';
 import { stagedAssetChanges, type AssetChange, type TextureChange } from './modelTextureBridge';
@@ -46,6 +47,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const [loop, setLoop] = useState(false);
   const [speed, setSpeed] = useState('1');
   const [background, setBackground] = useState(readBackground);
+  const [light, setLight] = useModelLight();
   const [textureChanges, setTextureChanges] = useState<TextureChange[]>([]);
   const [textureDirty, setTextureDirty] = useState(false);
   const [materialDirty, setMaterialDirty] = useState(false);
@@ -66,7 +68,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   }, [background]);
   const pathKey = JSON.stringify(paths);
   const supported = ['sword', 'shield', 'scarlet', 'violet', 'za'].some(game => game === paths.selectedGame);
-  const viewer = useModelViewport(paths, selected, animation, revision, false, background, textureChanges, assetChanges ?? stagedAssetChanges(session, selected));
+  const viewer = useModelViewport(paths, selected, animation, revision, false, background, textureChanges, assetChanges ?? stagedAssetChanges(session, selected), light);
   const error = catalogError ?? viewer.error;
   useEffect(() => {
     setCatalog([]); setSelected(''); setAnimation(null); setCatalogError(null); setLoading(false);
@@ -170,6 +172,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
           <span role="status">{viewer.info ? t('modelViewer.adapter', { adapter: viewer.info.adapter }) : ''}</span>
           {entry ? <small className="model-viewer__identifier" data-localization-ignore="true">{entry.id}</small> : null}
           <div className="model-viewer__properties model-viewer__properties--secondary">
+          <ModelLightControls light={light} onChange={setLight} />
           {viewer.info ? <details className="model-viewer__animation-group" open={!editing}>
             <summary>{t('modelViewer.animation')}</summary>
             <div className="model-viewer__animation">

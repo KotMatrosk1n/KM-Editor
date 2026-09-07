@@ -66,7 +66,10 @@ public static class PreviewRigReader
         if (!float.IsFinite(value.X + value.Y + value.Z)) throw new InvalidDataException("Invalid skeleton transform.");
         return value;
     }
-    public static PreviewClip Animation(ModelBuffer data, string id, PreviewBone[] bones)
+    public static PreviewClip Animation(ModelBuffer data, string id, PreviewBone[] bones) => ModelDerivedCache<PreviewClip>.Get(
+        data.Slice(0, data.Length), id + System.Text.Json.JsonSerializer.Serialize(bones),
+        () => AnimationUncached(data, id, bones), clip => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(clip).LongLength);
+    private static PreviewClip AnimationUncached(ModelBuffer data, string id, PreviewBone[] bones)
     {
         var info = data.Table(data.Root, 0);
         var frames = checked((int)data.Value(info, 1)); var rate = checked((int)data.Value(info, 2));

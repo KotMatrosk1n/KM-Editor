@@ -24,17 +24,20 @@ public sealed record PreviewPrimitive(float[] Vertices, uint[] Indices, PreviewM
 public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IReadOnlyList<PreviewTexture> Textures)
 {
     public PreviewRig Rig { get; init; } = new([], [], null, []);
-    public void Write(Stream stream)
+    public void Write(Stream stream, int resolution = 1)
     {
+        if (resolution is not (1 or 2 or 4)) throw new InvalidDataException("Model preview resolution is invalid.");
         if (Primitives.Sum(x => (long)x.Vertices.Length / 16) > 500_000 ||
-            Textures.Sum(x => (long)x.Blocks.Length) > 48 * 1024 * 1024)
+            Textures.Sum(x => x.ByteLength) > 64 * 1024 * 1024)
             throw new InvalidDataException("Model preview exceeds the GPU budget.");
         using var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true);
-        writer.Write("KMV2"u8); writer.Write(Primitives.Count); writer.Write(Textures.Count);
+        writer.Write("KMV3"u8); writer.Write(resolution); writer.Write(Primitives.Count); writer.Write(Textures.Count);
         foreach (var texture in Textures)
         {
             writer.Write(texture.Width); writer.Write(texture.Height); writer.Write(texture.Format);
+            writer.Write(1 + texture.Mips.Length);
             writer.Write(texture.Blocks.Length); writer.Write(texture.Blocks);
+            foreach (var mip in texture.Mips) { writer.Write(mip.Length); writer.Write(mip); }
         }
         foreach (var primitive in Primitives)
         {

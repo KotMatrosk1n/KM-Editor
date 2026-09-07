@@ -84,7 +84,7 @@ public sealed class ZaModelPreviewService
             variant = PreviewMaterialVariant.Shiny(new(Read(tablePath)), tablePath)
                 ?? throw new InvalidDataException("Shiny materials are unavailable.");
         }
-        var scene = new TrinityPreviewReader(Read, topOriginMaterialUv: true).Load(id, variant);
+        var scene = ModelPreviewCache.Load("ZA", id, variant, Read, read => new TrinityPreviewReader(read, topOriginMaterialUv: true).Load(id, variant));
         var warnings = scene.Rig.Warnings.ToList();
         var clips = new Dictionary<string, PreviewClipReference>(StringComparer.Ordinal);
         // Resource groups are resolved independently from the Z-A catalog. The base

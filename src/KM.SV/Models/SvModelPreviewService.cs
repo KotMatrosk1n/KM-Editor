@@ -102,7 +102,7 @@ public sealed class SvModelPreviewService
             var tablePath = TrinityPreviewReader.Resolve("pokemon/data/catalog", catalog.Text(entry, 2) ?? throw new InvalidDataException("Shiny materials are unavailable."));
             variant = PreviewMaterialVariant.Shiny(new(Read(tablePath)), tablePath) ?? throw new InvalidDataException("Shiny materials are unavailable.");
         }
-        var scene = new TrinityPreviewReader(Read).Load(id, variant);
+        var scene = ModelPreviewCache.Load("SV", id, variant, Read, read => new TrinityPreviewReader(read).Load(id, variant));
         var warnings = scene.Rig.Warnings.ToList();
         PreviewClipReference[] clips;
         try { clips = Clips(project, id, Read); }

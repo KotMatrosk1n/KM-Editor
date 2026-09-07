@@ -98,7 +98,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     label: 'Economy',
     sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
   },
-  { id: 'tools', label: 'Tools', sectionIds: ['fashionCatalog', 'modelViewer', 'fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',

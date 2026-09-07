@@ -55,7 +55,8 @@ internal static class ModelPreviewBridge
     internal static object Textures(ModelTexturesRequest request)
     {
         var project = Open(request.Paths);
-        return Resources(project, request.Id).Select(resource =>
+        return Resources(project, request.Id).Select(resource => ModelDerivedCache<object>.Get(resource.Bytes,
+            resource.Id + System.Text.Json.JsonSerializer.Serialize(resource.Materials), () =>
         {
             ModelTextureDocument? document = null;
             try { document = new ModelTextureDocument(resource.Bytes); } catch (InvalidDataException) { }
@@ -80,7 +81,7 @@ internal static class ModelPreviewBridge
             return new { resource.Id, resource.Materials, SourceHash = ModelTextureIntent.Hash(resource.Bytes), preview.Width, preview.Height,
                 Editable = document is not null, MipCount = BitConverter.ToUInt16(resource.Bytes, info + 22), Format = preview.Format.ToString("X4"), ThumbnailWidth = width, ThumbnailHeight = height,
                 Pixels = Convert.ToBase64String(thumbnail), Colors = colors.OrderByDescending(pair => pair.Value).Take(16).Select(pair => pair.Key).ToArray() };
-        }).ToArray();
+        }, value => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value).LongLength)).ToArray();
     }
 
     internal static object StageTexture(ModelTextureStageRequest request)
@@ -127,6 +128,7 @@ internal static class ModelPreviewBridge
     {
         if (request.TransferId is not { Length: 32 } || !request.TransferId.All(char.IsAsciiHexDigit))
             throw new InvalidDataException("Invalid model transfer identifier.");
+        if (request.Resolution is not (1 or 2 or 4)) throw new InvalidDataException("Model preview resolution is invalid.");
         var project = Open(request.Paths);
         var replacements = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         if (request.AssetChanges is { Length: > 0 } assetChanges)
@@ -168,13 +170,14 @@ internal static class ModelPreviewBridge
             }
             scene = scene with { Textures = textures };
         }
+        scene = scene with { Textures = scene.Textures.Select(texture => PreviewTextureResolution.Select(texture, request.Resolution)).ToArray() };
         var folder = Path.Combine(Path.GetTempPath(), "km-editor-model-preview");
         var path = Path.Combine(folder, request.TransferId + ".kmv");
         // The native host owns a delete-on-close handle. Even a cancelled worker or host
         // crash cannot leave a completed transfer accumulating on disk.
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
         if (stream.Length != 0) throw new InvalidDataException("Model transfer is already populated.");
-        scene.Write(stream);
+        scene.Write(stream, request.Resolution);
         if (stream.Length > 96L * 1024 * 1024) throw new InvalidDataException("Model preview exceeds the transfer budget.");
         return new { Ready = true };
     }
@@ -183,7 +186,7 @@ internal static class ModelPreviewBridge
     {
         var core = ProjectBridgeMapper.ToCore(paths);
         if (core.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield or ProjectGame.Scarlet or ProjectGame.Violet or ProjectGame.ZA))
-            throw new InvalidDataException("Select a supported game for the model viewer.");
+            throw new InvalidDataException("Select a supported game for the 3D Model Editor.");
         return new ProjectWorkspaceService().ValidateAndOpen(core);
     }
 }

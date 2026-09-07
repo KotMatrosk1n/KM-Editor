@@ -6,6 +6,8 @@ import { z } from 'zod';
 import type { ProjectPaths } from '../../bridge/contracts';
 import { ProjectBridgeError } from '../../bridge/projectBridgeError';
 import type { AssetChange, TextureChange } from './modelTextureBridge';
+import { useModelResolution } from './ModelResolutionSettings';
+import { defaultModelLight, type ModelLight } from './ModelLightControls';
 
 const infoSchema = z.object({
   adapter: z.string(), backend: z.literal('DX12'), selection: z.literal('Auto'),
@@ -19,7 +21,7 @@ export function modelError(cause: unknown): string {
   return 'KM-MODEL-UNSUPPORTED';
 }
 export type ModelBackground = { color: string; grid: boolean };
-export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = [], assets: AssetChange[] = []) {
+export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = [], assets: AssetChange[] = [], light: ModelLight = defaultModelLight) {
   const viewport = useRef<HTMLDivElement>(null);
   const session = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -30,9 +32,11 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
   const [playing, setPlaying] = useState(false);
   const coveredRef = useRef(covered); coveredRef.current = covered;
   const backgroundRef = useRef(background); backgroundRef.current = background;
+  const lightRef = useRef(light); lightRef.current = light;
   const sync = useRef<() => void>(() => {});
   const pathKey = JSON.stringify(paths);
-  const textureKey = JSON.stringify({ textures, assets });
+  const resolution = useModelResolution();
+  const textureKey = JSON.stringify({ textures, assets, animation, resolution });
   const textureRef = useRef(textureKey); textureRef.current = textureKey;
   const loadedTextures = useRef('');
   useEffect(() => {
@@ -74,7 +78,8 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
           width: Math.max(0, Math.round((right - left) * ratio)), height: Math.max(0, Math.round((bottom - top) * ratio)) },
         visible: !!rect && !document.hidden && !scrolling && unobstructed && right > left && bottom > top,
         background: [1, 3, 5].map(offset => parseInt(backgroundRef.current.color.slice(offset, offset + 2), 16)),
-        grid: backgroundRef.current.grid
+        grid: backgroundRef.current.grid,
+        light: lightRef.current
       };
     };
     // Coalesce bounds while IPC is in flight so an older position cannot arrive last.
@@ -140,7 +145,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
         await send();
         const openingTextures = textureRef.current;
         const result = infoSchema.parse(await invoke('model_preview_open', {
-          paths: JSON.parse(pathKey), id, animation, title: '3D Model Viewer', session: active,
+          paths: JSON.parse(pathKey), id, animation: JSON.parse(openingTextures).animation, resolution: JSON.parse(openingTextures).resolution, title: '3D Model Editor', session: active,
           textureChanges: JSON.parse(openingTextures).textures, assetChanges: JSON.parse(openingTextures).assets
         }));
         loadedTextures.current = openingTextures;
@@ -157,7 +162,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
       if (session.current === active) session.current = null;
       void invoke('model_preview_close', { session: active }).catch(() => {});
     };
-  }, [pathKey, id, animation, revision]);
+  }, [pathKey, id, revision]);
   useEffect(() => {
     const active = session.current;
     if (!active || !info || loadedTextures.current === textureKey) return;
@@ -167,14 +172,14 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
       await previous.catch(() => {});
       if (!live || session.current !== active) return;
       try {
-        await invoke('model_preview_open', { paths: JSON.parse(pathKey), id, animation,
-          title: '3D Model Viewer', session: active, textureChanges: JSON.parse(textureKey).textures, assetChanges: JSON.parse(textureKey).assets });
-        if (live) { loadedTextures.current = textureKey; setError(null); }
+        const result = infoSchema.parse(await invoke('model_preview_open', { paths: JSON.parse(pathKey), id, animation, resolution,
+          title: '3D Model Editor', session: active, textureChanges: JSON.parse(textureKey).textures, assetChanges: JSON.parse(textureKey).assets }));
+        if (live) { loadedTextures.current = textureKey; setInfo(result); setError(null); if (info.clip !== result.clip) { setPosition(0); setPlaying(false); } }
       } catch (cause) { if (live) setError(modelError(cause)); }
     })();
     return () => { live = false; };
-  }, [textureKey, info, pathKey, id, animation]);
-  useEffect(() => { sync.current(); }, [covered, background.color, background.grid]);
+  }, [textureKey, info, pathKey, id, animation, resolution]);
+  useEffect(() => { sync.current(); }, [covered, background.color, background.grid, light]);
   async function camera(action: string) { if (session.current) await invoke('model_preview_camera', { session: session.current, action }); }
   async function playback(action: string, value = 0) {
     if (!session.current) return;

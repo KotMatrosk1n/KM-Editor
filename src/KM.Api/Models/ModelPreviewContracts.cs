@@ -3,7 +3,7 @@ using KM.Api.Projects;
 using KM.Api.Editing;
 namespace KM.Api.Models;
 public sealed record ModelCatalogRequest(ProjectPathsDto Paths);
-public sealed record ModelPrepareRequest(ProjectPathsDto Paths, string Id, string TransferId, string? Animation = null, ModelTextureChangeDto[]? TextureChanges = null, ModelAssetChangeDto[]? AssetChanges = null);
+public sealed record ModelPrepareRequest(ProjectPathsDto Paths, string Id, string TransferId, string? Animation = null, ModelTextureChangeDto[]? TextureChanges = null, ModelAssetChangeDto[]? AssetChanges = null, int Resolution = 1);
 public sealed record ModelTextureColorDto(string From, string To, int Tolerance);
 public sealed record ModelTextureChangeDto(string Texture, string SourceHash, ModelTextureColorDto[] Changes);
 public sealed record ModelTexturesRequest(ProjectPathsDto Paths, string Id);

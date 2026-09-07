@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-struct Camera { view_projection: mat4x4<f32>, eye: vec4<f32> };
+struct Camera { view_projection: mat4x4<f32>, eye: vec4<f32>, light: vec4<f32> };
 struct Material { color: vec4<f32>, layers: array<vec4<f32>, 4>, uv: vec4<f32>, wrap: vec4<f32>, texture_scale: vec4<f32>, mask_uv: vec4<f32>, highlight_color: vec4<f32>, highlight_uv: vec4<f32>, highlight_scale: vec4<f32>, underlay_uv: vec4<f32>, underlay_wrap: vec4<f32>, underlay_scale: vec4<f32>, mask_channels: vec4<f32>, surface: array<vec4<f32>, 41>, map_wrap: array<vec4<f32>, 12>, map_scale: array<vec4<f32>, 12>, flags: vec4<f32> };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read> joints: array<mat4x4<f32>>;
@@ -127,6 +127,10 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
     let eyelid_uv = rotate_uv(transform_uv(input.uv, material.surface[38]), material.surface[10].y, material.surface[37].xy);
     let eyelid = textureSample(eyelid_mask, base_sampler, map_uv(eyelid_uv, 10u, textureDimensions(eyelid_mask))).r;
     let cutout = textureSample(discard_mask, base_sampler, map_uv(uv, 11u, textureDimensions(discard_mask)));
+    let to_light = camera.light.xyz - input.world;
+    let light_distance_squared = max(dot(to_light, to_light), 0.000001);
+    let l = to_light * inverseSqrt(light_distance_squared);
+    let light_energy = camera.light.w / light_distance_squared;
     if material.flags.x > 0.0 {
         if material.map_scale[0].z > 0.0 {
             var mapped = mapped_normal(normal_texel.rgb, material.map_scale[0].w, material.surface[0].z);
@@ -140,7 +144,6 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
             }
         }
         n = select(-n, n, front);
-        let l = normalize(vec3<f32>(-0.4, 0.8, 0.6));
         let v = normalize(camera.eye.xyz - input.world + vec3<f32>(0.00001));
         let h = normalize(l + v);
         let nl = dot(n, l); let nv = max(dot(n, v), 0.0);
@@ -168,7 +171,8 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
         rgb = mix(rgb, hue_rotate(rgb, material.surface[27].z), dark * hue_weight);
         let shade = clamp((nl + material.surface[3].z + material.surface[25].x) * material.surface[3].y * material.surface[27].w * (1.0 + material.surface[25].y), 0.0, 1.0);
         let occlusion = clamp(1.0 - (1.0 - ao) * material.surface[1].y, 0.0, 1.0);
-        let light = mix(vec3<f32>(1.0), mix(shadow_color * max(material.surface[3].w, 0.0), vec3<f32>(1.0), shade), clamp(material.surface[3].x, 0.0, 1.0)) * occlusion * material.surface[31].z;
+        let direct = max(nl, 0.0) * light_energy;
+        let light = mix(vec3<f32>(1.0), mix(shadow_color, vec3<f32>(1.0), shade), clamp(material.surface[3].x, 0.0, 1.0)) * direct * occlusion * max(material.surface[31].z, 0.0);
         let exponent = clamp((2.0 / max(roughness * roughness, 0.0001) - 2.0) * max(material.surface[2].w / 32.0, .01), 1.0, 2048.0);
         let shine = pow(clamp(dot(n, h) + specular.y, 0.0, 1.0), exponent * max(1.0 + specular.z, 0.01));
         let f0 = mix(material.surface[7].rgb * max(material.surface[10].w, 0.0), rgb, clamp(metallic, 0.0, 1.0));
@@ -177,10 +181,10 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
         let rim_color = mix(material.surface[35].rgb, material.surface[8].rgb, shade) * rim_mask * (rim * (material.surface[4].x + material.surface[4].w * max(-nl, 0.0)) + pow(1.0 - nv, max(material.surface[34].z, .01)) * material.surface[34].w);
         let coat = mix(vec3<f32>(.04), material.surface[28].rgb, clamp(material.surface[29].x, 0.0, 1.0)) * pow(max(dot(n, h), 0.0), clamp(2.0 / max(material.surface[29].y * material.surface[29].y, .0001), 1.0, 2048.0)) * material.surface[28].a;
         let highlight_reflection = highlight.r * mix(vec3<f32>(.04), rgb, clamp(material.surface[29].z, 0.0, 1.0)) * pow(max(dot(n, h), 0.0), clamp(2.0 / max(material.surface[29].w * material.surface[29].w, .0001), 1.0, 2048.0));
-        let subsurface = material.surface[30].rgb * max(-nl, 0.0) * clamp(subsurface_weight * material.surface[31].x + material.surface[31].y, 0.0, 1.0);
+        let subsurface = material.surface[30].rgb * max(-nl, 0.0) * light_energy * clamp(subsurface_weight * material.surface[31].x + material.surface[31].y, 0.0, 1.0);
         let eyelid_color = mix(vec3<f32>(1.0), material.surface[39].rgb, clamp(eyelid * material.map_scale[10].z, 0.0, 1.0));
-        let shaded = rgb * light * eyelid_color + reflection + rim_color + coat + subsurface + highlight_reflection;
-        let lit = mix(rgb, shaded, clamp(material.surface[31].w, 0.0, 1.0));
+        let shaded = rgb * light * eyelid_color + (reflection + rim_color + coat + highlight_reflection) * direct + subsurface;
+        let lit = mix(rgb * direct, shaded, clamp(material.surface[31].w, 0.0, 1.0));
         let albedo = rgb;
         rgb = lit + emission_color + highlight.r * material.highlight_color.rgb;
         if material.surface[39].w > 0.0 {
@@ -191,6 +195,6 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
         return vec4<f32>(rgb, base.a);
     }
     if base.a < 0.01 { discard; }
-    let light = 0.48 + 0.52 * max(dot(select(-n, n, front), normalize(vec3<f32>(-0.4, 0.8, 0.6))), 0.0);
+    let light = light_energy * max(dot(select(-n, n, front), l), 0.0);
     return vec4<f32>(rgb * light + highlight.r * material.highlight_color.rgb, base.a);
 }

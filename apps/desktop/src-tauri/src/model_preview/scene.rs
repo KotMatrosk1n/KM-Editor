@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use glam::Vec3;
 
+#[derive(Clone, PartialEq)]
 pub struct Texture {
     pub width: u32,
     pub height: u32,
     pub format: wgpu::TextureFormat,
     pub bytes: Vec<u8>,
+    pub mips: Vec<Vec<u8>>,
 }
 pub struct Primitive {
     pub vertices: Vec<f32>,
@@ -16,6 +18,7 @@ pub struct Primitive {
     pub blend: bool,
 }
 pub struct Scene {
+    pub resolution: u32,
     pub textures: Vec<Texture>,
     pub primitives: Vec<Primitive>,
     pub center: Vec3,
@@ -58,7 +61,13 @@ impl Scene {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
         let mut r = Reader { bytes, at: 0 };
-        if r.take(4)? != b"KMV2" {
+        let version = r.take(4)?;
+        let mipmapped = version == b"KMV3";
+        if !mipmapped && version != b"KMV2" {
+            return Err("KM-MODEL-UNSUPPORTED".into());
+        }
+        let resolution = if mipmapped { r.u32()? } else { 1 };
+        if !matches!(resolution, 1 | 2 | 4) {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
         let mesh_count = r.count(256)?;
@@ -86,23 +95,34 @@ impl Scene {
                 0x2006 => (wgpu::TextureFormat::Bc7RgbaUnormSrgb, 16),
                 _ => return Err("KM-MODEL-UNSUPPORTED".into()),
             };
-            let count = r.count(16 * 1024 * 1024)?;
-            texture_bytes += count;
-            let (block_width, block_height) = format.block_dimensions();
-            if width == 0
-                || height == 0
-                || count
-                    != (width.div_ceil(block_width) * height.div_ceil(block_height) * block)
-                        as usize
-                || texture_bytes > 48 * 1024 * 1024
-            {
+            if width == 0 || height == 0 {
                 return Err("KM-MODEL-UNSUPPORTED".into());
+            }
+            let levels = if mipmapped { r.count(13)? } else { 1 };
+            let max_levels = 32 - width.max(height).leading_zeros();
+            if levels == 0 || levels > max_levels as usize {
+                return Err("KM-MODEL-UNSUPPORTED".into());
+            }
+            let mut data = Vec::new();
+            for level in 0..levels {
+                let w = (width >> level).max(1);
+                let h = (height >> level).max(1);
+                let count = r.count(64 * 1024 * 1024)?;
+                texture_bytes += count;
+                let (bw, bh) = format.block_dimensions();
+                if count != (w.div_ceil(bw) * h.div_ceil(bh) * block) as usize
+                    || texture_bytes > 64 * 1024 * 1024
+                {
+                    return Err("KM-MODEL-UNSUPPORTED".into());
+                }
+                data.push(r.take(count)?.to_vec());
             }
             textures.push(Texture {
                 width,
                 height,
                 format,
-                bytes: r.take(count)?.to_vec(),
+                bytes: data.remove(0),
+                mips: data,
             });
         }
         let mut primitives = Vec::new();
@@ -263,6 +283,7 @@ impl Scene {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
         Ok(Self {
+            resolution,
             textures,
             primitives,
             center: (min + max) * 0.5,

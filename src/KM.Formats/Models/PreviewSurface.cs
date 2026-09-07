@@ -55,7 +55,7 @@ public sealed record PreviewSurface(float[][] Values, int[] Textures, float[][] 
         "DiscardMaskMap" => 11,
         _ => -1
     };
-    public static bool Supports(string name) => Scalars.Any(row => row.Contains(name)) || Vectors.ContainsKey(name)
+    public static bool Supports(string name) => (name != "ShadowingGIGain" && Scalars.Any(row => row.Contains(name))) || Vectors.ContainsKey(name)
         || Enumerable.Range(1, 4).Any(i => name == $"EmissionColorLayer{i}" || name == $"ShadowingColorLayer{i}")
         || name is "SpecularScale" or "ConstantColor0Val" or "ConstantColor1" or "ConstantColor1Val" or "ColorLerpValue"
             or "L1ConstantColor0" or "L1ConstantColor0Val" or "L1ConstantColor1" or "L1ConstantColor1Val"
