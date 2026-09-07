@@ -8,12 +8,12 @@ using KM.ZA.Workflows;
 
 namespace KM.ZA.Models;
 
-public sealed record ZaModelCatalogEntry(string Id, int Species, int Form, int Gender, string Name, string Category = "pokemon");
+public sealed record ZaModelCatalogEntry(string Id, int Species, int Form, int Gender, string Name, string Category = "pokemon", bool Shiny = false);
 
 public sealed class ZaModelPreviewService
 {
     private readonly ZaWorkflowFileSource source = new(bypassReusableBaseCache: true,
-        maximumReadBytes: 32 * 1024 * 1024, maximumReadCount: 512, maximumAggregateReadBytes: 128L * 1024 * 1024);
+        maximumReadBytes: 32 * 1024 * 1024, maximumReadCount: 8192, maximumAggregateReadBytes: 128L * 1024 * 1024);
 
     public IReadOnlyList<ZaModelCatalogEntry> Catalog(OpenedProject project)
     {
@@ -22,8 +22,17 @@ public sealed class ZaModelPreviewService
         var catalog = new ZaPokemonResourceCatalogService(source).Load(project);
         var labels = ZaTextLabelLookup.Load(project, source, [], project.Paths);
         var reader = new TrinityPreviewReader(path => source.Read(project, path).Bytes, topOriginMaterialUv: true);
-        return catalog.Entries.Where(entry => entry.Species > 0 && !string.IsNullOrWhiteSpace(entry.ModelPath))
-            .Select(entry => new ZaModelCatalogEntry(ModelPath(entry.ModelPath!), entry.Species, entry.Form, entry.Gender, labels.Pokemon(entry.Species)))
+        var pokemon = new List<ZaModelCatalogEntry>();
+        foreach (var entry in catalog.Entries.Where(entry => entry.Species > 0 && !string.IsNullOrWhiteSpace(entry.ModelPath)))
+        {
+            var model = new ZaModelCatalogEntry(ModelPath(entry.ModelPath!), entry.Species, entry.Form, entry.Gender, labels.Pokemon(entry.Species));
+            pokemon.Add(model);
+            if (entry.MaterialTablePath is not { Length: > 0 } relative) continue;
+            var tablePath = TrinityPreviewReader.Resolve("ik_pokemon/data/catalog", relative);
+            if (source.Exists(project, tablePath) && PreviewMaterialVariant.Shiny(new(source.Read(project, tablePath).Bytes), tablePath) is not null)
+                pokemon.Add(model with { Id = model.Id + "#shiny", Shiny = true });
+        }
+        return pokemon
             .Concat(ZaModelDiscovery.Discover(project).Select(entry => entry.Category == "trainers" && !reader.HasCharacterSurface(entry.Id)
                 ? entry with { Category = "other" } : entry)).DistinctBy(entry => entry.Id)
             .OrderBy(entry => entry.Species == 0 ? 1 : 0).ThenBy(entry => entry.Species).ThenBy(entry => entry.Form).ThenBy(entry => entry.Gender).ToArray();
@@ -49,6 +58,8 @@ public sealed class ZaModelPreviewService
     public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null, Func<string, byte[], byte[]>? transform = null)
     {
         if (project.Paths.SelectedGame != ProjectGame.ZA) throw new InvalidDataException("Select a Legends Z-A project.");
+        var shiny = id.EndsWith("#shiny", StringComparison.Ordinal);
+        if (shiny) id = id[..^6];
         using var scope = ZaWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
         var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         byte[] Read(string path)
@@ -63,9 +74,17 @@ public sealed class ZaModelPreviewService
         }
         var catalog = ZaPokemonResourceCatalogParser.Read(Read(ZaDataPaths.PokemonResourceCatalog));
         var entry = catalog.Entries.FirstOrDefault(entry => entry.Species > 0 && entry.ModelPath is not null && ModelPath(entry.ModelPath) == id);
-        if (entry is null && !ZaModelDiscovery.Discover(project).Any(model => model.Id == id))
+        if (entry is null && (shiny || !ZaModelDiscovery.Discover(project).Any(model => model.Id == id)))
             throw new InvalidDataException("Select a model from the current catalog.");
-        var scene = new TrinityPreviewReader(Read, topOriginMaterialUv: true).Load(id);
+        PreviewMaterialVariant? variant = null;
+        if (shiny)
+        {
+            var tablePath = TrinityPreviewReader.Resolve("ik_pokemon/data/catalog", entry!.MaterialTablePath
+                ?? throw new InvalidDataException("Shiny materials are unavailable."));
+            variant = PreviewMaterialVariant.Shiny(new(Read(tablePath)), tablePath)
+                ?? throw new InvalidDataException("Shiny materials are unavailable.");
+        }
+        var scene = new TrinityPreviewReader(Read, topOriginMaterialUv: true).Load(id, variant);
         var warnings = scene.Rig.Warnings.ToList();
         var clips = new Dictionary<string, PreviewClipReference>(StringComparer.Ordinal);
         // Resource groups are resolved independently from the Z-A catalog. The base

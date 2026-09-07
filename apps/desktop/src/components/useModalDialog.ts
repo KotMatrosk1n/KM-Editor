@@ -52,6 +52,8 @@ export function useModalDialog<TElement extends HTMLElement = HTMLElement>({
       if (dialog.closest('[inert]')) {
         return;
       }
+      if (event.key === 'Escape' && event.target instanceof Element
+          && event.target.closest('[role="combobox"][aria-expanded="true"]')) return;
       if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"]') !== dialog
           && event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"]') !== null) return;
       if (event.key === 'Escape' && canCloseRef.current) {

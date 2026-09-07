@@ -76,6 +76,7 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
     {error ? <p role="alert">{t('modelEditor.error')}</p> : null}
     {!properties && !error ? <p role="status">{t('modelViewer.loading')}</p> : null}
     {properties ? <>
+      <p>{t('modelEditor.studioPreview')}</p>
       <label htmlFor="model-material-select">{t('modelEditor.material')}</label>
       <SearchableOptionInput id="model-material-select" ariaLabel={t('modelEditor.material')} value={selection} disabled={busy || disabled}
         isFiniteCatalog localizeOptions={false} onChange={setSelection} options={properties.materials.flatMap(a => [...new Set(a.fields.map(f => f.material))].map(name => ({ value: `${a.id}|${name}`, label: `${name} (${a.id.split('/').at(-1)})` })))} />
@@ -90,7 +91,7 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
             return <fieldset key={field.key} className="model-materials__field" disabled={!field.editable || selectedRestore}>
               <legend data-localization-ignore="true">{field.name}</legend>
               {field.options.length ? <SearchableOptionInput id={`model-property-${field.key}`} ariaLabel={field.name}
-                disabled={false} isFiniteCatalog localizeOptions={false}
+                disabled={!field.editable || selectedRestore || busy || disabled} isFiniteCatalog localizeOptions={false}
                 value={field.kind === 'int' ? value.values[0] : value.text ?? ''}
                 onChange={text => edit(field, field.kind === 'int' ? { values: [text], text: null } : { values: [], text })}
                 options={field.options.map(option => ({ value: option, label: option }))} />

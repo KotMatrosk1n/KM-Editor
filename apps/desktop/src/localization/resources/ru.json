@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "Сбросить цвет фона",
+    "modelViewer.savedColors": "Сохранённые цвета",
+    "modelViewer.addColor": "+ Добавить",
+    "modelViewer.colorPresets": "Цветовая палитра",
     "welcome.choose": "Выберите игру",
     "welcome.resources": "Ресурсы",
     "welcome.documentation": "Документация",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "Изменяйте значения, объявленные материалом. Текстуры выбираются из существующих ресурсов. Общие материалы влияют на все использующие их модели.",
     "modelEditor.search": "Поиск свойств",
     "modelEditor.readOnly": "Только чтение",
+    "modelEditor.studioPreview": "Изменения поверхности показаны при студийном освещении. Освещение и эффекты в игре могут отличаться.",
     "modelEditor.gameOnly": "Сохраняется в файле игры; этот эффект не отображается в предпросмотре.",
     "modelEditor.invalid": "Введите допустимые конечные числа. Целочисленные свойства требуют целых чисел.",
     "modelEditor.stageMaterial": "Подготовить файл материалов",

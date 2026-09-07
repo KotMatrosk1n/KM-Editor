@@ -12,17 +12,17 @@ public static class ModelTextureResources
         {
             if (path.EndsWith(".bntx", StringComparison.Ordinal)) sources[path] = (bytes, archive);
         });
-        var colorIds = scene.Primitives.SelectMany(p => new[] { p.Material.Texture, p.Material.Underlay }).Where(i => i >= 0).Distinct();
-        var masks = scene.Primitives.SelectMany(p => new[] { p.Material.Mask, p.Material.Highlight }).ToHashSet();
+        IEnumerable<int> TextureIds(PreviewMaterial material) => new[] { material.Texture, material.Underlay, material.Mask, material.Highlight }
+            .Concat(material.Surface?.Textures ?? []).Where(i => i >= 0);
+        var colorIds = scene.Primitives.SelectMany(p => TextureIds(p.Material)).Distinct();
         var result = new List<ModelTextureResource>();
         foreach (var index in colorIds)
         {
-            if (masks.Contains(index)) continue;
             var path = scene.Textures[index].SourcePath;
             var matches = sources.Where(pair => pair.Key == path || Path.GetFileName(pair.Key) == path).ToArray();
             if (matches.Length != 1) throw new InvalidDataException("Color texture source is ambiguous.");
             var source = matches[0];
-            result.Add(new(source.Key, scene.Primitives.Where(p => p.Material.Texture == index || p.Material.Underlay == index)
+            result.Add(new(source.Key, scene.Primitives.Where(p => TextureIds(p.Material).Contains(index))
                 .Select(p => p.Material.Name).Distinct().ToArray(), source.Value.Bytes, source.Value.Archive));
         }
         return result.ToArray();

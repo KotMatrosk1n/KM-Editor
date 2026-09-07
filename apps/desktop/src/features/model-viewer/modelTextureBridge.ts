@@ -26,7 +26,7 @@ export const modelTexturesSchema = z.array(z.object({
   width: z.number().int().min(1).max(4096), height: z.number().int().min(1).max(4096), mipCount: z.number().int().min(1).max(13), format: z.string(),
   thumbnailWidth: z.number().int().min(1).max(256), thumbnailHeight: z.number().int().min(1).max(256),
   pixels: z.string().max(350000), colors: z.array(hex).max(16)
-})).max(32);
+})).max(128);
 export type ModelTexture = z.infer<typeof modelTexturesSchema>[number];
 const transport = (requestJson: string) => invoke<string>('project_bridge', { requestJson });
 export function loadModelTextures(paths: ProjectPaths, id: string) {

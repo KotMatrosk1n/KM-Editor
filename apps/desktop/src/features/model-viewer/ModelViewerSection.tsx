@@ -22,10 +22,11 @@ const catalogSchema = z.array(z.object({
 })).max(8192);
 type Entry = z.infer<typeof catalogSchema>[number];
 const backgroundKey = 'km-editor.model-viewer.background';
+const defaultBackgroundColor = '#343b44';
 const backgroundSchema = z.object({ color: z.string().regex(/^#[0-9a-f]{6}$/i), grid: z.boolean() });
 function readBackground(): ModelBackground {
   try { return backgroundSchema.parse(JSON.parse(localStorage.getItem(backgroundKey) ?? 'null')); }
-  catch { return { color: '#343b44', grid: false }; }
+  catch { return { color: defaultBackgroundColor, grid: false }; }
 }
 export default function ModelViewerSection({ paths, session, disabled, onStage, onStageAsset, onDirtyChange }: {
   paths: ProjectPaths; session: EditSession | null; disabled: boolean;
@@ -110,6 +111,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
     } catch { setRestoreError(true); } finally { setRestoring(false); }
   };
   return <section ref={dialog} className={`panel wide-panel model-viewer${editing ? ' model-viewer--editing' : ''}`} role={editing ? 'dialog' : undefined} aria-modal={editing || undefined} aria-labelledby="model-viewer-title" tabIndex={editing ? -1 : undefined}>
+    <div data-editor-portal-host className="editor-portal-host" />
     <header className="model-viewer__header"><Box aria-hidden="true" size={22} />
       <div><h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2><p>{editing ? entry?.name : t('modelViewer.description')}</p></div>
       {editing ? <button type="button" disabled={dirty || restoring} onClick={() => setEditing(false)}>{t('modelEditor.close')}</button>
@@ -155,6 +157,8 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
               options={[{ value: 'solid', label: t('modelViewer.backgroundSolid') }, { value: 'grid', label: t('modelViewer.backgroundGrid') }]} />
             <label htmlFor="model-background-color">{t('modelViewer.backgroundColor')}</label>
             <ViewerColorPicker color={background.color} onChange={color => setBackground(current => ({ ...current, color }))} />
+            <button type="button" disabled={background.color.toLowerCase() === defaultBackgroundColor}
+              onClick={() => setBackground(current => ({ ...current, color: defaultBackgroundColor }))}>{t('modelViewer.resetBackground')}</button>
           </div>
           </div>
           <div ref={viewer.viewport} className="model-viewer__viewport" tabIndex={0} role="region" aria-label={t('modelViewer.viewport')}

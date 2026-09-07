@@ -62,7 +62,7 @@ impl Scene {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
         let mesh_count = r.count(256)?;
-        let texture_count = r.count(32)?;
+        let texture_count = r.count(128)?;
         if mesh_count == 0 {
             return Err("KM-MODEL-UNSUPPORTED".into());
         }
@@ -190,6 +190,24 @@ impl Scene {
             serde_json::from_slice(r.take(metadata_size)?).map_err(|_| "KM-MODEL-UNSUPPORTED")?;
         rig.validate(mesh_count)?;
         for mesh in &rig.meshes {
+            if let Some(surface) = &mesh.surface {
+                if surface.values.len() != 41
+                    || surface.textures.len() != 12
+                    || surface.wraps.len() != 12
+                    || surface
+                        .textures
+                        .iter()
+                        .any(|i| *i < -1 || *i >= texture_count as i32)
+                    || surface
+                        .values
+                        .iter()
+                        .chain(&surface.wraps)
+                        .flatten()
+                        .any(|v| !v.is_finite() || v.abs() > 1_000_000.0)
+                {
+                    return Err("KM-MODEL-UNSUPPORTED".into());
+                }
+            }
             if mesh.highlight.is_some_and(|index| index >= texture_count)
                 || mesh.underlay.is_some_and(|index| index >= texture_count)
                 || mesh
@@ -197,6 +215,7 @@ impl Scene {
                     .iter()
                     .flatten()
                     .chain(&mesh.highlight_uv)
+                    .chain(&mesh.highlight_wrap)
                     .chain(&mesh.highlight_color)
                     .chain(&mesh.underlay_uv)
                     .chain(&mesh.underlay_wrap)

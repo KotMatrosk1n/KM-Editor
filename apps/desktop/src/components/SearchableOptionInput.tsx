@@ -484,7 +484,7 @@ export function SearchableOptionInput({
       {noOptionsStatus}
     </div>
   ) : null;
-  const portalHost = portalMenu ? getEditorPortalHost() : null;
+  const portalHost = portalMenu ? getEditorPortalHost(containerRef.current) : null;
 
   return (
     <HoverTooltip

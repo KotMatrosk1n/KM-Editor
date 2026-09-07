@@ -119,6 +119,10 @@ const knownFieldComponents = new Set([
  */
 const permittedTransientFieldLocks = new Map([
   [
+    'src/features/model-viewer/ModelViewerSection.tsx#ModelMaterialEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelMaterialEditor.tsx#SearchableOptionInput:id={`model-property-${field.key}`}[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
+    'Material property menus inherit the same staging and vanilla restoration ownership as their enclosing fields, including menus rendered in the dialog portal.'
+  ],
+  [
     'src/features/model-viewer/ModelViewerSection.tsx#ModelMaterialEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelMaterialEditor.tsx#SearchableOptionInput:id="model-material-select"[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
     'Material staging owns the selected file and its exact values until encoding completes. A staged vanilla restoration owns the replacement source until it is applied or discarded.'
   ],

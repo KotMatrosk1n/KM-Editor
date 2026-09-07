@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "Reset background color",
+    "modelViewer.savedColors": "Saved colors",
+    "modelViewer.addColor": "+ Add",
+    "modelViewer.colorPresets": "Color palette",
     "welcome.choose": "Choose your game",
     "welcome.resources": "Resources",
     "welcome.documentation": "Documentation",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "Edit the values declared by each material. Texture choices use existing resources. Shared materials affect all models that use them.",
     "modelEditor.search": "Search properties",
     "modelEditor.readOnly": "Read only",
+    "modelEditor.studioPreview": "Surface edits use studio lighting in the preview. Game lighting and effects can differ.",
     "modelEditor.gameOnly": "Saved to the game file; this effect is not rendered in the preview.",
     "modelEditor.invalid": "Enter valid finite numbers. Integer properties require whole numbers.",
     "modelEditor.stageMaterial": "Stage material file",

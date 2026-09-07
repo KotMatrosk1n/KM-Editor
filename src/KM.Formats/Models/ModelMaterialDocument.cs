@@ -38,10 +38,12 @@ public sealed class ModelMaterialDocument
                     throw new InvalidDataException("Material value extends beyond its table.");
                 var values = Enumerable.Range(0, components).Select(i => at == 0 ? fallback : kind == "int" ? data.I32(at + i * 4) : data.Float(at + i * 4)).ToArray();
                 if (values.Any(v => !double.IsFinite(v))) throw new InvalidDataException("Material contains a nonfinite value.");
-                var previewed = name is "BaseColor" or "ConstantColor0" or "UVScaleOffset" or "UVScaleOffset1"
+                var previewed = PreviewSurface.Supports(name) || name is "BaseColor" or "ConstantColor0" or "UVScaleOffset" or "UVScaleOffset1"
                     or "BaseColorLayer1" or "BaseColorLayer2" or "BaseColorLayer3" or "BaseColorLayer4"
                     or "Col0SkinColor" or "Col0PrimaryColor" or "Col0SecondaryColor"
-                    || name.StartsWith("ColorUV", StringComparison.Ordinal) || name.StartsWith("Layer1UV", StringComparison.Ordinal);
+                    || name.StartsWith("ColorUV", StringComparison.Ordinal) || name.StartsWith("Layer1UV", StringComparison.Ordinal)
+                    || name is "LayerMaskScale1" or "LayerMaskScale2" or "LayerMaskScale3" or "LayerMaskScale4" or "EmissionIntensityLayer5" or "EmissionColorLayer5"
+                        or "ColorBaseU" or "ColorBaseV" or "Layer1BaseU" or "Layer1BaseV";
                 bindings.Add(new(new(key, material, group, name, kind, values, null, options ?? [], at != 0 || location is not null, previewed), at, location));
             }
             void Parameters(int field, string group, int components, string kind, double fallback = 0)
@@ -71,7 +73,7 @@ public sealed class ModelMaterialDocument
                 var index = packedModel ? checked((int)data.Value(binding, 1)) : 0;
                 if (packedModel && index >= paths.Length) throw new InvalidDataException("Texture binding is invalid.");
                 bindings.Add(new(new($"{m}/texture/{t}", material, "textures", role, packedModel ? "textureIndex" : "texture",
-                    packedModel ? [index] : [], packedModel ? paths[index] : data.Text(binding, 1), paths, at != 0, role is "BaseColorMap" or "Col0Tex" or "LyCol0Tex" or "LayerMaskMap"), at));
+                    packedModel ? [index] : [], packedModel ? paths[index] : data.Text(binding, 1), paths, at != 0, RenderedTexture(role)), at));
                 if (packedModel && data.Table(binding, 2) is var sampler && sampler != 0)
                 {
                     Numeric($"{m}/wrap/{t}/u", "samplers", role + " U", "int", data.Field(sampler, 1), 1, options: ["0", "1", "2"], location: new(sampler, data.Field(binding, 2), 1, 1, false));
@@ -92,9 +94,25 @@ public sealed class ModelMaterialDocument
                 bindings.Add(new(new($"{m}/alpha", material, "surface", "Alpha", "text", [], alpha,
                     new[] { "Opaque", "Mask", "Blend", alpha }.OfType<string>().Distinct().ToArray(), at != 0, true), at));
             }
+            for (var i = 0; i < bindings.Count; i++)
+            {
+                var field = bindings[i].Field;
+                if (field.Material != material || field.Group != "samplers") continue;
+                bool rendered;
+                if (packedModel) rendered = RenderedTexture(field.Name[..^2]);
+                else
+                {
+                    var parts = field.Key.Split('/'); var slot = int.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
+                    rendered = parts[3] is "0" or "1" && textures.Any(t => data.Value(t, 2) == slot && RenderedTexture(data.Text(t, 0) ?? ""));
+                }
+                if (rendered) bindings[i] = bindings[i] with { Field = field with { Previewed = true } };
+            }
         }
         if (bindings.Count > 16384) throw new InvalidDataException("Material control budget exceeded.");
     }
+
+    private static bool RenderedTexture(string role) => PreviewSurface.TextureSlot(role) >= 0
+        || role is "BaseColorMap" or "Col0Tex" or "LyCol0Tex" or "LayerMaskMap" or "HighlightMaskMap" or "Col0ColChangeTex";
 
     public byte[] Apply(IReadOnlyList<ModelMaterialChange> changes)
     {

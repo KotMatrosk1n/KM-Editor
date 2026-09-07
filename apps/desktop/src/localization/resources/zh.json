@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "重置背景颜色",
+    "modelViewer.savedColors": "已保存的颜色",
+    "modelViewer.addColor": "+ 添加",
+    "modelViewer.colorPresets": "调色板",
     "welcome.choose": "选择游戏",
     "welcome.resources": "资源",
     "welcome.documentation": "文档",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "编辑各材质声明的值。纹理从现有资源中选择。共享材质会影响所有使用它们的模型。",
     "modelEditor.search": "搜索属性",
     "modelEditor.readOnly": "只读",
+    "modelEditor.studioPreview": "表面修改会在工作室灯光下预览。游戏中的灯光和特效可能有所不同。",
     "modelEditor.gameOnly": "会保存到游戏文件；预览中不显示此效果。",
     "modelEditor.invalid": "请输入有效的有限数值。整数属性必须输入整数。",
     "modelEditor.stageMaterial": "暂存材质文件",
