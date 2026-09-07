@@ -2,10 +2,11 @@
 
 export const editorPortalHostId = 'km-editor-portal-host';
 
-export function getEditorPortalHost() {
+export function getEditorPortalHost(anchor?: Element | null) {
   if (typeof document === 'undefined') {
     return null;
   }
 
-  return document.getElementById(editorPortalHostId) ?? document.querySelector('main') ?? document.body;
+  return anchor?.closest('[role="dialog"]')?.querySelector('[data-editor-portal-host]')
+    ?? document.getElementById(editorPortalHostId) ?? document.querySelector('main') ?? document.body;
 }

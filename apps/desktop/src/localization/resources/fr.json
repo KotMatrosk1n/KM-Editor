@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "Réinitialiser la couleur de fond",
+    "modelViewer.savedColors": "Couleurs enregistrées",
+    "modelViewer.addColor": "+ Ajouter",
+    "modelViewer.colorPresets": "Palette de couleurs",
     "welcome.choose": "Choisissez votre jeu",
     "welcome.resources": "Ressources",
     "welcome.documentation": "Documentation",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "Modifiez les valeurs déclarées par chaque matériau. Les textures proposées existent déjà. Les matériaux partagés affectent tous les modèles qui les utilisent.",
     "modelEditor.search": "Rechercher des propriétés",
     "modelEditor.readOnly": "Lecture seule",
+    "modelEditor.studioPreview": "Les modifications de surface utilisent un éclairage de studio dans l’aperçu. L’éclairage et les effets du jeu peuvent différer.",
     "modelEditor.gameOnly": "Enregistré dans le fichier du jeu ; cet effet n’est pas visible dans l’aperçu.",
     "modelEditor.invalid": "Saisissez des nombres finis valides. Les propriétés entières exigent des nombres entiers.",
     "modelEditor.stageMaterial": "Préparer le fichier de matériaux",

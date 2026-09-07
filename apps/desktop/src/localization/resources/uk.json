@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "Скинути колір тла",
+    "modelViewer.savedColors": "Збережені кольори",
+    "modelViewer.addColor": "+ Додати",
+    "modelViewer.colorPresets": "Колірна палітра",
     "welcome.choose": "Виберіть гру",
     "welcome.resources": "Ресурси",
     "welcome.documentation": "Документація",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "Змінюйте значення, оголошені матеріалом. Текстури вибираються з наявних ресурсів. Спільні матеріали впливають на всі моделі, які їх використовують.",
     "modelEditor.search": "Пошук властивостей",
     "modelEditor.readOnly": "Лише читання",
+    "modelEditor.studioPreview": "Зміни поверхні показано за студійного освітлення. Освітлення та ефекти в грі можуть відрізнятися.",
     "modelEditor.gameOnly": "Зберігається у файлі гри; цей ефект не відображається в попередньому перегляді.",
     "modelEditor.invalid": "Введіть допустимі скінченні числа. Цілочисельні властивості потребують цілих чисел.",
     "modelEditor.stageMaterial": "Підготувати файл матеріалів",

@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "Restablecer color de fondo",
+    "modelViewer.savedColors": "Colores guardados",
+    "modelViewer.addColor": "+ Añadir",
+    "modelViewer.colorPresets": "Paleta de colores",
     "welcome.choose": "Elige tu juego",
     "welcome.resources": "Recursos",
     "welcome.documentation": "Documentación",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "Edita los valores declarados por cada material. Las texturas disponibles usan recursos existentes. Los materiales compartidos afectan a todos los modelos que los usan.",
     "modelEditor.search": "Buscar propiedades",
     "modelEditor.readOnly": "Solo lectura",
+    "modelEditor.studioPreview": "Los cambios de superficie se muestran con iluminación de estudio. La iluminación y los efectos del juego pueden variar.",
     "modelEditor.gameOnly": "Se guarda en el archivo del juego; este efecto no se muestra en la vista previa.",
     "modelEditor.invalid": "Introduce números finitos válidos. Las propiedades enteras requieren números enteros.",
     "modelEditor.stageMaterial": "Preparar archivo de materiales",

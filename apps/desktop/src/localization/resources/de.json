@@ -1,5 +1,9 @@
 {
   "keys": {
+    "modelViewer.resetBackground": "Hintergrundfarbe zurücksetzen",
+    "modelViewer.savedColors": "Gespeicherte Farben",
+    "modelViewer.addColor": "+ Hinzufügen",
+    "modelViewer.colorPresets": "Farbpalette",
     "welcome.choose": "Wähle dein Spiel",
     "welcome.resources": "Ressourcen",
     "welcome.documentation": "Dokumentation",
@@ -3889,6 +3893,7 @@
     "modelEditor.materialHelp": "Bearbeite die vom Material definierten Werte. Texturen werden aus vorhandenen Ressourcen gewählt. Gemeinsame Materialien betreffen alle Modelle, die sie verwenden.",
     "modelEditor.search": "Eigenschaften suchen",
     "modelEditor.readOnly": "Schreibgeschützt",
+    "modelEditor.studioPreview": "Oberflächenänderungen werden in der Vorschau mit Studiobeleuchtung angezeigt. Beleuchtung und Effekte im Spiel können abweichen.",
     "modelEditor.gameOnly": "Wird in der Spieldatei gespeichert; dieser Effekt wird in der Vorschau nicht dargestellt.",
     "modelEditor.invalid": "Gib gültige endliche Zahlen ein. Ganzzahlige Eigenschaften erfordern ganze Zahlen.",
     "modelEditor.stageMaterial": "Materialdatei vormerken",

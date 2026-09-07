@@ -67,6 +67,8 @@ pub struct MeshInfo {
     #[serde(default = "unit_uv")]
     pub highlight_uv: [f32; 4],
     #[serde(default)]
+    pub highlight_wrap: [f32; 4],
+    #[serde(default)]
     pub underlay: Option<usize>,
     #[serde(default = "unit_uv")]
     pub underlay_uv: [f32; 4],
@@ -76,6 +78,14 @@ pub struct MeshInfo {
     pub mask_channels: [f32; 4],
     #[serde(default)]
     pub uv_origins: [f32; 4],
+    #[serde(default)]
+    pub surface: Option<SurfaceInfo>,
+}
+#[derive(Deserialize)]
+pub struct SurfaceInfo {
+    pub values: Vec<[f32; 4]>,
+    pub textures: Vec<i32>,
+    pub wraps: Vec<[f32; 4]>,
 }
 fn all_channels() -> [f32; 4] {
     [1.0; 4]

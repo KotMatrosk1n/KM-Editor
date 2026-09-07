@@ -12,11 +12,13 @@ public sealed record PreviewMaterial(string Name, int Texture, int Mask, Vector4
     public int Highlight { get; init; } = -1;
     public Vector4 HighlightColor { get; init; }
     public Vector4 HighlightUv { get; init; } = new(1, 1, 0, 0);
+    public Vector4 HighlightWrap { get; init; }
     public int Underlay { get; init; } = -1;
     public Vector4 UnderlayUv { get; init; } = new(1, 1, 0, 0);
     public Vector4 UnderlayWrap { get; init; }
     public Vector4 MaskChannels { get; init; } = Vector4.One;
     public Vector4 UvOrigins { get; init; }
+    public PreviewSurface? Surface { get; init; }
 }
 public sealed record PreviewPrimitive(float[] Vertices, uint[] Indices, PreviewMaterial Material, string Name);
 public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IReadOnlyList<PreviewTexture> Textures)
@@ -58,6 +60,7 @@ public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IR
                 p.Name,
                 Material = p.Material.Name,
                 p.Material.TopOriginUv,
+                p.Material.Surface,
                 UvOrigins = new[] { p.Material.UvOrigins.X, p.Material.UvOrigins.Y, p.Material.UvOrigins.Z, p.Material.UvOrigins.W },
                 MaskChannels = new[] { p.Material.MaskChannels.X, p.Material.MaskChannels.Y, p.Material.MaskChannels.Z, p.Material.MaskChannels.W },
                 Underlay = p.Material.Underlay < 0 ? (int?)null : p.Material.Underlay,
@@ -66,6 +69,7 @@ public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IR
                 MaskUv = p.Material.MaskUv is { } uv ? new[] { uv.X, uv.Y, uv.Z, uv.W } : null,
                 Highlight = p.Material.Highlight < 0 ? (int?)null : p.Material.Highlight,
                 HighlightColor = new[] { p.Material.HighlightColor.X, p.Material.HighlightColor.Y, p.Material.HighlightColor.Z, p.Material.HighlightColor.W },
+                HighlightWrap = new[] { p.Material.HighlightWrap.X, p.Material.HighlightWrap.Y, p.Material.HighlightWrap.Z, p.Material.HighlightWrap.W },
                 HighlightUv = new[] { p.Material.HighlightUv.X, p.Material.HighlightUv.Y, p.Material.HighlightUv.Z, p.Material.HighlightUv.W }
             }).ToArray()
         }, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });

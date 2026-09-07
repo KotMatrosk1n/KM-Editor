@@ -91,6 +91,7 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
         foreach (var material in data.Tables(data.Root, 1, 128))
         {
             var name = Required(data.Text(material, 0));
+            var surface = PreviewSurface.Read(data, material, false);
             var color = Vector4.One;
             var layers = new[] { Vector4.One, Vector4.One, Vector4.One, Vector4.One };
             var maskChannels = Vector4.Zero;
@@ -111,8 +112,7 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
             var highlightColor = Vector4.Zero;
             var highlightUv = new Vector4(1, 1, 0, 0);
             var highlightIntensity = 0f;
-            if (topOriginMaterialUv)
-                foreach (var parameter in data.Tables(material, 4, 256))
+            foreach (var parameter in data.Tables(material, 4, 256))
                     if (data.Text(parameter, 0) == "EmissionIntensityLayer5" && data.Field(parameter, 1) is var at && at != 0)
                         highlightIntensity = data.Float(at);
             foreach (var parameter in data.Tables(material, 7, 256))
@@ -136,12 +136,14 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
             var texture = -1;
             var mask = -1;
             var highlight = -1;
+            var highlightWrap = Vector4.Zero;
             var wrap = Vector4.Zero;
             var samplers = data.Tables(material, 3, 32);
             foreach (var entry in data.Tables(material, 2, 32))
             {
                 var role = data.Text(entry, 0);
-                if (role is not ("BaseColorMap" or "LayerMaskMap") && !(topOriginMaterialUv && role == "HighlightMaskMap")) continue;
+                var surfaceSlot = PreviewSurface.TextureSlot(role ?? "");
+                if (role is not ("BaseColorMap" or "LayerMaskMap" or "HighlightMaskMap") && surfaceSlot < 0) continue;
                 var slot = checked((int)data.Value(entry, 2));
                 if (samplers.Length > 0 && slot >= samplers.Length) { warnings.Add("textureUnavailable"); continue; }
                 var wrapU = samplers.Length == 0 ? 0 : data.Value(samplers[slot], 9);
@@ -149,23 +151,28 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
                 if (wrapU is not (0 or 1 or 6 or 7) || wrapV is not (0 or 1 or 6 or 7)) { warnings.Add("textureUnavailable"); continue; }
                 if (role == "BaseColorMap") { wrap.X = wrapU; wrap.Y = wrapV; }
                 else if (role == "LayerMaskMap") { wrap.Z = wrapU; wrap.W = wrapV; }
+                else if (role == "HighlightMaskMap") highlightWrap = new(wrapU, wrapV, 0, 0);
+                if (surfaceSlot >= 0) surface.Wraps[surfaceSlot] = [wrapU, wrapV, 0, 0];
                 var texturePath = Resolve(path, Required(data.Text(entry, 1)));
                 if (!textureIndices.TryGetValue(texturePath, out var textureIndex))
                 {
-                    if (textures.Count >= 32) throw new InvalidDataException("Preview texture limit exceeded.");
+                    if (textures.Count >= 128) throw new InvalidDataException("Preview texture limit exceeded.");
                     textureIndex = textures.Count;
                     try { textures.Add(PreviewTexture.Read(read(texturePath)) with { SourcePath = texturePath }); }
                     catch (IOException) { warnings.Add("textureUnavailable"); textureIndices.TryAdd(texturePath, -1); continue; }
                     textureIndices.Add(texturePath, textureIndex);
                 }
-                if (role == "BaseColorMap") texture = textureIndex; else if (role == "LayerMaskMap") mask = textureIndex; else highlight = textureIndex;
+                if (surfaceSlot >= 0) surface.Textures[surfaceSlot] = textureIndex;
+                else if (role == "BaseColorMap") texture = textureIndex; else if (role == "LayerMaskMap") mask = textureIndex; else highlight = textureIndex;
             }
             if (!materials.TryAdd(name, new(name, texture, mask, color, layers, uv, data.Text(material, 15) ?? "Opaque")
             {
                 Wrap = wrap,
+                Surface = surface,
                 MaskChannels = maskChannels,
                 TopOriginUv = topOriginMaterialUv,
                 Highlight = highlight,
+                HighlightWrap = highlightWrap,
                 HighlightColor = highlight >= 0 ? highlightColor * highlightIntensity : Vector4.Zero,
                 HighlightUv = highlightUv
             }))

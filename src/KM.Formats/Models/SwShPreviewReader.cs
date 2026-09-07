@@ -39,6 +39,7 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
         return data.Tables(data.Root, 6, 256).Select(material =>
         {
             var name = data.Text(material, 0) ?? throw new InvalidDataException("Material identity is missing.");
+            var surface = PreviewSurface.Read(data, material, true);
             var color = Vector4.One;
             var layers = new[] { Vector4.One, Vector4.One, Vector4.One, Vector4.One };
             foreach (var parameter in data.Tables(material, 14, 256))
@@ -85,16 +86,18 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
             foreach (var binding in data.Tables(material, 11, 32))
             {
                 var role = data.Text(binding, 0);
-                if (role is not ("Col0Tex" or "LyCol0Tex" or "Col0ColChangeTex")) continue;
+                var surfaceSlot = PreviewSurface.TextureSlot(role ?? "");
+                if (role is not ("Col0Tex" or "LyCol0Tex" or "Col0ColChangeTex") && surfaceSlot < 0) continue;
                 // An identity color change does not consume its placeholder mask.
                 if (role == "Col0ColChangeTex" && layers.Take(3).All(layer => layer == Vector4.One)) continue;
                 var index = checked((int)data.Value(binding, 1));
                 if (index >= names.Length) throw new InvalidDataException("Material texture index is invalid.");
                 var textureName = names[index] + ".bntx";
+                if (role == "NormalMapTex" && names[index] is "chara_d_white" or "dummy_col") continue;
                 if (role == "LyCol0Tex" && names[index] == "dummy_col") continue;
                 if (!textureIds.TryGetValue(textureName, out var loaded))
                 {
-                    if (textures.Count >= 32) throw new InvalidDataException("Preview texture limit exceeded.");
+                    if (textures.Count >= 128) throw new InvalidDataException("Preview texture limit exceeded.");
                     try { var decoded = PreviewTexture.Read(read(textureName)) with { SourcePath = textureName }; loaded = textures.Count; textures.Add(decoded); }
                     catch (IOException) { loaded = -1; warnings.Add("textureUnavailable"); }
                     textureIds.Add(textureName, loaded);
@@ -107,13 +110,15 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                     2 => 6,
                     _ => throw new InvalidDataException("Texture addressing mode is unsupported.")
                 };
-                if (role == "Col0Tex") { texture = loaded; wrap.X = Address(1); wrap.Y = Address(2); }
+                if (surfaceSlot >= 0) { surface.Textures[surfaceSlot] = loaded; surface.Wraps[surfaceSlot] = [Address(1), Address(2), 0, 0]; }
+                else if (role == "Col0Tex") { texture = loaded; wrap.X = Address(1); wrap.Y = Address(2); }
                 else if (role == "Col0ColChangeTex") { mask = loaded; wrap.Z = Address(1); wrap.W = Address(2); }
                 else { underlay = loaded; underlayWrap = new(Address(1), Address(2), 0, 0); }
             }
+            color = new(surface.Values[39][0], surface.Values[39][1], surface.Values[39][2], color.W);
             return new PreviewMaterial(name, texture, mask, color, layers,
                 uv, data.Value(material, 6) == 0 ? "Opaque" : "Blend")
-            { Wrap = wrap, UvOrigins = origins, MaskChannels = new(1, 1, 1, 0), Underlay = underlay, UnderlayUv = underlayUv, UnderlayWrap = underlayWrap };
+            { Surface = surface, Wrap = wrap, UvOrigins = origins, MaskChannels = new(1, 1, 1, 0), Underlay = underlay, UnderlayUv = underlayUv, UnderlayWrap = underlayWrap };
         }).ToArray();
     }
 

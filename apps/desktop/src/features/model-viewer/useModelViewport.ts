@@ -51,8 +51,6 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
     const bounds = () => {
       const rect = viewport.current?.getBoundingClientRect();
       const ratio = window.devicePixelRatio;
-      const unobstructed = !coveredRef.current && !Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"], dialog[open], .sidebar-overlay-open'))
-        .some(element => !element.contains(viewport.current));
       let left = Math.max(0, rect?.left ?? 0), top = Math.max(0, rect?.top ?? 0);
       let right = Math.min(window.innerWidth, rect?.right ?? 0), bottom = Math.min(window.innerHeight, rect?.bottom ?? 0);
       for (let parent = viewport.current?.parentElement; parent; parent = parent.parentElement) {
@@ -61,6 +59,13 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
         if (/auto|scroll|hidden|clip/.test(style.overflowY)) { top = Math.max(top, area.top + parent.clientTop); bottom = Math.min(bottom, area.top + parent.clientTop + parent.clientHeight); }
         if (parent.classList.contains('model-viewer--editing')) break;
       }
+      const unobstructed = !coveredRef.current && !Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"], dialog[open], .sidebar-overlay-open'))
+        .some(element => {
+          if (element.contains(viewport.current) || element.closest('[hidden], [inert]')) return false;
+          const style = getComputedStyle(element), area = element.getBoundingClientRect();
+          return style.visibility !== 'hidden' && area.width > 0 && area.height > 0
+            && area.left < right && area.right > left && area.top < bottom && area.bottom > top;
+        });
       return {
         x: Math.round((rect?.x ?? 0) * ratio), y: Math.round((rect?.y ?? 0) * ratio),
         width: Math.min(4096, Math.max(0, Math.round((rect?.width ?? 0) * ratio))),
