@@ -17,6 +17,7 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         var format = data.U32(info + 28);
         var blockBytes = format switch
         {
+            0x0b01 or 0x0b06 => 4,
             0x1a01 or 0x1a06 or 0x1d01 => 8,
             0x1b01 or 0x1b06 or 0x1c01 or 0x1c06 or 0x1e01 or 0x2001 or 0x2006 => 16,
             _ => throw new InvalidDataException("Texture compression is not supported by this preview.")
@@ -25,7 +26,8 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         if (width is < 1 or > 4096 || height is < 1 or > 4096
             || data.U32(info + 44) != 1 || data.U32(info + 48) != 1)
             throw new InvalidDataException("Texture dimensions are unsupported.");
-        var blocksWide = (width + 3) / 4; var blocksHigh = (height + 3) / 4;
+        var blockSize = format is 0x0b01 or 0x0b06 ? 1 : 4;
+        var blocksWide = (width + blockSize - 1) / blockSize; var blocksHigh = (height + blockSize - 1) / blockSize;
         var stride = checked(blocksWide * blockBytes);
         var result = new byte[checked(stride * blocksHigh)];
         var source = Pointer(Pointer(info + 112));

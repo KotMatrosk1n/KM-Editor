@@ -237,11 +237,12 @@ impl Renderer {
         });
         let mut textures = Vec::new();
         for texture in &scene.textures {
+            let (block_width, block_height) = texture.format.block_dimensions();
             textures.push(Self::texture(
                 &device,
                 &queue,
-                texture.width.div_ceil(4) * 4,
-                texture.height.div_ceil(4) * 4,
+                texture.width.div_ceil(block_width) * block_width,
+                texture.height.div_ceil(block_height) * block_height,
                 texture.format,
                 &texture.bytes,
             ));
@@ -269,9 +270,10 @@ impl Renderer {
                 index
                     .map(|i| {
                         let t = &scene.textures[i];
+                        let (width, height) = t.format.block_dimensions();
                         [
-                            t.width as f32 / (t.width.div_ceil(4) * 4) as f32,
-                            t.height as f32 / (t.height.div_ceil(4) * 4) as f32,
+                            t.width as f32 / (t.width.div_ceil(width) * width) as f32,
+                            t.height as f32 / (t.height.div_ceil(height) * height) as f32,
                         ]
                     })
                     .unwrap_or([1.0, 1.0])

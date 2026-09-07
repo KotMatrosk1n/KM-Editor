@@ -23,14 +23,21 @@ public static class PreviewMaterialAnimation
                     visibility.Add(new(name, [new(0, [data.Field(values, 0) is var v && v != 0 && data.U8(v) != 0 ? 1 : 0])]));
                 else if (kind is >= 2 and <= 4)
                 {
-                    var (start, count) = data.Vector(values, kind == 2 ? 0 : 1, 1, 18000);
-                    var (frames, frameCount) = kind == 2 ? (0, count) : data.Vector(values, 0, kind == 3 ? 2 : 1, 18000);
-                    if (frameCount != count) throw new InvalidDataException("Visibility keys are incomplete.");
-                    var keys = new PreviewKey[count];
-                    for (var i = 0; i < count; i++)
+                    var sourceFrames = checked((int)data.Value(config, 1, (uint)clip.Frames));
+                    if (sourceFrames is < 1 or > 18000) throw new InvalidDataException("Visibility timing is unsupported.");
+                    var (start, packedCount) = data.Vector(values, kind == 2 ? 0 : 1, 1, 2250);
+                    // A dense curve may end before the clip; playback holds its
+                    // final sample for the remaining duration.
+                    var (frames, frameCount) = kind == 2 ? (0, Math.Min(sourceFrames, packedCount * 8)) : data.Vector(values, 0, kind == 3 ? 2 : 1, 18000);
+                    if (frameCount == 0 || packedCount != (frameCount + 7) / 8)
+                        throw new InvalidDataException("Visibility samples are incomplete.");
+                    var keys = new PreviewKey[frameCount];
+                    for (var i = 0; i < frameCount; i++)
                     {
                         var frame = (kind == 2 ? i : kind == 3 ? data.U16(frames + i * 2) : data.U8(frames + i)) * ratio;
-                        keys[i] = new(frame, [data.U8(start + i) == 0 ? 0 : 1]);
+                        if (frame >= sourceFrames * ratio || (i > 0 && frame < keys[i - 1].Frame))
+                            throw new InvalidDataException("Visibility keys are out of order.");
+                        keys[i] = new(frame, [(data.U8(start + i / 8) >> (i % 8)) & 1]);
                     }
                     visibility.Add(new(name, keys));
                 }

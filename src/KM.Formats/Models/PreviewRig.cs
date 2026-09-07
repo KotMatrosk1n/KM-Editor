@@ -74,7 +74,10 @@ public static class PreviewRigReader
         var tracks = new List<PreviewBoneTrack>();
         var seen = new HashSet<int>();
         var skeletal = data.Table(data.Root, 1);
-        foreach (var entry in skeletal == 0 ? [] : data.Tables(skeletal, 0, 512))
+        // Shared clips can include companion and prop tracks beyond this model's
+        // skeleton. Bound the source independently, then retain matching bones.
+        var entries = skeletal == 0 ? [] : data.Tables(skeletal, 0, 4096);
+        foreach (var entry in entries)
         {
             var index = Array.FindIndex(bones, b => b.Name == data.Text(entry, 0));
             if (index < 0) continue;
@@ -102,7 +105,7 @@ public static class PreviewRigReader
                 return result;
             }
         }
-        if (tracks.Count == 0) throw new InvalidDataException("Animation does not match this skeleton.");
+        if (entries.Length > 0 && tracks.Count == 0) throw new InvalidDataException("Animation does not match this skeleton.");
         return new(id, frames, rate, data.Value(info, 0) != 0, tracks.ToArray());
     }
     private static float[] Rotation(ModelBuffer data, int at)

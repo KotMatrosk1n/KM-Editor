@@ -65,6 +65,24 @@ public static class SwShPreviewAnimation
         if (kind == 0) return Enumerable.Range(0, components).Select(_ => Array.Empty<PreviewKey>()).ToArray();
         if (kind > 4) throw new InvalidDataException("Animation curve encoding is unsupported.");
         var table = data.Table(track, field + 1);
+        if (bytes && kind > 1)
+        {
+            // Visibility samples are packed least-significant-bit first, with
+            // sparse frame indices stored separately from the sample bitset.
+            var (packed, packedCount) = data.Vector(table, kind == 2 ? 0 : 1, 1, 2250);
+            var (indices, samples) = kind == 2 ? (0, Math.Min(frames, packedCount * 8)) : data.Vector(table, 0, kind == 3 ? 2 : 1, 18000);
+            if (samples == 0 || packedCount != (samples + 7) / 8)
+                throw new InvalidDataException("Visibility samples are incomplete.");
+            var visibility = new PreviewKey[samples];
+            for (var i = 0; i < samples; i++)
+            {
+                var frame = kind == 2 ? i : kind == 3 ? data.U16(indices + i * 2) : data.U8(indices + i);
+                if (frame >= frames || (i > 0 && frame < visibility[i - 1].Frame))
+                    throw new InvalidDataException("Visibility keys are out of order.");
+                visibility[i] = new(frame, [(data.U8(packed + i / 8) >> (i % 8)) & 1]);
+            }
+            return [visibility];
+        }
         var stride = bytes ? 1 : 4 * components;
         var (start, count) = kind == 1 ? (data.Field(table, 0), 1) : data.Vector(table, kind == 2 ? 0 : 1, stride, 18000);
         var (keys, keyCount) = kind >= 3 ? data.Vector(table, 0, kind == 3 ? 2 : 1, 18000) : (0, count);

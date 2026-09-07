@@ -87,6 +87,7 @@ internal static class ZaModelDiscovery
         var hashes = index.Files.Select(file => file.FileHash).ToHashSet();
         var names = new HashSet<string>(StringComparer.Ordinal);
         var stem = Path.GetFileNameWithoutExtension(model);
+        names.Add(stem);
         foreach (var suffix in new[] { "_base", "_battle", "_field", "_other", "_face", "_head00" }) names.Add(stem + suffix);
         foreach (var pack in index.Files.Select(file => file.PackName).Distinct(StringComparer.Ordinal)
             .Where(pack => pack.StartsWith(prefix, StringComparison.Ordinal) && pack.EndsWith(".trpak", StringComparison.Ordinal) && pack.Length <= 256))
