@@ -59,10 +59,25 @@ public sealed class SvModelPreviewService
 
     public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
 
-    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null)
+    public ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false)
+    {
+        var baseProject = project with { Paths = project.Paths with { OutputRootPath = null } };
+        var seeds = new HashSet<string>(StringComparer.Ordinal);
+        Prepare(baseProject, id, "rest", (path, _, _) => { if (path != CatalogPath) seeds.Add(path); });
+        var graphSource = new SvWorkflowFileSource(bypassReusableBaseCache: true, maximumReadBytes: 32 * 1024 * 1024,
+            maximumReadCount: 16384, maximumAggregateReadBytes: 512L * 1024 * 1024);
+        ModelTextureResource[] graph;
+        using (SvWorkflowFileSource.BeginIndependentFreshReadScope(baseProject.Paths))
+            graph = ModelAssetGraph.Read(seeds.Select(path => (path, (string?)null)), (path, _) => graphSource.ReadBase(baseProject, path).Bytes);
+        if (vanilla) return graph;
+        using var currentScope = SvWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
+        return graph.Select(asset => asset with { Bytes = graphSource.Read(project, asset.Id).Bytes }).ToArray();
+    }
+
+    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null, Func<string, byte[], byte[]>? transform = null)
     {
         using var scope = SvWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
-        if (!Catalog(project).Any(x => x.Id == id)) throw new InvalidDataException("Select a model from the current catalog.");
+        if (project.Paths.SelectedGame is not (ProjectGame.Scarlet or ProjectGame.Violet)) throw new InvalidDataException("Select a Scarlet or Violet project.");
         var shiny = id.EndsWith("#shiny", StringComparison.Ordinal);
         if (shiny) id = id[..^6];
         var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
@@ -74,14 +89,17 @@ public sealed class SvModelPreviewService
                 throw new InvalidDataException("Model sources changed while loading. Reload the model.");
             hashes[path] = hash;
             observe?.Invoke(path, bytes, null);
-            return bytes;
+            return transform?.Invoke(path, bytes) ?? bytes;
         }
         PreviewMaterialVariant? variant = null;
+        var catalog = new ModelBuffer(Read(CatalogPath));
+        var entry = catalog.Tables(catalog.Root, 1, 8192).FirstOrDefault(e => catalog.Text(e, 1) is { } relative
+            && TrinityPreviewReader.Resolve("pokemon/data/catalog", relative) == id);
+        if (entry == 0 && (shiny || !SvModelDiscovery.Discover(project.Paths.BaseRomFsPath!).Any(model => model.Id == id)))
+            throw new InvalidDataException("Select a model from the current catalog.");
         if (shiny)
         {
-            var catalog = new ModelBuffer(Read(CatalogPath));
-            var entry = catalog.Tables(catalog.Root, 1, 8192).First(e => catalog.Text(e, 1) is { } relative && TrinityPreviewReader.Resolve("pokemon/data/catalog", relative) == id);
-            var tablePath = TrinityPreviewReader.Resolve("pokemon/data/catalog", catalog.Text(entry, 2)!);
+            var tablePath = TrinityPreviewReader.Resolve("pokemon/data/catalog", catalog.Text(entry, 2) ?? throw new InvalidDataException("Shiny materials are unavailable."));
             variant = PreviewMaterialVariant.Shiny(new(Read(tablePath)), tablePath) ?? throw new InvalidDataException("Shiny materials are unavailable.");
         }
         var scene = new TrinityPreviewReader(Read).Load(id, variant);

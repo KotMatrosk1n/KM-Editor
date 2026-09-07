@@ -12,6 +12,7 @@ const focusableSelector = [
 ].join(',');
 
 type ModalDialogOptions = {
+  enabled?: boolean;
   canClose?: boolean;
   onClose: () => void;
 };
@@ -21,6 +22,7 @@ type ModalDialogOptions = {
  * coupling the modal's content or actions to a shared visual component.
  */
 export function useModalDialog<TElement extends HTMLElement = HTMLElement>({
+  enabled = true,
   canClose = true,
   onClose
 }: ModalDialogOptions): RefObject<TElement | null> {
@@ -35,7 +37,7 @@ export function useModalDialog<TElement extends HTMLElement = HTMLElement>({
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog) {
+    if (!dialog || !enabled) {
       return;
     }
 
@@ -50,6 +52,8 @@ export function useModalDialog<TElement extends HTMLElement = HTMLElement>({
       if (dialog.closest('[inert]')) {
         return;
       }
+      if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"]') !== dialog
+          && event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"]') !== null) return;
       if (event.key === 'Escape' && canCloseRef.current) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -87,14 +91,15 @@ export function useModalDialog<TElement extends HTMLElement = HTMLElement>({
         previouslyFocused.focus({ preventScroll: true });
       }
     };
-  }, []);
+  }, [enabled]);
 
   return dialogRef;
 }
 
 function getFocusableElements(dialog: HTMLElement) {
   return Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
-    (element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true'
+    (element) => !element.closest('[hidden], [inert], [aria-hidden="true"]')
+      && !element.matches(':disabled') && element.getClientRects().length > 0
   );
 }
 

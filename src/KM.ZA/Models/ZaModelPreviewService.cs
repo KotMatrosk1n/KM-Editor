@@ -31,7 +31,22 @@ public sealed class ZaModelPreviewService
 
     public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
 
-    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null)
+    public ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false)
+    {
+        var baseProject = project with { Paths = project.Paths with { OutputRootPath = null } };
+        var seeds = new HashSet<string>(StringComparer.Ordinal);
+        Prepare(baseProject, id, "rest", (path, _, _) => { if (path != ZaDataPaths.PokemonResourceCatalog) seeds.Add(path); });
+        var graphSource = new ZaWorkflowFileSource(bypassReusableBaseCache: true, maximumReadBytes: 32 * 1024 * 1024,
+            maximumReadCount: 16384, maximumAggregateReadBytes: 512L * 1024 * 1024);
+        ModelTextureResource[] graph;
+        using (ZaWorkflowFileSource.BeginIndependentFreshReadScope(baseProject.Paths))
+            graph = ModelAssetGraph.Read(seeds.Select(path => (path, (string?)null)), (path, _) => graphSource.ReadBase(baseProject, path).Bytes);
+        if (vanilla) return graph;
+        using var currentScope = ZaWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
+        return graph.Select(asset => asset with { Bytes = graphSource.Read(project, asset.Id).Bytes }).ToArray();
+    }
+
+    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null, Func<string, byte[], byte[]>? transform = null)
     {
         if (project.Paths.SelectedGame != ProjectGame.ZA) throw new InvalidDataException("Select a Legends Z-A project.");
         using var scope = ZaWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
@@ -44,7 +59,7 @@ public sealed class ZaModelPreviewService
                 throw new InvalidDataException("Model sources changed while loading. Reload the model.");
             hashes[path] = hash;
             observe?.Invoke(path, bytes, null);
-            return bytes;
+            return transform?.Invoke(path, bytes) ?? bytes;
         }
         var catalog = ZaPokemonResourceCatalogParser.Read(Read(ZaDataPaths.PokemonResourceCatalog));
         var entry = catalog.Entries.FirstOrDefault(entry => entry.Species > 0 && entry.ModelPath is not null && ModelPath(entry.ModelPath) == id);

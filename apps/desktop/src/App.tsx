@@ -1,4 +1,4 @@
-import { stageModelTexture } from './features/model-viewer/modelTextureBridge';
+import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { AdvancedEditorDetails } from './components/AdvancedEditorDetails';
@@ -22249,6 +22249,13 @@ export function App({
             <Suspense fallback={<section className="panel wide-panel" role="status">{t('modelViewer.loading')}</section>}>
               <ModelViewerSection key={activeProjectId ?? 'unselected'} paths={gameDumpPaths} session={editSession}
                     disabled={isEditSessionOperationBusy} onDirtyChange={registerEditorDraftDirty}
+                    onStageAsset={async (model, change, restore) => {
+                      const response = await runEditSessionMutation(
+                        session => stageModelAsset(gameDumpPaths, model, change, session, restore),
+                        () => setEditSessionSection('modelViewer')
+                      );
+                      return response !== null;
+                    }}
                     onStage={async (model, change) => {
                       const response = await runEditSessionMutation(
                         session => stageModelTexture(gameDumpPaths, model, change, session),
@@ -36373,12 +36380,16 @@ function getPendingEditDisplayDetails(
         newValueLabel: formatNpcItemGiftPendingValue(edit.newValue),
         recordLabel: 'One NPC'
       });
-    case 'workflow.modelTextures':
+    case 'workflow.modelTextures': {
+      let kind = 'texture';
+      try { kind = (JSON.parse(edit.newValue ?? '{}') as { Kind?: string }).Kind ?? kind; } catch { /* Keep the legacy display for invalid entries. */ }
       return createPendingEditDisplayDetails(edit, {
-        editorLabel, fieldLabel: 'Texture colors', fieldLocalizationKey: 'modelViewer.texture.title',
-        newValueLabel: 'Verified color changes', newValueLocalizationKey: 'modelViewer.texture.verified',
+        editorLabel, fieldLabel: kind === 'restore' ? 'Restore Vanilla' : kind === 'material' ? 'Materials' : 'Texture colors',
+        fieldLocalizationKey: kind === 'restore' ? 'modelEditor.restore' : kind === 'material' ? 'modelEditor.materials' : 'modelViewer.texture.title',
+        newValueLabel: 'Verified model changes', newValueLocalizationKey: 'modelEditor.verified',
         recordLabel: edit.recordId?.split('/').at(-1) ?? ''
       });
+    }
     case 'workflow.trainerPools':
       return getTrainerPoolsPendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.habitatCoordinates':

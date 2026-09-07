@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import type { ProjectPaths } from '../../bridge/contracts';
 import { ProjectBridgeError } from '../../bridge/projectBridgeError';
-import type { TextureChange } from './modelTextureBridge';
+import type { AssetChange, TextureChange } from './modelTextureBridge';
 
 const infoSchema = z.object({
   adapter: z.string(), backend: z.literal('DX12'), selection: z.literal('Auto'),
@@ -19,7 +19,7 @@ export function modelError(cause: unknown): string {
   return 'KM-MODEL-UNSUPPORTED';
 }
 export type ModelBackground = { color: string; grid: boolean };
-export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = []) {
+export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = [], assets: AssetChange[] = []) {
   const viewport = useRef<HTMLDivElement>(null);
   const session = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -32,7 +32,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
   const backgroundRef = useRef(background); backgroundRef.current = background;
   const sync = useRef<() => void>(() => {});
   const pathKey = JSON.stringify(paths);
-  const textureKey = JSON.stringify(textures);
+  const textureKey = JSON.stringify({ textures, assets });
   const textureRef = useRef(textureKey); textureRef.current = textureKey;
   const loadedTextures = useRef('');
   useEffect(() => {
@@ -51,13 +51,15 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
     const bounds = () => {
       const rect = viewport.current?.getBoundingClientRect();
       const ratio = window.devicePixelRatio;
-      const unobstructed = !coveredRef.current && !document.querySelector('[role="dialog"], [role="alertdialog"], [role="listbox"], dialog[open], .sidebar-overlay-open');
+      const unobstructed = !coveredRef.current && !Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"], dialog[open], .sidebar-overlay-open'))
+        .some(element => !element.contains(viewport.current));
       let left = Math.max(0, rect?.left ?? 0), top = Math.max(0, rect?.top ?? 0);
       let right = Math.min(window.innerWidth, rect?.right ?? 0), bottom = Math.min(window.innerHeight, rect?.bottom ?? 0);
       for (let parent = viewport.current?.parentElement; parent; parent = parent.parentElement) {
         const style = getComputedStyle(parent), area = parent.getBoundingClientRect();
         if (/auto|scroll|hidden|clip/.test(style.overflowX)) { left = Math.max(left, area.left + parent.clientLeft); right = Math.min(right, area.left + parent.clientLeft + parent.clientWidth); }
         if (/auto|scroll|hidden|clip/.test(style.overflowY)) { top = Math.max(top, area.top + parent.clientTop); bottom = Math.min(bottom, area.top + parent.clientTop + parent.clientHeight); }
+        if (parent.classList.contains('model-viewer--editing')) break;
       }
       return {
         x: Math.round((rect?.x ?? 0) * ratio), y: Math.round((rect?.y ?? 0) * ratio),
@@ -134,7 +136,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
         const openingTextures = textureRef.current;
         const result = infoSchema.parse(await invoke('model_preview_open', {
           paths: JSON.parse(pathKey), id, animation, title: '3D Model Viewer', session: active,
-          textureChanges: JSON.parse(openingTextures)
+          textureChanges: JSON.parse(openingTextures).textures, assetChanges: JSON.parse(openingTextures).assets
         }));
         loadedTextures.current = openingTextures;
         if (live) { setInfo(result); lastBounds = ''; update(); }
@@ -161,7 +163,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
       if (!live || session.current !== active) return;
       try {
         await invoke('model_preview_open', { paths: JSON.parse(pathKey), id, animation,
-          title: '3D Model Viewer', session: active, textureChanges: JSON.parse(textureKey) });
+          title: '3D Model Viewer', session: active, textureChanges: JSON.parse(textureKey).textures, assetChanges: JSON.parse(textureKey).assets });
         if (live) { loadedTextures.current = textureKey; setError(null); }
       } catch (cause) { if (live) setError(modelError(cause)); }
     })();
