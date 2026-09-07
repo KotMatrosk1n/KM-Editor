@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import type { ProjectPaths } from '../../bridge/contracts';
 import { ProjectBridgeError } from '../../bridge/projectBridgeError';
+import type { TextureChange } from './modelTextureBridge';
 
 const infoSchema = z.object({
   adapter: z.string(), backend: z.literal('DX12'), selection: z.literal('Auto'),
@@ -18,7 +19,7 @@ export function modelError(cause: unknown): string {
   return 'KM-MODEL-UNSUPPORTED';
 }
 export type ModelBackground = { color: string; grid: boolean };
-export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground) {
+export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = []) {
   const viewport = useRef<HTMLDivElement>(null);
   const session = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -31,6 +32,9 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
   const backgroundRef = useRef(background); backgroundRef.current = background;
   const sync = useRef<() => void>(() => {});
   const pathKey = JSON.stringify(paths);
+  const textureKey = JSON.stringify(textures);
+  const textureRef = useRef(textureKey); textureRef.current = textureKey;
+  const loadedTextures = useRef('');
   useEffect(() => {
     setInfo(null); setError(null); setPosition(0); setPlaying(false);
     if (!id) { setLoading(false); return; }
@@ -127,9 +131,12 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
         if (!live) return;
         ready = true;
         await send();
+        const openingTextures = textureRef.current;
         const result = infoSchema.parse(await invoke('model_preview_open', {
-          paths: JSON.parse(pathKey), id, animation, title: '3D Model Viewer', session: active
+          paths: JSON.parse(pathKey), id, animation, title: '3D Model Viewer', session: active,
+          textureChanges: JSON.parse(openingTextures)
         }));
+        loadedTextures.current = openingTextures;
         if (live) { setInfo(result); lastBounds = ''; update(); }
       } catch (cause) { if (live && modelError(cause) !== 'KM-MODEL-CANCELLED') setError(modelError(cause)); }
       finally { if (live) setLoading(false); }
@@ -144,6 +151,22 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
       void invoke('model_preview_close', { session: active }).catch(() => {});
     };
   }, [pathKey, id, animation, revision]);
+  useEffect(() => {
+    const active = session.current;
+    if (!active || !info || loadedTextures.current === textureKey) return;
+    let live = true;
+    const previous = queue.current;
+    queue.current = (async () => {
+      await previous.catch(() => {});
+      if (!live || session.current !== active) return;
+      try {
+        await invoke('model_preview_open', { paths: JSON.parse(pathKey), id, animation,
+          title: '3D Model Viewer', session: active, textureChanges: JSON.parse(textureKey) });
+        if (live) { loadedTextures.current = textureKey; setError(null); }
+      } catch (cause) { if (live) setError(modelError(cause)); }
+    })();
+    return () => { live = false; };
+  }, [textureKey, info, pathKey, id, animation]);
   useEffect(() => { sync.current(); }, [covered, background.color, background.grid]);
   async function camera(action: string) { if (session.current) await invoke('model_preview_camera', { session: session.current, action }); }
   async function playback(action: string, value = 0) {

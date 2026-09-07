@@ -29,7 +29,9 @@ public sealed class ZaModelPreviewService
             .OrderBy(entry => entry.Species == 0 ? 1 : 0).ThenBy(entry => entry.Species).ThenBy(entry => entry.Form).ThenBy(entry => entry.Gender).ToArray();
     }
 
-    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null)
+    public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
+
+    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null)
     {
         if (project.Paths.SelectedGame != ProjectGame.ZA) throw new InvalidDataException("Select a Legends Z-A project.");
         using var scope = ZaWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
@@ -41,6 +43,7 @@ public sealed class ZaModelPreviewService
             if (hashes.TryGetValue(path, out var prior) && !hash.AsSpan().SequenceEqual(prior))
                 throw new InvalidDataException("Model sources changed while loading. Reload the model.");
             hashes[path] = hash;
+            observe?.Invoke(path, bytes, null);
             return bytes;
         }
         var catalog = ZaPokemonResourceCatalogParser.Read(Read(ZaDataPaths.PokemonResourceCatalog));

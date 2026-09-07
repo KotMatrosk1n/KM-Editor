@@ -23,7 +23,7 @@ function ColorValue({ label, value, onChange, numeric = false }: { label: string
     maxLength={numeric ? undefined : 7} value={draft} spellCheck={false}
     onChange={event => { setDraft(event.target.value); onChange(event.target.value); }} onBlur={() => setDraft(value)} /></label>;
 }
-export function ViewerColorPicker({ color, onChange }: { color: string; onChange: (color: string) => void }) {
+export function ViewerColorPicker({ color, onChange, id = 'model-background-color', label }: { color: string; onChange: (color: string) => void; id?: string; label?: string }) {
   const { t } = useLocalization();
   const [open, setOpen] = useState(false);
   const [hue, setHue] = useState(() => hsv(color)[0]);
@@ -56,11 +56,11 @@ export function ViewerColorPicker({ color, onChange }: { color: string; onChange
   return <div className="model-viewer__color-picker" ref={wrapper} onBlur={event => {
     if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
   }}>
-    <button ref={trigger} id="model-background-color" type="button" className="model-viewer__swatch"
-      aria-label={t('modelViewer.backgroundColor')} aria-haspopup="dialog" aria-expanded={open}
+    <button ref={trigger} id={id} type="button" className="model-viewer__swatch"
+      aria-label={label ?? t('modelViewer.backgroundColor')} aria-haspopup="dialog" aria-expanded={open}
       onClick={() => setOpen(current => !current)}><span style={{ backgroundColor: color }} /></button>
     {open ? <div ref={palette} className="model-viewer__palette" role="dialog" tabIndex={-1}
-      aria-label={t('modelViewer.backgroundColor')} onKeyDown={event => {
+      aria-label={label ?? t('modelViewer.backgroundColor')} onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); close(); }
       }}>
       <div className="model-viewer__color-plane" role="slider" tabIndex={0} aria-label={t('modelViewer.saturationBrightness')}

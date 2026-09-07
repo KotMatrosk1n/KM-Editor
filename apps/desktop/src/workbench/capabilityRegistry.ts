@@ -511,7 +511,7 @@ export const workbenchCapabilityRegistry = [
     icon: Box,
     id: 'modelViewer',
     label: '3D Model Viewer',
-    maturity: 'readOnly',
+    maturity: 'mixed',
     showInWorkflowDashboard: false,
     standalone: true
   }),

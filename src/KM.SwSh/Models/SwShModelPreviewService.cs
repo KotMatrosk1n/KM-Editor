@@ -26,7 +26,9 @@ public sealed class SwShModelPreviewService
             ? entry with { Name = labels[entry.Species].Text } : resource.Entry).ToArray();
     }
 
-    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null)
+    public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
+
+    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null)
     {
         var source = new SwShModelSource(project);
         var resource = Resources(project, source).FirstOrDefault(item => item.Entry.Id == id)
@@ -36,7 +38,9 @@ public sealed class SwShModelPreviewService
         {
             var path = dependency.StartsWith("bin/", StringComparison.Ordinal) ? dependency
                 : TrinityPreviewReader.Resolve(modelFolder + "resource", "../tex/" + dependency);
-            return source.Read(path, resource.Archive);
+            var bytes = source.Read(path, resource.Archive);
+            observe?.Invoke(path, bytes, resource.Archive);
+            return bytes;
         }
         var scene = new SwShPreviewReader(Read).Load(id);
         var warnings = scene.Rig.Warnings.ToList();

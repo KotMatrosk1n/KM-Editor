@@ -1919,6 +1919,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.ModelTextures => new KM.ZA.Models.ZaModelTextureEditSessionService().Validate(paths, session),
             ZaEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Text => textEditSessionService.Validate(paths, session),
@@ -1947,6 +1948,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.ModelTextures => new KM.ZA.Models.ZaModelTextureEditSessionService().CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1976,6 +1978,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.ModelTextures => new KM.ZA.Models.ZaModelTextureEditSessionService().ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
@@ -2356,6 +2359,7 @@ public sealed class ZaWorkflowService
         {
             [] => ZaEditSessionDomain.None,
             [ZaEditSessionSupport.PokemonDomain] => ZaEditSessionDomain.Pokemon,
+            [KM.Formats.Models.ModelTextureIntent.Domain] => ZaEditSessionDomain.ModelTextures,
             [ZaEditSessionSupport.ItemsDomain] => ZaEditSessionDomain.Items,
             [ZaEditSessionSupport.MovesDomain] => ZaEditSessionDomain.Moves,
             [ZaEditSessionSupport.TextDomain] => ZaEditSessionDomain.Text,
@@ -2401,6 +2405,7 @@ public sealed class ZaWorkflowService
         return domain switch
         {
             ZaEditSessionSupport.PokemonDomain => ZaEditSessionDomain.Pokemon,
+            KM.Formats.Models.ModelTextureIntent.Domain => ZaEditSessionDomain.ModelTextures,
             ZaEditSessionSupport.ItemsDomain => ZaEditSessionDomain.Items,
             ZaEditSessionSupport.MovesDomain => ZaEditSessionDomain.Moves,
             ZaEditSessionSupport.TextDomain => ZaEditSessionDomain.Text,
@@ -2422,7 +2427,7 @@ public sealed class ZaWorkflowService
 
     private static bool IsNormalDomain(ZaEditSessionDomain domain)
     {
-        return domain is ZaEditSessionDomain.Items
+        return domain is ZaEditSessionDomain.ModelTextures or ZaEditSessionDomain.Items
             or ZaEditSessionDomain.Pokemon
             or ZaEditSessionDomain.Moves
             or ZaEditSessionDomain.Text
@@ -2521,6 +2526,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.ModelTextures => KM.Formats.Models.ModelTextureIntent.Domain,
             ZaEditSessionDomain.Items => ZaEditSessionSupport.ItemsDomain,
             ZaEditSessionDomain.Pokemon => ZaEditSessionSupport.PokemonDomain,
             ZaEditSessionDomain.Moves => ZaEditSessionSupport.MovesDomain,
@@ -2966,6 +2972,7 @@ public sealed class ZaWorkflowService
 
     private enum ZaEditSessionDomain
     {
+        ModelTextures,
         None,
         Items,
         Pokemon,

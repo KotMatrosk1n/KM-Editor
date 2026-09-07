@@ -759,6 +759,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.QueryGameModule => DispatchQueryGameModule(requestJson),
                 KmCommandNames.ModelCatalog => DispatchModelPreview(requestJson, prepare: false),
                 KmCommandNames.ModelPrepare => DispatchModelPreview(requestJson, prepare: true),
+                KmCommandNames.ModelTextures => DispatchModelTextures(requestJson, stage: false),
+                KmCommandNames.ModelTextureStage => DispatchModelTextures(requestJson, stage: true),
                 KmCommandNames.ReadGuidedDesignCapabilities => DispatchReadGuidedDesignCapabilities(requestJson),
                 KmCommandNames.PreviewGuidedDesign => DispatchPreviewGuidedDesign(requestJson),
                 KmCommandNames.ImportGuidedDesignProposal => DispatchImportGuidedDesignProposal(requestJson),
@@ -1330,6 +1332,25 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(
             gameModuleApplicationService.Query(request.Payload),
             request.RequestId);
+    }
+
+    private string DispatchModelTextures(string requestJson, bool stage)
+    {
+        try
+        {
+            if (stage)
+            {
+                var request = DeserializeRequest<KM.Api.Models.ModelTextureStageRequest>(requestJson);
+                return SerializeSuccess(ModelPreviewBridge.StageTexture(request.Payload), request.RequestId);
+            }
+            var load = DeserializeRequest<KM.Api.Models.ModelTexturesRequest>(requestJson);
+            return SerializeSuccess(ModelPreviewBridge.Textures(load.Payload), load.RequestId);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or OverflowException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            throw new BridgeRequestException("Texture colors could not be prepared. Reload the model, check the selected color texture, and stage the edit again.",
+                exception, BridgeErrorCodes.ModelTextureEditInvalid);
+        }
     }
 
     private string DispatchModelPreview(string requestJson, bool prepare)
@@ -5913,6 +5934,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
             EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
             EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
+            EditSessionDomain.ModelTextures => new KM.SwSh.Models.SwShModelTextureEditSessionService().Validate(paths, session),
             EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             EditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
@@ -5957,6 +5979,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.ModelTextures => new KM.SwSh.Models.SwShModelTextureEditSessionService().CreateChangePlan(paths, session),
             EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
@@ -6002,6 +6025,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.ModelTextures => new KM.SwSh.Models.SwShModelTextureEditSessionService().ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
@@ -6267,6 +6291,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     {
         return domain switch
         {
+            "workflow.modelTextures" => EditSessionDomain.ModelTextures,
             "workflow.items" => EditSessionDomain.Items,
             "workflow.moves" => EditSessionDomain.Moves,
             "workflow.text" => EditSessionDomain.Text,
@@ -6306,6 +6331,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static bool IsNormalSwShDomain(EditSessionDomain domain)
     {
         return domain is
+            EditSessionDomain.ModelTextures or
             EditSessionDomain.Items or
             EditSessionDomain.Moves or
             EditSessionDomain.Text or
@@ -6339,6 +6365,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     {
         return domain switch
         {
+            EditSessionDomain.ModelTextures => "workflow.modelTextures",
             EditSessionDomain.Items => "workflow.items",
             EditSessionDomain.Moves => "workflow.moves",
             EditSessionDomain.Text => "workflow.text",
@@ -6420,6 +6447,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return domains switch
         {
             [] => EditSessionDomain.None,
+            ["workflow.modelTextures"] => EditSessionDomain.ModelTextures,
             ["workflow.items"] => EditSessionDomain.Items,
             ["workflow.moves"] => EditSessionDomain.Moves,
             ["workflow.text"] => EditSessionDomain.Text,
@@ -8093,6 +8121,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.QueryGameModule or
             KmCommandNames.ModelCatalog or
             KmCommandNames.ModelPrepare or
+            KmCommandNames.ModelTextures or
+            KmCommandNames.ModelTextureStage or
             KmCommandNames.ReadGuidedDesignCapabilities or
             KmCommandNames.PreviewGuidedDesign or
             KmCommandNames.ImportGuidedDesignProposal or
@@ -8465,6 +8495,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
 
     private enum EditSessionDomain
     {
+        ModelTextures,
         None,
         Items,
         Pokemon,

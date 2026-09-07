@@ -53,6 +53,17 @@ pub struct Renderer {
     pan: Vec3,
 }
 impl Renderer {
+    pub fn retain_view(&mut self, previous: &Self) {
+        self.yaw = previous.yaw;
+        self.pitch = previous.pitch;
+        self.distance = previous.distance;
+        self.pan = previous.pan;
+        self.position = previous.position.min(self.duration());
+        self.playing = previous.playing;
+        self.looping = previous.looping;
+        self.speed = previous.speed;
+    }
+
     pub async fn new(window: Arc<Window>, scene: Scene) -> Result<Self, String> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::DX12,

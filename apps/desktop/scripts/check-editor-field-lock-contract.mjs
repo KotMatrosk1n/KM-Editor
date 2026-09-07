@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  284,
+  286,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  93,
+  94,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -118,6 +118,10 @@ const knownFieldComponents = new Set([
  * detected value control exactly; stale permits fail the gate.
  */
 const permittedTransientFieldLocks = new Map([
+  [
+    'src/features/model-viewer/ModelTextureEditor.tsx#input:id="model-texture-tolerance"[disabled]',
+    'The texture encoder owns the exact color rule snapshot while staging. The enclosing palette fieldset and texture selector freeze the same snapshot until verification finishes.'
+  ],
   [
     'src/features/gameplay-settings/InGameSettingsPackagePanel.tsx#input:id="in-game-settings-review-confirmation"[disabled]',
     'The reviewed-package acknowledgement is owned by the exact apply transaction once the write begins.'

@@ -17,6 +17,7 @@ export const kmErrorCodeSchema = z
 
 export const projectBridgeErrorCodes = {
   modelUnsupported: "KM-MODEL-UNSUPPORTED",
+  modelTextureEditInvalid: "KM-MODEL-TEXTURE-EDIT-INVALID",
   modelPartial: "KM-MODEL-PARTIAL",
   modelGpuUnavailable: "KM-MODEL-GPU-UNAVAILABLE",
   modelCancelled: "KM-MODEL-CANCELLED",

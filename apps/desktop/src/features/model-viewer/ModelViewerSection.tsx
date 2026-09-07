@@ -1,15 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { Box } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { kmCommandNames, projectPathsSchema, type ProjectPaths } from '../../bridge/contracts';
+import { kmCommandNames, projectPathsSchema, type EditSession, type ProjectPaths } from '../../bridge/contracts';
 import { sendProjectBridgeRequest } from '../../bridge/projectBridgeRequest';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import { modelError, useModelViewport, type ModelBackground } from './useModelViewport';
 import { ViewerColorPicker } from './ViewerColorPicker';
+import { ModelTextureEditor } from './ModelTextureEditor';
+import type { TextureChange } from './modelTextureBridge';
 import './ModelViewerSection.css';
 
 const catalogSchema = z.array(z.object({
@@ -23,7 +25,11 @@ function readBackground(): ModelBackground {
   try { return backgroundSchema.parse(JSON.parse(localStorage.getItem(backgroundKey) ?? 'null')); }
   catch { return { color: '#343b44', grid: false }; }
 }
-export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
+export default function ModelViewerSection({ paths, session, disabled, onStage, onDirtyChange }: {
+  paths: ProjectPaths; session: EditSession | null; disabled: boolean;
+  onStage: (model: string, change: TextureChange) => Promise<boolean>;
+  onDirtyChange: (section: 'modelViewer', dirty: boolean) => void;
+}) {
   const { t } = useLocalization();
   const [catalog, setCatalog] = useState<Entry[]>([]);
   const [selected, setSelected] = useState('');
@@ -36,12 +42,15 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
   const [loop, setLoop] = useState(false);
   const [speed, setSpeed] = useState('1');
   const [background, setBackground] = useState(readBackground);
+  const [textureChanges, setTextureChanges] = useState<TextureChange[]>([]);
+  const [textureDirty, setTextureDirty] = useState(false);
+  const dirtyChange = useCallback((dirty: boolean) => { setTextureDirty(dirty); onDirtyChange('modelViewer', dirty); }, [onDirtyChange]);
   useEffect(() => {
     try { localStorage.setItem(backgroundKey, JSON.stringify(background)); } catch { /* Session controls remain usable when storage is unavailable. */ }
   }, [background]);
   const pathKey = JSON.stringify(paths);
   const supported = ['sword', 'shield', 'scarlet', 'violet', 'za'].some(game => game === paths.selectedGame);
-  const viewer = useModelViewport(paths, selected, animation, revision, false, background);
+  const viewer = useModelViewport(paths, selected, animation, revision, false, background, textureChanges);
   const error = catalogError ?? viewer.error;
   useEffect(() => {
     setCatalog([]); setSelected(''); setAnimation(null); setCatalogError(null); setLoading(false);
@@ -77,7 +86,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
   const message = error === 'KM-MODEL-GPU-UNAVAILABLE' ? 'modelViewer.gpuError' : error === 'KM-MODEL-BUSY' ? 'modelViewer.busyError' : 'modelViewer.loadError';
   usePublishCommonEditorDiagnostics(error ? [{ code: error, domain: 'workflow.modelViewer', message: t(message), severity: 'error' }] :
     (viewer.info?.warnings ?? []).map(warning => ({ code: 'KM-MODEL-PARTIAL', domain: 'workflow.modelViewer', message: t(`modelViewer.warning.${warning}`), severity: 'warning' })));
-  const select = (id: string) => { setSelected(id); setAnimation(null); };
+  const select = (id: string) => { setTextureChanges([]); setSelected(id); setAnimation(null); };
   return <section className="panel wide-panel model-viewer" aria-labelledby="model-viewer-title">
     <header className="model-viewer__header"><Box aria-hidden="true" size={22} />
       <div><h2 id="model-viewer-title">{t('modelViewer.title')}</h2><p>{t('modelViewer.description')}</p></div>
@@ -87,7 +96,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
       <div className="model-viewer__workspace">
         <aside className="model-viewer__browser" aria-label={t('modelViewer.models', { count: catalog.length })}>
           <div className="model-viewer__toolbar"><strong>{t('modelViewer.models', { count: catalog.length })}</strong>
-            <button type="button" onClick={() => setRevision(value => value + 1)} disabled={loading}>{t('modelViewer.reload')}</button>
+            <button type="button" onClick={() => { setTextureChanges([]); setRevision(value => value + 1); }} disabled={loading || textureDirty || disabled}>{t('modelViewer.reload')}</button>
           </div>
           <label htmlFor="model-category">{t('modelViewer.category')}</label>
           <SearchableOptionInput id="model-category" ariaLabel={t('modelViewer.category')} disabled={false} isFiniteCatalog localizeOptions={false}
@@ -99,7 +108,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
             {loading ? <p role="status">{t('modelViewer.loading')}</p> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
               groups.map(group => <details key={group[0].id} open={group.some(item => item.id === selected) || undefined}>
                 <summary data-localization-ignore="true">{group[0].species > 0 ? `#${group[0].species} ` : ''}{group[0].name} <span>({group.length})</span></summary>
-                {group.map(item => <button key={item.id} type="button" aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>
+                {group.map(item => <button key={item.id} type="button" disabled={textureDirty || disabled} aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>
                   {item.species > 0 ? t('modelViewer.variant', { form: item.form, gender: item.gender }) : item.name}
                   {item.shiny ? ` · ${t('modelViewer.shiny')}` : ''}
                 </button>)}
@@ -112,7 +121,7 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
             <strong data-localization-ignore="true">{entry?.name ?? t('modelViewer.selectModel')}</strong>
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('reset')}>{t('modelViewer.resetCamera')}</button>
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('frame')}>{t('modelViewer.frame')}</button>
-            {viewer.loading ? <button type="button" onClick={() => setSelected('')}>{t('modelViewer.cancel')}</button> : null}
+            {viewer.loading ? <button type="button" disabled={textureDirty} onClick={() => select('')}>{t('modelViewer.cancel')}</button> : null}
           </div>
           <div className="model-viewer__background">
             <label htmlFor="model-background-style">{t('modelViewer.backgroundStyle')}</label>
@@ -148,6 +157,8 @@ export default function ModelViewerSection({ paths }: { paths: ProjectPaths }) {
             <input id="model-seek" type="range" min="0" max={viewer.info.duration || 1} step="0.01" value={viewer.position} disabled={!viewer.info.clip} onChange={event => void viewer.playback('seek', Number(event.target.value))} />
             {viewer.info.warnings.map(warning => <p key={warning} role="status">{t(`modelViewer.warning.${warning}`)}</p>)}
           </div> : null}
+          {selected ? <ModelTextureEditor key={selected} paths={paths} model={selected} session={session} disabled={disabled}
+            onPreview={setTextureChanges} onStage={onStage} onDirtyChange={dirtyChange} /> : null}
         </div>
       </div>}
     {error ? <p className="model-viewer__error" role="alert">{t(message)} <code>{error}</code></p> : null}

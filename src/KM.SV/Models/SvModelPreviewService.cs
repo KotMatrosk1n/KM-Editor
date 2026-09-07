@@ -7,12 +7,12 @@ using System.Security.Cryptography;
 
 namespace KM.SV.Models;
 
-public sealed record SvModelCatalogEntry(string Id, int Species, int Form, int Gender, string Name, string Category = "pokemon");
+public sealed record SvModelCatalogEntry(string Id, int Species, int Form, int Gender, string Name, string Category = "pokemon", bool Shiny = false);
 public sealed class SvModelPreviewService
 {
     private const string CatalogPath = "pokemon/catalog/catalog/poke_resource_table.trpmcatalog";
     private readonly SvWorkflowFileSource source = new(bypassReusableBaseCache: true,
-        maximumReadBytes: 32 * 1024 * 1024, maximumReadCount: 512, maximumAggregateReadBytes: 128L * 1024 * 1024);
+        maximumReadBytes: 32 * 1024 * 1024, maximumReadCount: 8192, maximumAggregateReadBytes: 128L * 1024 * 1024);
 
     public IReadOnlyList<SvModelCatalogEntry> Catalog(OpenedProject project)
     {
@@ -36,7 +36,16 @@ public sealed class SvModelPreviewService
                 !path.EndsWith(".trmdl", StringComparison.Ordinal) ||
                 TrinityPreviewReader.Resolve("catalog", path) != path)
                 throw new InvalidDataException("Model catalog path is unsupported.");
-            if (species != 0 && seen.Add(path)) results.Add(new(path, species, form, gender, labels.Pokemon(species)));
+            if (species != 0 && seen.Add(path))
+            {
+                results.Add(new(path, species, form, gender, labels.Pokemon(species)));
+                if (data.Text(entry, 2) is { Length: > 0 } materialTable)
+                {
+                    var tablePath = TrinityPreviewReader.Resolve("pokemon/data/catalog", materialTable);
+                    if (source.Exists(project, tablePath) && PreviewMaterialVariant.Shiny(new(source.Read(project, tablePath).Bytes), tablePath) is not null)
+                        results.Add(new(path + "#shiny", species, form, gender, labels.Pokemon(species), Shiny: true));
+                }
+            }
         }
         if (project.Paths.BaseRomFsPath is { } root)
         {
@@ -48,10 +57,14 @@ public sealed class SvModelPreviewService
         return results.OrderBy(x => x.Species == 0 ? 1 : 0).ThenBy(x => x.Species).ThenBy(x => x.Form).ThenBy(x => x.Gender).ToArray();
     }
 
-    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null)
+    public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
+
+    public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null)
     {
         using var scope = SvWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
         if (!Catalog(project).Any(x => x.Id == id)) throw new InvalidDataException("Select a model from the current catalog.");
+        var shiny = id.EndsWith("#shiny", StringComparison.Ordinal);
+        if (shiny) id = id[..^6];
         var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         byte[] Read(string path)
         {
@@ -60,9 +73,18 @@ public sealed class SvModelPreviewService
             if (hashes.TryGetValue(path, out var previous) && !hash.AsSpan().SequenceEqual(previous))
                 throw new InvalidDataException("Model sources changed while loading. Reload the model.");
             hashes[path] = hash;
+            observe?.Invoke(path, bytes, null);
             return bytes;
         }
-        var scene = new TrinityPreviewReader(Read).Load(id);
+        PreviewMaterialVariant? variant = null;
+        if (shiny)
+        {
+            var catalog = new ModelBuffer(Read(CatalogPath));
+            var entry = catalog.Tables(catalog.Root, 1, 8192).First(e => catalog.Text(e, 1) is { } relative && TrinityPreviewReader.Resolve("pokemon/data/catalog", relative) == id);
+            var tablePath = TrinityPreviewReader.Resolve("pokemon/data/catalog", catalog.Text(entry, 2)!);
+            variant = PreviewMaterialVariant.Shiny(new(Read(tablePath)), tablePath) ?? throw new InvalidDataException("Shiny materials are unavailable.");
+        }
+        var scene = new TrinityPreviewReader(Read).Load(id, variant);
         var warnings = scene.Rig.Warnings.ToList();
         PreviewClipReference[] clips;
         try { clips = Clips(project, id, Read); }
