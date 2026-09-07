@@ -72,6 +72,8 @@ impl Scene {
             let width = r.count(4096)? as u32;
             let height = r.count(4096)? as u32;
             let (format, block) = match r.u32()? {
+                0x0b01 => (wgpu::TextureFormat::Rgba8Unorm, 4),
+                0x0b06 => (wgpu::TextureFormat::Rgba8UnormSrgb, 4),
                 0x1a01 => (wgpu::TextureFormat::Bc1RgbaUnorm, 8),
                 0x1a06 => (wgpu::TextureFormat::Bc1RgbaUnormSrgb, 8),
                 0x1b01 => (wgpu::TextureFormat::Bc2RgbaUnorm, 16),
@@ -86,9 +88,12 @@ impl Scene {
             };
             let count = r.count(16 * 1024 * 1024)?;
             texture_bytes += count;
+            let (block_width, block_height) = format.block_dimensions();
             if width == 0
                 || height == 0
-                || count != (width.div_ceil(4) * height.div_ceil(4) * block) as usize
+                || count
+                    != (width.div_ceil(block_width) * height.div_ceil(block_height) * block)
+                        as usize
                 || texture_bytes > 48 * 1024 * 1024
             {
                 return Err("KM-MODEL-UNSUPPORTED".into());
