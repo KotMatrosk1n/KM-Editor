@@ -595,6 +595,7 @@ import {
   WorkbenchSection as WorkbenchHomeSection,
   type WorkbenchToolId
 } from './features/workbench/WorkbenchSection';
+import { ModelResolutionSettings } from './features/model-viewer/ModelResolutionSettings';
 import { AnalysisLoadingSettings } from './features/workbench/AnalysisLoadingSettings';
 import { AnalysisPreparationPanel } from './features/workbench/AnalysisPreparationPanel';
 import {
@@ -35949,7 +35950,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.shinyRate': 'Shiny Rate',
     'workflow.items': 'Items',
     'workflow.ivScreen': 'IV Screen',
-    'workflow.modelTextures': '3D Model Viewer',
+    'workflow.modelTextures': '3D Model Editor',
     'workflow.moves': 'Moves',
     'workflow.placement': 'Placement',
     'workflow.pokemon': 'Pokemon',
@@ -58973,6 +58974,7 @@ function SettingsSection({
             </button>
           </div>
         </section> : null}
+          <ModelResolutionSettings />
           {analysisLoadingSettings}
         </div>
       ) : null}

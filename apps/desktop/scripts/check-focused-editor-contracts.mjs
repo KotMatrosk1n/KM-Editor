@@ -221,6 +221,6 @@ assert.doesNotMatch(
 );
 assert.match(
   toolsGroup,
-  /sectionIds: \['fashionCatalog'/,
+  /sectionIds: \[[^\]]*'fashionCatalog'/,
   'Fashion Catalog must be listed in Tools while retaining its existing route identity.'
 );

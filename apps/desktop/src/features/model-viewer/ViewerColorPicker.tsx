@@ -3,13 +3,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocalization } from '../../localization';
 
 const savedColorsKey = 'km-editor.model-viewer.saved-colors';
-const starterColors = ['#f43f5e', '#f97316', '#facc15', '#4ade80', '#2dd4bf', '#3b82f6', '#6366f1', '#ec4899', '#fb7185', '#d946ef', '#8b5cf6', '#0ea5e9', '#10b981', '#84cc16'];
 function readSavedColors(): string[] {
   try {
     const colors: unknown = JSON.parse(localStorage.getItem(savedColorsKey) ?? 'null');
     return Array.isArray(colors) && colors.every(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))
-      ? [...new Set(colors.map(color => color.toLowerCase()))].slice(0, 28) : starterColors;
-  } catch { return starterColors; }
+      ? [...new Set(colors.map(color => color.toLowerCase()))].slice(0, 28) : [];
+  } catch { return []; }
 }
 
 function hsv(color: string): [number, number, number] {

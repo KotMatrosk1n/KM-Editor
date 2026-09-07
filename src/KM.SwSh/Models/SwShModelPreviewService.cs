@@ -57,7 +57,7 @@ public sealed class SwShModelPreviewService
             observe?.Invoke(path, bytes, resource.Archive);
             return transform?.Invoke(path, bytes) ?? bytes;
         }
-        var scene = new SwShPreviewReader(Read).Load(id);
+        var scene = ModelPreviewCache.Load("SwSh", id, null, Read, read => new SwShPreviewReader(read).Load(id));
         var warnings = scene.Rig.Warnings.ToList();
         var clips = new Dictionary<string, PreviewClipReference>(StringComparer.Ordinal);
         var clipArchives = new Dictionary<string, string?>(StringComparer.Ordinal);

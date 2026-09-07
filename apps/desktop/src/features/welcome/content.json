@@ -594,22 +594,22 @@
     {
       "id": "model-viewer-2-6-0",
       "title": {
-        "en": "3D Model Viewer",
-        "de": "3D-Modellbetrachter",
-        "es": "Visor de modelos 3D",
-        "fr": "Visionneuse de modèles 3D",
-        "ru": "Просмотр 3D-моделей",
-        "uk": "Перегляд 3D-моделей",
-        "zh": "3D 模型查看器"
+        "en": "3D Model Editor",
+        "de": "3D-Modelleditor",
+        "es": "Editor de modelos 3D",
+        "fr": "Éditeur de modèles 3D",
+        "ru": "Редактор 3D-моделей",
+        "uk": "Редактор 3D-моделей",
+        "zh": "3D 模型编辑器"
       },
       "body": {
-        "en": "Check out the new 3D Model Viewer for Scarlet and Violet!",
-        "de": "Entdecke den neuen 3D-Modellbetrachter für Karmesin und Purpur!",
-        "es": "¡Descubre el nuevo visor de modelos 3D para Escarlata y Púrpura!",
-        "fr": "Découvrez la nouvelle visionneuse de modèles 3D pour Écarlate et Violet !",
-        "ru": "Попробуйте новый просмотрщик 3D-моделей для Scarlet и Violet!",
-        "uk": "Спробуйте новий переглядач 3D-моделей для Scarlet і Violet!",
-        "zh": "快来体验朱和紫的全新 3D 模型查看器！"
+        "en": "Find the 3D Model Editor first under Tools for all supported games.",
+        "de": "Der 3D-Modelleditor steht für alle unterstützten Spiele an erster Stelle unter Werkzeuge.",
+        "es": "El editor de modelos 3D aparece primero en Herramientas para todos los juegos compatibles.",
+        "fr": "L’éditeur de modèles 3D est le premier outil pour tous les jeux pris en charge.",
+        "ru": "Редактор 3D-моделей стоит первым в разделе «Инструменты» для всех поддерживаемых игр.",
+        "uk": "Редактор 3D-моделей стоїть першим у розділі «Інструменти» для всіх підтримуваних ігор.",
+        "zh": "所有受支持游戏的工具列表均将 3D 模型编辑器列为第一项。"
       },
       "audience": [
         "all"

@@ -6,6 +6,8 @@ mod background;
 #[cfg(windows)]
 mod gpu;
 #[cfg(windows)]
+mod gpu_assets;
+#[cfg(windows)]
 mod scene;
 #[cfg(windows)]
 mod window;
@@ -36,6 +38,11 @@ pub struct Viewport {
     pub background: [u8; 3],
     #[serde(default)]
     pub grid: bool,
+    #[serde(default = "default_light")]
+    pub light: [f32; 4],
+}
+fn default_light() -> [f32; 4] {
+    [-34.0, 48.0, 4.0, 1.0]
 }
 fn default_background() -> [u8; 3] {
     [52, 59, 68]
@@ -60,6 +67,7 @@ pub fn model_preview_viewport(
         || viewport.y.unsigned_abs() > 32768
         || viewport.width > 8192
         || viewport.height > 8192
+        || !valid_light(viewport.light)
         || viewport.clip.is_some_and(|clip| {
             clip.x > 8192 || clip.y > 8192 || clip.width > 8192 || clip.height > 8192
         })
@@ -72,6 +80,13 @@ pub fn model_preview_viewport(
         let _ = proxy.send_event(window::Event::Viewport { session, viewport });
     }
     Ok(())
+}
+fn valid_light(light: [f32; 4]) -> bool {
+    light.iter().all(|v| v.is_finite())
+        && (-180.0..=180.0).contains(&light[0])
+        && (-90.0..=90.0).contains(&light[1])
+        && (2.0..=10.0).contains(&light[2])
+        && (0.0..=4.0).contains(&light[3])
 }
 #[tauri::command]
 pub fn model_preview_camera(
@@ -188,6 +203,7 @@ pub async fn model_preview_open(
     animation: Option<String>,
     texture_changes: Option<serde_json::Value>,
     asset_changes: Option<serde_json::Value>,
+    resolution: Option<u32>,
 ) -> Result<PreviewInfo, String> {
     #[cfg(not(windows))]
     {
@@ -203,11 +219,15 @@ pub async fn model_preview_open(
             animation,
             texture_changes,
             asset_changes,
+            resolution,
         );
         Err("KM-MODEL-GPU-UNAVAILABLE".into())
     }
     #[cfg(windows)]
     {
+        if !matches!(resolution.unwrap_or(1), 1 | 2 | 4) {
+            return Err("KM-MODEL-UNSUPPORTED".into());
+        }
         if !state.current(&session) {
             return Err("KM-MODEL-CANCELLED".into());
         }
@@ -245,7 +265,7 @@ pub async fn model_preview_open(
             .map_err(|_| "KM-MODEL-UNSUPPORTED")?;
         let request =
             serde_json::json!({ "command": "models.prepare", "requestId": token, "payload": {
-            "paths": paths, "id": id, "transferId": token, "animation": animation, "textureChanges": texture_changes, "assetChanges": asset_changes
+            "paths": paths, "id": id, "transferId": token, "animation": animation, "textureChanges": texture_changes, "assetChanges": asset_changes, "resolution": resolution.unwrap_or(1)
         } })
             .to_string();
         let response = super::project_bridge(app.clone(), bridge, trace, request).await?;

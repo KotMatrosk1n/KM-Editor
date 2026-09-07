@@ -510,7 +510,7 @@ export const workbenchCapabilityRegistry = [
     games: allGames,
     icon: Box,
     id: 'modelViewer',
-    label: '3D Model Viewer',
+    label: '3D Model Editor',
     maturity: 'mixed',
     showInWorkflowDashboard: false,
     standalone: true

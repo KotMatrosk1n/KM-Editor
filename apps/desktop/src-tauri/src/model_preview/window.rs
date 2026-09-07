@@ -192,6 +192,12 @@ impl ApplicationHandler<Event> for Host {
                     self.close(None);
                 }
                 let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if replacing {
+                        if let Some(mut renderer) = self.renderer.take() {
+                            renderer.replace(scene);
+                            return Ok(renderer);
+                        }
+                    }
                     let parent = winit::raw_window_handle::RawWindowHandle::Win32(
                         winit::raw_window_handle::Win32WindowHandle::new(
                             std::num::NonZeroIsize::new(owner).ok_or("KM-MODEL-GPU-UNAVAILABLE")?,
