@@ -166,6 +166,7 @@ export const pokemonLegendsZAAdvancedEditorDomains = new Set([
 ]);
 
 export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
+  'modelViewer',
   'pokemon',
   'trainers',
   'moves',
@@ -187,6 +188,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
 ]);
 
 export const sharedStagedEditorDomains = new Set([
+  'workflow.modelTextures',
   'workflow.pokemon',
   'workflow.trainers',
   'workflow.moves',

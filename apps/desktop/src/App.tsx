@@ -1,3 +1,4 @@
+import { stageModelTexture } from './features/model-viewer/modelTextureBridge';
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { AdvancedEditorDetails } from './components/AdvancedEditorDetails';
@@ -22246,7 +22247,15 @@ export function App({
           ) : null}
           {activeSection === 'modelViewer' ? (
             <Suspense fallback={<section className="panel wide-panel" role="status">{t('modelViewer.loading')}</section>}>
-              <ModelViewerSection key={activeProjectId ?? 'unselected'} paths={gameDumpPaths} />
+              <ModelViewerSection key={activeProjectId ?? 'unselected'} paths={gameDumpPaths} session={editSession}
+                    disabled={isEditSessionOperationBusy} onDirtyChange={registerEditorDraftDirty}
+                    onStage={async (model, change) => {
+                      const response = await runEditSessionMutation(
+                        session => stageModelTexture(gameDumpPaths, model, change, session),
+                        () => setEditSessionSection('modelViewer')
+                      );
+                      return response !== null;
+                    }} />
             </Suspense>
           ) : null}
           {activeSection === 'changes' ? (
@@ -35933,6 +35942,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.shinyRate': 'Shiny Rate',
     'workflow.items': 'Items',
     'workflow.ivScreen': 'IV Screen',
+    'workflow.modelTextures': '3D Model Viewer',
     'workflow.moves': 'Moves',
     'workflow.placement': 'Placement',
     'workflow.pokemon': 'Pokemon',
@@ -35988,6 +35998,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.hyperspaceBypass': 'hyperspaceBypass',
     'workflow.items': 'items',
     'workflow.ivScreen': 'ivScreen',
+    'workflow.modelTextures': 'modelViewer',
     'workflow.moves': 'moves',
     'workflow.npcItemGift': 'npcItemGift',
     'workflow.placement': 'placement',
@@ -36361,6 +36372,12 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'gifts' ? 'NPC gifts' : undefined,
         newValueLabel: formatNpcItemGiftPendingValue(edit.newValue),
         recordLabel: 'One NPC'
+      });
+    case 'workflow.modelTextures':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, fieldLabel: 'Texture colors', fieldLocalizationKey: 'modelViewer.texture.title',
+        newValueLabel: 'Verified color changes', newValueLocalizationKey: 'modelViewer.texture.verified',
+        recordLabel: edit.recordId?.split('/').at(-1) ?? ''
       });
     case 'workflow.trainerPools':
       return getTrainerPoolsPendingEditDisplayDetails(edit, context, editorLabel);

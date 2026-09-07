@@ -187,7 +187,10 @@ impl ApplicationHandler<Event> for Host {
                     let _ = result.send(Err("KM-MODEL-CANCELLED".into()));
                     return;
                 }
-                self.close(None);
+                let replacing = self.session.as_deref() == Some(&session);
+                if !replacing {
+                    self.close(None);
+                }
                 let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let parent = winit::raw_window_handle::RawWindowHandle::Win32(
                         winit::raw_window_handle::Win32WindowHandle::new(
@@ -217,6 +220,11 @@ impl ApplicationHandler<Event> for Host {
                 .unwrap_or_else(|_| Err("KM-MODEL-GPU-UNAVAILABLE".into()));
                 match loaded {
                     Ok(mut renderer) => {
+                        if replacing {
+                            if let Some(previous) = &self.renderer {
+                                renderer.retain_view(previous);
+                            }
+                        }
                         if self.generation.load(Ordering::Acquire) != generation {
                             let _ = result.send(Err("KM-MODEL-CANCELLED".into()));
                             return;

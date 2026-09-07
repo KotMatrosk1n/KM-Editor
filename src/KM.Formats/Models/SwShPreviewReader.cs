@@ -95,7 +95,7 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                 if (!textureIds.TryGetValue(textureName, out var loaded))
                 {
                     if (textures.Count >= 32) throw new InvalidDataException("Preview texture limit exceeded.");
-                    try { var decoded = PreviewTexture.Read(read(textureName)); loaded = textures.Count; textures.Add(decoded); }
+                    try { var decoded = PreviewTexture.Read(read(textureName)) with { SourcePath = textureName }; loaded = textures.Count; textures.Add(decoded); }
                     catch (IOException) { loaded = -1; warnings.Add("textureUnavailable"); }
                     textureIds.Add(textureName, loaded);
                 }

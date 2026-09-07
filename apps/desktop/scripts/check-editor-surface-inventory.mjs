@@ -175,6 +175,7 @@ const editorSurfaceInventory = {
  */
 const embeddedEditableSurfaceInventory = {
   modelViewerPalette: ['src/features/model-viewer/ViewerColorPicker.tsx', 'ViewerColorPicker', 'utility-input'],
+  modelTextureEditor: ['src/features/model-viewer/ModelTextureEditor.tsx', 'ModelTextureEditor', 'raw-local-draft'],
   balanceLab: ['src/features/balance-lab/BalanceLabSection.tsx', 'BalanceLabSection', 'utility-input'],
   balanceLabCharts: ['src/features/balance-lab/BalanceLabCharts.tsx', 'BalanceLabChart', 'utility-input'],
   dynamaxAdventureSeedPlanner: ['src/features/dynamax-adventures/DynamaxAdventureSeedPlanner.tsx', 'DynamaxAdventureSeedPlanner', 'raw-local-draft'],
@@ -224,6 +225,7 @@ const allowedPolicies = new Set([
  * cannot be added under a generic policy without choosing its state contract.
  */
 const editorDraftContractInventory = {
+  modelTextureEditor: 'keyed-exact-submit',
   items: 'ordinary-session-local',
   pokemon: 'ordinary-session-local',
   moves: 'ordinary-session-local',

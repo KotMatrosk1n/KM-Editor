@@ -6,6 +6,7 @@ namespace KM.Formats.Models;
 
 public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] Blocks)
 {
+    public string? SourcePath { get; init; }
     public static PreviewTexture Read(byte[] bytes)
     {
         var data = new ModelBuffer(bytes);

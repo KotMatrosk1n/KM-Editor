@@ -33,3 +33,12 @@
 .model-viewer__animation input[type="range"] { width: 100%; }
 .model-viewer__toolbar .searchable-option-input { flex: 0 1 7rem; width: 7rem; }
 @media (max-width: 950px) { .model-viewer__workspace { grid-template-columns: 1fr; } .model-viewer__catalog { max-height: 15rem; } }
+/* Texture changes use the existing model workspace and palette controls. */
+.model-textures { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color, #666); }
+.model-textures__colors { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; align-items: flex-start; }
+.model-textures__colors canvas { width: min(256px, 100%); height: auto; image-rendering: pixelated; cursor: crosshair; background: repeating-conic-gradient(#555 0% 25%, #333 0% 50%) 0 0 / 16px 16px; }
+.model-textures__colors fieldset { flex: 1; min-width: 200px; border: 0; padding: 0; margin: 0; }
+.model-textures__swatches, .model-textures__pickers { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.model-textures__swatches button { width: 2rem; height: 2rem; padding: 0; border: 1px solid var(--color-border); }
+.model-textures__swatches span { display: block; width: 100%; height: 100%; border-radius: inherit; }
+.model-textures select { max-width: 100%; }

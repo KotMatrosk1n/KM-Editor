@@ -1624,6 +1624,7 @@ public sealed class SvWorkflowService
     {
         return domain switch
         {
+            SvEditSessionDomain.ModelTextures => new KM.SV.Models.SvModelTextureEditSessionService().Validate(paths, session),
             SvEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Text => textEditSessionService.Validate(paths, session),
@@ -1654,6 +1655,7 @@ public sealed class SvWorkflowService
     {
         return domain switch
         {
+            SvEditSessionDomain.ModelTextures => new KM.SV.Models.SvModelTextureEditSessionService().CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1685,6 +1687,7 @@ public sealed class SvWorkflowService
     {
         return domain switch
         {
+            SvEditSessionDomain.ModelTextures => new KM.SV.Models.SvModelTextureEditSessionService().ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -2054,6 +2057,7 @@ public sealed class SvWorkflowService
         return domains switch
         {
             [] => SvEditSessionDomain.None,
+            [KM.Formats.Models.ModelTextureIntent.Domain] => SvEditSessionDomain.ModelTextures,
             [SvEditSessionSupport.ItemsDomain] => SvEditSessionDomain.Items,
             [SvEditSessionSupport.MovesDomain] => SvEditSessionDomain.Moves,
             [SvEditSessionSupport.TextDomain] => SvEditSessionDomain.Text,
@@ -2108,6 +2112,7 @@ public sealed class SvWorkflowService
     {
         return domain switch
         {
+            KM.Formats.Models.ModelTextureIntent.Domain => SvEditSessionDomain.ModelTextures,
             SvEditSessionSupport.ItemsDomain => SvEditSessionDomain.Items,
             SvEditSessionSupport.MovesDomain => SvEditSessionDomain.Moves,
             SvEditSessionSupport.TextDomain => SvEditSessionDomain.Text,
@@ -2133,6 +2138,7 @@ public sealed class SvWorkflowService
     private static bool IsNormalDomain(SvEditSessionDomain domain)
     {
         return domain is
+            SvEditSessionDomain.ModelTextures or
             SvEditSessionDomain.Items or
             SvEditSessionDomain.Moves or
             SvEditSessionDomain.Text or
@@ -2153,6 +2159,7 @@ public sealed class SvWorkflowService
     {
         return domain switch
         {
+            SvEditSessionDomain.ModelTextures => new OwnershipOwnerId("workflow.sv.model-textures"),
             SvEditSessionDomain.Text => new OwnershipOwnerId("workflow.sv.text"),
             SvEditSessionDomain.TmMachineControls => new OwnershipOwnerId("workflow.sv.tm-machine-controls"),
             SvEditSessionDomain.HabitatCoordinates => new OwnershipOwnerId("workflow.sv.habitat-coordinates"),
@@ -2233,6 +2240,7 @@ public sealed class SvWorkflowService
     {
         return domain switch
         {
+            SvEditSessionDomain.ModelTextures => KM.Formats.Models.ModelTextureIntent.Domain,
             SvEditSessionDomain.Items => SvEditSessionSupport.ItemsDomain,
             SvEditSessionDomain.Moves => SvEditSessionSupport.MovesDomain,
             SvEditSessionDomain.Text => SvEditSessionSupport.TextDomain,
@@ -2399,6 +2407,7 @@ public sealed class SvWorkflowService
 
     private enum SvEditSessionDomain
     {
+        ModelTextures,
         None,
         Items,
         Moves,

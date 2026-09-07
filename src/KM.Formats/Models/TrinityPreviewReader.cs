@@ -30,13 +30,14 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
         return false;
     }
 
-    public PreviewScene Load(string modelPath)
+    public PreviewScene Load(string modelPath, PreviewMaterialVariant? variant = null)
     {
         var model = Metadata(modelPath);
         var meshes = model.Tables(model.Root, 1, 16);
         if (meshes.Length == 0) throw new InvalidDataException("Model has no supported mesh.");
         var (materialStart, materialCount) = model.Vector(model.Root, 3, 4, 16);
-        for (var i = 0; i < materialCount; i++) ReadMaterials(Resolve(modelPath, model.StringAt(materialStart + i * 4)));
+        if (variant is not null) foreach (var path in variant.Materials) ReadMaterials(path);
+        else for (var i = 0; i < materialCount; i++) ReadMaterials(Resolve(modelPath, model.StringAt(materialStart + i * 4)));
         var skeleton = model.Table(model.Root, 2);
         if (skeleton != 0 && model.Text(skeleton, 0) is { } skeletonName)
             bones = PreviewRigReader.Skeleton(Metadata(Resolve(modelPath, skeletonName)));
@@ -59,6 +60,7 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
                 primitives.AddRange(ReadShape(meshData, shapes[i], buffer, groups[i]));
         }
         if (primitives.Count == 0 || primitives.Count > 256) throw new InvalidDataException("Model primitive count is unsupported.");
+        if (variant is not null) primitives.RemoveAll(primitive => variant.Visibility.TryGetValue(primitive.Name, out var visible) && !visible);
         return new PreviewScene(primitives, textures) { Rig = new(bones, [], null, warnings.ToArray()) };
     }
 
@@ -152,7 +154,7 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
                 {
                     if (textures.Count >= 32) throw new InvalidDataException("Preview texture limit exceeded.");
                     textureIndex = textures.Count;
-                    try { textures.Add(PreviewTexture.Read(read(texturePath))); }
+                    try { textures.Add(PreviewTexture.Read(read(texturePath)) with { SourcePath = texturePath }); }
                     catch (IOException) { warnings.Add("textureUnavailable"); textureIndices.TryAdd(texturePath, -1); continue; }
                     textureIndices.Add(texturePath, textureIndex);
                 }
